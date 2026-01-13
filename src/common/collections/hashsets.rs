@@ -1,0 +1,37 @@
+use crate::common::collections::comparable::*;
+use builtin::*;
+use builtin_macros::*;
+use std::collections::*;
+use vstd::prelude::*;
+use vstd::set::*;
+use vstd::view::*;
+use vstd::std_specs::hash::*;
+use std::hash::Hash;
+verus!{
+    #[verifier(external_body)]
+    pub fn union_sets<T>(s1:&HashSet<T>, s2:&HashSet<T>) -> (res:HashSet<T>)
+    where
+        T: Clone + Eq + Hash
+    {
+        let mut result = HashSet::new();
+        for elem in s1 {
+            result.insert(elem.clone());
+        }
+        for elem in s2 {
+            result.insert(elem.clone());
+        }
+        result
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_hashset<T>(s:&HashSet<T>) -> (res:HashSet<T>)
+    where
+            T: Clone + Eq + Hash
+    {
+        let mut res = HashSet::new();
+        for elem in s {
+            res.insert(elem.clone());
+        }
+        res
+    }
+}

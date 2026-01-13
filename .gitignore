@@ -1,0 +1,13 @@
+/target
+.vscode/
+*.code-workspace
+certs/
+.sconsign.dblite
+lib.dll
+lib.dll.exp
+lib.dll.lib
+lib.pdb
+*~
+venv/
+bin/
+doubts.txt
