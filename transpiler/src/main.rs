@@ -178,6 +178,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
         }
         Commands::GenerateTypes { input, output } => {
             use verus_transpiler::{TypeParser, TypeRegistry, TypeGenerator};
+            use verus_transpiler::types::TypeDef;
             use verus_transpiler::config::NamingConfig;
 
             if cli.verbose {
@@ -187,21 +188,31 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let content = std::fs::read_to_string(input)
                 .map_err(|e| miette::miette!("Failed to read input file: {}", e))?;
 
-            let parser = TypeParser::new(&content);
+            let mut parser = TypeParser::new(&content);
             let mut registry = TypeRegistry::new();
 
-            // Parse structs and enums from the source
-            for struct_def in parser.parse_structs() {
-                if cli.verbose {
-                    eprintln!("  Found struct: {}", struct_def.name);
+            // Parse all type definitions from the source
+            let type_defs = parser.parse_types()
+                .map_err(|e| miette::miette!("Failed to parse types: {}", e))?;
+
+            for type_def in type_defs {
+                match type_def {
+                    TypeDef::Struct(struct_def) => {
+                        if cli.verbose {
+                            eprintln!("  Found struct: {}", struct_def.name);
+                        }
+                        registry.structs.insert(struct_def.name.clone(), struct_def);
+                    }
+                    TypeDef::Enum(enum_def) => {
+                        if cli.verbose {
+                            eprintln!("  Found enum: {}", enum_def.name);
+                        }
+                        registry.enums.insert(enum_def.name.clone(), enum_def);
+                    }
+                    TypeDef::Alias(_) => {
+                        // Type aliases are not directly generated
+                    }
                 }
-                registry.structs.insert(struct_def.name.clone(), struct_def);
-            }
-            for enum_def in parser.parse_enums() {
-                if cli.verbose {
-                    eprintln!("  Found enum: {}", enum_def.name);
-                }
-                registry.enums.insert(enum_def.name.clone(), enum_def);
             }
 
             if registry.structs.is_empty() && registry.enums.is_empty() {
