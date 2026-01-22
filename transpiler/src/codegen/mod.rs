@@ -8,7 +8,7 @@
 
 use crate::config::NamingConfig;
 use crate::types::{EnumDef, FieldDef, StructDef, TypeRegistry, VariantDef, VariantFields};
-use crate::ast::{Path, Type};
+use crate::ast::Type;
 
 /// Generated code output
 #[derive(Debug, Clone)]
@@ -39,7 +39,7 @@ impl TypeGenerator {
     /// Generate an exec struct from a spec struct
     pub fn generate_struct(&self, spec: &StructDef) -> GeneratedCode {
         let mut code = String::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         let exec_name = self.config.get_exec_type(&spec.name);
 
@@ -452,7 +452,7 @@ pub fn generate_all_types(registry: &TypeRegistry, config: &NamingConfig) -> Gen
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::Generics;
+    use crate::ast::{Generics, Path};
 
     fn make_config() -> NamingConfig {
         NamingConfig::default()
