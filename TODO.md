@@ -311,9 +311,10 @@ verus! {
   - Trigger annotations
   - Ghost/tracked modes
 
-- [ ] **Implement annotation file parser**
+- [x] **Implement annotation file parser** [26:01:22, 15:35]
   - Simple grammar for mode declarations
   - Module scoping support
+  - Implemented in `annotation/mod.rs` with full tests
 
 ### 3.3 Type Table Builder
 
