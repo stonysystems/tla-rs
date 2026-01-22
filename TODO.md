@@ -450,34 +450,25 @@ verus! {
 
 ### 5.4 Template Matching for Collections
 
-- [ ] **Define supported quantifier templates**
-  ```rust
-  pub enum QuantifierTemplate {
-      // seq![...] or Seq::new(|i| ...)
-      SeqComprehension {
-          length_expr: Expr,
-          element_expr: Expr,  // as function of index
-      },
+- [x] **Define supported quantifier templates** [26:01:22, 17:15]
+  - `QuantifierTemplate` enum in `templates/mod.rs`
+  - `SeqComprehension` - sequence construction from index expression
+  - `SetComprehension` - set from domain predicate
+  - `MapDomain`, `MapValue`, `MapComprehension` - map construction patterns
+  - `StructConstruction` - field-wise struct building
+  - `SimpleAssignment`, `Copy` - basic assignment patterns
 
-      // Set::new(|x| ...)
-      SetComprehension {
-          domain_predicate: Expr,
-      },
-
-      // Map::new(|k| ..., |k| ...)
-      MapComprehension {
-          domain_predicate: Expr,
-          value_expr: Expr,
-      },
-  }
-  ```
-
-- [ ] **Implement template matchers**
+- [x] **Implement template matchers** [26:01:22, 17:15]
+  - `TemplateMatcher` class with pattern recognition
   - Match `forall |i| 0 <= i < len ==> seq[i] == expr` → SeqComprehension
-  - Match `forall |k| k in map' <==> pred` → MapComprehension domain
-  - Match `forall |k| k in map' ==> map'[k] == expr` → MapComprehension value
+  - Match `forall |k| k in map <==> pred` → MapDomain
+  - Match `forall |k| k in map ==> map[k] == expr` → MapValue
+  - Match conjunction of field assignments → StructConstruction
 
-- [ ] **Report template matching failures with suggestions**
+- [x] **Report template matching failures with suggestions** [26:01:22, 17:15]
+  - `QuantifierTemplate::Unrecognized` with reason and hint
+  - `generate_hint()` provides restructuring suggestions
+  - `MatchResult` with confidence scores
 
 ---
 

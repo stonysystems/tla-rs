@@ -37,6 +37,7 @@ pub mod error;
 pub mod moder;
 pub mod parser;
 pub mod printer;
+pub mod templates;
 pub mod translator;
 pub mod types;
 
@@ -51,6 +52,7 @@ pub use parser::{parse_file, VerusParser};
 pub use printer::{print_function, Printer, PrinterConfig};
 pub use translator::{ExecFunction, Translator, TranslatorConfig};
 pub use types::{TypeRegistry, StructDef, EnumDef, FieldDef, FunctionSig, TypeParser};
+pub use templates::{QuantifierTemplate, TemplateMatcher, match_expression};
 
 use std::path::Path;
 
