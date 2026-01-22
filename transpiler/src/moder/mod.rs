@@ -6,8 +6,8 @@
 //! - Detect mode conflicts
 //! - Classify predicates for translation
 
-use crate::ast::{Expr, Parameter, ParameterMode, SpecFunction};
 use crate::annotation::FunctionAnnotation;
+use crate::ast::{Expr, Parameter, ParameterMode, SpecFunction};
 use crate::error::{DiagnosticAccumulator, TranspileError, TranspileResult};
 use std::collections::{HashMap, HashSet};
 
@@ -100,14 +100,9 @@ pub enum PredicateKind {
 #[derive(Debug, Clone)]
 pub enum ModeConflict {
     /// Output variable used before it was assigned
-    UseBeforeAssignment {
-        var: String,
-        context: String,
-    },
+    UseBeforeAssignment { var: String, context: String },
     /// Input variable appears on left side of assignment
-    InputAssignment {
-        var: String,
-    },
+    InputAssignment { var: String },
     /// Different branches assign different output variables
     BranchMismatch {
         branch1_assigns: HashSet<String>,
@@ -256,7 +251,11 @@ impl ModeAnalyzer {
             }
 
             // Conditionals - analyze both branches
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.analyze_expression(cond, tracker, output_params);
                 self.analyze_expression(then_branch, tracker, output_params);
                 if let Some(else_expr) = else_branch {
@@ -359,7 +358,13 @@ impl ModeAnalyzer {
         output_params: &HashSet<String>,
     ) -> Vec<ModeConflict> {
         let mut conflicts = Vec::new();
-        self.detect_conflicts_inner(expr, input_params, output_params, &HashSet::new(), &mut conflicts);
+        self.detect_conflicts_inner(
+            expr,
+            input_params,
+            output_params,
+            &HashSet::new(),
+            &mut conflicts,
+        );
         conflicts
     }
 
@@ -421,9 +426,19 @@ impl ModeAnalyzer {
                 self.check_use_before_assignment(right, output_params, &newly_assigned, conflicts);
             }
 
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 // Check condition for conflicts
-                self.detect_conflicts_inner(cond, input_params, output_params, &newly_assigned, conflicts);
+                self.detect_conflicts_inner(
+                    cond,
+                    input_params,
+                    output_params,
+                    &newly_assigned,
+                    conflicts,
+                );
 
                 // Analyze both branches
                 let then_assigned = self.detect_conflicts_inner(
@@ -446,8 +461,14 @@ impl ModeAnalyzer {
                     // Check for branch mismatch
                     if then_assigned != else_assigned {
                         conflicts.push(ModeConflict::BranchMismatch {
-                            branch1_assigns: then_assigned.difference(&newly_assigned).cloned().collect(),
-                            branch2_assigns: else_assigned.difference(&newly_assigned).cloned().collect(),
+                            branch1_assigns: then_assigned
+                                .difference(&newly_assigned)
+                                .cloned()
+                                .collect(),
+                            branch2_assigns: else_assigned
+                                .difference(&newly_assigned)
+                                .cloned()
+                                .collect(),
                         });
                     }
 
@@ -466,14 +487,31 @@ impl ModeAnalyzer {
             }
 
             Expr::Implies(premise, conclusion) => {
-                self.detect_conflicts_inner(premise, input_params, output_params, &newly_assigned, conflicts);
-                self.detect_conflicts_inner(conclusion, input_params, output_params, &newly_assigned, conflicts);
+                self.detect_conflicts_inner(
+                    premise,
+                    input_params,
+                    output_params,
+                    &newly_assigned,
+                    conflicts,
+                );
+                self.detect_conflicts_inner(
+                    conclusion,
+                    input_params,
+                    output_params,
+                    &newly_assigned,
+                    conflicts,
+                );
             }
 
             Expr::Call { args, .. } | Expr::MethodCall { args, .. } => {
                 // Check for use of unassigned outputs in function arguments
                 for arg in args {
-                    self.check_use_before_assignment(arg, output_params, &newly_assigned, conflicts);
+                    self.check_use_before_assignment(
+                        arg,
+                        output_params,
+                        &newly_assigned,
+                        conflicts,
+                    );
                 }
             }
 
@@ -493,7 +531,9 @@ impl ModeAnalyzer {
         conflicts: &mut Vec<ModeConflict>,
     ) {
         match expr {
-            Expr::Ident(name) if output_params.contains(name) && !already_assigned.contains(name) => {
+            Expr::Ident(name)
+                if output_params.contains(name) && !already_assigned.contains(name) =>
+            {
                 conflicts.push(ModeConflict::UseBeforeAssignment {
                     var: name.clone(),
                     context: "expression".to_string(),
@@ -508,7 +548,12 @@ impl ModeAnalyzer {
             }
             Expr::Call { args, .. } | Expr::MethodCall { args, .. } => {
                 for arg in args {
-                    self.check_use_before_assignment(arg, output_params, already_assigned, conflicts);
+                    self.check_use_before_assignment(
+                        arg,
+                        output_params,
+                        already_assigned,
+                        conflicts,
+                    );
                 }
             }
             _ => {}
@@ -521,9 +566,7 @@ impl ModeAnalyzer {
         params: &HashSet<String>,
     ) -> Option<(String, MemberPath)> {
         match expr {
-            Expr::Ident(name) if params.contains(name) => {
-                Some((name.clone(), MemberPath::Root))
-            }
+            Expr::Ident(name) if params.contains(name) => Some((name.clone(), MemberPath::Root)),
             Expr::Field(base, field) => {
                 if let Some((var, path)) = Self::extract_any_param_path(base, params) {
                     Some((var, path.field(field.clone())))
@@ -657,8 +700,9 @@ mod tests {
     fn test_analyze_conjunction() {
         let mut analyzer = ModeAnalyzer::new();
         let mut tracker = AssignmentTracker::new();
-        let output_params: HashSet<String> =
-            ["s_".to_string(), "packets".to_string()].into_iter().collect();
+        let output_params: HashSet<String> = ["s_".to_string(), "packets".to_string()]
+            .into_iter()
+            .collect();
 
         // Expression: &&& s_.max_bal == bal &&& packets == seq![]
         let expr = Expr::Conjunction(vec![
@@ -732,8 +776,9 @@ mod tests {
     fn test_detect_branch_mismatch_conflict() {
         let mut analyzer = ModeAnalyzer::new();
         let input_params: HashSet<String> = HashSet::new();
-        let output_params: HashSet<String> =
-            ["s_".to_string(), "packets".to_string()].into_iter().collect();
+        let output_params: HashSet<String> = ["s_".to_string(), "packets".to_string()]
+            .into_iter()
+            .collect();
 
         // Expression: if cond { s_ == new } else { packets == empty }
         // This is a branch mismatch - different outputs in each branch

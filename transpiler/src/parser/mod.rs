@@ -5,7 +5,7 @@
 //! converts them to our internal AST representation.
 
 use crate::ast::{
-    Binding, BinOp, Expr, Generics, GenericParam, Literal, MatchArm, Parameter, Path, Pattern,
+    BinOp, Binding, Expr, GenericParam, Generics, Literal, MatchArm, Parameter, Path, Pattern,
     SpecFunction, Type, TypeBound, VariableMode,
 };
 use crate::error::{TranspileError, TranspileResult};
@@ -522,7 +522,14 @@ impl<'a> VerusBlockParser<'a> {
             }
 
             // Check for clause keywords
-            let keywords = ["requires", "ensures", "recommends", "decreases", "when", "via"];
+            let keywords = [
+                "requires",
+                "ensures",
+                "recommends",
+                "decreases",
+                "when",
+                "via",
+            ];
             let is_keyword = keywords.iter().any(|kw| {
                 if self.pos + kw.len() <= self.content.len()
                     && &self.content[self.pos..self.pos + kw.len()] == *kw
@@ -859,7 +866,9 @@ impl<'a> VerusBlockParser<'a> {
                     if let Expr::Ident(name) = &expr {
                         let path_segments = vec![name.clone(), segment];
                         expr = Expr::Call {
-                            func: Path { segments: path_segments },
+                            func: Path {
+                                segments: path_segments,
+                            },
                             args,
                         };
                         continue;
@@ -1074,7 +1083,11 @@ impl<'a> VerusBlockParser<'a> {
         };
 
         Ok(Expr::Let {
-            binding: Binding { name, ty, variable_mode },
+            binding: Binding {
+                name,
+                ty,
+                variable_mode,
+            },
             value: Box::new(value),
             body: Box::new(body),
         })
@@ -1657,7 +1670,10 @@ impl<'a> VerusBlockParser<'a> {
             && &self.content[self.pos..self.pos + s.len()] == s
         {
             // Make sure it's not part of a longer identifier
-            if s.chars().last().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+            if s.chars()
+                .last()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            {
                 let next_char = self.content[self.pos + s.len()..].chars().next();
                 if next_char.is_some_and(|c| c.is_alphanumeric() || c == '_') {
                     return false;
@@ -1678,11 +1694,7 @@ impl<'a> VerusBlockParser<'a> {
             Ok(())
         } else {
             Err(TranspileError::Parse {
-                message: format!(
-                    "Expected '{}', found '{:?}'",
-                    c,
-                    self.peek()
-                ),
+                message: format!("Expected '{}', found '{:?}'", c, self.peek()),
                 span: None,
             })
         }
@@ -1779,7 +1791,11 @@ mod tests {
         assert_eq!(funcs.len(), 1);
 
         match &funcs[0].body {
-            Expr::If { cond: _, then_branch: _, else_branch } => {
+            Expr::If {
+                cond: _,
+                then_branch: _,
+                else_branch,
+            } => {
                 assert!(else_branch.is_some());
             }
             _ => panic!("Expected if expression"),

@@ -102,9 +102,13 @@ fn main() -> Result<()> {
     }
 
     // Require input and annotations for single-file mode
-    let input = cli.input.as_ref()
+    let input = cli
+        .input
+        .as_ref()
         .ok_or_else(|| miette::miette!("--input is required for single-file mode"))?;
-    let annotations = cli.annotations.as_ref()
+    let annotations = cli
+        .annotations
+        .as_ref()
         .ok_or_else(|| miette::miette!("--annotations is required for single-file mode"))?;
 
     if cli.verbose {
@@ -167,7 +171,11 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 Ok(modules) => {
                     println!("OK: {} module(s) parsed successfully", modules.len());
                     for module in &modules {
-                        println!("  - {} ({} functions)", module.module_path, module.functions.len());
+                        println!(
+                            "  - {} ({} functions)",
+                            module.module_path,
+                            module.functions.len()
+                        );
                     }
                 }
                 Err(e) => {
@@ -177,9 +185,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             Ok(())
         }
         Commands::GenerateTypes { input, output } => {
-            use verus_transpiler::{TypeParser, TypeRegistry, TypeGenerator};
-            use verus_transpiler::types::TypeDef;
             use verus_transpiler::config::NamingConfig;
+            use verus_transpiler::types::TypeDef;
+            use verus_transpiler::{TypeGenerator, TypeParser, TypeRegistry};
 
             if cli.verbose {
                 eprintln!("Generating types from: {}", input.display());
@@ -192,7 +200,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let mut registry = TypeRegistry::new();
 
             // Parse all type definitions from the source
-            let type_defs = parser.parse_types()
+            let type_defs = parser
+                .parse_types()
                 .map_err(|e| miette::miette!("Failed to parse types: {}", e))?;
 
             for type_def in type_defs {
@@ -249,10 +258,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             if let Some(output_path) = output {
                 std::fs::write(output_path, &all_code)
                     .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
-                println!("Generated {} structs, {} enums -> {}",
+                println!(
+                    "Generated {} structs, {} enums -> {}",
                     registry.structs.len(),
                     registry.enums.len(),
-                    output_path.display());
+                    output_path.display()
+                );
             } else {
                 println!("{}", all_code);
             }

@@ -104,11 +104,7 @@ impl Printer {
         self.write("(");
 
         // Print parameters
-        let params: Vec<_> = func
-            .params
-            .iter()
-            .map(|p| self.format_param(p))
-            .collect();
+        let params: Vec<_> = func.params.iter().map(|p| self.format_param(p)).collect();
         self.write(&params.join(", "));
 
         self.write(") -> (result: ");
@@ -144,7 +140,11 @@ impl Printer {
                 self.write(";");
             }
 
-            ExecExpr::If { cond, then_branch, else_branch } => {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.write("if ");
                 self.print_expr(cond);
                 self.write(" {");
@@ -198,7 +198,11 @@ impl Printer {
                 self.write(field);
             }
 
-            ExecExpr::MethodCall { receiver, method, args } => {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 self.print_expr(receiver);
                 self.write(".");
                 self.write(method);

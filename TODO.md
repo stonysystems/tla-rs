@@ -749,9 +749,12 @@ mode annotations, and basic expression transformation.
 - [x] Robust error handling and reporting (DiagnosticAccumulator, error types)
 - [ ] Performance optimization
 - [x] Documentation and examples (docs/ directory)
-- [ ] CI/CD integration
+- [x] CI/CD integration [26:01:22, 15:38]
+  - GitHub Actions workflow in `.github/workflows/ci.yml`
+  - Test, lint (clippy), and format checks on push/PR
+  - See `docs/dev/ci-cd-plan.md` for design rationale
 
-**Status**: Documentation complete. Performance optimization and CI pending.
+**Status**: Documentation and CI complete. Performance optimization pending.
 
 ---
 

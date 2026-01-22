@@ -97,9 +97,7 @@ where
     type V = HashMap<K::V, V::V>;
 
     fn view(&self) -> HashMap<K::V, V::V> {
-        self.iter()
-            .map(|(k, v)| (k.view(), v.view()))
-            .collect()
+        self.iter().map(|(k, v)| (k.view(), v.view())).collect()
     }
 }
 
@@ -275,7 +273,7 @@ mod tests {
         assert_eq!(x.view(), 42);
 
         let b: bool = true;
-        assert_eq!(b.view(), true);
+        assert!(b.view());
     }
 
     #[test]

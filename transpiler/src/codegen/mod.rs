@@ -11,9 +11,9 @@ pub mod template_codegen;
 
 pub use template_codegen::TemplateCodeGenerator;
 
+use crate::ast::Type;
 use crate::config::NamingConfig;
 use crate::types::{EnumDef, FieldDef, StructDef, TypeRegistry, VariantDef, VariantFields};
-use crate::ast::Type;
 
 /// Generated code output
 #[derive(Debug, Clone)]
@@ -53,7 +53,10 @@ impl TypeGenerator {
         for field in &spec.fields {
             let exec_type = self.translate_type(&field.ty);
             let vis = if field.is_public { "pub " } else { "" };
-            code.push_str(&format!("{}{}{}: {},\n", self.indent, vis, field.name, exec_type));
+            code.push_str(&format!(
+                "{}{}{}: {},\n",
+                self.indent, vis, field.name, exec_type
+            ));
         }
         code.push_str("}\n\n");
 
@@ -97,13 +100,21 @@ impl TypeGenerator {
             VariantFields::Unit => format!("{}{},\n", self.indent, variant.name),
             VariantFields::Tuple(types) => {
                 let type_strs: Vec<_> = types.iter().map(|t| self.translate_type(t)).collect();
-                format!("{}{}({}),\n", self.indent, variant.name, type_strs.join(", "))
+                format!(
+                    "{}{}({}),\n",
+                    self.indent,
+                    variant.name,
+                    type_strs.join(", ")
+                )
             }
             VariantFields::Struct(fields) => {
                 let mut s = format!("{}{} {{\n", self.indent, variant.name);
                 for field in fields {
                     let exec_type = self.translate_type(&field.ty);
-                    s.push_str(&format!("{}{}    {}: {},\n", self.indent, "", field.name, exec_type));
+                    s.push_str(&format!(
+                        "{}{}    {}: {},\n",
+                        self.indent, "", field.name, exec_type
+                    ));
                 }
                 s.push_str(&format!("{}}},\n", self.indent));
                 s
@@ -114,7 +125,10 @@ impl TypeGenerator {
     /// Generate well_formed predicate for a struct
     fn generate_well_formed_struct(&self, exec_name: &str, fields: &[FieldDef]) -> String {
         let mut code = format!("impl {} {{\n", exec_name);
-        code.push_str(&format!("{}pub open spec fn well_formed(&self) -> bool {{\n", self.indent));
+        code.push_str(&format!(
+            "{}pub open spec fn well_formed(&self) -> bool {{\n",
+            self.indent
+        ));
 
         if fields.is_empty() {
             code.push_str(&format!("{}{}true\n", self.indent, self.indent));
@@ -144,7 +158,10 @@ impl TypeGenerator {
     /// Generate well_formed predicate for an enum
     fn generate_well_formed_enum(&self, exec_name: &str, variants: &[VariantDef]) -> String {
         let mut code = format!("impl {} {{\n", exec_name);
-        code.push_str(&format!("{}pub open spec fn well_formed(&self) -> bool {{\n", self.indent));
+        code.push_str(&format!(
+            "{}pub open spec fn well_formed(&self) -> bool {{\n",
+            self.indent
+        ));
         code.push_str(&format!("{}{}match self {{\n", self.indent, self.indent));
 
         for variant in variants {
@@ -177,7 +194,10 @@ impl TypeGenerator {
                 }
 
                 if checks.is_empty() {
-                    format!("{}{}::{}({}) => true,\n", arm_indent, enum_name, variant.name, pattern)
+                    format!(
+                        "{}{}::{}({}) => true,\n",
+                        arm_indent, enum_name, variant.name, pattern
+                    )
                 } else {
                     format!(
                         "{}{}::{}({}) => {},\n",
@@ -356,7 +376,11 @@ impl TypeGenerator {
             Type::Seq(inner) => format!("Vec<{}>", self.translate_type(inner)),
             Type::Set(inner) => format!("HashSet<{}>", self.translate_type(inner)),
             Type::Map(k, v) => {
-                format!("HashMap<{}, {}>", self.translate_type(k), self.translate_type(v))
+                format!(
+                    "HashMap<{}, {}>",
+                    self.translate_type(k),
+                    self.translate_type(v)
+                )
             }
             Type::Tuple(types) => {
                 let type_strs: Vec<_> = types.iter().map(|t| self.translate_type(t)).collect();
@@ -378,24 +402,34 @@ impl TypeGenerator {
 
     /// Check if a type needs well_formed validation
     fn needs_well_formed(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Bool | Type::Int | Type::Nat | Type::Unit => false,
-            Type::Named(_) | Type::Generic(_, _) => true,
-            Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => true,
-            Type::Tuple(types) => types.iter().any(|t| self.needs_well_formed(t)),
-            Type::Reference { ty, .. } => self.needs_well_formed(ty),
-        }
+        needs_well_formed_check(ty)
     }
 
     /// Check if a type needs the view operator (@)
     fn needs_view(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Bool | Type::Int | Type::Nat | Type::Unit => false,
-            Type::Named(_) | Type::Generic(_, _) => true,
-            Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => true,
-            Type::Tuple(types) => types.iter().any(|t| self.needs_view(t)),
-            Type::Reference { ty, .. } => self.needs_view(ty),
-        }
+        needs_view_check(ty)
+    }
+}
+
+/// Check if a type needs well_formed validation (standalone function for recursion)
+fn needs_well_formed_check(ty: &Type) -> bool {
+    match ty {
+        Type::Bool | Type::Int | Type::Nat | Type::Unit => false,
+        Type::Named(_) | Type::Generic(_, _) => true,
+        Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => true,
+        Type::Tuple(types) => types.iter().any(needs_well_formed_check),
+        Type::Reference { ty, .. } => needs_well_formed_check(ty),
+    }
+}
+
+/// Check if a type needs the view operator (@) (standalone function for recursion)
+fn needs_view_check(ty: &Type) -> bool {
+    match ty {
+        Type::Bool | Type::Int | Type::Nat | Type::Unit => false,
+        Type::Named(_) | Type::Generic(_, _) => true,
+        Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => true,
+        Type::Tuple(types) => types.iter().any(needs_view_check),
+        Type::Reference { ty, .. } => needs_view_check(ty),
     }
 }
 
@@ -427,7 +461,7 @@ pub fn generate_all_types(registry: &TypeRegistry, config: &NamingConfig) -> Gen
     all_code.push_str("verus! {\n\n");
 
     // Generate structs
-    for (_, struct_def) in &registry.structs {
+    for struct_def in registry.structs.values() {
         if struct_def.is_spec {
             let generated = generator.generate_struct(struct_def);
             all_code.push_str(&generated.code);
@@ -437,7 +471,7 @@ pub fn generate_all_types(registry: &TypeRegistry, config: &NamingConfig) -> Gen
     }
 
     // Generate enums
-    for (_, enum_def) in &registry.enums {
+    for enum_def in registry.enums.values() {
         if enum_def.is_spec {
             let generated = generator.generate_enum(enum_def);
             all_code.push_str(&generated.code);

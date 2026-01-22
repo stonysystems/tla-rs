@@ -116,8 +116,10 @@ fn test_saturation_missing_field_assignment() {
 
     // When we check saturation, field2 should be missing
     let is_root_assigned = tracker.is_assigned("s_", &MemberPath::Root);
-    let is_field1_assigned = tracker.is_assigned("s_", &MemberPath::root().field("field1".to_string()));
-    let is_field2_assigned = tracker.is_assigned("s_", &MemberPath::root().field("field2".to_string()));
+    let is_field1_assigned =
+        tracker.is_assigned("s_", &MemberPath::root().field("field1".to_string()));
+    let is_field2_assigned =
+        tracker.is_assigned("s_", &MemberPath::root().field("field2".to_string()));
 
     // Root should not be considered assigned when only a field is assigned
     assert!(!is_root_assigned);
@@ -142,8 +144,8 @@ fn test_saturation_no_assignments() {
 
 #[test]
 fn test_unsupported_quantifier_multiple_vars() {
-    use verus_transpiler::checker::TemplateMatcher;
     use verus_transpiler::ast::{Binding, Expr, VariableMode};
+    use verus_transpiler::checker::TemplateMatcher;
 
     // Create forall with multiple bound variables - not supported by our templates
     let expr = Expr::Forall {
@@ -170,8 +172,8 @@ fn test_unsupported_quantifier_multiple_vars() {
 
 #[test]
 fn test_unsupported_quantifier_complex_body() {
-    use verus_transpiler::templates::match_expression;
     use verus_transpiler::ast::{Binding, Expr, VariableMode};
+    use verus_transpiler::templates::match_expression;
 
     // Create forall that doesn't match any known template
     let expr = Expr::Forall {
@@ -222,7 +224,9 @@ fn test_input_assignment_conflict() {
 
     // Should detect that 's' is being assigned but is marked as input
     assert!(!result.is_empty());
-    assert!(result.iter().any(|c| matches!(c, moder::ModeConflict::InputAssignment { .. })));
+    assert!(result
+        .iter()
+        .any(|c| matches!(c, moder::ModeConflict::InputAssignment { .. })));
 }
 
 #[test]
@@ -252,7 +256,9 @@ fn test_use_before_assignment_conflict() {
 
     // Should detect use before assignment
     assert!(!result.is_empty());
-    assert!(result.iter().any(|c| matches!(c, moder::ModeConflict::UseBeforeAssignment { .. })));
+    assert!(result
+        .iter()
+        .any(|c| matches!(c, moder::ModeConflict::UseBeforeAssignment { .. })));
 }
 
 // ============================================================================
@@ -312,7 +318,7 @@ fn test_diagnostic_accumulator_collects_all_errors() {
 
 #[test]
 fn test_translator_forall_without_template() {
-    use verus_transpiler::translator::{Translator, TransformContext, TranslatorConfig};
+    use verus_transpiler::translator::{TransformContext, Translator, TranslatorConfig};
 
     let translator = Translator::default();
     static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
@@ -338,12 +344,16 @@ fn test_translator_forall_without_template() {
     // Should return an error about needing template matching
     assert!(result.is_err());
     let err_str = format!("{}", result.unwrap_err());
-    assert!(err_str.contains("template") || err_str.contains("Forall") || err_str.contains("quantifier"));
+    assert!(
+        err_str.contains("template")
+            || err_str.contains("Forall")
+            || err_str.contains("quantifier")
+    );
 }
 
 #[test]
 fn test_translator_exists_not_supported() {
-    use verus_transpiler::translator::{Translator, TransformContext, TranslatorConfig};
+    use verus_transpiler::translator::{TransformContext, Translator, TranslatorConfig};
 
     let translator = Translator::default();
     static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
@@ -368,5 +378,7 @@ fn test_translator_exists_not_supported() {
     // Should return an error
     assert!(result.is_err());
     let err_str = format!("{}", result.unwrap_err());
-    assert!(err_str.contains("Exists") || err_str.contains("cannot") || err_str.contains("quantifier"));
+    assert!(
+        err_str.contains("Exists") || err_str.contains("cannot") || err_str.contains("quantifier")
+    );
 }

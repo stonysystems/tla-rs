@@ -142,10 +142,7 @@ pub enum ExecExpr {
         args: Vec<ExecExpr>,
     },
     /// Function call
-    Call {
-        func: String,
-        args: Vec<ExecExpr>,
-    },
+    Call { func: String, args: Vec<ExecExpr> },
     /// Binary operation
     Binary {
         lhs: Box<ExecExpr>,
@@ -153,10 +150,7 @@ pub enum ExecExpr {
         rhs: Box<ExecExpr>,
     },
     /// Unary operation
-    Unary {
-        op: String,
-        expr: Box<ExecExpr>,
-    },
+    Unary { op: String, expr: Box<ExecExpr> },
     /// Variable reference
     Var(String),
     /// Literal
@@ -323,10 +317,7 @@ impl Translator {
                 ParameterMode::Input => {
                     params.push(ExecParameter {
                         name: param.name.clone(),
-                        ty: ExecType::Reference(
-                            Box::new(self.translate_type(&param.ty)),
-                            false,
-                        ),
+                        ty: ExecType::Reference(Box::new(self.translate_type(&param.ty)), false),
                         is_reference: true,
                     });
                 }
@@ -422,7 +413,11 @@ impl Translator {
     }
 
     /// Transform a spec expression to an exec expression (public interface)
-    pub fn transform_expr_public(&self, expr: &Expr, ctx: &TransformContext) -> TranspileResult<ExecExpr> {
+    pub fn transform_expr_public(
+        &self,
+        expr: &Expr,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
         self.transform_expr(expr, ctx)
     }
 
@@ -448,7 +443,11 @@ impl Translator {
                 })
             }
 
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 let cond_expr = self.transform_expr(cond, ctx)?;
                 let then_expr = self.transform_expr(then_branch, ctx)?;
                 let else_expr = else_branch
@@ -469,20 +468,16 @@ impl Translator {
                 }
 
                 // Otherwise transform as a block
-                let stmts: TranspileResult<Vec<_>> = exprs
-                    .iter()
-                    .map(|e| self.transform_expr(e, ctx))
-                    .collect();
+                let stmts: TranspileResult<Vec<_>> =
+                    exprs.iter().map(|e| self.transform_expr(e, ctx)).collect();
                 Ok(ExecExpr::Block(stmts?))
             }
 
             Expr::Eq(lhs, rhs) => self.transform_equality(lhs, rhs, ctx),
 
             Expr::Call { func, args } => {
-                let translated_args: TranspileResult<Vec<_>> = args
-                    .iter()
-                    .map(|a| self.transform_expr(a, ctx))
-                    .collect();
+                let translated_args: TranspileResult<Vec<_>> =
+                    args.iter().map(|a| self.transform_expr(a, ctx)).collect();
                 let func_name = func.last().unwrap_or("unknown");
                 Ok(ExecExpr::Call {
                     func: self.translate_name(func_name),
@@ -490,12 +485,14 @@ impl Translator {
                 })
             }
 
-            Expr::MethodCall { receiver, method, args } => {
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 let recv_expr = self.transform_expr(receiver, ctx)?;
-                let translated_args: TranspileResult<Vec<_>> = args
-                    .iter()
-                    .map(|a| self.transform_expr(a, ctx))
-                    .collect();
+                let translated_args: TranspileResult<Vec<_>> =
+                    args.iter().map(|a| self.transform_expr(a, ctx)).collect();
                 Ok(ExecExpr::MethodCall {
                     receiver: Box::new(recv_expr),
                     method: method.clone(),
@@ -503,7 +500,11 @@ impl Translator {
                 })
             }
 
-            Expr::Let { binding, value, body } => {
+            Expr::Let {
+                binding,
+                value,
+                body,
+            } => {
                 let value_expr = self.transform_expr(value, ctx)?;
                 let body_expr = self.transform_expr(body, ctx)?;
                 Ok(ExecExpr::Block(vec![
@@ -672,10 +673,8 @@ impl Translator {
 
             Expr::SetLit(elems) => {
                 // Generate HashSet::from([...])
-                let translated: TranspileResult<Vec<_>> = elems
-                    .iter()
-                    .map(|e| self.transform_expr(e, ctx))
-                    .collect();
+                let translated: TranspileResult<Vec<_>> =
+                    elems.iter().map(|e| self.transform_expr(e, ctx)).collect();
                 Ok(ExecExpr::Call {
                     func: "HashSet::from".to_string(),
                     args: vec![ExecExpr::VecLit(translated?)],
@@ -699,10 +698,8 @@ impl Translator {
             }
 
             Expr::SeqLit(elems) => {
-                let translated: TranspileResult<Vec<_>> = elems
-                    .iter()
-                    .map(|e| self.transform_expr(e, ctx))
-                    .collect();
+                let translated: TranspileResult<Vec<_>> =
+                    elems.iter().map(|e| self.transform_expr(e, ctx)).collect();
                 Ok(ExecExpr::VecLit(translated?))
             }
 
@@ -718,17 +715,14 @@ impl Translator {
                 })
             }
 
-            Expr::Exists { vars, .. } => {
-                Err(TranspileError::UnsupportedPattern {
-                    message: format!(
-                        "Exists quantifier with vars {:?} cannot be directly translated",
-                        vars.iter().map(|v| &v.name).collect::<Vec<_>>()
-                    ),
-                    span: None,
-                    help: Some("Consider using choose! macro or restructuring".to_string()),
-                })
-            }
-            // Note: All Expr variants are now handled exhaustively
+            Expr::Exists { vars, .. } => Err(TranspileError::UnsupportedPattern {
+                message: format!(
+                    "Exists quantifier with vars {:?} cannot be directly translated",
+                    vars.iter().map(|v| &v.name).collect::<Vec<_>>()
+                ),
+                span: None,
+                help: Some("Consider using choose! macro or restructuring".to_string()),
+            }), // Note: All Expr variants are now handled exhaustively
         }
     }
 
@@ -838,7 +832,7 @@ impl Translator {
                 } else {
                     // Need to infer struct name from type information
                     // For now, generate a struct literal
-                    let struct_name = self.translate_name(&output_name.trim_end_matches('_').to_string());
+                    let struct_name = self.translate_name(output_name.trim_end_matches('_'));
                     results.push(ExecExpr::Struct {
                         name: struct_name,
                         fields: translated_fields,
@@ -912,9 +906,8 @@ impl Translator {
                 if fields.is_empty() {
                     variant_name
                 } else {
-                    let field_strs: Vec<_> = fields.iter()
-                        .map(|p| self.format_pattern(p))
-                        .collect();
+                    let field_strs: Vec<_> =
+                        fields.iter().map(|p| self.format_pattern(p)).collect();
                     format!("{}({})", variant_name, field_strs.join(", "))
                 }
             }

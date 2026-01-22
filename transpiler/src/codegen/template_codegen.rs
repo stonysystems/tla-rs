@@ -20,7 +20,11 @@ impl TemplateCodeGenerator {
     }
 
     /// Generate executable code from a quantifier template
-    pub fn generate(&self, template: &QuantifierTemplate, ctx: &TransformContext) -> TranspileResult<ExecExpr> {
+    pub fn generate(
+        &self,
+        template: &QuantifierTemplate,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
         match template {
             QuantifierTemplate::SeqComprehension {
                 index_var,
@@ -52,7 +56,9 @@ impl TemplateCodeGenerator {
                 domain_predicate,
                 value_expr,
                 map_var,
-            } => self.generate_map_comprehension(key_var, domain_predicate, value_expr, map_var, ctx),
+            } => {
+                self.generate_map_comprehension(key_var, domain_predicate, value_expr, map_var, ctx)
+            }
 
             QuantifierTemplate::SimpleAssignment {
                 output_var: _,
@@ -64,10 +70,9 @@ impl TemplateCodeGenerator {
                 input_var,
             } => Ok(ExecExpr::Clone(Box::new(ExecExpr::Var(input_var.clone())))),
 
-            QuantifierTemplate::StructConstruction {
-                output_var,
-                fields,
-            } => self.generate_struct_construction(output_var, fields, ctx),
+            QuantifierTemplate::StructConstruction { output_var, fields } => {
+                self.generate_struct_construction(output_var, fields, ctx)
+            }
 
             QuantifierTemplate::Unrecognized { reason, hint, .. } => {
                 Err(TranspileError::UnsupportedPattern {
@@ -241,7 +246,9 @@ impl TemplateCodeGenerator {
         if ctx.input_params.contains(&base_name.to_string()) {
             // Struct update syntax
             Ok(ExecExpr::StructUpdate {
-                base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(base_name.to_string())))),
+                base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(
+                    base_name.to_string(),
+                )))),
                 fields: translated_fields?,
             })
         } else {

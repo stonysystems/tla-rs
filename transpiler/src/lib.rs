@@ -47,17 +47,17 @@ pub mod types;
 // Re-export commonly used types
 pub use annotation::{AnnotationParser, FunctionAnnotation, ModuleAnnotations};
 pub use ast::{Expr, Parameter, ParameterMode, SpecFunction, Type};
-pub use config::{TranspilerConfig as FileConfig, NamingConfig, OutputConfig, ModuleConfig};
 pub use checker::{validate_function, HarmonyChecker, ObligationChecker, SaturationChecker};
+pub use codegen::{generate_all_types, GeneratedCode, TemplateCodeGenerator, TypeGenerator};
+pub use config::{ModuleConfig, NamingConfig, OutputConfig, TranspilerConfig as FileConfig};
 pub use error::{DiagnosticAccumulator, TranspileError, TranspileResult, TranspileWarning};
 pub use moder::{AnnotatedFunction, AssignmentTracker, ModeAnalyzer, PredicateKind};
 pub use parser::{parse_file, VerusParser};
 pub use printer::{print_function, Printer, PrinterConfig};
+pub use runtime::{DeepClone, ExecType, SpecType, Validated, ValidatedResult, View};
+pub use templates::{match_expression, QuantifierTemplate, TemplateMatcher};
 pub use translator::{ExecFunction, Translator, TranslatorConfig};
-pub use types::{TypeRegistry, StructDef, EnumDef, FieldDef, FunctionSig, TypeParser};
-pub use templates::{QuantifierTemplate, TemplateMatcher, match_expression};
-pub use codegen::{TypeGenerator, GeneratedCode, generate_all_types, TemplateCodeGenerator};
-pub use runtime::{View, SpecType, ExecType, DeepClone, Validated, ValidatedResult};
+pub use types::{EnumDef, FieldDef, FunctionSig, StructDef, TypeParser, TypeRegistry};
 
 use std::path::Path;
 

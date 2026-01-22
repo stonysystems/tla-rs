@@ -162,7 +162,10 @@ fn test_template_matching_seq_comprehension() {
     };
 
     let result = match_expression(&expr, &["result".to_string()]);
-    assert!(matches!(result.template, QuantifierTemplate::SeqComprehension { .. }));
+    assert!(matches!(
+        result.template,
+        QuantifierTemplate::SeqComprehension { .. }
+    ));
     assert!(result.confidence >= 0.8);
 }
 

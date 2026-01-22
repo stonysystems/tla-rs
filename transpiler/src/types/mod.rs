@@ -11,7 +11,7 @@
 //! - Create View trait implementations
 //! - Verify type consistency across translations
 
-use crate::ast::{Generics, GenericParam, Path, Type, SpecFunction};
+use crate::ast::{GenericParam, Generics, Path, SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
 use std::collections::HashMap;
 
@@ -207,7 +207,11 @@ impl TypeRegistry {
 
     /// Get the corresponding exec type name for a spec type
     /// Applies naming conventions: L* -> C*, or uses remapping if configured
-    pub fn get_exec_type_name(&self, spec_name: &str, config: &crate::config::NamingConfig) -> String {
+    pub fn get_exec_type_name(
+        &self,
+        spec_name: &str,
+        config: &crate::config::NamingConfig,
+    ) -> String {
         // Try prefix replacement
         if spec_name.starts_with(&config.spec_prefix) {
             let base = &spec_name[config.spec_prefix.len()..];
@@ -597,7 +601,10 @@ impl<'a> TypeParser<'a> {
             && &self.content[self.pos..self.pos + s.len()] == s
         {
             // Check it's not part of a longer identifier
-            if s.chars().last().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+            if s.chars()
+                .last()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            {
                 let next_char = self.content[self.pos + s.len()..].chars().next();
                 if next_char.is_some_and(|c| c.is_alphanumeric() || c == '_') {
                     return false;
@@ -992,7 +999,10 @@ mod tests {
         let config = crate::config::NamingConfig::default();
         let registry = TypeRegistry::new();
 
-        assert_eq!(registry.get_exec_type_name("LAcceptor", &config), "CAcceptor");
+        assert_eq!(
+            registry.get_exec_type_name("LAcceptor", &config),
+            "CAcceptor"
+        );
         assert_eq!(registry.get_exec_type_name("LState", &config), "CState");
         assert_eq!(registry.get_exec_type_name("Ballot", &config), "CBallot");
     }

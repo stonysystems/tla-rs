@@ -3,9 +3,9 @@
 //! This module provides functions that can be called from build.rs or scons
 //! to automatically transpile spec files when they change.
 
-use std::path::{Path, PathBuf};
-use crate::{Transpiler, TranspilerConfig};
 use crate::error::TranspileResult;
+use crate::{Transpiler, TranspilerConfig};
+use std::path::{Path, PathBuf};
 
 /// Configuration for build-time transpilation
 #[derive(Debug, Clone)]
@@ -116,11 +116,10 @@ pub fn run_build(config: &BuildConfig) -> TranspileResult<BuildResult> {
         }
 
         // Calculate output path
-        let relative = annotation_path.strip_prefix(&config.input_dir)
+        let relative = annotation_path
+            .strip_prefix(&config.input_dir)
             .unwrap_or(&annotation_path);
-        let output_path = config.output_dir
-            .join(relative)
-            .with_extension("gen.rs");
+        let output_path = config.output_dir.join(relative).with_extension("gen.rs");
 
         // Create output directory if needed
         if let Some(parent) = output_path.parent() {
@@ -160,7 +159,11 @@ fn find_files(dir: &Path, extension: &str) -> TranspileResult<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn find_files_recursive(dir: &Path, extension: &str, files: &mut Vec<PathBuf>) -> TranspileResult<()> {
+fn find_files_recursive(
+    dir: &Path,
+    extension: &str,
+    files: &mut Vec<PathBuf>,
+) -> TranspileResult<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -170,9 +173,7 @@ fn find_files_recursive(dir: &Path, extension: &str, files: &mut Vec<PathBuf>) -
         let path = entry.path();
 
         if path.is_dir() {
-            let name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             // Skip hidden directories and common non-source directories
             if !name.starts_with('.') && name != "target" && name != "node_modules" {
                 find_files_recursive(&path, extension, files)?;
@@ -217,7 +218,8 @@ fn main() {
         }
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate an scons helper script
@@ -270,7 +272,8 @@ transpile_builder = Builder(
 # env = Environment()
 # env.Append(BUILDERS={'Transpile': transpile_builder})
 # env.Transpile('src/generated', 'src/protocol')
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]
@@ -287,8 +290,7 @@ mod tests {
 
     #[test]
     fn test_config_builder() {
-        let config = BuildConfig::new("input", "output")
-            .fail_on_error(false);
+        let config = BuildConfig::new("input", "output").fail_on_error(false);
 
         assert_eq!(config.input_dir, PathBuf::from("input"));
         assert_eq!(config.output_dir, PathBuf::from("output"));

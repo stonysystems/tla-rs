@@ -234,15 +234,22 @@ mod tests {
 
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert_eq!(config.naming.spec_prefix, "L");
-        assert_eq!(config.remapping.get("LAcceptor"), Some(&"CAcceptor".to_string()));
+        assert_eq!(
+            config.remapping.get("LAcceptor"),
+            Some(&"CAcceptor".to_string())
+        );
         assert_eq!(config.remapping.get("Ballot"), Some(&"CBallot".to_string()));
     }
 
     #[test]
     fn test_get_exec_type_with_remapping() {
         let mut config = TranspilerConfig::default();
-        config.remapping.insert("LAcceptor".to_string(), "CAcceptor".to_string());
-        config.remapping.insert("Ballot".to_string(), "CBallot".to_string());
+        config
+            .remapping
+            .insert("LAcceptor".to_string(), "CAcceptor".to_string());
+        config
+            .remapping
+            .insert("Ballot".to_string(), "CBallot".to_string());
 
         assert_eq!(config.get_exec_type("LAcceptor"), "CAcceptor");
         assert_eq!(config.get_exec_type("Ballot"), "CBallot");
@@ -265,13 +272,18 @@ mod tests {
     #[test]
     fn test_roundtrip_toml() {
         let mut config = TranspilerConfig::default();
-        config.remapping.insert("LAcceptor".to_string(), "CAcceptor".to_string());
+        config
+            .remapping
+            .insert("LAcceptor".to_string(), "CAcceptor".to_string());
         config.output.include_debug_comments = true;
 
         let toml = config.to_toml().unwrap();
         let parsed = TranspilerConfig::from_toml(&toml).unwrap();
 
-        assert_eq!(parsed.remapping.get("LAcceptor"), Some(&"CAcceptor".to_string()));
+        assert_eq!(
+            parsed.remapping.get("LAcceptor"),
+            Some(&"CAcceptor".to_string())
+        );
         assert!(parsed.output.include_debug_comments);
     }
 

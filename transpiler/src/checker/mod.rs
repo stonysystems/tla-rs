@@ -15,10 +15,7 @@ pub struct SaturationChecker;
 
 impl SaturationChecker {
     /// Check that all members of output parameters are assigned
-    pub fn check(
-        func: &AnnotatedFunction,
-        tracker: &AssignmentTracker,
-    ) -> TranspileResult<()> {
+    pub fn check(func: &AnnotatedFunction, tracker: &AssignmentTracker) -> TranspileResult<()> {
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
             if *mode == crate::ast::ParameterMode::Output {
                 let required = Self::get_required_members(&param.ty);
@@ -36,7 +33,9 @@ impl SaturationChecker {
                             param.name, missing
                         ),
                         span: None, // TODO: Convert proc_macro2::Span to SourceSpan
-                        help: Some("Ensure all fields of output parameters are assigned".to_string()),
+                        help: Some(
+                            "Ensure all fields of output parameters are assigned".to_string(),
+                        ),
                     });
                 }
             }
@@ -60,10 +59,7 @@ pub struct HarmonyChecker;
 
 impl HarmonyChecker {
     /// Check that no member is assigned more than once
-    pub fn check(
-        _func: &AnnotatedFunction,
-        _tracker: &AssignmentTracker,
-    ) -> TranspileResult<()> {
+    pub fn check(_func: &AnnotatedFunction, _tracker: &AssignmentTracker) -> TranspileResult<()> {
         // TODO: Implement harmony check
         // This requires tracking assignment order during expression analysis
         Ok(())
@@ -75,10 +71,7 @@ pub struct ObligationChecker;
 
 impl ObligationChecker {
     /// Check that output variables are only used after assignment
-    pub fn check(
-        _func: &AnnotatedFunction,
-        _tracker: &AssignmentTracker,
-    ) -> TranspileResult<()> {
+    pub fn check(_func: &AnnotatedFunction, _tracker: &AssignmentTracker) -> TranspileResult<()> {
         // TODO: Implement obligation check
         // This requires building a dependency graph and detecting cycles
         Ok(())
@@ -179,9 +172,7 @@ impl TemplateMatcher {
         if let Expr::Implies(lhs, rhs) = body {
             if let Some(_collection) = Self::extract_membership(lhs, &var.name) {
                 // RHS should be: map'[k] == expr
-                if let Some((_, value_expr)) =
-                    Self::extract_indexed_assignment(rhs, &var.name)
-                {
+                if let Some((_, value_expr)) = Self::extract_indexed_assignment(rhs, &var.name) {
                     return Some(QuantifierTemplate::MapComprehension {
                         domain_predicate: Box::new(Expr::Literal(crate::ast::Literal::Bool(true))),
                         value_expr: Box::new(value_expr.clone()),
@@ -390,9 +381,9 @@ impl TemplateMatcher {
         match expr {
             Expr::Forall { vars, body, .. } => {
                 if vars.len() != 1 {
-                    return TemplateMatchResult::NotMatched(TemplateMatchFailure::MultipleVariables {
-                        count: vars.len(),
-                    });
+                    return TemplateMatchResult::NotMatched(
+                        TemplateMatchFailure::MultipleVariables { count: vars.len() },
+                    );
                 }
 
                 let var = &vars[0];
@@ -442,7 +433,10 @@ pub fn validate_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Binding, BinOp, Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type, VariableMode};
+    use crate::ast::{
+        BinOp, Binding, Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type,
+        VariableMode,
+    };
 
     fn make_test_function() -> AnnotatedFunction {
         AnnotatedFunction {
@@ -608,7 +602,10 @@ mod tests {
 
         let result = TemplateMatcher::match_template(&forall);
         assert!(result.is_some());
-        assert!(matches!(result, Some(QuantifierTemplate::SeqComprehension { .. })));
+        assert!(matches!(
+            result,
+            Some(QuantifierTemplate::SeqComprehension { .. })
+        ));
     }
 
     /// Test: forall |k| map'.contains(k) == pred(k) (set/map domain)
@@ -777,6 +774,9 @@ mod tests {
 
         let result = TemplateMatcher::match_template(&forall);
         assert!(result.is_some());
-        assert!(matches!(result, Some(QuantifierTemplate::SeqComprehension { .. })));
+        assert!(matches!(
+            result,
+            Some(QuantifierTemplate::SeqComprehension { .. })
+        ));
     }
 }

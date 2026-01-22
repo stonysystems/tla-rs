@@ -180,10 +180,7 @@ pub enum Expr {
         body: Box<Expr>,
     },
     /// Existential quantifier
-    Exists {
-        vars: Vec<Binding>,
-        body: Box<Expr>,
-    },
+    Exists { vars: Vec<Binding>, body: Box<Expr> },
 
     // Control flow
     /// Conditional expression
@@ -254,10 +251,7 @@ pub enum Expr {
 
     // Calls
     /// Function call
-    Call {
-        func: Path,
-        args: Vec<Expr>,
-    },
+    Call { func: Path, args: Vec<Expr> },
     /// Method call
     MethodCall {
         receiver: Box<Expr>,
@@ -318,10 +312,7 @@ pub enum Pattern {
         fields: Vec<(String, Pattern)>,
     },
     /// Enum variant pattern
-    Variant {
-        name: Path,
-        fields: Vec<Pattern>,
-    },
+    Variant { name: Path, fields: Vec<Pattern> },
     /// Literal pattern
     Literal(Literal),
 }

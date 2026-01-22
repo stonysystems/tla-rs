@@ -385,10 +385,9 @@ impl TemplateMatcher {
             }
 
             // Binary and
-            Expr::Binary(lhs, BinOp::And, rhs) => {
-                self.extract_upper_bound(lhs, index_var)
-                    .or_else(|| self.extract_upper_bound(rhs, index_var))
-            }
+            Expr::Binary(lhs, BinOp::And, rhs) => self
+                .extract_upper_bound(lhs, index_var)
+                .or_else(|| self.extract_upper_bound(rhs, index_var)),
 
             _ => None,
         }
@@ -418,11 +417,7 @@ impl TemplateMatcher {
     }
 
     /// Extract (seq_var, element_expr) from seq[i] == expr pattern
-    fn extract_indexed_equality(
-        &self,
-        expr: &Expr,
-        index_var: &str,
-    ) -> Option<(String, Expr)> {
+    fn extract_indexed_equality(&self, expr: &Expr, index_var: &str) -> Option<(String, Expr)> {
         let Expr::Eq(lhs, rhs) = expr else {
             return None;
         };
@@ -558,13 +553,11 @@ impl TemplateMatcher {
     /// Generate a hint for unrecognized patterns
     fn generate_hint(&self, expr: &Expr) -> String {
         match expr {
-            Expr::Forall { .. } => {
-                "Consider restructuring the forall to match a known pattern:\n\
+            Expr::Forall { .. } => "Consider restructuring the forall to match a known pattern:\n\
                  - Sequence: forall |i| 0 <= i < len ==> seq[i] == expr\n\
                  - Map domain: forall |k| k in map <==> pred\n\
                  - Map value: forall |k| k in map ==> map[k] == expr"
-                    .to_string()
-            }
+                .to_string(),
             Expr::Exists { .. } => {
                 "Exists patterns typically need manual implementation. Consider:\n\
                  - Using choose! macro for witnessing\n\
@@ -695,9 +688,7 @@ mod tests {
         let template = matcher.match_template(&expr);
         match template {
             QuantifierTemplate::SeqComprehension {
-                index_var,
-                seq_var,
-                ..
+                index_var, seq_var, ..
             } => {
                 assert_eq!(index_var, "i");
                 assert_eq!(seq_var, "seq");
