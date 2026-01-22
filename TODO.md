@@ -192,7 +192,7 @@ verus! {
   Implemented in `transpiler/src/config.rs` with serde TOML support.
   Added `NamingConfig`, `OutputConfig`, `ModuleConfig` with sensible defaults.
 
-- [ ] **Define mode annotation format** (`.automan` file)
+- [x] **Define mode annotation format** (`.automan` file) [26:01:22, 15:21] (see annotation/mod.rs)
   ```
   module RSL::Acceptor {
       LAcceptorInit(-, +);           // (out, in) - a is output, c is input
@@ -200,6 +200,10 @@ verus! {
       LAcceptorProcess2a(+, -, +, -);
   }
   ```
+  Implemented `AnnotationParser::parse()` method supporting:
+  - Module declarations with `module Path::Name { ... }` syntax
+  - Function annotations with `FuncName(+, -, +);` syntax
+  - Comments (lines starting with `//`)
 
 ---
 

@@ -58,9 +58,78 @@ impl AnnotationParser {
 
     /// Parse all module annotations from the source
     pub fn parse(&self) -> TranspileResult<Vec<ModuleAnnotations>> {
-        // TODO: Implement full parsing
-        let _ = &self.source; // Use the field to avoid warning
-        Ok(Vec::new())
+        let mut modules = Vec::new();
+        let mut current_module: Option<ModuleAnnotations> = None;
+        let mut brace_depth = 0;
+
+        for line in self.source.lines() {
+            let line = line.trim();
+
+            // Skip empty lines and comments
+            if line.is_empty() || line.starts_with("//") {
+                continue;
+            }
+
+            // Handle module declaration
+            if line.starts_with("module ") {
+                // Save previous module if any
+                if let Some(module) = current_module.take() {
+                    modules.push(module);
+                }
+
+                // Parse module path
+                let rest = line.strip_prefix("module ").unwrap().trim();
+                let module_path = if let Some(brace_pos) = rest.find('{') {
+                    rest[..brace_pos].trim().to_string()
+                } else {
+                    rest.trim_end_matches('{').trim().to_string()
+                };
+
+                current_module = Some(ModuleAnnotations {
+                    module_path,
+                    functions: HashMap::new(),
+                });
+
+                if line.contains('{') {
+                    brace_depth += 1;
+                }
+                continue;
+            }
+
+            // Handle opening brace (standalone)
+            if line == "{" {
+                brace_depth += 1;
+                continue;
+            }
+
+            // Handle closing brace
+            if line == "}" || line.ends_with('}') {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    // Module ended
+                    if let Some(module) = current_module.take() {
+                        modules.push(module);
+                    }
+                }
+                continue;
+            }
+
+            // Parse function annotation if we're inside a module
+            if let Some(ref mut module) = current_module {
+                // Try to parse as function annotation
+                if let Ok(func) = self.parse_function_line(line) {
+                    module.functions.insert(func.name.clone(), func);
+                }
+                // Silently skip lines that don't parse (could be other syntax)
+            }
+        }
+
+        // Handle unclosed module (shouldn't happen in valid files)
+        if let Some(module) = current_module {
+            modules.push(module);
+        }
+
+        Ok(modules)
     }
 
     /// Parse a single function annotation line
@@ -142,5 +211,93 @@ mod tests {
         let annotation = result.unwrap();
         assert_eq!(annotation.name, "NodeInit");
         assert_eq!(annotation.param_modes.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_module() {
+        let source = r#"
+            module RSL::Acceptor {
+                LAcceptorInit(-, +);
+                LAcceptorProcess1a(+, -, +, -);
+            }
+        "#;
+
+        let parser = AnnotationParser::new(source.to_string());
+        let result = parser.parse();
+        assert!(result.is_ok());
+
+        let modules = result.unwrap();
+        assert_eq!(modules.len(), 1);
+
+        let module = &modules[0];
+        assert_eq!(module.module_path, "RSL::Acceptor");
+        assert_eq!(module.functions.len(), 2);
+        assert!(module.functions.contains_key("LAcceptorInit"));
+        assert!(module.functions.contains_key("LAcceptorProcess1a"));
+
+        let init = module.functions.get("LAcceptorInit").unwrap();
+        assert_eq!(init.param_modes.len(), 2);
+        assert_eq!(init.param_modes[0], ParameterMode::Output);
+        assert_eq!(init.param_modes[1], ParameterMode::Input);
+    }
+
+    #[test]
+    fn test_parse_multiple_modules() {
+        let source = r#"
+            // Acceptor module annotations
+            module RSL::Acceptor {
+                LAcceptorInit(-, +);
+            }
+
+            // Proposer module annotations
+            module RSL::Proposer {
+                LProposerInit(-, +);
+                LProposerProcess1b(+, -, +, +, -);
+            }
+        "#;
+
+        let parser = AnnotationParser::new(source.to_string());
+        let modules = parser.parse().unwrap();
+        assert_eq!(modules.len(), 2);
+
+        assert_eq!(modules[0].module_path, "RSL::Acceptor");
+        assert_eq!(modules[1].module_path, "RSL::Proposer");
+
+        let proposer = &modules[1];
+        assert!(proposer.functions.contains_key("LProposerProcess1b"));
+        let process1b = proposer.functions.get("LProposerProcess1b").unwrap();
+        assert_eq!(process1b.param_modes.len(), 5);
+    }
+
+    #[test]
+    fn test_parse_with_comments() {
+        let source = r#"
+            // This is a comment at the top
+            module RSL::Acceptor {
+                // Init function
+                LAcceptorInit(-, +);
+                // Process 1a - handles 1a messages
+                LAcceptorProcess1a(+, -, +, -);
+            }
+        "#;
+
+        let parser = AnnotationParser::new(source.to_string());
+        let modules = parser.parse().unwrap();
+        assert_eq!(modules.len(), 1);
+        assert_eq!(modules[0].functions.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_empty_module() {
+        let source = r#"
+            module Empty::Module {
+            }
+        "#;
+
+        let parser = AnnotationParser::new(source.to_string());
+        let modules = parser.parse().unwrap();
+        assert_eq!(modules.len(), 1);
+        assert_eq!(modules[0].module_path, "Empty::Module");
+        assert!(modules[0].functions.is_empty());
     }
 }

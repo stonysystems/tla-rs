@@ -1,0 +1,64 @@
+
+running 36 tests
+test annotation::tests::test_parse_simple_annotation ... ok
+test annotation::tests::test_parse_empty_module ... ok
+test annotation::tests::test_parse_function_line ... ok
+test annotation::tests::test_parse_with_comments ... ok
+test annotation::tests::test_parse_module ... ok
+test ast::tests::test_parameter_mode ... ok
+test ast::tests::test_path_construction ... ok
+test checker::tests::test_saturation_check_passes ... ok
+test checker::tests::test_saturation_check_fails ... ok
+test annotation::tests::test_parse_multiple_modules ... ok
+test checker::tests::test_validate_function ... ok
+test config::tests::test_default_config ... ok
+test config::tests::test_get_exec_type_with_prefix ... ok
+test config::tests::test_get_exec_type_with_remapping ... ok
+test config::tests::test_get_exec_type_without_prefix ... ok
+test error::tests::test_diagnostic_accumulator ... ok
+test config::tests::test_module_config ... ok
+test config::tests::test_parse_toml ... ok
+test error::tests::test_into_result_with_errors ... ok
+test error::tests::test_into_result_without_errors ... ok
+test moder::tests::test_annotate_function ... ok
+test config::tests::test_roundtrip_toml ... ok
+test moder::tests::test_assignment_tracker ... ok
+test moder::tests::test_member_path ... ok
+test parser::tests::test_parse_simple_spec_fn ... ok
+test parser::tests::test_parse_spec_fn_with_conjunction ... ok
+test parser::tests::test_parse_spec_fn_with_forall ... ok
+test parser::tests::test_parse_spec_fn_with_if ... ok
+test parser::tests::test_parse_arrow_operator ... ok
+test parser::tests::test_parse_view_operator ... ok
+test parser::tests::test_parser_creation ... ok
+test printer::tests::test_printer_basic ... ok
+test tests::test_transpiler_creation ... ok
+test translator::tests::test_exec_type_to_string ... ok
+test translator::tests::test_translate_type ... ok
+test translator::tests::test_translate_name ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 1 test
+test tests::test_cli_parsing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test test_mode_annotation_parsing ... ok
+test test_assignment_tracker ... ok
+test test_error_types ... ok
+test test_printer_output ... ok
+test test_transpiler_pipeline ... ok
+test test_type_translation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test src/lib.rs - (line 18) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
