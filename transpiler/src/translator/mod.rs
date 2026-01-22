@@ -706,7 +706,7 @@ impl Translator {
                 Ok(ExecExpr::VecLit(translated?))
             }
 
-            Expr::Forall { vars, body, .. } => {
+            Expr::Forall { vars, .. } => {
                 // Forall in exec code needs template matching
                 Err(TranspileError::UnsupportedPattern {
                     message: format!(
@@ -728,12 +728,7 @@ impl Translator {
                     help: Some("Consider using choose! macro or restructuring".to_string()),
                 })
             }
-
-            _ => Err(TranspileError::UnsupportedPattern {
-                message: format!("Unsupported expression type: {:?}", std::mem::discriminant(expr)),
-                span: None,
-                help: Some("This pattern may need manual implementation".to_string()),
-            }),
+            // Note: All Expr variants are now handled exhaustively
         }
     }
 
