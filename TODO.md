@@ -691,9 +691,17 @@ verus! {
 
 ### 9.4 Documentation
 
-- [ ] **Document annotation format**
-- [ ] **Document supported patterns/templates**
-- [ ] **Document limitations and workarounds**
+- [x] **Document annotation format** [26:01:22, 21:00]
+  - See `transpiler/docs/annotation-format.md`
+  - Mode specifiers (+/-), module syntax, examples
+- [x] **Document supported patterns/templates** [26:01:22, 21:00]
+  - See `transpiler/docs/patterns.md`
+  - Assignment, conditional, quantifier patterns
+  - Type translations and expression transformations
+- [x] **Document limitations and workarounds** [26:01:22, 21:00]
+  - See `transpiler/docs/limitations.md`
+  - Quantifier, expression, type, mode analysis limitations
+  - Debugging tips and workarounds
 - [ ] **Provide migration guide from manual implementations**
 
 ---
