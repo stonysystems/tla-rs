@@ -1,0 +1,39 @@
+[package]
+name = "verus-transpiler"
+version = "0.1.0"
+edition = "2021"
+description = "Transpiler from Verus spec functions to verified exec implementations"
+license = "MIT"
+repository = "https://github.com/verus-lang/tla-rs"
+keywords = ["verus", "transpiler", "verification", "tla"]
+categories = ["development-tools"]
+
+[dependencies]
+# Rust parsing
+syn = { version = "2.0", features = ["full", "parsing", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+
+# Configuration
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Error handling
+miette = { version = "7.0", features = ["fancy"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+tempfile = "3.10"
+
+[[bin]]
+name = "verus-transpile"
+path = "src/main.rs"
+
+[lib]
+name = "verus_transpiler"
+path = "src/lib.rs"

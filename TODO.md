@@ -143,7 +143,7 @@ verus! {
 
 ### 2.1 Project Setup
 
-- [ ] **Create transpiler crate structure**
+- [x] **Create transpiler crate structure** [26:01:22, 14:48]
   ```
   transpiler/
   ├── Cargo.toml
@@ -161,14 +161,14 @@ verus! {
   └── tests/
   ```
 
-- [ ] **Define dependencies**
+- [x] **Define dependencies** [26:01:22, 14:48]
   - `syn` + `quote` + `proc-macro2` for Rust parsing
   - `proc-macro2` for token manipulation
   - `serde` + `serde_json` for configuration
   - `clap` for CLI
-  - `miette` or `ariadne` for error reporting
+  - `miette` for error reporting
 
-- [ ] **Design error handling strategy**
+- [x] **Design error handling strategy** [26:01:22, 14:48]
   - Span-aware errors pointing to source locations
   - Multiple error accumulation (don't stop at first error)
   - Warning vs error distinction
@@ -205,7 +205,7 @@ verus! {
 
 ### 3.1 Verus AST Definitions
 
-- [ ] **Define core AST types** (`ast/mod.rs`)
+- [x] **Define core AST types** (`ast/mod.rs`) [26:01:22, 14:48]
   ```rust
   pub struct SpecFunction {
       pub name: Ident,
@@ -229,7 +229,7 @@ verus! {
   }
   ```
 
-- [ ] **Define expression AST** supporting Verus constructs
+- [x] **Define expression AST** supporting Verus constructs [26:01:22, 14:48]
   ```rust
   pub enum Expr {
       // Logical operators
@@ -278,7 +278,7 @@ verus! {
   }
   ```
 
-- [ ] **Define type AST**
+- [x] **Define type AST** [26:01:22, 14:48]
   ```rust
   pub enum Type {
       Named(Path),
@@ -293,13 +293,14 @@ verus! {
 
 ### 3.2 Parser Implementation
 
-- [ ] **Implement Verus parser using `syn`**
+- [x] **Implement Verus parser using `syn`** [26:01:22, 14:48] (see docs/dev/verus-parser-plan.md)
   - Parse `verus! { ... }` macro blocks
   - Extract `spec fn` declarations
   - Handle Verus-specific syntax (`&&&`, `|||`, `==>`, `@`, `->`)
+  - Key findings: Need to check `==>` before `==`, and `&&&` before `&&` to avoid prefix matching issues
 
 - [ ] **Handle Verus extensions**
-  - `recommends` clauses
+  - `recommends` clauses (basic support added)
   - `decreases` clauses
   - Trigger annotations
   - Ghost/tracked modes

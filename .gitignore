@@ -1,4 +1,5 @@
 /target
+**/target/
 .vscode/
 *.code-workspace
 certs/
@@ -11,3 +12,5 @@ lib.pdb
 venv/
 bin/
 doubts.txt
+.apas
+Cargo.lock
