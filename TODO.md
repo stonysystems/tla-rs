@@ -476,44 +476,23 @@ verus! {
 
 ### 6.1 Type Generation
 
-- [ ] **Generate concrete types for each spec type**
-  ```rust
-  // Input (spec)
-  pub struct LAcceptor {
-      pub max_bal: Ballot,
-      pub votes: Votes,
-  }
+- [x] **Generate concrete types for each spec type** [26:01:22, 17:30]
+  - Implemented in `codegen/mod.rs:TypeGenerator`
+  - `generate_struct()` creates exec structs from spec structs
+  - `generate_enum()` creates exec enums with variant mappings
+  - `translate_type()` maps Seq->Vec, Set->HashSet, Map->HashMap, L*->C*
 
-  // Output (exec) - auto-generated
-  pub struct CAcceptor {
-      pub max_bal: CBallot,
-      pub votes: CVotes,
-  }
-  ```
+- [x] **Generate validity predicates** [26:01:22, 17:30]
+  - `generate_well_formed_struct()` creates well_formed() predicates
+  - `generate_well_formed_enum()` for enum types
+  - Recursively checks field/variant validity
+  - Handles primitive types (bool, int, nat), collections, references
 
-- [ ] **Generate validity predicates**
-  ```rust
-  impl CAcceptor {
-      pub open spec fn well_formed(&self) -> bool {
-          &&& self.max_bal.well_formed()
-          &&& self.votes.well_formed()
-      }
-  }
-  ```
-
-- [ ] **Generate View trait implementations**
-  ```rust
-  impl View for CAcceptor {
-      type V = LAcceptor;
-
-      open spec fn view(&self) -> LAcceptor {
-          LAcceptor {
-              max_bal: self.max_bal@,
-              votes: self.votes@,
-          }
-      }
-  }
-  ```
+- [x] **Generate View trait implementations** [26:01:22, 17:30]
+  - `generate_view_impl()` creates View trait impls
+  - Maps exec type to spec type: `type V = LAcceptor`
+  - Generates view function using @ operator on fields
+  - `generate_view_enum_impl()` for enum variants
 
 ### 6.2 Function Generation
 
