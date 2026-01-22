@@ -118,3 +118,206 @@ fn test_assignment_tracker() {
     assert!(tracker.is_assigned("state", &field_path));
     assert!(!tracker.is_assigned("state", &MemberPath::Root));
 }
+
+// ============================================================================
+// Phase 7 Integration Tests
+// ============================================================================
+
+#[test]
+fn test_template_matching_seq_comprehension() {
+    use verus_transpiler::ast::{Binding, Expr, Literal, Path, VariableMode};
+    use verus_transpiler::templates::{match_expression, QuantifierTemplate};
+
+    // Create: forall |i: int| 0 <= i < len ==> seq[i] == f(i)
+    // This is a sequence comprehension pattern
+    let expr = Expr::Forall {
+        vars: vec![Binding {
+            name: "i".to_string(),
+            ty: Some(verus_transpiler::ast::Type::Int),
+            variable_mode: VariableMode::default(),
+        }],
+        triggers: vec![],
+        body: Box::new(Expr::Implies(
+            Box::new(Expr::Conjunction(vec![
+                Expr::Le(
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                    Box::new(Expr::Ident("i".to_string())),
+                ),
+                Expr::Lt(
+                    Box::new(Expr::Ident("i".to_string())),
+                    Box::new(Expr::Ident("len".to_string())),
+                ),
+            ])),
+            Box::new(Expr::Eq(
+                Box::new(Expr::Index(
+                    Box::new(Expr::Ident("result".to_string())),
+                    Box::new(Expr::Ident("i".to_string())),
+                )),
+                Box::new(Expr::Call {
+                    func: Path::single("f".to_string()),
+                    args: vec![Expr::Ident("i".to_string())],
+                }),
+            )),
+        )),
+    };
+
+    let result = match_expression(&expr, &["result".to_string()]);
+    assert!(matches!(result.template, QuantifierTemplate::SeqComprehension { .. }));
+    assert!(result.confidence >= 0.8);
+}
+
+#[test]
+fn test_template_matching_struct_construction() {
+    use verus_transpiler::ast::{Expr, Literal};
+    use verus_transpiler::templates::{match_expression, QuantifierTemplate};
+
+    // Create: s_.field1 == 42 &&& s_.field2 == true
+    let expr = Expr::Conjunction(vec![
+        Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "field1".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Int(42))),
+        ),
+        Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "field2".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Bool(true))),
+        ),
+    ]);
+
+    let result = match_expression(&expr, &["s_".to_string()]);
+    assert!(matches!(
+        result.template,
+        QuantifierTemplate::StructConstruction { .. }
+    ));
+}
+
+#[test]
+fn test_type_registry_operations() {
+    use verus_transpiler::ast::Generics;
+    use verus_transpiler::types::{FieldDef, StructDef, TypeRegistry};
+
+    let mut registry = TypeRegistry::new();
+
+    // Register a struct
+    let struct_def = StructDef {
+        name: "LAcceptor".to_string(),
+        generics: Generics::default(),
+        fields: vec![
+            FieldDef {
+                name: "max_bal".to_string(),
+                ty: verus_transpiler::ast::Type::Int,
+                is_public: true,
+            },
+            FieldDef {
+                name: "votes".to_string(),
+                ty: verus_transpiler::ast::Type::Int,
+                is_public: true,
+            },
+        ],
+        is_spec: true,
+    };
+
+    registry.structs.insert("LAcceptor".to_string(), struct_def);
+
+    assert!(registry.structs.contains_key("LAcceptor"));
+    assert_eq!(registry.structs.get("LAcceptor").unwrap().fields.len(), 2);
+}
+
+#[test]
+fn test_code_generation_struct() {
+    use verus_transpiler::ast::Generics;
+    use verus_transpiler::codegen::TypeGenerator;
+    use verus_transpiler::config::NamingConfig;
+    use verus_transpiler::types::{FieldDef, StructDef};
+
+    let config = NamingConfig::default();
+    let generator = TypeGenerator::new(config);
+
+    let struct_def = StructDef {
+        name: "LState".to_string(),
+        generics: Generics::default(),
+        fields: vec![FieldDef {
+            name: "value".to_string(),
+            ty: verus_transpiler::ast::Type::Int,
+            is_public: true,
+        }],
+        is_spec: true,
+    };
+
+    let result = generator.generate_struct(&struct_def);
+
+    assert!(result.code.contains("pub struct CState"));
+    assert!(result.code.contains("pub value: i64"));
+    assert!(result.code.contains("well_formed"));
+    assert!(result.code.contains("impl View"));
+}
+
+#[test]
+fn test_expression_transformation() {
+    use verus_transpiler::ast::{Expr, Literal, Path};
+    use verus_transpiler::translator::{ExecExpr, TransformContext, Translator, TranslatorConfig};
+
+    let translator = Translator::default();
+    static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+    let ctx = TransformContext {
+        config: CONFIG.get_or_init(TranslatorConfig::default),
+        output_params: vec!["result".to_string()],
+        input_params: vec!["inp".to_string()],
+    };
+
+    // Test method call transformation
+    let expr = Expr::MethodCall {
+        receiver: Box::new(Expr::Ident("seq".to_string())),
+        method: "len".to_string(),
+        args: vec![],
+    };
+    let result = translator.transform_expr_public(&expr, &ctx).unwrap();
+    match result {
+        ExecExpr::MethodCall { method, .. } => {
+            assert_eq!(method, "len");
+        }
+        _ => panic!("Expected MethodCall"),
+    }
+
+    // Test struct construction
+    let expr = Expr::Struct {
+        name: Path::single("LState".to_string()),
+        fields: vec![("value".to_string(), Expr::Literal(Literal::Int(42)))],
+    };
+    let result = translator.transform_expr_public(&expr, &ctx).unwrap();
+    match result {
+        ExecExpr::Struct { name, fields } => {
+            assert_eq!(name, "CState");
+            assert_eq!(fields.len(), 1);
+        }
+        _ => panic!("Expected Struct"),
+    }
+}
+
+#[test]
+fn test_full_transpilation_simple() {
+    // Test a simple transpilation from spec to exec
+    let spec_source = r#"
+    verus! {
+        spec fn LSimpleInit(s: LState) -> bool {
+            s.value == 0
+        }
+    }
+    "#;
+
+    let annotation_source = r#"
+    # Mode annotations
+    fn LSimpleInit(-);
+    "#;
+
+    let transpiler = Transpiler::default();
+    let result = transpiler.transpile_source(spec_source, annotation_source);
+
+    // The transpiler should succeed (even if output is minimal)
+    assert!(result.is_ok());
+}
