@@ -376,10 +376,11 @@ verus! {
   ```
   - Implemented in `moder/mod.rs:AssignmentTracker`
 
-- [ ] **Detect mode conflicts**
-  - Output var used before assignment
-  - Input var being assigned
-  - Conflicting assignments in branches
+- [x] **Detect mode conflicts** [26:01:22, 16:55]
+  - Output var used before assignment - `ModeConflict::UseBeforeAssignment`
+  - Input var being assigned - `ModeConflict::InputAssignment`
+  - Conflicting assignments in branches - `ModeConflict::BranchMismatch`
+  - Implemented in `moder/mod.rs:ModeAnalyzer::detect_conflicts()`
 
 ### 4.3 Predicate Classification
 
