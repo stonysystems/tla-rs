@@ -326,6 +326,26 @@ impl Printer {
                 self.write(op);
                 self.print_expr(expr);
             }
+
+            ExecExpr::Range { start, end } => {
+                self.write("(");
+                self.print_expr(start);
+                self.write("..");
+                self.print_expr(end);
+                self.write(")");
+            }
+
+            ExecExpr::Closure { params, body } => {
+                self.write("|");
+                self.write(&params.join(", "));
+                self.write("| ");
+                self.print_expr(body);
+            }
+
+            ExecExpr::Comment(text) => {
+                self.write("// ");
+                self.write(text);
+            }
         }
     }
 

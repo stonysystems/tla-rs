@@ -167,6 +167,18 @@ pub enum ExecExpr {
     Tuple(Vec<ExecExpr>),
     /// Return statement
     Return(Box<ExecExpr>),
+    /// Range expression (start..end)
+    Range {
+        start: Box<ExecExpr>,
+        end: Box<ExecExpr>,
+    },
+    /// Closure expression (|params| body)
+    Closure {
+        params: Vec<String>,
+        body: Box<ExecExpr>,
+    },
+    /// Comment (for documentation or TODO markers)
+    Comment(String),
 }
 
 /// Context for expression transformation
@@ -407,6 +419,11 @@ impl Translator {
             .collect();
 
         format!("{}({})", func.spec_fn.name, args.join(", "))
+    }
+
+    /// Transform a spec expression to an exec expression (public interface)
+    pub fn transform_expr_public(&self, expr: &Expr, ctx: &TransformContext) -> TranspileResult<ExecExpr> {
+        self.transform_expr(expr, ctx)
     }
 
     /// Transform a spec expression to an exec expression

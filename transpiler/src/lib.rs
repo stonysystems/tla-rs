@@ -54,7 +54,7 @@ pub use printer::{print_function, Printer, PrinterConfig};
 pub use translator::{ExecFunction, Translator, TranslatorConfig};
 pub use types::{TypeRegistry, StructDef, EnumDef, FieldDef, FunctionSig, TypeParser};
 pub use templates::{QuantifierTemplate, TemplateMatcher, match_expression};
-pub use codegen::{TypeGenerator, GeneratedCode, generate_all_types};
+pub use codegen::{TypeGenerator, GeneratedCode, generate_all_types, TemplateCodeGenerator};
 
 use std::path::Path;
 

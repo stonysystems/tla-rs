@@ -5,6 +5,11 @@
 //! - `well_formed()` validity predicates
 //! - `View` trait implementations
 //! - Clone implementations
+//! - Executable code from quantifier templates
+
+pub mod template_codegen;
+
+pub use template_codegen::TemplateCodeGenerator;
 
 use crate::config::NamingConfig;
 use crate::types::{EnumDef, FieldDef, StructDef, TypeRegistry, VariantDef, VariantFields};
