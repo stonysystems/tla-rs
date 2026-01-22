@@ -8,8 +8,7 @@
 //! - Set comprehensions: `forall |x| x in set <==> pred(x)`
 //! - Map comprehensions: `forall |k| k in map <==> pred(k) && map[k] == expr`
 
-use crate::ast::{Binding, BinOp, Expr, Literal};
-use crate::error::{TranspileError, TranspileResult};
+use crate::ast::{BinOp, Expr};
 
 /// Recognized quantifier templates for code generation
 #[derive(Debug, Clone)]
@@ -615,7 +614,7 @@ pub fn match_expression(expr: &Expr, output_vars: &[String]) -> MatchResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Path, Trigger};
+    use crate::ast::{Binding, Literal, Path};
 
     #[test]
     fn test_simple_assignment_match() {

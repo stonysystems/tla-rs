@@ -32,6 +32,7 @@
 pub mod annotation;
 pub mod ast;
 pub mod checker;
+pub mod codegen;
 pub mod config;
 pub mod error;
 pub mod moder;
@@ -53,6 +54,7 @@ pub use printer::{print_function, Printer, PrinterConfig};
 pub use translator::{ExecFunction, Translator, TranslatorConfig};
 pub use types::{TypeRegistry, StructDef, EnumDef, FieldDef, FunctionSig, TypeParser};
 pub use templates::{QuantifierTemplate, TemplateMatcher, match_expression};
+pub use codegen::{TypeGenerator, GeneratedCode, generate_all_types};
 
 use std::path::Path;
 

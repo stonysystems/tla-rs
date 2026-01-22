@@ -122,18 +122,19 @@ impl TemplateMatcher {
             if vars.len() == 1 {
                 let var = &vars[0];
 
-                // Try sequence comprehension first
+                // Try sequence comprehension first (uses Implies with bounds)
                 if let Some(template) = Self::try_seq_comprehension(var, body) {
                     return Some(template);
                 }
 
-                // Try map comprehension
-                if let Some(template) = Self::try_map_comprehension(var, body) {
+                // Try set comprehension (uses Eq/biconditional for membership)
+                // Note: Set comprehension has same pattern as map domain, but set is simpler
+                if let Some(template) = Self::try_set_comprehension(var, body) {
                     return Some(template);
                 }
 
-                // Try set comprehension
-                if let Some(template) = Self::try_set_comprehension(var, body) {
+                // Try map comprehension value (uses Implies with membership)
+                if let Some(template) = Self::try_map_value_comprehension(var, body) {
                     return Some(template);
                 }
             }
@@ -153,10 +154,9 @@ impl TemplateMatcher {
             // Check if LHS is a bounds check like: 0 <= i && i < n  or  0 <= i < n
             if let Some(upper_bound) = Self::extract_int_upper_bound(lhs, &var.name) {
                 // Check if RHS is: seq[i] == expr or expr == seq[i]
-                if let Some((collection, element_expr)) =
+                if let Some((_collection, element_expr)) =
                     Self::extract_indexed_assignment(rhs, &var.name)
                 {
-                    // Verify the collection is being indexed by our variable
                     return Some(QuantifierTemplate::SeqComprehension {
                         length_expr: upper_bound,
                         element_expr: Box::new(element_expr.clone()),
@@ -168,38 +168,16 @@ impl TemplateMatcher {
         None
     }
 
-    /// Try to match: forall |k| k in map' <==> pred (domain) or
-    ///               forall |k| k in map' ==> map'[k] == f(k) (value)
-    fn try_map_comprehension(
+    /// Try to match: forall |k| k in map' ==> map'[k] == f(k) (value mapping)
+    fn try_map_value_comprehension(
         var: &crate::ast::Binding,
         body: &crate::ast::Expr,
     ) -> Option<QuantifierTemplate> {
         use crate::ast::Expr;
 
-        // Check for biconditional (domain pattern): k in map' <==> pred
-        // We represent <==> as Eq between boolean expressions
-        if let Expr::Eq(lhs, rhs) = body {
-            // Check if one side is membership: k in collection
-            if let Some(_collection) = Self::extract_membership(lhs, &var.name) {
-                // The other side is the domain predicate
-                return Some(QuantifierTemplate::MapComprehension {
-                    domain_predicate: rhs.clone(),
-                    value_expr: Box::new(Expr::Ident(var.name.clone())), // placeholder
-                    key_var: var.name.clone(),
-                });
-            }
-            if let Some(_collection) = Self::extract_membership(rhs, &var.name) {
-                return Some(QuantifierTemplate::MapComprehension {
-                    domain_predicate: lhs.clone(),
-                    value_expr: Box::new(Expr::Ident(var.name.clone())),
-                    key_var: var.name.clone(),
-                });
-            }
-        }
-
         // Check for implication (value pattern): k in map' ==> map'[k] == expr
         if let Expr::Implies(lhs, rhs) = body {
-            if let Some(collection) = Self::extract_membership(lhs, &var.name) {
+            if let Some(_collection) = Self::extract_membership(lhs, &var.name) {
                 // RHS should be: map'[k] == expr
                 if let Some((_, value_expr)) =
                     Self::extract_indexed_assignment(rhs, &var.name)
@@ -281,14 +259,8 @@ impl TemplateMatcher {
                 }
             }
 
-            // Pattern: i >= 0 (lower bound - ignore)
-            Expr::Ge(lhs, rhs) => {
-                if Self::is_var(lhs, var_name) && Self::is_zero(rhs) {
-                    None
-                } else {
-                    None
-                }
-            }
+            // Pattern: i >= 0 (lower bound - ignore, we always assume 0 lower bound)
+            Expr::Ge(_, _) => None,
 
             // Conjunction (Verus &&&)
             Expr::Conjunction(exprs) => {
@@ -425,14 +397,14 @@ impl TemplateMatcher {
 
                 let var = &vars[0];
 
-                // Try all patterns
+                // Try all patterns (same order as match_template)
                 if let Some(template) = Self::try_seq_comprehension(var, body) {
                     return TemplateMatchResult::Matched(template);
                 }
-                if let Some(template) = Self::try_map_comprehension(var, body) {
+                if let Some(template) = Self::try_set_comprehension(var, body) {
                     return TemplateMatchResult::Matched(template);
                 }
-                if let Some(template) = Self::try_set_comprehension(var, body) {
+                if let Some(template) = Self::try_map_value_comprehension(var, body) {
                     return TemplateMatchResult::Matched(template);
                 }
 
@@ -444,7 +416,7 @@ impl TemplateMatcher {
                     Expr::Eq(_, _) => {
                         "Equality body doesn't match set/map comprehension pattern".to_string()
                     }
-                    _ => format!("Unexpected body structure: expected implication or equality"),
+                    _ => "Unexpected body structure: expected implication or equality".to_string(),
                 };
 
                 TemplateMatchResult::NotMatched(TemplateMatchFailure::UnrecognizedPattern {
@@ -470,7 +442,7 @@ pub fn validate_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type, VariableMode};
+    use crate::ast::{Binding, BinOp, Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type, VariableMode};
 
     fn make_test_function() -> AnnotatedFunction {
         AnnotatedFunction {
@@ -534,5 +506,277 @@ mod tests {
 
         let result = validate_function(&func, &tracker);
         assert!(result.is_ok());
+    }
+
+    // ============ Template Matching Tests ============
+
+    /// Helper to create a binding for testing
+    fn make_binding(name: &str) -> Binding {
+        Binding {
+            name: name.to_string(),
+            ty: Some(Type::Int),
+            variable_mode: VariableMode::default(),
+        }
+    }
+
+    /// Test: forall |i| 0 <= i && i < 5 ==> result[i] == i * 2
+    #[test]
+    fn test_seq_comprehension_simple() {
+        // Build: 0 <= i && i < 5
+        let bounds = Expr::Binary(
+            Box::new(Expr::Le(
+                Box::new(Expr::Literal(Literal::Int(0))),
+                Box::new(Expr::Ident("i".to_string())),
+            )),
+            BinOp::And,
+            Box::new(Expr::Lt(
+                Box::new(Expr::Ident("i".to_string())),
+                Box::new(Expr::Literal(Literal::Int(5))),
+            )),
+        );
+
+        // Build: result[i] == i * 2
+        let assignment = Expr::Eq(
+            Box::new(Expr::Index(
+                Box::new(Expr::Ident("result".to_string())),
+                Box::new(Expr::Ident("i".to_string())),
+            )),
+            Box::new(Expr::Binary(
+                Box::new(Expr::Ident("i".to_string())),
+                BinOp::Mul,
+                Box::new(Expr::Literal(Literal::Int(2))),
+            )),
+        );
+
+        // Build: bounds ==> assignment
+        let body = Expr::Implies(Box::new(bounds), Box::new(assignment));
+
+        // Build: forall |i| body
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_some());
+
+        if let Some(QuantifierTemplate::SeqComprehension {
+            length_expr,
+            index_var,
+            ..
+        }) = result
+        {
+            assert_eq!(index_var, "i");
+            // length should be 5
+            if let Expr::Literal(Literal::Int(n)) = *length_expr {
+                assert_eq!(n, 5);
+            } else {
+                panic!("Expected literal length");
+            }
+        } else {
+            panic!("Expected SeqComprehension template");
+        }
+    }
+
+    /// Test: forall |i| i < n ==> seq[i] == f(i) (just upper bound)
+    #[test]
+    fn test_seq_comprehension_upper_bound_only() {
+        let bounds = Expr::Lt(
+            Box::new(Expr::Ident("i".to_string())),
+            Box::new(Expr::Ident("n".to_string())),
+        );
+
+        let assignment = Expr::Eq(
+            Box::new(Expr::Index(
+                Box::new(Expr::Ident("seq".to_string())),
+                Box::new(Expr::Ident("i".to_string())),
+            )),
+            Box::new(Expr::Call {
+                func: Path::single("f".to_string()),
+                args: vec![Expr::Ident("i".to_string())],
+            }),
+        );
+
+        let body = Expr::Implies(Box::new(bounds), Box::new(assignment));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_some());
+        assert!(matches!(result, Some(QuantifierTemplate::SeqComprehension { .. })));
+    }
+
+    /// Test: forall |k| map'.contains(k) == pred(k) (set/map domain)
+    #[test]
+    fn test_set_comprehension() {
+        // Build: set'.contains(k)
+        let membership = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("set_".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("k".to_string())],
+        };
+
+        // Build: k > 0
+        let pred = Expr::Gt(
+            Box::new(Expr::Ident("k".to_string())),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        );
+
+        // Build: membership == pred (biconditional)
+        let body = Expr::Eq(Box::new(membership), Box::new(pred));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("k")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_some());
+
+        if let Some(QuantifierTemplate::SetComprehension { element_var, .. }) = result {
+            assert_eq!(element_var, "k");
+        } else {
+            panic!("Expected SetComprehension template");
+        }
+    }
+
+    /// Test: forall |k| map'.contains(k) ==> map'[k] == f(k) (map value)
+    #[test]
+    fn test_map_comprehension_value() {
+        // Build: map'.contains(k)
+        let membership = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("map_".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("k".to_string())],
+        };
+
+        // Build: map'[k] == f(k)
+        let value_assign = Expr::Eq(
+            Box::new(Expr::Index(
+                Box::new(Expr::Ident("map_".to_string())),
+                Box::new(Expr::Ident("k".to_string())),
+            )),
+            Box::new(Expr::Call {
+                func: Path::single("f".to_string()),
+                args: vec![Expr::Ident("k".to_string())],
+            }),
+        );
+
+        // Build: membership ==> value_assign
+        let body = Expr::Implies(Box::new(membership), Box::new(value_assign));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("k")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_some());
+
+        if let Some(QuantifierTemplate::MapComprehension { key_var, .. }) = result {
+            assert_eq!(key_var, "k");
+        } else {
+            panic!("Expected MapComprehension template");
+        }
+    }
+
+    /// Test: non-forall expression returns None
+    #[test]
+    fn test_template_match_non_forall() {
+        let expr = Expr::Literal(Literal::Bool(true));
+        let result = TemplateMatcher::match_template(&expr);
+        assert!(result.is_none());
+    }
+
+    /// Test: multiple variables returns None
+    #[test]
+    fn test_template_match_multiple_vars() {
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i"), make_binding("j")],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_none());
+    }
+
+    /// Test detailed match result for unrecognized pattern
+    #[test]
+    fn test_template_match_detailed_unrecognized() {
+        // Body is just a literal - not a recognized pattern
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+
+        let result = TemplateMatcher::match_template_detailed(&forall);
+        assert!(matches!(
+            result,
+            TemplateMatchResult::NotMatched(TemplateMatchFailure::UnrecognizedPattern { .. })
+        ));
+    }
+
+    /// Test detailed match result for multiple variables
+    #[test]
+    fn test_template_match_detailed_multiple_vars() {
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i"), make_binding("j")],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+
+        let result = TemplateMatcher::match_template_detailed(&forall);
+        if let TemplateMatchResult::NotMatched(TemplateMatchFailure::MultipleVariables { count }) =
+            result
+        {
+            assert_eq!(count, 2);
+        } else {
+            panic!("Expected MultipleVariables failure");
+        }
+    }
+
+    /// Test with Conjunction bounds (Verus &&&)
+    #[test]
+    fn test_seq_comprehension_with_conjunction_bounds() {
+        // Build bounds using Conjunction: &&& 0 <= i &&& i < n
+        let bounds = Expr::Conjunction(vec![
+            Expr::Le(
+                Box::new(Expr::Literal(Literal::Int(0))),
+                Box::new(Expr::Ident("i".to_string())),
+            ),
+            Expr::Lt(
+                Box::new(Expr::Ident("i".to_string())),
+                Box::new(Expr::Ident("n".to_string())),
+            ),
+        ]);
+
+        let assignment = Expr::Eq(
+            Box::new(Expr::Index(
+                Box::new(Expr::Ident("result".to_string())),
+                Box::new(Expr::Ident("i".to_string())),
+            )),
+            Box::new(Expr::Ident("i".to_string())),
+        );
+
+        let body = Expr::Implies(Box::new(bounds), Box::new(assignment));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_some());
+        assert!(matches!(result, Some(QuantifierTemplate::SeqComprehension { .. })));
     }
 }
