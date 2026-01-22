@@ -175,7 +175,7 @@ verus! {
 
 ### 2.2 Configuration System
 
-- [ ] **Define configuration file format** (JSON/TOML)
+- [x] **Define configuration file format** (JSON/TOML) [26:01:22, 15:01] (see config.rs)
   ```toml
   [naming]
   spec_prefix = "L"
@@ -189,6 +189,8 @@ verus! {
   generate_abstraction_fns = true
   generate_validity_predicates = true
   ```
+  Implemented in `transpiler/src/config.rs` with serde TOML support.
+  Added `NamingConfig`, `OutputConfig`, `ModuleConfig` with sensible defaults.
 
 - [ ] **Define mode annotation format** (`.automan` file)
   ```
