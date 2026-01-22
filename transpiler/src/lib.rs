@@ -38,6 +38,7 @@ pub mod error;
 pub mod moder;
 pub mod parser;
 pub mod printer;
+pub mod runtime;
 pub mod templates;
 pub mod translator;
 pub mod types;
@@ -55,6 +56,7 @@ pub use translator::{ExecFunction, Translator, TranslatorConfig};
 pub use types::{TypeRegistry, StructDef, EnumDef, FieldDef, FunctionSig, TypeParser};
 pub use templates::{QuantifierTemplate, TemplateMatcher, match_expression};
 pub use codegen::{TypeGenerator, GeneratedCode, generate_all_types, TemplateCodeGenerator};
+pub use runtime::{View, SpecType, ExecType, DeepClone, Validated, ValidatedResult};
 
 use std::path::Path;
 
