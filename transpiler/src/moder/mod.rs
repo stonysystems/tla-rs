@@ -470,6 +470,13 @@ impl ModeAnalyzer {
                 self.detect_conflicts_inner(conclusion, input_params, output_params, &newly_assigned, conflicts);
             }
 
+            Expr::Call { args, .. } | Expr::MethodCall { args, .. } => {
+                // Check for use of unassigned outputs in function arguments
+                for arg in args {
+                    self.check_use_before_assignment(arg, output_params, &newly_assigned, conflicts);
+                }
+            }
+
             _ => {}
         }
 
