@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "verus-test"
+name = "tla-rs"
 version = "0.1.0"

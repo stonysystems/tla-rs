@@ -1,9 +1,12 @@
 [package]
-name = "verus-test"
+name = "tla-rs"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Rust implementation of the IronFleet verified distributed systems framework"
+license = "MIT"
+repository = "https://github.com/verus-lang/tla-rs"
+keywords = ["distributed-systems", "verification", "verus", "paxos", "consensus"]
+categories = ["algorithms", "science"]
 
 #[dependencies]
 #vstd = { git = "https://github.com/verus-lang/verus.git" }
