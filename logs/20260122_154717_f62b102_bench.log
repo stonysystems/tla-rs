@@ -1,0 +1,262 @@
+Benchmark Results - 20260122_154717 - Commit: f62b102
+
+
+running 98 tests
+test annotation::tests::test_parse_empty_module ... ignored
+test annotation::tests::test_parse_function_line ... ignored
+test annotation::tests::test_parse_module ... ignored
+test annotation::tests::test_parse_multiple_modules ... ignored
+test annotation::tests::test_parse_simple_annotation ... ignored
+test annotation::tests::test_parse_with_comments ... ignored
+test ast::tests::test_parameter_mode ... ignored
+test ast::tests::test_path_construction ... ignored
+test ast::tests::test_variable_mode ... ignored
+test build_integration::tests::test_build_rs_template ... ignored
+test build_integration::tests::test_config_builder ... ignored
+test build_integration::tests::test_default_config ... ignored
+test build_integration::tests::test_scons_helper ... ignored
+test checker::tests::test_map_comprehension_value ... ignored
+test checker::tests::test_saturation_check_fails ... ignored
+test checker::tests::test_saturation_check_passes ... ignored
+test checker::tests::test_seq_comprehension_simple ... ignored
+test checker::tests::test_seq_comprehension_upper_bound_only ... ignored
+test checker::tests::test_seq_comprehension_with_conjunction_bounds ... ignored
+test checker::tests::test_set_comprehension ... ignored
+test checker::tests::test_template_match_detailed_multiple_vars ... ignored
+test checker::tests::test_template_match_detailed_unrecognized ... ignored
+test checker::tests::test_template_match_multiple_vars ... ignored
+test checker::tests::test_template_match_non_forall ... ignored
+test checker::tests::test_validate_function ... ignored
+test codegen::template_codegen::tests::test_generate_copy ... ignored
+test codegen::template_codegen::tests::test_generate_simple_assignment ... ignored
+test codegen::tests::test_generate_enum ... ignored
+test codegen::tests::test_generate_simple_struct ... ignored
+test codegen::tests::test_generate_struct_with_collections ... ignored
+test codegen::tests::test_generate_struct_with_primitives ... ignored
+test codegen::tests::test_naming_config_get_exec_type ... ignored
+test codegen::tests::test_translate_type ... ignored
+test config::tests::test_default_config ... ignored
+test config::tests::test_get_exec_type_with_prefix ... ignored
+test config::tests::test_get_exec_type_with_remapping ... ignored
+test config::tests::test_get_exec_type_without_prefix ... ignored
+test config::tests::test_module_config ... ignored
+test config::tests::test_parse_toml ... ignored
+test config::tests::test_roundtrip_toml ... ignored
+test error::tests::test_diagnostic_accumulator ... ignored
+test error::tests::test_into_result_with_errors ... ignored
+test error::tests::test_into_result_without_errors ... ignored
+test moder::tests::test_analyze_conditional ... ignored
+test moder::tests::test_analyze_conjunction ... ignored
+test moder::tests::test_analyze_field_assignment ... ignored
+test moder::tests::test_analyze_simple_equality ... ignored
+test moder::tests::test_annotate_function ... ignored
+test moder::tests::test_assignment_tracker ... ignored
+test moder::tests::test_detect_branch_mismatch_conflict ... ignored
+test moder::tests::test_detect_input_assignment_conflict ... ignored
+test moder::tests::test_member_path ... ignored
+test moder::tests::test_no_conflict_valid_expression ... ignored
+test parser::tests::test_parse_arrow_operator ... ignored
+test parser::tests::test_parse_forall_with_trigger ... ignored
+test parser::tests::test_parse_ghost_parameter ... ignored
+test parser::tests::test_parse_requires_ensures_decreases ... ignored
+test parser::tests::test_parse_simple_spec_fn ... ignored
+test parser::tests::test_parse_spec_fn_with_conjunction ... ignored
+test parser::tests::test_parse_spec_fn_with_forall ... ignored
+test parser::tests::test_parse_spec_fn_with_if ... ignored
+test parser::tests::test_parse_tracked_parameter ... ignored
+test parser::tests::test_parse_view_operator ... ignored
+test parser::tests::test_parser_creation ... ignored
+test printer::tests::test_printer_basic ... ignored
+test runtime::tests::test_deep_clone_hashmap ... ignored
+test runtime::tests::test_deep_clone_primitive ... ignored
+test runtime::tests::test_deep_clone_vec ... ignored
+test runtime::tests::test_validated_invalid ... ignored
+test runtime::tests::test_validated_valid ... ignored
+test runtime::tests::test_validated_view ... ignored
+test runtime::tests::test_view_hashmap ... ignored
+test runtime::tests::test_view_option ... ignored
+test runtime::tests::test_view_primitive ... ignored
+test runtime::tests::test_view_vec ... ignored
+test templates::tests::test_match_expression_confidence ... ignored
+test templates::tests::test_seq_comprehension_match ... ignored
+test templates::tests::test_simple_assignment_match ... ignored
+test templates::tests::test_struct_construction_match ... ignored
+test templates::tests::test_unrecognized_pattern ... ignored
+test tests::test_transpiler_creation ... ignored
+test translator::tests::test_exec_type_to_string ... ignored
+test translator::tests::test_transform_binary_comparison ... ignored
+test translator::tests::test_transform_clone_output ... ignored
+test translator::tests::test_transform_field_access ... ignored
+test translator::tests::test_transform_if_else ... ignored
+test translator::tests::test_transform_literal ... ignored
+test translator::tests::test_transform_seq_empty ... ignored
+test translator::tests::test_translate_name ... ignored
+test translator::tests::test_translate_type ... ignored
+test types::tests::test_exec_type_name ... ignored
+test types::tests::test_parse_enum ... ignored
+test types::tests::test_parse_generic_struct ... ignored
+test types::tests::test_parse_simple_struct ... ignored
+test types::tests::test_parse_type_alias ... ignored
+test types::tests::test_register_enum ... ignored
+test types::tests::test_register_struct ... ignored
+test types::tests::test_registry_creation ... ignored
+
+test result: ok. 0 passed; 0 failed; 98 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test tests::test_cli_parsing ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+parser/simple_spec      time:   [3.1048 µs 3.1196 µs 3.1373 µs]
+                        change: [-0.3977% +6.8476% +16.936%] (p = 0.11 > 0.05)
+                        No change in performance detected.
+Found 18 outliers among 100 measurements (18.00%)
+  1 (1.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+  15 (15.00%) high severe
+parser/medium_spec      time:   [9.8485 µs 9.9194 µs 10.006 µs]
+                        change: [-6.5727% -5.6323% -4.4355%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 25 outliers among 100 measurements (25.00%)
+  1 (1.00%) low severe
+  11 (11.00%) low mild
+  8 (8.00%) high mild
+  5 (5.00%) high severe
+parser/complex_spec     time:   [28.475 µs 28.568 µs 28.654 µs]
+                        change: [-0.2197% +0.1881% +0.6686%] (p = 0.41 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) low mild
+  1 (1.00%) high severe
+
+annotation_parser/simple
+                        time:   [527.97 ns 547.20 ns 570.29 ns]
+                        change: [+5.7583% +9.9520% +13.617%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 24 outliers among 100 measurements (24.00%)
+  7 (7.00%) high mild
+  17 (17.00%) high severe
+annotation_parser/medium
+                        time:   [528.41 ns 530.47 ns 532.75 ns]
+                        change: [-1.4733% -1.1246% -0.7511%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+annotation_parser/large_50_functions
+                        time:   [22.103 µs 22.209 µs 22.350 µs]
+                        change: [-4.7228% -2.0623% +0.2005%] (p = 0.12 > 0.05)
+                        No change in performance detected.
+Found 33 outliers among 100 measurements (33.00%)
+  13 (13.00%) low severe
+  7 (7.00%) low mild
+  1 (1.00%) high mild
+  12 (12.00%) high severe
+
+mode_analyzer/annotate_simple
+                        time:   [611.17 ns 612.57 ns 613.89 ns]
+                        change: [-3.6554% -2.9262% -2.2476%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 17 outliers among 100 measurements (17.00%)
+  11 (11.00%) low severe
+  4 (4.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+mode_analyzer/annotate_medium
+                        time:   [2.2331 µs 2.2529 µs 2.2705 µs]
+                        change: [-4.4279% -3.6158% -2.7484%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+
+template_matcher/match_medium_expr
+                        time:   [1.6539 µs 1.6596 µs 1.6661 µs]
+                        change: [-3.6330% -3.1079% -2.5604%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 14 outliers among 100 measurements (14.00%)
+  3 (3.00%) low severe
+  2 (2.00%) low mild
+  5 (5.00%) high mild
+  4 (4.00%) high severe
+template_matcher/match_complex_expr
+                        time:   [5.3114 µs 5.3251 µs 5.3390 µs]
+                        change: [-2.7081% -2.3802% -2.0458%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) low mild
+
+translator/translate_simple
+                        time:   [1.2291 µs 1.2325 µs 1.2363 µs]
+                        change: [+0.9306% +1.4608% +2.0308%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 14 outliers among 100 measurements (14.00%)
+  2 (2.00%) low severe
+  2 (2.00%) low mild
+  3 (3.00%) high mild
+  7 (7.00%) high severe
+translator/translate_medium
+                        time:   [5.1013 µs 5.1117 µs 5.1234 µs]
+                        change: [-2.1012% -1.7651% -1.4591%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  1 (1.00%) low severe
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+
+full_pipeline/parse_annotate_translate
+                        time:   [21.916 µs 21.996 µs 22.079 µs]
+                        thrpt:  [15.031 MiB/s 15.088 MiB/s 15.144 MiB/s]
+                 change:
+                        time:   [+3.6454% +4.0453% +4.3842%] (p = 0.00 < 0.05)
+                        thrpt:  [-4.2000% -3.8880% -3.5171%]
+                        Performance has regressed.
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) low severe
+  3 (3.00%) low mild
+
+scaling/parse/1         time:   [3.7054 µs 3.7110 µs 3.7155 µs]
+                        thrpt:  [269.14 Kelem/s 269.47 Kelem/s 269.88 Kelem/s]
+                 change:
+                        time:   [-0.4039% -0.1719% +0.0360%] (p = 0.12 > 0.05)
+                        thrpt:  [-0.0360% +0.1722% +0.4056%]
+                        No change in performance detected.
+Found 10 outliers among 100 measurements (10.00%)
+  4 (4.00%) low severe
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+scaling/parse/5         time:   [11.364 µs 11.650 µs 11.988 µs]
+                        thrpt:  [417.09 Kelem/s 429.18 Kelem/s 440.00 Kelem/s]
+                 change:
+                        time:   [+0.1239% +1.3201% +2.7666%] (p = 0.04 < 0.05)
+                        thrpt:  [-2.6921% -1.3029% -0.1237%]
+                        Change within noise threshold.
+Found 24 outliers among 100 measurements (24.00%)
+  7 (7.00%) low severe
+  5 (5.00%) low mild
+  3 (3.00%) high mild
+  9 (9.00%) high severe
+scaling/parse/10        time:   [19.193 µs 19.397 µs 19.621 µs]
+                        thrpt:  [509.66 Kelem/s 515.54 Kelem/s 521.01 Kelem/s]
+                 change:
+                        time:   [-0.0637% +0.7707% +1.6366%] (p = 0.07 > 0.05)
+                        thrpt:  [-1.6102% -0.7648% +0.0638%]
+                        No change in performance detected.
+Found 27 outliers among 100 measurements (27.00%)
+  13 (13.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high mild
+  11 (11.00%) high severe
+scaling/parse/20        time:   [40.350 µs 40.942 µs 41.688 µs]
+                        thrpt:  [479.75 Kelem/s 488.49 Kelem/s 495.67 Kelem/s]
+                 change:
+                        time:   [+2.1612% +6.0507% +10.146%] (p = 0.00 < 0.05)
+                        thrpt:  [-9.2116% -5.7055% -2.1155%]
+                        Performance has regressed.
+Found 13 outliers among 100 measurements (13.00%)
+  4 (4.00%) high mild
+  9 (9.00%) high severe
+
