@@ -319,15 +319,17 @@ verus! {
 
 ### 3.3 Type Table Builder
 
-- [ ] **Build global type information**
-  - Collect all struct/enum definitions
-  - Track field types and names
-  - Handle generic type parameters
+- [x] **Build global type information** [26:01:22, 16:45]
+  - Collect all struct/enum definitions - `TypeParser::try_parse_struct/enum`
+  - Track field types and names - `StructDef`, `FieldDef`, `VariantDef`
+  - Handle generic type parameters - `Generics` in struct/enum defs
+  - Type alias support - `TypeAlias`
+  - Implemented in `types/mod.rs`
 
-- [ ] **Track predicate signatures**
-  - Parameter types
+- [x] **Track predicate signatures** [26:01:22, 16:45]
+  - Parameter types - `FunctionSig`, `ParamSig`
   - Return types (always bool for spec predicates)
-  - Cross-module references
+  - `TypeRegistry::register_spec_function()` for spec fn registration
 
 ---
 

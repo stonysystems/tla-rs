@@ -96,6 +96,25 @@ pub enum PredicateKind {
     Pure,
 }
 
+/// Mode conflict types detected during analysis
+#[derive(Debug, Clone)]
+pub enum ModeConflict {
+    /// Output variable used before it was assigned
+    UseBeforeAssignment {
+        var: String,
+        context: String,
+    },
+    /// Input variable appears on left side of assignment
+    InputAssignment {
+        var: String,
+    },
+    /// Different branches assign different output variables
+    BranchMismatch {
+        branch1_assigns: HashSet<String>,
+        branch2_assigns: HashSet<String>,
+    },
+}
+
 /// Mode analyzer
 pub struct ModeAnalyzer {
     diagnostics: DiagnosticAccumulator,
@@ -326,6 +345,195 @@ impl ModeAnalyzer {
     pub fn diagnostics(&self) -> &DiagnosticAccumulator {
         &self.diagnostics
     }
+
+    /// Detect mode conflicts during expression analysis
+    ///
+    /// This performs a more thorough analysis that:
+    /// - Tracks which outputs have been assigned
+    /// - Detects input variables being assigned
+    /// - Checks branch consistency
+    pub fn detect_conflicts(
+        &mut self,
+        expr: &Expr,
+        input_params: &HashSet<String>,
+        output_params: &HashSet<String>,
+    ) -> Vec<ModeConflict> {
+        let mut conflicts = Vec::new();
+        self.detect_conflicts_inner(expr, input_params, output_params, &HashSet::new(), &mut conflicts);
+        conflicts
+    }
+
+    fn detect_conflicts_inner(
+        &self,
+        expr: &Expr,
+        input_params: &HashSet<String>,
+        output_params: &HashSet<String>,
+        already_assigned: &HashSet<String>,
+        conflicts: &mut Vec<ModeConflict>,
+    ) -> HashSet<String> {
+        let mut newly_assigned = already_assigned.clone();
+
+        match expr {
+            Expr::Conjunction(clauses) => {
+                for clause in clauses {
+                    let assigned_here = self.detect_conflicts_inner(
+                        clause,
+                        input_params,
+                        output_params,
+                        &newly_assigned,
+                        conflicts,
+                    );
+                    newly_assigned.extend(assigned_here);
+                }
+            }
+
+            Expr::Eq(left, right) => {
+                // Determine which side is the assignment target
+                // In spec predicates, the output variable side is the target
+                let left_is_output = Self::extract_output_path(left, output_params).is_some();
+                let right_is_output = Self::extract_output_path(right, output_params).is_some();
+                let left_is_input = Self::extract_any_param_path(left, input_params).is_some();
+                let right_is_input = Self::extract_any_param_path(right, input_params).is_some();
+
+                // Check if we're assigning to an input (input on the "target" side)
+                // Only flag as conflict if an input is the root being assigned (not just used)
+                if left_is_input && !right_is_output {
+                    // Left is input and right is not an output - this means left is being "assigned"
+                    if let Some((var, _)) = Self::extract_any_param_path(left, input_params) {
+                        conflicts.push(ModeConflict::InputAssignment { var: var.clone() });
+                    }
+                } else if right_is_input && !left_is_output {
+                    // Right is input and left is not an output - unusual, flag it
+                    if let Some((var, _)) = Self::extract_any_param_path(right, input_params) {
+                        conflicts.push(ModeConflict::InputAssignment { var: var.clone() });
+                    }
+                }
+
+                // Check for assignment to output
+                if let Some((var, _)) = Self::extract_output_path(left, output_params) {
+                    newly_assigned.insert(var);
+                } else if let Some((var, _)) = Self::extract_output_path(right, output_params) {
+                    newly_assigned.insert(var);
+                }
+
+                // Check if we're using unassigned outputs
+                self.check_use_before_assignment(left, output_params, &newly_assigned, conflicts);
+                self.check_use_before_assignment(right, output_params, &newly_assigned, conflicts);
+            }
+
+            Expr::If { cond, then_branch, else_branch } => {
+                // Check condition for conflicts
+                self.detect_conflicts_inner(cond, input_params, output_params, &newly_assigned, conflicts);
+
+                // Analyze both branches
+                let then_assigned = self.detect_conflicts_inner(
+                    then_branch,
+                    input_params,
+                    output_params,
+                    &newly_assigned,
+                    conflicts,
+                );
+
+                if let Some(else_expr) = else_branch {
+                    let else_assigned = self.detect_conflicts_inner(
+                        else_expr,
+                        input_params,
+                        output_params,
+                        &newly_assigned,
+                        conflicts,
+                    );
+
+                    // Check for branch mismatch
+                    if then_assigned != else_assigned {
+                        conflicts.push(ModeConflict::BranchMismatch {
+                            branch1_assigns: then_assigned.difference(&newly_assigned).cloned().collect(),
+                            branch2_assigns: else_assigned.difference(&newly_assigned).cloned().collect(),
+                        });
+                    }
+
+                    // Both branches must assign the same outputs
+                    newly_assigned.extend(then_assigned.intersection(&else_assigned).cloned());
+                } else {
+                    // No else branch - then branch outputs are assigned
+                    newly_assigned.extend(then_assigned);
+                }
+            }
+
+            // For other expressions, recursively check
+            Expr::Binary(left, _, right) => {
+                self.check_use_before_assignment(left, output_params, &newly_assigned, conflicts);
+                self.check_use_before_assignment(right, output_params, &newly_assigned, conflicts);
+            }
+
+            Expr::Implies(premise, conclusion) => {
+                self.detect_conflicts_inner(premise, input_params, output_params, &newly_assigned, conflicts);
+                self.detect_conflicts_inner(conclusion, input_params, output_params, &newly_assigned, conflicts);
+            }
+
+            _ => {}
+        }
+
+        newly_assigned
+    }
+
+    /// Check if an expression uses an output variable that hasn't been assigned yet
+    #[allow(clippy::only_used_in_recursion)] // Method for future extension with diagnostics
+    fn check_use_before_assignment(
+        &self,
+        expr: &Expr,
+        output_params: &HashSet<String>,
+        already_assigned: &HashSet<String>,
+        conflicts: &mut Vec<ModeConflict>,
+    ) {
+        match expr {
+            Expr::Ident(name) if output_params.contains(name) && !already_assigned.contains(name) => {
+                conflicts.push(ModeConflict::UseBeforeAssignment {
+                    var: name.clone(),
+                    context: "expression".to_string(),
+                });
+            }
+            Expr::Field(base, _) | Expr::Index(base, _) => {
+                self.check_use_before_assignment(base, output_params, already_assigned, conflicts);
+            }
+            Expr::Binary(left, _, right) => {
+                self.check_use_before_assignment(left, output_params, already_assigned, conflicts);
+                self.check_use_before_assignment(right, output_params, already_assigned, conflicts);
+            }
+            Expr::Call { args, .. } | Expr::MethodCall { args, .. } => {
+                for arg in args {
+                    self.check_use_before_assignment(arg, output_params, already_assigned, conflicts);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Extract a parameter path regardless of whether it's input or output
+    fn extract_any_param_path(
+        expr: &Expr,
+        params: &HashSet<String>,
+    ) -> Option<(String, MemberPath)> {
+        match expr {
+            Expr::Ident(name) if params.contains(name) => {
+                Some((name.clone(), MemberPath::Root))
+            }
+            Expr::Field(base, field) => {
+                if let Some((var, path)) = Self::extract_any_param_path(base, params) {
+                    Some((var, path.field(field.clone())))
+                } else {
+                    None
+                }
+            }
+            Expr::Index(base, _) => {
+                if let Some((var, path)) = Self::extract_any_param_path(base, params) {
+                    Some((var, path.index()))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Default for ModeAnalyzer {
@@ -491,5 +699,67 @@ mod tests {
         // Both branches should have recorded the assignment
         // (tracker doesn't track which branch, just that it was assigned)
         assert!(tracker.is_assigned("s_", &MemberPath::Root));
+    }
+
+    #[test]
+    fn test_detect_input_assignment_conflict() {
+        let mut analyzer = ModeAnalyzer::new();
+        let input_params: HashSet<String> = ["s".to_string()].into_iter().collect();
+        let output_params: HashSet<String> = ["s_".to_string()].into_iter().collect();
+
+        // Expression: s.field == value (assigning to input is invalid)
+        let expr = Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "field".to_string(),
+            )),
+            Box::new(Expr::Ident("value".to_string())),
+        );
+
+        let conflicts = analyzer.detect_conflicts(&expr, &input_params, &output_params);
+        assert!(!conflicts.is_empty());
+        assert!(matches!(conflicts[0], ModeConflict::InputAssignment { .. }));
+    }
+
+    #[test]
+    fn test_detect_branch_mismatch_conflict() {
+        let mut analyzer = ModeAnalyzer::new();
+        let input_params: HashSet<String> = HashSet::new();
+        let output_params: HashSet<String> =
+            ["s_".to_string(), "packets".to_string()].into_iter().collect();
+
+        // Expression: if cond { s_ == new } else { packets == empty }
+        // This is a branch mismatch - different outputs in each branch
+        let expr = Expr::If {
+            cond: Box::new(Expr::Ident("cond".to_string())),
+            then_branch: Box::new(Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("new".to_string())),
+            )),
+            else_branch: Some(Box::new(Expr::Eq(
+                Box::new(Expr::Ident("packets".to_string())),
+                Box::new(Expr::SeqEmpty),
+            ))),
+        };
+
+        let conflicts = analyzer.detect_conflicts(&expr, &input_params, &output_params);
+        assert!(!conflicts.is_empty());
+        assert!(matches!(conflicts[0], ModeConflict::BranchMismatch { .. }));
+    }
+
+    #[test]
+    fn test_no_conflict_valid_expression() {
+        let mut analyzer = ModeAnalyzer::new();
+        let input_params: HashSet<String> = ["s".to_string()].into_iter().collect();
+        let output_params: HashSet<String> = ["s_".to_string()].into_iter().collect();
+
+        // Expression: s_ == compute(s) - valid, assigning to output using input
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("s_".to_string())),
+            Box::new(Expr::Ident("s".to_string())),
+        );
+
+        let conflicts = analyzer.detect_conflicts(&expr, &input_params, &output_params);
+        assert!(conflicts.is_empty());
     }
 }

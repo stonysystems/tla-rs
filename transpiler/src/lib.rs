@@ -38,6 +38,7 @@ pub mod moder;
 pub mod parser;
 pub mod printer;
 pub mod translator;
+pub mod types;
 
 // Re-export commonly used types
 pub use annotation::{AnnotationParser, FunctionAnnotation, ModuleAnnotations};
@@ -49,6 +50,7 @@ pub use moder::{AnnotatedFunction, AssignmentTracker, ModeAnalyzer, PredicateKin
 pub use parser::{parse_file, VerusParser};
 pub use printer::{print_function, Printer, PrinterConfig};
 pub use translator::{ExecFunction, Translator, TranslatorConfig};
+pub use types::{TypeRegistry, StructDef, EnumDef, FieldDef, FunctionSig, TypeParser};
 
 use std::path::Path;
 
