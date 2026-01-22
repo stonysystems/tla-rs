@@ -496,66 +496,28 @@ verus! {
 
 ### 6.2 Function Generation
 
-- [ ] **Transform spec predicates to exec functions**
-  - Convert parameter types (L* → C*)
-  - Convert return type (bool → tuple of outputs)
-  - Generate requires/ensures clauses
+- [x] **Transform spec predicates to exec functions** [26:01:22, 18:15]
+  - `Translator::translate()` converts spec function to exec function
+  - `translate_params()` converts L* → C* with reference wrapper for inputs
+  - `build_return_type()` creates tuple type from output parameters
+  - `build_requires()`/`build_ensures()` generate well_formed checks and spec linkage
 
-- [ ] **Transform expressions**
-  ```rust
-  fn transform_expr(expr: &Expr, ctx: &TransformContext) -> ExecExpr {
-      match expr {
-          // Equality assignment: s_.field == expr
-          // → let field_value = transform(expr); ...
-          Expr::Eq(lhs, rhs) if is_output_access(lhs, ctx) => {
-              let value = transform_expr(rhs, ctx);
-              ExecExpr::Assignment(extract_path(lhs), value)
-          }
+- [x] **Transform expressions** [26:01:22, 18:15]
+  - `transform_expr()` handles 30+ expression types:
+    - Literals, identifiers, field/index access
+    - Binary and unary operators
+    - Control flow: if/match/let
+    - Collections: SeqLit, MapLit, SeqEmpty
+    - Method and function calls
+    - Struct construction and update
+    - View and arrow operators
+  - `transform_equality()` detects output assignments vs comparisons
+  - `try_extract_struct_construction()` collects field assignments into struct
 
-          // Conjunction: collect assignments
-          Expr::Conjunction(exprs) => {
-              let assignments = exprs.iter()
-                  .map(|e| transform_expr(e, ctx))
-                  .collect();
-              ExecExpr::Block(assignments)
-          }
-
-          // Conditional: both branches produce same outputs
-          Expr::If { cond, then_, else_ } => {
-              ExecExpr::If {
-                  cond: transform_expr(cond, ctx),
-                  then_: transform_expr(then_, ctx),
-                  else_: else_.map(|e| transform_expr(e, ctx)),
-              }
-          }
-
-          // Quantifier: apply template
-          Expr::Forall { .. } => {
-              match match_template(expr) {
-                  Some(SeqComprehension { len, elem }) => {
-                      // Generate: (0..len).map(|i| elem(i)).collect()
-                  }
-                  None => {
-                      // Cannot functionalize, report error
-                  }
-              }
-          }
-
-          // ... other cases
-      }
-  }
-  ```
-
-- [ ] **Generate struct construction**
-  ```rust
-  // From assignments: s_.max_bal == bal, s_.votes == s.votes
-  // Generate:
-  CAcceptor {
-      max_bal: bal.clone(),
-      votes: s.votes.clone(),
-      constants: s.constants.clone(),  // Unchanged fields
-  }
-  ```
+- [x] **Generate struct construction** [26:01:22, 18:15]
+  - Automatic detection of `s_.field == expr` patterns in conjunctions
+  - Struct update syntax for partial modifications: `S { field: val, ..base }`
+  - Clone generation for full copies: `s_ == s` → `s.clone()`
 
 ### 6.3 Proof Linkage
 
