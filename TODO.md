@@ -634,11 +634,12 @@ verus! {
 
 ### 8.4 Negative Tests
 
-- [ ] **Test error reporting**
-  - Missing mode annotations
-  - Saturation failures
-  - Unsupported quantifier patterns
-  - Circular dependencies
+- [x] **Test error reporting** [26:01:22, 20:30]
+  - Missing mode annotations - test_missing_annotation_for_function
+  - Saturation failures - test_saturation_missing_field_assignment, test_saturation_no_assignments
+  - Unsupported quantifier patterns - test_unsupported_quantifier_*, test_translator_forall_without_template
+  - Mode conflicts - test_input_assignment_conflict, test_use_before_assignment_conflict
+  - 14 negative tests implemented in tests/negative_tests.rs
 
 ---
 
@@ -646,7 +647,7 @@ verus! {
 
 ### 9.1 CLI Tool
 
-- [ ] **Implement command-line interface**
+- [x] **Implement command-line interface** [26:01:22, 20:30]
   ```bash
   tla-transpile \
       --input src/protocol/RSL/acceptor.rs \
@@ -655,7 +656,9 @@ verus! {
       --output src/implementation/RSL/acceptor_gen.rs
   ```
 
-- [ ] **Support batch processing**
+- [x] **Support batch processing** [26:01:22, 20:30]
+  - CLI supports --project and --output-dir flags for batch mode
+  - Subcommands: ListTemplates, Check, GenerateTypes
   ```bash
   tla-transpile --project . --output-dir src/generated/
   ```
