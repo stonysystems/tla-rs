@@ -31,6 +31,7 @@
 
 pub mod annotation;
 pub mod ast;
+pub mod build_integration;
 pub mod checker;
 pub mod codegen;
 pub mod config;

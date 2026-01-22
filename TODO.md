@@ -665,16 +665,22 @@ verus! {
 
 ### 9.2 Build Integration
 
-- [ ] **Integrate with scons build system**
-  - Add transpiler as build step
-  - Dependency tracking (re-transpile on spec change)
+- [x] **Integrate with scons build system** [26:01:22, 21:00]
+  - Added build_integration module with scons helper generation
+  - generate_scons_helper() produces Python SCons builder template
+  - Supports dependency tracking via emitter function
 
-- [ ] **Cargo build script integration**
+- [x] **Cargo build script integration** [26:01:22, 21:00]
+  - BuildConfig struct for configuring build-time transpilation
+  - run_build() function for use in build.rs
+  - generate_build_rs_template() for creating build scripts
+  - print_rerun_instructions() for cargo dependency tracking
   ```rust
-  // build.rs
-  fn main() {
-      tla_transpile::generate("src/protocol", "src/generated");
-  }
+  // build.rs example
+  let config = verus_transpiler::build_integration::BuildConfig::new(
+      "src/protocol", "src/generated"
+  );
+  verus_transpiler::build_integration::run_build(&config).unwrap();
   ```
 
 ### 9.3 IDE Support
