@@ -16,8 +16,14 @@ pub struct SpecFunction {
     pub params: Vec<Parameter>,
     /// Return type (usually bool for predicates)
     pub return_type: Type,
+    /// Requires clauses (preconditions)
+    pub requires: Vec<Expr>,
+    /// Ensures clauses (postconditions)
+    pub ensures: Vec<Expr>,
     /// Recommends clauses
     pub recommends: Vec<Expr>,
+    /// Decreases clauses (for termination)
+    pub decreases: Vec<Expr>,
     /// Function body
     pub body: Expr,
     /// Source span for error reporting
@@ -75,6 +81,8 @@ pub struct Parameter {
     pub ty: Type,
     /// Mode annotation (filled by mode analyzer)
     pub mode: Option<ParameterMode>,
+    /// Variable mode (ghost/tracked/exec)
+    pub variable_mode: VariableMode,
     /// Source span
     pub span: Option<Span>,
 }
@@ -86,6 +94,18 @@ pub enum ParameterMode {
     Input,
     /// Must be computed output (-)
     Output,
+}
+
+/// Variable mode for Verus ghost/tracked/exec distinction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VariableMode {
+    /// Executable code (default)
+    #[default]
+    Exec,
+    /// Ghost code (proof only, erased at compile time)
+    Ghost,
+    /// Tracked code (linear permissions)
+    Tracked,
 }
 
 /// Type representation
@@ -265,6 +285,8 @@ pub enum Expr {
 pub struct Binding {
     pub name: String,
     pub ty: Option<Type>,
+    /// Variable mode (ghost/tracked/exec)
+    pub variable_mode: VariableMode,
 }
 
 /// Trigger for quantifiers
@@ -354,8 +376,24 @@ mod tests {
             name: "s".to_string(),
             ty: Type::Named(Path::single("LAcceptor".to_string())),
             mode: Some(ParameterMode::Input),
+            variable_mode: VariableMode::default(),
             span: None,
         };
         assert_eq!(param.mode, Some(ParameterMode::Input));
+        assert_eq!(param.variable_mode, VariableMode::Exec);
+    }
+
+    #[test]
+    fn test_variable_mode() {
+        assert_eq!(VariableMode::default(), VariableMode::Exec);
+
+        let ghost_param = Parameter {
+            name: "g".to_string(),
+            ty: Type::Bool,
+            mode: None,
+            variable_mode: VariableMode::Ghost,
+            span: None,
+        };
+        assert_eq!(ghost_param.variable_mode, VariableMode::Ghost);
     }
 }

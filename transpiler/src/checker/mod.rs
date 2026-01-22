@@ -138,7 +138,7 @@ pub fn validate_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type};
+    use crate::ast::{Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type, VariableMode};
 
     fn make_test_function() -> AnnotatedFunction {
         AnnotatedFunction {
@@ -150,17 +150,22 @@ mod tests {
                         name: "s".to_string(),
                         ty: Type::Named(Path::single("State".to_string())),
                         mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
                         span: None,
                     },
                     Parameter {
                         name: "s_".to_string(),
                         ty: Type::Named(Path::single("State".to_string())),
                         mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
                         span: None,
                     },
                 ],
                 return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
                 recommends: vec![],
+                decreases: vec![],
                 body: Expr::Literal(Literal::Bool(true)),
                 span: None,
             },

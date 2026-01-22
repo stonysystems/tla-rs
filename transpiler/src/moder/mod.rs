@@ -193,12 +193,133 @@ impl ModeAnalyzer {
     }
 
     /// Analyze mode propagation within an expression
-    pub fn analyze_expression(&mut self, _expr: &Expr, _tracker: &mut AssignmentTracker) {
-        // TODO: Implement expression analysis
-        // This will traverse the expression and:
-        // - Track assignments to output variables
-        // - Detect mode conflicts
-        // - Build dependency graph
+    ///
+    /// This traverses the expression tree and:
+    /// - Identifies assignments to output variables
+    /// - Records them in the tracker
+    #[allow(clippy::only_used_in_recursion)] // Will use self for diagnostics accumulation
+    pub fn analyze_expression(
+        &mut self,
+        expr: &Expr,
+        tracker: &mut AssignmentTracker,
+        output_params: &HashSet<String>,
+    ) {
+        match expr {
+            // Conjunction chains - analyze each clause
+            Expr::Conjunction(clauses) => {
+                for clause in clauses {
+                    self.analyze_expression(clause, tracker, output_params);
+                }
+            }
+
+            // Disjunction chains - analyze each clause
+            Expr::Disjunction(clauses) => {
+                for clause in clauses {
+                    self.analyze_expression(clause, tracker, output_params);
+                }
+            }
+
+            // Equality - this is where assignments happen in specs
+            Expr::Eq(left, right) => {
+                Self::analyze_equality(left, right, tracker, output_params);
+            }
+
+            // Binary operators - recurse into operands
+            Expr::Binary(left, _, right) => {
+                self.analyze_expression(left, tracker, output_params);
+                self.analyze_expression(right, tracker, output_params);
+            }
+
+            // Implications - analyze both sides
+            Expr::Implies(premise, conclusion) => {
+                self.analyze_expression(premise, tracker, output_params);
+                self.analyze_expression(conclusion, tracker, output_params);
+            }
+
+            // Conditionals - analyze both branches
+            Expr::If { cond, then_branch, else_branch } => {
+                self.analyze_expression(cond, tracker, output_params);
+                self.analyze_expression(then_branch, tracker, output_params);
+                if let Some(else_expr) = else_branch {
+                    self.analyze_expression(else_expr, tracker, output_params);
+                }
+            }
+
+            // Let bindings - analyze value and body
+            Expr::Let { value, body, .. } => {
+                self.analyze_expression(value, tracker, output_params);
+                self.analyze_expression(body, tracker, output_params);
+            }
+
+            // Match expressions - analyze arms
+            Expr::Match { scrutinee, arms } => {
+                self.analyze_expression(scrutinee, tracker, output_params);
+                for arm in arms {
+                    self.analyze_expression(&arm.body, tracker, output_params);
+                }
+            }
+
+            // Forall/Exists - analyze body
+            Expr::Forall { body, .. } | Expr::Exists { body, .. } => {
+                self.analyze_expression(body, tracker, output_params);
+            }
+
+            // Other expression types don't contain assignments
+            _ => {}
+        }
+    }
+
+    /// Analyze an equality expression for output assignments
+    fn analyze_equality(
+        left: &Expr,
+        right: &Expr,
+        tracker: &mut AssignmentTracker,
+        output_params: &HashSet<String>,
+    ) {
+        // Check if left side is an output path
+        if let Some((var, path)) = Self::extract_output_path(left, output_params) {
+            tracker.record_assignment(&var, path);
+        }
+        // Also check right side (less common but valid in specs)
+        else if let Some((var, path)) = Self::extract_output_path(right, output_params) {
+            tracker.record_assignment(&var, path);
+        }
+    }
+
+    /// Extract an output variable path from an expression
+    ///
+    /// Returns Some((var_name, path)) if the expression is an output parameter
+    /// or a field access on an output parameter.
+    fn extract_output_path(
+        expr: &Expr,
+        output_params: &HashSet<String>,
+    ) -> Option<(String, MemberPath)> {
+        match expr {
+            // Direct identifier reference
+            Expr::Ident(name) if output_params.contains(name) => {
+                Some((name.clone(), MemberPath::Root))
+            }
+
+            // Field access: base.field
+            Expr::Field(base, field) => {
+                if let Some((var, path)) = Self::extract_output_path(base, output_params) {
+                    Some((var, path.field(field.clone())))
+                } else {
+                    None
+                }
+            }
+
+            // Index access: base[idx]
+            Expr::Index(base, _) => {
+                if let Some((var, path)) = Self::extract_output_path(base, output_params) {
+                    Some((var, path.index()))
+                } else {
+                    None
+                }
+            }
+
+            _ => None,
+        }
     }
 
     /// Get accumulated diagnostics
@@ -236,6 +357,7 @@ mod tests {
 
     #[test]
     fn test_annotate_function() {
+        use crate::ast::VariableMode;
         let spec_fn = SpecFunction {
             name: "TestFn".to_string(),
             generics: Default::default(),
@@ -244,17 +366,22 @@ mod tests {
                     name: "s".to_string(),
                     ty: Type::Named(Path::single("State".to_string())),
                     mode: None,
+                    variable_mode: VariableMode::Exec,
                     span: None,
                 },
                 Parameter {
                     name: "s_".to_string(),
                     ty: Type::Named(Path::single("State".to_string())),
                     mode: None,
+                    variable_mode: VariableMode::Exec,
                     span: None,
                 },
             ],
             return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
             recommends: vec![],
+            decreases: vec![],
             body: Expr::Literal(crate::ast::Literal::Bool(true)),
             span: None,
         };
@@ -271,5 +398,98 @@ mod tests {
         let annotated = result.unwrap();
         assert!(annotated.is_functionalizable);
         assert_eq!(annotated.param_modes.len(), 2);
+    }
+
+    #[test]
+    fn test_analyze_simple_equality() {
+        let mut analyzer = ModeAnalyzer::new();
+        let mut tracker = AssignmentTracker::new();
+        let output_params: HashSet<String> = ["s_".to_string()].into_iter().collect();
+
+        // Expression: s_ == s
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("s_".to_string())),
+            Box::new(Expr::Ident("s".to_string())),
+        );
+
+        analyzer.analyze_expression(&expr, &mut tracker, &output_params);
+
+        assert!(tracker.is_assigned("s_", &MemberPath::Root));
+    }
+
+    #[test]
+    fn test_analyze_field_assignment() {
+        let mut analyzer = ModeAnalyzer::new();
+        let mut tracker = AssignmentTracker::new();
+        let output_params: HashSet<String> = ["s_".to_string()].into_iter().collect();
+
+        // Expression: s_.max_bal == bal
+        let expr = Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "max_bal".to_string(),
+            )),
+            Box::new(Expr::Ident("bal".to_string())),
+        );
+
+        analyzer.analyze_expression(&expr, &mut tracker, &output_params);
+
+        let expected_path = MemberPath::root().field("max_bal".to_string());
+        assert!(tracker.is_assigned("s_", &expected_path));
+    }
+
+    #[test]
+    fn test_analyze_conjunction() {
+        let mut analyzer = ModeAnalyzer::new();
+        let mut tracker = AssignmentTracker::new();
+        let output_params: HashSet<String> =
+            ["s_".to_string(), "packets".to_string()].into_iter().collect();
+
+        // Expression: &&& s_.max_bal == bal &&& packets == seq![]
+        let expr = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "max_bal".to_string(),
+                )),
+                Box::new(Expr::Ident("bal".to_string())),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Ident("packets".to_string())),
+                Box::new(Expr::SeqLit(vec![])),
+            ),
+        ]);
+
+        analyzer.analyze_expression(&expr, &mut tracker, &output_params);
+
+        let max_bal_path = MemberPath::root().field("max_bal".to_string());
+        assert!(tracker.is_assigned("s_", &max_bal_path));
+        assert!(tracker.is_assigned("packets", &MemberPath::Root));
+    }
+
+    #[test]
+    fn test_analyze_conditional() {
+        let mut analyzer = ModeAnalyzer::new();
+        let mut tracker = AssignmentTracker::new();
+        let output_params: HashSet<String> = ["s_".to_string()].into_iter().collect();
+
+        // Expression: if cond { s_ == new_state } else { s_ == s }
+        let expr = Expr::If {
+            cond: Box::new(Expr::Ident("cond".to_string())),
+            then_branch: Box::new(Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("new_state".to_string())),
+            )),
+            else_branch: Some(Box::new(Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("s".to_string())),
+            ))),
+        };
+
+        analyzer.analyze_expression(&expr, &mut tracker, &output_params);
+
+        // Both branches should have recorded the assignment
+        // (tracker doesn't track which branch, just that it was assigned)
+        assert!(tracker.is_assigned("s_", &MemberPath::Root));
     }
 }

@@ -6,7 +6,7 @@
 
 use crate::ast::{
     Binding, BinOp, Expr, Generics, GenericParam, Literal, MatchArm, Parameter, Path, Pattern,
-    SpecFunction, Type, TypeBound,
+    SpecFunction, Type, TypeBound, VariableMode,
 };
 use crate::error::{TranspileError, TranspileResult};
 
@@ -218,13 +218,34 @@ impl<'a> VerusBlockParser<'a> {
         };
         self.skip_whitespace();
 
-        // Parse recommends clause (optional)
-        let recommends = if self.try_consume("recommends") {
+        // Parse function contract clauses (requires, ensures, recommends, decreases)
+        let mut requires = Vec::new();
+        let mut ensures = Vec::new();
+        let mut recommends = Vec::new();
+        let mut decreases = Vec::new();
+
+        loop {
             self.skip_whitespace();
-            self.parse_expr_list_until_brace()?
-        } else {
-            Vec::new()
-        };
+            if self.peek() == Some('{') {
+                break;
+            }
+
+            if self.try_consume("requires") {
+                self.skip_whitespace();
+                requires.extend(self.parse_expr_list_until_clause()?);
+            } else if self.try_consume("ensures") {
+                self.skip_whitespace();
+                ensures.extend(self.parse_expr_list_until_clause()?);
+            } else if self.try_consume("recommends") {
+                self.skip_whitespace();
+                recommends.extend(self.parse_expr_list_until_clause()?);
+            } else if self.try_consume("decreases") {
+                self.skip_whitespace();
+                decreases.extend(self.parse_expr_list_until_clause()?);
+            } else {
+                break;
+            }
+        }
         self.skip_whitespace();
 
         // Parse function body
@@ -237,7 +258,10 @@ impl<'a> VerusBlockParser<'a> {
             generics,
             params,
             return_type,
+            requires,
+            ensures,
             recommends,
+            decreases,
             body,
             span: None,
         }))
@@ -335,6 +359,17 @@ impl<'a> VerusBlockParser<'a> {
                 break;
             }
 
+            // Check for ghost/tracked mode
+            let variable_mode = if self.try_consume("Ghost") || self.try_consume("ghost") {
+                self.skip_whitespace();
+                VariableMode::Ghost
+            } else if self.try_consume("Tracked") || self.try_consume("tracked") {
+                self.skip_whitespace();
+                VariableMode::Tracked
+            } else {
+                VariableMode::Exec
+            };
+
             // Parse parameter name
             let name = self.parse_identifier()?;
             self.skip_whitespace();
@@ -351,6 +386,7 @@ impl<'a> VerusBlockParser<'a> {
                 name,
                 ty,
                 mode: None,
+                variable_mode,
                 span: None,
             });
 
@@ -472,17 +508,46 @@ impl<'a> VerusBlockParser<'a> {
         }
     }
 
-    /// Parse expressions until we hit an opening brace
-    fn parse_expr_list_until_brace(&mut self) -> TranspileResult<Vec<Expr>> {
+    /// Parse expressions until we hit another clause keyword or opening brace
+    /// This handles the Verus style where clauses can span multiple expressions
+    fn parse_expr_list_until_clause(&mut self) -> TranspileResult<Vec<Expr>> {
         let mut exprs = Vec::new();
 
-        while self.peek() != Some('{') {
+        loop {
+            self.skip_whitespace();
+
+            // Stop at opening brace or another clause keyword
+            if self.peek() == Some('{') {
+                break;
+            }
+
+            // Check for clause keywords
+            let keywords = ["requires", "ensures", "recommends", "decreases", "when", "via"];
+            let is_keyword = keywords.iter().any(|kw| {
+                if self.pos + kw.len() <= self.content.len()
+                    && &self.content[self.pos..self.pos + kw.len()] == *kw
+                {
+                    // Make sure it's not part of a longer identifier
+                    self.content[self.pos + kw.len()..]
+                        .chars()
+                        .next()
+                        .map(|c| !c.is_alphanumeric() && c != '_')
+                        .unwrap_or(true)
+                } else {
+                    false
+                }
+            });
+
+            if is_keyword {
+                break;
+            }
+
             exprs.push(self.parse_expression()?);
             self.skip_whitespace();
+
             if !self.try_consume(",") {
                 break;
             }
-            self.skip_whitespace();
         }
 
         Ok(exprs)
@@ -970,6 +1035,17 @@ impl<'a> VerusBlockParser<'a> {
     fn parse_let_expr(&mut self) -> TranspileResult<Expr> {
         self.skip_whitespace();
 
+        // Check for ghost/tracked mode
+        let variable_mode = if self.try_consume("Ghost") || self.try_consume("ghost") {
+            self.skip_whitespace();
+            VariableMode::Ghost
+        } else if self.try_consume("Tracked") || self.try_consume("tracked") {
+            self.skip_whitespace();
+            VariableMode::Tracked
+        } else {
+            VariableMode::Exec
+        };
+
         let name = self.parse_identifier()?;
         self.skip_whitespace();
 
@@ -998,7 +1074,7 @@ impl<'a> VerusBlockParser<'a> {
         };
 
         Ok(Expr::Let {
-            binding: Binding { name, ty },
+            binding: Binding { name, ty, variable_mode },
             value: Box::new(value),
             body: Box::new(body),
         })
@@ -1026,15 +1102,8 @@ impl<'a> VerusBlockParser<'a> {
         self.expect('|')?;
         self.skip_whitespace();
 
-        // Parse optional trigger
-        let triggers = if self.try_consume("#![auto]") || self.try_consume("#![trigger") {
-            // Skip trigger specification for now
-            self.skip_until_pattern("]");
-            self.try_consume("]");
-            Vec::new()
-        } else {
-            Vec::new()
-        };
+        // Parse optional trigger annotations
+        let triggers = self.parse_triggers()?;
         self.skip_whitespace();
 
         // Parse body
@@ -1045,6 +1114,61 @@ impl<'a> VerusBlockParser<'a> {
             triggers,
             body: Box::new(body),
         })
+    }
+
+    /// Parse trigger annotations for quantifiers
+    /// Supports: #![auto], #![trigger expr1, expr2], #[trigger] expr
+    fn parse_triggers(&mut self) -> TranspileResult<Vec<crate::ast::Trigger>> {
+        let mut triggers = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+
+            // Check for #![auto] - automatic trigger selection
+            if self.try_consume("#![auto]") {
+                // #![auto] means Verus picks triggers automatically
+                // We represent this as an empty trigger list for now
+                continue;
+            }
+
+            // Check for #![trigger expr1, expr2, ...]
+            if self.try_consume("#![trigger") {
+                self.skip_whitespace();
+                let mut exprs = Vec::new();
+
+                // Parse trigger expressions until ]
+                loop {
+                    self.skip_whitespace();
+                    if self.peek() == Some(']') {
+                        break;
+                    }
+
+                    exprs.push(self.parse_expression()?);
+                    self.skip_whitespace();
+
+                    if !self.try_consume(",") {
+                        break;
+                    }
+                }
+
+                self.expect(']')?;
+                triggers.push(crate::ast::Trigger { exprs });
+                continue;
+            }
+
+            // Check for #[trigger] prefix on the next expression
+            if self.try_consume("#[trigger]") {
+                self.skip_whitespace();
+                // The next expression is a trigger
+                let expr = self.parse_primary_expr()?;
+                triggers.push(crate::ast::Trigger { exprs: vec![expr] });
+                continue;
+            }
+
+            break;
+        }
+
+        Ok(triggers)
     }
 
     /// Parse exists expression
@@ -1086,7 +1210,11 @@ impl<'a> VerusBlockParser<'a> {
                 None
             };
 
-            bindings.push(Binding { name, ty });
+            bindings.push(Binding {
+                name,
+                ty,
+                variable_mode: VariableMode::Exec,
+            });
 
             self.skip_whitespace();
             if !self.try_consume(",") {
@@ -1733,6 +1861,125 @@ mod tests {
                 assert!(matches!(**left, Expr::Arrow(_, _)));
             }
             _ => panic!("Expected equality with arrow expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_requires_ensures_decreases() {
+        let source = r#"
+        verus! {
+            pub open spec fn recursive_fn(n: nat) -> nat
+                requires n >= 0
+                ensures result >= n
+                decreases n
+            {
+                if n == 0 {
+                    0
+                } else {
+                    n
+                }
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        let func = &funcs[0];
+        assert_eq!(func.name, "recursive_fn");
+
+        // Check requires clause
+        assert_eq!(func.requires.len(), 1);
+
+        // Check ensures clause
+        assert_eq!(func.ensures.len(), 1);
+
+        // Check decreases clause
+        assert_eq!(func.decreases.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_ghost_parameter() {
+        let source = r#"
+        verus! {
+            pub open spec fn with_ghost_param(x: int, Ghost g: int) -> bool {
+                x + g == 0
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        let func = &funcs[0];
+        assert_eq!(func.params.len(), 2);
+
+        // First param is exec mode
+        assert_eq!(func.params[0].name, "x");
+        assert_eq!(func.params[0].variable_mode, VariableMode::Exec);
+
+        // Second param is ghost mode
+        assert_eq!(func.params[1].name, "g");
+        assert_eq!(func.params[1].variable_mode, VariableMode::Ghost);
+    }
+
+    #[test]
+    fn test_parse_tracked_parameter() {
+        let source = r#"
+        verus! {
+            pub open spec fn with_tracked_param(Tracked t: Token) -> bool {
+                t.valid()
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        let func = &funcs[0];
+        assert_eq!(func.params.len(), 1);
+        assert_eq!(func.params[0].name, "t");
+        assert_eq!(func.params[0].variable_mode, VariableMode::Tracked);
+    }
+
+    #[test]
+    fn test_parse_forall_with_trigger() {
+        let source = r#"
+        verus! {
+            pub open spec fn with_trigger(s: Seq<int>) -> bool {
+                forall |i: int| #![trigger s[i]] 0 <= i < s.len() ==> s[i] >= 0
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        match &funcs[0].body {
+            Expr::Forall { vars, triggers, .. } => {
+                assert_eq!(vars.len(), 1);
+                assert_eq!(vars[0].name, "i");
+                // We should have parsed the trigger
+                assert_eq!(triggers.len(), 1);
+                assert_eq!(triggers[0].exprs.len(), 1);
+            }
+            _ => panic!("Expected forall expression"),
         }
     }
 }

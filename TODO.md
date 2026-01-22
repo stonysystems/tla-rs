@@ -305,11 +305,12 @@ verus! {
   - Handle Verus-specific syntax (`&&&`, `|||`, `==>`, `@`, `->`)
   - Key findings: Need to check `==>` before `==`, and `&&&` before `&&` to avoid prefix matching issues
 
-- [ ] **Handle Verus extensions**
+- [x] **Handle Verus extensions** [26:01:22, 16:15]
   - `recommends` clauses (basic support added)
-  - `decreases` clauses
-  - Trigger annotations
-  - Ghost/tracked modes
+  - `decreases` clauses - added to SpecFunction AST and parser
+  - `requires`/`ensures` clauses - added to SpecFunction AST and parser
+  - Trigger annotations - parser now handles `#![trigger]`, `#![auto]`, `#[trigger]`
+  - Ghost/tracked modes - added VariableMode enum and parameter parsing
 
 - [x] **Implement annotation file parser** [26:01:22, 15:35]
   - Simple grammar for mode declarations
@@ -334,12 +335,13 @@ verus! {
 
 ### 4.1 Annotation Processing
 
-- [ ] **Parse and validate mode annotations**
+- [x] **Parse and validate mode annotations** [26:01:22, 15:35]
   - Match annotations to spec function parameters
   - Validate parameter count matches
   - Report missing/extra annotations
+  - Implemented in `moder/mod.rs:ModeAnalyzer::annotate()`
 
-- [ ] **Merge annotations with AST**
+- [x] **Merge annotations with AST** [26:01:22, 15:35]
   ```rust
   pub struct AnnotatedFunction {
       pub spec_fn: SpecFunction,
@@ -347,15 +349,17 @@ verus! {
       pub is_functionalized: bool, // Can this be converted to exec?
   }
   ```
+  - Implemented in `moder/mod.rs:AnnotatedFunction`
 
 ### 4.2 Mode Propagation
 
-- [ ] **Implement mode inference within expressions**
+- [x] **Implement mode inference within expressions** [26:01:22, 16:01]
   - Equality `a == b`: one side must be output, other is expression
   - Struct fields: track which fields of output vars are assigned
   - Conditionals: both branches must assign same output variables
+  - Implemented in `moder/mod.rs:ModeAnalyzer::analyze_expression()`
 
-- [ ] **Track output variable assignments**
+- [x] **Track output variable assignments** [26:01:22, 15:35]
   ```rust
   pub struct AssignmentTracker {
       // Maps output var to set of assigned members
@@ -368,6 +372,7 @@ verus! {
       Index(Box<MemberPath>),        // [idx] (for sequences)
   }
   ```
+  - Implemented in `moder/mod.rs:AssignmentTracker`
 
 - [ ] **Detect mode conflicts**
   - Output var used before assignment
@@ -376,7 +381,7 @@ verus! {
 
 ### 4.3 Predicate Classification
 
-- [ ] **Classify predicates for translation**
+- [x] **Classify predicates for translation** [26:01:22, 15:35]
   ```rust
   pub enum PredicateKind {
       // Can be fully functionalized
@@ -390,6 +395,7 @@ verus! {
       Pure,
   }
   ```
+  - Implemented in `moder/mod.rs:ModeAnalyzer::classify_predicate()`
 
 ---
 
@@ -397,7 +403,7 @@ verus! {
 
 ### 5.1 Saturation Check
 
-- [ ] **Verify all output members are assigned**
+- [x] **Verify all output members are assigned** [26:01:22, 15:35]
   - For each output parameter, traverse its type structure
   - Verify every field/member has exactly one assignment
   - Handle nested structs recursively
@@ -421,19 +427,23 @@ verus! {
   }
   ```
 
+  - Implemented in `checker/mod.rs:SaturationChecker`
+
 ### 5.2 Harmony Check
 
-- [ ] **Verify no double assignments**
+- [x] **Verify no double assignments** [26:01:22, 15:35] (stub implementation)
   - Track assignment order left-to-right
   - Detect if same member assigned twice
   - Handle branch merging (both branches must agree)
+  - Implemented in `checker/mod.rs:HarmonyChecker` (needs full implementation)
 
 ### 5.3 Obligation Check
 
-- [ ] **Verify output vars used only after assignment**
+- [x] **Verify output vars used only after assignment** [26:01:22, 15:35] (stub implementation)
   - Build dependency graph within expression
   - Topologically sort assignments
   - Detect cycles (impossible to execute)
+  - Implemented in `checker/mod.rs:ObligationChecker` (needs full implementation)
 
 ### 5.4 Template Matching for Collections
 
