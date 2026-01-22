@@ -685,9 +685,11 @@ verus! {
 
 ### 9.3 IDE Support
 
-- [ ] **LSP integration considerations**
+- [ ] **LSP integration considerations** [DEFERRED - pending Verus integration]
   - Jump from generated code to spec
   - Error highlighting in spec files
+  - See `docs/dev/ide-support-plan.md` for implementation plan
+  - Recommended: Start with VS Code extension using CLI diagnostics
 
 ### 9.4 Documentation
 
