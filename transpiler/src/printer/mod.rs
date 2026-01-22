@@ -289,6 +289,43 @@ impl Printer {
                 self.indent();
                 self.write("}");
             }
+
+            ExecExpr::StructUpdate { base, fields } => {
+                // Get the struct name from the base (if it's a clone of a var)
+                let base_str = {
+                    let mut p = Printer::new(self.config.clone());
+                    p.print_expr(base);
+                    p.output
+                };
+
+                // For struct update, we need to figure out the type name
+                // Since we're typically doing SomeType { fields, ..base }, we need the type
+                self.write("{ ");
+                for (field_name, field_value) in fields {
+                    self.write(field_name);
+                    self.write(": ");
+                    self.print_expr(field_value);
+                    self.write(", ");
+                }
+                self.write("..");
+                self.write(&base_str);
+                self.write(" }");
+            }
+
+            ExecExpr::Binary { lhs, op, rhs } => {
+                self.write("(");
+                self.print_expr(lhs);
+                self.write(" ");
+                self.write(op);
+                self.write(" ");
+                self.print_expr(rhs);
+                self.write(")");
+            }
+
+            ExecExpr::Unary { op, expr } => {
+                self.write(op);
+                self.print_expr(expr);
+            }
         }
     }
 

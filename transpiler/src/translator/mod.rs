@@ -126,6 +126,11 @@ pub enum ExecExpr {
         name: String,
         fields: Vec<(String, ExecExpr)>,
     },
+    /// Struct update (..base syntax)
+    StructUpdate {
+        base: Box<ExecExpr>,
+        fields: Vec<(String, ExecExpr)>,
+    },
     /// Clone call
     Clone(Box<ExecExpr>),
     /// Field access
@@ -140,6 +145,17 @@ pub enum ExecExpr {
     Call {
         func: String,
         args: Vec<ExecExpr>,
+    },
+    /// Binary operation
+    Binary {
+        lhs: Box<ExecExpr>,
+        op: String,
+        rhs: Box<ExecExpr>,
+    },
+    /// Unary operation
+    Unary {
+        op: String,
+        expr: Box<ExecExpr>,
     },
     /// Variable reference
     Var(String),
@@ -396,13 +412,23 @@ impl Translator {
     /// Transform a spec expression to an exec expression
     fn transform_expr(&self, expr: &Expr, ctx: &TransformContext) -> TranspileResult<ExecExpr> {
         match expr {
-            Expr::Literal(lit) => Ok(ExecExpr::Literal(format!("{:?}", lit))),
+            Expr::Literal(lit) => Ok(ExecExpr::Literal(self.format_literal(lit))),
 
             Expr::Ident(name) => Ok(ExecExpr::Var(name.clone())),
 
             Expr::Field(base, field) => {
                 let base_expr = self.transform_expr(base, ctx)?;
                 Ok(ExecExpr::Field(Box::new(base_expr), field.clone()))
+            }
+
+            Expr::Index(base, idx) => {
+                let base_expr = self.transform_expr(base, ctx)?;
+                let idx_expr = self.transform_expr(idx, ctx)?;
+                Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(base_expr),
+                    method: "index".to_string(),
+                    args: vec![idx_expr],
+                })
             }
 
             Expr::If { cond, then_branch, else_branch } => {
@@ -420,7 +446,12 @@ impl Translator {
             }
 
             Expr::Conjunction(exprs) => {
-                // Transform conjunction into a block of statements
+                // Check if this is a struct construction pattern (s_.f1 == e1 &&& s_.f2 == e2)
+                if let Some(struct_expr) = self.try_extract_struct_construction(exprs, ctx)? {
+                    return Ok(struct_expr);
+                }
+
+                // Otherwise transform as a block
                 let stmts: TranspileResult<Vec<_>> = exprs
                     .iter()
                     .map(|e| self.transform_expr(e, ctx))
@@ -428,22 +459,7 @@ impl Translator {
                 Ok(ExecExpr::Block(stmts?))
             }
 
-            Expr::Eq(lhs, rhs) => {
-                // Check if this is an assignment (output = expression)
-                if let Expr::Ident(name) = lhs.as_ref() {
-                    if ctx.is_output(name) {
-                        let value = self.transform_expr(rhs, ctx)?;
-                        return Ok(value); // The output is just the computed value
-                    }
-                }
-                // Otherwise it's a comparison
-                let lhs_expr = self.transform_expr(lhs, ctx)?;
-                let rhs_expr = self.transform_expr(rhs, ctx)?;
-                Ok(ExecExpr::Call {
-                    func: "eq".to_string(),
-                    args: vec![lhs_expr, rhs_expr],
-                })
-            }
+            Expr::Eq(lhs, rhs) => self.transform_equality(lhs, rhs, ctx),
 
             Expr::Call { func, args } => {
                 let translated_args: TranspileResult<Vec<_>> = args
@@ -457,7 +473,213 @@ impl Translator {
                 })
             }
 
+            Expr::MethodCall { receiver, method, args } => {
+                let recv_expr = self.transform_expr(receiver, ctx)?;
+                let translated_args: TranspileResult<Vec<_>> = args
+                    .iter()
+                    .map(|a| self.transform_expr(a, ctx))
+                    .collect();
+                Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(recv_expr),
+                    method: method.clone(),
+                    args: translated_args?,
+                })
+            }
+
+            Expr::Let { binding, value, body } => {
+                let value_expr = self.transform_expr(value, ctx)?;
+                let body_expr = self.transform_expr(body, ctx)?;
+                Ok(ExecExpr::Block(vec![
+                    ExecExpr::Let {
+                        name: binding.name.clone(),
+                        ty: None,
+                        value: Box::new(value_expr),
+                    },
+                    body_expr,
+                ]))
+            }
+
+            Expr::Match { scrutinee, arms } => {
+                let scrut_expr = self.transform_expr(scrutinee, ctx)?;
+                let mut translated_arms = Vec::new();
+                for arm in arms {
+                    let pattern = self.format_pattern(&arm.pattern);
+                    let body = self.transform_expr(&arm.body, ctx)?;
+                    translated_arms.push((pattern, body));
+                }
+                Ok(ExecExpr::Match {
+                    scrutinee: Box::new(scrut_expr),
+                    arms: translated_arms,
+                })
+            }
+
+            Expr::View(inner) => {
+                // @ operator - in exec code, this is typically just the value
+                // For exec types, we don't need the view in most cases
+                self.transform_expr(inner, ctx)
+            }
+
+            Expr::Arrow(base, field) => {
+                // -> operator (enum variant field access)
+                // In exec code: base.get_field() or match-based access
+                let base_expr = self.transform_expr(base, ctx)?;
+                Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(base_expr),
+                    method: format!("get_{}", field),
+                    args: vec![],
+                })
+            }
+
+            Expr::Struct { name, fields } => {
+                let exec_name = self.translate_name(name.last().unwrap_or("Unknown"));
+                let translated_fields: TranspileResult<Vec<_>> = fields
+                    .iter()
+                    .map(|(fname, fexpr)| {
+                        let expr = self.transform_expr(fexpr, ctx)?;
+                        Ok((fname.clone(), expr))
+                    })
+                    .collect();
+                Ok(ExecExpr::Struct {
+                    name: exec_name,
+                    fields: translated_fields?,
+                })
+            }
+
+            Expr::StructUpdate { base, fields } => {
+                let base_expr = self.transform_expr(base, ctx)?;
+                let translated_fields: TranspileResult<Vec<_>> = fields
+                    .iter()
+                    .map(|(fname, fexpr)| {
+                        let expr = self.transform_expr(fexpr, ctx)?;
+                        Ok((fname.clone(), expr))
+                    })
+                    .collect();
+                Ok(ExecExpr::StructUpdate {
+                    base: Box::new(base_expr),
+                    fields: translated_fields?,
+                })
+            }
+
+            // Binary operators from Expr::Binary
+            Expr::Binary(lhs, op, rhs) => {
+                let op_str = match op {
+                    crate::ast::BinOp::Add => "+",
+                    crate::ast::BinOp::Sub => "-",
+                    crate::ast::BinOp::Mul => "*",
+                    crate::ast::BinOp::Div => "/",
+                    crate::ast::BinOp::Mod => "%",
+                    crate::ast::BinOp::And => "&&",
+                    crate::ast::BinOp::Or => "||",
+                    crate::ast::BinOp::BitAnd => "&",
+                    crate::ast::BinOp::BitOr => "|",
+                    crate::ast::BinOp::BitXor => "^",
+                    crate::ast::BinOp::Shl => "<<",
+                    crate::ast::BinOp::Shr => ">>",
+                };
+                self.transform_binary_op(lhs, rhs, op_str, ctx)
+            }
+
+            // Comparison operators as dedicated AST nodes
+            Expr::Lt(lhs, rhs) => self.transform_binary_op(lhs, rhs, "<", ctx),
+            Expr::Le(lhs, rhs) => self.transform_binary_op(lhs, rhs, "<=", ctx),
+            Expr::Gt(lhs, rhs) => self.transform_binary_op(lhs, rhs, ">", ctx),
+            Expr::Ge(lhs, rhs) => self.transform_binary_op(lhs, rhs, ">=", ctx),
+            Expr::Ne(lhs, rhs) => self.transform_binary_op(lhs, rhs, "!=", ctx),
+
+            // Unary operators
+            Expr::Not(inner) => {
+                let inner_expr = self.transform_expr(inner, ctx)?;
+                Ok(ExecExpr::Unary {
+                    op: "!".to_string(),
+                    expr: Box::new(inner_expr),
+                })
+            }
+
+            Expr::Unary(op, inner) => {
+                let inner_expr = self.transform_expr(inner, ctx)?;
+                let op_str = match op {
+                    crate::ast::UnaryOp::Not => "!",
+                    crate::ast::UnaryOp::Neg => "-",
+                    crate::ast::UnaryOp::Deref => "*",
+                };
+                Ok(ExecExpr::Unary {
+                    op: op_str.to_string(),
+                    expr: Box::new(inner_expr),
+                })
+            }
+
+            Expr::Implies(lhs, rhs) => {
+                // a ==> b is equivalent to !a || b
+                let lhs_expr = self.transform_expr(lhs, ctx)?;
+                let rhs_expr = self.transform_expr(rhs, ctx)?;
+                Ok(ExecExpr::Binary {
+                    lhs: Box::new(ExecExpr::Unary {
+                        op: "!".to_string(),
+                        expr: Box::new(lhs_expr),
+                    }),
+                    op: "||".to_string(),
+                    rhs: Box::new(rhs_expr),
+                })
+            }
+
+            Expr::Disjunction(exprs) => {
+                // Transform ||| to chain of ||
+                if exprs.is_empty() {
+                    return Ok(ExecExpr::Literal("false".to_string()));
+                }
+                let mut result = self.transform_expr(&exprs[0], ctx)?;
+                for e in &exprs[1..] {
+                    let next = self.transform_expr(e, ctx)?;
+                    result = ExecExpr::Binary {
+                        lhs: Box::new(result),
+                        op: "||".to_string(),
+                        rhs: Box::new(next),
+                    };
+                }
+                Ok(result)
+            }
+
             Expr::SeqEmpty => Ok(ExecExpr::VecLit(vec![])),
+
+            Expr::SetEmpty => Ok(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("HashSet".to_string())),
+                method: "new".to_string(),
+                args: vec![],
+            }),
+
+            Expr::MapEmpty => Ok(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("HashMap".to_string())),
+                method: "new".to_string(),
+                args: vec![],
+            }),
+
+            Expr::SetLit(elems) => {
+                // Generate HashSet::from([...])
+                let translated: TranspileResult<Vec<_>> = elems
+                    .iter()
+                    .map(|e| self.transform_expr(e, ctx))
+                    .collect();
+                Ok(ExecExpr::Call {
+                    func: "HashSet::from".to_string(),
+                    args: vec![ExecExpr::VecLit(translated?)],
+                })
+            }
+
+            Expr::MapLit(pairs) => {
+                // Generate HashMap::from([...])
+                let translated: TranspileResult<Vec<_>> = pairs
+                    .iter()
+                    .map(|(k, v)| {
+                        let key = self.transform_expr(k, ctx)?;
+                        let val = self.transform_expr(v, ctx)?;
+                        Ok(ExecExpr::Tuple(vec![key, val]))
+                    })
+                    .collect();
+                Ok(ExecExpr::Call {
+                    func: "HashMap::from".to_string(),
+                    args: vec![ExecExpr::VecLit(translated?)],
+                })
+            }
 
             Expr::SeqLit(elems) => {
                 let translated: TranspileResult<Vec<_>> = elems
@@ -467,12 +689,224 @@ impl Translator {
                 Ok(ExecExpr::VecLit(translated?))
             }
 
-            // TODO: Handle more expression types
+            Expr::Forall { vars, body, .. } => {
+                // Forall in exec code needs template matching
+                Err(TranspileError::UnsupportedPattern {
+                    message: format!(
+                        "Forall quantifier with vars {:?} requires template matching",
+                        vars.iter().map(|v| &v.name).collect::<Vec<_>>()
+                    ),
+                    span: None,
+                    help: Some("Use checker module to match this to a known template".to_string()),
+                })
+            }
+
+            Expr::Exists { vars, .. } => {
+                Err(TranspileError::UnsupportedPattern {
+                    message: format!(
+                        "Exists quantifier with vars {:?} cannot be directly translated",
+                        vars.iter().map(|v| &v.name).collect::<Vec<_>>()
+                    ),
+                    span: None,
+                    help: Some("Consider using choose! macro or restructuring".to_string()),
+                })
+            }
+
             _ => Err(TranspileError::UnsupportedPattern {
                 message: format!("Unsupported expression type: {:?}", std::mem::discriminant(expr)),
                 span: None,
                 help: Some("This pattern may need manual implementation".to_string()),
             }),
+        }
+    }
+
+    /// Transform an equality expression
+    fn transform_equality(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        // Check if this is a simple output assignment: s_ == expr
+        if let Expr::Ident(name) = lhs {
+            if ctx.is_output(name) {
+                // Check if rhs is also an identifier (copy case)
+                if let Expr::Ident(rhs_name) = rhs {
+                    if ctx.input_params.contains(rhs_name) {
+                        return Ok(ExecExpr::Clone(Box::new(ExecExpr::Var(rhs_name.clone()))));
+                    }
+                }
+                return self.transform_expr(rhs, ctx);
+            }
+        }
+
+        // Check if this is a field assignment: s_.field == expr
+        if let Expr::Field(base, _field) = lhs {
+            if let Expr::Ident(name) = base.as_ref() {
+                if ctx.is_output(name) {
+                    // This is a field assignment - will be collected by try_extract_struct_construction
+                    return self.transform_expr(rhs, ctx);
+                }
+            }
+        }
+
+        // Regular equality comparison
+        let lhs_expr = self.transform_expr(lhs, ctx)?;
+        let rhs_expr = self.transform_expr(rhs, ctx)?;
+        Ok(ExecExpr::Binary {
+            lhs: Box::new(lhs_expr),
+            op: "==".to_string(),
+            rhs: Box::new(rhs_expr),
+        })
+    }
+
+    /// Try to extract struct construction from a conjunction of field assignments
+    fn try_extract_struct_construction(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> TranspileResult<Option<ExecExpr>> {
+        let mut field_assignments: HashMap<String, Vec<(String, Expr)>> = HashMap::new();
+        let mut other_exprs = Vec::new();
+
+        for expr in exprs {
+            if let Expr::Eq(lhs, rhs) = expr {
+                if let Expr::Field(base, field) = lhs.as_ref() {
+                    if let Expr::Ident(name) = base.as_ref() {
+                        if ctx.is_output(name) {
+                            field_assignments
+                                .entry(name.clone())
+                                .or_default()
+                                .push((field.clone(), *rhs.clone()));
+                            continue;
+                        }
+                    }
+                }
+                // Check for s_ == s (full copy)
+                if let Expr::Ident(name) = lhs.as_ref() {
+                    if ctx.is_output(name) {
+                        // This handles s_ == s or s_ == expr
+                        other_exprs.push(expr.clone());
+                        continue;
+                    }
+                }
+            }
+            other_exprs.push(expr.clone());
+        }
+
+        // If we have field assignments, construct the struct
+        if !field_assignments.is_empty() {
+            let mut results = Vec::new();
+
+            for (output_name, fields) in field_assignments {
+                // Find the input variable this is based on (usually same name without _)
+                let base_name = output_name.trim_end_matches('_');
+                let base_input = if ctx.input_params.contains(&base_name.to_string()) {
+                    Some(base_name.to_string())
+                } else {
+                    None
+                };
+
+                // Translate field expressions
+                let translated_fields: TranspileResult<Vec<_>> = fields
+                    .into_iter()
+                    .map(|(fname, fexpr)| {
+                        let expr = self.transform_expr(&fexpr, ctx)?;
+                        Ok((fname, expr))
+                    })
+                    .collect();
+                let translated_fields = translated_fields?;
+
+                if let Some(base) = base_input {
+                    // Struct update syntax: S { field: value, ..base.clone() }
+                    results.push(ExecExpr::StructUpdate {
+                        base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(base)))),
+                        fields: translated_fields,
+                    });
+                } else {
+                    // Need to infer struct name from type information
+                    // For now, generate a struct literal
+                    let struct_name = self.translate_name(&output_name.trim_end_matches('_').to_string());
+                    results.push(ExecExpr::Struct {
+                        name: struct_name,
+                        fields: translated_fields,
+                    });
+                }
+            }
+
+            // Add any other expressions
+            for expr in other_exprs {
+                results.push(self.transform_expr(&expr, ctx)?);
+            }
+
+            if results.len() == 1 {
+                return Ok(Some(results.into_iter().next().unwrap()));
+            } else {
+                return Ok(Some(ExecExpr::Tuple(results)));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Transform a binary operation
+    fn transform_binary_op(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        op: &str,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        let lhs_expr = self.transform_expr(lhs, ctx)?;
+        let rhs_expr = self.transform_expr(rhs, ctx)?;
+        Ok(ExecExpr::Binary {
+            lhs: Box::new(lhs_expr),
+            op: op.to_string(),
+            rhs: Box::new(rhs_expr),
+        })
+    }
+
+    /// Format a literal value
+    fn format_literal(&self, lit: &crate::ast::Literal) -> String {
+        match lit {
+            crate::ast::Literal::Bool(b) => b.to_string(),
+            crate::ast::Literal::Int(i) => i.to_string(),
+            crate::ast::Literal::String(s) => format!("\"{}\"", s),
+        }
+    }
+
+    /// Format a pattern for match arms
+    fn format_pattern(&self, pattern: &crate::ast::Pattern) -> String {
+        match pattern {
+            crate::ast::Pattern::Wildcard => "_".to_string(),
+            crate::ast::Pattern::Ident(name) => name.clone(),
+            crate::ast::Pattern::Tuple(patterns) => {
+                let parts: Vec<_> = patterns.iter().map(|p| self.format_pattern(p)).collect();
+                format!("({})", parts.join(", "))
+            }
+            crate::ast::Pattern::Struct { name, fields } => {
+                let field_strs: Vec<_> = fields
+                    .iter()
+                    .map(|(fname, fpat)| format!("{}: {}", fname, self.format_pattern(fpat)))
+                    .collect();
+                format!(
+                    "{} {{ {} }}",
+                    self.translate_name(name.last().unwrap_or("Unknown")),
+                    field_strs.join(", ")
+                )
+            }
+            crate::ast::Pattern::Variant { name, fields } => {
+                let variant_name = self.translate_name(name.last().unwrap_or("Unknown"));
+                if fields.is_empty() {
+                    variant_name
+                } else {
+                    let field_strs: Vec<_> = fields.iter()
+                        .map(|p| self.format_pattern(p))
+                        .collect();
+                    format!("{}({})", variant_name, field_strs.join(", "))
+                }
+            }
+            crate::ast::Pattern::Literal(lit) => self.format_literal(lit),
         }
     }
 }
@@ -486,7 +920,7 @@ impl Default for Translator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::Path;
+    use crate::ast::{Literal, Path};
 
     #[test]
     fn test_translate_name() {
@@ -518,5 +952,99 @@ mod tests {
             ExecType::Vec(Box::new(ExecType::Named("CPacket".to_string()))),
         ]);
         assert_eq!(tuple.to_rust_string(), "(CAcceptor, Vec<CPacket>)");
+    }
+
+    fn make_ctx() -> TransformContext<'static> {
+        static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+        TransformContext {
+            config: CONFIG.get_or_init(TranslatorConfig::default),
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "inp".to_string()],
+        }
+    }
+
+    #[test]
+    fn test_transform_literal() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::Literal(Literal::Int(42));
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        assert!(matches!(result, ExecExpr::Literal(s) if s == "42"));
+    }
+
+    #[test]
+    fn test_transform_field_access() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::Field(
+            Box::new(Expr::Ident("s".to_string())),
+            "max_bal".to_string(),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match result {
+            ExecExpr::Field(base, field) => {
+                assert_eq!(field, "max_bal");
+                assert!(matches!(*base, ExecExpr::Var(name) if name == "s"));
+            }
+            _ => panic!("Expected Field, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_if_else() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(true))),
+            then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+            else_branch: Some(Box::new(Expr::Literal(Literal::Int(2)))),
+        };
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        assert!(matches!(result, ExecExpr::If { .. }));
+    }
+
+    #[test]
+    fn test_transform_binary_comparison() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::Lt(
+            Box::new(Expr::Ident("a".to_string())),
+            Box::new(Expr::Ident("b".to_string())),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match result {
+            ExecExpr::Binary { op, .. } => {
+                assert_eq!(op, "<");
+            }
+            _ => panic!("Expected Binary, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_clone_output() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        // s_ == s should produce clone
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("s_".to_string())),
+            Box::new(Expr::Ident("s".to_string())),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        assert!(matches!(result, ExecExpr::Clone(_)));
+    }
+
+    #[test]
+    fn test_transform_seq_empty() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::SeqEmpty;
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        assert!(matches!(result, ExecExpr::VecLit(v) if v.is_empty()));
     }
 }
