@@ -750,11 +750,15 @@ mode annotations, and basic expression transformation.
 - [x] Test transpiler with quantifier predicates [26:01:23, 01:45]
 - [x] Test transpiler with seq.update() pattern [26:01:23, 01:50]
 - [x] Test transpiler with map.insert/seq.push patterns [26:01:23, 02:00]
-- [ ] Handle remaining RSL protocol predicates (cross-component dispatching)
+- [x] Test cross-component dispatch predicates [26:01:23, 16:30]
+  - ✅ `LAcceptorTruncateLog` - map filtering with conditional (4 verified)
+  - ✅ `LProposerProcess1b` - set addition pattern (5 verified)
+  - ✅ `LReplicaNextProcess1b` - cross-component dispatch to both Proposer and Acceptor (7 verified)
+- [ ] Handle remaining RSL protocol predicates (multi-component orchestration)
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: All core predicate patterns working. 18 Verus examples verified (133 total verifications).
+**Status**: Cross-component dispatch pattern tested. 21 Verus examples verified (145 total verifications).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
@@ -766,6 +770,9 @@ mode annotations, and basic expression transformation.
 - Disjunction patterns (||| at spec level with alternative implementations)
 - Index computation (GetReplicaIndex via choose matched with find_index)
 - Broadcast pattern (LBroadcastToEveryone - sending packets to all replicas)
+- Set addition pattern (received_1b_packets + set![p])
+- Map filtering with conditional (RemoveVotesBefore, LAcceptorTruncateLog)
+- Cross-component dispatch (LReplicaNextProcess1b - routes to Proposer AND Acceptor)
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -807,6 +814,9 @@ mode annotations, and basic expression transformation.
 - `lock_node_accept_complete.rs` - Lock service NodeAccept with disjunction (13 verified)
 - `acceptor_heartbeat_complete.rs` - RSL AcceptorProcessHeartbeat with seq.update and index computation (20 verified)
 - `broadcast_complete.rs` - RSL LBroadcastToEveryone pattern (7 verified)
+- `acceptor_truncate_complete.rs` - LAcceptorTruncateLog with map filtering (4 verified)
+- `proposer_process1b_complete.rs` - LProposerProcess1b with set addition (5 verified)
+- `replica_process1b_complete.rs` - LReplicaNextProcess1b cross-component dispatch (7 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
