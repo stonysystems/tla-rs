@@ -740,24 +740,36 @@ mode annotations, and basic expression transformation.
 **Status**: Template-based code generation for collections implemented.
 
 ### Milestone 4: Full RSL - IN PROGRESS
+- [x] Test transpiler on simplified RSL predicates [26:01:23, 00:45]
+- [ ] Handle complex nested struct updates (requires parser fix)
 - [ ] Handle all RSL protocol predicates
-- [ ] Complex nested updates
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: Foundation complete. Ready for RSL protocol integration.
+**Status**: Initial RSL testing complete. Flat struct predicates work; nested structs need parser enhancement.
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
 - [x] Migrate main codebase to Verus 0.2026.01.14 API (Priority 2 - 2026-01-23)
 - [x] Create working end-to-end example (Priority 3 - 2026-01-23)
 
-**Working examples**: See `transpiler/verus_examples/` for verified examples.
+**RSL Testing Results [26:01:23, 00:45]**:
+- ✅ Simplified `LAcceptorInit` with flat struct: Transpiles and verifies (1 verified, 0 errors)
+- ❌ Nested struct predicates (`a.max_bal.seqno == 0`): Parser doesn't handle nested field assignments
+- ❌ Struct construction syntax (`Ballot { seqno: 0, ... }`): Parser error
+
+**Discovered Limitations**:
+1. **Nested field assignments not supported**: `a.max_bal.seqno == 0` is not recognized as struct construction
+2. **Inline struct construction**: `Ballot { seqno: 0, proposer_id: 0 }` causes parse error
+
+**Working examples**: See `transpiler/verus_examples/` for verified examples:
+- `simple_complete.rs` - Basic spec/exec with Node struct (4 verified)
+- `acceptor_init_complete.rs` - RSL-style acceptor init (1 verified)
 
 **Next steps**:
-- [ ] Test transpiler on actual RSL protocol predicates (LAcceptor, LProposer, etc.)
-- [ ] Handle complex nested struct updates with collections
-- [ ] Add support for multi-predicate call chains
+- [ ] Fix parser to handle struct construction syntax (`Type { field: val, ... }`)
+- [ ] Enhance translator to handle nested field assignments
+- [ ] Test with full RSL protocol predicates after parser fixes
 - [ ] Integrate runtime with C# FFI layer
 
 ### Milestone 5: Production Ready ✅ COMPLETE
@@ -883,6 +895,31 @@ Chose **Option A**: Migrated to new Verus API (v0.2026.01.14)
 ```bash
 /home/shuai/tools/verus-x86-linux/verus transpiler/verus_examples/simple_complete.rs
 ```
+
+### Priority 4: Fix Parser for Struct Construction - NEXT
+
+**Issue**: Parser fails on inline struct construction syntax:
+```rust
+Ballot { seqno: 0, proposer_id: 0 }  // Error: Expected '}', found 'Some('{')'
+```
+
+**Root cause**: Parser's `parse_primary` doesn't handle `Ident { ... }` as struct construction.
+
+**Fix needed in `transpiler/src/parser/mod.rs`**:
+- After parsing identifier, check for `{` to detect struct construction
+- Parse field-value pairs: `field_name: expr, ...`
+- Return `Expr::Struct { name, fields }`
+
+### Priority 5: Handle Nested Field Assignments - AFTER P4
+
+**Issue**: Translator doesn't recognize nested field assignments as struct construction:
+```rust
+a.max_bal.seqno == 0  // Not recognized as assigning to a.max_bal nested struct
+```
+
+**Fix needed in `transpiler/src/translator/mod.rs`**:
+- Enhance `try_extract_struct_construction` to handle `Expr::Field(Expr::Field(base, outer), inner)`
+- Build nested struct assignments: `max_bal: CBallot { seqno: 0, ... }`
 
 ### Priority 0: Fix CI Pipeline (BLOCKING) ✅ COMPLETE [26:01:22, 22:58]
 

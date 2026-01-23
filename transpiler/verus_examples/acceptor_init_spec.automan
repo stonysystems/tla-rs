@@ -1,0 +1,10 @@
+// Mode annotations for LAcceptorInit
+// - means output (to be computed)
+// + means input (given)
+
+module RSL::Acceptor {
+    // LAcceptorInit(a: LAcceptor, c: LReplicaConstants) -> bool
+    // a is output (the acceptor being initialized)
+    // c is input (the constants used for initialization)
+    LAcceptorInit(-, +);
+}
