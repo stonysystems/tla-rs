@@ -749,7 +749,7 @@ mode annotations, and basic expression transformation.
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: All core predicate patterns working. 12 Verus examples verified (55 total verifications).
+**Status**: All core predicate patterns working. 13 Verus examples verified (62 total verifications).
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -785,6 +785,7 @@ mode annotations, and basic expression transformation.
 - `seq_quantifier_complete.rs` - Sequence initialization with forall quantifier (3 verified)
 - `map_filter_complete.rs` - Map filtering with quantifier over domain (4 verified)
 - `seq_update_complete.rs` - Sequence update at index pattern (2 verified)
+- `map_insert_complete.rs` - Map insert and seq push patterns (7 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
