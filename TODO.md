@@ -754,7 +754,7 @@ mode annotations, and basic expression transformation.
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: All core predicate patterns working. 16 Verus examples verified (99 total verifications).
+**Status**: All core predicate patterns working. 17 Verus examples verified (126 total verifications).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
@@ -764,6 +764,7 @@ mode annotations, and basic expression transformation.
 - Cross-predicate calls (ElectionStateInit from LProposerInit)
 - I/O operations (Send/Receive enum variants, packet construction)
 - Disjunction patterns (||| at spec level with alternative implementations)
+- Index computation (GetReplicaIndex via choose matched with find_index)
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -803,6 +804,7 @@ mode annotations, and basic expression transformation.
 - `lock_node_init_complete.rs` - Lock service NodeInit (5 verified)
 - `lock_node_grant_complete.rs` - Lock service NodeGrant with I/O (6 verified)
 - `lock_node_accept_complete.rs` - Lock service NodeAccept with disjunction (13 verified)
+- `acceptor_heartbeat_complete.rs` - RSL AcceptorProcessHeartbeat with seq.update and index computation (20 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
