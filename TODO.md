@@ -739,13 +739,30 @@ mode annotations, and basic expression transformation.
 
 **Status**: Template-based code generation for collections implemented.
 
-### Milestone 4: Full RSL (requires Verus)
+### Milestone 4: Full RSL - IN PROGRESS
 - [ ] Handle all RSL protocol predicates
 - [ ] Complex nested updates
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: Blocked on Verus integration testing. Core infrastructure ready.
+**Status**: Verus 0.2026.01.14 installed and working. Testing revealed:
+
+1. **Main codebase needs migration** - The existing tla-rs code was written for an older Verus API
+   (uses `builtin::*` imports instead of `vstd::prelude::*`). ~214 compilation errors.
+
+2. **Transpiler generates invalid code** - Initial testing with simple specs shows the transpiler
+   produces syntactically invalid Rust:
+   - Missing struct names in construction (`Cs` instead of `CNode`)
+   - Incomplete expressions in if-branches
+   - Incorrect handling of field assignments in conditionals
+
+3. **Next steps**:
+   - [ ] Fix transpiler code generation bugs (struct construction, conditionals)
+   - [ ] Migrate main codebase to Verus 0.2026.01.14 API (or use older Verus)
+   - [ ] Create working end-to-end example
+   - [ ] Verify generated code passes Verus proofs
+
+See `transpiler/examples/` for test files.
 
 ### Milestone 5: Production Ready ✅ COMPLETE
 - [x] Robust error handling and reporting (DiagnosticAccumulator, error types)
@@ -814,3 +831,74 @@ mode annotations, and basic expression transformation.
 | Validation | Saturation/Harmony/Obligation | Same approach |
 | Collection Templates | Strict matching | Same approach |
 | Proof Linkage | ensures clauses | ensures clauses |
+
+---
+
+## Appendix D: Immediate Action Items (2026-01-22)
+
+### Environment Status
+- **Verus**: ✅ Installed at `/home/shuai/tools/verus-x86-linux/verus` (v0.2026.01.14.88f7396)
+- **Rust toolchain**: ✅ 1.92.0-x86_64-unknown-linux-gnu
+- **Transpiler**: ✅ Builds and passes all 120 tests
+- **Main codebase**: ❌ Does not compile with current Verus (API changes)
+
+### Priority 1: Fix Transpiler Code Generation Bugs ✅ COMPLETE
+
+**Fixed 2026-01-22**:
+- Bug 1: Struct name derivation now uses type information (CNode not Cs)
+- Bug 2: Struct construction from conjunctions in if-branches now works
+- Bug 3: StructUpdate syntax includes type name
+- Added support for chained comparisons (0 <= i < n)
+- Fixed parser operator precedence (implication, logical, comparison, additive, multiplicative)
+
+**Files modified**:
+- `transpiler/src/translator/mod.rs` - added output_types tracking, fixed struct extraction
+- `transpiler/src/ast/mod.rs` - added name field to StructUpdate
+- `transpiler/src/printer/mod.rs` - output struct name in StructUpdate
+- `transpiler/src/parser/mod.rs` - rewrote operator precedence, added chained comparisons
+
+### Priority 2: Migrate Main Codebase OR Use Compatible Verus
+
+**Option A**: Migrate to new Verus API
+- Replace `use builtin::*;` with `use vstd::prelude::*;`
+- Update ~50+ files with import changes
+- Fix any API incompatibilities
+
+**Option B**: Use older Verus version
+- The codebase was tested with Verus v0.2024.09.05.29e4da0
+- Download and install that version for testing
+
+### Priority 3: Create Working End-to-End Example
+
+1. Fix transpiler bugs
+2. Create `transpiler/examples/simple_spec.rs` with valid output
+3. Verify with: `/home/shuai/tools/verus-x86-linux/verus examples/simple_impl.rs`
+4. Ensure proofs discharge
+
+### Priority 0: Fix CI Pipeline (BLOCKING)
+
+**Issue**: CI fails on all jobs with error:
+```
+##[error]Unable to resolve action dtolnay/rust-action, repository not found
+```
+
+**Root cause**: `.github/workflows/ci.yml` uses wrong action name:
+- ❌ `dtolnay/rust-action@stable` (doesn't exist)
+- ✅ `dtolnay/rust-toolchain@stable` (correct name)
+
+**Fix**: Replace `dtolnay/rust-action` with `dtolnay/rust-toolchain` in all 3 jobs (test, lint, format).
+
+### Test Commands
+
+```bash
+# Run transpiler tests
+cd transpiler && cargo test
+
+# Run transpiler on example
+cargo run -- --input examples/simple_spec.rs \
+              --annotations examples/simple_spec.automan \
+              --output examples/simple_impl.rs
+
+# Verify generated code with Verus
+/home/shuai/tools/verus-x86-linux/verus examples/simple_impl.rs
+```
