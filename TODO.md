@@ -745,11 +745,19 @@ mode annotations, and basic expression transformation.
 - [x] Test transpiler with RSL Process predicates [26:01:23, 01:32]
 - [x] Test transpiler with quantifier predicates [26:01:23, 01:45]
 - [x] Test transpiler with seq.update() pattern [26:01:23, 01:50]
-- [ ] Handle all RSL protocol predicates (remaining complex ones)
-- [ ] Multi-predicate call chains
-- [ ] Runtime integration
+- [x] Test transpiler with map.insert/seq.push patterns [26:01:23, 02:00]
+- [ ] Handle remaining RSL protocol predicates (cross-component dispatching)
+- [ ] Full protocol integration tests
+- [ ] Runtime integration with C# FFI
 
 **Status**: All core predicate patterns working. 13 Verus examples verified (62 total verifications).
+
+**Predicate Patterns Tested**:
+- Init predicates (struct construction, collection empty)
+- Process predicates (conditionals, state updates)
+- Quantifier predicates (forall over seq/map)
+- Collection mutations (seq.update, seq.push, map.insert, map.remove)
+- Cross-predicate calls (ElectionStateInit from LProposerInit)
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
