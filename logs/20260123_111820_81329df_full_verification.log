@@ -1,0 +1,53 @@
+Full Verification Log - Fri Jan 23 11:18:20 AM EST 2026
+Commit: 81329df
+
+=== All Verus Examples Verification ===
+
+1. acceptor_heartbeat_complete.rs: 20 verified, 0 errors
+2. acceptor_init_complete.rs: 1 verified, 0 errors
+3. acceptor_nested_complete.rs: 2 verified, 0 errors
+4. acceptor_process1a_complete.rs: 12 verified, 0 errors
+5. acceptor_process2a_complete.rs: 2 verified, 0 errors
+6. acceptor_truncate_complete.rs: 4 verified, 0 errors
+7. broadcast_complete.rs: 7 verified, 0 errors
+8. executor_init_complete.rs: 5 verified, 0 errors
+9. learner_forget_complete.rs: 7 verified, 0 errors
+10. learner_init_complete.rs: 3 verified, 0 errors
+11. lock_node_accept_complete.rs: 13 verified, 0 errors
+12. lock_node_grant_complete.rs: 6 verified, 0 errors
+13. lock_node_init_complete.rs: 5 verified, 0 errors
+14. map_filter_complete.rs: 4 verified, 0 errors
+15. map_insert_complete.rs: 7 verified, 0 errors
+16. nested_fields_complete.rs: 2 verified, 0 errors
+17. proposer_init_complete.rs: 10 verified, 0 errors
+18. proposer_nominate_complete.rs: 5 verified, 0 errors
+19. proposer_process1b_complete.rs: 5 verified, 0 errors
+20. replica_maybe_execute_complete.rs: 8 verified, 0 errors
+21. replica_process1b_complete.rs: 7 verified, 0 errors
+22. replica_process_request_complete.rs: 8 verified, 0 errors
+23. seq_quantifier_complete.rs: 3 verified, 0 errors
+24. seq_update_complete.rs: 2 verified, 0 errors
+25. simple_complete.rs: 4 verified, 0 errors
+
+=== Summary ===
+Total Examples: 25
+Total Verifications: 152
+Total Errors: 0
+
+=== Patterns Covered ===
+- Init predicates (struct construction, collection empty)
+- Process predicates (conditionals, state updates)
+- Quantifier predicates (forall over seq/map)
+- Collection mutations (seq.update, seq.push, map.insert, map.remove)
+- Cross-predicate calls (ElectionStateInit from LProposerInit)
+- I/O operations (Send/Receive enum variants, packet construction)
+- Disjunction patterns (||| at spec level with alternative implementations)
+- Index computation (GetReplicaIndex via choose matched with find_index)
+- Broadcast pattern (LBroadcastToEveryone - sending packets to all replicas)
+- Set addition pattern (received_1b_packets + set![p])
+- Map filtering with conditional (RemoveVotesBefore, LAcceptorTruncateLog)
+- Cross-component dispatch (LReplicaNextProcess1b - routes to Proposer AND Acceptor)
+- Vote manipulation (LAddVoteAndRemoveOldOnes - map with biconditional domain)
+- Three-component coordination (LReplicaNextSpontaneousMaybeExecute)
+- Conditional routing (LReplicaNextProcessRequest - cache-based dispatch)
+- 5-way conditional (LProposerMaybeNominateValueAndSend2a - timer state)

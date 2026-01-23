@@ -762,7 +762,7 @@ mode annotations, and basic expression transformation.
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: 5-way conditional pattern tested. 25 Verus examples verified (168 total verifications).
+**Status**: All major RSL patterns tested. 25 Verus examples verified (152 total verifications, all pass).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
