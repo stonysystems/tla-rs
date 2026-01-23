@@ -741,17 +741,24 @@ mode annotations, and basic expression transformation.
 
 ### Milestone 4: Full RSL - IN PROGRESS
 - [x] Test transpiler on simplified RSL predicates [26:01:23, 00:45]
+- [x] Test transpiler with RSL Init predicates [26:01:23, 01:21]
 - [ ] Handle complex nested struct updates (requires parser fix)
-- [ ] Handle all RSL protocol predicates
+- [ ] Handle all RSL protocol predicates (Process actions)
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: Initial RSL testing complete. Flat struct predicates work; nested structs need parser enhancement.
+**Status**: RSL Init predicates working. Process actions with quantifiers are next.
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
 - [x] Migrate main codebase to Verus 0.2026.01.14 API (Priority 2 - 2026-01-23)
 - [x] Create working end-to-end example (Priority 3 - 2026-01-23)
+
+**RSL Init Predicate Testing [26:01:23, 01:21]**:
+- ✅ `LLearnerInit`: Works with Map::empty() and struct literal (3 verified)
+- ✅ `LExecutorInit`: Works with enum variants and function calls (5 verified)
+- ✅ `LProposerInit`: Works with cross-predicate calls and many fields (10 verified)
+- ✅ `ElectionStateInit`: Works as helper predicate
 
 **RSL Testing Results [26:01:23, 00:45]**:
 - ✅ Simplified `LAcceptorInit` with flat struct: Transpiles and verifies (1 verified, 0 errors)
@@ -768,11 +775,15 @@ mode annotations, and basic expression transformation.
 - `acceptor_init_complete.rs` - RSL-style acceptor init with flat struct (1 verified)
 - `acceptor_nested_complete.rs` - RSL-style acceptor with inline struct construction (2 verified)
 - `nested_fields_complete.rs` - RSL-style with nested field assignments (2 verified)
+- `learner_init_complete.rs` - Full LLearnerInit predicate (3 verified)
+- `executor_init_complete.rs` - Full LExecutorInit with enum variants (5 verified)
+- `proposer_init_complete.rs` - Full LProposerInit with cross-predicate calls (10 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
 - [x] Enhance translator to handle nested field assignments (Priority 5 - DONE)
-- [ ] Test with full RSL protocol predicates
+- [x] Test with RSL Init predicates (Priority 6 - DONE)
+- [ ] Test with RSL Process predicates (quantifiers, complex conditions)
 - [ ] Integrate runtime with C# FFI layer
 
 ### Milestone 5: Production Ready ✅ COMPLETE

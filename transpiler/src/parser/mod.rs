@@ -1005,7 +1005,12 @@ impl<'a> VerusBlockParser<'a> {
             if self.peek() == Some('{') {
                 if let Expr::Ident(name) = &expr {
                     // Heuristic: struct names start with uppercase
-                    if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                    if name
+                        .chars()
+                        .next()
+                        .map(|c| c.is_uppercase())
+                        .unwrap_or(false)
+                    {
                         let fields = self.parse_struct_fields()?;
                         expr = Expr::Struct {
                             name: Path::single(name.clone()),
@@ -2208,15 +2213,13 @@ mod tests {
         assert_eq!(funcs.len(), 1);
 
         match &funcs[0].body {
-            Expr::Eq(_, rhs) => {
-                match rhs.as_ref() {
-                    Expr::Struct { name, fields } => {
-                        assert_eq!(name.segments[0], "Ballot");
-                        assert_eq!(fields.len(), 2);
-                    }
-                    _ => panic!("Expected struct on RHS, got {:?}", rhs),
+            Expr::Eq(_, rhs) => match rhs.as_ref() {
+                Expr::Struct { name, fields } => {
+                    assert_eq!(name.segments[0], "Ballot");
+                    assert_eq!(fields.len(), 2);
                 }
-            }
+                _ => panic!("Expected struct on RHS, got {:?}", rhs),
+            },
             _ => panic!("Expected equality, got {:?}", funcs[0].body),
         }
     }

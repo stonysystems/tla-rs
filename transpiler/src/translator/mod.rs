@@ -924,7 +924,8 @@ impl Translator {
             let mut results = Vec::new();
 
             // Collect all output variable names
-            let mut all_outputs: std::collections::HashSet<String> = field_assignments.keys().cloned().collect();
+            let mut all_outputs: std::collections::HashSet<String> =
+                field_assignments.keys().cloned().collect();
             all_outputs.extend(pre_translated.keys().cloned());
 
             for output_name in all_outputs {
