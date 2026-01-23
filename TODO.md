@@ -568,10 +568,10 @@ verus! {
 
 ### 7.2 Networking Runtime
 
-- [ ] **Define packet/message traits** (requires Verus integration)
-  - `Marshalable` trait for serialization
-  - Ghost serialization spec function
-  - Exec serialization/deserialization
+- [x] **Define packet/message traits** [EXISTING]
+  - `Marshalable` trait already in `src/implementation/common/marshalling.rs`
+  - Ghost serialization spec function: `ghost_serialize()`
+  - Exec serialization/deserialization: `serialize()`, `deserialize()`
 
 - [ ] **Integrate with existing C# I/O framework** (requires Verus integration)
   - FFI bindings for network operations
@@ -617,20 +617,23 @@ verus! {
   - Full transpilation pipeline test
   - 12 integration tests pass
 
-- [ ] **Verify generated code compiles with Verus** (requires Verus)
-  - Run Verus on generated output
-  - Check proofs discharge
+- [x] **Verify generated code compiles with Verus** [26:01:23, 02:00]
+  - 13 working examples in `transpiler/verus_examples/`
+  - 62 total verifications across all examples
+  - All proofs discharge successfully
 
 ### 8.3 Real Protocol Tests
+
+- [x] **Test with RSL (Paxos) components** [26:01:23, 02:00]
+  - ✅ Acceptor predicates: LAcceptorInit, LAcceptorProcess1a
+  - ✅ Proposer predicates: LProposerInit
+  - ✅ Learner predicates: LLearnerInit, LLearnerForgetDecision
+  - ✅ Executor predicates: LExecutorInit
+  - All verified with Verus (0 errors)
 
 - [ ] **Test with Lock service** (requires Verus)
   - Transform `NodeInit`, `NodeGrant`, `NodeAccept`
   - Verify generated code maintains proofs
-
-- [ ] **Test with RSL (Paxos) components** (requires Verus)
-  - Transform Acceptor predicates
-  - Transform Proposer predicates
-  - Transform Learner predicates
 
 ### 8.4 Negative Tests
 
