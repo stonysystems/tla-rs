@@ -999,6 +999,23 @@ impl<'a> VerusBlockParser<'a> {
                 }
             }
 
+            // Check for struct construction: Type { field: value, ... }
+            // Only treat as struct construction if the identifier starts with uppercase
+            // (type names are PascalCase in Rust/Verus)
+            if self.peek() == Some('{') {
+                if let Expr::Ident(name) = &expr {
+                    // Heuristic: struct names start with uppercase
+                    if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                        let fields = self.parse_struct_fields()?;
+                        expr = Expr::Struct {
+                            name: Path::single(name.clone()),
+                            fields,
+                        };
+                        continue;
+                    }
+                }
+            }
+
             break;
         }
 
@@ -1024,6 +1041,66 @@ impl<'a> VerusBlockParser<'a> {
         }
 
         Ok(args)
+    }
+
+    /// Parse struct construction fields: { field: value, field2: value2, ... }
+    fn parse_struct_fields(&mut self) -> TranspileResult<Vec<(String, Expr)>> {
+        self.expect('{')?;
+        self.skip_whitespace();
+
+        let mut fields = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+            if self.peek() == Some('}') {
+                break;
+            }
+
+            // Check for struct update syntax: ..base
+            if self.try_consume("..") {
+                // This is struct update, we'd need a different representation
+                // For now, parse the base expression and store it
+                let base = self.parse_expression()?;
+                // Store it as a special field name
+                fields.push(("..".to_string(), base));
+                self.skip_whitespace();
+                // Should be followed by } or ,}
+                if !self.try_consume(",") {
+                    break;
+                }
+                continue;
+            }
+
+            // Parse field name
+            let field_name = self.parse_identifier()?;
+            self.skip_whitespace();
+
+            // Check for shorthand syntax: { field } meaning { field: field }
+            if self.peek() == Some(',') || self.peek() == Some('}') {
+                fields.push((field_name.clone(), Expr::Ident(field_name)));
+                if !self.try_consume(",") {
+                    break;
+                }
+                continue;
+            }
+
+            self.expect(':')?;
+            self.skip_whitespace();
+
+            // Parse field value
+            let value = self.parse_expression()?;
+            fields.push((field_name, value));
+
+            self.skip_whitespace();
+            if !self.try_consume(",") {
+                break;
+            }
+        }
+
+        self.skip_whitespace();
+        self.expect('}')?;
+
+        Ok(fields)
     }
 
     /// Parse a block expression
@@ -2081,6 +2158,66 @@ mod tests {
                 assert_eq!(triggers[0].exprs.len(), 1);
             }
             _ => panic!("Expected forall expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_construction() {
+        let source = r#"
+        verus! {
+            pub open spec fn create_ballot() -> Ballot {
+                Ballot { seqno: 0, proposer_id: 1 }
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        match &funcs[0].body {
+            Expr::Struct { name, fields } => {
+                assert_eq!(name.segments.len(), 1);
+                assert_eq!(name.segments[0], "Ballot");
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].0, "seqno");
+                assert_eq!(fields[1].0, "proposer_id");
+            }
+            _ => panic!("Expected struct construction, got {:?}", funcs[0].body),
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_construction_in_condition() {
+        let source = r#"
+        verus! {
+            pub open spec fn check_ballot(b: Ballot) -> bool {
+                b == Ballot { seqno: 0, proposer_id: 0 }
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        match &funcs[0].body {
+            Expr::Eq(_, rhs) => {
+                match rhs.as_ref() {
+                    Expr::Struct { name, fields } => {
+                        assert_eq!(name.segments[0], "Ballot");
+                        assert_eq!(fields.len(), 2);
+                    }
+                    _ => panic!("Expected struct on RHS, got {:?}", rhs),
+                }
+            }
+            _ => panic!("Expected equality, got {:?}", funcs[0].body),
         }
     }
 }

@@ -756,20 +756,21 @@ mode annotations, and basic expression transformation.
 **RSL Testing Results [26:01:23, 00:45]**:
 - ✅ Simplified `LAcceptorInit` with flat struct: Transpiles and verifies (1 verified, 0 errors)
 - ❌ Nested struct predicates (`a.max_bal.seqno == 0`): Parser doesn't handle nested field assignments
-- ❌ Struct construction syntax (`Ballot { seqno: 0, ... }`): Parser error
+- ✅ Struct construction syntax (`Ballot { seqno: 0, ... }`): Now supported (Priority 4)
 
 **Discovered Limitations**:
-1. **Nested field assignments not supported**: `a.max_bal.seqno == 0` is not recognized as struct construction
-2. **Inline struct construction**: `Ballot { seqno: 0, proposer_id: 0 }` causes parse error
+1. **Nested field assignments not supported**: `a.max_bal.seqno == 0` is not recognized as struct construction (Priority 5)
+2. ~~**Inline struct construction**~~: Now supported with Priority 4 fix
 
 **Working examples**: See `transpiler/verus_examples/` for verified examples:
 - `simple_complete.rs` - Basic spec/exec with Node struct (4 verified)
-- `acceptor_init_complete.rs` - RSL-style acceptor init (1 verified)
+- `acceptor_init_complete.rs` - RSL-style acceptor init with flat struct (1 verified)
+- `acceptor_nested_complete.rs` - RSL-style acceptor with nested Ballot struct (2 verified)
 
 **Next steps**:
-- [ ] Fix parser to handle struct construction syntax (`Type { field: val, ... }`)
-- [ ] Enhance translator to handle nested field assignments
-- [ ] Test with full RSL protocol predicates after parser fixes
+- [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
+- [ ] Enhance translator to handle nested field assignments (Priority 5)
+- [ ] Test with full RSL protocol predicates after translator fix
 - [ ] Integrate runtime with C# FFI layer
 
 ### Milestone 5: Production Ready ✅ COMPLETE
@@ -896,21 +897,23 @@ Chose **Option A**: Migrated to new Verus API (v0.2026.01.14)
 /home/shuai/tools/verus-x86-linux/verus transpiler/verus_examples/simple_complete.rs
 ```
 
-### Priority 4: Fix Parser for Struct Construction - NEXT
+### Priority 4: Fix Parser for Struct Construction ✅ COMPLETE [26:01:23, 01:15]
 
-**Issue**: Parser fails on inline struct construction syntax:
-```rust
-Ballot { seqno: 0, proposer_id: 0 }  // Error: Expected '}', found 'Some('{')'
+**Fixed**:
+- Added `parse_struct_fields()` method to parse `{ field: value, ... }` syntax
+- Added struct construction detection in `parse_postfix_ops()` for uppercase identifiers
+- Uses PascalCase heuristic to distinguish struct construction from block expressions
+- Supports struct update syntax (`..base`) and shorthand field syntax
+- Added 2 new parser tests for struct construction
+
+**Files modified**: `transpiler/src/parser/mod.rs`
+
+**Verification**: Nested struct example now works (2 verified, 0 errors):
+```bash
+/home/shuai/tools/verus-x86-linux/verus transpiler/verus_examples/acceptor_nested_complete.rs
 ```
 
-**Root cause**: Parser's `parse_primary` doesn't handle `Ident { ... }` as struct construction.
-
-**Fix needed in `transpiler/src/parser/mod.rs`**:
-- After parsing identifier, check for `{` to detect struct construction
-- Parse field-value pairs: `field_name: expr, ...`
-- Return `Expr::Struct { name, fields }`
-
-### Priority 5: Handle Nested Field Assignments - AFTER P4
+### Priority 5: Handle Nested Field Assignments - NEXT
 
 **Issue**: Translator doesn't recognize nested field assignments as struct construction:
 ```rust
