@@ -875,7 +875,7 @@ See `transpiler/examples/` for test files.
 3. Verify with: `/home/shuai/tools/verus-x86-linux/verus examples/simple_impl.rs`
 4. Ensure proofs discharge
 
-### Priority 0: Fix CI Pipeline (BLOCKING)
+### Priority 0: Fix CI Pipeline (BLOCKING) ✅ COMPLETE [26:01:22, 22:58]
 
 **Issue**: CI fails on all jobs with error:
 ```
@@ -886,7 +886,7 @@ See `transpiler/examples/` for test files.
 - ❌ `dtolnay/rust-action@stable` (doesn't exist)
 - ✅ `dtolnay/rust-toolchain@stable` (correct name)
 
-**Fix**: Replace `dtolnay/rust-action` with `dtolnay/rust-toolchain` in all 3 jobs (test, lint, format).
+**Fix**: Replaced `dtolnay/rust-action` with `dtolnay/rust-toolchain` in all 3 jobs (test, lint, format).
 
 ### Test Commands
 
