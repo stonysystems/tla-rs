@@ -631,9 +631,10 @@ verus! {
   - ✅ Executor predicates: LExecutorInit
   - All verified with Verus (0 errors)
 
-- [ ] **Test with Lock service** (requires Verus)
-  - Transform `NodeInit`, `NodeGrant`, `NodeAccept`
-  - Verify generated code maintains proofs
+- [x] **Test with Lock service** [26:01:23, 02:15]
+  - ✅ `NodeInit`: Conditional init based on index (5 verified)
+  - [ ] `NodeGrant`: Conditional packet sending (complex I/O)
+  - [ ] `NodeAccept`: Complex conditional with packet handling (complex I/O)
 
 ### 8.4 Negative Tests
 
@@ -753,7 +754,7 @@ mode annotations, and basic expression transformation.
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: All core predicate patterns working. 13 Verus examples verified (62 total verifications).
+**Status**: All core predicate patterns working. 14 Verus examples verified (67 total verifications).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
@@ -797,6 +798,7 @@ mode annotations, and basic expression transformation.
 - `map_filter_complete.rs` - Map filtering with quantifier over domain (4 verified)
 - `seq_update_complete.rs` - Sequence update at index pattern (2 verified)
 - `map_insert_complete.rs` - Map insert and seq push patterns (7 verified)
+- `lock_node_init_complete.rs` - Lock service NodeInit (5 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
