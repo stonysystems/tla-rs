@@ -631,10 +631,10 @@ verus! {
   - ✅ Executor predicates: LExecutorInit
   - All verified with Verus (0 errors)
 
-- [x] **Test with Lock service** [26:01:23, 02:15]
+- [x] **Test with Lock service** [26:01:23, 02:52]
   - ✅ `NodeInit`: Conditional init based on index (5 verified)
-  - [ ] `NodeGrant`: Conditional packet sending (complex I/O)
-  - [ ] `NodeAccept`: Complex conditional with packet handling (complex I/O)
+  - ✅ `NodeGrant`: Conditional packet sending with I/O operations (6 verified)
+  - ✅ `NodeAccept`: Complex conditional with disjunction, packet handling (13 verified)
 
 ### 8.4 Negative Tests
 
@@ -754,7 +754,7 @@ mode annotations, and basic expression transformation.
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: All core predicate patterns working. 14 Verus examples verified (67 total verifications).
+**Status**: All core predicate patterns working. 16 Verus examples verified (99 total verifications).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
@@ -762,6 +762,8 @@ mode annotations, and basic expression transformation.
 - Quantifier predicates (forall over seq/map)
 - Collection mutations (seq.update, seq.push, map.insert, map.remove)
 - Cross-predicate calls (ElectionStateInit from LProposerInit)
+- I/O operations (Send/Receive enum variants, packet construction)
+- Disjunction patterns (||| at spec level with alternative implementations)
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -799,6 +801,8 @@ mode annotations, and basic expression transformation.
 - `seq_update_complete.rs` - Sequence update at index pattern (2 verified)
 - `map_insert_complete.rs` - Map insert and seq push patterns (7 verified)
 - `lock_node_init_complete.rs` - Lock service NodeInit (5 verified)
+- `lock_node_grant_complete.rs` - Lock service NodeGrant with I/O (6 verified)
+- `lock_node_accept_complete.rs` - Lock service NodeAccept with disjunction (13 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
