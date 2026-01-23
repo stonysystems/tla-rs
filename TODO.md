@@ -755,22 +755,24 @@ mode annotations, and basic expression transformation.
 
 **RSL Testing Results [26:01:23, 00:45]**:
 - ✅ Simplified `LAcceptorInit` with flat struct: Transpiles and verifies (1 verified, 0 errors)
-- ❌ Nested struct predicates (`a.max_bal.seqno == 0`): Parser doesn't handle nested field assignments
+- ✅ Nested struct predicates (`a.max_bal.seqno == 0`): Now supported (Priority 5)
 - ✅ Struct construction syntax (`Ballot { seqno: 0, ... }`): Now supported (Priority 4)
 
 **Discovered Limitations**:
-1. **Nested field assignments not supported**: `a.max_bal.seqno == 0` is not recognized as struct construction (Priority 5)
+1. ~~**Nested field assignments**~~: Now supported with Priority 5 fix
 2. ~~**Inline struct construction**~~: Now supported with Priority 4 fix
+3. **Nested struct name derivation**: Uses field name PascalCase (`max_bal` → `CMaxBal`) instead of actual type name
 
 **Working examples**: See `transpiler/verus_examples/` for verified examples:
 - `simple_complete.rs` - Basic spec/exec with Node struct (4 verified)
 - `acceptor_init_complete.rs` - RSL-style acceptor init with flat struct (1 verified)
-- `acceptor_nested_complete.rs` - RSL-style acceptor with nested Ballot struct (2 verified)
+- `acceptor_nested_complete.rs` - RSL-style acceptor with inline struct construction (2 verified)
+- `nested_fields_complete.rs` - RSL-style with nested field assignments (2 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
-- [ ] Enhance translator to handle nested field assignments (Priority 5)
-- [ ] Test with full RSL protocol predicates after translator fix
+- [x] Enhance translator to handle nested field assignments (Priority 5 - DONE)
+- [ ] Test with full RSL protocol predicates
 - [ ] Integrate runtime with C# FFI layer
 
 ### Milestone 5: Production Ready ✅ COMPLETE
@@ -913,16 +915,30 @@ Chose **Option A**: Migrated to new Verus API (v0.2026.01.14)
 /home/shuai/tools/verus-x86-linux/verus transpiler/verus_examples/acceptor_nested_complete.rs
 ```
 
-### Priority 5: Handle Nested Field Assignments - NEXT
+### Priority 5: Handle Nested Field Assignments ✅ COMPLETE [26:01:23, 01:40]
 
-**Issue**: Translator doesn't recognize nested field assignments as struct construction:
+**Fixed**:
+- Enhanced `try_extract_struct_construction()` to detect nested field patterns: `a.max_bal.seqno == 0`
+- Added `nested_assignments` HashMap to group inner fields by outer field name
+- Added `pre_translated` HashMap to store pre-translated nested struct constructions
+- Added `derive_nested_struct_name()` helper to convert field name to struct name (snake_case → PascalCase)
+
+**Files modified**: `transpiler/src/translator/mod.rs`
+
+**Generated output example**:
 ```rust
-a.max_bal.seqno == 0  // Not recognized as assigning to a.max_bal nested struct
+// Input: a.max_bal.seqno == 0 && a.max_bal.proposer_id == 0
+// Output:
+max_bal: CMaxBal {
+    seqno: 0,
+    proposer_id: 0,
+}
 ```
 
-**Fix needed in `transpiler/src/translator/mod.rs`**:
-- Enhance `try_extract_struct_construction` to handle `Expr::Field(Expr::Field(base, outer), inner)`
-- Build nested struct assignments: `max_bal: CBallot { seqno: 0, ... }`
+**Limitation**: Struct name derived from field name (`max_bal` → `CMaxBal`), not actual type name (`Ballot` → `CBallot`).
+For accurate type names, would need type information from type registry.
+
+**Verification**: 2 verified, 0 errors with `nested_fields_complete.rs`
 
 ### Priority 0: Fix CI Pipeline (BLOCKING) ✅ COMPLETE [26:01:22, 22:58]
 

@@ -1,0 +1,5 @@
+// Mode annotations for nested field test
+module RSL::Acceptor {
+    // a is output, c is input
+    LAcceptorInit(-, +);
+}

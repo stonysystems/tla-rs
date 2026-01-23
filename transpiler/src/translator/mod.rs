@@ -289,6 +289,24 @@ impl Translator {
         }
     }
 
+    /// Derive nested struct name from field name
+    /// e.g., "max_bal" -> "CBallot" (assuming Ballot is the type)
+    /// Falls back to PascalCase: "max_bal" -> "CMaxBal"
+    fn derive_nested_struct_name(&self, field_name: &str) -> String {
+        // Convert snake_case to PascalCase and add exec prefix
+        let pascal_case: String = field_name
+            .split('_')
+            .map(|s| {
+                let mut chars = s.chars();
+                match chars.next() {
+                    Some(c) => c.to_uppercase().chain(chars).collect::<String>(),
+                    None => String::new(),
+                }
+            })
+            .collect();
+        format!("{}{}", self.config.exec_prefix, pascal_case)
+    }
+
     /// Translate spec type to exec type
     fn translate_type(&self, ty: &Type) -> ExecType {
         match ty {
@@ -801,12 +819,34 @@ impl Translator {
         exprs: &[Expr],
         ctx: &TransformContext,
     ) -> TranspileResult<Option<ExecExpr>> {
+        // Track direct field assignments: output_var -> [(field_name, expr)]
         let mut field_assignments: HashMap<String, Vec<(String, Expr)>> = HashMap::new();
+        // Track nested field assignments: output_var -> { outer_field -> [(inner_field, expr)] }
+        let mut nested_assignments: HashMap<String, HashMap<String, Vec<(String, Expr)>>> =
+            HashMap::new();
+        // Track pre-translated nested structs: output_var -> [(field_name, ExecExpr)]
+        let mut pre_translated: HashMap<String, Vec<(String, ExecExpr)>> = HashMap::new();
         let mut other_exprs = Vec::new();
 
         for expr in exprs {
-            // Pattern 1: s_.field == expr
             if let Expr::Eq(lhs, rhs) = expr {
+                // Check for nested field: s_.outer.inner == expr
+                if let Expr::Field(mid, inner_field) = lhs.as_ref() {
+                    if let Expr::Field(base, outer_field) = mid.as_ref() {
+                        if let Expr::Ident(name) = base.as_ref() {
+                            if ctx.is_output(name) {
+                                nested_assignments
+                                    .entry(name.clone())
+                                    .or_default()
+                                    .entry(outer_field.clone())
+                                    .or_default()
+                                    .push((inner_field.clone(), *rhs.clone()));
+                                continue;
+                            }
+                        }
+                    }
+                }
+                // Check for direct field: s_.field == expr
                 if let Expr::Field(base, field) = lhs.as_ref() {
                     if let Expr::Ident(name) = base.as_ref() {
                         if ctx.is_output(name) {
@@ -821,7 +861,6 @@ impl Translator {
                 // Check for s_ == s (full copy)
                 if let Expr::Ident(name) = lhs.as_ref() {
                     if ctx.is_output(name) {
-                        // This handles s_ == s or s_ == expr
                         other_exprs.push(expr.clone());
                         continue;
                     }
@@ -841,7 +880,7 @@ impl Translator {
                     }
                 }
             }
-            // Pattern 3: s_.field (equivalent to s_.field == true, uncommon but possible)
+            // Pattern 3: s_.field (equivalent to s_.field == true)
             else if let Expr::Field(base, field) = expr {
                 if let Expr::Ident(name) = base.as_ref() {
                     if ctx.is_output(name) {
@@ -856,11 +895,39 @@ impl Translator {
             other_exprs.push(expr.clone());
         }
 
-        // If we have field assignments, construct the struct
-        if !field_assignments.is_empty() {
+        // Convert nested assignments to pre-translated struct constructions
+        for (output_name, nested_map) in nested_assignments {
+            for (outer_field, inner_fields) in nested_map {
+                // Build a nested struct construction for this outer field
+                let struct_name = self.derive_nested_struct_name(&outer_field);
+                let translated_inner: TranspileResult<Vec<_>> = inner_fields
+                    .into_iter()
+                    .map(|(fname, fexpr)| {
+                        let expr = self.transform_expr(&fexpr, ctx)?;
+                        Ok((fname, expr))
+                    })
+                    .collect();
+                let inner_struct = ExecExpr::Struct {
+                    name: struct_name,
+                    fields: translated_inner?,
+                };
+                // Store pre-translated nested struct
+                pre_translated
+                    .entry(output_name.clone())
+                    .or_default()
+                    .push((outer_field, inner_struct));
+            }
+        }
+
+        // If we have field assignments or pre-translated fields, construct the struct
+        if !field_assignments.is_empty() || !pre_translated.is_empty() {
             let mut results = Vec::new();
 
-            for (output_name, fields) in field_assignments {
+            // Collect all output variable names
+            let mut all_outputs: std::collections::HashSet<String> = field_assignments.keys().cloned().collect();
+            all_outputs.extend(pre_translated.keys().cloned());
+
+            for output_name in all_outputs {
                 // Get the struct name from the output parameter's type
                 let struct_name = ctx
                     .get_output_struct_name(&output_name)
@@ -878,15 +945,20 @@ impl Translator {
                     None
                 };
 
-                // Translate field expressions
-                let translated_fields: TranspileResult<Vec<_>> = fields
+                // Translate direct field expressions
+                let direct_fields = field_assignments.remove(&output_name).unwrap_or_default();
+                let mut translated_fields: Vec<_> = direct_fields
                     .into_iter()
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(&fexpr, ctx)?;
                         Ok((fname, expr))
                     })
-                    .collect();
-                let translated_fields = translated_fields?;
+                    .collect::<TranspileResult<Vec<_>>>()?;
+
+                // Add pre-translated nested struct fields
+                if let Some(nested_fields) = pre_translated.remove(&output_name) {
+                    translated_fields.extend(nested_fields);
+                }
 
                 if let Some(base) = base_input {
                     // Struct update syntax: S { field: value, ..base.clone() }
