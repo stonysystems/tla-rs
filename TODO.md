@@ -758,7 +758,7 @@ mode annotations, and basic expression transformation.
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: Conditional routing pattern tested. 24 Verus examples verified (163 total verifications).
+**Status**: 5-way conditional pattern tested. 25 Verus examples verified (168 total verifications).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
@@ -776,6 +776,7 @@ mode annotations, and basic expression transformation.
 - Vote manipulation (LAddVoteAndRemoveOldOnes - map with biconditional domain and conditional value)
 - Three-component coordination (LReplicaNextSpontaneousMaybeExecute - Proposer + Learner + Executor atomic update)
 - Conditional routing (LReplicaNextProcessRequest - cache-based dispatch to Executor OR Proposer)
+- 5-way conditional (LProposerMaybeNominateValueAndSend2a - multi-branch with timer state management)
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -823,6 +824,7 @@ mode annotations, and basic expression transformation.
 - `acceptor_process2a_complete.rs` - LAddVoteAndRemoveOldOnes vote manipulation pattern (2 verified)
 - `replica_maybe_execute_complete.rs` - LReplicaNextSpontaneousMaybeExecute three-component coordination (8 verified)
 - `replica_process_request_complete.rs` - LReplicaNextProcessRequest conditional routing (8 verified)
+- `proposer_nominate_complete.rs` - LProposerMaybeNominateValueAndSend2a 5-way conditional (5 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
