@@ -759,7 +759,10 @@ mode annotations, and basic expression transformation.
   - ✅ `LReplicaNextSpontaneousMaybeExecute` - three-component coordination (8 verified)
   - ✅ `LReplicaNextProcessRequest` - conditional routing (8 verified)
   - ✅ `LProposerMaybeNominateValueAndSend2a` - 5-way conditional with timer (5 verified)
-- [ ] Full protocol integration tests
+- [x] Full protocol integration tests [26:01:23, 11:25]
+  - 25 Verus examples verified (152 total verifications)
+  - All major RSL protocol patterns covered
+  - Integration tests pass in transpiler/tests/integration.rs
 - [ ] Runtime integration with C# FFI
 
 **Status**: All major RSL patterns tested. 25 Verus examples verified (152 total verifications, all pass).
