@@ -744,12 +744,12 @@ mode annotations, and basic expression transformation.
 - [x] Test transpiler with RSL Init predicates [26:01:23, 01:21]
 - [x] Test transpiler with RSL Process predicates [26:01:23, 01:32]
 - [x] Test transpiler with quantifier predicates [26:01:23, 01:45]
-- [ ] Handle complex nested struct updates (requires parser fix)
+- [x] Test transpiler with seq.update() pattern [26:01:23, 01:50]
 - [ ] Handle all RSL protocol predicates (remaining complex ones)
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: All core predicate patterns working. 11 Verus examples verified (53 total verifications).
+**Status**: All core predicate patterns working. 12 Verus examples verified (55 total verifications).
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -784,6 +784,7 @@ mode annotations, and basic expression transformation.
 - `acceptor_process1a_complete.rs` - LAcceptorProcess1a state update with conditional (12 verified)
 - `seq_quantifier_complete.rs` - Sequence initialization with forall quantifier (3 verified)
 - `map_filter_complete.rs` - Map filtering with quantifier over domain (4 verified)
+- `seq_update_complete.rs` - Sequence update at index pattern (2 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
