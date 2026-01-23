@@ -742,12 +742,13 @@ mode annotations, and basic expression transformation.
 ### Milestone 4: Full RSL - IN PROGRESS
 - [x] Test transpiler on simplified RSL predicates [26:01:23, 00:45]
 - [x] Test transpiler with RSL Init predicates [26:01:23, 01:21]
+- [x] Test transpiler with RSL Process predicates [26:01:23, 01:32]
 - [ ] Handle complex nested struct updates (requires parser fix)
-- [ ] Handle all RSL protocol predicates (Process actions)
+- [ ] Handle all RSL protocol predicates (remaining complex ones)
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: RSL Init predicates working. Process actions with quantifiers are next.
+**Status**: RSL Init and simple Process predicates working. Complex predicates with quantifiers next.
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -778,12 +779,15 @@ mode annotations, and basic expression transformation.
 - `learner_init_complete.rs` - Full LLearnerInit predicate (3 verified)
 - `executor_init_complete.rs` - Full LExecutorInit with enum variants (5 verified)
 - `proposer_init_complete.rs` - Full LProposerInit with cross-predicate calls (10 verified)
+- `learner_forget_complete.rs` - LLearnerForgetDecision with map.contains_key/remove (7 verified)
+- `acceptor_process1a_complete.rs` - LAcceptorProcess1a state update with conditional (12 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
 - [x] Enhance translator to handle nested field assignments (Priority 5 - DONE)
 - [x] Test with RSL Init predicates (Priority 6 - DONE)
-- [ ] Test with RSL Process predicates (quantifiers, complex conditions)
+- [x] Test with RSL Process predicates (Priority 7 - DONE)
+- [ ] Test with RSL predicates containing quantifiers over collections
 - [ ] Integrate runtime with C# FFI layer
 
 ### Milestone 5: Production Ready ✅ COMPLETE
