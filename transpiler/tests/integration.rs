@@ -262,15 +262,22 @@ fn test_code_generation_struct() {
 
 #[test]
 fn test_expression_transformation() {
-    use verus_transpiler::ast::{Expr, Literal, Path};
+    use std::collections::HashMap;
+    use verus_transpiler::ast::{Expr, Literal, Path, Type};
     use verus_transpiler::translator::{ExecExpr, TransformContext, Translator, TranslatorConfig};
 
     let translator = Translator::default();
     static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+    let mut output_types = HashMap::new();
+    output_types.insert(
+        "result".to_string(),
+        Type::Named(Path::single("LResult".to_string())),
+    );
     let ctx = TransformContext {
         config: CONFIG.get_or_init(TranslatorConfig::default),
         output_params: vec!["result".to_string()],
         input_params: vec!["inp".to_string()],
+        output_types,
     };
 
     // Test method call transformation

@@ -243,9 +243,17 @@ impl TemplateCodeGenerator {
 
         // Determine base variable name (remove trailing _)
         let base_name = output_var.trim_end_matches('_');
+
+        // Get struct name from output parameter's type
+        let struct_name = ctx
+            .get_output_struct_name(output_var)
+            .map(|n| self.translate_name(&n))
+            .unwrap_or_else(|| self.translate_name(base_name));
+
         if ctx.input_params.contains(&base_name.to_string()) {
             // Struct update syntax
             Ok(ExecExpr::StructUpdate {
+                name: struct_name,
                 base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(
                     base_name.to_string(),
                 )))),
@@ -253,7 +261,6 @@ impl TemplateCodeGenerator {
             })
         } else {
             // Full struct construction (need struct name from type info)
-            let struct_name = self.translate_name(base_name);
             Ok(ExecExpr::Struct {
                 name: struct_name,
                 fields: translated_fields?,
@@ -296,11 +303,18 @@ mod tests {
     use crate::ast::Literal;
 
     fn make_ctx() -> TransformContext<'static> {
+        use std::collections::HashMap;
         static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+        let mut output_types = HashMap::new();
+        output_types.insert(
+            "result".to_string(),
+            crate::ast::Type::Named(crate::ast::Path::single("LResult".to_string())),
+        );
         TransformContext {
             config: CONFIG.get_or_init(TranslatorConfig::default),
             output_params: vec!["result".to_string()],
             input_params: vec!["src".to_string()],
+            output_types,
         }
     }
 

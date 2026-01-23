@@ -231,6 +231,7 @@ pub enum Expr {
     },
     /// Struct update syntax
     StructUpdate {
+        name: Option<Path>,
         base: Box<Expr>,
         fields: Vec<(String, Expr)>,
     },

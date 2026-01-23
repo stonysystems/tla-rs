@@ -128,6 +128,7 @@ pub enum ExecExpr {
     },
     /// Struct update (..base syntax)
     StructUpdate {
+        name: String,
         base: Box<ExecExpr>,
         fields: Vec<(String, ExecExpr)>,
     },
@@ -180,11 +181,21 @@ pub struct TransformContext<'a> {
     pub config: &'a TranslatorConfig,
     pub output_params: Vec<String>,
     pub input_params: Vec<String>,
+    /// Maps output parameter names to their types (for struct name derivation)
+    pub output_types: HashMap<String, Type>,
 }
 
 impl<'a> TransformContext<'a> {
     pub fn is_output(&self, name: &str) -> bool {
         self.output_params.contains(&name.to_string())
+    }
+
+    /// Get the struct name for an output parameter from its type
+    pub fn get_output_struct_name(&self, name: &str) -> Option<String> {
+        self.output_types.get(name).and_then(|ty| match ty {
+            Type::Named(path) => path.last().map(|s| s.to_string()),
+            _ => None,
+        })
     }
 }
 
@@ -229,6 +240,16 @@ impl Translator {
         // Build ensures clauses
         let ensures = self.build_ensures(func, &output_names);
 
+        // Build output types map for struct name derivation
+        let output_types: HashMap<String, Type> = func
+            .spec_fn
+            .params
+            .iter()
+            .zip(&func.param_modes)
+            .filter(|(_, m)| **m == ParameterMode::Output)
+            .map(|(p, _)| (p.name.clone(), p.ty.clone()))
+            .collect();
+
         // Transform function body
         let ctx = TransformContext {
             config: &self.config,
@@ -241,6 +262,7 @@ impl Translator {
                 .filter(|(_, m)| **m == ParameterMode::Input)
                 .map(|(p, _)| p.name.clone())
                 .collect(),
+            output_types,
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
@@ -563,7 +585,7 @@ impl Translator {
                 })
             }
 
-            Expr::StructUpdate { base, fields } => {
+            Expr::StructUpdate { base, fields, name } => {
                 let base_expr = self.transform_expr(base, ctx)?;
                 let translated_fields: TranspileResult<Vec<_>> = fields
                     .iter()
@@ -572,7 +594,14 @@ impl Translator {
                         Ok((fname.clone(), expr))
                     })
                     .collect();
+                // Use provided name if available, otherwise try to derive from base
+                let struct_name = if let Some(n) = name {
+                    self.translate_name(n.last().unwrap_or("Unknown"))
+                } else {
+                    "Unknown".to_string()
+                };
                 Ok(ExecExpr::StructUpdate {
+                    name: struct_name,
                     base: Box::new(base_expr),
                     fields: translated_fields?,
                 })
@@ -776,6 +805,7 @@ impl Translator {
         let mut other_exprs = Vec::new();
 
         for expr in exprs {
+            // Pattern 1: s_.field == expr
             if let Expr::Eq(lhs, rhs) = expr {
                 if let Expr::Field(base, field) = lhs.as_ref() {
                     if let Expr::Ident(name) = base.as_ref() {
@@ -797,6 +827,32 @@ impl Translator {
                     }
                 }
             }
+            // Pattern 2: !s_.field (equivalent to s_.field == false)
+            else if let Expr::Not(inner) = expr {
+                if let Expr::Field(base, field) = inner.as_ref() {
+                    if let Expr::Ident(name) = base.as_ref() {
+                        if ctx.is_output(name) {
+                            field_assignments.entry(name.clone()).or_default().push((
+                                field.clone(),
+                                Expr::Literal(crate::ast::Literal::Bool(false)),
+                            ));
+                            continue;
+                        }
+                    }
+                }
+            }
+            // Pattern 3: s_.field (equivalent to s_.field == true, uncommon but possible)
+            else if let Expr::Field(base, field) = expr {
+                if let Expr::Ident(name) = base.as_ref() {
+                    if ctx.is_output(name) {
+                        field_assignments.entry(name.clone()).or_default().push((
+                            field.clone(),
+                            Expr::Literal(crate::ast::Literal::Bool(true)),
+                        ));
+                        continue;
+                    }
+                }
+            }
             other_exprs.push(expr.clone());
         }
 
@@ -805,6 +861,15 @@ impl Translator {
             let mut results = Vec::new();
 
             for (output_name, fields) in field_assignments {
+                // Get the struct name from the output parameter's type
+                let struct_name = ctx
+                    .get_output_struct_name(&output_name)
+                    .map(|n| self.translate_name(&n))
+                    .unwrap_or_else(|| {
+                        // Fallback: derive from variable name
+                        self.translate_name(output_name.trim_end_matches('_'))
+                    });
+
                 // Find the input variable this is based on (usually same name without _)
                 let base_name = output_name.trim_end_matches('_');
                 let base_input = if ctx.input_params.contains(&base_name.to_string()) {
@@ -826,13 +891,12 @@ impl Translator {
                 if let Some(base) = base_input {
                     // Struct update syntax: S { field: value, ..base.clone() }
                     results.push(ExecExpr::StructUpdate {
+                        name: struct_name,
                         base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(base)))),
                         fields: translated_fields,
                     });
                 } else {
-                    // Need to infer struct name from type information
-                    // For now, generate a struct literal
-                    let struct_name = self.translate_name(output_name.trim_end_matches('_'));
+                    // Generate a struct literal
                     results.push(ExecExpr::Struct {
                         name: struct_name,
                         fields: translated_fields,
@@ -961,10 +1025,16 @@ mod tests {
 
     fn make_ctx() -> TransformContext<'static> {
         static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+        let mut output_types = HashMap::new();
+        output_types.insert(
+            "s_".to_string(),
+            Type::Named(Path::single("LState".to_string())),
+        );
         TransformContext {
             config: CONFIG.get_or_init(TranslatorConfig::default),
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "inp".to_string()],
+            output_types,
         }
     }
 

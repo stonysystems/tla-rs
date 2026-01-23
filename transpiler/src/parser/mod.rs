@@ -633,53 +633,35 @@ impl<'a> VerusBlockParser<'a> {
         Ok(Expr::Disjunction(exprs))
     }
 
-    /// Parse binary operators after a primary expression
+    /// Parse binary operators after a primary expression (with correct precedence)
+    /// Precedence (lowest to highest):
+    /// 1. Implication (==>)
+    /// 2. Logical AND/OR (&&, ||)
+    /// 3. Comparison (==, !=, <, >, <=, >=)
+    /// 4. Additive (+, -)
+    /// 5. Multiplicative (*, /, %)
     fn parse_binary_continuation(&mut self, left: Expr) -> TranspileResult<Expr> {
+        self.parse_implication(left)
+    }
+
+    /// Parse implication (lowest precedence)
+    fn parse_implication(&mut self, left: Expr) -> TranspileResult<Expr> {
+        let left = self.parse_logical(left)?;
         self.skip_whitespace();
 
-        // Check for implication FIRST (before == to avoid consuming prefix)
         if self.try_consume("==>") {
             self.skip_whitespace();
             let right = self.parse_expression()?;
             return Ok(Expr::Implies(Box::new(left), Box::new(right)));
         }
 
-        // Check for comparison operators
-        if self.try_consume("==") {
-            self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Eq(Box::new(left), Box::new(right)));
-        }
+        Ok(left)
+    }
 
-        if self.try_consume("!=") {
-            self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Ne(Box::new(left), Box::new(right)));
-        }
-
-        if self.try_consume("<=") {
-            self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Le(Box::new(left), Box::new(right)));
-        }
-
-        if self.try_consume(">=") {
-            self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Ge(Box::new(left), Box::new(right)));
-        }
-
-        if self.try_consume("<") {
-            self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Lt(Box::new(left), Box::new(right)));
-        }
-
-        if self.try_consume(">") {
-            self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Gt(Box::new(left), Box::new(right)));
-        }
+    /// Parse logical AND/OR
+    fn parse_logical(&mut self, left: Expr) -> TranspileResult<Expr> {
+        let left = self.parse_comparison(left)?;
+        self.skip_whitespace();
 
         // Check for logical and/or
         // BUT: Don't consume && if it's actually &&& (conjunction chain)
@@ -687,66 +669,149 @@ impl<'a> VerusBlockParser<'a> {
         if self.peek_str(2) == Some("&&") && self.peek_str(3) != Some("&&&") {
             self.pos += 2; // Consume &&
             self.skip_whitespace();
-            let right = self.parse_expression()?;
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_logical(right_primary)?;
             return Ok(Expr::Binary(Box::new(left), BinOp::And, Box::new(right)));
         }
 
         if self.peek_str(2) == Some("||") && self.peek_str(3) != Some("|||") {
             self.pos += 2; // Consume ||
             self.skip_whitespace();
-            let right = self.parse_expression()?;
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_logical(right_primary)?;
             return Ok(Expr::Binary(Box::new(left), BinOp::Or, Box::new(right)));
         }
 
-        // Check for arithmetic operators
+        Ok(left)
+    }
+
+    /// Parse comparison operators with support for chained comparisons
+    /// Chained comparisons like `0 <= i < s.len()` are converted to `(0 <= i) && (i < s.len())`
+    fn parse_comparison(&mut self, left: Expr) -> TranspileResult<Expr> {
+        let left = self.parse_additive(left)?;
+        self.skip_whitespace();
+
+        // Try to parse a comparison operator
+        let (first_cmp, middle) = if self.try_consume("==") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Eq(Box::new(left), Box::new(right.clone())), right)
+        } else if self.try_consume("!=") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Ne(Box::new(left), Box::new(right.clone())), right)
+        } else if self.try_consume("<=") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Le(Box::new(left), Box::new(right.clone())), right)
+        } else if self.try_consume(">=") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Ge(Box::new(left), Box::new(right.clone())), right)
+        } else if self.try_consume("<") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Lt(Box::new(left), Box::new(right.clone())), right)
+        } else if self.try_consume(">") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Gt(Box::new(left), Box::new(right.clone())), right)
+        } else {
+            return Ok(left);
+        };
+
+        self.skip_whitespace();
+
+        // Check for chained comparison (e.g., `0 <= i < s.len()`)
+        // This is syntactic sugar for `(0 <= i) && (i < s.len())`
+        let second_cmp_opt = if self.try_consume("<=") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            Some(Expr::Le(Box::new(middle.clone()), Box::new(right)))
+        } else if self.try_consume(">=") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            Some(Expr::Ge(Box::new(middle.clone()), Box::new(right)))
+        } else if self.try_consume("<") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            Some(Expr::Lt(Box::new(middle.clone()), Box::new(right)))
+        } else if self.try_consume(">") {
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            Some(Expr::Gt(Box::new(middle.clone()), Box::new(right)))
+        } else {
+            None
+        };
+
+        match second_cmp_opt {
+            Some(second_cmp) => {
+                // Chained comparison: combine with AND
+                Ok(Expr::Binary(
+                    Box::new(first_cmp),
+                    BinOp::And,
+                    Box::new(second_cmp),
+                ))
+            }
+            None => Ok(first_cmp),
+        }
+    }
+
+    /// Parse additive operators (+, -)
+    fn parse_additive(&mut self, left: Expr) -> TranspileResult<Expr> {
+        let left = self.parse_multiplicative(left)?;
+        self.skip_whitespace();
+
         if self.try_consume("+") {
             self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Binary(
-                Box::new(left),
-                BinOp::Add,
-                Box::new(right),
-            ));
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            return Ok(Expr::Binary(Box::new(left), BinOp::Add, Box::new(right)));
         }
 
         if self.try_consume("-") && self.peek() != Some('>') {
             self.skip_whitespace();
-            let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Binary(
-                Box::new(left),
-                BinOp::Sub,
-                Box::new(right),
-            ));
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            return Ok(Expr::Binary(Box::new(left), BinOp::Sub, Box::new(right)));
         }
+
+        Ok(left)
+    }
+
+    /// Parse multiplicative operators (*, /, %)
+    fn parse_multiplicative(&mut self, left: Expr) -> TranspileResult<Expr> {
+        self.skip_whitespace();
 
         if self.try_consume("*") {
             self.skip_whitespace();
             let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Binary(
-                Box::new(left),
-                BinOp::Mul,
-                Box::new(right),
-            ));
+            let combined = Expr::Binary(Box::new(left), BinOp::Mul, Box::new(right));
+            return self.parse_multiplicative(combined);
         }
 
         if self.try_consume("/") {
             self.skip_whitespace();
             let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Binary(
-                Box::new(left),
-                BinOp::Div,
-                Box::new(right),
-            ));
+            let combined = Expr::Binary(Box::new(left), BinOp::Div, Box::new(right));
+            return self.parse_multiplicative(combined);
         }
 
         if self.try_consume("%") {
             self.skip_whitespace();
             let right = self.parse_primary_expr()?;
-            return self.parse_binary_continuation(Expr::Binary(
-                Box::new(left),
-                BinOp::Mod,
-                Box::new(right),
-            ));
+            let combined = Expr::Binary(Box::new(left), BinOp::Mod, Box::new(right));
+            return self.parse_multiplicative(combined);
         }
 
         Ok(left)

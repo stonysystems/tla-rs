@@ -318,14 +318,21 @@ fn test_diagnostic_accumulator_collects_all_errors() {
 
 #[test]
 fn test_translator_forall_without_template() {
+    use std::collections::HashMap;
     use verus_transpiler::translator::{TransformContext, Translator, TranslatorConfig};
 
     let translator = Translator::default();
     static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+    let mut output_types = HashMap::new();
+    output_types.insert(
+        "s_".to_string(),
+        ast::Type::Named(ast::Path::single("LState".to_string())),
+    );
     let ctx = TransformContext {
         config: CONFIG.get_or_init(TranslatorConfig::default),
         output_params: vec!["s_".to_string()],
         input_params: vec!["s".to_string()],
+        output_types,
     };
 
     // A forall that can't be translated directly
@@ -353,14 +360,17 @@ fn test_translator_forall_without_template() {
 
 #[test]
 fn test_translator_exists_not_supported() {
+    use std::collections::HashMap;
     use verus_transpiler::translator::{TransformContext, Translator, TranslatorConfig};
 
     let translator = Translator::default();
     static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+    let output_types = HashMap::new();
     let ctx = TransformContext {
         config: CONFIG.get_or_init(TranslatorConfig::default),
         output_params: vec![],
         input_params: vec![],
+        output_types,
     };
 
     // Exists quantifier - not directly translatable

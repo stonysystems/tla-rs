@@ -1,0 +1,6 @@
+// Mode annotations for simple_spec.rs
+module simple_spec {
+    NodeInit(-, +);       // s is output, start_with_lock is input
+    NodeGrant(+, -);      // s is input, s_ is output
+    NodeAccept(+, -, +);  // s is input, s_ is output, transfer_epoch is input
+}
