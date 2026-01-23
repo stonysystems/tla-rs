@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::*;
@@ -13,8 +14,6 @@ use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::{configuration::*, proposer::*};
-use builtin::*;
-use builtin_macros::*;
 use std::collections::hash_set::Iter;
 use std::collections::HashSet;
 use std::collections::*;

@@ -1,5 +1,4 @@
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 use std::collections::*;
@@ -94,6 +93,7 @@ verus!{
                     i == dsts_clone.len(),
                     // forall |j: int| 0 <= j < i ==> dsts_clone[i as int]==config.replica_ids[i as int]
                     forall |j: int| 0 <= j < i ==> #[trigger] dsts_clone@[j]@ == config.replica_ids@[j]@
+                decreases config.replica_ids.len() - i,
             {
                 dsts_clone.push(config.replica_ids[i].clone_up_to_view());
                 i+=1;

@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use std::collections::HashMap;
 
 use crate::common::framework::args_t::{abstractify_args, Args};
@@ -7,8 +8,6 @@ use crate::common::logic::*;
 use crate::common::native::io_s::*;
 use crate::implementation::common::cmd_line_parser_i::{parse_args, parse_end_points};
 use crate::implementation::RSL::{host_i::*, host_s::*};
-use builtin::*;
-use builtin_macros::*;
 use vstd::view::*;
 use vstd::{modes::*, prelude::*, seq::*, set::*, *};
 
@@ -18,6 +17,7 @@ verus!{
     }
 
 
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn paxos_main(netc:NetClient, args:Args) -> Result<(), IronError>
     {
         let mut netc = netc;

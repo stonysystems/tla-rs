@@ -1,6 +1,5 @@
+use vstd::prelude::*;
 use crate::protocol::common::upper_bound::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::*;
 
 verus! {

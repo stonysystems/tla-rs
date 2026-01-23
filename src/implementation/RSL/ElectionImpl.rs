@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::{vecs::*, hashsets::*};
@@ -7,8 +8,6 @@ use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::{
     configuration::*, constants::*, election::*, environment::*, message::*, types::*,
 };
-use builtin::*;
-use builtin_macros::*;
 use std::collections::hash_set::Iter;
 use std::collections::HashSet;
 use std::collections::*;
@@ -664,6 +663,7 @@ impl CElectionState
                 ss == self@,
                 !found,
                 !found ==> forall |m:int| 0 <= m < i ==> !RequestsMatch(ss.requests_received_this_epoch[m], starget),
+            decreases self.requests_received_this_epoch.len() - i,
         {
             if(Self::CRequestsMatch(&self.requests_received_this_epoch[i], &target)) {
                 found = true;
@@ -692,6 +692,7 @@ impl CElectionState
                 ss == self@,
                 !found,
                 !found ==> forall |n:int| 0 <= n < j ==> !RequestsMatch(ss.requests_received_prev_epochs[n], starget),
+            decreases self.requests_received_prev_epochs.len() - j,
         {
             if(Self::CRequestsMatch(&self.requests_received_prev_epochs[j], &target)) {
                 found = true;
@@ -838,6 +839,7 @@ impl CElectionState
         ensures
             forall |i: int| 0 <= i < rc@.len() ==> rc@[i].valid(),
             rc@.map(|i, req:CRequest| req@) == RemoveAllSatisfiedRequestsInSequence(s@.map(|i, req: CRequest| req@), r@),
+        decreases s.len(),
     {
         if s.len() == 0 {
             let empty: Vec<CRequest> = Vec::new();
@@ -890,6 +892,7 @@ impl CElectionState
         ensures
             (forall |i: int| 0 <= i < r@.len() ==> r@[i].valid()),
             r@.map(|i, req:CRequest| req@) == RemoveExecutedRequestBatch(reqs@.map(|i, req:CRequest| req@), abstractify_crequestbatch(batch)),
+        decreases batch.len(),
     {
         if batch.len() == 0 {
             return clone_vec_crequest(reqs);

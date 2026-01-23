@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use super::temporal_s::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

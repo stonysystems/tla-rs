@@ -1,5 +1,4 @@
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 use crate::protocol::RSL::configuration::*;

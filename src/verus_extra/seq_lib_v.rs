@@ -1,9 +1,6 @@
 use crate::implementation::common::function::*;
 use crate::implementation::common::function::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::prelude::*;
-use vstd::seq::*;
 // use crate::implementation::common::function::fun_ext_2;
 use vstd::seq_lib::*;
 

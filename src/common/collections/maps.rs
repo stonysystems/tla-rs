@@ -1,6 +1,5 @@
 #![allow(unused_imports)]
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::set_lib::lemma_set_properties;
 use vstd::{modes::*, prelude::*, seq::*, *};
 

@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::collections::count_matches::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
@@ -8,8 +9,6 @@ use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 

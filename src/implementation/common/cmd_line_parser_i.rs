@@ -1,5 +1,3 @@
-use builtin::*;
-use builtin_macros::*;
 use vstd::prelude::*;
 use vstd::seq_lib::*;
 
@@ -56,6 +54,7 @@ verus! {
             end_points.len() == i,
             forall |j| #![auto] 0 <= j < i ==> parse_arg_as_end_point(abstractify_args(*args)[j]) == end_points@[j]@,
             forall |j| #![auto] 0 <= j < i ==> end_points@[j]@.valid_physical_address(),
+        decreases args.len() - i,
         {
             let end_point = parse_end_point(&(*args)[i]);
             if !end_point.valid_physical_address() {

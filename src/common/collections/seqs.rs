@@ -1,6 +1,4 @@
-use builtin::*;
-use builtin_macros::*;
-use vstd::seq::*;
+use vstd::prelude::*;
 use std::collections::*;
 
 

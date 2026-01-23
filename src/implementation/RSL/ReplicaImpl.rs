@@ -1,8 +1,7 @@
+use vstd::prelude::*;
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::types_i::*;
-use builtin::*;
-use builtin_macros::*;
 // use crate::implementation::lock::message_i::*;
 use crate::implementation::RSL::acceptorimpl::*;
 use crate::implementation::RSL::cbroadcast::*;

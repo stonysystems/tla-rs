@@ -1,5 +1,3 @@
-use builtin::*;
-use builtin_macros::*;
 use crate::implementation::common::function::*;
 use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::{get_host_index, seq_is_unique, test_unique};

@@ -1,7 +1,5 @@
-use builtin::*;
-use builtin_macros::*;
-use vstd::seq::*;
 
+use vstd::prelude::*;
 use vstd::{set::*, set_lib::*};
 
 verus! {

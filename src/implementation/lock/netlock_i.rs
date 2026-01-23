@@ -1,8 +1,7 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use std::net;
 
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 use super::message_i::*;

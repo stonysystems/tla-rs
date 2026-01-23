@@ -1,10 +1,9 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use super::heuristics_i::*;
 use super::temporal_s::*;
 use crate::common::collections::maps2::*;
 
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

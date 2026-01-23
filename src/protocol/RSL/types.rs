@@ -1,12 +1,8 @@
 // #![allow(unused_imports)]
 // #![allow(unused_attributes)]
-use builtin::*;
-use builtin_macros::*;
-use vstd::map::*;
+use vstd::prelude::*;
 use vstd::modes::*;
 use vstd::multiset::*;
-use vstd::pervasive::*;
-use vstd::seq::*;
 
 use vstd::{set::*, set_lib::*};
 

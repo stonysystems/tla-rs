@@ -71,6 +71,7 @@ verus! {
                 i <= endpoints.len(),
                 forall |j: int, k: int| #![trigger endpoints@[j]@, endpoints@[k]@]
                     0 <= j && j < endpoints.len() && 0 <= k && k < i && j != k ==> endpoints@[j]@ != endpoints@[k]@,
+            decreases endpoints.len() - i,
         {
             let mut j: usize = 0;
             while j < endpoints.len()
@@ -82,6 +83,7 @@ verus! {
                     0 <= j,
                     j <= endpoints.len(),
                     forall |k: int| #![trigger endpoints@[k]@] 0 <= k && k < j && k != i ==> endpoints@[i as int]@ != endpoints@[k]@,
+                decreases endpoints.len() - j,
             {
                 if i != j && do_end_points_match(&endpoints[i], &endpoints[j]) {
                     assert (!seq_is_unique(abstractify_end_points(*endpoints))) by {
@@ -111,6 +113,7 @@ verus! {
             invariant
                 0 <= j && j <= endpoints.len(),
                 forall |k: int| #![trigger endpoints@[k]@] 0 <= k && k < j ==> endpoint@ != endpoints@[k]@,
+            decreases endpoints.len() - j,
         {
             if do_end_points_match(endpoint, &endpoints[j]) {
                 assert (abstractify_end_points(*endpoints)[j as int] == endpoint@);
@@ -136,6 +139,7 @@ verus! {
             invariant
                 0 <= j && j <= endpoints.len(),
                 forall |k: int| #![trigger endpoints@[k]@] 0 <= k && k < j ==> endpoint@ != endpoints@[k]@,
+            decreases endpoints.len() - j,
         {
             if do_end_points_match(endpoint, &endpoints[j]) {
                 assert (abstractify_end_points(*endpoints)[j as int] == endpoint@);

@@ -1,13 +1,9 @@
 #![allow(unused_imports)]
 #![allow(unused_attributes)]
 #![verus::trusted]
-use builtin::*;
-use builtin_macros::*;
-use vstd::map::*;
+use vstd::prelude::*;
 use vstd::modes::*;
 use vstd::multiset::*;
-use vstd::pervasive::*;
-use vstd::seq::*;
 
 use crate::implementation::common::marshalling::Marshalable;
 

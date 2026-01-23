@@ -1,6 +1,5 @@
 #![allow(unused_imports)]
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 use crate::common::collections::seq_is_unique_v::{endpoints_contain, seq_is_unique};

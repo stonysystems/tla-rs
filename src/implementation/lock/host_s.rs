@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use super::host_i::HostState;
 use super::netlock_i::only_sent_marshalable_data;
 use super::node_i::{ConcreteConfig, Node};
@@ -8,8 +9,6 @@ use crate::common::native::io_s::*;
 use crate::implementation::common::cmd_line_parser_i::*;
 use crate::implementation::lock::netlock_i::abstractify_raw_log_to_ios;
 use crate::protocol::lock::node::{AbstractConfig, AbstractNode, NodeInit, NodeNext};
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

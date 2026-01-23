@@ -1,6 +1,5 @@
 #![allow(unused_imports)]
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 use super::netlock_i::{is_marshalable_data, net_packet_bound, net_packet_is_abstractable};

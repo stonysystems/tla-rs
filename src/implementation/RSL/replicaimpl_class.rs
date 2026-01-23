@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use super::{
     acceptorimpl::CAcceptor,
     cconfiguration::CConfiguration,
@@ -24,8 +25,6 @@ use crate::{
     implementation::RSL::types_i::*,
     protocol::RSL::executor,
 };
-use builtin::*;
-use builtin_macros::*;
 use std::collections::{HashMap, HashSet};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};

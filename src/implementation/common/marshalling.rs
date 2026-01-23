@@ -2,8 +2,6 @@
 //!
 //! Not really a translation so much as a re-implementation
 
-use builtin::*;
-use builtin_macros::*;
 use vstd::bytes::*;
 use std::hash::Hash;
 // use vstd::function::*;
@@ -157,6 +155,7 @@ impl Marshalable for u64 {
         data@.subrange(0, old(data)@.len() as int) == old(data)@,
         data@.subrange(old(data)@.len() as int, data@.len() as int) == self.ghost_serialize().subrange(0, i as int),
         data@.len() == old(data)@.len() + i as int,
+      decreases 8 - i,
     {
       assert(data@.subrange(old(data)@.len() as int, data@.len() as int) == data@.subrange(old(data)@.len() as int, old(data)@.len() + i as int));
 
@@ -465,6 +464,7 @@ impl Marshalable for Vec<u8> {
         data@.subrange(0, old(data)@.len() as int) == old(data)@,
         data@.subrange(old(data)@.len() as int, data@.len() as int) == self.ghost_serialize().subrange(0, i + init@),
         data@.len() == old(data)@.len() + i + init@,
+      decreases self.len() - i,
     {
       assert(data@.subrange(old(data)@.len() as int, data@.len() as int) == data@.subrange(old(data)@.len() as int, old(data)@.len() + i + init@));
 
@@ -984,6 +984,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
         res ==> (forall |x: T| self@.subrange(0, i as int).contains(x) ==> #[trigger] x.is_marshalable()),
         res ==> total_len as int <= usize::MAX,
         !res ==> !self.is_marshalable(),
+      decreases if res { 1int } else { 0int }, self.len() - i,
     {
       assert(res);
       res = res && self[i]._is_marshalable() && (usize::MAX - total_len >= self[i].serialized_size());
@@ -1055,6 +1056,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
                self@.subrange(0 as int, self@.len() as int).fold_left(0, |acc: int, x: T| acc + x.ghost_serialize().len()) <= usize::MAX,
         res == (self@.len() as usize).ghost_serialize().len() +
                self@.subrange(0 as int, i as int).fold_left(0, |acc: int, x: T| acc + x.ghost_serialize().len()),
+      decreases self.len() - i,
     {
       proof {
         let f = |x: T| x.ghost_serialize();
@@ -1116,6 +1118,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
             self@.subrange(0, i as int).fold_left(Seq::<u8>::empty(), |acc: Seq<u8>, x: T| acc + x.ghost_serialize()),
         forall |x: T| self@.contains(x) ==> #[trigger] x.is_marshalable(),
         data@.len() >= old(data)@.len(),
+      decreases self.len() - i,
     {
       self[i].serialize(data);
       i = i + 1;
@@ -1185,6 +1188,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
         len.ghost_serialize().len() +
           res@.fold_left(0, |acc: int, x: T| acc + x.ghost_serialize().len()) == end - start,
         accf@ == |acc: Seq<u8>, x: T| acc + x.ghost_serialize(),
+      decreases len - i,
     {
       let (x, end1) = match T::deserialize(data, end) { None => {
         print("element failed to deserialize");
@@ -1550,7 +1554,7 @@ macro_rules! derive_marshalable_for_struct {
       $(,)?
     }
   } => {
-    ::builtin_macros::verus! {
+    ::verus_builtin_macros::verus! {
       impl $(< $($poly: Marshalable),* >)? Marshalable for $newstruct $(< $($poly),* >)? {
         open spec fn view_equal(&self, other: &Self) -> bool {
           $(
@@ -1693,7 +1697,7 @@ macro_rules! define_struct_and_derive_marshalable {
   } => {
 
     // We first re-generate the struct definition itself, so that the struct exists
-    ::builtin_macros::verus! {
+    ::verus_builtin_macros::verus! {
     $( #[$attr] )*
     $pub
     struct $newstruct $(< $($poly : Marshalable),+ >)? {
@@ -1732,7 +1736,7 @@ macro_rules! derive_marshalable_for_enum {
     }
     $( [rlimit attr = $rlimitattr:meta] )?
   } => {
-    ::builtin_macros::verus! {
+    ::verus_builtin_macros::verus! {
       impl $(< $($poly : Marshalable),+ >)? Marshalable for $newenum $(< $($poly),+ >)? {
         open spec fn view_equal(&self, other: &Self) -> bool {
           &&& match (self, other) {
@@ -1972,7 +1976,7 @@ macro_rules! define_enum_and_derive_marshalable {
   } => {
 
     // We first re-generate the enum definition itself, so that the enum exists
-    ::builtin_macros::verus! {
+    ::verus_builtin_macros::verus! {
     $( #[$attr] )*
     $pub
     enum $newenum $(< $($poly : Marshalable),+ >)? {
@@ -2011,7 +2015,7 @@ macro_rules! marshalable_by_bijection {
     }
     =>
     {
-        ::builtin_macros::verus! {
+        ::verus_builtin_macros::verus! {
             impl $type {
                  pub open spec fn forward_bijection_for_view_equality_do_not_use_for_anything_else($self: Self) -> $marshalable {
                   $forward

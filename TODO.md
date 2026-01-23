@@ -857,16 +857,20 @@ See `transpiler/examples/` for test files.
 - `transpiler/src/printer/mod.rs` - output struct name in StructUpdate
 - `transpiler/src/parser/mod.rs` - rewrote operator precedence, added chained comparisons
 
-### Priority 2: Migrate Main Codebase OR Use Compatible Verus
+### Priority 2: Migrate Main Codebase OR Use Compatible Verus ✅ COMPLETE [26:01:23, 00:14]
 
-**Option A**: Migrate to new Verus API
-- Replace `use builtin::*;` with `use vstd::prelude::*;`
-- Update ~50+ files with import changes
-- Fix any API incompatibilities
+Chose **Option A**: Migrated to new Verus API (v0.2026.01.14)
 
-**Option B**: Use older Verus version
-- The codebase was tested with Verus v0.2024.09.05.29e4da0
-- Download and install that version for testing
+**Changes made:**
+- Replaced `use builtin::*;` with `use vstd::prelude::*;` in 108 files
+- Changed `::builtin_macros::verus!` to `::verus_builtin_macros::verus!` in macros
+- Fixed HashSet::clone by implementing Clone with `#[verifier::external_body]`
+- Added `decreases` clauses to 18 loops/recursive functions
+- Increased rlimit for `lemma_2bMessageImplicationsForCAcceptor` proof
+
+**Verification result:** 456 verified, 0 errors
+
+**Plan document:** docs/dev/verus-api-migration-plan.md
 
 ### Priority 3: Create Working End-to-End Example
 

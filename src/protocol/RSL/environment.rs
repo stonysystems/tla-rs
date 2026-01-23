@@ -1,7 +1,5 @@
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::*;
-use vstd::seq::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::message::*;
 use crate::common::framework::environment_s::*;

@@ -1,5 +1,3 @@
-use builtin::*;
-use builtin_macros::*;
 use crate::implementation::common::function::*;
 use vstd::prelude::*;
 use vstd::slice::*;

@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::ExecutorImpl::OutboundPackets::PacketSequence;
@@ -27,8 +28,6 @@ use crate::common::native::io_s::*;
 use crate::common::collections::vecs::*;
 use crate::protocol::common::upper_bound::*;
 use vstd::std_specs::hash::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::{prelude::*, seq::*, seq_lib::*};
 
 verus! {

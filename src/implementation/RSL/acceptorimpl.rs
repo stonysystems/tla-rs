@@ -1,7 +1,6 @@
+use vstd::prelude::*;
 use super::types_i::COperationNumber;
 use crate::common::collections::sets::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::HashMap;
 
 // use std::iter::Map;
@@ -279,6 +278,7 @@ verus! {
                 i <= len,
                 t4.len() == i,
                 forall |j:int| 0 <= j < i ==> t4[j] == 0,
+            decreases len - i,
         {
             t4.push(0);
             i = i + 1;
@@ -696,12 +696,13 @@ verus! {
 // }
 
     fn CCountLargerInSeq(s:&Vec<u64>, target:u64) -> (res:u64)
-        ensures 
+        ensures
         ({
             let ss = s@.map(|i, t:u64| t as int);
             && res < 0xffff_ffff_ffff_ffff
             && res as int == CountMatchesInSeq(ss, |x:int| x > target as int)
         })
+        decreases s.len(),
     {
         let ghost ss = s@.map(|i, t:u64| t as int);
         if s.len() == 0 {
@@ -725,12 +726,13 @@ verus! {
 
 
     fn CCountLargerOrEqualInSeq(s:&Vec<u64>, target:u64) -> (res:u64)
-        ensures 
+        ensures
         ({
             let ss = s@.map(|i, t:u64| t as int);
             && res < 0xffff_ffff_ffff_ffff
             && res as int == CountMatchesInSeq(ss, |x:int| x >= target as int)
         })
+        decreases s.len(),
     {
         let ghost ss = s@.map(|i, t:u64| t as int);
         if s.len() == 0 {

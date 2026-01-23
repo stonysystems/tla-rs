@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::*;
 use crate::common::collections::seqs::*;
 use crate::common::framework::environment_s::*;
@@ -7,8 +8,6 @@ use crate::implementation::RSL::appinterface::*;
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
@@ -128,6 +127,7 @@ verus! {
                     i < self.replica_ids.len(),
                     forall |j:int| 0 <= j < i ==> self.replica_ids[j] != id,
                     self.valid()
+                decreases self.replica_ids.len() - i,
             {
                 if do_end_points_match(&id, &self.replica_ids[i]) {
                     let found = true;
@@ -233,6 +233,7 @@ verus! {
         //         let ss = s@.map(|i, e:EndPoint| e@);
         //         &&& found ==> FindIndexInSeq(ss, v@) == index as int
         //     })
+        decreases s.len() - start,
     {
         let ghost ss = s@.map(|i, e:EndPoint| e@);
         let ghost vv = v@;

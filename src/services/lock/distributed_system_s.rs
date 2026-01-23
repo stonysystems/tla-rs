@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use std::collections::HashMap;
 
 use crate::common::framework::args_t::{abstractify_args, Args};
@@ -16,8 +17,6 @@ use crate::implementation::lock::node_i::{valid_config, ConcreteConfig};
 use crate::protocol::lock::distributed_system_procotol_i::AbstractLSState;
 use crate::protocol::lock::node::{AbstractConfig, AbstractNode};
 use crate::protocol::lock::types::{LockEnvironment, LockIo, LockMessage, LockPacket};
-use builtin::*;
-use builtin_macros::*;
 use vstd::hash_map::HashMapWithView;
 use vstd::view::*;
 use vstd::{modes::*, prelude::*, seq::*, set::*, *};

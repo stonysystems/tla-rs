@@ -1,12 +1,7 @@
-use vstd::map::*;
+use vstd::prelude::*;
 use vstd::modes::*;
 use vstd::multiset::*;
-use vstd::seq::*;
-use vstd::set::*;
 
-use vstd::pervasive::*;
-use builtin::*;
-use builtin_macros::*;
 
 verus! {
     pub type AppState = u64;

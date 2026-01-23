@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::common::native::io_s::*;
@@ -9,8 +10,6 @@ use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};

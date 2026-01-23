@@ -1,6 +1,5 @@
 
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::*;
 
 verus! {

@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 
+use vstd::prelude::*;
 use super::cmd_line_parser_i::parse_cmd_line;
 use super::host_s::*;
 use super::node_i::{valid_config, Node};
@@ -10,8 +11,6 @@ use crate::common::framework::environment_s::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;
 use crate::protocol::lock::node::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

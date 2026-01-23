@@ -1,5 +1,4 @@
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;

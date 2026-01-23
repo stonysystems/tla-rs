@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::collections::vecs::*;
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::RSL::appinterface::*;
@@ -5,8 +6,6 @@ use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::state_machine::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::HashMap;
 use vstd::{prelude::*, seq::*, seq_lib::*};
 
@@ -44,7 +43,7 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
         //     &&& cr1@.map(|i, x: CReply| x@) == lr1
         //     &&& cr0@.map(|i, x: CAppState| x@) == lr0
         // })
-    // decreases batch.len()
+    decreases batch.len(),
 {
     if batch.len() == 0 {
         let states = vec![state.clone()];

@@ -1,12 +1,11 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::{get_host_index, seq_is_unique, test_unique};
 use crate::common::framework::args_t::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;
 use crate::implementation::common::cmd_line_parser_i::*;
 use crate::protocol::lock::node::{AbstractNode, NodeInit, NodeNext};
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 use super::host_i::HostState;

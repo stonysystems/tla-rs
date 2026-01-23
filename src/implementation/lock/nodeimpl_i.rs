@@ -1,8 +1,7 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use std::net;
 
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 use crate::common::collections::seq_is_unique_v::{endpoints_contain, seq_is_unique};

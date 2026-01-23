@@ -1,5 +1,4 @@
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use std::collections::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
@@ -424,10 +423,19 @@ verus! {
 
     pub open spec fn max_votes_len() -> int{1001}
 
-    #[derive(Clone)]
     pub struct CLearnerTuple {
         pub received_2b_message_senders:HashSet<EndPoint>,
         pub candidate_learned_value:CRequestBatch,
+    }
+
+    impl Clone for CLearnerTuple {
+        #[verifier::external_body]
+        fn clone(&self) -> Self {
+            CLearnerTuple {
+                received_2b_message_senders: self.received_2b_message_senders.clone(),
+                candidate_learned_value: self.candidate_learned_value.clone(),
+            }
+        }
     }
 
 

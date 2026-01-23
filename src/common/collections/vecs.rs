@@ -1,9 +1,6 @@
 use crate::common::collections::comparable::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::*;
 use vstd::prelude::*;
-use vstd::seq::*;
 use vstd::view::*;
 
 verus! {

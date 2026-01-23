@@ -1,6 +1,5 @@
 #![allow(unused_imports)]
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 
 use super::distributed_system_procotol_i::*;

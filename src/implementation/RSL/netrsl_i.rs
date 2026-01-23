@@ -1,3 +1,4 @@
+use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::{endpoints_contain, seq_is_unique};
 use crate::common::framework::environment_s::*;
 use crate::common::framework::environment_s::*;
@@ -11,8 +12,6 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
@@ -386,6 +385,7 @@ verus! {
 
         let mut i:usize = 0;
         while i < cpackets.len()
+            decreases cpackets.len() - i,
         {
             let cpacket: &CPacket = &cpackets[i];
             let (ok, Ghost(net_event)) = send_packet(cpacket, netc);
@@ -408,6 +408,7 @@ verus! {
             CBroadcast::CBroadcast { src, dsts, msg } => {
                 let mut i:usize = 0;
                 while i < dsts.len()
+                    decreases dsts.len() - i,
                 {
                     let dstEp:EndPoint = dsts[i].clone_up_to_view();
                     let cpacket: CPacket = CPacket{dst: dstEp, src: src.clone_up_to_view(), msg: msg.clone_up_to_view()};

@@ -1,7 +1,6 @@
+use vstd::prelude::*;
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::parameters::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::prelude::verus;
 use vstd::*;
 

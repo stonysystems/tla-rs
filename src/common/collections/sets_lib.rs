@@ -1,8 +1,5 @@
-use builtin::*;
-use builtin_macros::*;
-use vstd::seq::*;
-use vstd::set::*;
 
+use vstd::prelude::*;
 verus!{
     // pub proof fn ThingsIKnowAboutSubset<T>(x:Set<T>, y:Set<T>)
     //     requires x.subset_of(y)

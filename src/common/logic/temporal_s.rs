@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
 #![allow(non_camel_case_types)]
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

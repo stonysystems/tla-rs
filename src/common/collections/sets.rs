@@ -1,8 +1,5 @@
-use builtin::*;
-use builtin_macros::*;
-use vstd::seq::*;
-use vstd::set::*;
 
+use vstd::prelude::*;
 verus!{
     pub open spec fn Injective<X,Y>(f: spec_fn(X) -> Y) -> bool
     {

@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
+use vstd::prelude::*;
 use crate::common::logic::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

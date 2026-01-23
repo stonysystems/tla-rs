@@ -1,6 +1,4 @@
 use crate::implementation::common::function::*;
-use builtin::*;
-use builtin_macros::*;
 use vstd::bytes::*;
 // use crate::implementation::common::function::*;
 use vstd::prelude::*;

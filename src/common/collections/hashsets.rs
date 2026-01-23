@@ -1,9 +1,6 @@
 use crate::common::collections::comparable::*;
-use builtin::*;
-use builtin_macros::*;
 use std::collections::*;
 use vstd::prelude::*;
-use vstd::set::*;
 use vstd::view::*;
 use vstd::std_specs::hash::*;
 use std::hash::Hash;

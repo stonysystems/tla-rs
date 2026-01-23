@@ -1,5 +1,4 @@
-use builtin::*;
-use builtin_macros::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 use crate::protocol::RSL::distributed_system::*;
@@ -321,6 +320,7 @@ verus!{
     }
 
     // #[verifier::external_body]
+    #[verifier::rlimit(100)]
     pub proof fn lemma_2bMessageImplicationsForCAcceptor(
         b: Behavior<RslState>,
         c: LConstants,
