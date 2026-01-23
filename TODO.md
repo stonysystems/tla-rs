@@ -754,7 +754,11 @@ mode annotations, and basic expression transformation.
   - ✅ `LAcceptorTruncateLog` - map filtering with conditional (4 verified)
   - ✅ `LProposerProcess1b` - set addition pattern (5 verified)
   - ✅ `LReplicaNextProcess1b` - cross-component dispatch to both Proposer and Acceptor (7 verified)
-- [ ] Handle remaining RSL protocol predicates (multi-component orchestration)
+- [x] Handle remaining RSL protocol predicates (multi-component orchestration) [26:01:23, 11:25]
+  - ✅ `LAddVoteAndRemoveOldOnes` - vote manipulation with biconditional domain (2 verified)
+  - ✅ `LReplicaNextSpontaneousMaybeExecute` - three-component coordination (8 verified)
+  - ✅ `LReplicaNextProcessRequest` - conditional routing (8 verified)
+  - ✅ `LProposerMaybeNominateValueAndSend2a` - 5-way conditional with timer (5 verified)
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
