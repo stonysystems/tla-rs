@@ -758,7 +758,7 @@ mode annotations, and basic expression transformation.
 - [ ] Full protocol integration tests
 - [ ] Runtime integration with C# FFI
 
-**Status**: Cross-component dispatch pattern tested. 21 Verus examples verified (145 total verifications).
+**Status**: Vote manipulation pattern tested. 22 Verus examples verified (147 total verifications).
 
 **Predicate Patterns Tested**:
 - Init predicates (struct construction, collection empty)
@@ -773,6 +773,7 @@ mode annotations, and basic expression transformation.
 - Set addition pattern (received_1b_packets + set![p])
 - Map filtering with conditional (RemoveVotesBefore, LAcceptorTruncateLog)
 - Cross-component dispatch (LReplicaNextProcess1b - routes to Proposer AND Acceptor)
+- Vote manipulation (LAddVoteAndRemoveOldOnes - map with biconditional domain and conditional value)
 
 **Completed prerequisites**:
 - [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
@@ -817,6 +818,7 @@ mode annotations, and basic expression transformation.
 - `acceptor_truncate_complete.rs` - LAcceptorTruncateLog with map filtering (4 verified)
 - `proposer_process1b_complete.rs` - LProposerProcess1b with set addition (5 verified)
 - `replica_process1b_complete.rs` - LReplicaNextProcess1b cross-component dispatch (7 verified)
+- `acceptor_process2a_complete.rs` - LAddVoteAndRemoveOldOnes vote manipulation pattern (2 verified)
 
 **Next steps**:
 - [x] Fix parser to handle struct construction syntax (Priority 4 - DONE)
