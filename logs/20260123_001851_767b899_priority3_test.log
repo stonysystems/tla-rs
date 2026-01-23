@@ -1,0 +1,163 @@
+=== Cargo Tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/lib.rs (target/debug/deps/verus_transpiler-737aa4197386132e)
+
+running 98 tests
+test annotation::tests::test_parse_empty_module ... ok
+test annotation::tests::test_parse_simple_annotation ... ok
+test annotation::tests::test_parse_multiple_modules ... ok
+test annotation::tests::test_parse_with_comments ... ok
+test annotation::tests::test_parse_module ... ok
+test annotation::tests::test_parse_function_line ... ok
+test ast::tests::test_parameter_mode ... ok
+test ast::tests::test_path_construction ... ok
+test ast::tests::test_variable_mode ... ok
+test build_integration::tests::test_config_builder ... ok
+test build_integration::tests::test_default_config ... ok
+test build_integration::tests::test_build_rs_template ... ok
+test build_integration::tests::test_scons_helper ... ok
+test checker::tests::test_saturation_check_fails ... ok
+test checker::tests::test_map_comprehension_value ... ok
+test checker::tests::test_saturation_check_passes ... ok
+test checker::tests::test_seq_comprehension_with_conjunction_bounds ... ok
+test checker::tests::test_set_comprehension ... ok
+test checker::tests::test_template_match_detailed_multiple_vars ... ok
+test checker::tests::test_seq_comprehension_simple ... ok
+test checker::tests::test_template_match_detailed_unrecognized ... ok
+test checker::tests::test_seq_comprehension_upper_bound_only ... ok
+test checker::tests::test_template_match_multiple_vars ... ok
+test checker::tests::test_template_match_non_forall ... ok
+test checker::tests::test_validate_function ... ok
+test codegen::template_codegen::tests::test_generate_copy ... ok
+test codegen::template_codegen::tests::test_generate_simple_assignment ... ok
+test codegen::tests::test_generate_enum ... ok
+test codegen::tests::test_generate_simple_struct ... ok
+test codegen::tests::test_generate_struct_with_collections ... ok
+test codegen::tests::test_naming_config_get_exec_type ... ok
+test codegen::tests::test_generate_struct_with_primitives ... ok
+test codegen::tests::test_translate_type ... ok
+test config::tests::test_default_config ... ok
+test config::tests::test_get_exec_type_with_prefix ... ok
+test config::tests::test_get_exec_type_with_remapping ... ok
+test config::tests::test_get_exec_type_without_prefix ... ok
+test error::tests::test_diagnostic_accumulator ... ok
+test config::tests::test_module_config ... ok
+test config::tests::test_parse_toml ... ok
+test error::tests::test_into_result_with_errors ... ok
+test config::tests::test_roundtrip_toml ... ok
+test error::tests::test_into_result_without_errors ... ok
+test moder::tests::test_analyze_conjunction ... ok
+test moder::tests::test_analyze_field_assignment ... ok
+test moder::tests::test_analyze_conditional ... ok
+test moder::tests::test_annotate_function ... ok
+test moder::tests::test_analyze_simple_equality ... ok
+test moder::tests::test_detect_branch_mismatch_conflict ... ok
+test moder::tests::test_assignment_tracker ... ok
+test moder::tests::test_detect_input_assignment_conflict ... ok
+test moder::tests::test_member_path ... ok
+test moder::tests::test_no_conflict_valid_expression ... ok
+test parser::tests::test_parse_arrow_operator ... ok
+test parser::tests::test_parse_forall_with_trigger ... ok
+test parser::tests::test_parse_ghost_parameter ... ok
+test parser::tests::test_parse_requires_ensures_decreases ... ok
+test parser::tests::test_parse_simple_spec_fn ... ok
+test parser::tests::test_parse_spec_fn_with_conjunction ... ok
+test parser::tests::test_parse_spec_fn_with_if ... ok
+test parser::tests::test_parse_tracked_parameter ... ok
+test parser::tests::test_parse_spec_fn_with_forall ... ok
+test parser::tests::test_parser_creation ... ok
+test parser::tests::test_parse_view_operator ... ok
+test runtime::tests::test_deep_clone_hashmap ... ok
+test runtime::tests::test_deep_clone_primitive ... ok
+test runtime::tests::test_validated_invalid ... ok
+test translator::tests::test_transform_literal ... ok
+test runtime::tests::test_validated_valid ... ok
+test runtime::tests::test_validated_view ... ok
+test runtime::tests::test_view_option ... ok
+test templates::tests::test_simple_assignment_match ... ok
+test templates::tests::test_unrecognized_pattern ... ok
+test translator::tests::test_transform_if_else ... ok
+test translator::tests::test_transform_binary_comparison ... ok
+test translator::tests::test_exec_type_to_string ... ok
+test translator::tests::test_transform_field_access ... ok
+test translator::tests::test_transform_seq_empty ... ok
+test translator::tests::test_translate_name ... ok
+test types::tests::test_parse_enum ... ok
+test types::tests::test_register_enum ... ok
+test types::tests::test_register_struct ... ok
+test printer::tests::test_printer_basic ... ok
+test types::tests::test_parse_generic_struct ... ok
+test translator::tests::test_transform_clone_output ... ok
+test templates::tests::test_struct_construction_match ... ok
+test runtime::tests::test_view_primitive ... ok
+test types::tests::test_parse_simple_struct ... ok
+test types::tests::test_parse_type_alias ... ok
+test templates::tests::test_seq_comprehension_match ... ok
+test tests::test_transpiler_creation ... ok
+test runtime::tests::test_deep_clone_vec ... ok
+test runtime::tests::test_view_vec ... ok
+test runtime::tests::test_view_hashmap ... ok
+test templates::tests::test_match_expression_confidence ... ok
+test translator::tests::test_translate_type ... ok
+test types::tests::test_exec_type_name ... ok
+test types::tests::test_registry_creation ... ok
+
+test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/main.rs (target/debug/deps/verus_transpile-630d9330fb992f7d)
+
+running 1 test
+test tests::test_cli_parsing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/integration.rs (target/debug/deps/integration-4aa3754c3b0852d2)
+
+running 12 tests
+test test_code_generation_struct ... ok
+test test_error_types ... ok
+test test_assignment_tracker ... ok
+test test_mode_annotation_parsing ... ok
+test test_full_transpilation_simple ... ok
+test test_printer_output ... ok
+test test_template_matching_seq_comprehension ... ok
+test test_template_matching_struct_construction ... ok
+test test_transpiler_pipeline ... ok
+test test_expression_transformation ... ok
+test test_type_registry_operations ... ok
+test test_type_translation ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/negative_tests.rs (target/debug/deps/negative_tests-6d981c01e6506902)
+
+running 14 tests
+test test_annotation_wrong_parameter_count ... ok
+test test_diagnostic_accumulator_collects_all_errors ... ok
+test test_error_messages_have_suggestions ... ok
+test test_input_assignment_conflict ... ok
+test test_invalid_annotation_syntax ... ok
+test test_error_messages_contain_context ... ok
+test test_saturation_missing_field_assignment ... ok
+test test_saturation_no_assignments ... ok
+test test_missing_annotation_for_function ... ok
+test test_translator_exists_not_supported ... ok
+test test_translator_forall_without_template ... ok
+test test_unsupported_quantifier_complex_body ... ok
+test test_unsupported_quantifier_multiple_vars ... ok
+test test_use_before_assignment_conflict ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests verus_transpiler
+
+running 3 tests
+test src/build_integration/mod.rs - build_integration::run_build (line 80) ... ignored
+test src/lib.rs - (line 18) ... ignored
+test src/runtime/mod.rs - runtime::View (line 25) ... ignored
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+=== Verus Verification ===
+verification results:: 4 verified, 0 errors

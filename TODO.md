@@ -745,24 +745,20 @@ mode annotations, and basic expression transformation.
 - [ ] Multi-predicate call chains
 - [ ] Runtime integration
 
-**Status**: Verus 0.2026.01.14 installed and working. Testing revealed:
+**Status**: Foundation complete. Ready for RSL protocol integration.
 
-1. **Main codebase needs migration** - The existing tla-rs code was written for an older Verus API
-   (uses `builtin::*` imports instead of `vstd::prelude::*`). ~214 compilation errors.
+**Completed prerequisites**:
+- [x] Fix transpiler code generation bugs (Priority 1 - 2026-01-22)
+- [x] Migrate main codebase to Verus 0.2026.01.14 API (Priority 2 - 2026-01-23)
+- [x] Create working end-to-end example (Priority 3 - 2026-01-23)
 
-2. **Transpiler generates invalid code** - Initial testing with simple specs shows the transpiler
-   produces syntactically invalid Rust:
-   - Missing struct names in construction (`Cs` instead of `CNode`)
-   - Incomplete expressions in if-branches
-   - Incorrect handling of field assignments in conditionals
+**Working examples**: See `transpiler/verus_examples/` for verified examples.
 
-3. **Next steps**:
-   - [ ] Fix transpiler code generation bugs (struct construction, conditionals)
-   - [ ] Migrate main codebase to Verus 0.2026.01.14 API (or use older Verus)
-   - [ ] Create working end-to-end example
-   - [ ] Verify generated code passes Verus proofs
-
-See `transpiler/examples/` for test files.
+**Next steps**:
+- [ ] Test transpiler on actual RSL protocol predicates (LAcceptor, LProposer, etc.)
+- [ ] Handle complex nested struct updates with collections
+- [ ] Add support for multi-predicate call chains
+- [ ] Integrate runtime with C# FFI layer
 
 ### Milestone 5: Production Ready ✅ COMPLETE
 - [x] Robust error handling and reporting (DiagnosticAccumulator, error types)
@@ -872,12 +868,21 @@ Chose **Option A**: Migrated to new Verus API (v0.2026.01.14)
 
 **Plan document:** docs/dev/verus-api-migration-plan.md
 
-### Priority 3: Create Working End-to-End Example
+### Priority 3: Create Working End-to-End Example ✅ COMPLETE [26:01:23, 00:19]
 
-1. Fix transpiler bugs
-2. Create `transpiler/examples/simple_spec.rs` with valid output
-3. Verify with: `/home/shuai/tools/verus-x86-linux/verus examples/simple_impl.rs`
-4. Ensure proofs discharge
+**Changes made:**
+- Fixed hex literal parsing bug in `transpiler/src/parser/mod.rs` (0xFFFF... was parsed as 0)
+- Created working example files in `transpiler/verus_examples/`:
+  - `simple_spec.rs` - spec file with LNode struct and spec functions
+  - `simple_spec.automan` - mode annotations for the spec functions
+  - `simple_complete.rs` - complete standalone example with both spec and exec code
+- All 125 transpiler tests pass
+- Verus verification: 4 verified, 0 errors
+
+**Verification command:**
+```bash
+/home/shuai/tools/verus-x86-linux/verus transpiler/verus_examples/simple_complete.rs
+```
 
 ### Priority 0: Fix CI Pipeline (BLOCKING) ✅ COMPLETE [26:01:22, 22:58]
 

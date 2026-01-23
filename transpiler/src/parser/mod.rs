@@ -1597,8 +1597,15 @@ impl<'a> VerusBlockParser<'a> {
             self.advance();
         }
 
+        // Check for hex prefix
+        let is_hex = self.peek_str(2) == Some("0x") || self.peek_str(2) == Some("0X");
+        if is_hex {
+            self.advance(); // skip '0'
+            self.advance(); // skip 'x'
+        }
+
         while let Some(c) = self.peek() {
-            if c.is_ascii_digit() || c == '_' {
+            if c.is_ascii_hexdigit() || c == '_' {
                 self.advance();
             } else {
                 break;
@@ -1614,12 +1621,25 @@ impl<'a> VerusBlockParser<'a> {
             }
         }
 
-        let num_str: String = self.content[start..self.pos]
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == '-')
-            .collect();
+        let raw_str = &self.content[start..self.pos];
 
-        let value: i128 = num_str.parse().unwrap_or(0);
+        // Parse as hex or decimal
+        let value: i128 = if is_hex {
+            // Extract hex digits only (after 0x, without underscores)
+            let hex_str: String = raw_str
+                .chars()
+                .skip_while(|c| *c == '-' || *c == '0' || *c == 'x' || *c == 'X')
+                .filter(|c| c.is_ascii_hexdigit())
+                .collect();
+            i128::from_str_radix(&hex_str, 16).unwrap_or(0)
+        } else {
+            let num_str: String = raw_str
+                .chars()
+                .filter(|c| c.is_ascii_digit() || *c == '-')
+                .collect();
+            num_str.parse().unwrap_or(0)
+        };
+
         Ok(Expr::Literal(Literal::Int(value)))
     }
 

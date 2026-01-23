@@ -1,0 +1,9 @@
+// Mode annotations for simple_spec.rs
+// The format is: FunctionName(param1_mode, param2_mode, ...);
+// Where: + means input (read-only), - means output (to be computed)
+
+module simple_spec {
+    NodeInit(-, +);       // s is output, start_with_lock is input
+    NodeGrant(+, -);      // s is input, s_ is output
+    NodeAccept(+, -, +);  // s is input, s_ is output, transfer_epoch is input
+}
