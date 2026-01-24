@@ -537,10 +537,8 @@ impl TemplateMatcher {
             args,
         } = expr
         {
-            if method == "contains" && args.len() == 1 {
-                if Self::is_var(&args[0], var_name) {
-                    return Some(receiver);
-                }
+            if method == "contains" && args.len() == 1 && Self::is_var(&args[0], var_name) {
+                return Some(receiver);
             }
         }
         None

@@ -2679,7 +2679,7 @@ impl Translator {
                         // Check if rhs is if-then-else
                         if let Expr::If { cond, then_branch, else_branch } = rhs.as_ref() {
                             // Condition should involve k == new_key
-                            if let Some(_) = self.extract_key_equals(cond, key_var) {
+                            if self.extract_key_equals(cond, key_var).is_some() {
                                 // then_branch is the new_value
                                 // else_branch is the old_value (source[k])
                                 if let Some(else_expr) = else_branch {
