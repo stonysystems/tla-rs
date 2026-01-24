@@ -973,7 +973,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - Log: logs/20260124_130950_12d82da_map_filter_codegen.log
 
 #### Phase 3: Iterate on Transpiler to Handle Full RSL
-- [ ] Identify unsupported patterns in RSL specs
+- [x] Identify unsupported patterns in RSL specs [26:01:24, 13:30]
+  - Analysis document: docs/dev/unsupported-rsl-patterns.md
+  - **Critical blockers found:**
+    1. Exists quantifier completely unsupported (proposer.rs fails)
+    2. Forall with collection membership check unsupported (replica.rs fails)
+  - **Working:** acceptor.rs, learner.rs, executor.rs, broadcast.rs (with TODOs)
+- [ ] Add exists quantifier support (transform to `.any()` or `.find()`)
+- [ ] Add forall collection check template (`container.contains(x) ==> pred(x)` → `.all()`)
 - [ ] Extend template matching for RSL-specific patterns
 - [ ] Handle RSL type system (nested types, generic collections)
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
