@@ -313,15 +313,118 @@ impl Translator {
         }
     }
 
+    /// Convert an ExecExpr to a string representation for use in invariants.
+    /// This produces a Verus spec-level expression string.
+    fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
+        match expr {
+            ExecExpr::Var(name) => {
+                // In invariants, we often need to dereference the loop variable
+                // because it's a reference to the key
+                if name.starts_with('*') {
+                    name.clone()
+                } else {
+                    format!("*{}", name)
+                }
+            }
+            ExecExpr::Binary { lhs, op, rhs } => {
+                format!(
+                    "{} {} {}",
+                    self.expr_to_invariant_string(lhs),
+                    op,
+                    self.expr_to_invariant_string(rhs)
+                )
+            }
+            ExecExpr::Field(base, field) => {
+                let base_str = self.expr_to_invariant_string(base);
+                // Remove dereference for field access
+                let base_str = base_str.trim_start_matches('*');
+                format!("{}.{}", base_str, field)
+            }
+            ExecExpr::Literal(lit) => lit.clone(),
+            ExecExpr::MethodCall { receiver, method, args } => {
+                let recv_str = self.expr_to_invariant_string(receiver);
+                let recv_str = recv_str.trim_start_matches('*');
+                if args.is_empty() {
+                    format!("{}.{}()", recv_str, method)
+                } else {
+                    let args_str: Vec<String> = args.iter()
+                        .map(|a| self.expr_to_invariant_string(a))
+                        .collect();
+                    format!("{}.{}({})", recv_str, method, args_str.join(", "))
+                }
+            }
+            ExecExpr::Call { func, args } => {
+                let args_str: Vec<String> = args.iter()
+                    .map(|a| self.expr_to_invariant_string(a))
+                    .collect();
+                format!("{}({})", func, args_str.join(", "))
+            }
+            ExecExpr::Unary { op, expr } => {
+                format!("{}{}", op, self.expr_to_invariant_string(expr))
+            }
+            _ => "/* unsupported expr */".to_string(),
+        }
+    }
+
+    /// Generate loop invariants for map filter pattern.
+    ///
+    /// For a map filter operation like `votes.iter().filter(|k| k >= threshold).collect()`,
+    /// generates invariants that track iteration progress and establish the postcondition.
+    fn generate_map_filter_invariants(
+        &self,
+        source_map: &str,
+        key_var: &str,
+        filter_pred: &str,
+    ) -> Vec<String> {
+        vec![
+            // Track which keys we've processed
+            format!("seen_keys.subset_of({}@.dom())", source_map),
+            // All seen keys are in source
+            format!(
+                "forall |{k}| seen_keys.contains({k}) ==> {src}@.contains_key({k})",
+                k = key_var,
+                src = source_map
+            ),
+            // Result only contains keys that satisfy filter and are in source
+            format!(
+                "forall |{k}| result@.contains_key({k}) ==> ({pred}) && {src}@.contains_key({k})",
+                k = key_var,
+                pred = filter_pred,
+                src = source_map
+            ),
+            // Result only contains keys we've seen
+            format!(
+                "forall |{k}| result@.contains_key({k}) ==> seen_keys.contains({k})",
+                k = key_var
+            ),
+            // All seen keys matching filter are in result
+            format!(
+                "forall |{k}| seen_keys.contains({k}) && ({pred}) ==> result@.contains_key({k})",
+                k = key_var,
+                pred = filter_pred
+            ),
+        ]
+    }
+
     /// Generate explicit for loop for map filter pattern.
     /// Used when `generate_loops_for_verification` is enabled.
     ///
     /// Generates:
     /// ```ignore
     /// {
+    ///     broadcast use vstd::std_specs::hash::group_hash_axioms;
     ///     let m_keys = source.keys();
-    ///     let mut result: HashMap<_, _> = HashMap::new();
-    ///     for key in iter:m_keys {
+    ///     let ghost mut seen_keys = Set::<K>::empty();
+    ///     let mut result: HashMap<K, V> = HashMap::new();
+    ///     for key in iter:m_keys
+    ///     invariant
+    ///         seen_keys.subset_of(source@.dom()),
+    ///         forall |k| seen_keys.contains(k) ==> source@.contains_key(k),
+    ///         forall |k| result@.contains_key(k) ==> filter_pred(k) && source@.contains_key(k),
+    ///         forall |k| result@.contains_key(k) ==> seen_keys.contains(k),
+    ///         forall |k| seen_keys.contains(k) && filter_pred(k) ==> result@.contains_key(k),
+    ///     {
+    ///         proof { seen_keys = seen_keys.insert(*key); }
     ///         if filter_condition {
     ///             let value = source.get(&key);
     ///             match value {
@@ -341,7 +444,15 @@ impl Translator {
     ) -> ExecExpr {
         let iter_name = format!("{}_keys", source_map);
 
+        // Convert filter expression to string for use in invariants
+        let filter_pred = self.expr_to_invariant_string(&filter_expr);
+
+        // Generate the invariants for this map filter pattern
+        let invariants = self.generate_map_filter_invariants(source_map, key_var, &filter_pred);
+
         ExecExpr::Block(vec![
+            // broadcast use vstd::std_specs::hash::group_hash_axioms;
+            ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()),
             // let m_keys = source.keys();
             ExecExpr::Let {
                 pattern: iter_name.clone(),
@@ -351,6 +462,16 @@ impl Translator {
                     method: "keys".to_string(),
                     args: vec![],
                 }),
+            },
+            // let ghost mut seen_keys = Set::empty();
+            ExecExpr::GhostVar {
+                name: "seen_keys".to_string(),
+                ty: "Set<_>".to_string(),
+                init: Box::new(ExecExpr::Call {
+                    func: "Set::empty".to_string(),
+                    args: vec![],
+                }),
+                mutable: true,
             },
             // let mut result = HashMap::new();
             ExecExpr::Let {
@@ -366,50 +487,66 @@ impl Translator {
                 var: key_var.to_string(),
                 iter_name: iter_name.clone(),
                 iter_source: Box::new(ExecExpr::Var(iter_name)),
-                invariants: vec![
-                    "// TODO: Add loop invariants for verification".to_string(),
-                ],
-                body: Box::new(ExecExpr::If {
-                    cond: Box::new(filter_expr),
-                    then_branch: Box::new(ExecExpr::Block(vec![
-                        // let value = source.get(&key);
-                        ExecExpr::Let {
-                            pattern: "value".to_string(),
-                            ty: None,
-                            value: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var(source_map.to_string())),
-                                method: "get".to_string(),
-                                args: vec![ExecExpr::Var(key_var.to_string())],
+                invariants,
+                body: Box::new(ExecExpr::Block(vec![
+                    // proof { seen_keys = seen_keys.insert(*key); }
+                    ExecExpr::ProofBlock {
+                        stmts: vec![ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                            op: "=".to_string(),
+                            rhs: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                                method: "insert".to_string(),
+                                args: vec![ExecExpr::Unary {
+                                    op: "*".to_string(),
+                                    expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                                }],
                             }),
-                        },
-                        // match value { Some(v) => ..., None => {} }
-                        ExecExpr::Match {
-                            scrutinee: Box::new(ExecExpr::Var("value".to_string())),
-                            arms: vec![
-                                (
-                                    "Some(v)".to_string(),
-                                    ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::Var("result".to_string())),
-                                        method: "insert".to_string(),
-                                        args: vec![
-                                            ExecExpr::Unary {
-                                                op: "*".to_string(),
-                                                expr: Box::new(ExecExpr::Var(key_var.to_string())),
-                                            },
-                                            ExecExpr::MethodCall {
-                                                receiver: Box::new(ExecExpr::Var("v".to_string())),
-                                                method: "clone".to_string(),
-                                                args: vec![],
-                                            },
-                                        ],
-                                    },
-                                ),
-                                ("None".to_string(), ExecExpr::Block(vec![])),
-                            ],
-                        },
-                    ])),
-                    else_branch: None,
-                }),
+                        }],
+                    },
+                    // if filter_condition { ... }
+                    ExecExpr::If {
+                        cond: Box::new(filter_expr),
+                        then_branch: Box::new(ExecExpr::Block(vec![
+                            // let value = source.get(&key);
+                            ExecExpr::Let {
+                                pattern: "value".to_string(),
+                                ty: None,
+                                value: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var(source_map.to_string())),
+                                    method: "get".to_string(),
+                                    args: vec![ExecExpr::Var(key_var.to_string())],
+                                }),
+                            },
+                            // match value { Some(v) => ..., None => {} }
+                            ExecExpr::Match {
+                                scrutinee: Box::new(ExecExpr::Var("value".to_string())),
+                                arms: vec![
+                                    (
+                                        "Some(v)".to_string(),
+                                        ExecExpr::MethodCall {
+                                            receiver: Box::new(ExecExpr::Var("result".to_string())),
+                                            method: "insert".to_string(),
+                                            args: vec![
+                                                ExecExpr::Unary {
+                                                    op: "*".to_string(),
+                                                    expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                                                },
+                                                ExecExpr::MethodCall {
+                                                    receiver: Box::new(ExecExpr::Var("v".to_string())),
+                                                    method: "clone".to_string(),
+                                                    args: vec![],
+                                                },
+                                            ],
+                                        },
+                                    ),
+                                    ("None".to_string(), ExecExpr::Block(vec![])),
+                                ],
+                            },
+                        ])),
+                        else_branch: None,
+                    },
+                ])),
             },
             // result
             ExecExpr::Var("result".to_string()),
@@ -4503,7 +4640,7 @@ mod tests {
 
     #[test]
     fn test_generate_map_filter_loop() {
-        // Test that generate_loops_for_verification produces loop code
+        // Test that generate_loops_for_verification produces loop code with invariants
         let mut config = TranslatorConfig::default();
         config.generate_loops_for_verification = true;
 
@@ -4521,43 +4658,80 @@ mod tests {
 
         let result = translator.generate_map_filter_loop("votes", "opn", filter_expr);
 
-        // Should be a Block with multiple statements
+        // Should be a Block with 6 statements:
+        // 0: BroadcastUse, 1: Let (keys), 2: GhostVar, 3: Let (result), 4: ForInIter, 5: Var
         match result {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 4, "Block should have 4 statements");
+                assert_eq!(stmts.len(), 6, "Block should have 6 statements");
 
-                // First statement: let iter_name = source.keys()
+                // First statement: broadcast use
                 match &stmts[0] {
-                    ExecExpr::Let { pattern, .. } => {
-                        assert_eq!(pattern, "votes_keys", "Should create votes_keys iterator");
+                    ExecExpr::BroadcastUse(path) => {
+                        assert!(path.contains("hash"), "Should broadcast hash axioms");
                     }
-                    _ => panic!("First statement should be Let"),
+                    _ => panic!("First statement should be BroadcastUse"),
                 }
 
-                // Second statement: let mut result = HashMap::new()
+                // Second statement: let iter_name = source.keys()
                 match &stmts[1] {
                     ExecExpr::Let { pattern, .. } => {
-                        assert!(pattern.contains("result"), "Should create result variable");
+                        assert_eq!(pattern, "votes_keys", "Should create votes_keys iterator");
                     }
                     _ => panic!("Second statement should be Let"),
                 }
 
-                // Third statement: ForInIter
+                // Third statement: let ghost mut seen_keys = Set::empty()
                 match &stmts[2] {
-                    ExecExpr::ForInIter { var, iter_name, invariants, .. } => {
-                        assert_eq!(var, "opn", "Loop variable should be opn");
-                        assert_eq!(iter_name, "votes_keys", "Should iterate votes_keys");
-                        assert!(!invariants.is_empty(), "Should have TODO invariants");
+                    ExecExpr::GhostVar { name, mutable, .. } => {
+                        assert_eq!(name, "seen_keys", "Should create seen_keys ghost var");
+                        assert!(mutable, "Ghost var should be mutable");
                     }
-                    _ => panic!("Third statement should be ForInIter"),
+                    _ => panic!("Third statement should be GhostVar"),
                 }
 
-                // Fourth statement: result
+                // Fourth statement: let mut result = HashMap::new()
                 match &stmts[3] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert!(pattern.contains("result"), "Should create result variable");
+                    }
+                    _ => panic!("Fourth statement should be Let"),
+                }
+
+                // Fifth statement: ForInIter with invariants
+                match &stmts[4] {
+                    ExecExpr::ForInIter { var, iter_name, invariants, body, .. } => {
+                        assert_eq!(var, "opn", "Loop variable should be opn");
+                        assert_eq!(iter_name, "votes_keys", "Should iterate votes_keys");
+
+                        // Should have 5 invariants for map filter pattern
+                        assert_eq!(invariants.len(), 5, "Should have 5 invariants");
+                        assert!(invariants[0].contains("seen_keys.subset_of"), "First invariant: seen subset");
+                        assert!(invariants[1].contains("seen_keys.contains"), "Second invariant: seen in source");
+                        assert!(invariants[2].contains("result@.contains_key"), "Third invariant: result satisfies filter");
+                        assert!(invariants[3].contains("seen_keys.contains"), "Fourth invariant: result from seen");
+                        assert!(invariants[4].contains("result@.contains_key"), "Fifth invariant: all matching in result");
+
+                        // Body should contain proof block
+                        match body.as_ref() {
+                            ExecExpr::Block(body_stmts) => {
+                                assert!(body_stmts.len() >= 2, "Body should have proof block and if");
+                                match &body_stmts[0] {
+                                    ExecExpr::ProofBlock { .. } => {}
+                                    _ => panic!("First body statement should be ProofBlock"),
+                                }
+                            }
+                            _ => panic!("Body should be Block"),
+                        }
+                    }
+                    _ => panic!("Fifth statement should be ForInIter"),
+                }
+
+                // Sixth statement: result
+                match &stmts[5] {
                     ExecExpr::Var(name) => {
                         assert_eq!(name, "result", "Should return result");
                     }
-                    _ => panic!("Fourth statement should be Var(result)"),
+                    _ => panic!("Sixth statement should be Var(result)"),
                 }
             }
             _ => panic!("Expected Block, got {:?}", result),
@@ -4568,5 +4742,62 @@ mod tests {
     fn test_generate_loops_config_default_false() {
         let config = TranslatorConfig::default();
         assert!(!config.generate_loops_for_verification, "Default should be false");
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test variable (should add dereference)
+        let var = ExecExpr::Var("key".to_string());
+        assert_eq!(translator.expr_to_invariant_string(&var), "*key");
+
+        // Test binary expression
+        let binary = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Unary {
+                op: "*".to_string(),
+                expr: Box::new(ExecExpr::Var("opn".to_string())),
+            }),
+            op: ">=".to_string(),
+            rhs: Box::new(ExecExpr::Var("threshold".to_string())),
+        };
+        assert_eq!(
+            translator.expr_to_invariant_string(&binary),
+            "**opn >= *threshold"
+        );
+
+        // Test literal
+        let lit = ExecExpr::Literal("42".to_string());
+        assert_eq!(translator.expr_to_invariant_string(&lit), "42");
+
+        // Test field access
+        let field = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "votes".to_string(),
+        );
+        assert_eq!(translator.expr_to_invariant_string(&field), "s.votes");
+    }
+
+    #[test]
+    fn test_generate_map_filter_invariants() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        let invariants = translator.generate_map_filter_invariants(
+            "votes",
+            "opn",
+            "*opn >= threshold",
+        );
+
+        assert_eq!(invariants.len(), 5, "Should generate 5 invariants");
+
+        // Check invariant content
+        assert!(invariants[0].contains("seen_keys.subset_of(votes@.dom())"));
+        assert!(invariants[1].contains("forall |opn|"));
+        assert!(invariants[1].contains("seen_keys.contains(opn)"));
+        assert!(invariants[1].contains("votes@.contains_key(opn)"));
+        assert!(invariants[2].contains("*opn >= threshold"));
+        assert!(invariants[4].contains("*opn >= threshold"));
     }
 }

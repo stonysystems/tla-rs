@@ -1090,8 +1090,20 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added ForInIter, GhostVar, ProofBlock, Assume, Assert, BroadcastUse to ExecExpr
       - Added printer support for all new constructs
       - Added 5 new tests for loop constructs
-    - [ ] Phase 2: Simple loop generation without invariants (~200 LOC)
-    - [ ] Phase 3: Invariant templates for common patterns (~300 LOC)
+    - [x] Phase 2: Simple loop generation without invariants (~200 LOC) [26:01:25, 05:00]
+      - Added `generate_loops_for_verification` config flag to TranslatorConfig
+      - Implemented `generate_map_filter_loop()` helper method
+      - Modified QuantifierTemplate::MapFilter to use loop when flag is enabled
+      - Added 2 tests for loop generation
+      - Plan: docs/dev/phase2-simple-loop-plan.md
+    - [x] Phase 3: Invariant templates for common patterns (~300 LOC) [26:01:25, 05:30]
+      - Added `expr_to_invariant_string()` helper to convert expressions to spec-level strings
+      - Implemented `generate_map_filter_invariants()` for map filter pattern
+      - Updated `generate_map_filter_loop()` to include ghost variables and invariants
+      - Generates 5 loop invariants: seen_keys subset, seen in source, result satisfies filter, result from seen, all matching in result
+      - Added proof block to track seen_keys ghost state
+      - Added broadcast use for hash axioms
+      - Added 2 new tests for invariant generation
     - [ ] Phase 4: Ghost code generation (~100 LOC)
     - [ ] Phase 5: Post-loop assertions (~100 LOC)
   - See docs/dev/verus-integration-plan.md for integration strategy options
