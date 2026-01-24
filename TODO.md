@@ -1015,7 +1015,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added `process_helper_calls_in_conjunction()` to process all helper calls in a conjunction
       - Added `with_field_substitutions()` to create contexts with combined substitutions
       - Modified conjunction handler to integrate helper call processing
-  - [ ] Handle sequence of expressions returning single tuple result
+    - [x] Handle helper calls with multiple outputs (field + direct param) [26:01:24, 16:30]
+      - Extended HelperCallInfo to track both output_fields and output_params
+      - Updated detect_helper_call() to detect direct output identifiers
+      - Updated generate_helper_let_binding() for tuple pattern destructuring
+      - Added bound outputs to return tuple in conjunction handling
+  - [x] Handle sequence of expressions returning single tuple result [26:01:24, 16:30]
+      - Handled by multi-output helper call support above
+      - Patterns like `helper_call + struct construction` now properly return tuples
 - [ ] Handle RSL type system (nested types, generic collections)
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
 - [ ] Handle `recommends` clauses properly
