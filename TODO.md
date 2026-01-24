@@ -1078,9 +1078,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Main codebase: 456 verified, 0 errors (57 deprecation warnings)
     - Integration test module compiles with existing types
 - [ ] Verify generated code passes all Verus proofs (0 errors)
-  - **BLOCKED**: Requires transpiler to generate loop patterns with invariants instead of iterator chains
-  - Current generated code uses `.iter().filter().collect()` which doesn't verify
-  - Manual code uses explicit `for` loops with `invariant` clauses
+  - **PARTIALLY COMPLETE**: Using Option B (external_body for iterator methods)
+  - [x] Demonstrated external_body pattern in generated_acceptor_test.rs [26:01:25, 03:30]
+    - Function contracts verified (requires/ensures)
+    - Iterator implementation trusted via #[verifier::external_body]
+    - Compiles with 456 verified, 0 errors
+  - [ ] Future: Option A (generate loop patterns with invariants)
   - See docs/dev/verus-integration-plan.md for integration strategy options
 - [ ] Compare verification time: generated vs manual implementation
 - [ ] Integration test: generated acceptor works with manual proposer/learner
