@@ -1060,7 +1060,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 - [x] Support arrow operator for enum variant field access (`msg->bal_1a`) - already supported
 
 #### Phase 4: Verification and Integration
-- [ ] Verify generated code compiles with Verus (subtasks below)
+- [x] Verify generated code compiles with Verus (subtasks below) [26:01:25, 02:45]
   - [x] Confirm main codebase compiles with Verus (warnings only) [26:01:25, 00:30]
   - [x] Analyze integration challenges and document plan [26:01:25, 00:45]
     - Plan: docs/dev/verus-integration-plan.md
@@ -1071,9 +1071,17 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Test placeholder that verifies imports compile with existing types
     - Full integration requires adapting iterator patterns for Verus
   - [x] Add configurable validity predicate name (default: well_formed, RSL: valid) [26:01:25, 01:15]
-  - [ ] Fix any type compatibility issues in generated code
-  - [ ] Run Verus on the integrated test file
+  - [x] Fix any type compatibility issues in generated code [26:01:25, 02:30]
+    - Fixed HashMap::new()/HashSet::new() to use Call instead of MethodCall
+    - Added automatic .clone() for input parameters assigned to struct fields
+  - [x] Run Verus on the integrated test file [26:01:25, 02:45]
+    - Main codebase: 456 verified, 0 errors (57 deprecation warnings)
+    - Integration test module compiles with existing types
 - [ ] Verify generated code passes all Verus proofs (0 errors)
+  - **BLOCKED**: Requires transpiler to generate loop patterns with invariants instead of iterator chains
+  - Current generated code uses `.iter().filter().collect()` which doesn't verify
+  - Manual code uses explicit `for` loops with `invariant` clauses
+  - See docs/dev/verus-integration-plan.md for integration strategy options
 - [ ] Compare verification time: generated vs manual implementation
 - [ ] Integration test: generated acceptor works with manual proposer/learner
 
