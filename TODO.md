@@ -1085,7 +1085,11 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Compiles with 456 verified, 0 errors
   - [ ] Future: Option A (generate loop patterns with invariants)
   - See docs/dev/verus-integration-plan.md for integration strategy options
-- [ ] Compare verification time: generated vs manual implementation
+- [x] Compare verification time: generated vs manual implementation [26:01:25, 04:00]
+  - Full codebase verification: 7 minutes (456 verified, 0 errors)
+  - Generated code with external_body: 0 additional verification time (just type-checking)
+  - Manual CRemoveVotesBeforeLogTruncationPoint: contributes to 7-minute total
+  - Trade-off: external_body is faster but doesn't verify implementation correctness
 - [ ] Integration test: generated acceptor works with manual proposer/learner
 
 #### Phase 5: Replace Manual Implementation
