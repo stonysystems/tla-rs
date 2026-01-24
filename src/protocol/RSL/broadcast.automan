@@ -1,0 +1,18 @@
+// Mode annotations for RSL Broadcast predicates
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module RSL::broadcast {
+    // Broadcast to all replicas
+    // c (input): configuration with replica list
+    // myidx (input): sender's index in replica list
+    // m (input): message to broadcast
+    // sent_packets (output): sequence of packets to all replicas
+    LBroadcastToEveryone(+, +, +, -);
+
+    // Build broadcast packet sequence
+    // src (input): source endpoint
+    // dsts (input): sequence of destination endpoints
+    // m (input): message to send
+    // Returns: sequence of packets
+    BuildLBroadcast(+, +, +);
+}

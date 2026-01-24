@@ -1,0 +1,197 @@
+// Mode annotations for RSL Replica predicates
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module RSL::replica {
+    // Initialization predicate: creates a new replica from constants
+    // r (output): the initialized replica state
+    // c (input): the replica constants
+    LReplicaInit(-, +);
+
+    // Process invalid message (no-op)
+    // s (input): current replica state
+    // s_ (output): new replica state (unchanged)
+    // received_packet (input): incoming invalid packet
+    // sent_packets (output): empty packet sequence
+    LReplicaNextProcessInvalid(+, -, +, -);
+
+    // Process client request
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming request packet
+    // sent_packets (output): reply packets (if cached)
+    LReplicaNextProcessRequest(+, -, +, -);
+
+    // Process 1a message (Paxos phase 1a)
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming 1a packet
+    // sent_packets (output): 1b response packets
+    LReplicaNextProcess1a(+, -, +, -);
+
+    // Process 1b message (Paxos phase 1b)
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming 1b packet
+    // sent_packets (output): empty (processing only)
+    LReplicaNextProcess1b(+, -, +, -);
+
+    // Process StartingPhase2 message
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming StartingPhase2 packet
+    // sent_packets (output): app state request packets
+    LReplicaNextProcessStartingPhase2(+, -, +, -);
+
+    // Process 2a message (Paxos phase 2a)
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming 2a packet
+    // sent_packets (output): 2b response packets
+    LReplicaNextProcess2a(+, -, +, -);
+
+    // Process 2b message (Paxos phase 2b)
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming 2b packet
+    // sent_packets (output): empty (learning only)
+    LReplicaNextProcess2b(+, -, +, -);
+
+    // Process reply message (no-op)
+    // s (input): current replica state
+    // s_ (output): new replica state (unchanged)
+    // received_packet (input): incoming reply packet
+    // sent_packets (output): empty
+    LReplicaNextProcessReply(+, -, +, -);
+
+    // Process app state supply message
+    // s (input): current replica state
+    // s_ (output): new replica state with transferred state
+    // received_packet (input): incoming app state supply packet
+    // sent_packets (output): empty
+    LReplicaNextProcessAppStateSupply(+, -, +, -);
+
+    // Process app state request message
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming app state request packet
+    // sent_packets (output): app state supply response
+    LReplicaNextProcessAppStateRequest(+, -, +, -);
+
+    // Process heartbeat message
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // received_packet (input): incoming heartbeat packet
+    // clock (input): current time
+    // sent_packets (output): empty
+    LReplicaNextProcessHeartbeat(+, -, +, +, -);
+
+    // Spontaneous: Maybe enter new view and send 1a
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // sent_packets (output): 1a broadcast packets
+    LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(+, -, -);
+
+    // Spontaneous: Maybe enter phase 2
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // sent_packets (output): StartingPhase2 broadcast packets
+    LReplicaNextSpontaneousMaybeEnterPhase2(+, -, -);
+
+    // Read clock: Maybe nominate value and send 2a
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // clock (input): clock reading
+    // sent_packets (output): 2a broadcast packets
+    LReplicaNextReadClockMaybeNominateValueAndSend2a(+, -, +, -);
+
+    // Spontaneous: Truncate log based on checkpoints
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // sent_packets (output): empty
+    LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(+, -, -);
+
+    // Spontaneous: Maybe make decision
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // sent_packets (output): empty
+    LReplicaNextSpontaneousMaybeMakeDecision(+, -, -);
+
+    // Spontaneous: Maybe execute
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // sent_packets (output): reply packets
+    LReplicaNextSpontaneousMaybeExecute(+, -, -);
+
+    // Read clock: Maybe send heartbeat
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // clock (input): clock reading
+    // sent_packets (output): heartbeat broadcast packets
+    LReplicaNextReadClockMaybeSendHeartbeat(+, -, +, -);
+
+    // Read clock: Check for view timeout
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // clock (input): clock reading
+    // sent_packets (output): empty
+    LReplicaNextReadClockCheckForViewTimeout(+, -, +, -);
+
+    // Read clock: Check for quorum of view suspicions
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // clock (input): clock reading
+    // sent_packets (output): empty
+    LReplicaNextReadClockCheckForQuorumOfViewSuspicions(+, -, +, -);
+
+    // Helper: Extract sent packets from I/O sequence
+    // Pure function (input, returns output)
+    ExtractSentPacketsFromIos(+);
+
+    // Helper: Check spontaneous I/O structure
+    // Pure predicate (all inputs)
+    SpontaneousIos(+, +);
+
+    // Helper: Get clock from spontaneous I/O
+    // Pure function (input, returns output)
+    SpontaneousClock(+);
+
+    // Read clock and process packet (for heartbeat)
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // ios (input): I/O sequence with receive and clock
+    LReplicaNextReadClockAndProcessPacket(+, -, +);
+
+    // Process packet without reading clock
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // ios (input): I/O sequence with receive
+    LReplicaNextProcessPacketWithoutReadingClock(+, -, +);
+
+    // Process any packet (dispatch)
+    // s (input): current replica state
+    // s_ (output): new replica state
+    // ios (input): I/O sequence
+    LReplicaNextProcessPacket(+, -, +);
+
+    // No-receive next (spontaneous actions)
+    // s (input): current replica state
+    // nextActionIndex (input): which action to take
+    // s_ (output): new replica state
+    // ios (input): I/O sequence
+    LReplicaNoReceiveNext(+, +, -, +);
+
+    // Scheduler initialization
+    // s (output): initialized scheduler
+    // c (input): replica constants
+    LSchedulerInit(-, +);
+
+    // Scheduler next step
+    // s (input): current scheduler state
+    // s_ (output): new scheduler state
+    // ios (input): I/O sequence
+    LSchedulerNext(+, -, +);
+
+    // Helper: Number of replica actions
+    // Pure constant
+    LReplicaNumActions();
+}
