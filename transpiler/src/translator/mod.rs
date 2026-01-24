@@ -1039,16 +1039,6 @@ impl Translator {
     }
 
     /// Categorize expressions in a conjunction into output assignments and other expressions
-    /// Returns: (Vec of output expressions with their param name, Vec of other expressions)
-    fn categorize_output_assignments(
-        &self,
-        exprs: &[Expr],
-        ctx: &TransformContext,
-    ) -> TranspileResult<(Vec<(String, ExecExpr)>, Vec<ExecExpr>)> {
-        self.categorize_output_assignments_with_exclusions(exprs, ctx, &HashSet::new())
-    }
-
-    /// Categorize expressions in a conjunction into output assignments and other expressions
     /// Excludes outputs that have already been bound (e.g., by helper calls)
     /// Returns: (Vec of output expressions with their param name, Vec of other expressions)
     fn categorize_output_assignments_with_exclusions(
