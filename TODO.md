@@ -1078,8 +1078,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Main codebase: 456 verified, 0 errors (57 deprecation warnings)
     - Integration test module compiles with existing types
 - [ ] Verify generated code passes all Verus proofs (0 errors)
-  - **PARTIALLY COMPLETE**: Loop generation infrastructure complete, needs integration testing
-  - Option A (generate loops): Infrastructure complete, need to test with actual spec function
+  - **PARTIALLY COMPLETE**: Loop generation infrastructure complete, printer fixes done
+  - Option A (generate loops): Infrastructure complete, printer issues fixed [26:01:25, 06:45]
+    - Fixed double dereference (*opn instead of **opn)
+    - Fixed empty match arms (None => {} instead of None => ,)
+    - Fixed redundant iterator binding
+    - Fixed double semicolons in comments
   - Option B (external_body): Working, demonstrated in generated_acceptor_test.rs
   - [x] Demonstrated external_body pattern in generated_acceptor_test.rs [26:01:25, 03:30]
     - Function contracts verified (requires/ensures)

@@ -143,6 +143,8 @@ impl Printer {
                             | ExecExpr::BroadcastUse(_)
                             | ExecExpr::GhostVar { .. }
                             | ExecExpr::Comment(_)
+                            | ExecExpr::ProofBlock { .. }
+                            | ExecExpr::ForInIter { .. }
                     );
                     if !is_last && !has_own_semicolon {
                         self.write(";");
@@ -348,13 +350,22 @@ impl Printer {
             }
 
             ExecExpr::Binary { lhs, op, rhs } => {
-                self.write("(");
-                self.print_expr(lhs);
-                self.write(" ");
-                self.write(op);
-                self.write(" ");
-                self.print_expr(rhs);
-                self.write(")");
+                // For assignments (used in proof blocks), don't wrap in parentheses
+                if op == "=" {
+                    self.print_expr(lhs);
+                    self.write(" ");
+                    self.write(op);
+                    self.write(" ");
+                    self.print_expr(rhs);
+                } else {
+                    self.write("(");
+                    self.print_expr(lhs);
+                    self.write(" ");
+                    self.write(op);
+                    self.write(" ");
+                    self.print_expr(rhs);
+                    self.write(")");
+                }
             }
 
             ExecExpr::Unary { op, expr } => {
@@ -510,17 +521,23 @@ impl Printer {
             }
 
             ExecExpr::ProofBlock { stmts } => {
-                self.write("proof {");
-                self.newline();
-                self.current_indent += 1;
-                for stmt in stmts {
-                    self.indent();
-                    self.print_expr(stmt);
+                // Verus proof blocks: proof{stmt};
+                self.write("proof{");
+                // For single-statement proof blocks, keep it compact
+                if stmts.len() == 1 {
+                    self.print_expr(&stmts[0]);
+                } else {
                     self.newline();
+                    self.current_indent += 1;
+                    for stmt in stmts {
+                        self.indent();
+                        self.print_expr(stmt);
+                        self.newline();
+                    }
+                    self.current_indent -= 1;
+                    self.indent();
                 }
-                self.current_indent -= 1;
-                self.indent();
-                self.write("}");
+                self.write("};");
             }
 
             ExecExpr::Assume(expr) => {
@@ -680,9 +697,10 @@ mod tests {
         printer.print_expr(&expr);
         let output = printer.output;
 
-        assert!(output.contains("proof {"));
-        assert!(output.contains("seen_keys.insert"));
-        assert!(output.contains("}"));
+        // For single-statement proof blocks, output is compact: proof{stmt};
+        assert!(output.contains("proof{"));
+        assert!(output.contains("seen_keys = seen_keys.insert"));
+        assert!(output.contains("};"));
     }
 
     #[test]
