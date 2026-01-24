@@ -23,6 +23,10 @@ pub struct TranslatorConfig {
     pub generate_validity_predicates: bool,
     /// Name of the validity predicate (default: "well_formed", RSL uses "valid")
     pub validity_predicate_name: String,
+    /// Whether to generate explicit for loops instead of iterator chains.
+    /// When true, generates Verus-verifiable loop code with placeholders for invariants.
+    /// When false (default), generates iterator-based code (.iter().filter().collect()).
+    pub generate_loops_for_verification: bool,
 }
 
 impl Default for TranslatorConfig {
@@ -34,6 +38,7 @@ impl Default for TranslatorConfig {
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
+            generate_loops_for_verification: false,
         }
     }
 }
@@ -306,6 +311,109 @@ impl Translator {
             ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Clone(Box::new(expr)),
             _ => expr,
         }
+    }
+
+    /// Generate explicit for loop for map filter pattern.
+    /// Used when `generate_loops_for_verification` is enabled.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// {
+    ///     let m_keys = source.keys();
+    ///     let mut result: HashMap<_, _> = HashMap::new();
+    ///     for key in iter:m_keys {
+    ///         if filter_condition {
+    ///             let value = source.get(&key);
+    ///             match value {
+    ///                 Some(v) => { result.insert(*key, v.clone()); }
+    ///                 None => { }
+    ///             }
+    ///         }
+    ///     }
+    ///     result
+    /// }
+    /// ```
+    fn generate_map_filter_loop(
+        &self,
+        source_map: &str,
+        key_var: &str,
+        filter_expr: ExecExpr,
+    ) -> ExecExpr {
+        let iter_name = format!("{}_keys", source_map);
+
+        ExecExpr::Block(vec![
+            // let m_keys = source.keys();
+            ExecExpr::Let {
+                pattern: iter_name.clone(),
+                ty: None,
+                value: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(source_map.to_string())),
+                    method: "keys".to_string(),
+                    args: vec![],
+                }),
+            },
+            // let mut result = HashMap::new();
+            ExecExpr::Let {
+                pattern: "mut result".to_string(),
+                ty: Some(ExecType::Named("HashMap<_, _>".to_string())),
+                value: Box::new(ExecExpr::Call {
+                    func: "HashMap::new".to_string(),
+                    args: vec![],
+                }),
+            },
+            // for key in iter:m_keys { ... }
+            ExecExpr::ForInIter {
+                var: key_var.to_string(),
+                iter_name: iter_name.clone(),
+                iter_source: Box::new(ExecExpr::Var(iter_name)),
+                invariants: vec![
+                    "// TODO: Add loop invariants for verification".to_string(),
+                ],
+                body: Box::new(ExecExpr::If {
+                    cond: Box::new(filter_expr),
+                    then_branch: Box::new(ExecExpr::Block(vec![
+                        // let value = source.get(&key);
+                        ExecExpr::Let {
+                            pattern: "value".to_string(),
+                            ty: None,
+                            value: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var(source_map.to_string())),
+                                method: "get".to_string(),
+                                args: vec![ExecExpr::Var(key_var.to_string())],
+                            }),
+                        },
+                        // match value { Some(v) => ..., None => {} }
+                        ExecExpr::Match {
+                            scrutinee: Box::new(ExecExpr::Var("value".to_string())),
+                            arms: vec![
+                                (
+                                    "Some(v)".to_string(),
+                                    ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var("result".to_string())),
+                                        method: "insert".to_string(),
+                                        args: vec![
+                                            ExecExpr::Unary {
+                                                op: "*".to_string(),
+                                                expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                                            },
+                                            ExecExpr::MethodCall {
+                                                receiver: Box::new(ExecExpr::Var("v".to_string())),
+                                                method: "clone".to_string(),
+                                                args: vec![],
+                                            },
+                                        ],
+                                    },
+                                ),
+                                ("None".to_string(), ExecExpr::Block(vec![])),
+                            ],
+                        },
+                    ])),
+                    else_branch: None,
+                }),
+            },
+            // result
+            ExecExpr::Var("result".to_string()),
+        ])
     }
 
     /// Translate an annotated spec function to an exec function
@@ -2977,25 +3085,30 @@ impl Translator {
                 key_var,
                 filter_predicate,
             } => {
-                // Generate: source.iter().filter(|(k, _)| predicate).collect()
                 let pred = self.transform_expr(filter_predicate, ctx)?;
 
-                Ok(ExecExpr::MethodCall {
-                    receiver: Box::new(ExecExpr::MethodCall {
+                if self.config.generate_loops_for_verification {
+                    // Generate explicit for loop for Verus verification
+                    Ok(self.generate_map_filter_loop(source_map, key_var, pred))
+                } else {
+                    // Generate: source.iter().filter(|(k, _)| predicate).collect()
+                    Ok(ExecExpr::MethodCall {
                         receiver: Box::new(ExecExpr::MethodCall {
-                            receiver: Box::new(ExecExpr::Var(source_map.clone())),
-                            method: "iter".to_string(),
-                            args: vec![],
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                method: "iter".to_string(),
+                                args: vec![],
+                            }),
+                            method: "filter".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![format!("({}, _)", key_var)],
+                                body: Box::new(pred),
+                            }],
                         }),
-                        method: "filter".to_string(),
-                        args: vec![ExecExpr::Closure {
-                            params: vec![format!("({}, _)", key_var)],
-                            body: Box::new(pred),
-                        }],
-                    }),
-                    method: "collect".to_string(),
-                    args: vec![],
-                })
+                        method: "collect".to_string(),
+                        args: vec![],
+                    })
+                }
             }
 
             QuantifierTemplate::SetComprehension {
@@ -4386,5 +4499,74 @@ mod tests {
             translator.config.validity_predicate_name, "valid",
             "Should use configured validity predicate name"
         );
+    }
+
+    #[test]
+    fn test_generate_map_filter_loop() {
+        // Test that generate_loops_for_verification produces loop code
+        let mut config = TranslatorConfig::default();
+        config.generate_loops_for_verification = true;
+
+        let translator = Translator::new(config);
+
+        // Generate a simple filter expression
+        let filter_expr = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Unary {
+                op: "*".to_string(),
+                expr: Box::new(ExecExpr::Var("opn".to_string())),
+            }),
+            op: ">=".to_string(),
+            rhs: Box::new(ExecExpr::Var("threshold".to_string())),
+        };
+
+        let result = translator.generate_map_filter_loop("votes", "opn", filter_expr);
+
+        // Should be a Block with multiple statements
+        match result {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 4, "Block should have 4 statements");
+
+                // First statement: let iter_name = source.keys()
+                match &stmts[0] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert_eq!(pattern, "votes_keys", "Should create votes_keys iterator");
+                    }
+                    _ => panic!("First statement should be Let"),
+                }
+
+                // Second statement: let mut result = HashMap::new()
+                match &stmts[1] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert!(pattern.contains("result"), "Should create result variable");
+                    }
+                    _ => panic!("Second statement should be Let"),
+                }
+
+                // Third statement: ForInIter
+                match &stmts[2] {
+                    ExecExpr::ForInIter { var, iter_name, invariants, .. } => {
+                        assert_eq!(var, "opn", "Loop variable should be opn");
+                        assert_eq!(iter_name, "votes_keys", "Should iterate votes_keys");
+                        assert!(!invariants.is_empty(), "Should have TODO invariants");
+                    }
+                    _ => panic!("Third statement should be ForInIter"),
+                }
+
+                // Fourth statement: result
+                match &stmts[3] {
+                    ExecExpr::Var(name) => {
+                        assert_eq!(name, "result", "Should return result");
+                    }
+                    _ => panic!("Fourth statement should be Var(result)"),
+                }
+            }
+            _ => panic!("Expected Block, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_generate_loops_config_default_false() {
+        let config = TranslatorConfig::default();
+        assert!(!config.generate_loops_for_verification, "Default should be false");
     }
 }
