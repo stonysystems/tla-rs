@@ -406,6 +406,74 @@ impl Translator {
         ]
     }
 
+    /// Generate pre-loop assertions for map filter pattern.
+    /// These help Verus understand the initial state before the loop.
+    fn generate_pre_loop_assertions(&self, iter_name: &str, source_map: &str) -> Vec<ExecExpr> {
+        vec![
+            // assert(m_keys@.0 == 0);
+            ExecExpr::Assert(Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var(format!("{}@", iter_name))),
+                    "0".to_string(),
+                )),
+                op: "==".to_string(),
+                rhs: Box::new(ExecExpr::Literal("0".to_string())),
+            })),
+            // assume(m_keys@.1.len() == source@.len());
+            ExecExpr::Assume(Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Field(
+                        Box::new(ExecExpr::Var(format!("{}@", iter_name))),
+                        "1".to_string(),
+                    )),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+                op: "==".to_string(),
+                rhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(format!("{}@", source_map))),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+            })),
+            // assert(m_keys@.1.to_set() =~= source@.dom());
+            ExecExpr::Assert(Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Field(
+                        Box::new(ExecExpr::Var(format!("{}@", iter_name))),
+                        "1".to_string(),
+                    )),
+                    method: "to_set".to_string(),
+                    args: vec![],
+                }),
+                op: "=~=".to_string(),
+                rhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(format!("{}@", source_map))),
+                    method: "dom".to_string(),
+                    args: vec![],
+                }),
+            })),
+        ]
+    }
+
+    /// Generate in-loop assertions for map filter pattern.
+    /// These help Verus verify the loop body maintains invariants.
+    fn generate_in_loop_assertions(&self, key_var: &str, source_map: &str) -> Vec<ExecExpr> {
+        vec![
+            // broadcast use vstd::std_specs::hash::group_hash_axioms;
+            ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()),
+            // assume(source@.contains_key(*key));
+            ExecExpr::Assume(Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var(format!("{}@", source_map))),
+                method: "contains_key".to_string(),
+                args: vec![ExecExpr::Unary {
+                    op: "*".to_string(),
+                    expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                }],
+            })),
+        ]
+    }
+
     /// Generate explicit for loop for map filter pattern.
     /// Used when `generate_loops_for_verification` is enabled.
     ///
@@ -414,6 +482,9 @@ impl Translator {
     /// {
     ///     broadcast use vstd::std_specs::hash::group_hash_axioms;
     ///     let m_keys = source.keys();
+    ///     assert(m_keys@.0 == 0);
+    ///     assume(m_keys@.1.len() == source@.len());
+    ///     assert(m_keys@.1.to_set() =~= source@.dom());
     ///     let ghost mut seen_keys = Set::<K>::empty();
     ///     let mut result: HashMap<K, V> = HashMap::new();
     ///     for key in iter:m_keys
@@ -424,6 +495,8 @@ impl Translator {
     ///         forall |k| result@.contains_key(k) ==> seen_keys.contains(k),
     ///         forall |k| seen_keys.contains(k) && filter_pred(k) ==> result@.contains_key(k),
     ///     {
+    ///         broadcast use vstd::std_specs::hash::group_hash_axioms;
+    ///         assume(source@.contains_key(*key));
     ///         proof { seen_keys = seen_keys.insert(*key); }
     ///         if filter_condition {
     ///             let value = source.get(&key);
@@ -450,7 +523,74 @@ impl Translator {
         // Generate the invariants for this map filter pattern
         let invariants = self.generate_map_filter_invariants(source_map, key_var, &filter_pred);
 
-        ExecExpr::Block(vec![
+        // Generate pre-loop assertions
+        let pre_loop_assertions = self.generate_pre_loop_assertions(&iter_name, source_map);
+
+        // Generate in-loop assertions
+        let in_loop_assertions = self.generate_in_loop_assertions(key_var, source_map);
+
+        // Build the loop body: in-loop assertions + proof block + if statement
+        let mut loop_body = in_loop_assertions;
+        // proof { seen_keys = seen_keys.insert(*key); }
+        loop_body.push(ExecExpr::ProofBlock {
+            stmts: vec![ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                op: "=".to_string(),
+                rhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                    method: "insert".to_string(),
+                    args: vec![ExecExpr::Unary {
+                        op: "*".to_string(),
+                        expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                    }],
+                }),
+            }],
+        });
+        // if filter_condition { ... }
+        loop_body.push(ExecExpr::If {
+            cond: Box::new(filter_expr),
+            then_branch: Box::new(ExecExpr::Block(vec![
+                // let value = source.get(&key);
+                ExecExpr::Let {
+                    pattern: "value".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var(source_map.to_string())),
+                        method: "get".to_string(),
+                        args: vec![ExecExpr::Var(key_var.to_string())],
+                    }),
+                },
+                // match value { Some(v) => ..., None => {} }
+                ExecExpr::Match {
+                    scrutinee: Box::new(ExecExpr::Var("value".to_string())),
+                    arms: vec![
+                        (
+                            "Some(v)".to_string(),
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("result".to_string())),
+                                method: "insert".to_string(),
+                                args: vec![
+                                    ExecExpr::Unary {
+                                        op: "*".to_string(),
+                                        expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                                    },
+                                    ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var("v".to_string())),
+                                        method: "clone".to_string(),
+                                        args: vec![],
+                                    },
+                                ],
+                            },
+                        ),
+                        ("None".to_string(), ExecExpr::Block(vec![])),
+                    ],
+                },
+            ])),
+            else_branch: None,
+        });
+
+        // Build the full block
+        let mut stmts = vec![
             // broadcast use vstd::std_specs::hash::group_hash_axioms;
             ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()),
             // let m_keys = source.keys();
@@ -463,94 +603,40 @@ impl Translator {
                     args: vec![],
                 }),
             },
-            // let ghost mut seen_keys = Set::empty();
-            ExecExpr::GhostVar {
-                name: "seen_keys".to_string(),
-                ty: "Set<_>".to_string(),
-                init: Box::new(ExecExpr::Call {
-                    func: "Set::empty".to_string(),
-                    args: vec![],
-                }),
-                mutable: true,
-            },
-            // let mut result = HashMap::new();
-            ExecExpr::Let {
-                pattern: "mut result".to_string(),
-                ty: Some(ExecType::Named("HashMap<_, _>".to_string())),
-                value: Box::new(ExecExpr::Call {
-                    func: "HashMap::new".to_string(),
-                    args: vec![],
-                }),
-            },
-            // for key in iter:m_keys { ... }
-            ExecExpr::ForInIter {
-                var: key_var.to_string(),
-                iter_name: iter_name.clone(),
-                iter_source: Box::new(ExecExpr::Var(iter_name)),
-                invariants,
-                body: Box::new(ExecExpr::Block(vec![
-                    // proof { seen_keys = seen_keys.insert(*key); }
-                    ExecExpr::ProofBlock {
-                        stmts: vec![ExecExpr::Binary {
-                            lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
-                            op: "=".to_string(),
-                            rhs: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
-                                method: "insert".to_string(),
-                                args: vec![ExecExpr::Unary {
-                                    op: "*".to_string(),
-                                    expr: Box::new(ExecExpr::Var(key_var.to_string())),
-                                }],
-                            }),
-                        }],
-                    },
-                    // if filter_condition { ... }
-                    ExecExpr::If {
-                        cond: Box::new(filter_expr),
-                        then_branch: Box::new(ExecExpr::Block(vec![
-                            // let value = source.get(&key);
-                            ExecExpr::Let {
-                                pattern: "value".to_string(),
-                                ty: None,
-                                value: Box::new(ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::Var(source_map.to_string())),
-                                    method: "get".to_string(),
-                                    args: vec![ExecExpr::Var(key_var.to_string())],
-                                }),
-                            },
-                            // match value { Some(v) => ..., None => {} }
-                            ExecExpr::Match {
-                                scrutinee: Box::new(ExecExpr::Var("value".to_string())),
-                                arms: vec![
-                                    (
-                                        "Some(v)".to_string(),
-                                        ExecExpr::MethodCall {
-                                            receiver: Box::new(ExecExpr::Var("result".to_string())),
-                                            method: "insert".to_string(),
-                                            args: vec![
-                                                ExecExpr::Unary {
-                                                    op: "*".to_string(),
-                                                    expr: Box::new(ExecExpr::Var(key_var.to_string())),
-                                                },
-                                                ExecExpr::MethodCall {
-                                                    receiver: Box::new(ExecExpr::Var("v".to_string())),
-                                                    method: "clone".to_string(),
-                                                    args: vec![],
-                                                },
-                                            ],
-                                        },
-                                    ),
-                                    ("None".to_string(), ExecExpr::Block(vec![])),
-                                ],
-                            },
-                        ])),
-                        else_branch: None,
-                    },
-                ])),
-            },
-            // result
-            ExecExpr::Var("result".to_string()),
-        ])
+        ];
+        // Add pre-loop assertions
+        stmts.extend(pre_loop_assertions);
+        // let ghost mut seen_keys = Set::empty();
+        stmts.push(ExecExpr::GhostVar {
+            name: "seen_keys".to_string(),
+            ty: "Set<_>".to_string(),
+            init: Box::new(ExecExpr::Call {
+                func: "Set::empty".to_string(),
+                args: vec![],
+            }),
+            mutable: true,
+        });
+        // let mut result = HashMap::new();
+        stmts.push(ExecExpr::Let {
+            pattern: "mut result".to_string(),
+            ty: Some(ExecType::Named("HashMap<_, _>".to_string())),
+            value: Box::new(ExecExpr::Call {
+                func: "HashMap::new".to_string(),
+                args: vec![],
+            }),
+        });
+        // for key in iter:m_keys { ... }
+        stmts.push(ExecExpr::ForInIter {
+            var: key_var.to_string(),
+            iter_name: iter_name.clone(),
+            iter_source: Box::new(ExecExpr::Var(iter_name)),
+            invariants,
+            body: Box::new(ExecExpr::Block(loop_body)),
+        });
+        // result
+        stmts.push(ExecExpr::Var("result".to_string()));
+
+        ExecExpr::Block(stmts)
     }
 
     /// Translate an annotated spec function to an exec function
@@ -4658,11 +4744,12 @@ mod tests {
 
         let result = translator.generate_map_filter_loop("votes", "opn", filter_expr);
 
-        // Should be a Block with 6 statements:
-        // 0: BroadcastUse, 1: Let (keys), 2: GhostVar, 3: Let (result), 4: ForInIter, 5: Var
+        // Should be a Block with 9 statements:
+        // 0: BroadcastUse, 1: Let (keys), 2-4: pre-loop assertions,
+        // 5: GhostVar, 6: Let (result), 7: ForInIter, 8: Var
         match result {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 6, "Block should have 6 statements");
+                assert_eq!(stmts.len(), 9, "Block should have 9 statements");
 
                 // First statement: broadcast use
                 match &stmts[0] {
@@ -4680,25 +4767,39 @@ mod tests {
                     _ => panic!("Second statement should be Let"),
                 }
 
-                // Third statement: let ghost mut seen_keys = Set::empty()
+                // Statements 2-4: pre-loop assertions
                 match &stmts[2] {
+                    ExecExpr::Assert(_) => {}
+                    _ => panic!("Statement 2 should be Assert"),
+                }
+                match &stmts[3] {
+                    ExecExpr::Assume(_) => {}
+                    _ => panic!("Statement 3 should be Assume"),
+                }
+                match &stmts[4] {
+                    ExecExpr::Assert(_) => {}
+                    _ => panic!("Statement 4 should be Assert"),
+                }
+
+                // Sixth statement: let ghost mut seen_keys = Set::empty()
+                match &stmts[5] {
                     ExecExpr::GhostVar { name, mutable, .. } => {
                         assert_eq!(name, "seen_keys", "Should create seen_keys ghost var");
                         assert!(mutable, "Ghost var should be mutable");
                     }
-                    _ => panic!("Third statement should be GhostVar"),
+                    _ => panic!("Statement 5 should be GhostVar"),
                 }
 
-                // Fourth statement: let mut result = HashMap::new()
-                match &stmts[3] {
+                // Seventh statement: let mut result = HashMap::new()
+                match &stmts[6] {
                     ExecExpr::Let { pattern, .. } => {
                         assert!(pattern.contains("result"), "Should create result variable");
                     }
-                    _ => panic!("Fourth statement should be Let"),
+                    _ => panic!("Statement 6 should be Let"),
                 }
 
-                // Fifth statement: ForInIter with invariants
-                match &stmts[4] {
+                // Eighth statement: ForInIter with invariants
+                match &stmts[7] {
                     ExecExpr::ForInIter { var, iter_name, invariants, body, .. } => {
                         assert_eq!(var, "opn", "Loop variable should be opn");
                         assert_eq!(iter_name, "votes_keys", "Should iterate votes_keys");
@@ -4711,27 +4812,43 @@ mod tests {
                         assert!(invariants[3].contains("seen_keys.contains"), "Fourth invariant: result from seen");
                         assert!(invariants[4].contains("result@.contains_key"), "Fifth invariant: all matching in result");
 
-                        // Body should contain proof block
+                        // Body should contain in-loop assertions, proof block, and if
                         match body.as_ref() {
                             ExecExpr::Block(body_stmts) => {
-                                assert!(body_stmts.len() >= 2, "Body should have proof block and if");
+                                assert_eq!(body_stmts.len(), 4, "Body should have 4 statements");
+                                // 0: BroadcastUse
                                 match &body_stmts[0] {
+                                    ExecExpr::BroadcastUse(_) => {}
+                                    _ => panic!("Body[0] should be BroadcastUse"),
+                                }
+                                // 1: Assume
+                                match &body_stmts[1] {
+                                    ExecExpr::Assume(_) => {}
+                                    _ => panic!("Body[1] should be Assume"),
+                                }
+                                // 2: ProofBlock
+                                match &body_stmts[2] {
                                     ExecExpr::ProofBlock { .. } => {}
-                                    _ => panic!("First body statement should be ProofBlock"),
+                                    _ => panic!("Body[2] should be ProofBlock"),
+                                }
+                                // 3: If
+                                match &body_stmts[3] {
+                                    ExecExpr::If { .. } => {}
+                                    _ => panic!("Body[3] should be If"),
                                 }
                             }
                             _ => panic!("Body should be Block"),
                         }
                     }
-                    _ => panic!("Fifth statement should be ForInIter"),
+                    _ => panic!("Statement 7 should be ForInIter"),
                 }
 
-                // Sixth statement: result
-                match &stmts[5] {
+                // Ninth statement: result
+                match &stmts[8] {
                     ExecExpr::Var(name) => {
                         assert_eq!(name, "result", "Should return result");
                     }
-                    _ => panic!("Sixth statement should be Var(result)"),
+                    _ => panic!("Statement 8 should be Var(result)"),
                 }
             }
             _ => panic!("Expected Block, got {:?}", result),
@@ -4799,5 +4916,59 @@ mod tests {
         assert!(invariants[1].contains("votes@.contains_key(opn)"));
         assert!(invariants[2].contains("*opn >= threshold"));
         assert!(invariants[4].contains("*opn >= threshold"));
+    }
+
+    #[test]
+    fn test_generate_pre_loop_assertions() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        let assertions = translator.generate_pre_loop_assertions("m_keys", "votes");
+
+        // Should generate 3 pre-loop assertions
+        assert_eq!(assertions.len(), 3, "Should generate 3 pre-loop assertions");
+
+        // First assertion: m_keys@.0 == 0
+        match &assertions[0] {
+            ExecExpr::Assert(_) => {}
+            _ => panic!("First pre-loop should be Assert"),
+        }
+
+        // Second assertion: assume iterator length
+        match &assertions[1] {
+            ExecExpr::Assume(_) => {}
+            _ => panic!("Second pre-loop should be Assume"),
+        }
+
+        // Third assertion: iterator to_set matches dom
+        match &assertions[2] {
+            ExecExpr::Assert(_) => {}
+            _ => panic!("Third pre-loop should be Assert"),
+        }
+    }
+
+    #[test]
+    fn test_generate_in_loop_assertions() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        let assertions = translator.generate_in_loop_assertions("key", "votes");
+
+        // Should generate 2 in-loop statements
+        assert_eq!(assertions.len(), 2, "Should generate 2 in-loop statements");
+
+        // First: broadcast use hash axioms
+        match &assertions[0] {
+            ExecExpr::BroadcastUse(path) => {
+                assert!(path.contains("hash"), "Should broadcast hash axioms");
+            }
+            _ => panic!("First in-loop should be BroadcastUse"),
+        }
+
+        // Second: assume key is in source
+        match &assertions[1] {
+            ExecExpr::Assume(_) => {}
+            _ => panic!("Second in-loop should be Assume"),
+        }
     }
 }

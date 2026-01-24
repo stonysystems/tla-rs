@@ -1104,7 +1104,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added proof block to track seen_keys ghost state
       - Added broadcast use for hash axioms
       - Added 2 new tests for invariant generation
-    - [ ] Phase 4: Ghost code generation (~100 LOC)
+    - [x] Phase 4: Ghost code generation (~100 LOC) [26:01:25, 05:45]
+      - Added `generate_pre_loop_assertions()` for iterator state setup
+      - Added `generate_in_loop_assertions()` for loop body proof helpers
+      - Pre-loop: assert iterator starts at 0, assume length match, assert to_set matches dom
+      - In-loop: broadcast use hash axioms, assume current key is in source
+      - Added 2 new tests for assertion generation
     - [ ] Phase 5: Post-loop assertions (~100 LOC)
   - See docs/dev/verus-integration-plan.md for integration strategy options
 - [x] Compare verification time: generated vs manual implementation [26:01:25, 04:00]
