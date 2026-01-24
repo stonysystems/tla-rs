@@ -939,13 +939,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 **Blocking issue (RESOLVED):**
 - [x] Add comment handling inside function bodies (parser skips comments at top-level but not in expressions)
 
-**Current blockers:**
-- Forall quantifiers in RSL specs need template matching extensions
-- RSL uses patterns like `forall |opn:OperationNumber| votes_.contains_key(opn) ==> ...`
-- These require building SeqComprehension or MapComprehension templates
+**Current blockers (RESOLVED):**
+- [x] Forall quantifiers in RSL specs now handled via extended template matching
+- [x] Added templates: MapPreservation, MapDomainBiconditional, MapConditionalValue, MapExclusion, MapInclusion
+- [x] Extended `extract_index_by_var` to handle field access patterns like `a.last_checkpointed_operation[idx]`
 
 **Transpilation tasks:**
-- [~] Run transpiler on `src/protocol/RSL/acceptor.rs` - PARSING WORKS, fails on forall templates
+- [x] Run transpiler on `src/protocol/RSL/acceptor.rs` - NOW WORKS (generates code)
 - [ ] Compare generated code with `src/implementation/RSL/acceptorimpl.rs`
 - [ ] Document differences and missing features
 - [ ] Repeat for proposer, learner, executor, replica

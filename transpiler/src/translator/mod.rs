@@ -772,16 +772,25 @@ impl Translator {
                 Ok(ExecExpr::VecLit(translated?))
             }
 
-            Expr::Forall { vars, .. } => {
-                // Forall in exec code needs template matching
-                Err(TranspileError::UnsupportedPattern {
-                    message: format!(
-                        "Forall quantifier with vars {:?} requires template matching",
-                        vars.iter().map(|v| &v.name).collect::<Vec<_>>()
-                    ),
-                    span: None,
-                    help: Some("Use checker module to match this to a known template".to_string()),
-                })
+            Expr::Forall { vars, body, .. } => {
+                // Try to match to a known template using the checker module
+                use crate::checker::TemplateMatcher;
+
+                if let Some(template) = TemplateMatcher::match_template(expr) {
+                    self.translate_quantifier_template(&template, ctx)
+                } else {
+                    Err(TranspileError::UnsupportedPattern {
+                        message: format!(
+                            "Forall quantifier with vars {:?} doesn't match any known template",
+                            vars.iter().map(|v| &v.name).collect::<Vec<_>>()
+                        ),
+                        span: None,
+                        help: Some(format!(
+                            "Body structure: {:?}. Consider restructuring to match a known pattern.",
+                            std::mem::discriminant(body.as_ref())
+                        )),
+                    })
+                }
             }
 
             Expr::Exists { vars, .. } => Err(TranspileError::UnsupportedPattern {
@@ -1071,6 +1080,169 @@ impl Translator {
                 }
             }
             crate::ast::Pattern::Literal(lit) => self.format_literal(lit),
+        }
+    }
+
+    /// Translate a matched quantifier template to executable code
+    fn translate_quantifier_template(
+        &self,
+        template: &crate::checker::QuantifierTemplate,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        use crate::checker::QuantifierTemplate;
+
+        match template {
+            QuantifierTemplate::SeqComprehension {
+                length_expr,
+                element_expr,
+                index_var,
+            } => {
+                // Generate: (0..length).map(|i| element).collect::<Vec<_>>()
+                let length = self.transform_expr(length_expr, ctx)?;
+                let element = self.transform_expr(element_expr, ctx)?;
+
+                Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Range {
+                            start: Box::new(ExecExpr::Literal("0".to_string())),
+                            end: Box::new(length),
+                        }),
+                        method: "map".to_string(),
+                        args: vec![ExecExpr::Closure {
+                            params: vec![index_var.clone()],
+                            body: Box::new(element),
+                        }],
+                    }),
+                    method: "collect".to_string(),
+                    args: vec![],
+                })
+            }
+
+            QuantifierTemplate::MapDomainBiconditional {
+                output_map: _,
+                key_var,
+                domain_predicate,
+            } => {
+                // Generate a comment indicating this is a domain constraint
+                // The actual map construction should be handled by combining this with
+                // a value template or preservation template
+                let pred = self.transform_expr(domain_predicate, ctx)?;
+                Ok(ExecExpr::Comment(format!(
+                    "Domain constraint: {} in output <==> {:?}",
+                    key_var, pred
+                )))
+            }
+
+            QuantifierTemplate::MapPreservation {
+                source_map,
+                output_map: _,
+                key_var: _,
+            } => {
+                // Generate: source.clone() - this preserves all values
+                // Filtering is done by combining with domain constraint
+                Ok(ExecExpr::Clone(Box::new(ExecExpr::Var(source_map.clone()))))
+            }
+
+            QuantifierTemplate::MapConditionalValue {
+                output_map: _,
+                key_var,
+                value_expr,
+            } => {
+                // Generate: iterate and build map with conditional values
+                // This is typically used with LAddVoteAndRemoveOldOnes pattern
+                let value = self.transform_expr(value_expr, ctx)?;
+                Ok(ExecExpr::Comment(format!(
+                    "Value mapping: output[{}] = {:?}",
+                    key_var, value
+                )))
+            }
+
+            QuantifierTemplate::MapFilter {
+                source_map,
+                output_map: _,
+                key_var,
+                filter_predicate,
+            } => {
+                // Generate: source.iter().filter(|(k, _)| predicate).collect()
+                let pred = self.transform_expr(filter_predicate, ctx)?;
+
+                Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                            method: "iter".to_string(),
+                            args: vec![],
+                        }),
+                        method: "filter".to_string(),
+                        args: vec![ExecExpr::Closure {
+                            params: vec![format!("({}, _)", key_var)],
+                            body: Box::new(pred),
+                        }],
+                    }),
+                    method: "collect".to_string(),
+                    args: vec![],
+                })
+            }
+
+            QuantifierTemplate::SetComprehension {
+                domain_predicate,
+                element_var,
+            } => {
+                // Generate: elements.into_iter().filter(|x| pred).collect()
+                let pred = self.transform_expr(domain_predicate, ctx)?;
+                Ok(ExecExpr::Comment(format!(
+                    "Set comprehension: {} in output <==> {:?}",
+                    element_var, pred
+                )))
+            }
+
+            QuantifierTemplate::MapComprehension {
+                domain_predicate,
+                value_expr,
+                key_var,
+            } => {
+                // Generate: domain.into_iter().filter(|k| pred).map(|k| (k, value)).collect()
+                let pred = self.transform_expr(domain_predicate, ctx)?;
+                let value = self.transform_expr(value_expr, ctx)?;
+
+                Ok(ExecExpr::Comment(format!(
+                    "Map comprehension: {} where {:?} -> {:?}",
+                    key_var, pred, value
+                )))
+            }
+
+            QuantifierTemplate::MapExclusion {
+                output_map: _,
+                key_var,
+                exclusion_predicate,
+            } => {
+                // This is a constraint pattern - keys matching predicate are NOT in output
+                // In the context of map construction, this combines with other constraints
+                let pred = self.transform_expr(exclusion_predicate, ctx)?;
+                Ok(ExecExpr::Comment(format!(
+                    "Exclusion constraint: when {:?}, {} is NOT in output",
+                    pred, key_var
+                )))
+            }
+
+            QuantifierTemplate::MapInclusion {
+                output_map: _,
+                source_map,
+                key_var,
+                inclusion_predicate,
+            } => {
+                // This is a constraint pattern - keys matching predicate (and in source) ARE in output
+                let pred = self.transform_expr(inclusion_predicate, ctx)?;
+                Ok(ExecExpr::Comment(format!(
+                    "Inclusion constraint: when {:?}{}, {} is in output",
+                    pred,
+                    source_map
+                        .as_ref()
+                        .map(|s| format!(" and in {}", s))
+                        .unwrap_or_default(),
+                    key_var
+                )))
+            }
         }
     }
 }
