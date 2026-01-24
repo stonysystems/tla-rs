@@ -1098,6 +1098,236 @@ impl Translator {
         }
     }
 
+    /// Extract source map and filter predicate from a domain predicate
+    /// Returns (source_map_name, filter_predicate) if the pattern is recognized
+    ///
+    /// Handles patterns like:
+    /// - `source.contains_key(k) && filter_pred`
+    /// - `filter_pred && source.contains_key(k)`
+    /// - `source.dom().contains(k) && filter_pred`
+    fn extract_source_and_filter(
+        &self,
+        pred: &Expr,
+        key_var: &str,
+    ) -> Option<(String, Expr)> {
+        use crate::ast::Expr;
+
+        // Check for conjunction (&&)
+        if let Expr::Conjunction(parts) = pred {
+            // Look for source.contains_key(k) in the parts
+            for (i, part) in parts.iter().enumerate() {
+                if let Some(source_map) = self.extract_contains_key_source(part, key_var) {
+                    // Collect all other parts as the filter predicate
+                    let other_parts: Vec<Expr> =
+                        parts.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, p)| p.clone()).collect();
+
+                    let filter = if other_parts.len() == 1 {
+                        other_parts.into_iter().next().unwrap()
+                    } else {
+                        Expr::Conjunction(other_parts)
+                    };
+
+                    return Some((source_map, filter));
+                }
+            }
+        }
+
+        // Check for binary && (Binary with && op)
+        if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = pred {
+            if let Some(source_map) = self.extract_contains_key_source(lhs, key_var) {
+                return Some((source_map, (**rhs).clone()));
+            }
+            if let Some(source_map) = self.extract_contains_key_source(rhs, key_var) {
+                return Some((source_map, (**lhs).clone()));
+            }
+        }
+
+        // Pattern: just source.contains_key(k) without filter (returns true as filter)
+        if let Some(source_map) = self.extract_contains_key_source(pred, key_var) {
+            return Some((source_map, Expr::Literal(crate::ast::Literal::Bool(true))));
+        }
+
+        None
+    }
+
+    /// Extract source set and filter predicate from a domain predicate (for sets)
+    /// Handles: source.contains(x) && filter_pred
+    fn extract_source_set_and_filter(
+        &self,
+        pred: &Expr,
+        element_var: &str,
+    ) -> Option<(String, Expr)> {
+        use crate::ast::Expr;
+
+        // Check for conjunction
+        if let Expr::Conjunction(parts) = pred {
+            for (i, part) in parts.iter().enumerate() {
+                if let Some(source) = self.extract_set_contains_source(part, element_var) {
+                    let other_parts: Vec<Expr> =
+                        parts.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, p)| p.clone()).collect();
+
+                    let filter = if other_parts.len() == 1 {
+                        other_parts.into_iter().next().unwrap()
+                    } else {
+                        Expr::Conjunction(other_parts)
+                    };
+
+                    return Some((source, filter));
+                }
+            }
+        }
+
+        // Check for binary &&
+        if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = pred {
+            if let Some(source) = self.extract_set_contains_source(lhs, element_var) {
+                return Some((source, (**rhs).clone()));
+            }
+            if let Some(source) = self.extract_set_contains_source(rhs, element_var) {
+                return Some((source, (**lhs).clone()));
+            }
+        }
+
+        // Just contains without filter
+        if let Some(source) = self.extract_set_contains_source(pred, element_var) {
+            return Some((source, Expr::Literal(crate::ast::Literal::Bool(true))));
+        }
+
+        None
+    }
+
+    /// Extract source set name from a contains expression
+    fn extract_set_contains_source(&self, expr: &Expr, element_var: &str) -> Option<String> {
+        use crate::ast::Expr;
+
+        if let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        {
+            if method == "contains" && args.len() == 1 {
+                if let Expr::Ident(arg_name) = &args[0] {
+                    if arg_name == element_var {
+                        if let Expr::Ident(source) = receiver.as_ref() {
+                            return Some(source.clone());
+                        }
+                        if let Expr::Field(base, field) = receiver.as_ref() {
+                            if let Expr::Ident(base_name) = base.as_ref() {
+                                return Some(format!("{}.{}", base_name, field));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract source map from a conditional value expression
+    /// Handles: if cond { v1 } else { source[k] }
+    fn extract_source_from_conditional_value(&self, expr: &Expr, key_var: &str) -> Option<String> {
+        use crate::ast::Expr;
+
+        match expr {
+            // if cond { v1 } else { source[k] }
+            Expr::If {
+                else_branch: Some(else_branch),
+                ..
+            } => {
+                // Check if else branch is source[k]
+                if let Expr::Index(source, idx) = else_branch.as_ref() {
+                    if let Expr::Ident(idx_name) = idx.as_ref() {
+                        if idx_name == key_var {
+                            if let Expr::Ident(source_name) = source.as_ref() {
+                                return Some(source_name.clone());
+                            }
+                            if let Expr::Field(base, field) = source.as_ref() {
+                                if let Expr::Ident(base_name) = base.as_ref() {
+                                    return Some(format!("{}.{}", base_name, field));
+                                }
+                            }
+                        }
+                    }
+                }
+                // Recursively check then branch
+                if let Expr::If { then_branch, .. } = expr {
+                    if let Some(source) =
+                        self.extract_source_from_conditional_value(then_branch, key_var)
+                    {
+                        return Some(source);
+                    }
+                }
+            }
+            // source[k] directly
+            Expr::Index(source, idx) => {
+                if let Expr::Ident(idx_name) = idx.as_ref() {
+                    if idx_name == key_var {
+                        if let Expr::Ident(source_name) = source.as_ref() {
+                            return Some(source_name.clone());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Extract the source map name from a contains_key expression
+    /// Handles: source.contains_key(k), source.dom().contains(k)
+    fn extract_contains_key_source(&self, expr: &Expr, key_var: &str) -> Option<String> {
+        use crate::ast::Expr;
+
+        match expr {
+            // source.contains_key(k)
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } if method == "contains_key" && args.len() == 1 => {
+                if let Expr::Ident(arg_name) = &args[0] {
+                    if arg_name == key_var {
+                        if let Expr::Ident(source) = receiver.as_ref() {
+                            return Some(source.clone());
+                        }
+                        // Also handle field access like s.votes.contains_key(k)
+                        if let Expr::Field(base, field) = receiver.as_ref() {
+                            if let Expr::Ident(base_name) = base.as_ref() {
+                                return Some(format!("{}.{}", base_name, field));
+                            }
+                        }
+                    }
+                }
+            }
+            // source.dom().contains(k)
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } if method == "contains" && args.len() == 1 => {
+                if let Expr::Ident(arg_name) = &args[0] {
+                    if arg_name == key_var {
+                        // Check if receiver is source.dom()
+                        if let Expr::MethodCall {
+                            receiver: inner_recv,
+                            method: inner_method,
+                            args: inner_args,
+                        } = receiver.as_ref()
+                        {
+                            if inner_method == "dom" && inner_args.is_empty() {
+                                if let Expr::Ident(source) = inner_recv.as_ref() {
+                                    return Some(source.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
     /// Translate a matched quantifier template to executable code
     fn translate_quantifier_template(
         &self,
@@ -1138,14 +1368,43 @@ impl Translator {
                 key_var,
                 domain_predicate,
             } => {
-                // Generate a comment indicating this is a domain constraint
-                // The actual map construction should be handled by combining this with
-                // a value template or preservation template
-                let pred = self.transform_expr(domain_predicate, ctx)?;
-                Ok(ExecExpr::Comment(format!(
-                    "Domain constraint: {} in output <==> {:?}",
-                    key_var, pred
-                )))
+                // Try to extract source map and filter predicate from domain predicate
+                // Common pattern: source.contains_key(k) && filter_pred
+                // or: filter_pred && source.contains_key(k)
+                if let Some((source_map, filter_pred)) =
+                    self.extract_source_and_filter(domain_predicate, key_var)
+                {
+                    // Generate: source.iter().filter(|(k, _)| filter_pred).cloned().collect()
+                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var(source_map)),
+                                    method: "iter".to_string(),
+                                    args: vec![],
+                                }),
+                                method: "filter".to_string(),
+                                args: vec![ExecExpr::Closure {
+                                    params: vec![format!("({}, _)", key_var)],
+                                    body: Box::new(filter_expr),
+                                }],
+                            }),
+                            method: "cloned".to_string(),
+                            args: vec![],
+                        }),
+                        method: "collect".to_string(),
+                        args: vec![],
+                    })
+                } else {
+                    // Fallback: generate a comment if we can't extract the pattern
+                    let pred = self.transform_expr(domain_predicate, ctx)?;
+                    Ok(ExecExpr::Comment(format!(
+                        "TODO: Map domain constraint - {} in output <==> {:?}",
+                        key_var, pred
+                    )))
+                }
             }
 
             QuantifierTemplate::MapPreservation {
@@ -1163,13 +1422,46 @@ impl Translator {
                 key_var,
                 value_expr,
             } => {
-                // Generate: iterate and build map with conditional values
-                // This is typically used with LAddVoteAndRemoveOldOnes pattern
-                let value = self.transform_expr(value_expr, ctx)?;
-                Ok(ExecExpr::Comment(format!(
-                    "Value mapping: output[{}] = {:?}",
-                    key_var, value
-                )))
+                // This pattern indicates how values should be computed
+                // For patterns like: output[k] == if cond { v1 } else { source[k] }
+                // We need a source map to iterate over
+                //
+                // Try to extract source map from the value expression
+                if let Some(source_map) = self.extract_source_from_conditional_value(value_expr, key_var) {
+                    // Generate: source.iter().map(|(k, v)| (k.clone(), value_expr)).collect()
+                    let value = self.transform_expr(value_expr, ctx)?;
+
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var(source_map)),
+                                method: "iter".to_string(),
+                                args: vec![],
+                            }),
+                            method: "map".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![format!("({}, v)", key_var)],
+                                body: Box::new(ExecExpr::Tuple(vec![
+                                    ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var(key_var.clone())),
+                                        method: "clone".to_string(),
+                                        args: vec![],
+                                    },
+                                    value,
+                                ])),
+                            }],
+                        }),
+                        method: "collect".to_string(),
+                        args: vec![],
+                    })
+                } else {
+                    // Fallback: generate a comment if we can't extract the source
+                    let value = self.transform_expr(value_expr, ctx)?;
+                    Ok(ExecExpr::Comment(format!(
+                        "TODO: Value mapping - output[{}] = {:?}",
+                        key_var, value
+                    )))
+                }
             }
 
             QuantifierTemplate::MapFilter {
@@ -1203,12 +1495,42 @@ impl Translator {
                 domain_predicate,
                 element_var,
             } => {
-                // Generate: elements.into_iter().filter(|x| pred).collect()
-                let pred = self.transform_expr(domain_predicate, ctx)?;
-                Ok(ExecExpr::Comment(format!(
-                    "Set comprehension: {} in output <==> {:?}",
-                    element_var, pred
-                )))
+                // Try to extract source set from domain predicate
+                // Pattern: source.contains(x) && filter_pred
+                if let Some((source_set, filter_pred)) =
+                    self.extract_source_set_and_filter(domain_predicate, element_var)
+                {
+                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+
+                    // Generate: source.iter().filter(|x| filter_pred).cloned().collect()
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var(source_set)),
+                                    method: "iter".to_string(),
+                                    args: vec![],
+                                }),
+                                method: "filter".to_string(),
+                                args: vec![ExecExpr::Closure {
+                                    params: vec![element_var.clone()],
+                                    body: Box::new(filter_expr),
+                                }],
+                            }),
+                            method: "cloned".to_string(),
+                            args: vec![],
+                        }),
+                        method: "collect".to_string(),
+                        args: vec![],
+                    })
+                } else {
+                    // Fallback
+                    let pred = self.transform_expr(domain_predicate, ctx)?;
+                    Ok(ExecExpr::Comment(format!(
+                        "TODO: Set comprehension - {} in output <==> {:?}",
+                        element_var, pred
+                    )))
+                }
             }
 
             QuantifierTemplate::MapComprehension {
@@ -1216,14 +1538,53 @@ impl Translator {
                 value_expr,
                 key_var,
             } => {
-                // Generate: domain.into_iter().filter(|k| pred).map(|k| (k, value)).collect()
-                let pred = self.transform_expr(domain_predicate, ctx)?;
-                let value = self.transform_expr(value_expr, ctx)?;
+                // Try to extract source from domain predicate
+                if let Some((source_map, filter_pred)) =
+                    self.extract_source_and_filter(domain_predicate, key_var)
+                {
+                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+                    let value = self.transform_expr(value_expr, ctx)?;
 
-                Ok(ExecExpr::Comment(format!(
-                    "Map comprehension: {} where {:?} -> {:?}",
-                    key_var, pred, value
-                )))
+                    // Generate: source.iter().filter(|(k, _)| filter_pred).map(|(k, v)| (k.clone(), value)).collect()
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var(source_map)),
+                                    method: "iter".to_string(),
+                                    args: vec![],
+                                }),
+                                method: "filter".to_string(),
+                                args: vec![ExecExpr::Closure {
+                                    params: vec![format!("({}, _)", key_var)],
+                                    body: Box::new(filter_expr),
+                                }],
+                            }),
+                            method: "map".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![format!("({}, v)", key_var)],
+                                body: Box::new(ExecExpr::Tuple(vec![
+                                    ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var(key_var.clone())),
+                                        method: "clone".to_string(),
+                                        args: vec![],
+                                    },
+                                    value,
+                                ])),
+                            }],
+                        }),
+                        method: "collect".to_string(),
+                        args: vec![],
+                    })
+                } else {
+                    // Fallback
+                    let pred = self.transform_expr(domain_predicate, ctx)?;
+                    let value = self.transform_expr(value_expr, ctx)?;
+                    Ok(ExecExpr::Comment(format!(
+                        "TODO: Map comprehension - {} where {:?} -> {:?}",
+                        key_var, pred, value
+                    )))
+                }
             }
 
             QuantifierTemplate::MapExclusion {
@@ -1403,5 +1764,70 @@ mod tests {
         let expr = Expr::SeqEmpty;
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         assert!(matches!(result, ExecExpr::VecLit(v) if v.is_empty()));
+    }
+
+    #[test]
+    fn test_extract_source_and_filter() {
+        let translator = Translator::default();
+
+        // Test: source.contains_key(k) && k >= threshold
+        let contains_key = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("source".to_string())),
+            method: "contains_key".to_string(),
+            args: vec![Expr::Ident("k".to_string())],
+        };
+        let filter = Expr::Ge(
+            Box::new(Expr::Ident("k".to_string())),
+            Box::new(Expr::Ident("threshold".to_string())),
+        );
+        let pred = Expr::Conjunction(vec![contains_key, filter.clone()]);
+
+        let result = translator.extract_source_and_filter(&pred, "k");
+        assert!(result.is_some());
+        let (source, extracted_filter) = result.unwrap();
+        assert_eq!(source, "source");
+        // Filter should be the Ge expression
+        assert!(matches!(extracted_filter, Expr::Ge(..)));
+    }
+
+    #[test]
+    fn test_extract_source_dom_contains() {
+        let translator = Translator::default();
+
+        // Test: source.dom().contains(k)
+        let dom = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("source".to_string())),
+            method: "dom".to_string(),
+            args: vec![],
+        };
+        let contains = Expr::MethodCall {
+            receiver: Box::new(dom),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("k".to_string())],
+        };
+
+        let result = translator.extract_contains_key_source(&contains, "k");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "source");
+    }
+
+    #[test]
+    fn test_extract_source_from_conditional_value() {
+        let translator = Translator::default();
+
+        // Test: if cond { new_value } else { source[k] }
+        let source_index = Expr::Index(
+            Box::new(Expr::Ident("source".to_string())),
+            Box::new(Expr::Ident("k".to_string())),
+        );
+        let conditional = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(true))),
+            then_branch: Box::new(Expr::Ident("new_value".to_string())),
+            else_branch: Some(Box::new(source_index)),
+        };
+
+        let result = translator.extract_source_from_conditional_value(&conditional, "k");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "source");
     }
 }

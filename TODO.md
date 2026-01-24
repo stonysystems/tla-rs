@@ -963,7 +963,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - Generated code: Basic structure with placeholder comments for map operations
   - Key gaps: Map iteration code not generated (templates produce comments), no inline proofs
 - [x] Fix parser limitation for replica.rs and proposer.rs
-- [ ] Improve code generation for map filter patterns to produce actual loop code
+- [x] Improve code generation for map filter patterns to produce actual loop code [26:01:24, 13:09]
+  - Added source/filter extraction helpers: `extract_source_and_filter()`, `extract_source_set_and_filter()`, `extract_source_from_conditional_value()`
+  - MapDomainBiconditional: Now generates `source.iter().filter(...).cloned().collect()`
+  - MapConditionalValue: Now generates `source.iter().map(...).collect()`
+  - SetComprehension: Now generates `source.iter().filter(...).cloned().collect()`
+  - MapComprehension: Now generates `source.iter().filter(...).map(...).collect()`
+  - Plan file: docs/dev/map-filter-codegen-plan.md
+  - Log: logs/20260124_130950_12d82da_map_filter_codegen.log
 
 #### Phase 3: Iterate on Transpiler to Handle Full RSL
 - [ ] Identify unsupported patterns in RSL specs
