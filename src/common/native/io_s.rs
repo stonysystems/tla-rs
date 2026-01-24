@@ -121,17 +121,15 @@ verus! {
         }
     }
 
-    #[verifier(broadcast_forall)]
     #[verifier(external_body)]
-    pub proof fn axiom_endpoint_view()
+    pub broadcast proof fn axiom_endpoint_view()
         ensures forall |e1:EndPoint, e2:EndPoint| e1@ == e2@ ==> e1 == e2
     {
 
     }
 
-    #[verifier(broadcast_forall)]
     #[verifier(external_body)]
-    pub proof fn axiom_endpoint_key_model()
+    pub broadcast proof fn axiom_endpoint_key_model()
         ensures #[trigger] obeys_key_model::<EndPoint>()
     {
     }

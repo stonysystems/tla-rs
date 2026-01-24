@@ -153,8 +153,8 @@ verus! {
     pub fn clone_option_vec_u8(ov: Option<&Vec<u8>>) -> (res: Option<Vec<u8>>)
         ensures
             match ov {
-                Some(e1) => res.is_some() && e1@ == res.get_Some_0()@,
-                None => res.is_None(),
+                Some(e1) => res is Some && e1@ == res->Some_0@,
+                None => res is None,
             }
     {
         match ov {
@@ -173,8 +173,8 @@ verus! {
     pub fn clone_option_end_point(oep: &Option<EndPoint>) -> (cloned_oep: Option<EndPoint>)
         ensures
             match oep {
-                Some(ep) => cloned_oep.is_some() && ep@ == cloned_oep.get_Some_0()@,
-                None => cloned_oep.is_None(),
+                Some(ep) => cloned_oep is Some && ep@ == cloned_oep->Some_0@,
+                None => cloned_oep is None,
             }
     {
         match oep.as_ref() {

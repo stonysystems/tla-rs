@@ -1000,7 +1000,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
             }
           };
           let sl = |x: T| x.ghost_serialize().len() as int;
-          fun_ext_2::<int, T, int>(|acc: int, x: T| acc + x.ghost_serialize().len() as int, |acc: int, x: T| acc + sl(x));
+          assert((|acc: int, x: T| acc + x.ghost_serialize().len() as int) =~= (|acc: int, x: T| acc + sl(x)));
           let s = self@.subrange(0 as int, i as int);
           seq_lib_v::lemma_seq_fold_left_sum_right::<T>(s, 0, sl);
           assert(s.subrange(0, s.len() - 1) =~= self@.subrange(0 as int, i - 1 as int));
@@ -1017,11 +1017,11 @@ impl<T: Marshalable> Marshalable for Vec<T> {
               let f = |x: T| x.ghost_serialize();
               let sl = |x: T| x.ghost_serialize().len() as int;
               let s = self@.subrange(0 as int, i as int + 1);
-              fun_ext_2::<int, T, int>(|acc: int, x: T| acc + x.ghost_serialize().len() as int, |acc: int, x: T| acc + sl(x));
+              assert((|acc: int, x: T| acc + x.ghost_serialize().len() as int) =~= (|acc: int, x: T| acc + sl(x)));
               seq_lib_v::lemma_seq_fold_left_sum_right::<T>(s, 0, sl);
               assert(s.subrange(0, s.len() - 1) =~= self@.subrange(0 as int, i as int));
               seq_lib_v::lemma_seq_fold_left_append_len_int_le(self@, i as int + 1, 0, f);
-              fun_ext_2(|acc: int, x: T| acc + x.ghost_serialize().len() as int, |acc: int, x: T| acc + f(x).len());
+              assert((|acc: int, x: T| acc + x.ghost_serialize().len() as int) =~= (|acc: int, x: T| acc + f(x).len()));
             };
           } else {
             assert(!self@[i as int].is_marshalable());
@@ -1060,11 +1060,11 @@ impl<T: Marshalable> Marshalable for Vec<T> {
     {
       proof {
         let f = |x: T| x.ghost_serialize();
-        fun_ext_2::<int, T, int>(|acc: int, x: T| acc + f(x).len(), |acc: int, x: T| acc + x.ghost_serialize().len());
+        assert((|acc: int, x: T| acc + f(x).len()) =~= (|acc: int, x: T| acc + x.ghost_serialize().len()));
         seq_lib_v::lemma_seq_fold_left_append_len_int_le::<T, u8>(self@, i + 1 as int, 0, f);
         let sl = |x: T| x.ghost_serialize().len() as int;
         let accl = |acc: int, x: T| acc + x.ghost_serialize().len() as int;
-        fun_ext_2::<int, T, int>(accl, |acc: int, x: T| acc + sl(x));
+        assert(accl =~= (|acc: int, x: T| acc + sl(x)));
         let s = self@.subrange(0 as int, i + 1 as int);
         seq_lib_v::lemma_seq_fold_left_sum_right::<T>(s, 0, sl);
         assert(s.subrange(0, s.len() - 1 as int) =~= self@.subrange(0 as int, i as int));
@@ -1075,7 +1075,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
       i = i + 1;
       proof {
         let sl = |x: T| x.ghost_serialize().len() as int;
-        fun_ext_2::<int, T, int>(|acc: int, x: T| acc + x.ghost_serialize().len() as int, |acc: int, x: T| acc + sl(x));
+        assert((|acc: int, x: T| acc + x.ghost_serialize().len() as int) =~= (|acc: int, x: T| acc + sl(x)));
         let s = self@.subrange(0 as int, i as int);
         seq_lib_v::lemma_seq_fold_left_sum_right::<T>(s, 0, sl);
         assert(s.subrange(0, s.len() - 1) =~= self@.subrange(0 as int, i - 1 as int));
@@ -1085,8 +1085,8 @@ impl<T: Marshalable> Marshalable for Vec<T> {
     proof {
       let f = |x: T| x.ghost_serialize();
       seq_lib_v::lemma_seq_fold_left_append_len_int::<T, u8>(self@, Seq::<u8>::empty(), f);
-      fun_ext_2::<Seq<u8>, T, Seq<u8>>(|acc: Seq<u8>, x: T| acc + f(x), |acc: Seq<u8>, x: T| acc + x.ghost_serialize());
-      fun_ext_2::<int, T, int>(|acc: int, x: T| acc + f(x).len(), |acc: int, x: T| acc + x.ghost_serialize().len());
+      assert((|acc: Seq<u8>, x: T| acc + f(x)) =~= (|acc: Seq<u8>, x: T| acc + x.ghost_serialize()));
+      assert((|acc: int, x: T| acc + f(x).len()) =~= (|acc: int, x: T| acc + x.ghost_serialize().len()));
       assert(self@.subrange(0 as int, i as int) =~= self@);
     }
 
@@ -1134,7 +1134,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
           let f = |x: T| x.ghost_serialize();
           let t = s.subrange(0, i as int);
 
-          fun_ext_2(accf, |acc: Seq<u8>, x: T| acc + f(x));
+          assert(accf =~= (|acc: Seq<u8>, x: T| acc + f(x)));
           assert(t.subrange(0, t.len() - 1) =~= s.subrange(0, i - 1));
           seq_lib_v::lemma_seq_fold_left_append_right(t, emp, f);
           assert(
@@ -1215,7 +1215,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
         //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + f(x));
         seq_lib_v::lemma_seq_fold_left_append_right(res@, emp@, f);
         assert(accf@ == (|acc: Seq<u8>, x: T| acc + f(x))) by {
-          fun_ext_2(accf@, |acc: Seq<u8>, x: T| acc + f(x));
+          assert(accf@ =~= (|acc: Seq<u8>, x: T| acc + f(x)));
         }
         assert(old_res@ =~= res@.subrange(0, res@.len() - 1));
         // assert(data@.subrange(mid as int, end as int) == seq_lib_v::seq_fold_left(res@, emp@, accf@));
@@ -1226,7 +1226,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
         let l = |x: T| x.ghost_serialize().len() as int;
         let suml = |acc: int, x: T| acc + l(x);
         seq_lib_v::lemma_seq_fold_left_sum_right(res@, 0, l);
-        fun_ext_2(|acc: int, x: T| acc + x.ghost_serialize().len(), suml);
+        assert((|acc: int, x: T| acc + x.ghost_serialize().len()) =~= suml);
         assert(old_res@ =~= res@.subrange(0, res@.len() - 1));
       }
 
@@ -1260,7 +1260,7 @@ impl<T: Marshalable> Marshalable for Vec<T> {
       let accg = |acc: Seq<u8>, x: T| acc + g(x);
       let accgs = |acc: Seq<u8>, x: T| acc + x.ghost_serialize();
       let gs = |s: Seq<T>, start: int, end: int| s.subrange(start, end).fold_left(emp, accg);
-      fun_ext_2(accg, accgs);
+      assert(accg =~= accgs);
       assert(self.ghost_serialize() =~= ((self@.len() as usize).ghost_serialize() + gs(self@, 0, idx)) + g(self@[idx]) + gs(self@, idx + 1, self.len() as int)) by {
         assert(gs(self@, 0, self.len() as int) == gs(self@, 0, idx) + gs(self@, idx, self.len() as int)) by {
           let s1 = self@.subrange(0, idx);

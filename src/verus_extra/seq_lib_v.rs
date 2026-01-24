@@ -1,7 +1,4 @@
-use crate::implementation::common::function::*;
-use crate::implementation::common::function::*;
 use vstd::prelude::*;
-// use crate::implementation::common::function::fun_ext_2;
 use vstd::seq_lib::*;
 
 verus! {
@@ -79,7 +76,7 @@ pub proof fn lemma_seq_fold_left_sum_right<A>(s: Seq<A>, low: int, f: spec_fn(A)
     s.fold_left(low, |b: int, a: A| b + f(a))
 {
   let g = |x: int, y: int| x + y;
-  fun_ext_2::<int, A, int>(|b: int, a: A| b + f(a), |b: int, a: A| g(b, f(a)));
+  assert((|b: int, a: A| b + f(a)) =~= (|b: int, a: A| g(b, f(a))));
   lemma_seq_fold_left_merge_right_assoc::<A, int>(s, low, f, g);
 }
 
@@ -97,7 +94,7 @@ pub proof fn lemma_seq_fold_left_append_right<A, B>(s: Seq<A>, prefix: Seq<B>, f
   g(g(x, y), z) == g(x, g(y, z)) by {
     assert_seqs_equal!(g(g(x, y), z) == g(x, g(y, z)));
   };
-  fun_ext_2::<Seq<B>, A, Seq<B>>(|b: Seq<B>, a: A| b + f(a), |b: Seq<B>, a: A| g(b, f(a)));
+  assert((|b: Seq<B>, a: A| b + f(a)) =~= (|b: Seq<B>, a: A| g(b, f(a))));
   lemma_seq_fold_left_merge_right_assoc::<A, Seq<B>>(s, prefix, f, g);
 }
 
@@ -148,7 +145,7 @@ pub proof fn lemma_seq_fold_left_append_len_int_le<A, B>(s: Seq<A>, i: int, low:
     lemma_seq_fold_left_append_len_int_le::<A, B>(s.subrange(1, s.len() as int), i - 1, low + f(s[0]).len() as int, f);
   } else if i == s.len() - 1 {
     let fl = |x| f(x).len() as int;
-    fun_ext_2::<int, A, int>(accfl, |acc: int, x: A| acc + fl(x));
+    assert(accfl =~= (|acc: int, x: A| acc + fl(x)));
     lemma_seq_fold_left_sum_right::<A>(s, low, fl);
   } else {
     lemma_seq_fold_left_append_len_int_le::<A, B>(s.subrange(0, s.len() - 1), i, low, f);

@@ -269,17 +269,15 @@ verus! {
     }
 
     
-    #[verifier(broadcast_forall)]
     #[verifier(external_body)]
-    pub proof fn axiom_cmessage_view()
+    pub broadcast proof fn axiom_cmessage_view()
         ensures forall |p1:CMessage, p2:CMessage| p1@ == p2@ ==> p1 == p2
     {
 
     }
 
-    #[verifier(broadcast_forall)]
     #[verifier(external_body)]
-    pub proof fn axiom_cmessage_key_model()
+    pub broadcast proof fn axiom_cmessage_key_model()
         ensures #[trigger] obeys_key_model::<CMessage>()
     {
     }
@@ -358,17 +356,15 @@ verus! {
     //     }
     // }
 
-    #[verifier(broadcast_forall)]
     #[verifier(external_body)]
-    pub proof fn axiom_cpacket_view()
+    pub broadcast proof fn axiom_cpacket_view()
         ensures forall |p1:CPacket, p2:CPacket| p1@ == p2@ ==> p1 == p2
     {
 
     }
 
-    #[verifier(broadcast_forall)]
     #[verifier(external_body)]
-    pub proof fn axiom_cpacket_key_model()
+    pub broadcast proof fn axiom_cpacket_key_model()
         ensures #[trigger] obeys_key_model::<CPacket>()
     {
     }

@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 use vstd::prelude::*;
-use vstd::set_lib::lemma_set_properties;
+use vstd::set_lib::group_set_properties;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {
@@ -97,7 +97,7 @@ verus! {
 
       lemma_MapSizeIsDomainSize(domain_before, before);
       lemma_MapSizeIsDomainSize(domain_after, after);
-      lemma_set_properties::<S>();
+      broadcast use group_set_properties;
 
       if after.len() == before.len() {
         if domain_before =~= domain_after {
@@ -146,7 +146,7 @@ verus! {
   let domain_after  = domain(after);
   lemma_MapSizeIsDomainSize(domain_before, before);
   lemma_MapSizeIsDomainSize(domain_after, after);
-  lemma_set_properties::<S>();
+  broadcast use group_set_properties;
   assert(domain_after + set![item_removed] == domain_before);
 }
 
