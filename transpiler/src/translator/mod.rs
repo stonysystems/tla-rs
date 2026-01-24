@@ -5144,4 +5144,49 @@ mod tests {
             _ => panic!("assertions[6] should be Comment"),
         }
     }
+
+    /// Test that demonstrates the full generated loop code structure.
+    /// This test prints the generated code to help verify it matches
+    /// the expected Verus pattern from CRemoveVotesBeforeLogTruncationPoint.
+    #[test]
+    fn test_generated_loop_code_output() {
+        use crate::printer::Printer;
+
+        let mut config = TranslatorConfig::default();
+        config.generate_loops_for_verification = true;
+
+        let translator = Translator::new(config);
+
+        // Generate a map filter pattern similar to RemoveVotesBeforeLogTruncationPoint
+        // Filter condition: *opn >= log_truncation_point
+        let filter_expr = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Unary {
+                op: "*".to_string(),
+                expr: Box::new(ExecExpr::Var("opn".to_string())),
+            }),
+            op: ">=".to_string(),
+            rhs: Box::new(ExecExpr::Var("log_truncation_point".to_string())),
+        };
+
+        let loop_expr = translator.generate_map_filter_loop("votes", "opn", filter_expr);
+
+        // Print the generated code
+        let mut printer = Printer::default();
+        let code = printer.print_expr_to_string(&loop_expr);
+
+        // Print for manual inspection (cargo test -- --nocapture)
+        println!("\n=== Generated Map Filter Loop ===\n{}\n=================================\n", code);
+
+        // Verify key patterns are present in the output
+        assert!(code.contains("broadcast use"), "Should have broadcast use");
+        assert!(code.contains("votes.keys()"), "Should get keys from votes");
+        assert!(code.contains("ghost mut seen_keys"), "Should have ghost variable");
+        assert!(code.contains("for opn in iter:"), "Should have for-in-iter loop");
+        assert!(code.contains("invariant"), "Should have invariants");
+        assert!(code.contains("seen_keys.subset_of"), "Should have subset invariant");
+        assert!(code.contains("proof"), "Should have proof blocks");
+        assert!(code.contains("votes.get"), "Should get value from votes");
+        assert!(code.contains("result.insert"), "Should insert into result");
+        assert!(code.contains("subset_len_equal_implies_equal"), "Should call lemma");
+    }
 }

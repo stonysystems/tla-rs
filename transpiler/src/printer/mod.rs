@@ -97,6 +97,14 @@ impl Printer {
         std::mem::take(&mut self.output)
     }
 
+    /// Print just an expression to a string (for testing/debugging)
+    pub fn print_expr_to_string(&mut self, expr: &ExecExpr) -> String {
+        self.output.clear();
+        self.current_indent = 0;
+        self.print_expr(expr);
+        std::mem::take(&mut self.output)
+    }
+
     /// Print function signature
     fn print_signature(&mut self, func: &ExecFunction) {
         self.write("pub exec fn ");
@@ -125,10 +133,17 @@ impl Printer {
                     self.indent();
                     self.print_expr(stmt);
                     // Add semicolon after statements except the last one (return value)
-                    // Let bindings already have semicolons from their own printing
+                    // Some statements already have semicolons from their own printing
                     let is_last = i == stmts.len() - 1;
-                    let needs_semicolon = !is_last && !matches!(stmt, ExecExpr::Let { .. });
-                    if needs_semicolon {
+                    let has_own_semicolon = matches!(
+                        stmt,
+                        ExecExpr::Let { .. }
+                            | ExecExpr::Assume(_)
+                            | ExecExpr::Assert(_)
+                            | ExecExpr::BroadcastUse(_)
+                            | ExecExpr::GhostVar { .. }
+                    );
+                    if !is_last && !has_own_semicolon {
                         self.write(";");
                     }
                     self.newline();
