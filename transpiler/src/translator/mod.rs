@@ -797,14 +797,57 @@ impl Translator {
                 }
             }
 
-            Expr::Exists { vars, .. } => Err(TranspileError::UnsupportedPattern {
-                message: format!(
-                    "Exists quantifier with vars {:?} cannot be directly translated",
-                    vars.iter().map(|v| &v.pattern).collect::<Vec<_>>()
-                ),
-                span: None,
-                help: Some("Consider using choose! macro or restructuring".to_string()),
-            }),
+            Expr::Exists { vars, body, .. } => {
+                // Try to translate exists quantifier to .any() or .iter().any()
+                // Common pattern: exists |x| container.contains(x) && pred(x)
+                // Translates to: container.iter().any(|x| pred(x))
+
+                if vars.len() != 1 {
+                    return Err(TranspileError::UnsupportedPattern {
+                        message: format!(
+                            "Exists quantifier with {} variables not supported (only single variable)",
+                            vars.len()
+                        ),
+                        span: None,
+                        help: Some("Consider restructuring to use a single bound variable".to_string()),
+                    });
+                }
+
+                let var = &vars[0];
+                let var_name = var.name_string();
+
+                // Try to extract container and predicate from body
+                if let Some((container, predicate)) = self.extract_exists_container_and_pred(body, &var_name) {
+                    // Transform: exists |x| container.contains(x) && pred(x)
+                    // To: container.iter().any(|x| pred(x))
+                    let container_expr = self.transform_expr(&container, ctx)?;
+                    let pred_expr = self.transform_expr(&predicate, ctx)?;
+
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(container_expr),
+                            method: "iter".to_string(),
+                            args: vec![],
+                        }),
+                        method: "any".to_string(),
+                        args: vec![ExecExpr::Closure {
+                            params: vec![var_name],
+                            body: Box::new(pred_expr),
+                        }],
+                    })
+                } else {
+                    // Fallback: try to handle simple exists without container extraction
+                    // Pattern: exists |x| pred(x) where pred doesn't have container.contains(x)
+                    Err(TranspileError::UnsupportedPattern {
+                        message: format!(
+                            "Exists quantifier pattern not recognized. Expected: exists |{}| container.contains({}) && pred({})",
+                            var_name, var_name, var_name
+                        ),
+                        span: None,
+                        help: Some("Restructure to: exists |x| container.contains(x) && predicate(x)".to_string()),
+                    })
+                }
+            }
 
             Expr::Cast(inner_expr, target_type) => {
                 let inner = self.transform_expr(inner_expr, ctx)?;
@@ -1145,6 +1188,62 @@ impl Translator {
         // Pattern: just source.contains_key(k) without filter (returns true as filter)
         if let Some(source_map) = self.extract_contains_key_source(pred, key_var) {
             return Some((source_map, Expr::Literal(crate::ast::Literal::Bool(true))));
+        }
+
+        None
+    }
+
+    /// Extract container and predicate from exists body
+    /// Handles: container.contains(x) && pred(x)
+    /// Returns (container, predicate_without_contains)
+    fn extract_exists_container_and_pred(
+        &self,
+        body: &Expr,
+        var_name: &str,
+    ) -> Option<(Expr, Expr)> {
+        use crate::ast::Expr;
+
+        // Check for conjunction: container.contains(x) && pred(x)
+        if let Expr::Conjunction(parts) = body {
+            for (i, part) in parts.iter().enumerate() {
+                if let Some(container) = self.extract_set_contains_source(part, var_name) {
+                    // Found container.contains(x), rest is predicate
+                    let other_parts: Vec<Expr> = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .map(|(_, p)| p.clone())
+                        .collect();
+
+                    let predicate = if other_parts.len() == 1 {
+                        other_parts.into_iter().next().unwrap()
+                    } else if other_parts.is_empty() {
+                        Expr::Literal(crate::ast::Literal::Bool(true))
+                    } else {
+                        Expr::Conjunction(other_parts)
+                    };
+
+                    return Some((Expr::Ident(container), predicate));
+                }
+            }
+        }
+
+        // Check for binary &&: container.contains(x) && pred(x)
+        if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = body {
+            if let Some(container) = self.extract_set_contains_source(lhs, var_name) {
+                return Some((Expr::Ident(container), (**rhs).clone()));
+            }
+            if let Some(container) = self.extract_set_contains_source(rhs, var_name) {
+                return Some((Expr::Ident(container), (**lhs).clone()));
+            }
+        }
+
+        // Check for just container.contains(x) without additional predicate
+        if let Some(container) = self.extract_set_contains_source(body, var_name) {
+            return Some((
+                Expr::Ident(container),
+                Expr::Literal(crate::ast::Literal::Bool(true)),
+            ));
         }
 
         None
@@ -1829,5 +1928,79 @@ mod tests {
         let result = translator.extract_source_from_conditional_value(&conditional, "k");
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "source");
+    }
+
+    #[test]
+    fn test_exists_with_container_contains() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        // Test: exists |p| S.contains(p) && pred(p)
+        // Build S.contains(p)
+        let contains = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("S".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("p".to_string())],
+        };
+        // Build pred(p) as p.valid
+        let pred = Expr::Field(
+            Box::new(Expr::Ident("p".to_string())),
+            "valid".to_string(),
+        );
+        // Build conjunction
+        let body = Expr::Conjunction(vec![contains, pred]);
+
+        // Build exists expression
+        let exists = Expr::Exists {
+            vars: vec![crate::ast::Binding {
+                pattern: crate::ast::Pattern::Ident("p".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            body: Box::new(body),
+        };
+
+        let result = translator.transform_expr(&exists, &ctx);
+        assert!(result.is_ok(), "exists should transform successfully: {:?}", result);
+
+        // Check the result is a method call to .any()
+        let exec_expr = result.unwrap();
+        match &exec_expr {
+            ExecExpr::MethodCall { method, .. } => {
+                assert_eq!(method, "any", "Should generate .any() call");
+            }
+            _ => panic!("Expected MethodCall, got {:?}", exec_expr),
+        }
+    }
+
+    #[test]
+    fn test_extract_exists_container_and_pred() {
+        let translator = Translator::default();
+
+        // Test: S.contains(p) && pred_call(p)
+        let contains = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("S".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("p".to_string())],
+        };
+        let pred = Expr::Call {
+            func: crate::ast::Path::single("some_pred".to_string()),
+            args: vec![Expr::Ident("p".to_string())],
+        };
+        let body = Expr::Conjunction(vec![contains, pred.clone()]);
+
+        let result = translator.extract_exists_container_and_pred(&body, "p");
+        assert!(result.is_some());
+        let (container, predicate) = result.unwrap();
+
+        // Container should be S
+        if let Expr::Ident(name) = container {
+            assert_eq!(name, "S");
+        } else {
+            panic!("Container should be identifier");
+        }
+
+        // Predicate should be the call expression
+        assert!(matches!(predicate, Expr::Call { .. }));
     }
 }

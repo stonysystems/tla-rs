@@ -979,7 +979,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     1. Exists quantifier completely unsupported (proposer.rs fails)
     2. Forall with collection membership check unsupported (replica.rs fails)
   - **Working:** acceptor.rs, learner.rs, executor.rs, broadcast.rs (with TODOs)
-- [ ] Add exists quantifier support (transform to `.any()` or `.find()`)
+- [x] Add exists quantifier support (transform to `.any()` or `.find()`) [26:01:24, 13:30]
+  - Added `extract_exists_container_and_pred()` helper function
+  - Pattern: `exists |x| container.contains(x) && pred(x)` → `container.iter().any(|x| pred(x))`
+  - Added 2 unit tests for exists support
+  - proposer.rs now transpiles successfully
+  - Log: logs/20260124_131527_a5905c4_exists_quantifier.log
 - [ ] Add forall collection check template (`container.contains(x) ==> pred(x)` → `.all()`)
 - [ ] Extend template matching for RSL-specific patterns
 - [ ] Handle RSL type system (nested types, generic collections)
