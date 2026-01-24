@@ -1153,6 +1153,18 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 
 #### Phase 5: Replace Manual Implementation
 - [ ] Once transpiler output is verified, replace `src/implementation/RSL/` with generated code
+  - **Gap Analysis** [26:01:25, 10:30]: Generated code needs significant adaptation
+  - Manual implementation has ~785 lines vs generated ~170 lines
+  - Key differences requiring manual adaptation:
+    1. Import statements and module dependencies (20+ use statements)
+    2. Struct definitions with View trait implementations (~50 lines)
+    3. `abstractable()` predicate alongside `valid()` (~25 lines)
+    4. `&mut self` method pattern vs functional style (all public methods)
+    5. Optimized variants (CAddVoteAndRemoveOldOnes_optimized, CAcceptorProcess2a_optimized)
+    6. Additional helper functions (min_vote_opn tracking, clone_up_to_view)
+    7. Detailed proof annotations (assert, assume, ghost variables)
+  - Recommended approach: Use generated code as reference, incrementally update manual code
+  - Config file created: src/protocol/RSL/transpile.toml (validity_predicate_name = "valid")
 - [ ] Run full system tests with generated implementation
 - [ ] Document any manual adjustments needed
 
