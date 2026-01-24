@@ -360,7 +360,17 @@ impl Translator {
                 format!("{}({})", func, args_str.join(", "))
             }
             ExecExpr::Unary { op, expr } => {
-                format!("{}{}", op, self.expr_to_invariant_string(expr))
+                // For dereference, don't add another * to the inner expression
+                if op == "*" {
+                    // Just return the inner expression without additional dereference
+                    // since Var already adds * for loop variables
+                    match expr.as_ref() {
+                        ExecExpr::Var(name) => format!("*{}", name),
+                        _ => format!("{}{}", op, self.expr_to_invariant_string(expr))
+                    }
+                } else {
+                    format!("{}{}", op, self.expr_to_invariant_string(expr))
+                }
             }
             _ => "/* unsupported expr */".to_string(),
         }
@@ -4986,7 +4996,7 @@ mod tests {
         };
         assert_eq!(
             translator.expr_to_invariant_string(&binary),
-            "**opn >= *threshold"
+            "*opn >= *threshold"
         );
 
         // Test literal

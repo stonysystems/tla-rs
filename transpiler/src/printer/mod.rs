@@ -142,6 +142,7 @@ impl Printer {
                             | ExecExpr::Assert(_)
                             | ExecExpr::BroadcastUse(_)
                             | ExecExpr::GhostVar { .. }
+                            | ExecExpr::Comment(_)
                     );
                     if !is_last && !has_own_semicolon {
                         self.write(";");
@@ -307,7 +308,15 @@ impl Printer {
                     self.indent();
                     self.write(pattern);
                     self.write(" => ");
-                    self.print_expr(body);
+                    // Handle empty blocks specially - print {} instead of nothing
+                    match body {
+                        ExecExpr::Block(stmts) if stmts.is_empty() => {
+                            self.write("{}");
+                        }
+                        _ => {
+                            self.print_expr(body);
+                        }
+                    }
                     self.write(",");
                     self.newline();
                 }
@@ -437,14 +446,18 @@ impl Printer {
                 invariants,
                 body,
             } => {
-                // First, generate the iterator initialization: let iter_name = source;
-                self.write("let ");
-                self.write(iter_name);
-                self.write(" = ");
-                self.print_expr(iter_source);
-                self.write(";");
-                self.newline();
-                self.indent();
+                // Only generate iterator initialization if iter_source is not already a Var with the same name
+                // (avoids redundant "let x = x;")
+                let skip_binding = matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
+                if !skip_binding {
+                    self.write("let ");
+                    self.write(iter_name);
+                    self.write(" = ");
+                    self.print_expr(iter_source);
+                    self.write(";");
+                    self.newline();
+                    self.indent();
+                }
                 // Generate: for var in iter:iter_name
                 self.write("for ");
                 self.write(var);
