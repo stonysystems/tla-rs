@@ -223,6 +223,11 @@ impl<'a> TransformContext<'a> {
         self.output_params.contains(&name.to_string())
     }
 
+    /// Check if a variable is an input parameter (passed by reference)
+    pub fn is_input(&self, name: &str) -> bool {
+        self.input_params.contains(&name.to_string())
+    }
+
     /// Get the struct name for an output parameter from its type
     pub fn get_output_struct_name(&self, name: &str) -> Option<String> {
         self.output_types.get(name).and_then(|ty| match ty {
@@ -247,6 +252,16 @@ impl Translator {
     /// Create a new translator with the given configuration
     pub fn new(config: TranslatorConfig) -> Self {
         Self { config }
+    }
+
+    /// Wrap an expression with .clone() if it directly references an input parameter.
+    /// Input parameters are passed by reference, so when assigning to struct fields
+    /// (which expect owned types), we need to clone.
+    fn clone_if_input_ref(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
+        match &expr {
+            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Clone(Box::new(expr)),
+            _ => expr,
+        }
     }
 
     /// Translate an annotated spec function to an exec function
@@ -992,6 +1007,8 @@ impl Translator {
                     .iter()
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(fexpr, ctx)?;
+                        // Clone input parameters when assigning to struct fields
+                        let expr = self.clone_if_input_ref(expr, ctx);
                         Ok((fname.clone(), expr))
                     })
                     .collect();
@@ -1007,6 +1024,8 @@ impl Translator {
                     .iter()
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(fexpr, ctx)?;
+                        // Clone input parameters when assigning to struct fields
+                        let expr = self.clone_if_input_ref(expr, ctx);
                         Ok((fname.clone(), expr))
                     })
                     .collect();
@@ -1126,15 +1145,13 @@ impl Translator {
 
             Expr::SeqEmpty => Ok(ExecExpr::VecLit(vec![])),
 
-            Expr::SetEmpty => Ok(ExecExpr::MethodCall {
-                receiver: Box::new(ExecExpr::Var("HashSet".to_string())),
-                method: "new".to_string(),
+            Expr::SetEmpty => Ok(ExecExpr::Call {
+                func: "HashSet::new".to_string(),
                 args: vec![],
             }),
 
-            Expr::MapEmpty => Ok(ExecExpr::MethodCall {
-                receiver: Box::new(ExecExpr::Var("HashMap".to_string())),
-                method: "new".to_string(),
+            Expr::MapEmpty => Ok(ExecExpr::Call {
+                func: "HashMap::new".to_string(),
                 args: vec![],
             }),
 
@@ -1766,6 +1783,8 @@ impl Translator {
                     .into_iter()
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(&fexpr, ctx)?;
+                        // Clone input parameters when assigning to struct fields
+                        let expr = self.clone_if_input_ref(expr, ctx);
                         Ok((fname, expr))
                     })
                     .collect();
@@ -1814,6 +1833,8 @@ impl Translator {
                     .into_iter()
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(&fexpr, ctx)?;
+                        // Clone input parameters when assigning to struct fields
+                        let expr = self.clone_if_input_ref(expr, ctx);
                         Ok((fname, expr))
                     })
                     .collect::<TranspileResult<Vec<_>>>()?;
@@ -3231,6 +3252,101 @@ mod tests {
         let expr = Expr::SeqEmpty;
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         assert!(matches!(result, ExecExpr::VecLit(v) if v.is_empty()));
+    }
+
+    #[test]
+    fn test_transform_set_empty() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::SetEmpty;
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "HashSet::new");
+                assert!(args.is_empty());
+            }
+            _ => panic!("Expected Call, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_map_empty() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::MapEmpty;
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "HashMap::new");
+                assert!(args.is_empty());
+            }
+            _ => panic!("Expected Call, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_clone_input_ref_in_struct_field() {
+        let translator = Translator::default();
+        // Create context where 'c' is an input parameter
+        let mut ctx = make_ctx();
+        ctx.input_params = vec!["c".to_string()];
+
+        // Struct { constants: c } where c is an input param should produce Clone
+        let expr = Expr::Struct {
+            name: crate::ast::Path::single("LAcceptor".to_string()),
+            fields: vec![("constants".to_string(), Expr::Ident("c".to_string()))],
+        };
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+
+        match result {
+            ExecExpr::Struct { name, fields } => {
+                assert_eq!(name, "CAcceptor");
+                assert_eq!(fields.len(), 1);
+                let (field_name, field_val) = &fields[0];
+                assert_eq!(field_name, "constants");
+                // Field value should be Clone(Var("c"))
+                match field_val {
+                    ExecExpr::Clone(inner) => match inner.as_ref() {
+                        ExecExpr::Var(name) => assert_eq!(name, "c"),
+                        _ => panic!("Expected Var inside Clone, got {:?}", inner),
+                    },
+                    _ => panic!("Expected Clone, got {:?}", field_val),
+                }
+            }
+            _ => panic!("Expected Struct, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_no_clone_for_non_input_in_struct_field() {
+        let translator = Translator::default();
+        // Create context where 'local_var' is NOT an input parameter
+        let mut ctx = make_ctx();
+        ctx.input_params = vec!["c".to_string()]; // Only 'c' is input
+
+        // Struct { field: local_var } should NOT produce Clone
+        let expr = Expr::Struct {
+            name: crate::ast::Path::single("LStruct".to_string()),
+            fields: vec![("field".to_string(), Expr::Ident("local_var".to_string()))],
+        };
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+
+        match result {
+            ExecExpr::Struct { name, fields } => {
+                assert_eq!(name, "CStruct");
+                assert_eq!(fields.len(), 1);
+                let (field_name, field_val) = &fields[0];
+                assert_eq!(field_name, "field");
+                // Field value should NOT be Clone, just Var
+                match field_val {
+                    ExecExpr::Var(name) => assert_eq!(name, "local_var"),
+                    _ => panic!("Expected Var (not Clone), got {:?}", field_val),
+                }
+            }
+            _ => panic!("Expected Struct, got {:?}", result),
+        }
     }
 
     #[test]
