@@ -999,7 +999,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Multiple outputs now wrapped in `ExecExpr::Tuple` instead of `ExecExpr::Block`
     - Plan: docs/dev/tuple-return-generation-plan.md
   - [ ] Fix helper predicate output handling (complex - needs breakdown)
-    - [ ] Detect helper predicate calls with output parameters (e.g., `LHelper(in, out_param, ...)`)
+    - [x] Detect helper predicate calls with output parameters [26:01:24, 15:00]
+      - Added `HelperCallInfo` struct to capture function name, input args, and output fields
+      - Added `detect_helper_call()` function to identify calls with `s_.field` patterns
+      - Added test for helper call detection
     - [ ] Generate let bindings to capture helper outputs (e.g., `let s_proposer = CHelper(...)`)
     - [ ] Rewrite field references from `s_.field` to captured variable `s_field`
     - [ ] Handle multiple helper calls in sequence (combine their outputs)

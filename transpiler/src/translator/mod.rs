@@ -188,6 +188,19 @@ pub struct TransformContext<'a> {
     pub output_types: HashMap<String, Type>,
 }
 
+/// Information about a helper predicate call with output arguments
+#[derive(Debug, Clone)]
+pub struct HelperCallInfo {
+    /// Function name
+    pub func_name: String,
+    /// Input arguments (already transformed)
+    pub input_args: Vec<ExecExpr>,
+    /// Output fields: (output_var, field_name) pairs
+    /// e.g., for LProposerProcessRequest(s.proposer, s_.proposer, ...),
+    /// this would be [("s_", "proposer")]
+    pub output_fields: Vec<(String, String)>,
+}
+
 impl<'a> TransformContext<'a> {
     pub fn is_output(&self, name: &str) -> bool {
         self.output_params.contains(&name.to_string())
@@ -968,6 +981,47 @@ impl Translator {
             a_idx.cmp(&b_idx)
         });
         sorted.into_iter().map(|(_, e)| e).collect()
+    }
+
+    /// Detect helper predicate calls with output parameters
+    /// A helper call has output parameters if any argument is `output_var.field`
+    fn detect_helper_call(
+        &self,
+        expr: &Expr,
+        ctx: &TransformContext,
+    ) -> Option<HelperCallInfo> {
+        if let Expr::Call { func, args } = expr {
+            let func_name = func.last()?.to_string();
+            let mut input_args = Vec::new();
+            let mut output_fields = Vec::new();
+
+            for arg in args {
+                // Check if argument is output_var.field
+                if let Expr::Field(base, field) = arg {
+                    if let Expr::Ident(var_name) = base.as_ref() {
+                        if ctx.is_output(var_name) {
+                            // This is an output argument
+                            output_fields.push((var_name.clone(), field.clone()));
+                            continue;
+                        }
+                    }
+                }
+                // Not an output field, it's an input
+                // Transform it and add to inputs
+                if let Ok(transformed) = self.transform_expr(arg, ctx) {
+                    input_args.push(transformed);
+                }
+            }
+
+            if !output_fields.is_empty() {
+                return Some(HelperCallInfo {
+                    func_name,
+                    input_args,
+                    output_fields,
+                });
+            }
+        }
+        None
     }
 
     /// Try to extract struct construction from a conjunction of field assignments
@@ -2224,5 +2278,47 @@ mod tests {
             }
             _ => panic!("Expected Tuple, got {:?}", exec_expr),
         }
+    }
+
+    #[test]
+    fn test_detect_helper_call_with_output() {
+        let translator = Translator::default();
+
+        // Create context with s_ as output
+        let config = TranslatorConfig::default();
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "received_packet".to_string()],
+            output_types: HashMap::new(),
+        };
+
+        // Build: LProposerProcessRequest(s.proposer, s_.proposer, received_packet)
+        let call = Expr::Call {
+            func: crate::ast::Path::single("LProposerProcessRequest".to_string()),
+            args: vec![
+                // s.proposer (input)
+                Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "proposer".to_string(),
+                ),
+                // s_.proposer (output)
+                Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "proposer".to_string(),
+                ),
+                // received_packet (input)
+                Expr::Ident("received_packet".to_string()),
+            ],
+        };
+
+        let result = translator.detect_helper_call(&call, &ctx);
+        assert!(result.is_some(), "Should detect helper call");
+
+        let info = result.unwrap();
+        assert_eq!(info.func_name, "LProposerProcessRequest");
+        assert_eq!(info.input_args.len(), 2, "Should have 2 input args");
+        assert_eq!(info.output_fields.len(), 1, "Should have 1 output field");
+        assert_eq!(info.output_fields[0], ("s_".to_string(), "proposer".to_string()));
     }
 }
