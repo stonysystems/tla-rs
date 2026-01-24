@@ -5,6 +5,10 @@
 //! - Warning vs error distinction
 //! - Source location tracking
 
+// Suppress false positives from thiserror/miette derive macros in Rust 1.93+
+// See: https://github.com/rust-lang/rust/issues/XXXXX
+#![allow(unused_assignments)]
+
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
 

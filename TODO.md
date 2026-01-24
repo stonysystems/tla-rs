@@ -688,15 +688,7 @@ verus! {
   verus_transpiler::build_integration::run_build(&config).unwrap();
   ```
 
-### 9.3 IDE Support
-
-- [ ] **LSP integration considerations** [DEFERRED - pending Verus integration]
-  - Jump from generated code to spec
-  - Error highlighting in spec files
-  - See `docs/dev/ide-support-plan.md` for implementation plan
-  - Recommended: Start with VS Code extension using CLI diagnostics
-
-### 9.4 Documentation
+### 9.3 Documentation
 
 - [x] **Document annotation format** [26:01:22, 21:00]
   - See `transpiler/docs/annotation-format.md`
@@ -916,9 +908,18 @@ mode annotations, and basic expression transformation.
 
 ---
 
-## Appendix D: Immediate Action Items (2026-01-22)
+## Appendix D: Immediate Action Items
 
-### Environment Status
+### Current: Fix CI Clippy Failures ✅ COMPLETE [26:01:23, 19:13]
+
+- [x] **Investigate and fix CI clippy lint failures** [2026-01-23]
+  - **Root cause**: Rust 1.93 introduced new `unused_assignments` lint that produces false positives
+    on enum variant fields in thiserror/miette derive macros
+  - **Fix**: Added `#![allow(unused_assignments)]` at module level in `transpiler/src/error.rs`
+  - **Verification**: All 126 tests pass, clippy passes with `-D warnings`, format check passes
+  - **Log**: logs/20260123_191349_d3a3cee_clippy_fix.log
+
+### Environment Status (2026-01-22)
 - **Verus**: ✅ Installed at `/home/shuai/tools/verus-x86-linux/verus` (v0.2026.01.14.88f7396)
 - **Rust toolchain**: ✅ 1.92.0-x86_64-unknown-linux-gnu
 - **Transpiler**: ✅ Builds and passes all 120 tests
