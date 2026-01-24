@@ -910,7 +910,75 @@ mode annotations, and basic expression transformation.
 
 ## Appendix D: Immediate Action Items
 
-### Current: Fix CI Clippy Failures ✅ COMPLETE [26:01:23, 19:13]
+### Current: Transpile Full Paxos (RSL) Spec to Implementation
+
+Goal: Use the transpiler to generate the RSL implementation from `src/protocol/RSL/` specs, compare with the manual implementation in `src/implementation/RSL/`, and iterate until the transpiler can fully generate verified Paxos code.
+
+#### Phase 1: Create Annotation Files for RSL Specs ✅ COMPLETE [26:01:24, 00:03]
+- [x] Create `src/protocol/RSL/acceptor.automan` with mode annotations for:
+  - `LAcceptorInit(-, +)` - output acceptor, input constants
+  - `LAcceptorProcess1a(+, -, +, -)` - input state, output state', input packet, output packets
+  - `LAcceptorProcess2a(+, -, +, -)`
+  - `LAcceptorProcessHeartbeat(+, -, +)`
+  - `LAcceptorTruncateLog(+, -, +)`
+- [x] Create `src/protocol/RSL/proposer.automan`
+- [x] Create `src/protocol/RSL/learner.automan`
+- [x] Create `src/protocol/RSL/executor.automan`
+- [x] Create `src/protocol/RSL/replica.automan`
+- [x] Create `src/protocol/RSL/broadcast.automan`
+
+#### Phase 2: Run Transpiler and Compare Output (IN PROGRESS)
+**Parser enhancements completed [26:01:24]:**
+- [x] Add turbofish syntax support `::<Type>` for generic type parameters
+- [x] Add `is` keyword for enum variant checks
+- [x] Add `=~=` extensional equality operator
+- [x] Add `<==>` biconditional (iff) operator
+- [x] Fix `==>` implication to not match `==` prefix
+- [x] Fix `<=` and `<` to not match `<==>` prefix
+
+**Blocking issue (RESOLVED):**
+- [x] Add comment handling inside function bodies (parser skips comments at top-level but not in expressions)
+
+**Current blockers:**
+- Forall quantifiers in RSL specs need template matching extensions
+- RSL uses patterns like `forall |opn:OperationNumber| votes_.contains_key(opn) ==> ...`
+- These require building SeqComprehension or MapComprehension templates
+
+**Transpilation tasks:**
+- [~] Run transpiler on `src/protocol/RSL/acceptor.rs` - PARSING WORKS, fails on forall templates
+- [ ] Compare generated code with `src/implementation/RSL/acceptorimpl.rs`
+- [ ] Document differences and missing features
+- [ ] Repeat for proposer, learner, executor, replica
+
+#### Phase 3: Iterate on Transpiler to Handle Full RSL
+- [ ] Identify unsupported patterns in RSL specs
+- [ ] Extend template matching for RSL-specific patterns
+- [ ] Handle RSL type system (nested types, generic collections)
+- [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
+- [ ] Handle `recommends` clauses properly
+- [x] Support arrow operator for enum variant field access (`msg->bal_1a`) - already supported
+
+#### Phase 4: Verification and Integration
+- [ ] Verify generated code compiles with Verus
+- [ ] Verify generated code passes all Verus proofs (0 errors)
+- [ ] Compare verification time: generated vs manual implementation
+- [ ] Integration test: generated acceptor works with manual proposer/learner
+
+#### Phase 5: Replace Manual Implementation
+- [ ] Once transpiler output is verified, replace `src/implementation/RSL/` with generated code
+- [ ] Run full system tests with generated implementation
+- [ ] Document any manual adjustments needed
+
+#### Known Challenges
+- RSL uses complex nested types (`LReplicaConstants`, `LConfiguration`, etc.)
+- Some predicates have 4+ output parameters
+- Quantifiers over maps with biconditional domains (`votes_.dom().contains(opn) <==> ...`)
+- Cross-component dispatch (replica routes to proposer AND acceptor)
+- FFI integration with C# layer
+
+---
+
+### Completed: Fix CI Clippy Failures ✅ [26:01:23, 19:13]
 
 - [x] **Investigate and fix CI clippy lint failures** [2026-01-23]
   - **Root cause**: Rust 1.93 introduced new `unused_assignments` lint that produces false positives
