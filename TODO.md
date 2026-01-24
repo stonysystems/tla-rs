@@ -998,8 +998,11 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Added `sort_outputs_by_param_order()` to maintain consistent tuple order
     - Multiple outputs now wrapped in `ExecExpr::Tuple` instead of `ExecExpr::Block`
     - Plan: docs/dev/tuple-return-generation-plan.md
-  - [ ] Fix output variable binding (`s_` should be derived from struct construction)
-  - [ ] Generate let bindings for helper predicate calls that return values
+  - [ ] Fix helper predicate output handling (complex - needs breakdown)
+    - [ ] Detect helper predicate calls with output parameters (e.g., `LHelper(in, out_param, ...)`)
+    - [ ] Generate let bindings to capture helper outputs (e.g., `let s_proposer = CHelper(...)`)
+    - [ ] Rewrite field references from `s_.field` to captured variable `s_field`
+    - [ ] Handle multiple helper calls in sequence (combine their outputs)
   - [ ] Handle sequence of expressions returning single tuple result
 - [ ] Handle RSL type system (nested types, generic collections)
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
