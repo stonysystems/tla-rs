@@ -1081,9 +1081,10 @@ Analysis of generated acceptor output identified these remaining issues:
      CAcceptor { votes: s_votes, ... }
      ```
 
-2. **Clone missing on borrowed values**
+2. **Clone missing on borrowed values** ✅ FIXED [26:01:24, 21:00]
    - Pattern: `(s, Cempty())` when s is `&CAcceptor`
-   - Fix: Add `.clone()` when returning borrowed references
+   - Fix: Added clone detection in `categorize_output_assignments_with_exclusions`
+   - When `s_ == s` pattern detected and s is input param, generate `ExecExpr::Clone`
 
 3. **Reference/value comparison issues**
    - Pattern: `opn <= s.log_truncation_point` comparing `&T` with `T`

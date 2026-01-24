@@ -1180,6 +1180,16 @@ impl Translator {
                 // Check if LHS is an output parameter: s_ == expr or sent_packets == expr
                 if let Expr::Ident(name) = lhs.as_ref() {
                     if ctx.is_output(name) && !exclude_outputs.contains(name) {
+                        // Check if RHS is an input param - if so, generate clone
+                        if let Expr::Ident(rhs_name) = rhs.as_ref() {
+                            if ctx.input_params.contains(rhs_name) {
+                                output_exprs.push((
+                                    name.clone(),
+                                    ExecExpr::Clone(Box::new(ExecExpr::Var(rhs_name.clone()))),
+                                ));
+                                continue;
+                            }
+                        }
                         let transformed = self.transform_expr(rhs, ctx)?;
                         output_exprs.push((name.clone(), transformed));
                         continue;
