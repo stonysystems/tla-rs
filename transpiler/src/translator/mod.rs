@@ -186,6 +186,9 @@ pub struct TransformContext<'a> {
     pub input_params: Vec<String>,
     /// Maps output parameter names to their types (for struct name derivation)
     pub output_types: HashMap<String, Type>,
+    /// Maps (output_var, field) pairs to substitution variable names
+    /// e.g., ("s_", "proposer") -> "s_proposer"
+    pub field_substitutions: HashMap<(String, String), String>,
 }
 
 /// Information about a helper predicate call with output arguments
@@ -212,6 +215,12 @@ impl<'a> TransformContext<'a> {
             Type::Named(path) => path.last().map(|s| s.to_string()),
             _ => None,
         })
+    }
+
+    /// Get the substitution variable name for an output field access
+    /// e.g., for s_.proposer, returns Some("s_proposer") if there's a binding
+    pub fn get_field_substitution(&self, var: &str, field: &str) -> Option<&String> {
+        self.field_substitutions.get(&(var.to_string(), field.to_string()))
     }
 }
 
@@ -279,6 +288,7 @@ impl Translator {
                 .map(|(p, _)| p.name.clone())
                 .collect(),
             output_types,
+            field_substitutions: HashMap::new(),
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
@@ -485,6 +495,13 @@ impl Translator {
             Expr::Ident(name) => Ok(ExecExpr::Var(name.clone())),
 
             Expr::Field(base, field) => {
+                // Check if this is an output field access that has a substitution
+                // e.g., s_.proposer -> s_proposer
+                if let Expr::Ident(var_name) = base.as_ref() {
+                    if let Some(subst) = ctx.get_field_substitution(var_name, field) {
+                        return Ok(ExecExpr::Var(subst.clone()));
+                    }
+                }
                 let base_expr = self.transform_expr(base, ctx)?;
                 Ok(ExecExpr::Field(Box::new(base_expr), field.clone()))
             }
@@ -2007,6 +2024,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "inp".to_string()],
             output_types,
+            field_substitutions: HashMap::new(),
         }
     }
 
@@ -2295,6 +2313,7 @@ mod tests {
             output_params: vec!["s_".to_string(), "sent_packets".to_string()],
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
         };
 
         // Build: s_ == s &&& sent_packets == Seq::empty()
@@ -2339,6 +2358,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
         };
 
         // Build: LProposerProcessRequest(s.proposer, s_.proposer, received_packet)
@@ -2402,6 +2422,40 @@ mod tests {
                 }
             }
             _ => panic!("Expected Let, got {:?}", let_binding),
+        }
+    }
+
+    #[test]
+    fn test_field_substitution() {
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+
+        // Create context with a field substitution
+        let mut field_substitutions = HashMap::new();
+        field_substitutions.insert(("s_".to_string(), "proposer".to_string()), "s_proposer".to_string());
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions,
+        };
+
+        // Test: s_.proposer should be substituted to s_proposer
+        let field_access = Expr::Field(
+            Box::new(Expr::Ident("s_".to_string())),
+            "proposer".to_string(),
+        );
+
+        let result = translator.transform_expr(&field_access, &ctx);
+        assert!(result.is_ok(), "Should transform successfully");
+
+        match result.unwrap() {
+            ExecExpr::Var(name) => {
+                assert_eq!(name, "s_proposer", "Should substitute to s_proposer");
+            }
+            other => panic!("Expected Var, got {:?}", other),
         }
     }
 }

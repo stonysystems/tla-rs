@@ -334,6 +334,7 @@ fn test_translator_forall_without_template() {
         output_params: vec!["s_".to_string()],
         input_params: vec!["s".to_string()],
         output_types,
+        field_substitutions: HashMap::new(),
     };
 
     // A forall that can't be translated directly
@@ -372,6 +373,7 @@ fn test_translator_exists_not_supported() {
         output_params: vec![],
         input_params: vec![],
         output_types,
+        field_substitutions: HashMap::new(),
     };
 
     // Exists quantifier - not directly translatable

@@ -279,6 +279,7 @@ fn test_expression_transformation() {
         output_params: vec!["result".to_string()],
         input_params: vec!["inp".to_string()],
         output_types,
+        field_substitutions: HashMap::new(),
     };
 
     // Test method call transformation

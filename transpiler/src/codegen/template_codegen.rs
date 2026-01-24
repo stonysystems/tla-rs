@@ -315,6 +315,7 @@ mod tests {
             output_params: vec!["result".to_string()],
             input_params: vec!["src".to_string()],
             output_types,
+            field_substitutions: std::collections::HashMap::new(),
         }
     }
 
