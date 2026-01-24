@@ -1113,6 +1113,21 @@ Analysis of generated acceptor output identified these remaining issues:
    - Uses `transform_conditional_field()` to generate proper conditional expression
    - Now generates: `CAcceptor { ..., votes: if cond { helper() } else { s.votes }, ... }`
 
+#### Code Generation Summary [26:01:24, 23:45]
+All major code generation issues for acceptor.rs have been addressed:
+- ✅ Helper predicate calls strip output field arguments
+- ✅ Reference arguments (`&`) added automatically for function calls
+- ✅ Conditional field assignments integrated into struct construction
+- ✅ Map update with insert operations generate proper code
+- ✅ Clone for input → output copies when `s_ == s`
+
+Remaining limitations (require type information to fully resolve):
+- Ownership: Reference params assigned to struct fields may need `.clone()` or dereference
+- Type coercion: Some comparisons may need explicit type handling
+- Iterator methods: `.iter().filter().collect()` may need type annotations
+
+The generated code is structurally correct and matches the expected Verus exec function format.
+
 ---
 
 ### Completed: Fix CI Clippy Failures ✅ [26:01:23, 19:13]
