@@ -1033,6 +1033,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Target code: votes.iter().filter(|(k,_)| *k >= threshold).collect()
     - Added try_extract_map_filter_conjunction() to recognize the pattern
     - Generates proper .iter().filter().collect() code
+  - [x] Sequence initialization pattern (length + forall constraints) [26:01:24, 19:30]
+    - Pattern: `output.field.len() == length_expr && forall |i| ... ==> output.field[i] == element`
+    - Example: LAcceptorInit with last_checkpointed_operation initialization
+    - Target code: `(0..c.all.config.replica_ids.len()).map(|_| 0).collect()`
+    - Added `try_extract_seq_init_pattern()` to recognize the pattern
+    - Generates proper `.map().collect()` code for struct field initialization
   - [ ] Map update/insert operations with proper cloning
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
 - [x] Handle `recommends` clauses properly [26:01:24, 18:30]

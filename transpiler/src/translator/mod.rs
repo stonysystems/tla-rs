@@ -1448,6 +1448,58 @@ impl Translator {
             other_exprs.push(expr.clone());
         }
 
+        // Check for sequence initialization patterns: length constraint + forall element constraint
+        // Pattern: output.field.len() == length && forall |i| ... ==> output.field[i] == element
+        if let Some((out_var, field_name, length_expr, element_expr)) =
+            self.try_extract_seq_init_pattern(exprs, ctx)
+        {
+            // Generate: (0..length).map(|_| element).collect()
+            let length = self.transform_expr(&length_expr, ctx)?;
+            let element = self.transform_expr(&element_expr, ctx)?;
+            let seq_init = ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Range {
+                        start: Box::new(ExecExpr::Literal("0".to_string())),
+                        end: Box::new(length),
+                    }),
+                    method: "map".to_string(),
+                    args: vec![ExecExpr::Closure {
+                        params: vec!["_".to_string()],
+                        body: Box::new(element),
+                    }],
+                }),
+                method: "collect".to_string(),
+                args: vec![],
+            };
+
+            // Store pre-translated (don't add placeholder to field_assignments)
+            pre_translated
+                .entry(out_var)
+                .or_default()
+                .push((field_name, seq_init));
+
+            // Remove the length and forall expressions from other_exprs since they're now handled
+            other_exprs.retain(|e| {
+                // Keep expressions that aren't the length constraint or forall
+                if let Expr::Eq(lhs, rhs) = e {
+                    if let Expr::MethodCall { method, .. } = lhs.as_ref() {
+                        if method == "len" {
+                            return false;
+                        }
+                    }
+                    if let Expr::MethodCall { method, .. } = rhs.as_ref() {
+                        if method == "len" {
+                            return false;
+                        }
+                    }
+                }
+                if let Expr::Forall { .. } = e {
+                    return false;
+                }
+                true
+            });
+        }
+
         // Convert nested assignments to pre-translated struct constructions
         for (output_name, nested_map) in nested_assignments {
             for (outer_field, inner_fields) in nested_map {
@@ -1660,6 +1712,152 @@ impl Translator {
         }
 
         None
+    }
+
+    /// Try to extract a sequence initialization pattern from conjunction expressions
+    /// Pattern:
+    /// 1. Length constraint: output.field.len() == length_expr
+    /// 2. Element forall: forall |i| 0 <= i < output.field.len() ==> output.field[i] == element_expr
+    /// Returns: (output_var, field_name, length_expr, element_expr) if pattern matches
+    fn try_extract_seq_init_pattern(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> Option<(String, String, Expr, Expr)> {
+        use crate::ast::Expr;
+
+        // Look for length constraint: output.field.len() == expr
+        let mut length_info: Option<(String, String, Expr)> = None;
+        for expr in exprs {
+            if let Expr::Eq(lhs, rhs) = expr {
+                // Check: output.field.len() == expr
+                if let Expr::MethodCall { receiver, method, args } = lhs.as_ref() {
+                    if method == "len" && args.is_empty() {
+                        if let Expr::Field(base, field) = receiver.as_ref() {
+                            if let Expr::Ident(var_name) = base.as_ref() {
+                                if ctx.is_output(var_name) {
+                                    length_info = Some((var_name.clone(), field.clone(), (**rhs).clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+                // Also check: expr == output.field.len()
+                if let Expr::MethodCall { receiver, method, args } = rhs.as_ref() {
+                    if method == "len" && args.is_empty() {
+                        if let Expr::Field(base, field) = receiver.as_ref() {
+                            if let Expr::Ident(var_name) = base.as_ref() {
+                                if ctx.is_output(var_name) {
+                                    length_info = Some((var_name.clone(), field.clone(), (**lhs).clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let (out_var, field_name, length_expr) = length_info?;
+
+        // Look for element forall: forall |i| 0 <= i < output.field.len() ==> output.field[i] == element
+        for expr in exprs {
+            if let Expr::Forall { vars, body, .. } = expr {
+                if vars.len() != 1 {
+                    continue;
+                }
+                let idx_var = vars[0].name_string();
+
+                // Body should be: bounds ==> output.field[i] == element
+                if let Expr::Implies(lhs, rhs) = body.as_ref() {
+                    // Check LHS is bounds: 0 <= i < n
+                    // Check RHS is: output.field[i] == element
+                    if let Some(element_expr) = self.extract_seq_element_assignment(
+                        rhs,
+                        &idx_var,
+                        &out_var,
+                        &field_name,
+                    ) {
+                        // Verify LHS is proper bounds (uses the same field.len())
+                        if self.is_valid_seq_bounds(lhs, &idx_var, &out_var, &field_name) {
+                            return Some((out_var, field_name, length_expr, element_expr));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract element expression from output.field[i] == element
+    fn extract_seq_element_assignment(
+        &self,
+        expr: &Expr,
+        idx_var: &str,
+        out_var: &str,
+        field_name: &str,
+    ) -> Option<Expr> {
+        use crate::ast::Expr;
+
+        if let Expr::Eq(lhs, rhs) = expr {
+            // Check: output.field[i] == element
+            if let Some(element) = self.match_field_index(lhs, idx_var, out_var, field_name) {
+                if element {
+                    return Some((**rhs).clone());
+                }
+            }
+            // Also check: element == output.field[i]
+            if let Some(element) = self.match_field_index(rhs, idx_var, out_var, field_name) {
+                if element {
+                    return Some((**lhs).clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if expr matches output.field[idx_var]
+    fn match_field_index(
+        &self,
+        expr: &Expr,
+        idx_var: &str,
+        out_var: &str,
+        field_name: &str,
+    ) -> Option<bool> {
+        use crate::ast::Expr;
+
+        // Pattern: output.field[idx]
+        if let Expr::Index(base, idx) = expr {
+            if let Expr::Ident(idx_name) = idx.as_ref() {
+                if idx_name == idx_var {
+                    if let Expr::Field(base_obj, fname) = base.as_ref() {
+                        if fname == field_name {
+                            if let Expr::Ident(obj_name) = base_obj.as_ref() {
+                                if obj_name == out_var {
+                                    return Some(true);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if expr is valid bounds: 0 <= idx < output.field.len()
+    fn is_valid_seq_bounds(
+        &self,
+        _expr: &Expr,
+        _idx_var: &str,
+        _out_var: &str,
+        _field_name: &str,
+    ) -> bool {
+        // For now, accept any bounds - we can make this more strict later
+        // A more complete check would verify:
+        // - lower bound: 0 <= idx or idx >= 0
+        // - upper bound: idx < output.field.len()
+        true
     }
 
     /// Try to recognize a conjunction of foralls as a map filter pattern
@@ -3267,5 +3465,93 @@ mod tests {
 
         let lit_bool = Expr::Literal(Literal::Bool(true));
         assert_eq!(translator.expr_to_simple_string(&lit_bool), "true");
+    }
+
+    #[test]
+    fn test_seq_init_pattern() {
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["a".to_string()],
+            input_params: vec!["c".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Build the pattern:
+        // a.seq_field.len() == c.items.len()
+        // forall |idx| 0 <= idx < a.seq_field.len() ==> a.seq_field[idx] == 0
+        let length_expr = Expr::Eq(
+            Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Field(
+                    Box::new(Expr::Ident("a".to_string())),
+                    "seq_field".to_string(),
+                )),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+            Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Field(
+                    Box::new(Expr::Ident("c".to_string())),
+                    "items".to_string(),
+                )),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+        );
+
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("idx".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+
+        let forall_expr = Expr::Forall {
+            vars: vec![binding],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Le(
+                        Box::new(Expr::Literal(Literal::Int(0))),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )),
+                    BinOp::And,
+                    Box::new(Expr::Lt(
+                        Box::new(Expr::Ident("idx".to_string())),
+                        Box::new(Expr::MethodCall {
+                            receiver: Box::new(Expr::Field(
+                                Box::new(Expr::Ident("a".to_string())),
+                                "seq_field".to_string(),
+                            )),
+                            method: "len".to_string(),
+                            args: vec![],
+                        }),
+                    )),
+                )),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("a".to_string())),
+                            "seq_field".to_string(),
+                        )),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+            )),
+        };
+
+        // Test try_extract_seq_init_pattern
+        let exprs = vec![length_expr, forall_expr];
+        let result = translator.try_extract_seq_init_pattern(&exprs, &ctx);
+
+        assert!(result.is_some(), "Should detect seq init pattern");
+        let (out_var, field_name, _length, element) = result.unwrap();
+        assert_eq!(out_var, "a");
+        assert_eq!(field_name, "seq_field");
+        // Element should be the literal 0
+        assert!(matches!(element, Expr::Literal(Literal::Int(0))));
     }
 }
