@@ -177,6 +177,14 @@ pub enum ExecExpr {
     Comment(String),
     /// Type cast (expr as Type)
     Cast(Box<ExecExpr>, String),
+    /// Map update with insert operation
+    /// Generates: { let mut result = source.iter().filter().collect(); if filter(new_key) { result.insert(new_key, value); } result }
+    MapUpdateWithInsert {
+        source: Box<ExecExpr>,
+        key_var: String,
+        filter: Box<ExecExpr>,
+        new_key: Box<ExecExpr>,
+    },
 }
 
 /// Context for expression transformation
@@ -637,7 +645,69 @@ impl Translator {
             }
 
             Expr::Conjunction(exprs) => {
-                // First, check if this is a map filter conjunction pattern
+                // First, check if this is a map update with insert pattern
+                // (domain biconditional forall + value conditional forall)
+                if let Some((source_map, key_var, filter_pred, new_key, new_value, old_value_expr)) =
+                    self.try_extract_map_update_with_value(exprs, ctx)
+                {
+                    // Generate complete map update code:
+                    // {
+                    //   let mut result = source.iter().filter(|(k,_)| filter).map(|(k,v)| (k.clone(), v.clone())).collect();
+                    //   result.insert(new_key.clone(), new_value.clone());
+                    //   result
+                    // }
+                    // But we need to handle the conditional value (if k == new_key then new_value else old_value)
+                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+                    let new_key_expr = self.transform_expr(&new_key, ctx)?;
+                    let new_value_expr = self.transform_expr(&new_value, ctx)?;
+                    let old_value = self.transform_expr(&old_value_expr, ctx)?;
+
+                    // Generate: source.iter().filter().map(value_fn).collect() then insert new_key
+                    return Ok(ExecExpr::Block(vec![
+                        ExecExpr::Let {
+                            pattern: "mut __result".to_string(),
+                            ty: None,
+                            value: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::MethodCall {
+                                            receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                            method: "iter".to_string(),
+                                            args: vec![],
+                                        }),
+                                        method: "filter".to_string(),
+                                        args: vec![ExecExpr::Closure {
+                                            params: vec![format!("({}, _)", key_var)],
+                                            body: Box::new(filter_expr.clone()),
+                                        }],
+                                    }),
+                                    method: "map".to_string(),
+                                    args: vec![ExecExpr::Closure {
+                                        params: vec![format!("({}, {})", key_var, "__v")],
+                                        body: Box::new(ExecExpr::Tuple(vec![
+                                            ExecExpr::Clone(Box::new(ExecExpr::Var(key_var.clone()))),
+                                            old_value,
+                                        ])),
+                                    }],
+                                }),
+                                method: "collect".to_string(),
+                                args: vec![],
+                            }),
+                        },
+                        // Insert new key with new value
+                        ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__result".to_string())),
+                            method: "insert".to_string(),
+                            args: vec![
+                                ExecExpr::Clone(Box::new(new_key_expr)),
+                                ExecExpr::Clone(Box::new(new_value_expr)),
+                            ],
+                        },
+                        ExecExpr::Var("__result".to_string()),
+                    ]));
+                }
+
+                // Next, check if this is a map filter conjunction pattern
                 // (multiple foralls that together define filtering a map)
                 if let Some((source_map, _output_map, key_var, filter_pred)) =
                     self.try_extract_map_filter_conjunction(exprs, ctx)
@@ -1724,6 +1794,234 @@ impl Translator {
         None
     }
 
+    /// Try to extract "map update with insert" pattern from domain predicate
+    /// Pattern: filter && (source.contains(k) || k == new_key)
+    /// Returns: (source_map, filter_pred, new_key_expr) if pattern matches
+    fn extract_map_update_with_insert(
+        &self,
+        pred: &Expr,
+        key_var: &str,
+    ) -> Option<(String, Expr, Expr)> {
+        use crate::ast::{BinOp, Expr};
+
+        // Look for: filter && (source.contains(k) || k == new_key)
+        if let Expr::Binary(lhs, BinOp::And, rhs) = pred {
+            // Check if RHS is the OR clause: source.contains(k) || k == new_key
+            if let Some((source, new_key)) = self.extract_contains_or_equals(rhs, key_var) {
+                return Some((source, (**lhs).clone(), new_key));
+            }
+            // Check LHS as well (filter might be on the right)
+            if let Some((source, new_key)) = self.extract_contains_or_equals(lhs, key_var) {
+                return Some((source, (**rhs).clone(), new_key));
+            }
+        }
+
+        // Check for Conjunction form
+        if let Expr::Conjunction(parts) = pred {
+            // Look for the OR clause among the parts
+            for (i, part) in parts.iter().enumerate() {
+                if let Some((source, new_key)) = self.extract_contains_or_equals(part, key_var) {
+                    // Collect remaining parts as filter
+                    let filter_parts: Vec<_> = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .map(|(_, p)| p.clone())
+                        .collect();
+                    let filter = if filter_parts.len() == 1 {
+                        filter_parts.into_iter().next().unwrap()
+                    } else {
+                        Expr::Conjunction(filter_parts)
+                    };
+                    return Some((source, filter, new_key));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract pattern: source.contains(k) || k == new_key
+    /// Returns: (source_map, new_key_expr)
+    fn extract_contains_or_equals(
+        &self,
+        expr: &Expr,
+        key_var: &str,
+    ) -> Option<(String, Expr)> {
+        use crate::ast::{BinOp, Expr};
+
+        if let Expr::Binary(lhs, BinOp::Or, rhs) = expr {
+            // Check: source.contains(k) || k == new_key
+            if let Some(source) = self.extract_contains_key_source(lhs, key_var) {
+                if let Some(new_key) = self.extract_key_equals(rhs, key_var) {
+                    return Some((source, new_key));
+                }
+            }
+            // Check: k == new_key || source.contains(k)
+            if let Some(source) = self.extract_contains_key_source(rhs, key_var) {
+                if let Some(new_key) = self.extract_key_equals(lhs, key_var) {
+                    return Some((source, new_key));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract pattern: k == expr (where k is the key variable)
+    /// Returns the expr that k equals
+    fn extract_key_equals(&self, expr: &Expr, key_var: &str) -> Option<Expr> {
+        use crate::ast::Expr;
+
+        if let Expr::Eq(lhs, rhs) = expr {
+            // Check: k == expr
+            if let Expr::Ident(name) = lhs.as_ref() {
+                if name == key_var {
+                    return Some((**rhs).clone());
+                }
+            }
+            // Check: expr == k
+            if let Expr::Ident(name) = rhs.as_ref() {
+                if name == key_var {
+                    return Some((**lhs).clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Try to extract map update with value pattern from conjunction of foralls
+    /// Pattern: conjunction of:
+    /// 1. Domain: forall |k| output.dom().contains(k) <==> filter && (source.contains(k) || k == new_key)
+    /// 2. Value: forall |k| output.dom().contains(k) ==> output[k] == (if k == new_key then new_value else source[k])
+    /// Returns: (source_map, key_var, filter_pred, new_key, new_value, old_value_expr)
+    fn try_extract_map_update_with_value(
+        &self,
+        exprs: &[Expr],
+        _ctx: &TransformContext,
+    ) -> Option<(String, String, Expr, Expr, Expr, Expr)> {
+        use crate::ast::Expr;
+
+        // Collect foralls from the expressions
+        let foralls: Vec<_> = exprs
+            .iter()
+            .filter_map(|e| {
+                if let Expr::Forall { vars, body, .. } = e {
+                    if vars.len() == 1 {
+                        Some((vars[0].name_string(), body.as_ref()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if foralls.len() < 2 {
+            return None;
+        }
+
+        // All foralls should use the same variable
+        let key_var = &foralls[0].0;
+        if !foralls.iter().all(|(v, _)| v == key_var) {
+            return None;
+        }
+
+        let mut source_map: Option<String> = None;
+        let mut filter_pred: Option<Expr> = None;
+        let mut new_key: Option<Expr> = None;
+        let mut new_value: Option<Expr> = None;
+        let mut old_value_expr: Option<Expr> = None;
+
+        for (_, body) in &foralls {
+            // Check for domain biconditional: dom().contains(k) <==> filter && (source.contains(k) || k == new_key)
+            if let Expr::Iff(lhs, rhs) = body {
+                // Check if lhs is output.dom().contains(k)
+                if self.is_dom_contains(lhs, key_var).is_some() {
+                    // Try to extract the complex predicate from rhs
+                    if let Some((src, flt, nk)) = self.extract_map_update_with_insert(rhs, key_var) {
+                        source_map = Some(src);
+                        filter_pred = Some(flt);
+                        new_key = Some(nk);
+                    }
+                }
+            }
+
+            // Check for value conditional: dom().contains(k) ==> output[k] == (if k == new_key then new_value else source[k])
+            if let Expr::Implies(lhs, rhs) = body {
+                // LHS should be dom().contains(k)
+                if self.is_dom_contains(lhs, key_var).is_some() {
+                    // RHS should be: output[k] == (if k == new_key then new_value else source[k])
+                    if let Some((nv, ov)) = self.extract_conditional_value(rhs, key_var) {
+                        new_value = Some(nv);
+                        old_value_expr = Some(ov);
+                    }
+                }
+            }
+        }
+
+        // Return if we have all components
+        if let (Some(src), Some(flt), Some(nk), Some(nv), Some(ov)) =
+            (source_map, filter_pred, new_key, new_value, old_value_expr)
+        {
+            return Some((src, key_var.clone(), flt, nk, nv, ov));
+        }
+
+        None
+    }
+
+    /// Check if expr is output.dom().contains(key_var)
+    fn is_dom_contains(&self, expr: &Expr, key_var: &str) -> Option<String> {
+        use crate::ast::Expr;
+
+        if let Expr::MethodCall { receiver, method, args } = expr {
+            if method == "contains" && args.len() == 1 {
+                if let Expr::Ident(arg_name) = &args[0] {
+                    if arg_name == key_var {
+                        if let Expr::MethodCall { receiver: inner_recv, method: inner_method, args: inner_args } = receiver.as_ref() {
+                            if inner_method == "dom" && inner_args.is_empty() {
+                                if let Expr::Ident(output_name) = inner_recv.as_ref() {
+                                    return Some(output_name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract conditional value from: output[k] == (if k == new_key then new_value else source[k])
+    /// Returns: (new_value, old_value_expr)
+    fn extract_conditional_value(&self, expr: &Expr, key_var: &str) -> Option<(Expr, Expr)> {
+        use crate::ast::Expr;
+
+        if let Expr::Eq(lhs, rhs) = expr {
+            // Check if lhs is output[k]
+            if let Expr::Index(_, idx) = lhs.as_ref() {
+                if let Expr::Ident(idx_name) = idx.as_ref() {
+                    if idx_name == key_var {
+                        // Check if rhs is if-then-else
+                        if let Expr::If { cond, then_branch, else_branch } = rhs.as_ref() {
+                            // Condition should involve k == new_key
+                            if let Some(_) = self.extract_key_equals(cond, key_var) {
+                                // then_branch is the new_value
+                                // else_branch is the old_value (source[k])
+                                if let Some(else_expr) = else_branch {
+                                    return Some(((**then_branch).clone(), (**else_expr).clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Try to extract a sequence initialization pattern from conjunction expressions
     /// Pattern:
     /// 1. Length constraint: output.field.len() == length_expr
@@ -2315,9 +2613,29 @@ impl Translator {
                 key_var,
                 domain_predicate,
             } => {
-                // Try to extract source map and filter predicate from domain predicate
-                // Common pattern: source.contains_key(k) && filter_pred
-                // or: filter_pred && source.contains_key(k)
+                // First try "map update with insert" pattern:
+                // filter && (source.contains(k) || k == new_key)
+                // This generates: filter source, then insert new_key
+                if let Some((source_map, filter_pred, new_key_expr)) =
+                    self.extract_map_update_with_insert(domain_predicate, key_var)
+                {
+                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+                    let new_key = self.transform_expr(&new_key_expr, ctx)?;
+
+                    // Generate a block that:
+                    // 1. Creates filtered map from source
+                    // 2. Inserts new_key (value will be set by MapConditionalValue)
+                    // For now, just generate the filter part with a marker for insert
+                    // The value setting will be handled by MapConditionalValue template
+                    return Ok(ExecExpr::MapUpdateWithInsert {
+                        source: Box::new(ExecExpr::Var(source_map)),
+                        key_var: key_var.clone(),
+                        filter: Box::new(filter_expr),
+                        new_key: Box::new(new_key),
+                    });
+                }
+
+                // Try simple filter pattern: source.contains_key(k) && filter_pred
                 if let Some((source_map, filter_pred)) =
                     self.extract_source_and_filter(domain_predicate, key_var)
                 {
@@ -3563,5 +3881,156 @@ mod tests {
         assert_eq!(field_name, "seq_field");
         // Element should be the literal 0
         assert!(matches!(element, Expr::Literal(Literal::Int(0))));
+    }
+
+    #[test]
+    fn test_map_update_with_insert_pattern() {
+        // Test the pattern for CAddVoteAndRemoveOldOnes:
+        // Domain: votes_.dom().contains(opn) <==> opn >= log_truncation_point && (votes.dom().contains(opn) || opn == new_opn)
+        // Value: votes_.dom().contains(opn) ==> votes_[opn] == (if opn == new_opn {new_vote} else {votes[opn]})
+
+        let translator = Translator::default();
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec!["votes_".to_string()],
+            input_params: vec![
+                "votes".to_string(),
+                "new_opn".to_string(),
+                "new_vote".to_string(),
+                "log_truncation_point".to_string(),
+            ],
+            output_types: std::collections::HashMap::new(),
+            field_substitutions: std::collections::HashMap::new(),
+        };
+
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("opn".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+
+        // Domain biconditional forall:
+        // forall opn: votes_.dom().contains(opn) <==> opn >= log_truncation_point && (votes.dom().contains(opn) || opn == new_opn)
+        let domain_forall = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Iff(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes_".to_string())),
+                        method: "dom".to_string(),
+                        args: vec![],
+                    }),
+                    method: "contains".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ge(
+                        Box::new(Expr::Ident("opn".to_string())),
+                        Box::new(Expr::Ident("log_truncation_point".to_string())),
+                    )),
+                    crate::ast::BinOp::And,
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::MethodCall {
+                            receiver: Box::new(Expr::MethodCall {
+                                receiver: Box::new(Expr::Ident("votes".to_string())),
+                                method: "dom".to_string(),
+                                args: vec![],
+                            }),
+                            method: "contains".to_string(),
+                            args: vec![Expr::Ident("opn".to_string())],
+                        }),
+                        crate::ast::BinOp::Or,
+                        Box::new(Expr::Eq(
+                            Box::new(Expr::Ident("opn".to_string())),
+                            Box::new(Expr::Ident("new_opn".to_string())),
+                        )),
+                    )),
+                )),
+            )),
+        };
+
+        // Value conditional forall:
+        // forall opn: votes_.dom().contains(opn) ==> votes_[opn] == (if opn == new_opn {new_vote} else {votes[opn]})
+        let value_forall = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes_".to_string())),
+                        method: "dom".to_string(),
+                        args: vec![],
+                    }),
+                    method: "contains".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Ident("votes_".to_string())),
+                        Box::new(Expr::Ident("opn".to_string())),
+                    )),
+                    Box::new(Expr::If {
+                        cond: Box::new(Expr::Eq(
+                            Box::new(Expr::Ident("opn".to_string())),
+                            Box::new(Expr::Ident("new_opn".to_string())),
+                        )),
+                        then_branch: Box::new(Expr::Ident("new_vote".to_string())),
+                        else_branch: Some(Box::new(Expr::Index(
+                            Box::new(Expr::Ident("votes".to_string())),
+                            Box::new(Expr::Ident("opn".to_string())),
+                        ))),
+                    }),
+                )),
+            )),
+        };
+
+        let conjunction = Expr::Conjunction(vec![domain_forall, value_forall]);
+
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(
+            result.is_ok(),
+            "Should transform map update with insert: {:?}",
+            result
+        );
+
+        // Should generate a block with:
+        // 1. let mut __result = source.iter().filter().map().collect()
+        // 2. __result.insert(new_key, new_value)
+        // 3. __result
+        match result.unwrap() {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 3, "Block should have 3 statements");
+
+                // First should be let binding
+                match &stmts[0] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert!(
+                            pattern.contains("__result"),
+                            "Should declare __result variable"
+                        );
+                    }
+                    other => panic!("Expected Let binding, got {:?}", other),
+                }
+
+                // Second should be insert call
+                match &stmts[1] {
+                    ExecExpr::MethodCall { method, args, .. } => {
+                        assert_eq!(method, "insert", "Should call insert");
+                        assert_eq!(args.len(), 2, "Insert should have 2 args (key, value)");
+                    }
+                    other => panic!("Expected MethodCall for insert, got {:?}", other),
+                }
+
+                // Third should be __result
+                match &stmts[2] {
+                    ExecExpr::Var(name) => {
+                        assert_eq!(name, "__result", "Should return __result");
+                    }
+                    other => panic!("Expected Var(__result), got {:?}", other),
+                }
+            }
+            other => panic!("Expected Block, got {:?}", other),
+        }
     }
 }

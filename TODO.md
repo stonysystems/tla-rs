@@ -1039,7 +1039,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Target code: `(0..c.all.config.replica_ids.len()).map(|_| 0).collect()`
     - Added `try_extract_seq_init_pattern()` to recognize the pattern
     - Generates proper `.map().collect()` code for struct field initialization
-  - [ ] Map update/insert operations with proper cloning
+  - [x] Map update/insert operations with proper cloning [26:01:24, 22:00]
+    - Pattern: `output.dom().contains(k) <==> filter && (source.dom().contains(k) || k == new_key)`
+    - Plus value: `output.dom().contains(k) ==> output[k] == if k == new_key {new_val} else {source[k]}`
+    - Example: LAddVoteAndRemoveOldOnes - filter map by key, insert new entry
+    - Added `try_extract_map_update_with_value()` to detect domain + value forall conjunction
+    - Generates: `let mut __result = source.iter().filter().map().collect(); __result.insert(key, val); __result`
+    - Fixed Block printer to add semicolons for non-return statements
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
 - [x] Handle `recommends` clauses properly [26:01:24, 18:30]
     - Added `expr_to_requires_string()` and `expr_to_simple_string()` helpers

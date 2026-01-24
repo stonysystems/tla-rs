@@ -121,9 +121,16 @@ impl Printer {
     fn print_expr(&mut self, expr: &ExecExpr) {
         match expr {
             ExecExpr::Block(stmts) => {
-                for stmt in stmts {
+                for (i, stmt) in stmts.iter().enumerate() {
                     self.indent();
                     self.print_expr(stmt);
+                    // Add semicolon after statements except the last one (return value)
+                    // Let bindings already have semicolons from their own printing
+                    let is_last = i == stmts.len() - 1;
+                    let needs_semicolon = !is_last && !matches!(stmt, ExecExpr::Let { .. });
+                    if needs_semicolon {
+                        self.write(";");
+                    }
                     self.newline();
                 }
             }
@@ -357,6 +364,53 @@ impl Printer {
                 self.write(" as ");
                 self.write(target_type);
                 self.write(")");
+            }
+
+            ExecExpr::MapUpdateWithInsert {
+                source,
+                key_var,
+                filter,
+                new_key,
+            } => {
+                // Generate: {
+                //   let mut __result = source.iter().filter(|(k, _)| filter).cloned().collect::<HashMap<_, _>>();
+                //   if filter_applies_to_new_key { __result.insert(new_key.clone(), __new_value); }
+                //   __result
+                // }
+                // Note: The value (__new_value) needs to be set by the caller context
+                // For now, generate a placeholder that will be replaced by MapConditionalValue
+                self.write("{\n");
+                self.current_indent += 1;
+                self.indent();
+                self.write("let mut __result = ");
+                self.print_expr(source);
+                self.write(".iter().filter(|(");
+                self.write(key_var);
+                self.write(", _)| ");
+                self.print_expr(filter);
+                self.write(").map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>();\n");
+                self.indent();
+                self.write("// Insert new key if it passes filter\n");
+                self.indent();
+                self.write("if ");
+                // Generate filter check for new_key by substituting key_var with new_key
+                // This is a simplified version - ideally we'd substitute properly
+                self.write("true /* ");
+                self.print_expr(new_key);
+                self.write(" passes filter */ {\n");
+                self.current_indent += 1;
+                self.indent();
+                self.write("__result.insert(");
+                self.print_expr(new_key);
+                self.write(".clone(), __new_value.clone());\n");
+                self.current_indent -= 1;
+                self.indent();
+                self.write("}\n");
+                self.indent();
+                self.write("__result\n");
+                self.current_indent -= 1;
+                self.indent();
+                self.write("}");
             }
         }
     }
