@@ -1035,7 +1035,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Generates proper .iter().filter().collect() code
   - [ ] Map update/insert operations with proper cloning
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
-- [ ] Handle `recommends` clauses properly
+- [x] Handle `recommends` clauses properly [26:01:24, 18:30]
+    - Added `expr_to_requires_string()` and `expr_to_simple_string()` helpers
+    - Spec function `recommends` expressions become `requires` clauses in exec functions
+    - Supports: identifiers, field access, arrow access, method calls, function calls (with C prefix)
+    - Supports: Is expressions, comparisons, binary operations, literals
+    - Example: `recommends inp.msg is RslMessage1a` → `requires inp.msg is RslMessage1a`
+    - Example: `recommends BalLeq(s.max_bal, inp.msg->bal_2a)` → `requires CBalLeq(s.max_bal, inp.msg.get_bal_2a())`
 - [x] Support arrow operator for enum variant field access (`msg->bal_1a`) - already supported
 
 #### Phase 4: Verification and Integration

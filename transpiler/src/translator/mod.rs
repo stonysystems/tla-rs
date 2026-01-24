@@ -3,7 +3,7 @@
 //! This module transforms validated spec predicates into executable Rust/Verus
 //! functions with proper proof linkage.
 
-use crate::ast::{Expr, ParameterMode, Type};
+use crate::ast::{BinOp, Expr, Literal, ParameterMode, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
@@ -430,7 +430,106 @@ impl Translator {
             }
         }
 
+        // Add recommends clauses from the spec as requires
+        // (recommends in spec functions become requires in exec functions)
+        for recommends_expr in &func.spec_fn.recommends {
+            // Convert the expression to a string for the exec function
+            requires.push(self.expr_to_requires_string(recommends_expr));
+        }
+
         requires
+    }
+
+    /// Convert an expression to a requires clause string
+    fn expr_to_requires_string(&self, expr: &Expr) -> String {
+        // For now, use a simple string representation
+        // This can be enhanced to properly translate the expression
+        match expr {
+            Expr::Is(expr, variant) => {
+                // Pattern: inp.msg is RslMessage1a -> inp.msg is CRslMessage1a (or similar check)
+                let base = self.expr_to_simple_string(expr);
+                format!("{} is {}", base, variant)
+            }
+            _ => self.expr_to_simple_string(expr),
+        }
+    }
+
+    /// Convert an expression to a simple string representation
+    fn expr_to_simple_string(&self, expr: &Expr) -> String {
+        match expr {
+            Expr::Ident(name) => name.clone(),
+            Expr::Field(base, field) => {
+                format!("{}.{}", self.expr_to_simple_string(base), field)
+            }
+            Expr::Arrow(base, field) => {
+                // Arrow access: expr->field becomes expr.get_field() in exec
+                format!("{}.get_{}()", self.expr_to_simple_string(base), field)
+            }
+            Expr::MethodCall { receiver, method, args } => {
+                let recv = self.expr_to_simple_string(receiver);
+                let args_str: Vec<_> = args.iter().map(|a| self.expr_to_simple_string(a)).collect();
+                format!("{}.{}({})", recv, method, args_str.join(", "))
+            }
+            Expr::Call { func, args } => {
+                // Function call: translate function name with C prefix
+                let func_name = if func.segments.len() == 1 {
+                    format!("C{}", func.segments[0])
+                } else {
+                    func.segments.join("::")
+                };
+                let args_str: Vec<_> = args.iter().map(|a| self.expr_to_simple_string(a)).collect();
+                format!("{}({})", func_name, args_str.join(", "))
+            }
+            Expr::Is(base, variant) => {
+                format!("{} is {}", self.expr_to_simple_string(base), variant)
+            }
+            Expr::Eq(lhs, rhs) => {
+                format!("({} == {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+            }
+            Expr::Ne(lhs, rhs) => {
+                format!("({} != {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+            }
+            Expr::Lt(lhs, rhs) => {
+                format!("({} < {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+            }
+            Expr::Le(lhs, rhs) => {
+                format!("({} <= {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+            }
+            Expr::Gt(lhs, rhs) => {
+                format!("({} > {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+            }
+            Expr::Ge(lhs, rhs) => {
+                format!("({} >= {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+            }
+            Expr::Binary(lhs, op, rhs) => {
+                let op_str = match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "/",
+                    BinOp::Mod => "%",
+                    BinOp::And => "&&",
+                    BinOp::Or => "||",
+                    BinOp::BitAnd => "&",
+                    BinOp::BitOr => "|",
+                    BinOp::BitXor => "^",
+                    BinOp::Shl => "<<",
+                    BinOp::Shr => ">>",
+                };
+                format!("({} {} {})", self.expr_to_simple_string(lhs), op_str, self.expr_to_simple_string(rhs))
+            }
+            Expr::Not(inner) => {
+                format!("!{}", self.expr_to_simple_string(inner))
+            }
+            Expr::Literal(lit) => {
+                match lit {
+                    Literal::Bool(b) => b.to_string(),
+                    Literal::Int(i) => i.to_string(),
+                    Literal::String(s) => format!("\"{}\"", s),
+                }
+            }
+            _ => format!("{:?}", expr),
+        }
     }
 
     /// Build ensures clauses linking to spec
@@ -3095,5 +3194,78 @@ mod tests {
             }
             other => panic!("Expected MethodCall with collect, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_expr_to_simple_string() {
+        let translator = Translator::default();
+
+        // Test: simple identifier
+        let ident = Expr::Ident("x".to_string());
+        assert_eq!(translator.expr_to_simple_string(&ident), "x");
+
+        // Test: field access
+        let field = Expr::Field(
+            Box::new(Expr::Ident("obj".to_string())),
+            "field".to_string(),
+        );
+        assert_eq!(translator.expr_to_simple_string(&field), "obj.field");
+
+        // Test: arrow access (enum field)
+        let arrow = Expr::Arrow(
+            Box::new(Expr::Ident("msg".to_string())),
+            "bal_1a".to_string(),
+        );
+        assert_eq!(translator.expr_to_simple_string(&arrow), "msg.get_bal_1a()");
+
+        // Test: method call
+        let method_call = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("list".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("item".to_string())],
+        };
+        assert_eq!(translator.expr_to_simple_string(&method_call), "list.contains(item)");
+
+        // Test: function call with C prefix
+        let func_call = Expr::Call {
+            func: crate::ast::Path::single("BalLeq".to_string()),
+            args: vec![
+                Expr::Ident("a".to_string()),
+                Expr::Ident("b".to_string()),
+            ],
+        };
+        assert_eq!(translator.expr_to_simple_string(&func_call), "CBalLeq(a, b)");
+
+        // Test: is expression
+        let is_expr = Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("inp".to_string())),
+                "msg".to_string(),
+            )),
+            "RslMessage1a".to_string(),
+        );
+        assert_eq!(translator.expr_to_simple_string(&is_expr), "inp.msg is RslMessage1a");
+
+        // Test: comparison
+        let lt = Expr::Lt(
+            Box::new(Expr::Ident("x".to_string())),
+            Box::new(Expr::Ident("y".to_string())),
+        );
+        assert_eq!(translator.expr_to_simple_string(&lt), "(x < y)");
+
+        // Test: binary operation (and)
+        let binary_and = Expr::Binary(
+            Box::new(Expr::Ident("a".to_string())),
+            BinOp::And,
+            Box::new(Expr::Ident("b".to_string())),
+        );
+        assert_eq!(translator.expr_to_simple_string(&binary_and), "(a && b)");
+
+        // Test: literal
+        let lit_int = Expr::Literal(Literal::Int(42));
+        assert_eq!(translator.expr_to_simple_string(&lit_int), "42");
+
+        let lit_bool = Expr::Literal(Literal::Bool(true));
+        assert_eq!(translator.expr_to_simple_string(&lit_bool), "true");
     }
 }
