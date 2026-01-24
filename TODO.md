@@ -1091,9 +1091,9 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Function contracts verified (requires/ensures)
     - Iterator implementation trusted via #[verifier::external_body]
     - Compiles with 456 verified, 0 errors
-  - [ ] Future: Option A (generate loop patterns with invariants)
+  - [x] Option A (generate loop patterns with invariants) [26:01:25, 08:15]
     - Analysis: docs/dev/loop-generation-analysis.md
-    - Estimated: ~850 LOC total, broken into 5 phases
+    - Total: ~850 LOC across 5 phases - ALL COMPLETE
     - [x] Phase 1: Infrastructure - Add ExecExpr variants for loop constructs (~150 LOC) [26:01:25, 04:45]
       - Added ForInIter, GhostVar, ProofBlock, Assume, Assert, BroadcastUse to ExecExpr
       - Added printer support for all new constructs
@@ -1165,6 +1165,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     7. Detailed proof annotations (assert, assume, ghost variables)
   - Recommended approach: Use generated code as reference, incrementally update manual code
   - Config file created: src/protocol/RSL/transpile.toml (validity_predicate_name = "valid")
+  - **Incremental sub-tasks**:
+    - [x] Add custom imports generation to transpiler [26:01:25, 11:20]
+      - Added `custom_imports` field to `TranspilerConfig` and `OutputConfig`
+      - Modified `transpile_file` and `transpile_source` to output imports before verus! block
+      - Updated `load_config` in CLI to pass custom_imports from TOML config
+      - Added 2 new tests for custom imports functionality
+      - Updated src/protocol/RSL/transpile.toml with RSL-specific imports
+    - [x] Generate code header with configurable imports [26:01:25, 11:20]
+      - Imports appear before `verus!` block in generated output
+    - [ ] Test: generated acceptor with correct imports compiles standalone
 - [ ] Run full system tests with generated implementation
 - [ ] Document any manual adjustments needed
 

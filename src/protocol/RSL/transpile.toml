@@ -26,13 +26,22 @@ generate_validity_predicates = true
 validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
-
-[modules.acceptor]
-custom_includes = [
+# Custom imports for RSL acceptor
+custom_imports = [
     "use vstd::prelude::*;",
+    "use vstd::map::*;",
+    "use vstd::set::*;",
     "use std::collections::HashMap;",
+    "use crate::common::collections::sets::*;",
+    "use crate::common::native::io_s::EndPoint;",
     "use crate::implementation::RSL::types_i::*;",
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::protocol::RSL::acceptor::*;",
+    "use crate::protocol::RSL::types::*;",
 ]
+
+# Module-specific configuration (for future use)
+[modules.acceptor]
+# Module-specific includes can override or extend the defaults

@@ -284,6 +284,7 @@ fn load_config(path: &PathBuf) -> Result<TranspilerConfig> {
             validity_predicate_name: file_config.output.validity_predicate_name,
             ..TranslatorConfig::default()
         },
+        custom_imports: file_config.output.custom_imports,
         ..TranspilerConfig::default()
     })
 }

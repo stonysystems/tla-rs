@@ -174,6 +174,10 @@ pub struct OutputConfig {
     /// Output directory for generated files
     #[serde(default)]
     pub output_dir: Option<String>,
+
+    /// Custom imports to include before verus! block
+    #[serde(default)]
+    pub custom_imports: Vec<String>,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -193,6 +197,7 @@ impl Default for OutputConfig {
             generate_clone: true,
             include_debug_comments: false,
             output_dir: None,
+            custom_imports: Vec::new(),
         }
     }
 }
@@ -311,5 +316,23 @@ mod tests {
         let module = config.modules.get("RSL_Acceptor").unwrap();
         assert_eq!(module.skip_functions, vec!["LAcceptorOldFunction"]);
         assert_eq!(module.custom_includes, vec!["use crate::common::*;"]);
+    }
+
+    #[test]
+    fn test_custom_imports_in_output() {
+        let toml = r#"
+            [output]
+            validity_predicate_name = "valid"
+            custom_imports = [
+                "use vstd::prelude::*;",
+                "use std::collections::HashMap;",
+            ]
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.output.validity_predicate_name, "valid");
+        assert_eq!(config.output.custom_imports.len(), 2);
+        assert_eq!(config.output.custom_imports[0], "use vstd::prelude::*;");
+        assert_eq!(config.output.custom_imports[1], "use std::collections::HashMap;");
     }
 }
