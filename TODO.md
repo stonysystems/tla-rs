@@ -992,7 +992,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - Enhanced exists support to handle nested field access paths
   - replica.rs now transpiles successfully (all 6 RSL specs now work)
   - Added 2 unit tests for collection check
-- [ ] Extend template matching for RSL-specific patterns
+- [x] Extend template matching for RSL-specific patterns
   - [x] Fix tuple return generation (wrap multiple outputs as `(state, packets)`) [26:01:24, 14:30]
     - Added `categorize_output_assignments()` to detect output parameter assignments
     - Added `sort_outputs_by_param_order()` to maintain consistent tuple order
@@ -1023,7 +1023,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - [x] Handle sequence of expressions returning single tuple result [26:01:24, 16:30]
       - Handled by multi-output helper call support above
       - Patterns like `helper_call + struct construction` now properly return tuples
-- [ ] Handle RSL type system (nested types, generic collections)
+- [x] Handle RSL type system (nested types, generic collections)
   - [x] Basic type translation (Map→HashMap, Set→HashSet, Seq→Vec) - already supported
   - [x] Nested struct access chains (s.constants.all.config) - already supported
   - [x] Type aliases (Votes, ReplyCache, etc.) - transparent, no special handling needed
