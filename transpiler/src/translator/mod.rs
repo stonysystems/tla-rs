@@ -535,43 +535,89 @@ impl Translator {
             }
 
             Expr::Conjunction(exprs) => {
+                // First, process any helper calls in the conjunction
+                // This generates let bindings and collects field substitutions
+                let (let_bindings, remaining_exprs, substitutions) =
+                    self.process_helper_calls_in_conjunction(exprs, ctx);
+
+                // Create updated context with field substitutions if any helper calls were found
+                let updated_ctx = if !substitutions.is_empty() {
+                    Self::with_field_substitutions(ctx, substitutions)
+                } else {
+                    // No substitutions, use original context
+                    TransformContext {
+                        config: ctx.config,
+                        output_params: ctx.output_params.clone(),
+                        input_params: ctx.input_params.clone(),
+                        output_types: ctx.output_types.clone(),
+                        field_substitutions: ctx.field_substitutions.clone(),
+                    }
+                };
+
+                // Use remaining exprs if we processed helper calls, otherwise use original
+                let exprs_to_process = if !let_bindings.is_empty() {
+                    &remaining_exprs
+                } else {
+                    exprs
+                };
+
                 // Check if this is a struct construction pattern (s_.f1 == e1 &&& s_.f2 == e2)
-                if let Some(struct_expr) = self.try_extract_struct_construction(exprs, ctx)? {
+                if let Some(struct_expr) =
+                    self.try_extract_struct_construction(exprs_to_process, &updated_ctx)?
+                {
+                    // If we have let bindings, wrap them in a block with the struct
+                    if !let_bindings.is_empty() {
+                        let mut block = let_bindings;
+                        block.push(struct_expr);
+                        return Ok(ExecExpr::Block(block));
+                    }
                     return Ok(struct_expr);
                 }
 
                 // Check if we have multiple output assignments that should be wrapped as a tuple
-                let (output_exprs, other_exprs) = self.categorize_output_assignments(exprs, ctx)?;
+                let (output_exprs, other_exprs) =
+                    self.categorize_output_assignments(exprs_to_process, &updated_ctx)?;
 
                 if output_exprs.len() > 1 {
                     // Multiple outputs should be returned as a tuple
                     // Sort by output parameter order if possible
-                    let sorted_outputs = self.sort_outputs_by_param_order(&output_exprs, ctx);
+                    let sorted_outputs = self.sort_outputs_by_param_order(&output_exprs, &updated_ctx);
 
-                    if other_exprs.is_empty() {
-                        // Just the tuple
-                        Ok(ExecExpr::Tuple(sorted_outputs))
+                    // Combine let bindings + other expressions + tuple
+                    let mut block = let_bindings;
+                    block.extend(other_exprs);
+                    block.push(ExecExpr::Tuple(sorted_outputs));
+                    if block.len() == 1 {
+                        Ok(block.pop().unwrap())
                     } else {
-                        // Other expressions + tuple return
-                        let mut block = other_exprs;
-                        block.push(ExecExpr::Tuple(sorted_outputs));
                         Ok(ExecExpr::Block(block))
                     }
                 } else if output_exprs.len() == 1 {
                     // Single output - extract the ExecExpr from the tuple
                     let (_, single_output) = output_exprs.into_iter().next().unwrap();
-                    if other_exprs.is_empty() {
-                        Ok(single_output)
+                    let mut block = let_bindings;
+                    block.extend(other_exprs);
+                    block.push(single_output);
+                    if block.len() == 1 {
+                        Ok(block.pop().unwrap())
                     } else {
-                        let mut block = other_exprs;
-                        block.push(single_output);
                         Ok(ExecExpr::Block(block))
                     }
                 } else {
                     // No outputs detected, transform as block
-                    let stmts: TranspileResult<Vec<_>> =
-                        exprs.iter().map(|e| self.transform_expr(e, ctx)).collect();
-                    Ok(ExecExpr::Block(stmts?))
+                    let stmts: TranspileResult<Vec<_>> = exprs_to_process
+                        .iter()
+                        .map(|e| self.transform_expr(e, &updated_ctx))
+                        .collect();
+                    let mut block = let_bindings;
+                    block.extend(stmts?);
+                    if block.is_empty() {
+                        Ok(ExecExpr::Block(vec![]))
+                    } else if block.len() == 1 {
+                        Ok(block.pop().unwrap())
+                    } else {
+                        Ok(ExecExpr::Block(block))
+                    }
                 }
             }
 
@@ -1087,6 +1133,51 @@ impl Translator {
             map.insert((var.clone(), field.clone()), var_name);
         }
         map
+    }
+
+    /// Process helper calls in a conjunction, generating let bindings and collecting substitutions
+    /// Returns: (let_bindings, remaining_exprs, combined_substitutions)
+    fn process_helper_calls_in_conjunction(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> (Vec<ExecExpr>, Vec<Expr>, HashMap<(String, String), String>) {
+        let mut let_bindings = Vec::new();
+        let mut remaining_exprs = Vec::new();
+        let mut combined_substitutions = HashMap::new();
+
+        for expr in exprs {
+            if let Some(info) = self.detect_helper_call(expr, ctx) {
+                // Generate let binding for this helper call
+                let let_binding = self.generate_helper_let_binding(&info);
+                let_bindings.push(let_binding);
+
+                // Add substitutions from this helper call
+                let subs = Self::get_helper_substitutions(&info);
+                combined_substitutions.extend(subs);
+            } else {
+                // Not a helper call, keep for later processing
+                remaining_exprs.push(expr.clone());
+            }
+        }
+
+        (let_bindings, remaining_exprs, combined_substitutions)
+    }
+
+    /// Create a new context with additional field substitutions
+    fn with_field_substitutions<'b>(
+        ctx: &'b TransformContext<'b>,
+        additional: HashMap<(String, String), String>,
+    ) -> TransformContext<'b> {
+        let mut new_subs = ctx.field_substitutions.clone();
+        new_subs.extend(additional);
+        TransformContext {
+            config: ctx.config,
+            output_params: ctx.output_params.clone(),
+            input_params: ctx.input_params.clone(),
+            output_types: ctx.output_types.clone(),
+            field_substitutions: new_subs,
+        }
     }
 
     /// Try to extract struct construction from a conjunction of field assignments
@@ -2456,6 +2547,108 @@ mod tests {
                 assert_eq!(name, "s_proposer", "Should substitute to s_proposer");
             }
             other => panic!("Expected Var, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_multiple_helper_calls_in_conjunction() {
+        // Test pattern from LReplicaNextProcess1b:
+        // &&& LProposerProcess1b(s.proposer, s_.proposer, received_packet)
+        // &&& LAcceptorTruncateLog(s.acceptor, s_.acceptor, truncation_point)
+        // &&& sent_packets == Seq::empty()
+        // &&& s_ == LReplica { ..., proposer: s_.proposer, acceptor: s_.acceptor, ... }
+
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string(), "sent_packets".to_string()],
+            input_params: vec!["s".to_string(), "received_packet".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Build the conjunction
+        let conjunction = Expr::Conjunction(vec![
+            // LProposerProcess1b(s.proposer, s_.proposer, received_packet)
+            Expr::Call {
+                func: crate::ast::Path::single("LProposerProcess1b".to_string()),
+                args: vec![
+                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "proposer".to_string()),
+                    Expr::Field(Box::new(Expr::Ident("s_".to_string())), "proposer".to_string()),
+                    Expr::Ident("received_packet".to_string()),
+                ],
+            },
+            // LAcceptorTruncateLog(s.acceptor, s_.acceptor, truncation_point)
+            Expr::Call {
+                func: crate::ast::Path::single("LAcceptorTruncateLog".to_string()),
+                args: vec![
+                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "acceptor".to_string()),
+                    Expr::Field(Box::new(Expr::Ident("s_".to_string())), "acceptor".to_string()),
+                    Expr::Ident("truncation_point".to_string()),
+                ],
+            },
+            // sent_packets == Seq::empty()
+            Expr::Eq(
+                Box::new(Expr::Ident("sent_packets".to_string())),
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("Seq".to_string())),
+                    method: "empty".to_string(),
+                    args: vec![],
+                }),
+            ),
+            // s_ == LReplica { proposer: s_.proposer, acceptor: s_.acceptor }
+            Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Struct {
+                    name: crate::ast::Path::single("LReplica".to_string()),
+                    fields: vec![
+                        ("constants".to_string(), Expr::Field(
+                            Box::new(Expr::Ident("s".to_string())),
+                            "constants".to_string(),
+                        )),
+                        ("proposer".to_string(), Expr::Field(
+                            Box::new(Expr::Ident("s_".to_string())),
+                            "proposer".to_string(),
+                        )),
+                        ("acceptor".to_string(), Expr::Field(
+                            Box::new(Expr::Ident("s_".to_string())),
+                            "acceptor".to_string(),
+                        )),
+                    ],
+                }),
+            ),
+        ]);
+
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(result.is_ok(), "Should transform conjunction: {:?}", result);
+
+        // The result should be a Block with:
+        // 1. let s_proposer = CProposerProcess1b(...)
+        // 2. let s_acceptor = CAcceptorTruncateLog(...)
+        // 3. Tuple((struct, Seq::empty()))
+        match result.unwrap() {
+            ExecExpr::Block(stmts) => {
+                assert!(stmts.len() >= 2, "Should have at least 2 statements (let bindings), got {}", stmts.len());
+
+                // Check first let binding
+                match &stmts[0] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert_eq!(pattern, "s_proposer", "First let should bind s_proposer");
+                    }
+                    other => panic!("Expected Let for first statement, got {:?}", other),
+                }
+
+                // Check second let binding
+                match &stmts[1] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert_eq!(pattern, "s_acceptor", "Second let should bind s_acceptor");
+                    }
+                    other => panic!("Expected Let for second statement, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Block, got {:?}", other),
         }
     }
 }
