@@ -1078,7 +1078,9 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Main codebase: 456 verified, 0 errors (57 deprecation warnings)
     - Integration test module compiles with existing types
 - [ ] Verify generated code passes all Verus proofs (0 errors)
-  - **PARTIALLY COMPLETE**: Using Option B (external_body for iterator methods)
+  - **PARTIALLY COMPLETE**: Loop generation infrastructure complete, needs integration testing
+  - Option A (generate loops): Infrastructure complete, need to test with actual spec function
+  - Option B (external_body): Working, demonstrated in generated_acceptor_test.rs
   - [x] Demonstrated external_body pattern in generated_acceptor_test.rs [26:01:25, 03:30]
     - Function contracts verified (requires/ensures)
     - Iterator implementation trusted via #[verifier::external_body]
