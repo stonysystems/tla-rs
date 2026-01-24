@@ -159,6 +159,10 @@ pub struct OutputConfig {
     #[serde(default = "default_true")]
     pub generate_validity_predicates: bool,
 
+    /// Name of the validity predicate (default: "well_formed", RSL uses "valid")
+    #[serde(default = "default_validity_predicate_name")]
+    pub validity_predicate_name: String,
+
     /// Whether to generate Clone implementations
     #[serde(default = "default_true")]
     pub generate_clone: bool,
@@ -172,6 +176,10 @@ pub struct OutputConfig {
     pub output_dir: Option<String>,
 }
 
+fn default_validity_predicate_name() -> String {
+    "well_formed".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -181,6 +189,7 @@ impl Default for OutputConfig {
         Self {
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
+            validity_predicate_name: "well_formed".to_string(),
             generate_clone: true,
             include_debug_comments: false,
             output_dir: None,

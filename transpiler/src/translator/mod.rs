@@ -21,6 +21,8 @@ pub struct TranslatorConfig {
     pub generate_abstraction_fns: bool,
     /// Whether to generate validity predicates
     pub generate_validity_predicates: bool,
+    /// Name of the validity predicate (default: "well_formed", RSL uses "valid")
+    pub validity_predicate_name: String,
 }
 
 impl Default for TranslatorConfig {
@@ -31,6 +33,7 @@ impl Default for TranslatorConfig {
             type_remapping: HashMap::new(),
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
+            validity_predicate_name: "well_formed".to_string(),
         }
     }
 }
@@ -431,10 +434,11 @@ impl Translator {
     fn build_requires(&self, func: &AnnotatedFunction) -> Vec<String> {
         let mut requires = Vec::new();
 
-        // Add well_formed requirements for input params
+        // Add validity requirements for input params (configurable predicate name)
+        let validity_pred = &self.config.validity_predicate_name;
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
             if *mode == ParameterMode::Input {
-                requires.push(format!("{}.well_formed()", param.name));
+                requires.push(format!("{}.{}()", param.name, validity_pred));
             }
         }
 
@@ -544,14 +548,15 @@ impl Translator {
     fn build_ensures(&self, func: &AnnotatedFunction, output_names: &[String]) -> Vec<String> {
         let mut ensures = Vec::new();
 
-        // Add well_formed ensures for outputs
+        // Add validity ensures for outputs (configurable predicate name)
+        let validity_pred = &self.config.validity_predicate_name;
         for (i, name) in output_names.iter().enumerate() {
             let accessor = if output_names.len() == 1 {
                 "result".to_string()
             } else {
                 format!("result.{}", i)
             };
-            ensures.push(format!("{}.well_formed()", accessor));
+            ensures.push(format!("{}.{}()", accessor, validity_pred));
             let _ = name; // Suppress warning
         }
 
@@ -4204,5 +4209,22 @@ mod tests {
             }
             other => panic!("Expected Block, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_configurable_validity_predicate_name() {
+        // Test that the validity predicate name is configurable
+        let mut config = TranslatorConfig::default();
+        config.validity_predicate_name = "valid".to_string();
+
+        let translator = Translator::new(config);
+
+        // The translator should use "valid" instead of "well_formed"
+        // We can't easily test build_requires/build_ensures directly,
+        // but we can verify the config is stored correctly
+        assert_eq!(
+            translator.config.validity_predicate_name, "valid",
+            "Should use configured validity predicate name"
+        );
     }
 }
