@@ -49,9 +49,16 @@ forall |i: int| 0 <= i < n ==>
 
 ### 2. Existential Quantifiers
 
-**Limitation:** `exists` quantifiers cannot be automatically converted to executable code.
+**Supported Pattern:** Simple `exists` quantifiers over collections are now supported:
+```rust
+// SUPPORTED:
+exists |x| container.contains(x) && predicate(x)
+// Transpiles to: container.iter().any(|x| predicate(x))
+```
 
-**Workaround:** Implement as a search function manually or provide the witness explicitly.
+**Limitation:** Complex existential quantifiers (nested, multi-variable, or non-collection based) may not be supported.
+
+**Workaround:** For complex cases, implement as a search function manually or provide the witness explicitly.
 
 ### 3. Complex Triggers
 
@@ -171,6 +178,6 @@ If you encounter a limitation not listed here:
 The following limitations are planned for future versions:
 
 - [ ] Multi-variable quantifier support
-- [ ] Existential quantifier synthesis
+- [x] Existential quantifier synthesis (basic support added for collection patterns)
 - [ ] Better recursive predicate handling
 - [ ] Automatic lemma insertion
