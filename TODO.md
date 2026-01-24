@@ -946,8 +946,11 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 
 **Transpilation tasks:**
 - [x] Run transpiler on `src/protocol/RSL/acceptor.rs` - NOW WORKS (generates code)
-- [ ] Compare generated code with `src/implementation/RSL/acceptorimpl.rs`
-- [ ] Document differences and missing features
+- [x] Compare generated code with `src/implementation/RSL/acceptorimpl.rs`
+  - Manual implementation: 786 lines with inline proofs, loop invariants, optimized versions
+  - Generated code: Basic structure with placeholder comments for map operations
+  - Key gaps: Map iteration code not generated (templates produce comments), no inline proofs
+- [ ] Improve code generation for map filter patterns to produce actual loop code
 - [ ] Repeat for proposer, learner, executor, replica
 
 #### Phase 3: Iterate on Transpiler to Handle Full RSL
