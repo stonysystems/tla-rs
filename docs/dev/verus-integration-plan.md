@@ -1,12 +1,23 @@
 # Verus Integration Plan for Generated Code
 
-## Status [2026-01-25, 00:45]
+## Status [2026-01-25, 03:00]
+
+### Current State
+
+**Completed:**
+- ✅ Main codebase compiles with Verus (456 verified, 0 errors)
+- ✅ Integration test file created (`src/implementation/RSL/generated_acceptor_test.rs`)
+- ✅ Type compatibility issues fixed (HashMap::new(), .clone() for struct fields)
+- ✅ Configurable validity predicate name
+
+**Blocked:**
+- ❌ Generated code passes Verus proofs - requires loop generation with invariants
 
 ### Findings
 
 1. **Main codebase compiles**: The main tla-rs codebase compiles with Verus (warnings only, no errors)
    - Command: `/home/shuai/tools/verus-x86-linux/verus src/lib.rs --crate-type=lib`
-   - Result: Deprecation warnings but no compilation errors
+   - Result: 456 verified, 0 errors (57 deprecation warnings)
 
 2. **Generated code patterns**: The transpiler generates code using:
    - Iterator methods: `.iter().filter().collect()`
@@ -57,12 +68,49 @@
 1. Add verified iterator methods to vstd
 2. Allow the simpler generated patterns to verify directly
 
+### Loop Generation Requirements
+
+To generate verifiable code, the transpiler would need to:
+
+1. **Generate explicit for loops** instead of iterator chains
+   ```rust
+   // Instead of:
+   votes.iter().filter(|(opn, _)| opn >= threshold).collect()
+
+   // Generate:
+   for key in iter:m_keys
+   invariant
+       // Loop invariants derived from postcondition
+   {
+       if *key >= threshold {
+           result.insert(*key, votes[key]);
+       }
+   }
+   ```
+
+2. **Derive loop invariants from spec postconditions**
+   - The spec predicate `RemoveVotesBeforeLogTruncationPoint` has 3 postconditions
+   - Each needs to be translated to a loop invariant
+   - Ghost variable tracking (`seen_keys`) may be needed
+
+3. **Add ghost variables and proof blocks**
+   - `ghost mut seen_keys = Set::empty()`
+   - `proof { seen_keys = seen_keys.insert(*key) }`
+
+4. **Add post-loop assertions**
+   - Help SMT solver connect loop invariants to postconditions
+
+**Complexity analysis:**
+- Manual `CRemoveVotesBeforeLogTruncationPoint`: 80 LOC with invariants, ghost code, assumes
+- Generated version: 1 line with iterator chain
+- The gap requires significant invariant synthesis
+
 ### Next Steps
 
-1. [ ] Choose integration strategy
-2. [ ] Create a minimal test case with a single function
+1. [x] Choose integration strategy - **Option B initially** (use `assume` for iterator methods)
+2. [ ] Create a minimal test case with a single function using `assume`
 3. [ ] Verify that test case compiles with Verus
-4. [ ] Incrementally add more functions
+4. [ ] Explore Option A (loop generation) as a future enhancement
 
 ### Test Case Template
 
