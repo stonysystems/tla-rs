@@ -1068,6 +1068,31 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 - Cross-component dispatch (replica routes to proposer AND acceptor)
 - FFI integration with C# layer
 
+#### Remaining Code Generation Issues [26:01:24, 20:00]
+Analysis of generated acceptor output identified these remaining issues:
+
+1. **Helper predicate calls with output field arguments**
+   - Pattern: `LAddVoteAndRemoveOldOnes(s.votes, s_.votes, ...)`
+   - Issue: `s_.votes` is output field passed to helper, transpiler includes it verbatim
+   - Fix: Lift helper call to let binding, use result in struct construction
+   - Example fix:
+     ```rust
+     let s_votes = CAddVoteAndRemoveOldOnes(&s.votes, opn, vote, threshold);
+     CAcceptor { votes: s_votes, ... }
+     ```
+
+2. **Clone missing on borrowed values**
+   - Pattern: `(s, Cempty())` when s is `&CAcceptor`
+   - Fix: Add `.clone()` when returning borrowed references
+
+3. **Reference/value comparison issues**
+   - Pattern: `opn <= s.log_truncation_point` comparing `&T` with `T`
+   - Fix: Dereference or use proper comparison methods
+
+4. **Reference arguments to helper functions**
+   - Pattern: `CRemoveVotesBeforeLogTruncationPoint(s.votes, opn)`
+   - Should be: `CRemoveVotesBeforeLogTruncationPoint(&s.votes, opn)`
+
 ---
 
 ### Completed: Fix CI Clippy Failures ✅ [26:01:23, 19:13]
