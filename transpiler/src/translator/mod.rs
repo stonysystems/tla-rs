@@ -510,10 +510,39 @@ impl Translator {
                     return Ok(struct_expr);
                 }
 
-                // Otherwise transform as a block
-                let stmts: TranspileResult<Vec<_>> =
-                    exprs.iter().map(|e| self.transform_expr(e, ctx)).collect();
-                Ok(ExecExpr::Block(stmts?))
+                // Check if we have multiple output assignments that should be wrapped as a tuple
+                let (output_exprs, other_exprs) = self.categorize_output_assignments(exprs, ctx)?;
+
+                if output_exprs.len() > 1 {
+                    // Multiple outputs should be returned as a tuple
+                    // Sort by output parameter order if possible
+                    let sorted_outputs = self.sort_outputs_by_param_order(&output_exprs, ctx);
+
+                    if other_exprs.is_empty() {
+                        // Just the tuple
+                        Ok(ExecExpr::Tuple(sorted_outputs))
+                    } else {
+                        // Other expressions + tuple return
+                        let mut block = other_exprs;
+                        block.push(ExecExpr::Tuple(sorted_outputs));
+                        Ok(ExecExpr::Block(block))
+                    }
+                } else if output_exprs.len() == 1 {
+                    // Single output - extract the ExecExpr from the tuple
+                    let (_, single_output) = output_exprs.into_iter().next().unwrap();
+                    if other_exprs.is_empty() {
+                        Ok(single_output)
+                    } else {
+                        let mut block = other_exprs;
+                        block.push(single_output);
+                        Ok(ExecExpr::Block(block))
+                    }
+                } else {
+                    // No outputs detected, transform as block
+                    let stmts: TranspileResult<Vec<_>> =
+                        exprs.iter().map(|e| self.transform_expr(e, ctx)).collect();
+                    Ok(ExecExpr::Block(stmts?))
+                }
             }
 
             Expr::Eq(lhs, rhs) => self.transform_equality(lhs, rhs, ctx),
@@ -895,6 +924,50 @@ impl Translator {
             op: "==".to_string(),
             rhs: Box::new(rhs_expr),
         })
+    }
+
+    /// Categorize expressions in a conjunction into output assignments and other expressions
+    /// Returns: (Vec of output expressions with their param name, Vec of other expressions)
+    fn categorize_output_assignments(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> TranspileResult<(Vec<(String, ExecExpr)>, Vec<ExecExpr>)> {
+        let mut output_exprs: Vec<(String, ExecExpr)> = Vec::new();
+        let mut other_exprs: Vec<ExecExpr> = Vec::new();
+
+        for expr in exprs {
+            if let Expr::Eq(lhs, rhs) = expr {
+                // Check if LHS is an output parameter: s_ == expr or sent_packets == expr
+                if let Expr::Ident(name) = lhs.as_ref() {
+                    if ctx.is_output(name) {
+                        let transformed = self.transform_expr(rhs, ctx)?;
+                        output_exprs.push((name.clone(), transformed));
+                        continue;
+                    }
+                }
+            }
+            // Not an output assignment, add to other expressions
+            let transformed = self.transform_expr(expr, ctx)?;
+            other_exprs.push(transformed);
+        }
+
+        Ok((output_exprs, other_exprs))
+    }
+
+    /// Sort output expressions by their parameter order in the context
+    fn sort_outputs_by_param_order(
+        &self,
+        outputs: &[(String, ExecExpr)],
+        ctx: &TransformContext,
+    ) -> Vec<ExecExpr> {
+        let mut sorted: Vec<_> = outputs.to_vec();
+        sorted.sort_by(|a, b| {
+            let a_idx = ctx.output_params.iter().position(|p| p == &a.0).unwrap_or(usize::MAX);
+            let b_idx = ctx.output_params.iter().position(|p| p == &b.0).unwrap_or(usize::MAX);
+            a_idx.cmp(&b_idx)
+        });
+        sorted.into_iter().map(|(_, e)| e).collect()
     }
 
     /// Try to extract struct construction from a conjunction of field assignments
@@ -2106,6 +2179,50 @@ mod tests {
                 assert_eq!(method, "all", "Should generate .all() call");
             }
             _ => panic!("Expected MethodCall with .all(), got {:?}", exec_expr),
+        }
+    }
+
+    #[test]
+    fn test_tuple_return_generation() {
+        let translator = Translator::default();
+
+        // Create context with two output params: s_ and sent_packets
+        let config = TranslatorConfig::default();
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string(), "sent_packets".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+        };
+
+        // Build: s_ == s &&& sent_packets == Seq::empty()
+        let s_assign = Expr::Eq(
+            Box::new(Expr::Ident("s_".to_string())),
+            Box::new(Expr::Ident("s".to_string())),
+        );
+        let packets_assign = Expr::Eq(
+            Box::new(Expr::Ident("sent_packets".to_string())),
+            Box::new(Expr::SeqEmpty),
+        );
+        let conjunction = Expr::Conjunction(vec![s_assign, packets_assign]);
+
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(result.is_ok(), "Conjunction should transform: {:?}", result);
+
+        // Check that result is a Tuple with two elements
+        let exec_expr = result.unwrap();
+        match &exec_expr {
+            ExecExpr::Tuple(elems) => {
+                assert_eq!(elems.len(), 2, "Should have 2 tuple elements");
+                // First should be clone of s (or Var if not recognized as clone)
+                assert!(
+                    matches!(&elems[0], ExecExpr::Clone(_)) || matches!(&elems[0], ExecExpr::Var(_)),
+                    "First element should be Clone or Var, got {:?}", elems[0]
+                );
+                // Second should be empty vec
+                assert!(matches!(&elems[1], ExecExpr::VecLit(v) if v.is_empty()));
+            }
+            _ => panic!("Expected Tuple, got {:?}", exec_expr),
         }
     }
 }

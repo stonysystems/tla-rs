@@ -993,6 +993,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - replica.rs now transpiles successfully (all 6 RSL specs now work)
   - Added 2 unit tests for collection check
 - [ ] Extend template matching for RSL-specific patterns
+  - [x] Fix tuple return generation (wrap multiple outputs as `(state, packets)`) [26:01:24, 14:30]
+    - Added `categorize_output_assignments()` to detect output parameter assignments
+    - Added `sort_outputs_by_param_order()` to maintain consistent tuple order
+    - Multiple outputs now wrapped in `ExecExpr::Tuple` instead of `ExecExpr::Block`
+    - Plan: docs/dev/tuple-return-generation-plan.md
+  - [ ] Fix output variable binding (`s_` should be derived from struct construction)
+  - [ ] Generate let bindings for helper predicate calls that return values
+  - [ ] Handle sequence of expressions returning single tuple result
 - [ ] Handle RSL type system (nested types, generic collections)
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
 - [ ] Handle `recommends` clauses properly
