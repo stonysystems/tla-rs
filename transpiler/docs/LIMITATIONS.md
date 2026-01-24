@@ -136,23 +136,7 @@ Set::new(|x| x in s1 && x in s2 && predicate(x))
 
 ## Known Issues
 
-### 1. Parser Issue with Trailing Items
-
-**Limitation:** The parser may fail when a spec function is immediately followed by another item (struct, enum, or another function) and there are nested braces involved.
-
-**Error:** `Expected ')', found 'Some('a')'` or similar messages.
-
-**Workaround:** Add an empty line or comment between adjacent items:
-```rust
-    } // end of first function
-} // extra blank line here helps
-
-pub struct NextItem { ... }
-```
-
-**Status:** Under investigation. This appears to be related to brace counting in the `skip_item` function.
-
-### 2. Type Name Collisions
+### 1. Type Name Collisions
 
 If a type name like `CMessage` already exists, the transpiler may generate conflicts.
 

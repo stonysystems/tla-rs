@@ -267,6 +267,8 @@ pub enum Expr {
     // Verus-specific
     /// View operator (expr@)
     View(Box<Expr>),
+    /// Type cast (expr as Type)
+    Cast(Box<Expr>, Type),
 
     // Primitives
     /// Identifier

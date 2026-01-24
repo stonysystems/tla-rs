@@ -350,6 +350,14 @@ impl Printer {
                 self.write("// ");
                 self.write(text);
             }
+
+            ExecExpr::Cast(inner, target_type) => {
+                self.write("(");
+                self.print_expr(inner);
+                self.write(" as ");
+                self.write(target_type);
+                self.write(")");
+            }
         }
     }
 

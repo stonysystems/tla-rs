@@ -174,6 +174,8 @@ pub enum ExecExpr {
     },
     /// Comment (for documentation or TODO markers)
     Comment(String),
+    /// Type cast (expr as Type)
+    Cast(Box<ExecExpr>, String),
 }
 
 /// Context for expression transformation
@@ -800,7 +802,13 @@ impl Translator {
                 ),
                 span: None,
                 help: Some("Consider using choose! macro or restructuring".to_string()),
-            }), // Note: All Expr variants are now handled exhaustively
+            }),
+
+            Expr::Cast(inner_expr, target_type) => {
+                let inner = self.transform_expr(inner_expr, ctx)?;
+                let exec_type = self.translate_type(target_type);
+                Ok(ExecExpr::Cast(Box::new(inner), exec_type.to_rust_string()))
+            }
         }
     }
 

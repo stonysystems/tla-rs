@@ -919,7 +919,12 @@ impl<'a> VerusBlockParser<'a> {
             return self.parse_multiplicative(combined);
         }
 
-        if self.try_consume("/") {
+        // Don't match '/' if it's a comment start ('//' or '/*')
+        if self.peek() == Some('/')
+            && self.peek_str(2) != Some("//")
+            && self.peek_str(2) != Some("/*")
+        {
+            self.advance(); // consume '/'
             self.skip_whitespace();
             let right = self.parse_primary_expr()?;
             let combined = Expr::Binary(Box::new(left), BinOp::Div, Box::new(right));
@@ -1133,6 +1138,14 @@ impl<'a> VerusBlockParser<'a> {
                 self.skip_whitespace();
                 let field = self.parse_identifier()?;
                 expr = Expr::Arrow(Box::new(expr), field);
+                continue;
+            }
+
+            // Check for type cast (as)
+            if self.try_consume("as") {
+                self.skip_whitespace();
+                let target_type = self.parse_type()?;
+                expr = Expr::Cast(Box::new(expr), target_type);
                 continue;
             }
 
@@ -1662,11 +1675,24 @@ impl<'a> VerusBlockParser<'a> {
             return Ok(Pattern::Literal(Literal::Bool(false)));
         }
 
-        // Parse identifier or path pattern
-        let name = self.parse_identifier()?;
+        // Parse identifier or path pattern (e.g., RslMessage::RslMessageInvalid)
+        let mut path_segments = vec![self.parse_identifier()?];
         self.skip_whitespace();
 
-        // Check for struct/variant pattern
+        // Handle path continuation with ::
+        while self.peek_str(2) == Some("::") {
+            self.pos += 2; // consume ::
+            self.skip_whitespace();
+            let segment = self.parse_identifier()?;
+            path_segments.push(segment);
+            self.skip_whitespace();
+        }
+
+        let path = Path {
+            segments: path_segments.clone(),
+        };
+
+        // Check for struct/variant pattern with {}
         if self.peek() == Some('{') {
             self.advance();
             let mut fields = Vec::new();
@@ -1696,13 +1722,10 @@ impl<'a> VerusBlockParser<'a> {
             }
 
             self.expect('}')?;
-            return Ok(Pattern::Struct {
-                name: Path::single(name),
-                fields,
-            });
+            return Ok(Pattern::Struct { name: path, fields });
         }
 
-        // Check for tuple variant pattern
+        // Check for tuple variant pattern with ()
         if self.peek() == Some('(') {
             self.advance();
             let mut pats = Vec::new();
@@ -1723,12 +1746,21 @@ impl<'a> VerusBlockParser<'a> {
 
             self.expect(')')?;
             return Ok(Pattern::Variant {
-                name: Path::single(name),
+                name: path,
                 fields: pats,
             });
         }
 
-        Ok(Pattern::Ident(name))
+        // Just an identifier pattern (or path without braces)
+        if path_segments.len() == 1 {
+            Ok(Pattern::Ident(path_segments.into_iter().next().unwrap()))
+        } else {
+            // Path pattern without braces - treat as variant with no fields
+            Ok(Pattern::Variant {
+                name: path,
+                fields: vec![],
+            })
+        }
     }
 
     /// Parse parenthesized expression or tuple

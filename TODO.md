@@ -939,10 +939,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 - [x] Fix `find_verus_blocks` to skip comments when counting braces
 - [x] Fix `skip_item` to skip comments when counting braces
 
-**Parser limitation (documented):**
-- [ ] Parser fails on some files with nested closing braces followed by items (see LIMITATIONS.md)
-  - replica.rs and proposer.rs fail with this pattern
-  - acceptor.rs, learner.rs, executor.rs work correctly
+**Parser limitation (RESOLVED):**
+- [x] Fixed division operator '/' incorrectly matching comment starts '//' and '/*'
+- [x] Added path-qualified pattern support for match arms (e.g., `RslMessage::RslMessageInvalid{}`)
+- [x] Added type cast (`as`) operator support (e.g., `x.len() as int`)
+- [x] replica.rs and proposer.rs now parse successfully
+- [x] All RSL spec files now pass the parser
 
 **Blocking issue (RESOLVED):**
 - [x] Add comment handling inside function bodies (parser skips comments at top-level but not in expressions)
@@ -960,7 +962,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - Manual implementation: 786 lines with inline proofs, loop invariants, optimized versions
   - Generated code: Basic structure with placeholder comments for map operations
   - Key gaps: Map iteration code not generated (templates produce comments), no inline proofs
-- [ ] Fix parser limitation for replica.rs and proposer.rs
+- [x] Fix parser limitation for replica.rs and proposer.rs
 - [ ] Improve code generation for map filter patterns to produce actual loop code
 
 #### Phase 3: Iterate on Transpiler to Handle Full RSL
