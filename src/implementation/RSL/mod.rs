@@ -27,3 +27,5 @@ pub mod host_i;
 pub mod host_s;
 #[cfg(test)]
 pub mod generated_acceptor_test;
+#[cfg(test)]
+pub mod generated_acceptor_v3;

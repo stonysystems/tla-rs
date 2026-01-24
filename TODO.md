@@ -1174,7 +1174,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Updated src/protocol/RSL/transpile.toml with RSL-specific imports
     - [x] Generate code header with configurable imports [26:01:25, 11:20]
       - Imports appear before `verus!` block in generated output
-    - [ ] Test: generated acceptor with correct imports compiles standalone
+    - [x] Test: generated acceptor with correct imports compiles standalone [26:01:25, 11:45]
+      - Generated src/implementation/RSL/generated_acceptor_v3.rs
+      - Added module to mod.rs with #[cfg(test)]
+      - Verifies with Verus: 456 verified, 0 errors
 - [ ] Run full system tests with generated implementation
 - [ ] Document any manual adjustments needed
 
