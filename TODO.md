@@ -1066,7 +1066,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Plan: docs/dev/verus-integration-plan.md
     - Finding: Generated code uses iterator patterns, manual code uses explicit loops
     - Challenge: Pattern mismatch between generated and verifiable code
-  - [ ] Create integration test file that imports generated acceptor
+  - [x] Create integration test file that imports generated acceptor [26:01:25, 01:30]
+    - Added src/implementation/RSL/generated_acceptor_test.rs
+    - Test placeholder that verifies imports compile with existing types
+    - Full integration requires adapting iterator patterns for Verus
   - [x] Add configurable validity predicate name (default: well_formed, RSL: valid) [26:01:25, 01:15]
   - [ ] Fix any type compatibility issues in generated code
   - [ ] Run Verus on the integrated test file

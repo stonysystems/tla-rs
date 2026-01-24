@@ -25,3 +25,5 @@ pub mod replicaimpl_main;
 pub mod cmd_line_parser;
 pub mod host_i;
 pub mod host_s;
+#[cfg(test)]
+pub mod generated_acceptor_test;
