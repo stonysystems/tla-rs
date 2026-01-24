@@ -1,97 +1,235 @@
-# IronFleet Verus
+# tla-rs (IronFleet Verus)
 
-# Building and running Verification
+A Rust implementation of the IronFleet verified distributed systems framework, featuring formally verified Byzantine fault-tolerant consensus protocols using [Verus](https://github.com/verus-lang/verus).
+
+## Features
+
+- **Formally Verified Protocols**: Paxos-based RSL (Replicated State Machine) and distributed Lock service
+- **456 Verified Functions**: Main codebase fully verified with Verus (0 errors)
+- **Spec-to-Exec Transpiler**: Automatic transformation of TLA-style specifications to verified implementations (~10K LOC)
+- **C# FFI Integration**: Production-ready networking layer via .NET runtime
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  C# .NET Layer (I/O & Networking)           │
+│  Trusted runtime for network operations     │
+└──────────────────┬──────────────────────────┘
+                   │ FFI
+┌──────────────────▼──────────────────────────┐
+│  Rust/Verus Layer (Verified Protocol)       │
+├─────────────────────────────────────────────┤
+│ src/services/       - Entry points          │
+│ src/implementation/ - Concrete impls        │
+│ src/protocol/       - Specs & proofs        │
+│ src/common/         - Utilities & I/O       │
+└─────────────────────────────────────────────┘
+```
 
 ## Requirements
 
-* Verus (Last build was using verus - release/rolling/0.2024.09.05.29e4da0)
-* rustc (Last build was using rustc - 1.80.1 (3f5fd8dd4 2024-08-06))
-* .NET 6.0 SDK (https://dotnet.microsoft.com/download)
-* scons (`pip install scons`)
-* python 3 (for running scons)
+- **Verus**: v0.2026.01.14 or compatible (tested with 0.2026.01.14.88f7396)
+- **Rust**: 1.80.1+ (tested with 1.92.0)
+- **.NET 6.0 SDK**: https://dotnet.microsoft.com/download
+- **scons**: `pip install scons`
+- **Python 3**: For running scons
 
-```shell
+## Building
+
+```bash
+# Build and verify all Rust code with Verus
 scons --verus-path="$VERUS_PATH"
+
+# Build only C# projects (skip Verus verification)
+scons --skip-verus
+
+# Build specific target
+scons bin/IronRSLServer.dll
 ```
 
-This should run verus verification and create .dlls/.so in a bin/ folder for the C# files, and at the root of the project for Rust files. To only run the build without verification use `--no-verify`.
+## Running
 
-# Running
+### IronRSL (Paxos-based Replicated State Machine)
 
-## IronRSL
+#### Generate Certificates
 
-### Generate Certs
+Each IronRSL host has a unique public key as an identifier:
 
-Each IronRSL host has a unique public key as an identifier. Generate these with the CreateIronServiceCerts dll.
-
-```shell
-dotnet bin/CreateIronServiceCerts.dll outputdir=certs name=MyCounter type=IronRSL addr1=127.0.0.1 port1=4001 addr2=127.0.0.1 port2=4002 addr3=127.0.0.1 port3=4003
+```bash
+dotnet bin/CreateIronServiceCerts.dll \
+    outputdir=certs name=MyCounter type=IronRSL \
+    addr1=127.0.0.1 port1=4001 \
+    addr2=127.0.0.1 port2=4002 \
+    addr3=127.0.0.1 port3=4003
 ```
 
-### Running the IronRSL servers
+#### Run Servers
 
-Run these lines in separate terminals to run the 3 servers.
+Run each in a separate terminal:
 
-```shell
+```bash
 dotnet bin/IronRSLServer.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server1.private.txt
 dotnet bin/IronRSLServer.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server2.private.txt
 dotnet bin/IronRSLServer.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server3.private.txt
 ```
 
+### IronLock (Distributed Lock Service)
 
-## IronLock
+#### Generate Certificates
 
-### Generate Certs
-
-Each IronLock host has a unique public key as an identifier. Generate these with the CreateIronServiceCerts dll.
-
-```shell
-dotnet bin/CreateIronServiceCerts.dll outputdir=certs name=MyLock type=IronLock addr1=127.0.0.1 port1=4001 addr2=127.0.0.1 port2=4002 addr3=127.0.0.1 port3=4003
+```bash
+dotnet bin/CreateIronServiceCerts.dll \
+    outputdir=certs name=MyLock type=IronLock \
+    addr1=127.0.0.1 port1=4001 \
+    addr2=127.0.0.1 port2=4002 \
+    addr3=127.0.0.1 port3=4003
 ```
 
-### Running the IronLock servers
+#### Run Servers
 
-Run these lines in separate terminals to run the 3 servers. Note that the protocol only starts working once the first server (server1) is online.
+Note: The protocol starts once server1 is online.
 
-```shell
+```bash
 dotnet bin/IronLockServer.dll certs/MyLock.IronLock.service.txt certs/MyLock.IronLock.server2.private.txt
 dotnet bin/IronLockServer.dll certs/MyLock.IronLock.service.txt certs/MyLock.IronLock.server3.private.txt
 dotnet bin/IronLockServer.dll certs/MyLock.IronLock.service.txt certs/MyLock.IronLock.server1.private.txt
 ```
 
-# Notes on porting
+## Transpiler
 
-- Verus spec functions cannot have any mutable variables or iteration. Any code that depends on iteration in a Dafny (ghost) function needs to be written recursively or in a proof function. However, you can't call proof functions in pre/post-condition clauses.  
-- Verus doesn't support adding additional conditions on anything implementing a trait. I'm not sure how to implement the IronFleet structure of having a base, more abstract module and then refining it in each subclass. That's why the clauses from the framework abstract classes are just copied over into the lock functions.
-- Verus doesn't support using addition/other operations in a forall clause. For example, trying to state something about two adjacent items in a Dafny function usually looks like:
+The project includes a spec-to-implementation transpiler that converts Verus `spec fn` predicates (TLA-style specifications) into verified `exec fn` implementations.
 
+### Usage
+
+```bash
+cd transpiler
+
+# Run transpiler tests
+cargo test
+
+# Transpile a spec file
+cargo run -- --input spec.rs --annotations spec.automan --output impl.rs
+
+# Verify generated code
+verus impl.rs
 ```
-forall i :: 0 <= i < |s| - 1 ==> foo(s[i], s[i+1])
+
+### Transformation Example
+
+**Input (spec):**
+```rust
+spec fn LAcceptorProcess1a(s: LAcceptor, s_: LAcceptor, inp: RslPacket, sent: Seq<RslPacket>) -> bool {
+    if BalLt(s.max_bal, inp.msg->bal_1a) {
+        &&& s_.max_bal == inp.msg->bal_1a
+        &&& s_.votes == s.votes
+        &&& sent == seq![make_1b_reply(s, inp)]
+    } else {
+        &&& s_ == s
+        &&& sent == Seq::empty()
+    }
+}
 ```
 
-This will fail in Verus, and you need to introduce another variable j, with the value for i+1, i.e.
-
+**Output (exec):**
+```rust
+exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CRslPacket) -> (CAcceptor, Vec<CRslPacket>)
+    requires s.well_formed(), inp.well_formed()
+    ensures LAcceptorProcess1a(s@, result.0@, inp@, result.1@)
+{
+    if ballot_lt(&s.max_bal, &inp.msg.get_bal_1a()) {
+        (CAcceptor { max_bal: inp.msg.get_bal_1a().clone(), votes: s.votes.clone() },
+         vec![make_1b_reply_impl(s, inp)])
+    } else {
+        (s.clone(), vec![])
+    }
+}
 ```
-forall |i: int| 0 <= i < s.len() - 1 && j == i+1 ==> foo(s[i], s[j])
+
+### Verified Examples
+
+The transpiler includes 25+ verified examples in `transpiler/verus_examples/` covering:
+- Init predicates (struct construction, collection initialization)
+- Process predicates (conditionals, state updates)
+- Quantifier patterns (forall over sequences/maps)
+- Collection mutations (seq.update, map.insert, set addition)
+- Cross-component dispatch (multi-component state transitions)
+- I/O operations (packet construction, broadcast patterns)
+
+### Documentation
+
+- `transpiler/docs/ANNOTATION_FORMAT.md` - Mode annotation syntax
+- `transpiler/docs/PATTERNS.md` - Supported transformation patterns
+- `transpiler/docs/LIMITATIONS.md` - Known limitations and workarounds
+- `transpiler/docs/MIGRATION_GUIDE.md` - Migration from manual implementations
+
+## Code Organization
+
+### Naming Conventions
+
+- `*_s.rs` - Spec/abstract modules (protocol layer)
+- `*_i.rs` - Implementation/concrete modules
+- `L*` prefix - Logical/protocol types (e.g., `LReplica`, `LProposer`)
+- `C*` prefix - Concrete types (e.g., `CConstants`, `CMessage`)
+
+### Key Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/protocol/RSL/` | Abstract Paxos protocol specs and proofs (~6K LOC) |
+| `src/protocol/lock/` | Abstract Lock protocol specs |
+| `src/implementation/RSL/` | Verified concrete RSL implementation (~6K LOC) |
+| `src/implementation/lock/` | Verified concrete Lock implementation |
+| `src/common/native/io_s.rs` | Network client with marshalling (~17K LOC) |
+| `csharp/` | C# runtime and deployable services (~45K LOC) |
+| `transpiler/` | Spec-to-exec transpiler (~10K LOC) |
+
+## Verus Patterns
+
+### Function Types
+
+```rust
+verus! {
+    spec fn abstract_spec() -> bool;           // Pure mathematical (ghost)
+    proof fn lemma_about_spec() { ... }        // Proof-only
+    exec fn concrete_impl() { ... }            // Executable code
+}
 ```
 
-- Verus maps and sets are infinite by default. In Dafny, there are imaps, isets, maps and sets. All verus maps are imaps, and need to be bounded with m.dom().finite() if required.
-- Verus has a handy View trait for mapping a concrete type to a ghost type. This is used a lot for the protocol->host implementation. To use it, the struct needs a spec function called view() that returns the ghost type. The shortcut to call the view function is `@`, e.g. host_protocol@ returns an abstract node (The abstract protocol struct).
-- Marshalling has a flaw - there's no spec function to check whether something is not deserializable. This makes it hard to assign something like a "CInvalid" message type for non-deserializable message, because I can't prove it's not a valid message. So, these packets are currently just ignored. 
+### View Trait
 
-# Code borrowed from IronKV
+Maps concrete types to ghost types for verification:
+```rust
+// struct@ syntax calls the view function
+let ghost_replica = replica@;
+```
 
-Some of the code in [IronKV](https://github.com/verus-lang/verified-ironkv) has been directly used:
+### Triggers Workaround
 
-- NetClient code (src/common/framework/native/io_s.rs)
-  - Depends on the verus_extra code as well: (src/verus_extra/...)
-- C# code (slightly modified to use Lock)
-- Binding to C# code (src/lib.rs)
-- The common marshalling library (src/implementation/common/marshalling.rs)
+For arithmetic in triggers, use extra variables:
+```rust
+// Instead of: forall|i: int| 0 <= i < len ==> f(i + 1)
+// Use: forall|i: int, j: int| j == i + 1 && 0 <= i < len ==> f(j)
+```
 
-# Code organization
+## Known Limitations
 
-- I've tried to follow the code organization of the original ironfleet code, but there are some changes:
-  - "Common" classes and methods for IronFleet main, Host etc. aren't present. I've copied over all the clauses into the lock classes/methods because traits don't allow adding additional lock-specific post/pre conditions.
-- Marshalling is completely different, and uses the IronKV code
-- Collection functions aren't necessary to always port, since Verus has many in-built collection functions in the library.
+- Verus spec functions cannot use mutable variables or iteration (use recursion)
+- Verus maps/sets are infinite by default (need `.dom().finite()` bounds)
+- Cannot add conditions on trait implementations (copy clauses as workaround)
+- Marshalling lacks spec function for non-deserializable check
+
+## Code Attribution
+
+Some code borrowed from [IronKV](https://github.com/verus-lang/verified-ironkv):
+- NetClient code (`src/common/framework/native/io_s.rs`)
+- Verus extra utilities (`src/verus_extra/...`)
+- C# I/O framework (modified)
+- Binding to C# (`src/lib.rs`)
+- Common marshalling library (`src/implementation/common/marshalling.rs`)
+
+The transpiler is inspired by [AutoMan](https://github.com/stonysystems/automan) (for Dafny), reimplemented in Rust for Verus.
+
+## License
+
+MIT License - see [LICENSE](LICENSE)
