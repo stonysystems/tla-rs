@@ -1782,8 +1782,9 @@ impl Translator {
         })
     }
 
-    /// Categorize expressions in a conjunction into output assignments and other expressions
-    /// Excludes outputs that have already been bound (e.g., by helper calls)
+    /// Categorize expressions in a conjunction into output assignments and other expressions.
+    ///
+    /// Excludes outputs that have already been bound (e.g., by helper calls).
     /// Returns: (Vec of output expressions with their param name, Vec of other expressions)
     fn categorize_output_assignments_with_exclusions(
         &self,
@@ -2027,9 +2028,10 @@ impl Translator {
         })
     }
 
-    /// Process helper calls in a conjunction, generating let bindings and collecting substitutions
+    /// Process helper calls in a conjunction, generating let bindings and collecting substitutions.
+    ///
     /// Returns: (let_bindings, remaining_exprs, combined_substitutions, bound_outputs)
-    /// bound_outputs tracks which direct output params (like sent_packets) were bound by helper calls
+    /// where bound_outputs tracks which direct output params (like sent_packets) were bound by helper calls.
     fn process_helper_calls_in_conjunction(
         &self,
         exprs: &[Expr],
@@ -2563,10 +2565,12 @@ impl Translator {
         None
     }
 
-    /// Try to extract map update with value pattern from conjunction of foralls
+    /// Try to extract map update with value pattern from conjunction of foralls.
+    ///
     /// Pattern: conjunction of:
     /// 1. Domain: forall |k| output.dom().contains(k) <==> filter && (source.contains(k) || k == new_key)
     /// 2. Value: forall |k| output.dom().contains(k) ==> output[k] == (if k == new_key then new_value else source[k])
+    ///
     /// Returns: (source_map, key_var, filter_pred, new_key, new_value, old_value_expr)
     fn try_extract_map_update_with_value(
         &self,
@@ -2694,11 +2698,13 @@ impl Translator {
         None
     }
 
-    /// Try to extract a sequence initialization pattern from conjunction expressions
+    /// Try to extract a sequence initialization pattern from conjunction expressions.
+    ///
     /// Pattern:
     /// 1. Length constraint: output.field.len() == length_expr
     /// 2. Element forall: forall |i| 0 <= i < output.field.len() ==> output.field[i] == element_expr
-    /// Returns: (output_var, field_name, length_expr, element_expr) if pattern matches
+    ///
+    /// Returns: (output_var, field_name, length_expr, element_expr) if pattern matches.
     fn try_extract_seq_init_pattern(
         &self,
         exprs: &[Expr],
@@ -2840,12 +2846,14 @@ impl Translator {
         true
     }
 
-    /// Try to recognize a conjunction of foralls as a map filter pattern
-    /// Pattern: conjunction of 3 foralls that together define filtering a map
+    /// Try to recognize a conjunction of foralls as a map filter pattern.
+    ///
+    /// Pattern: conjunction of 3 foralls that together define filtering a map:
     /// 1. Preservation: forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]
     /// 2. Exclusion: forall |k| k < threshold ==> !output.contains_key(k)
     /// 3. Inclusion: forall |k| k >= threshold && source.contains_key(k) ==> output.contains_key(k)
-    /// Returns: (source_map, output_map, key_var, filter_predicate) if pattern matches
+    ///
+    /// Returns: (source_map, output_map, key_var, filter_predicate) if pattern matches.
     fn try_extract_map_filter_conjunction(
         &self,
         exprs: &[Expr],
