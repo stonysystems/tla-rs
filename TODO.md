@@ -1003,7 +1003,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added `HelperCallInfo` struct to capture function name, input args, and output fields
       - Added `detect_helper_call()` function to identify calls with `s_.field` patterns
       - Added test for helper call detection
-    - [ ] Generate let bindings to capture helper outputs (e.g., `let s_proposer = CHelper(...)`)
+    - [x] Generate let bindings to capture helper outputs [26:01:24, 15:15]
+      - Added `generate_helper_let_binding()` function
+      - Generates: `let s_proposer = CProposerProcessRequest(...);`
+      - Added `get_helper_substitutions()` for variable mapping
     - [ ] Rewrite field references from `s_.field` to captured variable `s_field`
     - [ ] Handle multiple helper calls in sequence (combine their outputs)
   - [ ] Handle sequence of expressions returning single tuple result

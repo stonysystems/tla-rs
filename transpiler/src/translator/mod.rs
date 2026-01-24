@@ -1024,6 +1024,54 @@ impl Translator {
         None
     }
 
+    /// Generate a let binding for a helper call with output parameters
+    /// For example: LProposerProcessRequest(s.proposer, s_.proposer, packet)
+    /// Generates: let s_proposer = CProposerProcessRequest(&s.proposer, &packet);
+    fn generate_helper_let_binding(&self, info: &HelperCallInfo) -> ExecExpr {
+        // Generate the variable name by combining output var and field
+        // e.g., ("s_", "proposer") -> "s_proposer"
+        let var_name = if info.output_fields.len() == 1 {
+            let (var, field) = &info.output_fields[0];
+            format!("{}_{}", var.trim_end_matches('_'), field)
+        } else {
+            // Multiple outputs - generate a tuple pattern
+            info.output_fields
+                .iter()
+                .map(|(var, field)| format!("{}_{}", var.trim_end_matches('_'), field))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        let pattern = if info.output_fields.len() > 1 {
+            format!("({})", var_name)
+        } else {
+            var_name
+        };
+
+        // Build the function call
+        let call = ExecExpr::Call {
+            func: self.translate_name(&info.func_name),
+            args: info.input_args.clone(),
+        };
+
+        ExecExpr::Let {
+            pattern,
+            ty: None,
+            value: Box::new(call),
+        }
+    }
+
+    /// Get the substitution map from helper call info
+    /// Maps "s_.proposer" style access to variable name "s_proposer"
+    fn get_helper_substitutions(info: &HelperCallInfo) -> HashMap<(String, String), String> {
+        let mut map = HashMap::new();
+        for (var, field) in &info.output_fields {
+            let var_name = format!("{}_{}", var.trim_end_matches('_'), field);
+            map.insert((var.clone(), field.clone()), var_name);
+        }
+        map
+    }
+
     /// Try to extract struct construction from a conjunction of field assignments
     fn try_extract_struct_construction(
         &self,
@@ -2320,5 +2368,40 @@ mod tests {
         assert_eq!(info.input_args.len(), 2, "Should have 2 input args");
         assert_eq!(info.output_fields.len(), 1, "Should have 1 output field");
         assert_eq!(info.output_fields[0], ("s_".to_string(), "proposer".to_string()));
+    }
+
+    #[test]
+    fn test_generate_helper_let_binding() {
+        let translator = Translator::default();
+
+        // Create a HelperCallInfo for LProposerProcessRequest
+        let info = crate::translator::HelperCallInfo {
+            func_name: "LProposerProcessRequest".to_string(),
+            input_args: vec![
+                ExecExpr::Field(
+                    Box::new(ExecExpr::Var("s".to_string())),
+                    "proposer".to_string(),
+                ),
+                ExecExpr::Var("received_packet".to_string()),
+            ],
+            output_fields: vec![("s_".to_string(), "proposer".to_string())],
+        };
+
+        let let_binding = translator.generate_helper_let_binding(&info);
+
+        // Check that it generates a Let expression
+        match &let_binding {
+            ExecExpr::Let { pattern, value, .. } => {
+                assert_eq!(pattern, "s_proposer", "Variable name should be s_proposer");
+                match value.as_ref() {
+                    ExecExpr::Call { func, args } => {
+                        assert_eq!(func, "CProposerProcessRequest");
+                        assert_eq!(args.len(), 2);
+                    }
+                    _ => panic!("Expected Call, got {:?}", value),
+                }
+            }
+            _ => panic!("Expected Let, got {:?}", let_binding),
+        }
     }
 }
