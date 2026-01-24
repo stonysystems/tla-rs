@@ -1,0 +1,38 @@
+# Configuration for transpiling RSL spec to implementation
+# This configures the transpiler to match the existing RSL codebase conventions
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+# RSL-specific type mappings
+"LAcceptor" = "CAcceptor"
+"LProposer" = "CProposer"
+"LLearner" = "CLearner"
+"LExecutor" = "CExecutor"
+"LReplica" = "CReplica"
+"LReplicaConstants" = "CReplicaConstants"
+"Ballot" = "CBallot"
+"Vote" = "CVote"
+"OperationNumber" = "COperationNumber"
+"RslPacket" = "CPacket"
+"RslMessage" = "CMessage"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+# RSL uses 'valid()' instead of 'well_formed()'
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+
+[modules.acceptor]
+custom_includes = [
+    "use vstd::prelude::*;",
+    "use std::collections::HashMap;",
+    "use crate::implementation::RSL::types_i::*;",
+    "use crate::implementation::RSL::cconstants::*;",
+    "use crate::implementation::RSL::cmessage::*;",
+    "use crate::protocol::RSL::acceptor::*;",
+]
