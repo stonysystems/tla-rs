@@ -975,17 +975,23 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 #### Phase 3: Iterate on Transpiler to Handle Full RSL
 - [x] Identify unsupported patterns in RSL specs [26:01:24, 13:30]
   - Analysis document: docs/dev/unsupported-rsl-patterns.md
-  - **Critical blockers found:**
-    1. Exists quantifier completely unsupported (proposer.rs fails)
-    2. Forall with collection membership check unsupported (replica.rs fails)
-  - **Working:** acceptor.rs, learner.rs, executor.rs, broadcast.rs (with TODOs)
+  - **Critical blockers resolved:**
+    1. ~~Exists quantifier completely unsupported~~ - FIXED (uses .any())
+    2. ~~Forall with collection membership check unsupported~~ - FIXED (uses .all())
+  - **All RSL specs now transpile:** acceptor.rs, proposer.rs, learner.rs, executor.rs, replica.rs, broadcast.rs
 - [x] Add exists quantifier support (transform to `.any()` or `.find()`) [26:01:24, 13:30]
   - Added `extract_exists_container_and_pred()` helper function
   - Pattern: `exists |x| container.contains(x) && pred(x)` → `container.iter().any(|x| pred(x))`
   - Added 2 unit tests for exists support
   - proposer.rs now transpiles successfully
   - Log: logs/20260124_131527_a5905c4_exists_quantifier.log
-- [ ] Add forall collection check template (`container.contains(x) ==> pred(x)` → `.all()`)
+- [x] Add forall collection check template (`container.contains(x) ==> pred(x)` → `.all()`) [26:01:24, 14:00]
+  - Added `CollectionCheck` template to checker/mod.rs
+  - Added `try_collection_check()` matcher function
+  - Added code generation for `.iter().all(|x| pred(x))` pattern
+  - Enhanced exists support to handle nested field access paths
+  - replica.rs now transpiles successfully (all 6 RSL specs now work)
+  - Added 2 unit tests for collection check
 - [ ] Extend template matching for RSL-specific patterns
 - [ ] Handle RSL type system (nested types, generic collections)
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)

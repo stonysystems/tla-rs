@@ -1206,7 +1206,7 @@ impl Translator {
         // Check for conjunction: container.contains(x) && pred(x)
         if let Expr::Conjunction(parts) = body {
             for (i, part) in parts.iter().enumerate() {
-                if let Some(container) = self.extract_set_contains_source(part, var_name) {
+                if let Some(container) = self.extract_contains_receiver(part, var_name) {
                     // Found container.contains(x), rest is predicate
                     let other_parts: Vec<Expr> = parts
                         .iter()
@@ -1223,29 +1223,51 @@ impl Translator {
                         Expr::Conjunction(other_parts)
                     };
 
-                    return Some((Expr::Ident(container), predicate));
+                    return Some((container, predicate));
                 }
             }
         }
 
         // Check for binary &&: container.contains(x) && pred(x)
         if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = body {
-            if let Some(container) = self.extract_set_contains_source(lhs, var_name) {
-                return Some((Expr::Ident(container), (**rhs).clone()));
+            if let Some(container) = self.extract_contains_receiver(lhs, var_name) {
+                return Some((container, (**rhs).clone()));
             }
-            if let Some(container) = self.extract_set_contains_source(rhs, var_name) {
-                return Some((Expr::Ident(container), (**lhs).clone()));
+            if let Some(container) = self.extract_contains_receiver(rhs, var_name) {
+                return Some((container, (**lhs).clone()));
             }
         }
 
         // Check for just container.contains(x) without additional predicate
-        if let Some(container) = self.extract_set_contains_source(body, var_name) {
+        if let Some(container) = self.extract_contains_receiver(body, var_name) {
             return Some((
-                Expr::Ident(container),
+                container,
                 Expr::Literal(crate::ast::Literal::Bool(true)),
             ));
         }
 
+        None
+    }
+
+    /// Extract the receiver expression from a contains call
+    /// Returns the full expression (e.g., s.acceptor.last_checkpointed_operation)
+    fn extract_contains_receiver(&self, expr: &Expr, element_var: &str) -> Option<Expr> {
+        use crate::ast::Expr;
+
+        if let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        {
+            if method == "contains" && args.len() == 1 {
+                if let Expr::Ident(arg_name) = &args[0] {
+                    if arg_name == element_var {
+                        return Some((**receiver).clone());
+                    }
+                }
+            }
+        }
         None
     }
 
@@ -1307,19 +1329,28 @@ impl Translator {
             if method == "contains" && args.len() == 1 {
                 if let Expr::Ident(arg_name) = &args[0] {
                     if arg_name == element_var {
-                        if let Expr::Ident(source) = receiver.as_ref() {
-                            return Some(source.clone());
-                        }
-                        if let Expr::Field(base, field) = receiver.as_ref() {
-                            if let Expr::Ident(base_name) = base.as_ref() {
-                                return Some(format!("{}.{}", base_name, field));
-                            }
-                        }
+                        // Use expr_to_name to handle arbitrary nesting depth
+                        return Some(Self::expr_to_name_static(receiver));
                     }
                 }
             }
         }
         None
+    }
+
+    /// Convert an expression to a string name (for collection names)
+    /// Handles identifiers and nested field access chains
+    fn expr_to_name_static(expr: &Expr) -> String {
+        use crate::ast::Expr;
+
+        match expr {
+            Expr::Ident(name) => name.clone(),
+            Expr::Field(base, field) => {
+                format!("{}.{}", Self::expr_to_name_static(base), field)
+            }
+            // For other expression types, use a placeholder
+            _ => "_expr_".to_string(),
+        }
     }
 
     /// Extract source map from a conditional value expression
@@ -1718,6 +1749,30 @@ impl Translator {
                     key_var
                 )))
             }
+
+            QuantifierTemplate::CollectionCheck {
+                container,
+                element_var,
+                predicate,
+            } => {
+                // Generate: container.iter().all(|x| predicate)
+                // Pattern: forall |x| container.contains(x) ==> pred(x)
+                let container_expr = self.transform_expr(container, ctx)?;
+                let pred_expr = self.transform_expr(predicate, ctx)?;
+
+                Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(container_expr),
+                        method: "iter".to_string(),
+                        args: vec![],
+                    }),
+                    method: "all".to_string(),
+                    args: vec![ExecExpr::Closure {
+                        params: vec![element_var.clone()],
+                        body: Box::new(pred_expr),
+                    }],
+                })
+            }
         }
     }
 }
@@ -2002,5 +2057,55 @@ mod tests {
 
         // Predicate should be the call expression
         assert!(matches!(predicate, Expr::Call { .. }));
+    }
+
+    #[test]
+    fn test_collection_check_template() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        // Test: forall |p| packets.contains(p) ==> p.src != other.src
+        // Build packets.contains(p)
+        let contains = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("packets".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("p".to_string())],
+        };
+        // Build p.src != other.src
+        let pred = Expr::Ne(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("p".to_string())),
+                "src".to_string(),
+            )),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("other".to_string())),
+                "src".to_string(),
+            )),
+        );
+        // Build implication
+        let body = Expr::Implies(Box::new(contains), Box::new(pred));
+
+        // Build forall expression
+        let forall = Expr::Forall {
+            vars: vec![crate::ast::Binding {
+                pattern: crate::ast::Pattern::Ident("p".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = translator.transform_expr(&forall, &ctx);
+        assert!(result.is_ok(), "forall collection check should transform: {:?}", result);
+
+        // Check the result is a method call to .all()
+        let exec_expr = result.unwrap();
+        match &exec_expr {
+            ExecExpr::MethodCall { method, .. } => {
+                assert_eq!(method, "all", "Should generate .all() call");
+            }
+            _ => panic!("Expected MethodCall with .all(), got {:?}", exec_expr),
+        }
     }
 }

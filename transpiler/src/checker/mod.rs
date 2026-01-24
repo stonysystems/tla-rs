@@ -172,6 +172,18 @@ pub enum QuantifierTemplate {
         /// Inclusion predicate
         inclusion_predicate: Box<crate::ast::Expr>,
     },
+
+    /// Collection check pattern: forall |x| container.contains(x) ==> pred(x)
+    /// Used to verify all elements in a collection satisfy a predicate
+    /// Translates to: container.iter().all(|x| pred(x))
+    CollectionCheck {
+        /// Container expression (can be a set, vec, etc.)
+        container: Box<crate::ast::Expr>,
+        /// Element variable
+        element_var: String,
+        /// Predicate to check for each element
+        predicate: Box<crate::ast::Expr>,
+    },
 }
 
 /// Template matcher for quantifier expressions
@@ -214,6 +226,12 @@ impl TemplateMatcher {
 
                 // Try map inclusion (uses Implies with contains_key in conclusion)
                 if let Some(template) = Self::try_map_inclusion(var, body) {
+                    return Some(template);
+                }
+
+                // Try collection check (uses Implies with contains in premise)
+                // Pattern: container.contains(x) ==> pred(x)
+                if let Some(template) = Self::try_collection_check(var, body) {
                     return Some(template);
                 }
 
@@ -453,6 +471,76 @@ impl TemplateMatcher {
                     key_var: var.name_string().clone(),
                     inclusion_predicate: pred,
                 });
+            }
+        }
+        None
+    }
+
+    /// Try to match collection check pattern:
+    /// `forall |x| container.contains(x) ==> pred(x)`
+    /// This is for verifying all elements in a collection satisfy a predicate.
+    ///
+    /// Note: This does NOT match if the conclusion is an indexed assignment like `container[x] == value`
+    /// because that pattern is MapComprehension.
+    fn try_collection_check(
+        var: &crate::ast::Binding,
+        body: &crate::ast::Expr,
+    ) -> Option<QuantifierTemplate> {
+        use crate::ast::Expr;
+
+        // Check for implication: container.contains(x) ==> pred(x)
+        if let Expr::Implies(premise, conclusion) = body {
+            // Premise should be: container.contains(x) (set/vec membership)
+            if let Some(container) = Self::extract_set_membership(premise, &var.name_string()) {
+                // Don't match if the conclusion is an indexed assignment (that's MapComprehension)
+                // Pattern to exclude: container[x] == value or value == container[x]
+                if let Expr::Eq(lhs, rhs) = conclusion.as_ref() {
+                    // Check both sides for indexed access
+                    for expr in [lhs.as_ref(), rhs.as_ref()] {
+                        if let Expr::Index(indexed_container, idx) = expr {
+                            // Check if index is the variable and container matches
+                            if Self::is_var(idx, &var.name_string()) {
+                                let container_name = Self::expr_to_name(container);
+                                let indexed_name = Self::expr_to_name(indexed_container);
+                                if container_name == indexed_name {
+                                    // This is a map value assignment pattern, not collection check
+                                    return None;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // The conclusion is the predicate
+                return Some(QuantifierTemplate::CollectionCheck {
+                    container: Box::new(container.clone()),
+                    element_var: var.name_string().clone(),
+                    predicate: conclusion.clone(),
+                });
+            }
+        }
+        None
+    }
+
+    /// Extract container from set/vec membership check: `container.contains(x)`
+    /// Returns the container expression if x matches var_name
+    fn extract_set_membership<'a>(
+        expr: &'a crate::ast::Expr,
+        var_name: &str,
+    ) -> Option<&'a crate::ast::Expr> {
+        use crate::ast::Expr;
+
+        // Pattern: container.contains(x)
+        if let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        {
+            if method == "contains" && args.len() == 1 {
+                if Self::is_var(&args[0], var_name) {
+                    return Some(receiver);
+                }
             }
         }
         None
@@ -871,6 +959,9 @@ impl TemplateMatcher {
                     return TemplateMatchResult::Matched(template);
                 }
                 if let Some(template) = Self::try_map_inclusion(var, body) {
+                    return TemplateMatchResult::Matched(template);
+                }
+                if let Some(template) = Self::try_collection_check(var, body) {
                     return TemplateMatchResult::Matched(template);
                 }
                 if let Some(template) = Self::try_set_comprehension(var, body) {
@@ -1475,6 +1566,53 @@ mod tests {
             assert_eq!(key_var, "k");
         } else {
             panic!("Expected MapDomainBiconditional template, got {:?}", result);
+        }
+    }
+
+    /// Test: forall |x| container.contains(x) ==> pred(x)
+    /// This pattern is for checking all elements in a collection satisfy a predicate.
+    #[test]
+    fn test_collection_check() {
+        // Build: packets.contains(p)
+        let membership = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("packets".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("p".to_string())],
+        };
+
+        // Build: p.src != other_packet.src
+        let predicate = Expr::Ne(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("p".to_string())),
+                "src".to_string(),
+            )),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("other_packet".to_string())),
+                "src".to_string(),
+            )),
+        );
+
+        // Build: membership ==> predicate
+        let body = Expr::Implies(Box::new(membership), Box::new(predicate));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("p")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_some());
+
+        if let Some(QuantifierTemplate::CollectionCheck {
+            element_var,
+            predicate: _,
+            ..
+        }) = result
+        {
+            assert_eq!(element_var, "p");
+        } else {
+            panic!("Expected CollectionCheck template, got {:?}", result);
         }
     }
 }

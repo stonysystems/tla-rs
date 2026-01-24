@@ -1,0 +1,29 @@
+Collection Check Template Support Log
+=====================================
+Date: Sat Jan 24 02:00:00 PM EST 2026
+Commit: da49f7f (previous: exists quantifier)
+
+Task: Add forall collection check template (container.contains(x) ==> pred(x) → .all())
+
+Changes Made:
+- Added CollectionCheck template to QuantifierTemplate enum in checker/mod.rs
+- Added try_collection_check() matcher function
+- Added extract_set_membership() helper function
+- Added code generation for CollectionCheck: generates container.iter().all(|x| pred(x))
+- Enhanced exists support: added extract_contains_receiver() for nested field access paths
+- Added expr_to_name_static() helper for arbitrary nesting depth
+
+Test Results:
+=============
+All 138 tests pass (111 lib + 1 bin + 12 integration + 14 negative)
+
+RSL Transpilation Results:
+=========================
+- acceptor.rs: SUCCESS
+- proposer.rs: SUCCESS (uses exists quantifier)
+- learner.rs: SUCCESS
+- executor.rs: SUCCESS
+- replica.rs: SUCCESS (uses collection check)
+- broadcast.rs: SUCCESS
+
+All 6 RSL spec files now transpile successfully!
