@@ -73,6 +73,29 @@ impl VerusParser {
                     i += 1;
 
                     while i < chars.len() && depth > 0 {
+                        // Skip line comments
+                        if i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '/' {
+                            while i < chars.len() && chars[i] != '\n' {
+                                i += 1;
+                            }
+                            continue;
+                        }
+                        // Skip block comments
+                        if i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '*' {
+                            i += 2;
+                            let mut comment_depth = 1;
+                            while i + 1 < chars.len() && comment_depth > 0 {
+                                if chars[i] == '/' && chars[i + 1] == '*' {
+                                    comment_depth += 1;
+                                    i += 1;
+                                } else if chars[i] == '*' && chars[i + 1] == '/' {
+                                    comment_depth -= 1;
+                                    i += 1;
+                                }
+                                i += 1;
+                            }
+                            continue;
+                        }
                         match chars[i] {
                             '{' => depth += 1,
                             '}' => depth -= 1,
@@ -210,9 +233,26 @@ impl<'a> VerusBlockParser<'a> {
         self.skip_whitespace();
 
         // Parse return type (optional)
+        // Supports both `-> Type` and `-> (name: Type)` syntax
         let return_type = if self.try_consume("->") {
             self.skip_whitespace();
-            self.parse_type()?
+            if self.peek() == Some('(') {
+                // Named return: (name: Type) or (result: (T1, T2))
+                self.advance(); // consume '('
+                self.skip_whitespace();
+                // Parse and discard the name
+                let _return_name = self.parse_identifier()?;
+                self.skip_whitespace();
+                self.expect(':')?;
+                self.skip_whitespace();
+                // Parse the actual return type
+                let ty = self.parse_type()?;
+                self.skip_whitespace();
+                self.expect(')')?;
+                ty
+            } else {
+                self.parse_type()?
+            }
         } else {
             Type::Bool
         };
@@ -225,7 +265,7 @@ impl<'a> VerusBlockParser<'a> {
         let mut decreases = Vec::new();
 
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
             if self.peek() == Some('{') {
                 break;
             }
@@ -298,6 +338,29 @@ impl<'a> VerusBlockParser<'a> {
 
         let ident = self.content[start..self.pos].to_string();
         Ok(ident)
+    }
+
+    /// Parse a tuple index (numeric field like .0, .1)
+    fn parse_tuple_index(&mut self) -> TranspileResult<String> {
+        let start = self.pos;
+
+        // Consume all digits
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        if self.pos == start {
+            return Err(TranspileError::Parse {
+                message: "Expected tuple index".to_string(),
+                span: None,
+            });
+        }
+
+        Ok(self.content[start..self.pos].to_string())
     }
 
     /// Parse generic parameters
@@ -630,10 +693,10 @@ impl<'a> VerusBlockParser<'a> {
         let mut exprs = Vec::new();
 
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
             let expr = self.parse_primary_expr()?;
             exprs.push(self.parse_binary_continuation(expr)?);
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
 
             // Use peek to check for next &&&
             if self.peek_str(3) == Some("&&&") {
@@ -651,10 +714,10 @@ impl<'a> VerusBlockParser<'a> {
         let mut exprs = Vec::new();
 
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
             let expr = self.parse_primary_expr()?;
             exprs.push(self.parse_binary_continuation(expr)?);
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
 
             // Use peek to check for next |||
             if self.peek_str(3) == Some("|||") {
@@ -681,7 +744,7 @@ impl<'a> VerusBlockParser<'a> {
     /// Parse implication (lowest precedence)
     fn parse_implication(&mut self, left: Expr) -> TranspileResult<Expr> {
         let left = self.parse_logical(left)?;
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Check for biconditional (iff) first since it contains ==>
         if self.try_consume("<==>") {
@@ -702,14 +765,14 @@ impl<'a> VerusBlockParser<'a> {
     /// Parse logical AND/OR
     fn parse_logical(&mut self, left: Expr) -> TranspileResult<Expr> {
         let left = self.parse_comparison(left)?;
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Check for logical and/or
         // BUT: Don't consume && if it's actually &&& (conjunction chain)
         // AND: Don't consume || if it's actually ||| (disjunction chain)
         if self.peek_str(2) == Some("&&") && self.peek_str(3) != Some("&&&") {
             self.pos += 2; // Consume &&
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_logical(right_primary)?;
             return Ok(Expr::Binary(Box::new(left), BinOp::And, Box::new(right)));
@@ -717,7 +780,7 @@ impl<'a> VerusBlockParser<'a> {
 
         if self.peek_str(2) == Some("||") && self.peek_str(3) != Some("|||") {
             self.pos += 2; // Consume ||
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_logical(right_primary)?;
             return Ok(Expr::Binary(Box::new(left), BinOp::Or, Box::new(right)));
@@ -730,7 +793,7 @@ impl<'a> VerusBlockParser<'a> {
     /// Chained comparisons like `0 <= i < s.len()` are converted to `(0 <= i) && (i < s.len())`
     fn parse_comparison(&mut self, left: Expr) -> TranspileResult<Expr> {
         let left = self.parse_additive(left)?;
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Try to parse a comparison operator
         // Note: =~= must be checked before ==, and we must not match == when looking at ==>
@@ -782,7 +845,7 @@ impl<'a> VerusBlockParser<'a> {
             return Ok(left);
         };
 
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Check for chained comparison (e.g., `0 <= i < s.len()`)
         // This is syntactic sugar for `(0 <= i) && (i < s.len())`
@@ -1076,6 +1139,16 @@ impl<'a> VerusBlockParser<'a> {
             // Check for dot access
             if self.try_consume(".") {
                 self.skip_whitespace();
+
+                // Check for tuple field access (.0, .1, etc.)
+                if let Some(c) = self.peek() {
+                    if c.is_ascii_digit() {
+                        let field = self.parse_tuple_index()?;
+                        expr = Expr::Field(Box::new(expr), field);
+                        continue;
+                    }
+                }
+
                 let field = self.parse_identifier()?;
                 self.skip_whitespace();
 
@@ -1295,7 +1368,7 @@ impl<'a> VerusBlockParser<'a> {
     /// Parse expression until we hit a brace (for if conditions)
     fn parse_expression_until_brace(&mut self) -> TranspileResult<Expr> {
         let expr = self.parse_primary_expr()?;
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Continue with binary operations, but stop at '{'
         if self.peek() == Some('{') {
@@ -1905,6 +1978,28 @@ impl<'a> VerusBlockParser<'a> {
         let mut depth = 0;
 
         loop {
+            // Skip comments first
+            if self.peek_str(2) == Some("//") {
+                self.skip_until_pattern("\n");
+                continue;
+            }
+            if self.peek_str(2) == Some("/*") {
+                self.advance();
+                self.advance();
+                let mut comment_depth = 1;
+                while comment_depth > 0 && self.pos < self.content.len() {
+                    if self.peek_str(2) == Some("/*") {
+                        comment_depth += 1;
+                        self.advance();
+                    } else if self.peek_str(2) == Some("*/") {
+                        comment_depth -= 1;
+                        self.advance();
+                    }
+                    self.advance();
+                }
+                continue;
+            }
+
             match self.peek() {
                 Some('{') => {
                     depth += 1;

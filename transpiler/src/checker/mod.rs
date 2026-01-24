@@ -493,7 +493,10 @@ impl TemplateMatcher {
                 }
 
                 if remaining.is_empty() {
-                    (source_map, Box::new(Expr::Literal(crate::ast::Literal::Bool(true))))
+                    (
+                        source_map,
+                        Box::new(Expr::Literal(crate::ast::Literal::Bool(true))),
+                    )
                 } else if remaining.len() == 1 {
                     (source_map, Box::new(remaining.into_iter().next().unwrap()))
                 } else {
@@ -507,25 +510,25 @@ impl TemplateMatcher {
     /// Extract map name from membership patterns:
     /// - `map.contains_key(k)` -> Some(map)
     /// - `map.dom().contains(k)` -> Some(map)
+    /// - `obj.field.contains_key(k)` -> Some(obj.field)
     fn extract_map_membership(expr: &crate::ast::Expr, var_name: &str) -> Option<String> {
         use crate::ast::Expr;
 
         match expr {
-            // Pattern: map.contains_key(k)
+            // Pattern: map.contains_key(k) or obj.field.contains_key(k)
             Expr::MethodCall {
                 receiver,
                 method,
                 args,
             } if method == "contains_key" && args.len() == 1 => {
                 if Self::is_var(&args[0], var_name) {
-                    if let Expr::Ident(map_name) = receiver.as_ref() {
-                        return Some(map_name.clone());
-                    }
+                    // Use expr_to_name to handle both identifiers and field access
+                    return Some(Self::expr_to_name(receiver));
                 }
                 None
             }
 
-            // Pattern: map.dom().contains(k) - nested method call
+            // Pattern: map.dom().contains(k) or obj.field.dom().contains(k)
             Expr::MethodCall {
                 receiver,
                 method,
@@ -540,9 +543,8 @@ impl TemplateMatcher {
                     } = receiver.as_ref()
                     {
                         if inner_method == "dom" && inner_args.is_empty() {
-                            if let Expr::Ident(map_name) = inner_recv.as_ref() {
-                                return Some(map_name.clone());
-                            }
+                            // Use expr_to_name to handle both identifiers and field access
+                            return Some(Self::expr_to_name(inner_recv));
                         }
                     }
                 }

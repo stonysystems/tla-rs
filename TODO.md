@@ -935,6 +935,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 - [x] Add `<==>` biconditional (iff) operator
 - [x] Fix `==>` implication to not match `==` prefix
 - [x] Fix `<=` and `<` to not match `<==>` prefix
+- [x] Add comprehensive comment handling in expressions (conjunction/disjunction chains, comparisons, etc.)
+- [x] Fix `find_verus_blocks` to skip comments when counting braces
+- [x] Fix `skip_item` to skip comments when counting braces
+
+**Parser limitation (documented):**
+- [ ] Parser fails on some files with nested closing braces followed by items (see LIMITATIONS.md)
+  - replica.rs and proposer.rs fail with this pattern
+  - acceptor.rs, learner.rs, executor.rs work correctly
 
 **Blocking issue (RESOLVED):**
 - [x] Add comment handling inside function bodies (parser skips comments at top-level but not in expressions)
@@ -946,12 +954,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 
 **Transpilation tasks:**
 - [x] Run transpiler on `src/protocol/RSL/acceptor.rs` - NOW WORKS (generates code)
+- [x] Run transpiler on `src/protocol/RSL/learner.rs` - WORKS
+- [x] Run transpiler on `src/protocol/RSL/executor.rs` - WORKS
 - [x] Compare generated code with `src/implementation/RSL/acceptorimpl.rs`
   - Manual implementation: 786 lines with inline proofs, loop invariants, optimized versions
   - Generated code: Basic structure with placeholder comments for map operations
   - Key gaps: Map iteration code not generated (templates produce comments), no inline proofs
+- [ ] Fix parser limitation for replica.rs and proposer.rs
 - [ ] Improve code generation for map filter patterns to produce actual loop code
-- [ ] Repeat for proposer, learner, executor, replica
 
 #### Phase 3: Iterate on Transpiler to Handle Full RSL
 - [ ] Identify unsupported patterns in RSL specs
