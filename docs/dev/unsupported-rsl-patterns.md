@@ -1,145 +1,109 @@
-# Unsupported RSL Patterns Analysis
+# RSL Patterns Analysis
 
 ## Overview
 
-This document identifies patterns in RSL specifications that the transpiler cannot currently handle, along with recommendations for addressing them.
+This document tracks patterns in RSL specifications and their transpiler support status.
 
-## Transpilation Results
+## Transpilation Results (Updated 2026-01-24)
 
-| File | Status | Blocking Issue |
-|------|--------|----------------|
-| acceptor.rs | Success (with TODOs) | None |
-| proposer.rs | **FAILED** | Exists quantifier |
-| learner.rs | Success (with TODOs) | None |
-| executor.rs | Success (with TODOs) | None |
-| replica.rs | **FAILED** | Forall pattern unsupported |
-| broadcast.rs | Success (with TODOs) | None |
+| File | Status | Notes |
+|------|--------|-------|
+| acceptor.rs | SUCCESS | All functions transpile |
+| proposer.rs | SUCCESS | Exists quantifier now supported |
+| learner.rs | SUCCESS | All functions transpile |
+| executor.rs | SUCCESS | All functions transpile |
+| replica.rs | SUCCESS | Collection check now supported |
+| broadcast.rs | SUCCESS | All functions transpile |
 
-## Critical Unsupported Patterns
+**All 6 RSL spec files now transpile successfully!**
 
-### 1. Exists Quantifier (HIGH PRIORITY)
+## Recently Resolved Patterns
 
-**Status:** Completely unsupported - all `exists` patterns are rejected
+### 1. Exists Quantifier ✅ RESOLVED (2026-01-24)
 
 **Pattern:**
 ```rust
 exists |p:RslPacket| S.contains(p) && pred(p)
 ```
 
-**Location:** `proposer.rs` (3+ occurrences)
+**Solution implemented:**
+- Pattern: `exists |x| container.contains(x) && pred(x)`
+- Generated code: `container.iter().any(|x| pred(x))`
+- Supports nested field access: `s.acceptor.last_checkpointed_operation.contains(opn)`
 
-**Example from LExistsAcceptorHasProposalLargeThanOpn:**
-```rust
-exists |p:RslPacket| S.contains(p) && LExistVotesHasProposalLargeThanOpn(p, op)
-```
-
-**Why it fails:** The transpiler explicitly rejects all exists quantifiers in `translator/mod.rs:800-807` because finding a witness is non-deterministic.
-
-**Potential solutions:**
-1. Add `choose!` macro transformation for simple exists patterns
-2. Generate iterator-based search: `set.iter().find(|p| pred(p)).is_some()`
-3. For specifications that return bool, transform to: `set.iter().any(|p| pred(p))`
-
-### 2. Forall with Collection Membership and Field Comparison (MEDIUM PRIORITY)
-
-**Status:** Template matching fails - pattern not recognized
+### 2. Forall Collection Check ✅ RESOLVED (2026-01-24)
 
 **Pattern:**
-```rust
-forall |var:Type| container.contains(var) ==> var.field != other_value
-```
-
-**Location:** `replica.rs:117`
-
-**Example from LReplicaNextProcess1b:**
 ```rust
 forall |other_packet:RslPacket|
     s.proposer.received_1b_packets.contains(other_packet)
     ==> other_packet.src != received_packet.src
 ```
 
-**Why it fails:** The forall template matcher expects patterns like:
-- `seq[i] == expr` (sequence construction)
-- `k in map <==> pred` (map domain)
-- `map[k] == expr` (map value)
+**Solution implemented:**
+- Added `CollectionCheck` template to checker/mod.rs
+- Pattern: `forall |x| container.contains(x) ==> pred(x)`
+- Generated code: `container.iter().all(|x| pred(x))`
 
-But this pattern has:
-- Collection membership in premise
-- Field comparison (not assignment) in conclusion
+## Supported Templates
 
-**Potential solutions:**
-1. Add template: `ForallCollectionCheck` that generates:
-   ```rust
-   container.iter().all(|var| var.field != other_value)
-   ```
-2. Recognize negation pattern and generate appropriate code
-
-## Currently Supported Templates
-
-The following forall patterns ARE supported (in `checker/mod.rs`):
+The following forall/exists patterns are supported:
 
 | Template | Pattern | Generated Code |
 |----------|---------|---------------|
+| **ExistsContainer** | `exists \|x\| container.contains(x) && pred(x)` | `.iter().any(\|x\| pred(x))` |
+| **CollectionCheck** | `forall \|x\| container.contains(x) ==> pred(x)` | `.iter().all(\|x\| pred(x))` |
 | SeqComprehension | `forall \|i\| 0 <= i < len ==> seq[i] == expr` | `(0..len).map(\|i\| expr).collect()` |
 | MapDomainBiconditional | `forall \|k\| output.contains_key(k) <==> pred` | `source.iter().filter(...).collect()` |
 | MapPreservation | `forall \|k\| output[k] == source[k]` | `source.clone()` |
 | MapConditionalValue | `forall \|k\| output[k] == if cond { v1 } else { v2 }` | `.map(...).collect()` |
 | MapFilter | `forall \|k\| output.contains_key(k) <==> source.contains_key(k) && pred` | `.filter(...).collect()` |
 | SetComprehension | `forall \|x\| x in set <==> pred` | `.filter(...).collect()` |
+| MapExclusion | `forall \|k\| pred ==> !output.contains_key(k)` | (constraint only) |
+| MapInclusion | `forall \|k\| pred ==> output.contains_key(k)` | (constraint only) |
 
-## Generated Code Quality Issues
+## Remaining Code Quality Issues
 
-Even successful transpilations produce code with issues:
+Generated code has some quality issues that don't block transpilation:
 
-### TODO Comments
+### Multiple Return Values
+Expressions are generated on separate lines instead of as tuples:
 ```rust
-// TODO: Map domain constraint - opn in output <==> ...
-// TODO: Value mapping - output[k] = ...
+// Generated
+s.clone()
+Cempty()
+
+// Should be
+(s.clone(), Cempty())
 ```
 
-These indicate incomplete semantic translation where:
-- Domain constraints are recognized but not fully generated
-- Value mappings are detected but not implemented
+### Helper Predicate Positioning
+Calls to helper predicates appear before struct construction instead of being integrated:
+```rust
+// Generated
+CProposerProcess1b(s.proposer, s_.proposer, received_packet)
+CReplica { ... }
+
+// Should use result of helper
+```
 
 ### Missing Variable Bindings
-Generated code sometimes references variables like `s_.votes` that are never defined in scope.
+Generated code sometimes references variables like `s_.votes` that need to be bound from helper predicate results.
 
 ## Recommendations
 
-### High Priority (Blocking)
-1. **Add exists quantifier support** - At minimum, transform simple exists to `.any()`
-2. **Add forall collection check template** - Handle `container.contains(x) ==> pred(x)`
+### High Priority (Code Quality)
+1. Fix tuple return generation for multiple output values
+2. Properly sequence helper predicate calls with result binding
+3. Ensure all output variables are properly scoped
 
-### Medium Priority (Code Quality)
-1. Fix TODO comments to generate actual code
-2. Ensure all output variables are properly bound
-
-### Low Priority (Optimization)
+### Medium Priority (Optimization)
 1. Reduce unnecessary `.clone()` calls
 2. Optimize iterator chains
+3. Use references where possible
 
-## Implementation Notes
+## Change History
 
-### For Exists Support
-The safest approach is to transform exists to iterator methods:
-```rust
-// Spec
-exists |p| set.contains(p) && pred(p)
-
-// Exec
-set.iter().any(|p| pred(p))
-```
-
-### For Forall Collection Check
-```rust
-// Spec
-forall |x| container.contains(x) ==> x.field != value
-
-// Exec
-container.iter().all(|x| x.field != value)
-```
-
-## Files Modified for This Analysis
-
-- Created: `docs/dev/unsupported-rsl-patterns.md` (this file)
-- Analysis date: 2026-01-24
+- **2026-01-24**: Added exists quantifier support (.any())
+- **2026-01-24**: Added forall collection check template (.all())
+- **2026-01-24**: All 6 RSL spec files now transpile
