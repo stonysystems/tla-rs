@@ -538,7 +538,33 @@ impl Translator {
             }
 
             Expr::Conjunction(exprs) => {
-                // First, process any helper calls in the conjunction
+                // First, check if this is a map filter conjunction pattern
+                // (multiple foralls that together define filtering a map)
+                if let Some((source_map, _output_map, key_var, filter_pred)) =
+                    self.try_extract_map_filter_conjunction(exprs, ctx)
+                {
+                    // Generate: source.iter().filter(|(k, _)| predicate).collect()
+                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+
+                    return Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var(source_map)),
+                                method: "iter".to_string(),
+                                args: vec![],
+                            }),
+                            method: "filter".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![format!("({}, _)", key_var)],
+                                body: Box::new(filter_expr),
+                            }],
+                        }),
+                        method: "collect".to_string(),
+                        args: vec![],
+                    });
+                }
+
+                // Next, process any helper calls in the conjunction
                 // This generates let bindings, field substitutions, and tracks bound outputs
                 let (let_bindings, remaining_exprs, substitutions, bound_outputs) =
                     self.process_helper_calls_in_conjunction(exprs, ctx);
@@ -1535,6 +1561,146 @@ impl Translator {
         }
 
         None
+    }
+
+    /// Try to recognize a conjunction of foralls as a map filter pattern
+    /// Pattern: conjunction of 3 foralls that together define filtering a map
+    /// 1. Preservation: forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]
+    /// 2. Exclusion: forall |k| k < threshold ==> !output.contains_key(k)
+    /// 3. Inclusion: forall |k| k >= threshold && source.contains_key(k) ==> output.contains_key(k)
+    /// Returns: (source_map, output_map, key_var, filter_predicate) if pattern matches
+    fn try_extract_map_filter_conjunction(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> Option<(String, String, String, Expr)> {
+        use crate::ast::Expr;
+
+        // We need at least 2-3 forall expressions
+        let foralls: Vec<_> = exprs
+            .iter()
+            .filter_map(|e| {
+                if let Expr::Forall { vars, body, .. } = e {
+                    if vars.len() == 1 {
+                        Some((vars[0].name_string(), body.as_ref()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if foralls.len() < 2 {
+            return None;
+        }
+
+        // Check all foralls use the same variable
+        let key_var = &foralls[0].0;
+        if !foralls.iter().all(|(v, _)| v == key_var) {
+            return None;
+        }
+
+        let mut source_map: Option<String> = None;
+        let mut output_map: Option<String> = None;
+        let mut filter_predicate: Option<Expr> = None;
+
+        for (_, body) in &foralls {
+            // Pattern 1: Preservation - output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]
+            if let Expr::Implies(premise, conclusion) = body {
+                // Check for output.contains_key(k) in premise
+                if let Some(map_name) = self.extract_contains_key_source(premise, key_var) {
+                    if ctx.is_output(&map_name) {
+                        output_map = Some(map_name.clone());
+                        // Try to find source in conclusion
+                        if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = conclusion.as_ref()
+                        {
+                            if let Some(src) = self.extract_contains_key_source(lhs, key_var) {
+                                if !ctx.is_output(&src) {
+                                    source_map = Some(src);
+                                }
+                            }
+                            if let Some(src) = self.extract_contains_key_source(rhs, key_var) {
+                                if !ctx.is_output(&src) {
+                                    source_map = Some(src);
+                                }
+                            }
+                        }
+                        if let Expr::Conjunction(parts) = conclusion.as_ref() {
+                            for part in parts {
+                                if let Some(src) = self.extract_contains_key_source(part, key_var) {
+                                    if !ctx.is_output(&src) {
+                                        source_map = Some(src);
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                }
+
+                // Pattern 2: Exclusion - k < threshold ==> !output.contains_key(k)
+                // Check if conclusion is negation of contains_key on output
+                if let Expr::Not(inner) = conclusion.as_ref() {
+                    if let Some(map_name) = self.extract_contains_key_source(inner, key_var) {
+                        if ctx.is_output(&map_name) {
+                            output_map = Some(map_name.clone());
+                            // The premise is the exclusion condition, we want the opposite for filter
+                            // If k < threshold excludes, then k >= threshold includes
+                            match premise.as_ref() {
+                                // k < threshold, so filter is k >= threshold
+                                Expr::Lt(lhs, rhs) if Self::is_var_expr(lhs, key_var) => {
+                                    filter_predicate = Some(Expr::Ge(lhs.clone(), rhs.clone()));
+                                }
+                                // k <= threshold, so filter is k > threshold
+                                Expr::Le(lhs, rhs) if Self::is_var_expr(lhs, key_var) => {
+                                    filter_predicate = Some(Expr::Gt(lhs.clone(), rhs.clone()));
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+                    }
+                }
+
+                // Pattern 3: Inclusion - k >= threshold && source.contains_key(k) ==> output.contains_key(k)
+                if let Some(map_name) = self.extract_contains_key_source(conclusion, key_var) {
+                    if ctx.is_output(&map_name) {
+                        output_map = Some(map_name.clone());
+                        // The premise contains the filter predicate and source membership
+                        if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = premise.as_ref() {
+                            if let Some(src) = self.extract_contains_key_source(lhs, key_var) {
+                                if !ctx.is_output(&src) {
+                                    source_map = Some(src);
+                                    // The other part is the filter
+                                    filter_predicate = Some((**rhs).clone());
+                                }
+                            }
+                            if let Some(src) = self.extract_contains_key_source(rhs, key_var) {
+                                if !ctx.is_output(&src) {
+                                    source_map = Some(src);
+                                    // The other part is the filter
+                                    filter_predicate = Some((**lhs).clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If we found all components, return them
+        if let (Some(src), Some(out), Some(filter)) = (source_map, output_map, filter_predicate) {
+            Some((src, out, key_var.clone(), filter))
+        } else {
+            None
+        }
+    }
+
+    /// Check if an expression is a variable with the given name
+    fn is_var_expr(expr: &Expr, var_name: &str) -> bool {
+        matches!(expr, Expr::Ident(name) if name == var_name)
     }
 
     /// Extract container and predicate from exists body
@@ -2803,6 +2969,131 @@ mod tests {
                 }
             }
             other => panic!("Expected Block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_filter_conjunction() {
+        // Test pattern from RemoveVotesBeforeLogTruncationPoint:
+        // &&& forall |opn| votes_.contains_key(opn) ==> votes.contains_key(opn) && votes_[opn] == votes[opn]
+        // &&& forall |opn| opn < log_truncation_point ==> !votes_.contains_key(opn)
+        // &&& forall |opn| opn >= log_truncation_point && votes.contains_key(opn) ==> votes_.contains_key(opn)
+
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["votes_".to_string()],
+            input_params: vec!["votes".to_string(), "log_truncation_point".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Build the three foralls
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("opn".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+
+        // Forall 1: votes_.contains_key(opn) ==> votes.contains_key(opn) && votes_[opn] == votes[opn]
+        let forall1 = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("votes_".to_string())),
+                    method: "contains_key".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes".to_string())),
+                        method: "contains_key".to_string(),
+                        args: vec![Expr::Ident("opn".to_string())],
+                    }),
+                    crate::ast::BinOp::And,
+                    Box::new(Expr::Eq(
+                        Box::new(Expr::Index(
+                            Box::new(Expr::Ident("votes_".to_string())),
+                            Box::new(Expr::Ident("opn".to_string())),
+                        )),
+                        Box::new(Expr::Index(
+                            Box::new(Expr::Ident("votes".to_string())),
+                            Box::new(Expr::Ident("opn".to_string())),
+                        )),
+                    )),
+                )),
+            )),
+        };
+
+        // Forall 2: opn < log_truncation_point ==> !votes_.contains_key(opn)
+        let forall2 = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Lt(
+                    Box::new(Expr::Ident("opn".to_string())),
+                    Box::new(Expr::Ident("log_truncation_point".to_string())),
+                )),
+                Box::new(Expr::Not(Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("votes_".to_string())),
+                    method: "contains_key".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }))),
+            )),
+        };
+
+        // Forall 3: opn >= log_truncation_point && votes.contains_key(opn) ==> votes_.contains_key(opn)
+        let forall3 = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ge(
+                        Box::new(Expr::Ident("opn".to_string())),
+                        Box::new(Expr::Ident("log_truncation_point".to_string())),
+                    )),
+                    crate::ast::BinOp::And,
+                    Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes".to_string())),
+                        method: "contains_key".to_string(),
+                        args: vec![Expr::Ident("opn".to_string())],
+                    }),
+                )),
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("votes_".to_string())),
+                    method: "contains_key".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+            )),
+        };
+
+        let conjunction = Expr::Conjunction(vec![forall1, forall2, forall3]);
+
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(result.is_ok(), "Should transform map filter conjunction: {:?}", result);
+
+        // Should generate: votes.iter().filter(|(opn, _)| opn >= log_truncation_point).collect()
+        match result.unwrap() {
+            ExecExpr::MethodCall { method, receiver, .. } => {
+                assert_eq!(method, "collect", "Should end with .collect()");
+                match receiver.as_ref() {
+                    ExecExpr::MethodCall { method, args, .. } => {
+                        assert_eq!(method, "filter", "Should have .filter()");
+                        assert_eq!(args.len(), 1, "Filter should have closure arg");
+                        match &args[0] {
+                            ExecExpr::Closure { params, .. } => {
+                                assert!(params[0].contains("opn"), "Closure param should contain opn");
+                            }
+                            _ => panic!("Expected Closure"),
+                        }
+                    }
+                    _ => panic!("Expected MethodCall for filter"),
+                }
+            }
+            other => panic!("Expected MethodCall with collect, got {:?}", other),
         }
     }
 }

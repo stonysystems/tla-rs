@@ -1024,6 +1024,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Handled by multi-output helper call support above
       - Patterns like `helper_call + struct construction` now properly return tuples
 - [ ] Handle RSL type system (nested types, generic collections)
+  - [x] Basic type translation (Map→HashMap, Set→HashSet, Seq→Vec) - already supported
+  - [x] Nested struct access chains (s.constants.all.config) - already supported
+  - [x] Type aliases (Votes, ReplyCache, etc.) - transparent, no special handling needed
+  - [x] Map filter operations (removing entries based on predicates) [26:01:24, 17:30]
+    - Pattern: conjunction of 3 foralls (preservation + exclusion + inclusion)
+    - Example: RemoveVotesBeforeLogTruncationPoint with opn >= threshold filter
+    - Target code: votes.iter().filter(|(k,_)| *k >= threshold).collect()
+    - Added try_extract_map_filter_conjunction() to recognize the pattern
+    - Generates proper .iter().filter().collect() code
+  - [ ] Map update/insert operations with proper cloning
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
 - [ ] Handle `recommends` clauses properly
 - [x] Support arrow operator for enum variant field access (`msg->bal_1a`) - already supported
