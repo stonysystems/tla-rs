@@ -6,7 +6,7 @@
 use crate::ast::{Expr, ParameterMode, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Configuration for code generation
 #[derive(Debug, Clone)]
@@ -202,6 +202,9 @@ pub struct HelperCallInfo {
     /// e.g., for LProposerProcessRequest(s.proposer, s_.proposer, ...),
     /// this would be [("s_", "proposer")]
     pub output_fields: Vec<(String, String)>,
+    /// Direct output parameters (not fields of a struct)
+    /// e.g., for LAcceptorProcess1a(..., sent_packets), this would be ["sent_packets"]
+    pub output_params: Vec<String>,
 }
 
 impl<'a> TransformContext<'a> {
@@ -536,8 +539,8 @@ impl Translator {
 
             Expr::Conjunction(exprs) => {
                 // First, process any helper calls in the conjunction
-                // This generates let bindings and collects field substitutions
-                let (let_bindings, remaining_exprs, substitutions) =
+                // This generates let bindings, field substitutions, and tracks bound outputs
+                let (let_bindings, remaining_exprs, substitutions, bound_outputs) =
                     self.process_helper_calls_in_conjunction(exprs, ctx);
 
                 // Create updated context with field substitutions if any helper calls were found
@@ -567,6 +570,26 @@ impl Translator {
                 {
                     // If we have let bindings, wrap them in a block with the struct
                     if !let_bindings.is_empty() {
+                        // If there are bound outputs (like sent_packets from helper calls),
+                        // we need to return a tuple with the struct and those outputs
+                        if !bound_outputs.is_empty() {
+                            // Collect outputs: first the struct, then any helper-bound outputs
+                            let mut outputs = vec![struct_expr];
+                            for bound_output in &bound_outputs {
+                                // Direct output params like sent_packets
+                                if ctx.is_output(bound_output) {
+                                    outputs.push(ExecExpr::Var(bound_output.clone()));
+                                }
+                            }
+
+                            let mut block = let_bindings;
+                            if outputs.len() > 1 {
+                                block.push(ExecExpr::Tuple(outputs));
+                            } else {
+                                block.push(outputs.pop().unwrap());
+                            }
+                            return Ok(ExecExpr::Block(block));
+                        }
                         let mut block = let_bindings;
                         block.push(struct_expr);
                         return Ok(ExecExpr::Block(block));
@@ -575,8 +598,21 @@ impl Translator {
                 }
 
                 // Check if we have multiple output assignments that should be wrapped as a tuple
-                let (output_exprs, other_exprs) =
-                    self.categorize_output_assignments(exprs_to_process, &updated_ctx)?;
+                // Exclude outputs that were already bound by helper calls
+                let (mut output_exprs, other_exprs) = self.categorize_output_assignments_with_exclusions(
+                    exprs_to_process,
+                    &updated_ctx,
+                    &bound_outputs,
+                )?;
+
+                // Add bound direct output params (like sent_packets) to output_exprs
+                // These were bound by helper calls and need to be included in the return tuple
+                for bound_output in &bound_outputs {
+                    // Only include direct output params, not substitution variable names
+                    if ctx.is_output(bound_output) {
+                        output_exprs.push((bound_output.clone(), ExecExpr::Var(bound_output.clone())));
+                    }
+                }
 
                 if output_exprs.len() > 1 {
                     // Multiple outputs should be returned as a tuple
@@ -1009,6 +1045,18 @@ impl Translator {
         exprs: &[Expr],
         ctx: &TransformContext,
     ) -> TranspileResult<(Vec<(String, ExecExpr)>, Vec<ExecExpr>)> {
+        self.categorize_output_assignments_with_exclusions(exprs, ctx, &HashSet::new())
+    }
+
+    /// Categorize expressions in a conjunction into output assignments and other expressions
+    /// Excludes outputs that have already been bound (e.g., by helper calls)
+    /// Returns: (Vec of output expressions with their param name, Vec of other expressions)
+    fn categorize_output_assignments_with_exclusions(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+        exclude_outputs: &HashSet<String>,
+    ) -> TranspileResult<(Vec<(String, ExecExpr)>, Vec<ExecExpr>)> {
         let mut output_exprs: Vec<(String, ExecExpr)> = Vec::new();
         let mut other_exprs: Vec<ExecExpr> = Vec::new();
 
@@ -1016,7 +1064,7 @@ impl Translator {
             if let Expr::Eq(lhs, rhs) = expr {
                 // Check if LHS is an output parameter: s_ == expr or sent_packets == expr
                 if let Expr::Ident(name) = lhs.as_ref() {
-                    if ctx.is_output(name) {
+                    if ctx.is_output(name) && !exclude_outputs.contains(name) {
                         let transformed = self.transform_expr(rhs, ctx)?;
                         output_exprs.push((name.clone(), transformed));
                         continue;
@@ -1047,7 +1095,7 @@ impl Translator {
     }
 
     /// Detect helper predicate calls with output parameters
-    /// A helper call has output parameters if any argument is `output_var.field`
+    /// A helper call has output parameters if any argument is `output_var.field` or a direct output var
     fn detect_helper_call(
         &self,
         expr: &Expr,
@@ -1057,30 +1105,40 @@ impl Translator {
             let func_name = func.last()?.to_string();
             let mut input_args = Vec::new();
             let mut output_fields = Vec::new();
+            let mut output_params = Vec::new();
 
             for arg in args {
-                // Check if argument is output_var.field
+                // Check if argument is output_var.field (e.g., s_.proposer)
                 if let Expr::Field(base, field) = arg {
                     if let Expr::Ident(var_name) = base.as_ref() {
                         if ctx.is_output(var_name) {
-                            // This is an output argument
+                            // This is an output field argument
                             output_fields.push((var_name.clone(), field.clone()));
                             continue;
                         }
                     }
                 }
-                // Not an output field, it's an input
+                // Check if argument is a direct output parameter (e.g., sent_packets)
+                if let Expr::Ident(var_name) = arg {
+                    if ctx.is_output(var_name) {
+                        // This is a direct output parameter
+                        output_params.push(var_name.clone());
+                        continue;
+                    }
+                }
+                // Not an output, it's an input
                 // Transform it and add to inputs
                 if let Ok(transformed) = self.transform_expr(arg, ctx) {
                     input_args.push(transformed);
                 }
             }
 
-            if !output_fields.is_empty() {
+            if !output_fields.is_empty() || !output_params.is_empty() {
                 return Some(HelperCallInfo {
                     func_name,
                     input_args,
                     output_fields,
+                    output_params,
                 });
             }
         }
@@ -1088,27 +1146,28 @@ impl Translator {
     }
 
     /// Generate a let binding for a helper call with output parameters
-    /// For example: LProposerProcessRequest(s.proposer, s_.proposer, packet)
-    /// Generates: let s_proposer = CProposerProcessRequest(&s.proposer, &packet);
+    /// Examples:
+    /// - LProposerProcessRequest(s.proposer, s_.proposer, packet)
+    ///   Generates: let s_proposer = CProposerProcessRequest(&s.proposer, &packet);
+    /// - LAcceptorProcess1a(s.acceptor, s_.acceptor, packet, sent_packets)
+    ///   Generates: let (s_acceptor, sent_packets) = CAcceptorProcess1a(&s.acceptor, &packet);
     fn generate_helper_let_binding(&self, info: &HelperCallInfo) -> ExecExpr {
-        // Generate the variable name by combining output var and field
-        // e.g., ("s_", "proposer") -> "s_proposer"
-        let var_name = if info.output_fields.len() == 1 {
-            let (var, field) = &info.output_fields[0];
-            format!("{}_{}", var.trim_end_matches('_'), field)
-        } else {
-            // Multiple outputs - generate a tuple pattern
-            info.output_fields
-                .iter()
-                .map(|(var, field)| format!("{}_{}", var.trim_end_matches('_'), field))
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
+        // Collect all output variable names
+        let mut output_names: Vec<String> = Vec::new();
 
-        let pattern = if info.output_fields.len() > 1 {
-            format!("({})", var_name)
+        // Add field outputs: (output_var, field) -> "var_field"
+        for (var, field) in &info.output_fields {
+            output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+        }
+
+        // Add direct output params
+        output_names.extend(info.output_params.clone());
+
+        // Generate the pattern
+        let pattern = if output_names.len() == 1 {
+            output_names[0].clone()
         } else {
-            var_name
+            format!("({})", output_names.join(", "))
         };
 
         // Build the function call
@@ -1136,15 +1195,17 @@ impl Translator {
     }
 
     /// Process helper calls in a conjunction, generating let bindings and collecting substitutions
-    /// Returns: (let_bindings, remaining_exprs, combined_substitutions)
+    /// Returns: (let_bindings, remaining_exprs, combined_substitutions, bound_outputs)
+    /// bound_outputs tracks which direct output params (like sent_packets) were bound by helper calls
     fn process_helper_calls_in_conjunction(
         &self,
         exprs: &[Expr],
         ctx: &TransformContext,
-    ) -> (Vec<ExecExpr>, Vec<Expr>, HashMap<(String, String), String>) {
+    ) -> (Vec<ExecExpr>, Vec<Expr>, HashMap<(String, String), String>, HashSet<String>) {
         let mut let_bindings = Vec::new();
         let mut remaining_exprs = Vec::new();
         let mut combined_substitutions = HashMap::new();
+        let mut bound_outputs: HashSet<String> = HashSet::new();
 
         for expr in exprs {
             if let Some(info) = self.detect_helper_call(expr, ctx) {
@@ -1152,16 +1213,26 @@ impl Translator {
                 let let_binding = self.generate_helper_let_binding(&info);
                 let_bindings.push(let_binding);
 
-                // Add substitutions from this helper call
+                // Add substitutions from this helper call (for field accesses)
                 let subs = Self::get_helper_substitutions(&info);
                 combined_substitutions.extend(subs);
+
+                // Track which direct outputs were bound
+                bound_outputs.extend(info.output_params.clone());
+
+                // Also track field-based outputs that map to substitutions
+                for (var, field) in &info.output_fields {
+                    let sub_name = format!("{}_{}", var.trim_end_matches('_'), field);
+                    // Mark that this field has been handled
+                    bound_outputs.insert(sub_name);
+                }
             } else {
                 // Not a helper call, keep for later processing
                 remaining_exprs.push(expr.clone());
             }
         }
 
-        (let_bindings, remaining_exprs, combined_substitutions)
+        (let_bindings, remaining_exprs, combined_substitutions, bound_outputs)
     }
 
     /// Create a new context with additional field substitutions
@@ -2496,6 +2567,7 @@ mod tests {
                 ExecExpr::Var("received_packet".to_string()),
             ],
             output_fields: vec![("s_".to_string(), "proposer".to_string())],
+            output_params: vec![],
         };
 
         let let_binding = translator.generate_helper_let_binding(&info);
@@ -2646,6 +2718,98 @@ mod tests {
                         assert_eq!(pattern, "s_acceptor", "Second let should bind s_acceptor");
                     }
                     other => panic!("Expected Let for second statement, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_helper_call_with_both_field_and_param_outputs() {
+        // Test pattern from LReplicaNextProcess1a:
+        // &&& LAcceptorProcess1a(s.acceptor, s_.acceptor, received_packet, sent_packets)
+        // &&& s_ == LReplica { ..., acceptor: s_.acceptor, ... }
+        // Here the helper call outputs both s_.acceptor AND sent_packets
+
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string(), "sent_packets".to_string()],
+            input_params: vec!["s".to_string(), "received_packet".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Build the conjunction
+        let conjunction = Expr::Conjunction(vec![
+            // LAcceptorProcess1a(s.acceptor, s_.acceptor, received_packet, sent_packets)
+            Expr::Call {
+                func: crate::ast::Path::single("LAcceptorProcess1a".to_string()),
+                args: vec![
+                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "acceptor".to_string()),
+                    Expr::Field(Box::new(Expr::Ident("s_".to_string())), "acceptor".to_string()),
+                    Expr::Ident("received_packet".to_string()),
+                    Expr::Ident("sent_packets".to_string()),
+                ],
+            },
+            // s_ == LReplica { acceptor: s_.acceptor, ... }
+            Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Struct {
+                    name: crate::ast::Path::single("LReplica".to_string()),
+                    fields: vec![
+                        ("constants".to_string(), Expr::Field(
+                            Box::new(Expr::Ident("s".to_string())),
+                            "constants".to_string(),
+                        )),
+                        ("acceptor".to_string(), Expr::Field(
+                            Box::new(Expr::Ident("s_".to_string())),
+                            "acceptor".to_string(),
+                        )),
+                    ],
+                }),
+            ),
+        ]);
+
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(result.is_ok(), "Should transform conjunction: {:?}", result);
+
+        // The result should be a Block with:
+        // 1. let (s_acceptor, sent_packets) = CAcceptorProcess1a(...)
+        // 2. (CReplica { ..., acceptor: s_acceptor }, sent_packets)
+        match result.unwrap() {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 2, "Should have 2 statements: let binding and tuple return");
+
+                // Check let binding has tuple pattern
+                match &stmts[0] {
+                    ExecExpr::Let { pattern, .. } => {
+                        assert!(pattern.contains("s_acceptor"), "Pattern should contain s_acceptor: {}", pattern);
+                        assert!(pattern.contains("sent_packets"), "Pattern should contain sent_packets: {}", pattern);
+                    }
+                    other => panic!("Expected Let for first statement, got {:?}", other),
+                }
+
+                // Check return is a tuple with struct and sent_packets
+                match &stmts[1] {
+                    ExecExpr::Tuple(elements) => {
+                        assert_eq!(elements.len(), 2, "Tuple should have 2 elements");
+                        // First element should be struct
+                        match &elements[0] {
+                            ExecExpr::Struct { .. } => {}
+                            other => panic!("Expected Struct as first tuple element, got {:?}", other),
+                        }
+                        // Second element should be sent_packets variable
+                        match &elements[1] {
+                            ExecExpr::Var(name) => {
+                                assert_eq!(name, "sent_packets", "Second element should be sent_packets");
+                            }
+                            other => panic!("Expected Var(sent_packets) as second tuple element, got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected Tuple as second statement, got {:?}", other),
                 }
             }
             other => panic!("Expected Block, got {:?}", other),

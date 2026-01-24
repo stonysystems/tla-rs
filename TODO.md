@@ -998,7 +998,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Added `sort_outputs_by_param_order()` to maintain consistent tuple order
     - Multiple outputs now wrapped in `ExecExpr::Tuple` instead of `ExecExpr::Block`
     - Plan: docs/dev/tuple-return-generation-plan.md
-  - [ ] Fix helper predicate output handling (complex - needs breakdown)
+  - [x] Fix helper predicate output handling [26:01:24, 16:00]
     - [x] Detect helper predicate calls with output parameters [26:01:24, 15:00]
       - Added `HelperCallInfo` struct to capture function name, input args, and output fields
       - Added `detect_helper_call()` function to identify calls with `s_.field` patterns
@@ -1007,8 +1007,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added `generate_helper_let_binding()` function
       - Generates: `let s_proposer = CProposerProcessRequest(...);`
       - Added `get_helper_substitutions()` for variable mapping
-    - [ ] Rewrite field references from `s_.field` to captured variable `s_field`
-    - [ ] Handle multiple helper calls in sequence (combine their outputs)
+    - [x] Rewrite field references from `s_.field` to captured variable `s_field` [26:01:24, 15:30]
+      - Added `field_substitutions` map to `TransformContext`
+      - Added `get_field_substitution()` method to check for substitutions
+      - Modified `Expr::Field` transformation to apply substitutions
+    - [x] Handle multiple helper calls in sequence (combine their outputs) [26:01:24, 16:00]
+      - Added `process_helper_calls_in_conjunction()` to process all helper calls in a conjunction
+      - Added `with_field_substitutions()` to create contexts with combined substitutions
+      - Modified conjunction handler to integrate helper call processing
   - [ ] Handle sequence of expressions returning single tuple result
 - [ ] Handle RSL type system (nested types, generic collections)
 - [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
