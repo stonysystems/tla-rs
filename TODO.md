@@ -1179,8 +1179,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added module to mod.rs with #[cfg(test)]
       - Verifies with Verus: 456 verified, 0 errors
   - **MILESTONE**: Transpiler can generate verifiable RSL acceptor code
-  - **Remaining for full replacement**:
+  - **Remaining for full replacement** (future work, significant complexity):
     - [ ] Add struct definitions (CAcceptor) with View trait to generated code
+      - Requires: TypeParser to handle verus! block syntax
+      - Requires: View trait generation with abstractable/valid/view functions
     - [ ] Add wrapper methods that convert functional style to &mut self pattern
     - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.)
     - [ ] Add min_vote_opn optimization helper
