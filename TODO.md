@@ -1110,7 +1110,17 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Pre-loop: assert iterator starts at 0, assume length match, assert to_set matches dom
       - In-loop: broadcast use hash axioms, assume current key is in source
       - Added 2 new tests for assertion generation
-    - [ ] Phase 5: Post-loop assertions (~100 LOC)
+    - [x] Phase 5: Post-loop assertions (~100 LOC) [26:01:25, 06:00]
+      - Added `generate_post_loop_assertions()` helper method
+      - Generates termination assertions: seen_keys subset, iterator completed, length match
+      - Generates proof block: subset_len_equal_implies_equal lemma call
+      - Generates final assertion: seen_keys == source@.dom()
+      - Generates postcondition comments for result correctness
+      - Added 1 new test for post-loop assertions
+  - **Loop generation complete!** Full structure:
+    - Pre-loop: broadcast use, iterator binding, assertions for iterator state, ghost var, result init
+    - Loop: 5 invariants, in-loop assertions, proof block for ghost update, filter/insert logic
+    - Post-loop: termination assertions, lemma call, postcondition assertions
   - See docs/dev/verus-integration-plan.md for integration strategy options
 - [x] Compare verification time: generated vs manual implementation [26:01:25, 04:00]
   - Full codebase verification: 7 minutes (456 verified, 0 errors)

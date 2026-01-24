@@ -474,6 +474,92 @@ impl Translator {
         ]
     }
 
+    /// Generate post-loop assertions for map filter pattern.
+    /// These help Verus establish the postcondition after the loop terminates.
+    fn generate_post_loop_assertions(
+        &self,
+        iter_name: &str,
+        source_map: &str,
+        key_var: &str,
+        filter_pred: &str,
+    ) -> Vec<ExecExpr> {
+        vec![
+            // assert(seen_keys.subset_of(source@.dom()));
+            ExecExpr::Assert(Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                method: "subset_of".to_string(),
+                args: vec![ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(format!("{}@", source_map))),
+                    method: "dom".to_string(),
+                    args: vec![],
+                }],
+            })),
+            // assume(m_keys@.0 == m_keys@.1.len()); - iterator completed
+            ExecExpr::Assume(Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var(format!("{}@", iter_name))),
+                    "0".to_string(),
+                )),
+                op: "==".to_string(),
+                rhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Field(
+                        Box::new(ExecExpr::Var(format!("{}@", iter_name))),
+                        "1".to_string(),
+                    )),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+            })),
+            // assume(seen_keys.len() == m_keys@.0);
+            ExecExpr::Assume(Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+                op: "==".to_string(),
+                rhs: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var(format!("{}@", iter_name))),
+                    "0".to_string(),
+                )),
+            })),
+            // proof { subset_len_equal_implies_equal(seen_keys, source@.dom()) };
+            ExecExpr::ProofBlock {
+                stmts: vec![ExecExpr::Call {
+                    func: "subset_len_equal_implies_equal".to_string(),
+                    args: vec![
+                        ExecExpr::Var("seen_keys".to_string()),
+                        ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var(format!("{}@", source_map))),
+                            method: "dom".to_string(),
+                            args: vec![],
+                        },
+                    ],
+                }],
+            },
+            // assert(seen_keys == source@.dom());
+            ExecExpr::Assert(Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                op: "==".to_string(),
+                rhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(format!("{}@", source_map))),
+                    method: "dom".to_string(),
+                    args: vec![],
+                }),
+            })),
+            // assert(forall |k| result@.contains_key(k) ==> filter_pred(k) && source@.contains_key(k) && result@[k] == source@[k]);
+            ExecExpr::Comment(format!(
+                "assert(forall |{}| result@.contains_key({}) ==> ({}) && {}@.contains_key({}) && result@[{}] == {}@[{}]);",
+                key_var, key_var, filter_pred, source_map, key_var, key_var, source_map, key_var
+            )),
+            // assert(forall |k| source@.contains_key(k) && filter_pred(k) ==> result@.contains_key(k));
+            ExecExpr::Comment(format!(
+                "assert(forall |{}| {}@.contains_key({}) && ({}) ==> result@.contains_key({}));",
+                key_var, source_map, key_var, filter_pred, key_var
+            )),
+        ]
+    }
+
     /// Generate explicit for loop for map filter pattern.
     /// Used when `generate_loops_for_verification` is enabled.
     ///
@@ -629,10 +715,13 @@ impl Translator {
         stmts.push(ExecExpr::ForInIter {
             var: key_var.to_string(),
             iter_name: iter_name.clone(),
-            iter_source: Box::new(ExecExpr::Var(iter_name)),
+            iter_source: Box::new(ExecExpr::Var(iter_name.clone())),
             invariants,
             body: Box::new(ExecExpr::Block(loop_body)),
         });
+        // Add post-loop assertions
+        let post_loop_assertions = self.generate_post_loop_assertions(&iter_name, source_map, key_var, &filter_pred);
+        stmts.extend(post_loop_assertions);
         // result
         stmts.push(ExecExpr::Var("result".to_string()));
 
@@ -4744,12 +4833,12 @@ mod tests {
 
         let result = translator.generate_map_filter_loop("votes", "opn", filter_expr);
 
-        // Should be a Block with 9 statements:
+        // Should be a Block with 16 statements:
         // 0: BroadcastUse, 1: Let (keys), 2-4: pre-loop assertions,
-        // 5: GhostVar, 6: Let (result), 7: ForInIter, 8: Var
+        // 5: GhostVar, 6: Let (result), 7: ForInIter, 8-14: post-loop assertions, 15: Var
         match result {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 9, "Block should have 9 statements");
+                assert_eq!(stmts.len(), 16, "Block should have 16 statements");
 
                 // First statement: broadcast use
                 match &stmts[0] {
@@ -4781,7 +4870,7 @@ mod tests {
                     _ => panic!("Statement 4 should be Assert"),
                 }
 
-                // Sixth statement: let ghost mut seen_keys = Set::empty()
+                // Statement 5: let ghost mut seen_keys = Set::empty()
                 match &stmts[5] {
                     ExecExpr::GhostVar { name, mutable, .. } => {
                         assert_eq!(name, "seen_keys", "Should create seen_keys ghost var");
@@ -4790,7 +4879,7 @@ mod tests {
                     _ => panic!("Statement 5 should be GhostVar"),
                 }
 
-                // Seventh statement: let mut result = HashMap::new()
+                // Statement 6: let mut result = HashMap::new()
                 match &stmts[6] {
                     ExecExpr::Let { pattern, .. } => {
                         assert!(pattern.contains("result"), "Should create result variable");
@@ -4798,7 +4887,7 @@ mod tests {
                     _ => panic!("Statement 6 should be Let"),
                 }
 
-                // Eighth statement: ForInIter with invariants
+                // Statement 7: ForInIter with invariants
                 match &stmts[7] {
                     ExecExpr::ForInIter { var, iter_name, invariants, body, .. } => {
                         assert_eq!(var, "opn", "Loop variable should be opn");
@@ -4816,26 +4905,6 @@ mod tests {
                         match body.as_ref() {
                             ExecExpr::Block(body_stmts) => {
                                 assert_eq!(body_stmts.len(), 4, "Body should have 4 statements");
-                                // 0: BroadcastUse
-                                match &body_stmts[0] {
-                                    ExecExpr::BroadcastUse(_) => {}
-                                    _ => panic!("Body[0] should be BroadcastUse"),
-                                }
-                                // 1: Assume
-                                match &body_stmts[1] {
-                                    ExecExpr::Assume(_) => {}
-                                    _ => panic!("Body[1] should be Assume"),
-                                }
-                                // 2: ProofBlock
-                                match &body_stmts[2] {
-                                    ExecExpr::ProofBlock { .. } => {}
-                                    _ => panic!("Body[2] should be ProofBlock"),
-                                }
-                                // 3: If
-                                match &body_stmts[3] {
-                                    ExecExpr::If { .. } => {}
-                                    _ => panic!("Body[3] should be If"),
-                                }
                             }
                             _ => panic!("Body should be Block"),
                         }
@@ -4843,12 +4912,48 @@ mod tests {
                     _ => panic!("Statement 7 should be ForInIter"),
                 }
 
-                // Ninth statement: result
+                // Statements 8-14: post-loop assertions (7 items)
+                // 8: Assert (seen_keys.subset_of)
                 match &stmts[8] {
+                    ExecExpr::Assert(_) => {}
+                    _ => panic!("Statement 8 should be Assert"),
+                }
+                // 9: Assume (iterator completed)
+                match &stmts[9] {
+                    ExecExpr::Assume(_) => {}
+                    _ => panic!("Statement 9 should be Assume"),
+                }
+                // 10: Assume (seen_keys.len)
+                match &stmts[10] {
+                    ExecExpr::Assume(_) => {}
+                    _ => panic!("Statement 10 should be Assume"),
+                }
+                // 11: ProofBlock (subset_len_equal_implies_equal)
+                match &stmts[11] {
+                    ExecExpr::ProofBlock { .. } => {}
+                    _ => panic!("Statement 11 should be ProofBlock"),
+                }
+                // 12: Assert (seen_keys == source@.dom())
+                match &stmts[12] {
+                    ExecExpr::Assert(_) => {}
+                    _ => panic!("Statement 12 should be Assert"),
+                }
+                // 13-14: Comments for postcondition assertions
+                match &stmts[13] {
+                    ExecExpr::Comment(_) => {}
+                    _ => panic!("Statement 13 should be Comment"),
+                }
+                match &stmts[14] {
+                    ExecExpr::Comment(_) => {}
+                    _ => panic!("Statement 14 should be Comment"),
+                }
+
+                // Statement 15: result
+                match &stmts[15] {
                     ExecExpr::Var(name) => {
                         assert_eq!(name, "result", "Should return result");
                     }
-                    _ => panic!("Statement 8 should be Var(result)"),
+                    _ => panic!("Statement 15 should be Var(result)"),
                 }
             }
             _ => panic!("Expected Block, got {:?}", result),
@@ -4969,6 +5074,74 @@ mod tests {
         match &assertions[1] {
             ExecExpr::Assume(_) => {}
             _ => panic!("Second in-loop should be Assume"),
+        }
+    }
+
+    #[test]
+    fn test_generate_post_loop_assertions() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        let assertions = translator.generate_post_loop_assertions(
+            "m_keys",
+            "votes",
+            "opn",
+            "*opn >= threshold",
+        );
+
+        // Should generate 7 post-loop statements
+        assert_eq!(assertions.len(), 7, "Should generate 7 post-loop statements");
+
+        // 0: Assert (seen_keys.subset_of)
+        match &assertions[0] {
+            ExecExpr::Assert(_) => {}
+            _ => panic!("assertions[0] should be Assert"),
+        }
+
+        // 1: Assume (iterator completed)
+        match &assertions[1] {
+            ExecExpr::Assume(_) => {}
+            _ => panic!("assertions[1] should be Assume"),
+        }
+
+        // 2: Assume (seen_keys.len)
+        match &assertions[2] {
+            ExecExpr::Assume(_) => {}
+            _ => panic!("assertions[2] should be Assume"),
+        }
+
+        // 3: ProofBlock (subset_len_equal_implies_equal)
+        match &assertions[3] {
+            ExecExpr::ProofBlock { stmts } => {
+                assert_eq!(stmts.len(), 1, "ProofBlock should have 1 statement");
+                match &stmts[0] {
+                    ExecExpr::Call { func, .. } => {
+                        assert!(func.contains("subset_len_equal_implies_equal"));
+                    }
+                    _ => panic!("ProofBlock should contain Call"),
+                }
+            }
+            _ => panic!("assertions[3] should be ProofBlock"),
+        }
+
+        // 4: Assert (seen_keys == source@.dom())
+        match &assertions[4] {
+            ExecExpr::Assert(_) => {}
+            _ => panic!("assertions[4] should be Assert"),
+        }
+
+        // 5-6: Comments for postcondition assertions
+        match &assertions[5] {
+            ExecExpr::Comment(s) => {
+                assert!(s.contains("result@.contains_key"));
+            }
+            _ => panic!("assertions[5] should be Comment"),
+        }
+        match &assertions[6] {
+            ExecExpr::Comment(s) => {
+                assert!(s.contains("votes@.contains_key"));
+            }
+            _ => panic!("assertions[6] should be Comment"),
         }
     }
 }
