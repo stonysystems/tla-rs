@@ -169,6 +169,8 @@ pub enum Expr {
     Disjunction(Vec<Expr>),
     /// Implication (==>)
     Implies(Box<Expr>, Box<Expr>),
+    /// Biconditional / iff (<==>) - equivalent to (a ==> b) && (b ==> a)
+    Iff(Box<Expr>, Box<Expr>),
     /// Negation (!)
     Not(Box<Expr>),
 
@@ -214,6 +216,8 @@ pub enum Expr {
     Gt(Box<Expr>, Box<Expr>),
     /// Greater than or equal (>=)
     Ge(Box<Expr>, Box<Expr>),
+    /// Enum variant check (expr is VariantName)
+    Is(Box<Expr>, String),
 
     // Access
     /// Field access (expr.field)

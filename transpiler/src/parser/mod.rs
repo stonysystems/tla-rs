@@ -508,6 +508,40 @@ impl<'a> VerusBlockParser<'a> {
         }
     }
 
+    /// Parse turbofish type parameters `::<Type1, Type2, ...>`
+    /// Returns the type parameters as a string including the angle brackets
+    fn parse_turbofish_types(&mut self) -> TranspileResult<String> {
+        self.expect('<')?;
+        let start_pos = self.pos - 1; // Include the <
+        let mut depth = 1;
+
+        // Skip until we find the matching >
+        while depth > 0 && self.pos < self.content.len() {
+            match self.peek() {
+                Some('<') => {
+                    depth += 1;
+                    self.advance();
+                }
+                Some('>') => {
+                    depth -= 1;
+                    self.advance();
+                }
+                Some(_) => {
+                    self.advance();
+                }
+                None => {
+                    return Err(TranspileError::Parse {
+                        message: "Unexpected end of input in turbofish type parameters".to_string(),
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        let end_pos = self.pos;
+        Ok(self.content[start_pos..end_pos].to_string())
+    }
+
     /// Parse expressions until we hit another clause keyword or opening brace
     /// This handles the Verus style where clauses can span multiple expressions
     fn parse_expr_list_until_clause(&mut self) -> TranspileResult<Vec<Expr>> {
@@ -649,6 +683,13 @@ impl<'a> VerusBlockParser<'a> {
         let left = self.parse_logical(left)?;
         self.skip_whitespace();
 
+        // Check for biconditional (iff) first since it contains ==>
+        if self.try_consume("<==>") {
+            self.skip_whitespace();
+            let right = self.parse_expression()?;
+            return Ok(Expr::Iff(Box::new(left), Box::new(right)));
+        }
+
         if self.try_consume("==>") {
             self.skip_whitespace();
             let right = self.parse_expression()?;
@@ -692,7 +733,15 @@ impl<'a> VerusBlockParser<'a> {
         self.skip_whitespace();
 
         // Try to parse a comparison operator
-        let (first_cmp, middle) = if self.try_consume("==") {
+        // Note: =~= must be checked before ==, and we must not match == when looking at ==>
+        let (first_cmp, middle) = if self.try_consume("=~=") {
+            // Extensional equality (same as == in Verus, just different syntax)
+            self.skip_whitespace();
+            let right_primary = self.parse_primary_expr()?;
+            let right = self.parse_additive(right_primary)?;
+            (Expr::Eq(Box::new(left), Box::new(right.clone())), right)
+        } else if self.peek_str(3) != Some("==>") && self.try_consume("==") {
+            // Match == but not ==> (implication is handled at a higher level)
             self.skip_whitespace();
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_additive(right_primary)?;
@@ -702,7 +751,8 @@ impl<'a> VerusBlockParser<'a> {
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_additive(right_primary)?;
             (Expr::Ne(Box::new(left), Box::new(right.clone())), right)
-        } else if self.try_consume("<=") {
+        } else if self.peek_str(4) != Some("<==>") && self.try_consume("<=") {
+            // Match <= but not <==> (biconditional is handled at a higher level)
             self.skip_whitespace();
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_additive(right_primary)?;
@@ -712,7 +762,8 @@ impl<'a> VerusBlockParser<'a> {
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_additive(right_primary)?;
             (Expr::Ge(Box::new(left), Box::new(right.clone())), right)
-        } else if self.try_consume("<") {
+        } else if self.peek_str(4) != Some("<==>") && self.try_consume("<") {
+            // Match < but not <==> (biconditional is handled at a higher level)
             self.skip_whitespace();
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_additive(right_primary)?;
@@ -722,6 +773,11 @@ impl<'a> VerusBlockParser<'a> {
             let right_primary = self.parse_primary_expr()?;
             let right = self.parse_additive(right_primary)?;
             (Expr::Gt(Box::new(left), Box::new(right.clone())), right)
+        } else if self.try_consume("is") {
+            // Enum variant check: expr is VariantName
+            self.skip_whitespace();
+            let variant = self.parse_identifier()?;
+            return Ok(Expr::Is(Box::new(left), variant));
         } else {
             return Ok(left);
         };
@@ -918,6 +974,68 @@ impl<'a> VerusBlockParser<'a> {
             if self.peek_str(2) == Some("::") {
                 self.pos += 2; // Consume ::
                 self.skip_whitespace();
+
+                // Check for turbofish syntax ::<Type> - skip the type parameters
+                if self.peek() == Some('<') {
+                    // Parse and skip type parameters for turbofish
+                    let type_params = self.parse_turbofish_types()?;
+                    self.skip_whitespace();
+
+                    // Update the expr with type params
+                    if let Expr::Ident(name) = &expr {
+                        expr = Expr::Ident(format!("{}::{}", name, type_params));
+                    }
+
+                    // Check if there's another :: path segment (e.g., Map::<K,V>::empty())
+                    if self.peek_str(2) == Some("::") {
+                        self.pos += 2;
+                        self.skip_whitespace();
+                        let method = self.parse_identifier()?;
+                        self.skip_whitespace();
+
+                        // Check if it's a function call
+                        if self.peek() == Some('(') {
+                            self.advance();
+                            let args = self.parse_call_args()?;
+                            self.expect(')')?;
+
+                            if let Expr::Ident(name) = &expr {
+                                expr = Expr::Call {
+                                    func: Path {
+                                        segments: vec![name.clone(), method],
+                                    },
+                                    args,
+                                };
+                                continue;
+                            }
+                        } else {
+                            // Just a path segment
+                            if let Expr::Ident(name) = &expr {
+                                expr = Expr::Ident(format!("{}::{}", name, method));
+                            }
+                            continue;
+                        }
+                    }
+
+                    // Check if it's directly followed by a function call
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        let args = self.parse_call_args()?;
+                        self.expect(')')?;
+
+                        if let Expr::Ident(name) = &expr {
+                            expr = Expr::Call {
+                                func: Path {
+                                    segments: vec![name.clone()],
+                                },
+                                args,
+                            };
+                            continue;
+                        }
+                    }
+                    continue;
+                }
+
                 let segment = self.parse_identifier()?;
                 self.skip_whitespace();
 

@@ -651,6 +651,16 @@ impl Translator {
             Expr::Ge(lhs, rhs) => self.transform_binary_op(lhs, rhs, ">=", ctx),
             Expr::Ne(lhs, rhs) => self.transform_binary_op(lhs, rhs, "!=", ctx),
 
+            // Enum variant check: expr is VariantName
+            Expr::Is(inner, variant) => {
+                let inner_expr = self.transform_expr(inner, ctx)?;
+                Ok(ExecExpr::Binary {
+                    lhs: Box::new(inner_expr),
+                    op: "is".to_string(),
+                    rhs: Box::new(ExecExpr::Var(variant.clone())),
+                })
+            }
+
             // Unary operators
             Expr::Not(inner) => {
                 let inner_expr = self.transform_expr(inner, ctx)?;
@@ -683,6 +693,18 @@ impl Translator {
                         expr: Box::new(lhs_expr),
                     }),
                     op: "||".to_string(),
+                    rhs: Box::new(rhs_expr),
+                })
+            }
+
+            Expr::Iff(lhs, rhs) => {
+                // a <==> b is equivalent to (a ==> b) && (b ==> a), which is (!a || b) && (!b || a)
+                // But for exec code, we just use ==
+                let lhs_expr = self.transform_expr(lhs, ctx)?;
+                let rhs_expr = self.transform_expr(rhs, ctx)?;
+                Ok(ExecExpr::Binary {
+                    lhs: Box::new(lhs_expr),
+                    op: "==".to_string(),
                     rhs: Box::new(rhs_expr),
                 })
             }
