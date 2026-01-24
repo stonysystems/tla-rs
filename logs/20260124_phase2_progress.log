@@ -1,0 +1,55 @@
+# Phase 2 Transpiler Progress - 2026-01-24
+
+## Completed Tasks
+
+### 1. Tuple Return Generation
+- Added `categorize_output_assignments()` to detect output parameter assignments
+- Added `sort_outputs_by_param_order()` to maintain consistent tuple order  
+- Multiple outputs now wrapped in `ExecExpr::Tuple` instead of `ExecExpr::Block`
+
+### 2. Helper Predicate Output Handling
+- Added `HelperCallInfo` struct to capture function name, input args, and output fields
+- Added `detect_helper_call()` function to identify calls with output patterns
+- Added `generate_helper_let_binding()` function for let binding generation
+- Added `get_helper_substitutions()` for variable mapping
+- Extended to handle multiple outputs (both field and direct param outputs)
+
+### 3. Field Reference Substitution
+- Added `field_substitutions` map to `TransformContext`
+- Added `get_field_substitution()` method to check for substitutions
+- Modified `Expr::Field` transformation to apply substitutions
+
+### 4. Multiple Helper Calls Integration
+- Added `process_helper_calls_in_conjunction()` to process all helper calls in a conjunction
+- Added `with_field_substitutions()` to create contexts with combined substitutions
+- Modified conjunction handler to integrate helper call processing
+- Added bound output params to return tuple
+
+## Generated Code Quality
+
+The replica.rs transpilation now produces mostly correct code:
+- Helper calls properly generate let bindings
+- Tuple destructuring patterns like `let (s_acceptor, sent_packets) = CHelper(...)`
+- Field substitutions work (s_.proposer -> s_proposer)
+- Return tuples properly include struct + sent_packets
+
+## Remaining Issues
+
+1. Some complex patterns with nested struct construction still have issues
+2. Multi-expression conjunctions without clear output patterns need attention
+3. Verus compilation testing needed to verify generated code
+
+## Test Coverage
+
+All 144 tests pass:
+- 117 unit tests
+- 12 integration tests
+- 14 negative tests
+- 1 CLI test
+
+## Commits Made
+
+1. Add field substitution support for helper predicate output bindings (d957de9)
+2. Integrate multiple helper calls in conjunction transformation (4613473)
+3. Handle helper calls with multiple outputs (field + direct param) (a15d947)
+4. Update TODO.md with completed transpiler tasks (33f25e5)
