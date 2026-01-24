@@ -1091,6 +1091,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - Manual CRemoveVotesBeforeLogTruncationPoint: contributes to 7-minute total
   - Trade-off: external_body is faster but doesn't verify implementation correctness
 - [ ] Integration test: generated acceptor works with manual proposer/learner
+  - **Status**: Partially demonstrated
+  - [x] Generated function compiles with existing types [26:01:25, 03:30]
+  - [ ] Full integration requires generating all CAcceptor methods:
+    - CAcceptorInit, CAcceptorProcess1a, CAcceptorProcess2a
+    - CAcceptorProcessHeartbeat, CAcceptorTruncateLog
+  - [ ] Wire generated acceptor into CReplica for end-to-end test
 
 #### Phase 5: Replace Manual Implementation
 - [ ] Once transpiler output is verified, replace `src/implementation/RSL/` with generated code
