@@ -148,7 +148,6 @@ Update `transpile.toml` remapping section to handle these.
 
 1. **Iterator patterns**: Generated code uses `.iter().filter()` which requires external_body trust for correctness
 2. **HashMap axioms**: Requires `broadcast use vstd::std_specs::hash::group_hash_axioms`
-3. **Deprecation warnings**: Some vstd methods are deprecated (is_Variant, get_Some_0)
 
 ## Future Improvements
 
