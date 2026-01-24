@@ -1105,6 +1105,14 @@ Analysis of generated acceptor output identified these remaining issues:
      - Arrow accesses (`msg->field`)
      - Identifiers (except outputs)
 
+5. **Conditional field assignments not integrated into struct** ✅ FIXED [26:01:24, 23:30]
+   - Pattern: Struct field with conditional value (`if cond { helper() } else { s.field }`)
+   - Issue: When the conditional is detected, it's returned separately instead of being integrated as a struct field
+   - Affects: `CAcceptorProcess2a` where `votes` field should come from conditional
+   - Fix: Added Pattern 4 in `try_extract_struct_construction()` to detect conditional helper patterns
+   - Uses `transform_conditional_field()` to generate proper conditional expression
+   - Now generates: `CAcceptor { ..., votes: if cond { helper() } else { s.votes }, ... }`
+
 ---
 
 ### Completed: Fix CI Clippy Failures ✅ [26:01:23, 19:13]

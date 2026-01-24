@@ -1503,6 +1503,34 @@ impl Translator {
         map
     }
 
+    /// Transform a conditional field assignment pattern
+    /// Pattern: if cond { helper_call } else { source_value }
+    fn transform_conditional_field(
+        &self,
+        cond: &Expr,
+        helper_info: &HelperCallInfo,
+        copy_source: &Expr,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        // Transform condition
+        let cond_expr = self.transform_expr(cond, ctx)?;
+
+        // Build the helper call
+        let helper_call = ExecExpr::Call {
+            func: self.translate_name(&helper_info.func_name),
+            args: helper_info.input_args.clone(),
+        };
+
+        // Transform the else (copy) source
+        let else_value = self.transform_expr(copy_source, ctx)?;
+
+        Ok(ExecExpr::If {
+            cond: Box::new(cond_expr),
+            then_branch: Box::new(helper_call),
+            else_branch: Some(Box::new(else_value)),
+        })
+    }
+
     /// Process helper calls in a conjunction, generating let bindings and collecting substitutions
     /// Returns: (let_bindings, remaining_exprs, combined_substitutions, bound_outputs)
     /// bound_outputs tracks which direct output params (like sent_packets) were bound by helper calls
@@ -1636,6 +1664,36 @@ impl Translator {
                             Expr::Literal(crate::ast::Literal::Bool(true)),
                         ));
                         continue;
+                    }
+                }
+            }
+            // Pattern 4: if cond { helper_call(..., output.field, ...) } else { output.field == input.field }
+            // This pattern sets a field conditionally via helper predicate
+            else if let Expr::If {
+                cond: if_cond,
+                then_branch,
+                else_branch: Some(else_br),
+            } = expr
+            {
+                if let Some(helper_info) = self.detect_helper_call(then_branch, ctx) {
+                    // Check if else branch is output.field == source
+                    if let Some(copy_source) =
+                        self.extract_simple_copy_source(else_br, &helper_info, ctx)
+                    {
+                        // Found conditional field assignment pattern
+                        // Get the output field from helper_info
+                        if let Some((out_var, field_name)) = helper_info.output_fields.first() {
+                            // Transform the conditional and store as pre-translated field
+                            if let Ok(transformed) =
+                                self.transform_conditional_field(if_cond, &helper_info, &copy_source, ctx)
+                            {
+                                pre_translated
+                                    .entry(out_var.clone())
+                                    .or_default()
+                                    .push((field_name.clone(), transformed));
+                                continue;
+                            }
+                        }
                     }
                 }
             }
