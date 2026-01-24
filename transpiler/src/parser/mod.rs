@@ -602,7 +602,7 @@ impl<'a> VerusBlockParser<'a> {
 
     /// Parse an expression
     fn parse_expression(&mut self) -> TranspileResult<Expr> {
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Check for conjunction chain (&&&)
         // Look-ahead check since try_consume would consume
@@ -875,7 +875,7 @@ impl<'a> VerusBlockParser<'a> {
 
     /// Parse a primary expression
     fn parse_primary_expr(&mut self) -> TranspileResult<Expr> {
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         // Check for nested conjunction/disjunction
         if self.peek() == Some('{') {
@@ -962,7 +962,7 @@ impl<'a> VerusBlockParser<'a> {
     /// Parse postfix operations (field access, method calls, index, etc.)
     fn parse_postfix_ops(&mut self, mut expr: Expr) -> TranspileResult<Expr> {
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
 
             // Check for view operator (@)
             if self.try_consume("@") {
