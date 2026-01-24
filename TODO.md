@@ -1060,7 +1060,15 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 - [x] Support arrow operator for enum variant field access (`msg->bal_1a`) - already supported
 
 #### Phase 4: Verification and Integration
-- [ ] Verify generated code compiles with Verus
+- [ ] Verify generated code compiles with Verus (subtasks below)
+  - [x] Confirm main codebase compiles with Verus (warnings only) [26:01:25, 00:30]
+  - [x] Analyze integration challenges and document plan [26:01:25, 00:45]
+    - Plan: docs/dev/verus-integration-plan.md
+    - Finding: Generated code uses iterator patterns, manual code uses explicit loops
+    - Challenge: Pattern mismatch between generated and verifiable code
+  - [ ] Create integration test file that imports generated acceptor
+  - [ ] Fix any type compatibility issues in generated code
+  - [ ] Run Verus on the integrated test file
 - [ ] Verify generated code passes all Verus proofs (0 errors)
 - [ ] Compare verification time: generated vs manual implementation
 - [ ] Integration test: generated acceptor works with manual proposer/learner
