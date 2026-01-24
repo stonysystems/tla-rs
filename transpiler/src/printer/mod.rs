@@ -412,6 +412,106 @@ impl Printer {
                 self.indent();
                 self.write("}");
             }
+
+            // === Verus Loop Constructs ===
+
+            ExecExpr::ForInIter {
+                var,
+                iter_name,
+                iter_source,
+                invariants,
+                body,
+            } => {
+                // First, generate the iterator initialization: let iter_name = source;
+                self.write("let ");
+                self.write(iter_name);
+                self.write(" = ");
+                self.print_expr(iter_source);
+                self.write(";");
+                self.newline();
+                self.indent();
+                // Generate: for var in iter:iter_name
+                self.write("for ");
+                self.write(var);
+                self.write(" in iter:");
+                self.write(iter_name);
+                self.newline();
+                // Generate invariants
+                if !invariants.is_empty() {
+                    self.indent();
+                    self.write("invariant");
+                    self.newline();
+                    self.current_indent += 1;
+                    for inv in invariants {
+                        self.indent();
+                        self.write(inv);
+                        self.write(",");
+                        self.newline();
+                    }
+                    self.current_indent -= 1;
+                }
+                // Generate body
+                self.indent();
+                self.write("{");
+                self.newline();
+                self.current_indent += 1;
+                self.indent();
+                self.print_expr(body);
+                self.newline();
+                self.current_indent -= 1;
+                self.indent();
+                self.write("}");
+            }
+
+            ExecExpr::GhostVar {
+                name,
+                ty,
+                init,
+                mutable,
+            } => {
+                self.write("let ghost ");
+                if *mutable {
+                    self.write("mut ");
+                }
+                self.write(name);
+                self.write(": ");
+                self.write(ty);
+                self.write(" = ");
+                self.print_expr(init);
+                self.write(";");
+            }
+
+            ExecExpr::ProofBlock { stmts } => {
+                self.write("proof {");
+                self.newline();
+                self.current_indent += 1;
+                for stmt in stmts {
+                    self.indent();
+                    self.print_expr(stmt);
+                    self.newline();
+                }
+                self.current_indent -= 1;
+                self.indent();
+                self.write("}");
+            }
+
+            ExecExpr::Assume(expr) => {
+                self.write("assume(");
+                self.print_expr(expr);
+                self.write(");");
+            }
+
+            ExecExpr::Assert(expr) => {
+                self.write("assert(");
+                self.print_expr(expr);
+                self.write(");");
+            }
+
+            ExecExpr::BroadcastUse(path) => {
+                self.write("broadcast use ");
+                self.write(path);
+                self.write(";");
+            }
         }
     }
 
@@ -469,5 +569,121 @@ mod tests {
         assert!(output.contains("pub exec fn CTestFn"));
         assert!(output.contains("requires"));
         assert!(output.contains("ensures"));
+    }
+
+    #[test]
+    fn test_print_for_in_iter() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::ForInIter {
+            var: "key".to_string(),
+            iter_name: "m_keys".to_string(),
+            iter_source: Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("votes".to_string())),
+                method: "keys".to_string(),
+                args: vec![],
+            }),
+            invariants: vec![
+                "seen_keys.subset_of(votes@.dom())".to_string(),
+                "forall |opn| result@.contains_key(opn) ==> opn >= threshold".to_string(),
+            ],
+            body: Box::new(ExecExpr::If {
+                cond: Box::new(ExecExpr::Binary {
+                    lhs: Box::new(ExecExpr::Var("*key".to_string())),
+                    op: ">=".to_string(),
+                    rhs: Box::new(ExecExpr::Var("threshold".to_string())),
+                }),
+                then_branch: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("result".to_string())),
+                    method: "insert".to_string(),
+                    args: vec![ExecExpr::Var("*key".to_string())],
+                }),
+                else_branch: None,
+            }),
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+
+        assert!(output.contains("let m_keys = votes.keys();"));
+        assert!(output.contains("for key in iter:m_keys"));
+        assert!(output.contains("invariant"));
+        assert!(output.contains("seen_keys.subset_of(votes@.dom())"));
+    }
+
+    #[test]
+    fn test_print_ghost_var() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::GhostVar {
+            name: "seen_keys".to_string(),
+            ty: "Set::<COperationNumber>".to_string(),
+            init: Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("Set".to_string())),
+                method: "empty".to_string(),
+                args: vec![],
+            }),
+            mutable: true,
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+
+        assert!(output.contains("let ghost mut seen_keys"));
+        assert!(output.contains("Set::<COperationNumber>"));
+        assert!(output.contains("Set.empty()"));
+    }
+
+    #[test]
+    fn test_print_proof_block() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::ProofBlock {
+            stmts: vec![
+                ExecExpr::Binary {
+                    lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                    op: "=".to_string(),
+                    rhs: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                        method: "insert".to_string(),
+                        args: vec![ExecExpr::Var("*key".to_string())],
+                    }),
+                },
+            ],
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+
+        assert!(output.contains("proof {"));
+        assert!(output.contains("seen_keys.insert"));
+        assert!(output.contains("}"));
+    }
+
+    #[test]
+    fn test_print_assume_assert() {
+        let mut printer = Printer::default();
+
+        // Test assume
+        printer.print_expr(&ExecExpr::Assume(Box::new(ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: ">".to_string(),
+            rhs: Box::new(ExecExpr::Literal("0".to_string())),
+        })));
+        assert!(printer.output.contains("assume((x > 0));"));
+
+        printer.output.clear();
+
+        // Test assert
+        printer.print_expr(&ExecExpr::Assert(Box::new(ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("y".to_string())),
+            op: "<".to_string(),
+            rhs: Box::new(ExecExpr::Literal("10".to_string())),
+        })));
+        assert!(printer.output.contains("assert((y < 10));"));
+    }
+
+    #[test]
+    fn test_print_broadcast_use() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()));
+        assert!(printer.output.contains("broadcast use vstd::std_specs::hash::group_hash_axioms;"));
     }
 }

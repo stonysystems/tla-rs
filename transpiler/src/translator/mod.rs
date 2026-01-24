@@ -188,6 +188,50 @@ pub enum ExecExpr {
         filter: Box<ExecExpr>,
         new_key: Box<ExecExpr>,
     },
+
+    // === Verus Loop Constructs for Verified Code ===
+
+    /// Verus for-in-iter loop with invariants
+    /// Generates: `for var in iter:iter_name { body } invariant inv1, inv2, ...`
+    ForInIter {
+        /// Loop variable name (e.g., "key")
+        var: String,
+        /// Iterator name (e.g., "m_keys")
+        iter_name: String,
+        /// Source expression for iterator (e.g., "votes.keys()")
+        iter_source: Box<ExecExpr>,
+        /// Loop invariants (Verus spec expressions as strings)
+        invariants: Vec<String>,
+        /// Loop body
+        body: Box<ExecExpr>,
+    },
+
+    /// Ghost variable declaration
+    /// Generates: `let ghost mut name: ty = init;`
+    GhostVar {
+        name: String,
+        ty: String,
+        init: Box<ExecExpr>,
+        mutable: bool,
+    },
+
+    /// Proof block
+    /// Generates: `proof { stmts }`
+    ProofBlock {
+        stmts: Vec<ExecExpr>,
+    },
+
+    /// Assume statement
+    /// Generates: `assume(expr);`
+    Assume(Box<ExecExpr>),
+
+    /// Assert statement
+    /// Generates: `assert(expr);`
+    Assert(Box<ExecExpr>),
+
+    /// Broadcast use statement
+    /// Generates: `broadcast use path;`
+    BroadcastUse(String),
 }
 
 /// Context for expression transformation

@@ -1084,6 +1084,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Iterator implementation trusted via #[verifier::external_body]
     - Compiles with 456 verified, 0 errors
   - [ ] Future: Option A (generate loop patterns with invariants)
+    - Analysis: docs/dev/loop-generation-analysis.md
+    - Estimated: ~850 LOC total, broken into 5 phases
+    - [x] Phase 1: Infrastructure - Add ExecExpr variants for loop constructs (~150 LOC) [26:01:25, 04:45]
+      - Added ForInIter, GhostVar, ProofBlock, Assume, Assert, BroadcastUse to ExecExpr
+      - Added printer support for all new constructs
+      - Added 5 new tests for loop constructs
+    - [ ] Phase 2: Simple loop generation without invariants (~200 LOC)
+    - [ ] Phase 3: Invariant templates for common patterns (~300 LOC)
+    - [ ] Phase 4: Ghost code generation (~100 LOC)
+    - [ ] Phase 5: Post-loop assertions (~100 LOC)
   - See docs/dev/verus-integration-plan.md for integration strategy options
 - [x] Compare verification time: generated vs manual implementation [26:01:25, 04:00]
   - Full codebase verification: 7 minutes (456 verified, 0 errors)
