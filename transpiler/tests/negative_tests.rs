@@ -4,6 +4,7 @@
 //! for invalid inputs, missing annotations, and unsupported patterns.
 
 use std::collections::HashSet;
+use verus_transpiler::ast::Pattern;
 use verus_transpiler::*;
 
 // ============================================================================
@@ -151,12 +152,12 @@ fn test_unsupported_quantifier_multiple_vars() {
     let expr = Expr::Forall {
         vars: vec![
             Binding {
-                name: "i".to_string(),
+                pattern: Pattern::Ident("i".to_string()),
                 ty: Some(ast::Type::Int),
                 variable_mode: VariableMode::default(),
             },
             Binding {
-                name: "j".to_string(),
+                pattern: Pattern::Ident("j".to_string()),
                 ty: Some(ast::Type::Int),
                 variable_mode: VariableMode::default(),
             },
@@ -178,7 +179,7 @@ fn test_unsupported_quantifier_complex_body() {
     // Create forall that doesn't match any known template
     let expr = Expr::Forall {
         vars: vec![Binding {
-            name: "x".to_string(),
+            pattern: Pattern::Ident("x".to_string()),
             ty: Some(ast::Type::Int),
             variable_mode: VariableMode::default(),
         }],
@@ -338,7 +339,7 @@ fn test_translator_forall_without_template() {
     // A forall that can't be translated directly
     let expr = ast::Expr::Forall {
         vars: vec![ast::Binding {
-            name: "x".to_string(),
+            pattern: Pattern::Ident("x".to_string()),
             ty: Some(ast::Type::Int),
             variable_mode: ast::VariableMode::default(),
         }],
@@ -376,7 +377,7 @@ fn test_translator_exists_not_supported() {
     // Exists quantifier - not directly translatable
     let expr = ast::Expr::Exists {
         vars: vec![ast::Binding {
-            name: "x".to_string(),
+            pattern: Pattern::Ident("x".to_string()),
             ty: Some(ast::Type::Int),
             variable_mode: ast::VariableMode::default(),
         }],

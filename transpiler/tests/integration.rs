@@ -1,5 +1,6 @@
 //! Integration tests for the Verus transpiler.
 
+use verus_transpiler::ast::Pattern;
 use verus_transpiler::*;
 
 #[test]
@@ -132,7 +133,7 @@ fn test_template_matching_seq_comprehension() {
     // This is a sequence comprehension pattern
     let expr = Expr::Forall {
         vars: vec![Binding {
-            name: "i".to_string(),
+            pattern: Pattern::Ident("i".to_string()),
             ty: Some(verus_transpiler::ast::Type::Int),
             variable_mode: VariableMode::default(),
         }],

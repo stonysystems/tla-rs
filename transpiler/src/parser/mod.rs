@@ -233,23 +233,38 @@ impl<'a> VerusBlockParser<'a> {
         self.skip_whitespace();
 
         // Parse return type (optional)
-        // Supports both `-> Type` and `-> (name: Type)` syntax
+        // Supports: `-> Type`, `-> (name: Type)`, and `-> (Type1, Type2)` (tuple)
         let return_type = if self.try_consume("->") {
             self.skip_whitespace();
             if self.peek() == Some('(') {
-                // Named return: (name: Type) or (result: (T1, T2))
+                // Could be named return `(name: Type)` or tuple `(Type1, Type2)`
+                // Save position to backtrack if needed
+                let start_pos = self.pos;
                 self.advance(); // consume '('
                 self.skip_whitespace();
-                // Parse and discard the name
-                let _return_name = self.parse_identifier()?;
-                self.skip_whitespace();
-                self.expect(':')?;
-                self.skip_whitespace();
-                // Parse the actual return type
-                let ty = self.parse_type()?;
-                self.skip_whitespace();
-                self.expect(')')?;
-                ty
+
+                // Try to parse as named return first
+                let _possible_name_pos = self.pos;
+                if let Ok(_name) = self.parse_identifier() {
+                    self.skip_whitespace();
+                    if self.peek() == Some(':') {
+                        // Named return: (name: Type)
+                        self.advance(); // consume ':'
+                        self.skip_whitespace();
+                        let ty = self.parse_type()?;
+                        self.skip_whitespace();
+                        self.expect(')')?;
+                        ty
+                    } else {
+                        // Not named return - backtrack and parse as tuple type
+                        self.pos = start_pos;
+                        self.parse_type()?
+                    }
+                } else {
+                    // Couldn't parse name - backtrack and parse as tuple type
+                    self.pos = start_pos;
+                    self.parse_type()?
+                }
             } else {
                 self.parse_type()?
             }
@@ -1406,7 +1421,8 @@ impl<'a> VerusBlockParser<'a> {
             VariableMode::Exec
         };
 
-        let name = self.parse_identifier()?;
+        // Parse binding pattern (identifier or tuple pattern)
+        let pattern = self.parse_let_pattern()?;
         self.skip_whitespace();
 
         // Optional type annotation
@@ -1430,18 +1446,57 @@ impl<'a> VerusBlockParser<'a> {
             self.parse_expression()?
         } else {
             // No body, just the let binding as an expression
-            Expr::Ident(name.clone())
+            // For tuple patterns, use a unit placeholder
+            match &pattern {
+                Pattern::Ident(name) => Expr::Ident(name.clone()),
+                _ => Expr::Literal(Literal::Bool(true)), // Unit placeholder for non-ident patterns
+            }
         };
 
         Ok(Expr::Let {
             binding: Binding {
-                name,
+                pattern,
                 ty,
                 variable_mode,
             },
             value: Box::new(value),
             body: Box::new(body),
         })
+    }
+
+    /// Parse a pattern for let bindings (identifier or tuple)
+    fn parse_let_pattern(&mut self) -> TranspileResult<Pattern> {
+        self.skip_whitespace();
+
+        if self.peek() == Some('(') {
+            // Tuple pattern
+            self.advance(); // consume '('
+            self.skip_whitespace();
+
+            let mut patterns = Vec::new();
+            while self.peek() != Some(')') {
+                let pat = self.parse_let_pattern()?;
+                patterns.push(pat);
+                self.skip_whitespace();
+
+                if self.peek() == Some(',') {
+                    self.advance();
+                    self.skip_whitespace();
+                } else {
+                    break;
+                }
+            }
+            self.expect(')')?;
+            Ok(Pattern::Tuple(patterns))
+        } else if self.peek() == Some('_') {
+            // Wildcard pattern
+            self.advance();
+            Ok(Pattern::Wildcard)
+        } else {
+            // Identifier pattern
+            let name = self.parse_identifier()?;
+            Ok(Pattern::Ident(name))
+        }
     }
 
     /// Parse expression until semicolon
@@ -1575,7 +1630,7 @@ impl<'a> VerusBlockParser<'a> {
             };
 
             bindings.push(Binding {
-                name,
+                pattern: Pattern::Ident(name),
                 ty,
                 variable_mode: VariableMode::Exec,
             });
@@ -2235,7 +2290,7 @@ mod tests {
         match &funcs[0].body {
             Expr::Forall { vars, .. } => {
                 assert_eq!(vars.len(), 1);
-                assert_eq!(vars[0].name, "i");
+                assert_eq!(vars[0].name(), Some("i"));
             }
             _ => panic!("Expected forall expression"),
         }
@@ -2402,7 +2457,7 @@ mod tests {
         match &funcs[0].body {
             Expr::Forall { vars, triggers, .. } => {
                 assert_eq!(vars.len(), 1);
-                assert_eq!(vars[0].name, "i");
+                assert_eq!(vars[0].name(), Some("i"));
                 // We should have parsed the trigger
                 assert_eq!(triggers.len(), 1);
                 assert_eq!(triggers[0].exprs.len(), 1);

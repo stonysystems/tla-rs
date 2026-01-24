@@ -106,7 +106,8 @@ pub enum ExecExpr {
     Block(Vec<ExecExpr>),
     /// Let binding
     Let {
-        name: String,
+        /// Pattern as a string (e.g., "x" or "(a, b)")
+        pattern: String,
         ty: Option<ExecType>,
         value: Box<ExecExpr>,
     },
@@ -549,9 +550,10 @@ impl Translator {
             } => {
                 let value_expr = self.transform_expr(value, ctx)?;
                 let body_expr = self.transform_expr(body, ctx)?;
+                let pattern_str = self.format_binding_pattern(&binding.pattern);
                 Ok(ExecExpr::Block(vec![
                     ExecExpr::Let {
-                        name: binding.name.clone(),
+                        pattern: pattern_str,
                         ty: None,
                         value: Box::new(value_expr),
                     },
@@ -784,7 +786,7 @@ impl Translator {
                     Err(TranspileError::UnsupportedPattern {
                         message: format!(
                             "Forall quantifier with vars {:?} doesn't match any known template",
-                            vars.iter().map(|v| &v.name).collect::<Vec<_>>()
+                            vars.iter().map(|v| &v.pattern).collect::<Vec<_>>()
                         ),
                         span: None,
                         help: Some(format!(
@@ -798,7 +800,7 @@ impl Translator {
             Expr::Exists { vars, .. } => Err(TranspileError::UnsupportedPattern {
                 message: format!(
                     "Exists quantifier with vars {:?} cannot be directly translated",
-                    vars.iter().map(|v| &v.name).collect::<Vec<_>>()
+                    vars.iter().map(|v| &v.pattern).collect::<Vec<_>>()
                 ),
                 span: None,
                 help: Some("Consider using choose! macro or restructuring".to_string()),
@@ -1055,6 +1057,11 @@ impl Translator {
             crate::ast::Literal::Int(i) => i.to_string(),
             crate::ast::Literal::String(s) => format!("\"{}\"", s),
         }
+    }
+
+    /// Format a binding pattern for let expressions
+    fn format_binding_pattern(&self, pattern: &crate::ast::Pattern) -> String {
+        self.format_pattern(pattern)
     }
 
     /// Format a pattern for match arms

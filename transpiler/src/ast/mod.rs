@@ -284,10 +284,30 @@ pub enum Expr {
 /// Variable binding
 #[derive(Debug, Clone)]
 pub struct Binding {
-    pub name: String,
+    /// The pattern being bound (simple identifier, tuple, etc.)
+    pub pattern: Pattern,
     pub ty: Option<Type>,
     /// Variable mode (ghost/tracked/exec)
     pub variable_mode: VariableMode,
+}
+
+impl Binding {
+    /// Helper to get the name for simple identifier bindings
+    pub fn name(&self) -> Option<&str> {
+        if let Pattern::Ident(name) = &self.pattern {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
+    /// Get name as a String, panics if not an identifier pattern.
+    /// Used for quantifier bindings which are always simple identifiers.
+    pub fn name_string(&self) -> String {
+        self.name()
+            .expect("Expected identifier pattern in binding")
+            .to_string()
+    }
 }
 
 /// Trigger for quantifiers

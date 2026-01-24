@@ -242,15 +242,15 @@ impl TemplateMatcher {
         // Body must be an implication: bounds ==> assignment
         if let Expr::Implies(lhs, rhs) = body {
             // Check if LHS is a bounds check like: 0 <= i && i < n  or  0 <= i < n
-            if let Some(upper_bound) = Self::extract_int_upper_bound(lhs, &var.name) {
+            if let Some(upper_bound) = Self::extract_int_upper_bound(lhs, &var.name_string()) {
                 // Check if RHS is: seq[i] == expr or expr == seq[i]
                 if let Some((_collection, element_expr)) =
-                    Self::extract_indexed_assignment(rhs, &var.name)
+                    Self::extract_indexed_assignment(rhs, &var.name_string())
                 {
                     return Some(QuantifierTemplate::SeqComprehension {
                         length_expr: upper_bound,
                         element_expr: Box::new(element_expr.clone()),
-                        index_var: var.name.clone(),
+                        index_var: var.name_string().clone(),
                     });
                 }
             }
@@ -267,13 +267,13 @@ impl TemplateMatcher {
 
         // Check for implication (value pattern): k in map' ==> map'[k] == expr
         if let Expr::Implies(lhs, rhs) = body {
-            if let Some(_collection) = Self::extract_membership(lhs, &var.name) {
+            if let Some(_collection) = Self::extract_membership(lhs, &var.name_string()) {
                 // RHS should be: map'[k] == expr
-                if let Some((_, value_expr)) = Self::extract_indexed_assignment(rhs, &var.name) {
+                if let Some((_, value_expr)) = Self::extract_indexed_assignment(rhs, &var.name_string()) {
                     return Some(QuantifierTemplate::MapComprehension {
                         domain_predicate: Box::new(Expr::Literal(crate::ast::Literal::Bool(true))),
                         value_expr: Box::new(value_expr.clone()),
-                        key_var: var.name.clone(),
+                        key_var: var.name_string().clone(),
                     });
                 }
             }
@@ -290,16 +290,16 @@ impl TemplateMatcher {
 
         // Check for biconditional: x in set' <==> pred
         if let Expr::Eq(lhs, rhs) = body {
-            if let Some(_collection) = Self::extract_membership(lhs, &var.name) {
+            if let Some(_collection) = Self::extract_membership(lhs, &var.name_string()) {
                 return Some(QuantifierTemplate::SetComprehension {
                     domain_predicate: rhs.clone(),
-                    element_var: var.name.clone(),
+                    element_var: var.name_string().clone(),
                 });
             }
-            if let Some(_collection) = Self::extract_membership(rhs, &var.name) {
+            if let Some(_collection) = Self::extract_membership(rhs, &var.name_string()) {
                 return Some(QuantifierTemplate::SetComprehension {
                     domain_predicate: lhs.clone(),
-                    element_var: var.name.clone(),
+                    element_var: var.name_string().clone(),
                 });
             }
         }
@@ -318,18 +318,18 @@ impl TemplateMatcher {
         // Check for Iff (biconditional <==>)
         if let Expr::Iff(lhs, rhs) = body {
             // Check if LHS is output.dom().contains(k) or output.contains_key(k)
-            if let Some(output_map) = Self::extract_map_membership(lhs, &var.name) {
+            if let Some(output_map) = Self::extract_map_membership(lhs, &var.name_string()) {
                 return Some(QuantifierTemplate::MapDomainBiconditional {
                     output_map,
-                    key_var: var.name.clone(),
+                    key_var: var.name_string().clone(),
                     domain_predicate: rhs.clone(),
                 });
             }
             // Also check RHS in case it's reversed
-            if let Some(output_map) = Self::extract_map_membership(rhs, &var.name) {
+            if let Some(output_map) = Self::extract_map_membership(rhs, &var.name_string()) {
                 return Some(QuantifierTemplate::MapDomainBiconditional {
                     output_map,
-                    key_var: var.name.clone(),
+                    key_var: var.name_string().clone(),
                     domain_predicate: lhs.clone(),
                 });
             }
@@ -348,16 +348,16 @@ impl TemplateMatcher {
         // Check for implication
         if let Expr::Implies(premise, conclusion) = body {
             // Premise should be: output.contains_key(k)
-            if let Some(output_map) = Self::extract_map_membership(premise, &var.name) {
+            if let Some(output_map) = Self::extract_map_membership(premise, &var.name_string()) {
                 // Conclusion should be: source.contains_key(k) && output[k] == source[k]
                 // or conjunction with these parts
                 if let Some(source_map) =
-                    Self::extract_preservation_conclusion(conclusion, &var.name, &output_map)
+                    Self::extract_preservation_conclusion(conclusion, &var.name_string(), &output_map)
                 {
                     return Some(QuantifierTemplate::MapPreservation {
                         source_map,
                         output_map,
-                        key_var: var.name.clone(),
+                        key_var: var.name_string().clone(),
                     });
                 }
             }
@@ -377,25 +377,25 @@ impl TemplateMatcher {
         // Check for implication
         if let Expr::Implies(premise, conclusion) = body {
             // Premise should be: output.contains_key(k) or output.dom().contains(k)
-            if let Some(output_map) = Self::extract_map_membership(premise, &var.name) {
+            if let Some(output_map) = Self::extract_map_membership(premise, &var.name_string()) {
                 // Conclusion should be: output[k] == value_expr
                 if let Expr::Eq(lhs, rhs) = conclusion.as_ref() {
                     // Check if LHS is output[k]
-                    if let Some(indexed_map) = Self::extract_index_by_var(lhs, &var.name) {
+                    if let Some(indexed_map) = Self::extract_index_by_var(lhs, &var.name_string()) {
                         if indexed_map == output_map {
                             return Some(QuantifierTemplate::MapConditionalValue {
                                 output_map,
-                                key_var: var.name.clone(),
+                                key_var: var.name_string().clone(),
                                 value_expr: rhs.clone(),
                             });
                         }
                     }
                     // Check if RHS is output[k]
-                    if let Some(indexed_map) = Self::extract_index_by_var(rhs, &var.name) {
+                    if let Some(indexed_map) = Self::extract_index_by_var(rhs, &var.name_string()) {
                         if indexed_map == output_map {
                             return Some(QuantifierTemplate::MapConditionalValue {
                                 output_map,
-                                key_var: var.name.clone(),
+                                key_var: var.name_string().clone(),
                                 value_expr: lhs.clone(),
                             });
                         }
@@ -418,10 +418,10 @@ impl TemplateMatcher {
         if let Expr::Implies(premise, conclusion) = body {
             // Conclusion should be: !output.contains_key(k)
             if let Expr::Not(inner) = conclusion.as_ref() {
-                if let Some(output_map) = Self::extract_map_membership(inner, &var.name) {
+                if let Some(output_map) = Self::extract_map_membership(inner, &var.name_string()) {
                     return Some(QuantifierTemplate::MapExclusion {
                         output_map,
-                        key_var: var.name.clone(),
+                        key_var: var.name_string().clone(),
                         exclusion_predicate: premise.clone(),
                     });
                 }
@@ -442,15 +442,15 @@ impl TemplateMatcher {
         // Check for implication with membership in conclusion
         if let Expr::Implies(premise, conclusion) = body {
             // Conclusion should be: output.contains_key(k)
-            if let Some(output_map) = Self::extract_map_membership(conclusion, &var.name) {
+            if let Some(output_map) = Self::extract_map_membership(conclusion, &var.name_string()) {
                 // Premise might be: predicate && source.contains_key(k)
                 // Try to extract source map from premise
-                let (source_map, pred) = Self::extract_source_from_premise(premise, &var.name);
+                let (source_map, pred) = Self::extract_source_from_premise(premise, &var.name_string());
 
                 return Some(QuantifierTemplate::MapInclusion {
                     output_map,
                     source_map,
-                    key_var: var.name.clone(),
+                    key_var: var.name_string().clone(),
                     inclusion_predicate: pred,
                 });
             }
@@ -918,8 +918,8 @@ pub fn validate_function(
 mod tests {
     use super::*;
     use crate::ast::{
-        BinOp, Binding, Expr, Literal, Parameter, ParameterMode, Path, SpecFunction, Type,
-        VariableMode,
+        BinOp, Binding, Expr, Literal, Parameter, ParameterMode, Path, Pattern, SpecFunction,
+        Type, VariableMode,
     };
 
     fn make_test_function() -> AnnotatedFunction {
@@ -991,7 +991,7 @@ mod tests {
     /// Helper to create a binding for testing
     fn make_binding(name: &str) -> Binding {
         Binding {
-            name: name.to_string(),
+            pattern: Pattern::Ident(name.to_string()),
             ty: Some(Type::Int),
             variable_mode: VariableMode::default(),
         }

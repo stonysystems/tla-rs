@@ -128,9 +128,9 @@ impl Printer {
                 }
             }
 
-            ExecExpr::Let { name, ty, value } => {
+            ExecExpr::Let { pattern, ty, value } => {
                 self.write("let ");
-                self.write(name);
+                self.write(pattern);
                 if let Some(ty) = ty {
                     self.write(": ");
                     self.write(&ty.to_rust_string());

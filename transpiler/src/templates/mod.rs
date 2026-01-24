@@ -167,7 +167,7 @@ impl TemplateMatcher {
         if vars.len() != 1 {
             return None;
         }
-        let index_var = vars[0].name.clone();
+        let index_var = vars[0].name_string();
 
         // Body should be an implication
         let Expr::Implies(premise, conclusion) = body.as_ref() else {
@@ -202,7 +202,7 @@ impl TemplateMatcher {
         if vars.len() != 1 {
             return None;
         }
-        let key_var = vars[0].name.clone();
+        let key_var = vars[0].name_string();
 
         // Check for domain pattern: k in map <==> pred
         if let Expr::Eq(lhs, rhs) = body.as_ref() {
@@ -246,7 +246,7 @@ impl TemplateMatcher {
         if vars.len() != 1 {
             return None;
         }
-        let elem_var = vars[0].name.clone();
+        let elem_var = vars[0].name_string();
 
         // Check for: x in set <==> pred(x)
         if let Expr::Eq(lhs, rhs) = body.as_ref() {
@@ -607,7 +607,7 @@ pub fn match_expression(expr: &Expr, output_vars: &[String]) -> MatchResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Binding, Literal, Path};
+    use crate::ast::{Binding, Literal, Path, Pattern};
 
     #[test]
     fn test_simple_assignment_match() {
@@ -662,7 +662,7 @@ mod tests {
         // forall |i| 0 <= i < len ==> seq[i] == f(i)
         let expr = Expr::Forall {
             vars: vec![Binding {
-                name: "i".to_string(),
+                pattern: Pattern::Ident("i".to_string()),
                 ty: None,
                 variable_mode: crate::ast::VariableMode::Exec,
             }],
@@ -704,7 +704,7 @@ mod tests {
         // Some complex expression that doesn't match
         let expr = Expr::Exists {
             vars: vec![Binding {
-                name: "x".to_string(),
+                pattern: Pattern::Ident("x".to_string()),
                 ty: None,
                 variable_mode: crate::ast::VariableMode::Exec,
             }],
