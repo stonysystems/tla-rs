@@ -1046,7 +1046,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Added `try_extract_map_update_with_value()` to detect domain + value forall conjunction
     - Generates: `let mut __result = source.iter().filter().map().collect(); __result.insert(key, val); __result`
     - Fixed Block printer to add semicolons for non-return statements
-- [ ] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`)
+- [x] Support helper predicates (e.g., `LAddVoteAndRemoveOldOnes`, `RemoveVotesBeforeLogTruncationPoint`) [26:01:24, 23:00]
+    - Added conditional helper pattern detection for IF expressions
+    - Fixed reference argument handling for function calls
+    - Output fields in helper calls are automatically excluded from arguments
 - [x] Handle `recommends` clauses properly [26:01:24, 18:30]
     - Added `expr_to_requires_string()` and `expr_to_simple_string()` helpers
     - Spec function `recommends` expressions become `requires` clauses in exec functions
@@ -1077,28 +1080,30 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 #### Remaining Code Generation Issues [26:01:24, 20:00]
 Analysis of generated acceptor output identified these remaining issues:
 
-1. **Helper predicate calls with output field arguments**
+1. **Helper predicate calls with output field arguments** ✅ FIXED [26:01:24, 23:00]
    - Pattern: `LAddVoteAndRemoveOldOnes(s.votes, s_.votes, ...)`
    - Issue: `s_.votes` is output field passed to helper, transpiler includes it verbatim
-   - Fix: Lift helper call to let binding, use result in struct construction
-   - Example fix:
-     ```rust
-     let s_votes = CAddVoteAndRemoveOldOnes(&s.votes, opn, vote, threshold);
-     CAcceptor { votes: s_votes, ... }
-     ```
+   - Fix: Added `extract_simple_copy_source()` to detect conditional helper pattern
+   - When IF contains helper call in then-branch and copy in else-branch, generate proper conditional
+   - Example: `if cond { CHelper(&inputs...) } else { s.field }`
 
 2. **Clone missing on borrowed values** ✅ FIXED [26:01:24, 21:00]
    - Pattern: `(s, Cempty())` when s is `&CAcceptor`
    - Fix: Added clone detection in `categorize_output_assignments_with_exclusions`
    - When `s_ == s` pattern detected and s is input param, generate `ExecExpr::Clone`
 
-3. **Reference/value comparison issues**
+3. **Reference/value comparison issues** (Not an issue for Verus - comparisons work with mixed types)
    - Pattern: `opn <= s.log_truncation_point` comparing `&T` with `T`
-   - Fix: Dereference or use proper comparison methods
+   - Verus handles this via deref coercion
 
-4. **Reference arguments to helper functions**
+4. **Reference arguments to helper functions** ✅ FIXED [26:01:24, 23:00]
    - Pattern: `CRemoveVotesBeforeLogTruncationPoint(s.votes, opn)`
-   - Should be: `CRemoveVotesBeforeLogTruncationPoint(&s.votes, opn)`
+   - Should be: `CRemoveVotesBeforeLogTruncationPoint(&s.votes, &opn)`
+   - Fix: Added automatic `&` prefix for function call arguments that are:
+     - Field accesses (`s.field`)
+     - Method calls (`obj.method()`)
+     - Arrow accesses (`msg->field`)
+     - Identifiers (except outputs)
 
 ---
 

@@ -631,6 +631,30 @@ impl Translator {
                 then_branch,
                 else_branch,
             } => {
+                // Check for special pattern: helper predicate in then-branch, simple copy in else-branch
+                // Pattern: if cond { LHelper(input, output, ...) } else { output == input }
+                if let Some(helper_info) = self.detect_helper_call(then_branch, ctx) {
+                    // Check if else branch is a simple copy: s_.field == s.field
+                    if let Some(else_expr) = else_branch {
+                        if let Some(copy_source) =
+                            self.extract_simple_copy_source(else_expr, &helper_info, ctx)
+                        {
+                            // Generate: if cond { CHelper(&input, ...) } else { source_value }
+                            let cond_expr = self.transform_expr(cond, ctx)?;
+                            let helper_call = ExecExpr::Call {
+                                func: self.translate_name(&helper_info.func_name),
+                                args: helper_info.input_args.clone(),
+                            };
+                            let else_value = self.transform_expr(&copy_source, ctx)?;
+                            return Ok(ExecExpr::If {
+                                cond: Box::new(cond_expr),
+                                then_branch: Box::new(helper_call),
+                                else_branch: Some(Box::new(else_value)),
+                            });
+                        }
+                    }
+                }
+
                 let cond_expr = self.transform_expr(cond, ctx)?;
                 let then_expr = self.transform_expr(then_branch, ctx)?;
                 let else_expr = else_branch
@@ -855,8 +879,37 @@ impl Translator {
             Expr::Eq(lhs, rhs) => self.transform_equality(lhs, rhs, ctx),
 
             Expr::Call { func, args } => {
-                let translated_args: TranspileResult<Vec<_>> =
-                    args.iter().map(|a| self.transform_expr(a, ctx)).collect();
+                // Transform arguments, adding reference prefixes where appropriate
+                let translated_args: TranspileResult<Vec<_>> = args
+                    .iter()
+                    .map(|a| {
+                        let transformed = self.transform_expr(a, ctx)?;
+                        // Add reference for most argument types:
+                        // - Field accesses (s.field)
+                        // - Method calls (obj.method())
+                        // - Arrow accesses (msg->field)
+                        // - Input parameters and local variables (identifiers)
+                        // Do NOT add reference for:
+                        // - Literals (0, "string", true)
+                        // - Struct construction
+                        let needs_ref = match a {
+                            Expr::Field(..) | Expr::MethodCall { .. } | Expr::Arrow(..) => true,
+                            Expr::Ident(name) => {
+                                // Add & for input params and local variables (not outputs)
+                                !ctx.is_output(name)
+                            }
+                            _ => false,
+                        };
+                        if needs_ref {
+                            Ok(ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(transformed),
+                            })
+                        } else {
+                            Ok(transformed)
+                        }
+                    })
+                    .collect();
                 let func_name = func.last().unwrap_or("unknown");
                 Ok(ExecExpr::Call {
                     func: self.translate_name(func_name),
@@ -1322,9 +1375,29 @@ impl Translator {
                     }
                 }
                 // Not an output, it's an input
-                // Transform it and add to inputs
+                // Transform it and add to inputs with reference prefix where appropriate
                 if let Ok(transformed) = self.transform_expr(arg, ctx) {
-                    input_args.push(transformed);
+                    // Add reference for most argument types:
+                    // - Field accesses (s.field)
+                    // - Method calls (obj.method())
+                    // - Arrow accesses (msg->field)
+                    // - Input parameters and local variables (not outputs)
+                    let needs_ref = match arg {
+                        Expr::Field(..) | Expr::MethodCall { .. } | Expr::Arrow(..) => true,
+                        Expr::Ident(name) => {
+                            // Add & for input params and local variables (not outputs)
+                            !ctx.is_output(name)
+                        }
+                        _ => false,
+                    };
+                    if needs_ref {
+                        input_args.push(ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(transformed),
+                        });
+                    } else {
+                        input_args.push(transformed);
+                    }
                 }
             }
 
@@ -1376,6 +1449,47 @@ impl Translator {
             ty: None,
             value: Box::new(call),
         }
+    }
+
+    /// Extract simple copy source from else branch of conditional helper
+    /// Pattern: s_.field == s.field returns Some(s.field)
+    /// Pattern: s_.field == expr returns Some(expr) if field matches helper output
+    fn extract_simple_copy_source(
+        &self,
+        expr: &Expr,
+        helper_info: &HelperCallInfo,
+        ctx: &TransformContext,
+    ) -> Option<Expr> {
+        // Check for equality: s_.field == s.field or s_.field == other_expr
+        if let Expr::Eq(lhs, rhs) = expr {
+            // Check if LHS is an output field that matches one of the helper's output fields
+            if let Expr::Field(base, field) = lhs.as_ref() {
+                if let Expr::Ident(var_name) = base.as_ref() {
+                    if ctx.is_output(var_name) {
+                        // Check if this field is one of the helper's outputs
+                        for (out_var, out_field) in &helper_info.output_fields {
+                            if var_name == out_var && field == out_field {
+                                // Return the RHS as the copy source
+                                return Some((**rhs).clone());
+                            }
+                        }
+                    }
+                }
+            }
+            // Also check swapped: s.field == s_.field
+            if let Expr::Field(base, field) = rhs.as_ref() {
+                if let Expr::Ident(var_name) = base.as_ref() {
+                    if ctx.is_output(var_name) {
+                        for (out_var, out_field) in &helper_info.output_fields {
+                            if var_name == out_var && field == out_field {
+                                return Some((**lhs).clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Get the substitution map from helper call info
