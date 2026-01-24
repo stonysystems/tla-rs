@@ -8,6 +8,18 @@ use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
 
+/// Type alias for output assignments result: (name, expression) pairs and other expressions.
+pub type OutputAssignments = (Vec<(String, ExecExpr)>, Vec<ExecExpr>);
+
+/// Type alias for helper call processing result:
+/// (let_bindings, remaining_exprs, field_substitutions, bound_output_params)
+pub type HelperCallResult = (
+    Vec<ExecExpr>,
+    Vec<Expr>,
+    HashMap<(String, String), String>,
+    HashSet<String>,
+);
+
 /// Configuration for code generation
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -1791,7 +1803,7 @@ impl Translator {
         exprs: &[Expr],
         ctx: &TransformContext,
         exclude_outputs: &HashSet<String>,
-    ) -> TranspileResult<(Vec<(String, ExecExpr)>, Vec<ExecExpr>)> {
+    ) -> TranspileResult<OutputAssignments> {
         let mut output_exprs: Vec<(String, ExecExpr)> = Vec::new();
         let mut other_exprs: Vec<ExecExpr> = Vec::new();
 
@@ -2036,7 +2048,7 @@ impl Translator {
         &self,
         exprs: &[Expr],
         ctx: &TransformContext,
-    ) -> (Vec<ExecExpr>, Vec<Expr>, HashMap<(String, String), String>, HashSet<String>) {
+    ) -> HelperCallResult {
         let mut let_bindings = Vec::new();
         let mut remaining_exprs = Vec::new();
         let mut combined_substitutions = HashMap::new();
