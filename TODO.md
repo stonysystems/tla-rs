@@ -1141,10 +1141,13 @@ All major code generation issues for acceptor.rs have been addressed:
 - ✅ Map update with insert operations generate proper code
 - ✅ Clone for input → output copies when `s_ == s`
 
-Remaining limitations (require type information to fully resolve):
-- Ownership: Reference params assigned to struct fields may need `.clone()` or dereference
-- Type coercion: Some comparisons may need explicit type handling
-- Iterator methods: `.iter().filter().collect()` may need type annotations
+Remaining limitations (require type information or code structure changes):
+- ✅ FIXED [26:01:25]: Ownership - Reference params assigned to struct fields now automatically get `.clone()`
+- Type coercion: Some comparisons may need explicit type handling (usually not an issue due to Verus deref coercion)
+- ⚠️ Iterator methods: `.iter().filter().collect()` patterns don't verify in Verus
+  - Manual code uses explicit `for` loops with `invariant` clauses
+  - Transpiler would need to generate loop-based code instead of iterator chains
+  - See docs/dev/verus-integration-plan.md for integration strategy options
 
 The generated code is structurally correct and matches the expected Verus exec function format.
 
