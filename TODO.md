@@ -1178,8 +1178,18 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Generated src/implementation/RSL/generated_acceptor_v3.rs
       - Added module to mod.rs with #[cfg(test)]
       - Verifies with Verus: 456 verified, 0 errors
+  - **MILESTONE**: Transpiler can generate verifiable RSL acceptor code
+  - **Remaining for full replacement**:
+    - [ ] Add struct definitions (CAcceptor) with View trait to generated code
+    - [ ] Add wrapper methods that convert functional style to &mut self pattern
+    - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.)
+    - [ ] Add min_vote_opn optimization helper
 - [ ] Run full system tests with generated implementation
-- [ ] Document any manual adjustments needed
+- [x] Document any manual adjustments needed [26:01:25, 12:00]
+  - Created docs/dev/generated-code-integration.md
+  - Documents struct definitions, View trait, method adaptation, type mappings
+  - Includes incremental integration strategy (Phases A/B/C)
+  - Lists known issues and future improvements
 
 #### Known Challenges
 - RSL uses complex nested types (`LReplicaConstants`, `LConfiguration`, etc.)
