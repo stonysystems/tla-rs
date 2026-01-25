@@ -1393,9 +1393,10 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
   - Builds transpiler and runs type generation
   - Ready for CI integration to ensure generated code stays in sync
 
-- [ ] **E3: Final cleanup**
-  - Remove redundant test files
-  - Update README with generated implementation section
+- [x] **E3: Final cleanup** ✅ [26:01:25]
+  - Added `src/generated/RSL/` to README project structure
+  - Added `scripts/` directory to README
+  - Existing test files retained (needed for equivalence testing)
 
 #### Success Criteria
 1. All RSL modules can be regenerated from specs using transpiler
