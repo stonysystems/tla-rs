@@ -661,20 +661,32 @@ impl<'a> TypeParser<'a> {
     }
 
     fn skip_item(&mut self) {
+        // Skip leading whitespace
+        self.skip_whitespace_and_comments();
+
+        // Handle items that end with semicolon (use, type alias, etc.)
+        // vs items that end with braces (fn, struct, enum, impl, etc.)
         let mut depth = 0;
+        let mut found_brace = false;
+
         loop {
             match self.peek() {
                 Some('{') => {
+                    found_brace = true;
                     depth += 1;
                     self.advance();
                 }
                 Some('}') => {
-                    if depth == 0 {
-                        break;
-                    }
                     depth -= 1;
                     self.advance();
-                    if depth == 0 {
+                    if depth == 0 && found_brace {
+                        break;
+                    }
+                }
+                Some(';') => {
+                    self.advance();
+                    // If we haven't entered a brace block, semicolon ends the item
+                    if depth == 0 && !found_brace {
                         break;
                     }
                 }
@@ -1304,6 +1316,48 @@ verus! {
                 }
             }
             _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_with_use_statements_before_verus() {
+        // Test that use statements before verus! block don't break parsing
+        let source = r#"
+use vstd::prelude::*;
+use std::collections::*;
+use crate::some::module::*;
+
+verus! {
+    pub struct Ballot {
+        pub seqno: int,
+        pub proposer_id: int,
+    }
+
+    pub struct Request {
+        pub client: AbstractEndPoint,
+        pub seqno: int,
+    }
+}
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        // Should parse both structs from inside verus! block
+        assert_eq!(types.len(), 2);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "Ballot");
+                assert_eq!(s.fields.len(), 2);
+            }
+            _ => panic!("Expected struct Ballot"),
+        }
+        match &types[1] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "Request");
+                assert_eq!(s.fields.len(), 2);
+            }
+            _ => panic!("Expected struct Request"),
         }
     }
 }

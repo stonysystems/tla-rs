@@ -439,16 +439,20 @@ fn needs_view_check(ty: &Type) -> bool {
 
 impl NamingConfig {
     /// Get the exec type name for a spec type
+    ///
+    /// Only replaces prefix if followed by uppercase letter to avoid
+    /// mangling names like "LearnerTuple" (should become "CLearnerTuple"
+    /// not "CearnerTuple").
     pub fn get_exec_type(&self, spec_name: &str) -> String {
         if spec_name.starts_with(&self.spec_prefix) {
-            format!(
-                "{}{}",
-                self.exec_prefix,
-                &spec_name[self.spec_prefix.len()..]
-            )
-        } else {
-            format!("{}{}", self.exec_prefix, spec_name)
+            let rest = &spec_name[self.spec_prefix.len()..];
+            // Check if the character after the prefix is uppercase
+            if rest.chars().next().is_some_and(|c| c.is_uppercase()) {
+                return format!("{}{}", self.exec_prefix, rest);
+            }
         }
+        // Default: prepend exec prefix
+        format!("{}{}", self.exec_prefix, spec_name)
     }
 }
 
@@ -649,8 +653,15 @@ mod tests {
     fn test_naming_config_get_exec_type() {
         let config = make_config();
 
+        // L-prefixed types with uppercase after L -> replace L with C
         assert_eq!(config.get_exec_type("LAcceptor"), "CAcceptor");
         assert_eq!(config.get_exec_type("LState"), "CState");
+
+        // Types without L prefix -> prepend C
         assert_eq!(config.get_exec_type("Ballot"), "CBallot");
+
+        // L followed by lowercase -> prepend C (not replace)
+        // (e.g., "LearnerTuple" should become "CLearnerTuple", not "CearnerTuple")
+        assert_eq!(config.get_exec_type("LearnerTuple"), "CLearnerTuple");
     }
 }
