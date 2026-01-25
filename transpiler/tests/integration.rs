@@ -333,3 +333,201 @@ fn test_full_transpilation_simple() {
     // The transpiler should succeed (even if output is minimal)
     assert!(result.is_ok());
 }
+
+// ============================================================================
+// Phase A Integration Tests: Type Parsing + Generation Pipeline
+// ============================================================================
+
+#[test]
+fn test_parse_verus_block_and_generate_types() {
+    use verus_transpiler::codegen::TypeGenerator;
+    use verus_transpiler::config::NamingConfig;
+    use verus_transpiler::types::{TypeDef, TypeParser, TypeRegistry};
+
+    // Parse a verus! block with struct definitions
+    let source = r#"
+        verus! {
+            pub struct LAcceptor {
+                pub max_bal: Ballot,
+                pub votes: Votes,
+            }
+
+            pub struct LBallot {
+                pub seqno: int,
+                pub proposer_id: int,
+            }
+        }
+    "#;
+
+    let mut parser = TypeParser::new(source);
+    let types = parser.parse_types().unwrap();
+
+    // Should have parsed 2 types
+    assert_eq!(types.len(), 2, "Expected 2 types but got {}", types.len());
+
+    // Register types
+    let mut registry = TypeRegistry::new();
+    for type_def in types {
+        match type_def {
+            TypeDef::Struct(s) => {
+                registry.structs.insert(s.name.clone(), s);
+            }
+            _ => {}
+        }
+    }
+
+    assert!(registry.structs.contains_key("LAcceptor"));
+    assert!(registry.structs.contains_key("LBallot"));
+
+    // Generate exec types
+    let config = NamingConfig::default();
+    let generator = TypeGenerator::new(config);
+
+    // Generate CAcceptor
+    let acceptor_def = registry.structs.get("LAcceptor").unwrap();
+    let acceptor_code = generator.generate_struct(acceptor_def);
+
+    // Verify generated code contains expected elements
+    assert!(
+        acceptor_code.code.contains("#[derive(Clone)]"),
+        "Should have #[derive(Clone)]"
+    );
+    assert!(
+        acceptor_code.code.contains("pub struct CAcceptor"),
+        "Should have CAcceptor struct"
+    );
+    assert!(
+        acceptor_code.code.contains("pub max_bal: CBallot"),
+        "Should have CBallot field type"
+    );
+    assert!(
+        acceptor_code.code.contains("pub votes: CVotes"),
+        "Should have CVotes field type"
+    );
+    assert!(
+        acceptor_code.code.contains("fn well_formed"),
+        "Should have well_formed predicate"
+    );
+    assert!(
+        acceptor_code.code.contains("impl View for CAcceptor"),
+        "Should have View impl"
+    );
+    assert!(
+        acceptor_code.code.contains("type V = LAcceptor"),
+        "Should have spec type alias"
+    );
+
+    // Generate CBallot
+    let ballot_def = registry.structs.get("LBallot").unwrap();
+    let ballot_code = generator.generate_struct(ballot_def);
+
+    assert!(
+        ballot_code.code.contains("pub struct CBallot"),
+        "Should have CBallot struct"
+    );
+    assert!(
+        ballot_code.code.contains("seqno: i64"),
+        "int should map to i64"
+    );
+    assert!(
+        ballot_code.code.contains("proposer_id: i64"),
+        "int should map to i64"
+    );
+}
+
+#[test]
+fn test_generate_enum_from_parsed_type() {
+    use verus_transpiler::codegen::TypeGenerator;
+    use verus_transpiler::config::NamingConfig;
+    use verus_transpiler::types::{TypeDef, TypeParser, TypeRegistry};
+
+    let source = r#"
+        verus! {
+            pub enum LMessage {
+                Message1a { bal: Ballot },
+                Message1b { bal: Ballot, votes: Votes },
+                Invalid,
+            }
+        }
+    "#;
+
+    let mut parser = TypeParser::new(source);
+    let types = parser.parse_types().unwrap();
+
+    assert_eq!(types.len(), 1);
+
+    let mut registry = TypeRegistry::new();
+    for type_def in types {
+        match type_def {
+            TypeDef::Enum(e) => {
+                registry.enums.insert(e.name.clone(), e);
+            }
+            _ => {}
+        }
+    }
+
+    let config = NamingConfig::default();
+    let generator = TypeGenerator::new(config);
+
+    let message_def = registry.enums.get("LMessage").unwrap();
+    let code = generator.generate_enum(message_def);
+
+    // Verify generated enum
+    assert!(code.code.contains("#[derive(Clone)]"));
+    assert!(code.code.contains("pub enum CMessage"));
+    assert!(code.code.contains("Message1a"));
+    assert!(code.code.contains("Message1b"));
+    assert!(code.code.contains("Invalid"));
+    assert!(code.code.contains("bal: CBallot"));
+    assert!(code.code.contains("fn well_formed"));
+    assert!(code.code.contains("impl View for CMessage"));
+}
+
+#[test]
+fn test_generate_all_types_from_registry() {
+    use verus_transpiler::codegen::generate_all_types;
+    use verus_transpiler::config::NamingConfig;
+    use verus_transpiler::types::{TypeDef, TypeParser, TypeRegistry};
+
+    let source = r#"
+        verus! {
+            pub struct LState {
+                pub value: int,
+                pub items: Seq<Item>,
+            }
+
+            pub enum LStatus {
+                Active,
+                Inactive { reason: int },
+            }
+        }
+    "#;
+
+    let mut parser = TypeParser::new(source);
+    let types = parser.parse_types().unwrap();
+
+    let mut registry = TypeRegistry::new();
+    for type_def in types {
+        match type_def {
+            TypeDef::Struct(s) => {
+                registry.structs.insert(s.name.clone(), s);
+            }
+            TypeDef::Enum(e) => {
+                registry.enums.insert(e.name.clone(), e);
+            }
+            _ => {}
+        }
+    }
+
+    let config = NamingConfig::default();
+    let code = generate_all_types(&registry, &config);
+
+    // Verify the combined output
+    assert!(code.code.contains("// Auto-generated"));
+    assert!(code.code.contains("verus!"));
+    assert!(code.code.contains("pub struct CState"));
+    assert!(code.code.contains("pub enum CStatus"));
+    assert!(code.code.contains("items: Vec<CItem>"));
+    assert!(code.code.contains("impl View for CState"));
+    assert!(code.code.contains("impl View for CStatus"));
+}

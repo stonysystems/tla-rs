@@ -48,6 +48,8 @@ impl TypeGenerator {
 
         let exec_name = self.config.get_exec_type(&spec.name);
 
+        // Generate derive attributes
+        code.push_str("#[derive(Clone)]\n");
         // Generate struct definition
         code.push_str(&format!("pub struct {} {{\n", exec_name));
         for field in &spec.fields {
@@ -77,6 +79,8 @@ impl TypeGenerator {
 
         let exec_name = self.config.get_exec_type(&spec.name);
 
+        // Generate derive attributes
+        code.push_str("#[derive(Clone)]\n");
         // Generate enum definition
         code.push_str(&format!("pub enum {} {{\n", exec_name));
         for variant in &spec.variants {
@@ -521,6 +525,7 @@ mod tests {
 
         let result = generator.generate_struct(&spec);
 
+        assert!(result.code.contains("#[derive(Clone)]"));
         assert!(result.code.contains("pub struct CAcceptor"));
         assert!(result.code.contains("pub max_bal: CBallot"));
         assert!(result.code.contains("pub votes: CVotes"));
