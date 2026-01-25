@@ -180,9 +180,11 @@ The transpiler includes 25+ verified examples in `transpiler/verus_examples/` co
 | `src/protocol/lock/` | Abstract Lock protocol specs |
 | `src/implementation/RSL/` | Verified concrete RSL implementation (~6K LOC) |
 | `src/implementation/lock/` | Verified concrete Lock implementation |
+| `src/generated/RSL/` | Auto-generated RSL types and functions |
 | `src/common/native/io_s.rs` | Network client with marshalling (~17K LOC) |
 | `csharp/` | C# runtime and deployable services (~45K LOC) |
 | `transpiler/` | Spec-to-exec transpiler (~10K LOC) |
+| `scripts/` | Utility scripts (e.g., regeneration) |
 
 ## Verus Patterns
 
