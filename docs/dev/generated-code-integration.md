@@ -19,16 +19,30 @@ The transpiler successfully generates verifiable exec functions for all RSL acce
 
 ## Generated Code Location
 
+### Functions
 - Config: `src/protocol/RSL/transpile.toml`
 - Generated: `src/implementation/RSL/generated_acceptor_v3.rs`
-- Command:
-  ```bash
-  cd transpiler && cargo run -- \
-    --input ../src/protocol/RSL/acceptor.rs \
-    --annotations ../src/protocol/RSL/acceptor.automan \
-    --config ../src/protocol/RSL/transpile.toml \
-    --output ../src/implementation/RSL/generated_acceptor_v3.rs
-  ```
+
+### Types
+- Config: `src/protocol/RSL/types_transpile.toml`
+- Generated: `src/generated/RSL/types_gen.rs`
+
+### Function Generation Command
+```bash
+cd transpiler && cargo run -- \
+  --input ../src/protocol/RSL/acceptor.rs \
+  --annotations ../src/protocol/RSL/acceptor.automan \
+  --config ../src/protocol/RSL/transpile.toml \
+  --output ../src/implementation/RSL/generated_acceptor_v3.rs
+```
+
+### Type Generation Command
+```bash
+cd transpiler && cargo run -- generate-types \
+  --input ../src/protocol/RSL/types.rs \
+  --config ../src/protocol/RSL/types_transpile.toml \
+  --output ../src/generated/RSL/types_gen.rs
+```
 
 ## Manual Adjustments Required
 
@@ -149,10 +163,34 @@ Update `transpile.toml` remapping section to handle these.
 1. **Iterator patterns**: Generated code uses `.iter().filter()` which requires external_body trust for correctness
 2. **HashMap axioms**: Requires `broadcast use vstd::std_specs::hash::group_hash_axioms`
 
+## Recent Improvements (2026-01-25)
+
+- [x] **Type definition generation**: Now available via `generate-types` CLI command
+  - Generates exec structs from spec types
+  - Generates `well_formed()` validity predicates
+  - Generates `View` trait implementations with `@` operator support
+  - Supports type remapping via config file
+- [x] **View trait generation**: Automatic generation with correct `as int` conversions
+- [x] **Regeneration script**: `scripts/regenerate_rsl.sh` for rebuilding all generated code
+
+## Generated Types
+
+Type generation is now available:
+
+```bash
+cd transpiler && cargo run -- generate-types \
+    --input ../src/protocol/RSL/types.rs \
+    --config ../src/protocol/RSL/types_transpile.toml \
+    --output ../src/generated/RSL/types_gen.rs
+```
+
+Generated output includes:
+- Struct definitions with exec types (i64, u64, Vec, HashMap, HashSet)
+- `well_formed()` spec predicates
+- `View` trait implementations
+
 ## Future Improvements
 
-- [ ] Add type definition generation to transpiler
-- [ ] Add View trait generation
-- [ ] Add &mut self wrapper generation
+- [ ] Add &mut self wrapper generation (see docs/dev/phase5-wrapper-methods-plan.md)
 - [ ] Add optimization variant support
 - [ ] Reduce iterator pattern reliance with generated loops
