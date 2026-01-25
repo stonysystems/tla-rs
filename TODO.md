@@ -1313,18 +1313,21 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
 
 #### Phase B: Full RSL Type Generation
 
-- [ ] **B1: Create type annotation file for RSL**
-  - New file: `src/protocol/RSL/types.automan`
-  - Annotate which spec types need exec counterparts
-  - Specify type mappings and custom field handling
+- [x] **B1-B2: Generate RSL types** ✅
+  - CLI `generate-types` command now works end-to-end
+  - Generated `src/generated/RSL/types_gen.rs` with 6 structs:
+    - CBallot, CRequest, CReply, CVote, CLearnerTuple, CClockReading
+  - Bug fixes applied:
+    - Fixed skip_item() to properly handle use statements before verus! blocks
+    - Fixed is_spec detection (all types inside verus! blocks are spec types)
+    - Fixed get_exec_type() L prefix detection (LearnerTuple → CLearnerTuple)
+    - Fixed well_formed() empty body for all-primitive structs
 
-- [ ] **B2: Generate all RSL types**
-  - Run transpiler to generate: `src/generated/RSL/types_gen.rs`
-  - Types: CAcceptor, CBallot, CVote, CVotes, CReplicaConstants, CConfiguration, etc.
-
-- [ ] **B3: Verify generated types compile with Verus**
-  - Add generated types module to build
-  - Ensure View trait implementations verify
+- [ ] **B3: Verify generated types compile with Verus** ⏳
+  - Generated code provides correct structure but needs imports
+  - Manual additions needed: type imports (CAbstractEndPoint, CAppMessage, etc.)
+  - Manual additions needed: spec type imports (Request, Reply, Ballot, etc.)
+  - Note: int→i64 mapping needs `as int` conversion in View impl
 
 #### Phase C: Complete Generated Implementation
 
