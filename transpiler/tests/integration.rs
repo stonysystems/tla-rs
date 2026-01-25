@@ -368,11 +368,8 @@ fn test_parse_verus_block_and_generate_types() {
     // Register types
     let mut registry = TypeRegistry::new();
     for type_def in types {
-        match type_def {
-            TypeDef::Struct(s) => {
-                registry.structs.insert(s.name.clone(), s);
-            }
-            _ => {}
+        if let TypeDef::Struct(s) = type_def {
+            registry.structs.insert(s.name.clone(), s);
         }
     }
 
@@ -458,11 +455,8 @@ fn test_generate_enum_from_parsed_type() {
 
     let mut registry = TypeRegistry::new();
     for type_def in types {
-        match type_def {
-            TypeDef::Enum(e) => {
-                registry.enums.insert(e.name.clone(), e);
-            }
-            _ => {}
+        if let TypeDef::Enum(e) = type_def {
+            registry.enums.insert(e.name.clone(), e);
         }
     }
 
