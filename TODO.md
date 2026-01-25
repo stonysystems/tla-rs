@@ -1387,9 +1387,10 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
   - How to customize type generation
   - How to handle edge cases
 
-- [ ] **E2: Create regeneration script**
-  - Script to regenerate all RSL implementation from specs
-  - Include in CI to ensure generated code stays in sync with specs
+- [x] **E2: Create regeneration script** ✅ [26:01:25]
+  - Created `scripts/regenerate_rsl.sh`
+  - Builds transpiler and runs type generation
+  - Ready for CI integration to ensure generated code stays in sync
 
 - [ ] **E3: Final cleanup**
   - Remove redundant test files
