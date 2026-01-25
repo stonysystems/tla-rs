@@ -1382,10 +1382,11 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
 
 #### Phase E: Documentation and Cleanup
 
-- [ ] **E1: Document the full transpilation workflow**
-  - How to add new protocols
-  - How to customize type generation
-  - How to handle edge cases
+- [x] **E1: Document the full transpilation workflow** ✅ [26:01:25]
+  - Updated docs/dev/generated-code-integration.md with type generation
+  - Added commands for function and type generation
+  - Documented recent improvements (type generation, View trait, regeneration script)
+  - Type generation customization via config file documented
 
 - [x] **E2: Create regeneration script** ✅ [26:01:25]
   - Created `scripts/regenerate_rsl.sh`
