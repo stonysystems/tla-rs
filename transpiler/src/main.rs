@@ -90,6 +90,10 @@ enum Commands {
         /// Output file
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Configuration file (TOML) with type remappings
+        #[arg(short, long)]
+        config: Option<PathBuf>,
     },
 }
 
@@ -184,7 +188,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
             Ok(())
         }
-        Commands::GenerateTypes { input, output } => {
+        Commands::GenerateTypes {
+            input,
+            output,
+            config,
+        } => {
+            use std::collections::HashMap;
             use verus_transpiler::config::NamingConfig;
             use verus_transpiler::types::TypeDef;
             use verus_transpiler::{TypeParser, TypeRegistry};
@@ -192,6 +201,22 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             if cli.verbose {
                 eprintln!("Generating types from: {}", input.display());
             }
+
+            // Load config for remappings and imports if provided
+            let (remapping, custom_imports): (HashMap<String, String>, Vec<String>) =
+                if let Some(config_path) = config {
+                    if cli.verbose {
+                        eprintln!("Loading config from: {}", config_path.display());
+                    }
+                    let file_config = FileConfig::from_file(config_path)
+                        .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+                    (
+                        file_config.remapping.clone(),
+                        file_config.output.custom_imports.clone(),
+                    )
+                } else {
+                    (HashMap::new(), Vec::new())
+                };
 
             let content = std::fs::read_to_string(input)
                 .map_err(|e| miette::miette!("Failed to read input file: {}", e))?;
@@ -229,8 +254,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Generate exec types using the registry function
-            let config = NamingConfig::default();
-            let generated = verus_transpiler::codegen::generate_all_types(&registry, &config);
+            let naming_config = NamingConfig::default();
+            let generated = verus_transpiler::codegen::generate_all_types_with_options(
+                &registry,
+                &naming_config,
+                &remapping,
+                &custom_imports,
+            );
 
             // Print any warnings
             for warning in &generated.warnings {

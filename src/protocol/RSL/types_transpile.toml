@@ -1,0 +1,28 @@
+# Configuration for generating RSL types
+# This is separate from the main transpile.toml for function generation
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+# External types that don't follow L->C convention
+"AbstractEndPoint" = "EndPoint"
+"AppMessage" = "CAppMessage"
+"RequestBatch" = "CRequestBatch"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "well_formed"
+generate_clone = true
+include_debug_comments = false
+# Custom imports for RSL types
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use std::collections::HashSet;",
+    "use crate::common::native::io_s::EndPoint;",
+    "use crate::implementation::RSL::appinterface::CAppMessage;",
+    "use crate::implementation::RSL::types_i::CRequestBatch;",
+    "use crate::protocol::RSL::types::*;",
+]

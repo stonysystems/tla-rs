@@ -2,60 +2,13 @@
 // DO NOT EDIT MANUALLY
 
 use vstd::prelude::*;
+use std::collections::HashSet;
+use crate::common::native::io_s::EndPoint;
+use crate::implementation::RSL::appinterface::CAppMessage;
+use crate::implementation::RSL::types_i::CRequestBatch;
+use crate::protocol::RSL::types::*;
 
 verus! {
-
-#[derive(Clone)]
-pub struct CRequest {
-    pub client: CAbstractEndPoint,
-    pub seqno: i64,
-    pub request: CAppMessage,
-}
-
-impl CRequest {
-    pub open spec fn well_formed(&self) -> bool {
-            self.client.well_formed()
-        &&& self.request.well_formed()
-    }
-}
-
-impl View for CRequest {
-    type V = Request;
-
-    open spec fn view(&self) -> Request {
-        Request {
-            client: self.client@,
-            seqno: self.seqno as int,
-            request: self.request@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CReply {
-    pub client: CAbstractEndPoint,
-    pub seqno: i64,
-    pub reply: CAppMessage,
-}
-
-impl CReply {
-    pub open spec fn well_formed(&self) -> bool {
-            self.client.well_formed()
-        &&& self.reply.well_formed()
-    }
-}
-
-impl View for CReply {
-    type V = Reply;
-
-    open spec fn view(&self) -> Reply {
-        Reply {
-            client: self.client@,
-            seqno: self.seqno as int,
-            reply: self.reply@,
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct CVote {
@@ -82,25 +35,27 @@ impl View for CVote {
 }
 
 #[derive(Clone)]
-pub struct CLearnerTuple {
-    pub received_2b_message_senders: HashSet<CAbstractEndPoint>,
-    pub candidate_learned_value: CRequestBatch,
+pub struct CRequest {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub request: CAppMessage,
 }
 
-impl CLearnerTuple {
+impl CRequest {
     pub open spec fn well_formed(&self) -> bool {
-            self.received_2b_message_senders.well_formed()
-        &&& self.candidate_learned_value.well_formed()
+            self.client.well_formed()
+        &&& self.request.well_formed()
     }
 }
 
-impl View for CLearnerTuple {
-    type V = LearnerTuple;
+impl View for CRequest {
+    type V = Request;
 
-    open spec fn view(&self) -> LearnerTuple {
-        LearnerTuple {
-            received_2b_message_senders: self.received_2b_message_senders@,
-            candidate_learned_value: self.candidate_learned_value@,
+    open spec fn view(&self) -> Request {
+        Request {
+            client: self.client@,
+            seqno: self.seqno as int,
+            request: self.request@,
         }
     }
 }
@@ -145,6 +100,56 @@ impl View for CBallot {
         Ballot {
             seqno: self.seqno as int,
             proposer_id: self.proposer_id as int,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CLearnerTuple {
+    pub received_2b_message_senders: HashSet<EndPoint>,
+    pub candidate_learned_value: CRequestBatch,
+}
+
+impl CLearnerTuple {
+    pub open spec fn well_formed(&self) -> bool {
+            self.received_2b_message_senders.well_formed()
+        &&& self.candidate_learned_value.well_formed()
+    }
+}
+
+impl View for CLearnerTuple {
+    type V = LearnerTuple;
+
+    open spec fn view(&self) -> LearnerTuple {
+        LearnerTuple {
+            received_2b_message_senders: self.received_2b_message_senders@,
+            candidate_learned_value: self.candidate_learned_value@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CReply {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub reply: CAppMessage,
+}
+
+impl CReply {
+    pub open spec fn well_formed(&self) -> bool {
+            self.client.well_formed()
+        &&& self.reply.well_formed()
+    }
+}
+
+impl View for CReply {
+    type V = Reply;
+
+    open spec fn view(&self) -> Reply {
+        Reply {
+            client: self.client@,
+            seqno: self.seqno as int,
+            reply: self.reply@,
         }
     }
 }

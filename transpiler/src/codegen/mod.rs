@@ -11,6 +11,8 @@ pub mod template_codegen;
 
 pub use template_codegen::TemplateCodeGenerator;
 
+use std::collections::HashMap;
+
 use crate::ast::Type;
 use crate::config::NamingConfig;
 use crate::types::{EnumDef, FieldDef, StructDef, TypeRegistry, VariantDef, VariantFields};
@@ -28,6 +30,8 @@ pub struct GeneratedCode {
 pub struct TypeGenerator {
     /// Naming configuration
     config: NamingConfig,
+    /// Type remapping table (spec name -> exec name)
+    remapping: HashMap<String, String>,
     /// Indentation string
     indent: String,
 }
@@ -37,6 +41,16 @@ impl TypeGenerator {
     pub fn new(config: NamingConfig) -> Self {
         Self {
             config,
+            remapping: HashMap::new(),
+            indent: "    ".to_string(),
+        }
+    }
+
+    /// Create a new type generator with remapping table
+    pub fn with_remapping(config: NamingConfig, remapping: HashMap<String, String>) -> Self {
+        Self {
+            config,
+            remapping,
             indent: "    ".to_string(),
         }
     }
@@ -46,7 +60,7 @@ impl TypeGenerator {
         let mut code = String::new();
         let warnings = Vec::new();
 
-        let exec_name = self.config.get_exec_type(&spec.name);
+        let exec_name = self.get_exec_type(&spec.name);
 
         // Generate derive attributes
         code.push_str("#[derive(Clone)]\n");
@@ -77,7 +91,7 @@ impl TypeGenerator {
         let mut code = String::new();
         let warnings = Vec::new();
 
-        let exec_name = self.config.get_exec_type(&spec.name);
+        let exec_name = self.get_exec_type(&spec.name);
 
         // Generate derive attributes
         code.push_str("#[derive(Clone)]\n");
@@ -353,16 +367,26 @@ impl TypeGenerator {
         }
     }
 
+    /// Get exec type name, checking remapping table first
+    fn get_exec_type(&self, name: &str) -> String {
+        // First check explicit remapping
+        if let Some(exec_type) = self.remapping.get(name) {
+            return exec_type.clone();
+        }
+        // Fall back to naming convention
+        self.config.get_exec_type(name)
+    }
+
     /// Translate a spec type to its exec equivalent
     fn translate_type(&self, ty: &Type) -> String {
         match ty {
             Type::Named(path) => {
                 let name = path.last().unwrap_or("Unknown");
-                self.config.get_exec_type(name)
+                self.get_exec_type(name)
             }
             Type::Generic(path, args) => {
                 let name = path.last().unwrap_or("Unknown");
-                let exec_name = self.config.get_exec_type(name);
+                let exec_name = self.get_exec_type(name);
                 let arg_strs: Vec<_> = args.iter().map(|a| self.translate_type(a)).collect();
                 format!("{}<{}>", exec_name, arg_strs.join(", "))
             }
@@ -485,14 +509,46 @@ impl NamingConfig {
 
 /// Generate all types from a type registry
 pub fn generate_all_types(registry: &TypeRegistry, config: &NamingConfig) -> GeneratedCode {
-    let generator = TypeGenerator::new(config.clone());
+    generate_all_types_with_remapping(registry, config, &HashMap::new())
+}
+
+/// Generate all types from a type registry with custom type remapping
+pub fn generate_all_types_with_remapping(
+    registry: &TypeRegistry,
+    config: &NamingConfig,
+    remapping: &HashMap<String, String>,
+) -> GeneratedCode {
+    generate_all_types_with_options(registry, config, remapping, &[])
+}
+
+/// Generate all types from a type registry with custom remapping and imports
+pub fn generate_all_types_with_options(
+    registry: &TypeRegistry,
+    config: &NamingConfig,
+    remapping: &HashMap<String, String>,
+    custom_imports: &[String],
+) -> GeneratedCode {
+    let generator = TypeGenerator::with_remapping(config.clone(), remapping.clone());
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
 
     // Header
     all_code.push_str("// Auto-generated concrete types by verus-transpiler\n");
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
-    all_code.push_str("use vstd::prelude::*;\n\n");
+
+    // Custom imports
+    if custom_imports.is_empty() {
+        all_code.push_str("use vstd::prelude::*;\n\n");
+    } else {
+        for import in custom_imports {
+            all_code.push_str(import);
+            if !import.ends_with('\n') {
+                all_code.push('\n');
+            }
+        }
+        all_code.push('\n');
+    }
+
     all_code.push_str("verus! {\n\n");
 
     // Generate structs
@@ -765,6 +821,80 @@ mod tests {
         assert!(
             result.code.contains("seqno: self.seqno as int"),
             "Should have 'as int' for seqno: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_type_remapping() {
+        // Test that remapping table overrides default naming
+        let mut remapping = HashMap::new();
+        remapping.insert("AbstractEndPoint".to_string(), "EndPoint".to_string());
+        remapping.insert("AppMessage".to_string(), "CAppMessage".to_string());
+
+        let generator = TypeGenerator::with_remapping(make_config(), remapping);
+
+        let spec = StructDef {
+            name: "Request".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "client".to_string(),
+                    ty: Type::Named(Path::single("AbstractEndPoint".to_string())),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "msg".to_string(),
+                    ty: Type::Named(Path::single("AppMessage".to_string())),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // client should use remapped EndPoint, not CAbstractEndPoint
+        assert!(
+            result.code.contains("client: EndPoint"),
+            "Should use remapped 'EndPoint': {}",
+            result.code
+        );
+        // msg should use remapped CAppMessage
+        assert!(
+            result.code.contains("msg: CAppMessage"),
+            "Should use remapped 'CAppMessage': {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_type_remapping_in_collections() {
+        // Test that remapping works for types inside collections
+        let mut remapping = HashMap::new();
+        remapping.insert("AbstractEndPoint".to_string(), "EndPoint".to_string());
+
+        let generator = TypeGenerator::with_remapping(make_config(), remapping);
+
+        let spec = StructDef {
+            name: "LGroup".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "members".to_string(),
+                ty: Type::Set(Box::new(Type::Named(Path::single(
+                    "AbstractEndPoint".to_string(),
+                )))),
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should use remapped EndPoint inside HashSet
+        assert!(
+            result.code.contains("members: HashSet<EndPoint>"),
+            "Should use remapped 'EndPoint' in HashSet: {}",
             result.code
         );
     }

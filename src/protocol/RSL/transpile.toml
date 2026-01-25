@@ -18,6 +18,10 @@ exec_prefix = "C"
 "OperationNumber" = "COperationNumber"
 "RslPacket" = "CPacket"
 "RslMessage" = "CMessage"
+# External types that don't follow L->C convention
+"AbstractEndPoint" = "EndPoint"
+"AppMessage" = "CAppMessage"
+"RequestBatch" = "CRequestBatch"
 
 [output]
 generate_abstraction_fns = true
