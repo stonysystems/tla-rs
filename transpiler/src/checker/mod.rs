@@ -287,7 +287,9 @@ impl TemplateMatcher {
         if let Expr::Implies(lhs, rhs) = body {
             if let Some(_collection) = Self::extract_membership(lhs, &var.name_string()) {
                 // RHS should be: map'[k] == expr
-                if let Some((_, value_expr)) = Self::extract_indexed_assignment(rhs, &var.name_string()) {
+                if let Some((_, value_expr)) =
+                    Self::extract_indexed_assignment(rhs, &var.name_string())
+                {
                     return Some(QuantifierTemplate::MapComprehension {
                         domain_predicate: Box::new(Expr::Literal(crate::ast::Literal::Bool(true))),
                         value_expr: Box::new(value_expr.clone()),
@@ -369,9 +371,11 @@ impl TemplateMatcher {
             if let Some(output_map) = Self::extract_map_membership(premise, &var.name_string()) {
                 // Conclusion should be: source.contains_key(k) && output[k] == source[k]
                 // or conjunction with these parts
-                if let Some(source_map) =
-                    Self::extract_preservation_conclusion(conclusion, &var.name_string(), &output_map)
-                {
+                if let Some(source_map) = Self::extract_preservation_conclusion(
+                    conclusion,
+                    &var.name_string(),
+                    &output_map,
+                ) {
                     return Some(QuantifierTemplate::MapPreservation {
                         source_map,
                         output_map,
@@ -463,7 +467,8 @@ impl TemplateMatcher {
             if let Some(output_map) = Self::extract_map_membership(conclusion, &var.name_string()) {
                 // Premise might be: predicate && source.contains_key(k)
                 // Try to extract source map from premise
-                let (source_map, pred) = Self::extract_source_from_premise(premise, &var.name_string());
+                let (source_map, pred) =
+                    Self::extract_source_from_premise(premise, &var.name_string());
 
                 return Some(QuantifierTemplate::MapInclusion {
                     output_map,
@@ -1007,8 +1012,8 @@ pub fn validate_function(
 mod tests {
     use super::*;
     use crate::ast::{
-        BinOp, Binding, Expr, Literal, Parameter, ParameterMode, Path, Pattern, SpecFunction,
-        Type, VariableMode,
+        BinOp, Binding, Expr, Literal, Parameter, ParameterMode, Path, Pattern, SpecFunction, Type,
+        VariableMode,
     };
 
     fn make_test_function() -> AnnotatedFunction {

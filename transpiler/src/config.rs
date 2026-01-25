@@ -333,6 +333,9 @@ mod tests {
         assert_eq!(config.output.validity_predicate_name, "valid");
         assert_eq!(config.output.custom_imports.len(), 2);
         assert_eq!(config.output.custom_imports[0], "use vstd::prelude::*;");
-        assert_eq!(config.output.custom_imports[1], "use std::collections::HashMap;");
+        assert_eq!(
+            config.output.custom_imports[1],
+            "use std::collections::HashMap;"
+        );
     }
 }

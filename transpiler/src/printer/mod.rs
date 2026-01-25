@@ -449,7 +449,6 @@ impl Printer {
             }
 
             // === Verus Loop Constructs ===
-
             ExecExpr::ForInIter {
                 var,
                 iter_name,
@@ -459,7 +458,8 @@ impl Printer {
             } => {
                 // Only generate iterator initialization if iter_source is not already a Var with the same name
                 // (avoids redundant "let x = x;")
-                let skip_binding = matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
+                let skip_binding =
+                    matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
                 if !skip_binding {
                     self.write("let ");
                     self.write(iter_name);
@@ -681,17 +681,15 @@ mod tests {
     fn test_print_proof_block() {
         let mut printer = Printer::default();
         let expr = ExecExpr::ProofBlock {
-            stmts: vec![
-                ExecExpr::Binary {
-                    lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
-                    op: "=".to_string(),
-                    rhs: Box::new(ExecExpr::MethodCall {
-                        receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
-                        method: "insert".to_string(),
-                        args: vec![ExecExpr::Var("*key".to_string())],
-                    }),
-                },
-            ],
+            stmts: vec![ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                op: "=".to_string(),
+                rhs: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("seen_keys".to_string())),
+                    method: "insert".to_string(),
+                    args: vec![ExecExpr::Var("*key".to_string())],
+                }),
+            }],
         };
 
         printer.print_expr(&expr);
@@ -729,7 +727,11 @@ mod tests {
     #[test]
     fn test_print_broadcast_use() {
         let mut printer = Printer::default();
-        printer.print_expr(&ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()));
-        assert!(printer.output.contains("broadcast use vstd::std_specs::hash::group_hash_axioms;"));
+        printer.print_expr(&ExecExpr::BroadcastUse(
+            "vstd::std_specs::hash::group_hash_axioms".to_string(),
+        ));
+        assert!(printer
+            .output
+            .contains("broadcast use vstd::std_specs::hash::group_hash_axioms;"));
     }
 }

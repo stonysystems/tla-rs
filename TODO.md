@@ -1260,6 +1260,24 @@ The generated code is structurally correct and matches the expected Verus exec f
 
 ---
 
+### Completed: Fix CI Formatting and Clippy Failures ✅ [26:01:25]
+
+- [x] **Fix GitHub CI test failures** [2026-01-25]
+  - **Root cause**: Formatting issues from recent code changes
+  - **Fix 1**: `cargo fmt` to fix formatting issues in:
+    - `transpiler/src/checker/mod.rs`
+    - `transpiler/src/config.rs`
+    - `transpiler/src/lib.rs`
+    - `transpiler/src/printer/mod.rs`
+    - `transpiler/src/translator/mod.rs`
+  - **Fix 2**: Clippy `field_reassign_with_default` warnings
+    - Replaced `mut config = Default::default(); config.field = value;` pattern
+    - With struct initialization syntax: `let config = Config { field: value, ..Default::default() };`
+    - Fixed in 4 locations across `translator/mod.rs` and `lib.rs`
+  - **Verification**: All 168 tests pass, clippy passes with `-D warnings`, format check passes
+
+---
+
 ### Completed: Fix CI Clippy Failures ✅ [26:01:23, 19:13]
 
 - [x] **Investigate and fix CI clippy lint failures** [2026-01-23]

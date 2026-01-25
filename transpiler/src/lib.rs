@@ -214,11 +214,13 @@ mod tests {
 
     #[test]
     fn test_custom_imports_in_output() {
-        let mut config = TranspilerConfig::default();
-        config.custom_imports = vec![
-            "use vstd::prelude::*;".to_string(),
-            "use std::collections::HashMap;".to_string(),
-        ];
+        let config = TranspilerConfig {
+            custom_imports: vec![
+                "use vstd::prelude::*;".to_string(),
+                "use std::collections::HashMap;".to_string(),
+            ],
+            ..Default::default()
+        };
 
         let transpiler = Transpiler::new(config);
 
@@ -236,7 +238,9 @@ mod tests {
             }
         "#;
 
-        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
 
         // Check that imports appear before verus! block
         assert!(result.contains("use vstd::prelude::*;"));
@@ -245,6 +249,9 @@ mod tests {
         // Verify order: imports should come before verus!
         let import_pos = result.find("use vstd::prelude::*;").unwrap();
         let verus_pos = result.find("verus!").unwrap();
-        assert!(import_pos < verus_pos, "Custom imports should appear before verus! block");
+        assert!(
+            import_pos < verus_pos,
+            "Custom imports should appear before verus! block"
+        );
     }
 }

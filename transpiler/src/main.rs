@@ -19,7 +19,7 @@
 use clap::{Parser, Subcommand};
 use miette::Result;
 use std::path::{Path, PathBuf};
-use verus_transpiler::{FileConfig, Transpiler, TranspilerConfig, TranslatorConfig};
+use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfig};
 
 /// Verus Spec-to-Implementation Transpiler
 ///
@@ -275,8 +275,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
 /// Load configuration from a TOML file
 fn load_config(path: &Path) -> Result<TranspilerConfig> {
-    let file_config = FileConfig::from_file(path)
-        .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+    let file_config =
+        FileConfig::from_file(path).map_err(|e| miette::miette!("Failed to load config: {}", e))?;
 
     // Convert FileConfig to internal TranspilerConfig
     Ok(TranspilerConfig {

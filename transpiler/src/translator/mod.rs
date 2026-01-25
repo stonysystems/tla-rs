@@ -207,7 +207,6 @@ pub enum ExecExpr {
     },
 
     // === Verus Loop Constructs for Verified Code ===
-
     /// Verus for-in-iter loop with invariants
     /// Generates: `for var in iter:iter_name { body } invariant inv1, inv2, ...`
     ForInIter {
@@ -234,9 +233,7 @@ pub enum ExecExpr {
 
     /// Proof block
     /// Generates: `proof { stmts }`
-    ProofBlock {
-        stmts: Vec<ExecExpr>,
-    },
+    ProofBlock { stmts: Vec<ExecExpr> },
 
     /// Assume statement
     /// Generates: `assume(expr);`
@@ -300,7 +297,8 @@ impl<'a> TransformContext<'a> {
     /// Get the substitution variable name for an output field access
     /// e.g., for s_.proposer, returns Some("s_proposer") if there's a binding
     pub fn get_field_substitution(&self, var: &str, field: &str) -> Option<&String> {
-        self.field_substitutions.get(&(var.to_string(), field.to_string()))
+        self.field_substitutions
+            .get(&(var.to_string(), field.to_string()))
     }
 }
 
@@ -353,20 +351,26 @@ impl Translator {
                 format!("{}.{}", base_str, field)
             }
             ExecExpr::Literal(lit) => lit.clone(),
-            ExecExpr::MethodCall { receiver, method, args } => {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 let recv_str = self.expr_to_invariant_string(receiver);
                 let recv_str = recv_str.trim_start_matches('*');
                 if args.is_empty() {
                     format!("{}.{}()", recv_str, method)
                 } else {
-                    let args_str: Vec<String> = args.iter()
+                    let args_str: Vec<String> = args
+                        .iter()
                         .map(|a| self.expr_to_invariant_string(a))
                         .collect();
                     format!("{}.{}({})", recv_str, method, args_str.join(", "))
                 }
             }
             ExecExpr::Call { func, args } => {
-                let args_str: Vec<String> = args.iter()
+                let args_str: Vec<String> = args
+                    .iter()
                     .map(|a| self.expr_to_invariant_string(a))
                     .collect();
                 format!("{}({})", func, args_str.join(", "))
@@ -378,7 +382,7 @@ impl Translator {
                     // since Var already adds * for loop variables
                     match expr.as_ref() {
                         ExecExpr::Var(name) => format!("*{}", name),
-                        _ => format!("{}{}", op, self.expr_to_invariant_string(expr))
+                        _ => format!("{}{}", op, self.expr_to_invariant_string(expr)),
                     }
                 } else {
                     format!("{}{}", op, self.expr_to_invariant_string(expr))
@@ -742,7 +746,8 @@ impl Translator {
             body: Box::new(ExecExpr::Block(loop_body)),
         });
         // Add post-loop assertions
-        let post_loop_assertions = self.generate_post_loop_assertions(&iter_name, source_map, key_var, &filter_pred);
+        let post_loop_assertions =
+            self.generate_post_loop_assertions(&iter_name, source_map, key_var, &filter_pred);
         stmts.extend(post_loop_assertions);
         // result
         stmts.push(ExecExpr::Var("result".to_string()));
@@ -978,7 +983,11 @@ impl Translator {
                 // Arrow access: expr->field becomes expr.get_field() in exec
                 format!("{}.get_{}()", self.expr_to_simple_string(base), field)
             }
-            Expr::MethodCall { receiver, method, args } => {
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 let recv = self.expr_to_simple_string(receiver);
                 let args_str: Vec<_> = args.iter().map(|a| self.expr_to_simple_string(a)).collect();
                 format!("{}.{}({})", recv, method, args_str.join(", "))
@@ -997,22 +1006,46 @@ impl Translator {
                 format!("{} is {}", self.expr_to_simple_string(base), variant)
             }
             Expr::Eq(lhs, rhs) => {
-                format!("({} == {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+                format!(
+                    "({} == {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Ne(lhs, rhs) => {
-                format!("({} != {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+                format!(
+                    "({} != {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Lt(lhs, rhs) => {
-                format!("({} < {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+                format!(
+                    "({} < {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Le(lhs, rhs) => {
-                format!("({} <= {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+                format!(
+                    "({} <= {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Gt(lhs, rhs) => {
-                format!("({} > {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+                format!(
+                    "({} > {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Ge(lhs, rhs) => {
-                format!("({} >= {})", self.expr_to_simple_string(lhs), self.expr_to_simple_string(rhs))
+                format!(
+                    "({} >= {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Binary(lhs, op, rhs) => {
                 let op_str = match op {
@@ -1029,18 +1062,21 @@ impl Translator {
                     BinOp::Shl => "<<",
                     BinOp::Shr => ">>",
                 };
-                format!("({} {} {})", self.expr_to_simple_string(lhs), op_str, self.expr_to_simple_string(rhs))
+                format!(
+                    "({} {} {})",
+                    self.expr_to_simple_string(lhs),
+                    op_str,
+                    self.expr_to_simple_string(rhs)
+                )
             }
             Expr::Not(inner) => {
                 format!("!{}", self.expr_to_simple_string(inner))
             }
-            Expr::Literal(lit) => {
-                match lit {
-                    Literal::Bool(b) => b.to_string(),
-                    Literal::Int(i) => i.to_string(),
-                    Literal::String(s) => format!("\"{}\"", s),
-                }
-            }
+            Expr::Literal(lit) => match lit {
+                Literal::Bool(b) => b.to_string(),
+                Literal::Int(i) => i.to_string(),
+                Literal::String(s) => format!("\"{}\"", s),
+            },
             _ => format!("{:?}", expr),
         }
     }
@@ -1177,8 +1213,14 @@ impl Translator {
             Expr::Conjunction(exprs) => {
                 // First, check if this is a map update with insert pattern
                 // (domain biconditional forall + value conditional forall)
-                if let Some((source_map, key_var, filter_pred, new_key, new_value, old_value_expr)) =
-                    self.try_extract_map_update_with_value(exprs, ctx)
+                if let Some((
+                    source_map,
+                    key_var,
+                    filter_pred,
+                    new_key,
+                    new_value,
+                    old_value_expr,
+                )) = self.try_extract_map_update_with_value(exprs, ctx)
                 {
                     // Generate complete map update code:
                     // {
@@ -1215,7 +1257,9 @@ impl Translator {
                                     args: vec![ExecExpr::Closure {
                                         params: vec![format!("({}, {})", key_var, "__v")],
                                         body: Box::new(ExecExpr::Tuple(vec![
-                                            ExecExpr::Clone(Box::new(ExecExpr::Var(key_var.clone()))),
+                                            ExecExpr::Clone(Box::new(ExecExpr::Var(
+                                                key_var.clone(),
+                                            ))),
                                             old_value,
                                         ])),
                                     }],
@@ -1324,25 +1368,28 @@ impl Translator {
 
                 // Check if we have multiple output assignments that should be wrapped as a tuple
                 // Exclude outputs that were already bound by helper calls
-                let (mut output_exprs, other_exprs) = self.categorize_output_assignments_with_exclusions(
-                    exprs_to_process,
-                    &updated_ctx,
-                    &bound_outputs,
-                )?;
+                let (mut output_exprs, other_exprs) = self
+                    .categorize_output_assignments_with_exclusions(
+                        exprs_to_process,
+                        &updated_ctx,
+                        &bound_outputs,
+                    )?;
 
                 // Add bound direct output params (like sent_packets) to output_exprs
                 // These were bound by helper calls and need to be included in the return tuple
                 for bound_output in &bound_outputs {
                     // Only include direct output params, not substitution variable names
                     if ctx.is_output(bound_output) {
-                        output_exprs.push((bound_output.clone(), ExecExpr::Var(bound_output.clone())));
+                        output_exprs
+                            .push((bound_output.clone(), ExecExpr::Var(bound_output.clone())));
                     }
                 }
 
                 if output_exprs.len() > 1 {
                     // Multiple outputs should be returned as a tuple
                     // Sort by output parameter order if possible
-                    let sorted_outputs = self.sort_outputs_by_param_order(&output_exprs, &updated_ctx);
+                    let sorted_outputs =
+                        self.sort_outputs_by_param_order(&output_exprs, &updated_ctx);
 
                     // Combine let bindings + other expressions + tuple
                     let mut block = let_bindings;
@@ -1714,7 +1761,9 @@ impl Translator {
                 let var_name = var.name_string();
 
                 // Try to extract container and predicate from body
-                if let Some((container, predicate)) = self.extract_exists_container_and_pred(body, &var_name) {
+                if let Some((container, predicate)) =
+                    self.extract_exists_container_and_pred(body, &var_name)
+                {
                     // Transform: exists |x| container.contains(x) && pred(x)
                     // To: container.iter().any(|x| pred(x))
                     let container_expr = self.transform_expr(&container, ctx)?;
@@ -1844,8 +1893,16 @@ impl Translator {
     ) -> Vec<ExecExpr> {
         let mut sorted: Vec<_> = outputs.to_vec();
         sorted.sort_by(|a, b| {
-            let a_idx = ctx.output_params.iter().position(|p| p == &a.0).unwrap_or(usize::MAX);
-            let b_idx = ctx.output_params.iter().position(|p| p == &b.0).unwrap_or(usize::MAX);
+            let a_idx = ctx
+                .output_params
+                .iter()
+                .position(|p| p == &a.0)
+                .unwrap_or(usize::MAX);
+            let b_idx = ctx
+                .output_params
+                .iter()
+                .position(|p| p == &b.0)
+                .unwrap_or(usize::MAX);
             a_idx.cmp(&b_idx)
         });
         sorted.into_iter().map(|(_, e)| e).collect()
@@ -1853,11 +1910,7 @@ impl Translator {
 
     /// Detect helper predicate calls with output parameters
     /// A helper call has output parameters if any argument is `output_var.field` or a direct output var
-    fn detect_helper_call(
-        &self,
-        expr: &Expr,
-        ctx: &TransformContext,
-    ) -> Option<HelperCallInfo> {
+    fn detect_helper_call(&self, expr: &Expr, ctx: &TransformContext) -> Option<HelperCallInfo> {
         if let Expr::Call { func, args } = expr {
             let func_name = func.last()?.to_string();
             let mut input_args = Vec::new();
@@ -2079,7 +2132,12 @@ impl Translator {
             }
         }
 
-        (let_bindings, remaining_exprs, combined_substitutions, bound_outputs)
+        (
+            let_bindings,
+            remaining_exprs,
+            combined_substitutions,
+            bound_outputs,
+        )
     }
 
     /// Create a new context with additional field substitutions
@@ -2194,9 +2252,12 @@ impl Translator {
                         // Get the output field from helper_info
                         if let Some((out_var, field_name)) = helper_info.output_fields.first() {
                             // Transform the conditional and store as pre-translated field
-                            if let Ok(transformed) =
-                                self.transform_conditional_field(if_cond, &helper_info, &copy_source, ctx)
-                            {
+                            if let Ok(transformed) = self.transform_conditional_field(
+                                if_cond,
+                                &helper_info,
+                                &copy_source,
+                                ctx,
+                            ) {
                                 pre_translated
                                     .entry(out_var.clone())
                                     .or_default()
@@ -2435,11 +2496,7 @@ impl Translator {
     /// - `source.contains_key(k) && filter_pred`
     /// - `filter_pred && source.contains_key(k)`
     /// - `source.dom().contains(k) && filter_pred`
-    fn extract_source_and_filter(
-        &self,
-        pred: &Expr,
-        key_var: &str,
-    ) -> Option<(String, Expr)> {
+    fn extract_source_and_filter(&self, pred: &Expr, key_var: &str) -> Option<(String, Expr)> {
         use crate::ast::Expr;
 
         // Check for conjunction (&&)
@@ -2448,8 +2505,12 @@ impl Translator {
             for (i, part) in parts.iter().enumerate() {
                 if let Some(source_map) = self.extract_contains_key_source(part, key_var) {
                     // Collect all other parts as the filter predicate
-                    let other_parts: Vec<Expr> =
-                        parts.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, p)| p.clone()).collect();
+                    let other_parts: Vec<Expr> = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .map(|(_, p)| p.clone())
+                        .collect();
 
                     let filter = if other_parts.len() == 1 {
                         other_parts.into_iter().next().unwrap()
@@ -2529,11 +2590,7 @@ impl Translator {
 
     /// Extract pattern: source.contains(k) || k == new_key
     /// Returns: (source_map, new_key_expr)
-    fn extract_contains_or_equals(
-        &self,
-        expr: &Expr,
-        key_var: &str,
-    ) -> Option<(String, Expr)> {
+    fn extract_contains_or_equals(&self, expr: &Expr, key_var: &str) -> Option<(String, Expr)> {
         use crate::ast::{BinOp, Expr};
 
         if let Expr::Binary(lhs, BinOp::Or, rhs) = expr {
@@ -2629,7 +2686,8 @@ impl Translator {
                 // Check if lhs is output.dom().contains(k)
                 if self.is_dom_contains(lhs, key_var).is_some() {
                     // Try to extract the complex predicate from rhs
-                    if let Some((src, flt, nk)) = self.extract_map_update_with_insert(rhs, key_var) {
+                    if let Some((src, flt, nk)) = self.extract_map_update_with_insert(rhs, key_var)
+                    {
                         source_map = Some(src);
                         filter_pred = Some(flt);
                         new_key = Some(nk);
@@ -2664,11 +2722,21 @@ impl Translator {
     fn is_dom_contains(&self, expr: &Expr, key_var: &str) -> Option<String> {
         use crate::ast::Expr;
 
-        if let Expr::MethodCall { receiver, method, args } = expr {
+        if let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        {
             if method == "contains" && args.len() == 1 {
                 if let Expr::Ident(arg_name) = &args[0] {
                     if arg_name == key_var {
-                        if let Expr::MethodCall { receiver: inner_recv, method: inner_method, args: inner_args } = receiver.as_ref() {
+                        if let Expr::MethodCall {
+                            receiver: inner_recv,
+                            method: inner_method,
+                            args: inner_args,
+                        } = receiver.as_ref()
+                        {
                             if inner_method == "dom" && inner_args.is_empty() {
                                 if let Expr::Ident(output_name) = inner_recv.as_ref() {
                                     return Some(output_name.clone());
@@ -2693,7 +2761,12 @@ impl Translator {
                 if let Expr::Ident(idx_name) = idx.as_ref() {
                     if idx_name == key_var {
                         // Check if rhs is if-then-else
-                        if let Expr::If { cond, then_branch, else_branch } = rhs.as_ref() {
+                        if let Expr::If {
+                            cond,
+                            then_branch,
+                            else_branch,
+                        } = rhs.as_ref()
+                        {
                             // Condition should involve k == new_key
                             if self.extract_key_equals(cond, key_var).is_some() {
                                 // then_branch is the new_value
@@ -2729,24 +2802,36 @@ impl Translator {
         for expr in exprs {
             if let Expr::Eq(lhs, rhs) = expr {
                 // Check: output.field.len() == expr
-                if let Expr::MethodCall { receiver, method, args } = lhs.as_ref() {
+                if let Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                } = lhs.as_ref()
+                {
                     if method == "len" && args.is_empty() {
                         if let Expr::Field(base, field) = receiver.as_ref() {
                             if let Expr::Ident(var_name) = base.as_ref() {
                                 if ctx.is_output(var_name) {
-                                    length_info = Some((var_name.clone(), field.clone(), (**rhs).clone()));
+                                    length_info =
+                                        Some((var_name.clone(), field.clone(), (**rhs).clone()));
                                 }
                             }
                         }
                     }
                 }
                 // Also check: expr == output.field.len()
-                if let Expr::MethodCall { receiver, method, args } = rhs.as_ref() {
+                if let Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                } = rhs.as_ref()
+                {
                     if method == "len" && args.is_empty() {
                         if let Expr::Field(base, field) = receiver.as_ref() {
                             if let Expr::Ident(var_name) = base.as_ref() {
                                 if ctx.is_output(var_name) {
-                                    length_info = Some((var_name.clone(), field.clone(), (**lhs).clone()));
+                                    length_info =
+                                        Some((var_name.clone(), field.clone(), (**lhs).clone()));
                                 }
                             }
                         }
@@ -2769,12 +2854,9 @@ impl Translator {
                 if let Expr::Implies(lhs, rhs) = body.as_ref() {
                     // Check LHS is bounds: 0 <= i < n
                     // Check RHS is: output.field[i] == element
-                    if let Some(element_expr) = self.extract_seq_element_assignment(
-                        rhs,
-                        &idx_var,
-                        &out_var,
-                        &field_name,
-                    ) {
+                    if let Some(element_expr) =
+                        self.extract_seq_element_assignment(rhs, &idx_var, &out_var, &field_name)
+                    {
                         // Verify LHS is proper bounds (uses the same field.len())
                         if self.is_valid_seq_bounds(lhs, &idx_var, &out_var, &field_name) {
                             return Some((out_var, field_name, length_expr, element_expr));
@@ -3047,10 +3129,7 @@ impl Translator {
 
         // Check for just container.contains(x) without additional predicate
         if let Some(container) = self.extract_contains_receiver(body, var_name) {
-            return Some((
-                container,
-                Expr::Literal(crate::ast::Literal::Bool(true)),
-            ));
+            return Some((container, Expr::Literal(crate::ast::Literal::Bool(true))));
         }
 
         None
@@ -3091,8 +3170,12 @@ impl Translator {
         if let Expr::Conjunction(parts) = pred {
             for (i, part) in parts.iter().enumerate() {
                 if let Some(source) = self.extract_set_contains_source(part, element_var) {
-                    let other_parts: Vec<Expr> =
-                        parts.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, p)| p.clone()).collect();
+                    let other_parts: Vec<Expr> = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .map(|(_, p)| p.clone())
+                        .collect();
 
                     let filter = if other_parts.len() == 1 {
                         other_parts.into_iter().next().unwrap()
@@ -3384,7 +3467,9 @@ impl Translator {
                 // We need a source map to iterate over
                 //
                 // Try to extract source map from the value expression
-                if let Some(source_map) = self.extract_source_from_conditional_value(value_expr, key_var) {
+                if let Some(source_map) =
+                    self.extract_source_from_conditional_value(value_expr, key_var)
+                {
                     // Generate: source.iter().map(|(k, v)| (k.clone(), value_expr)).collect()
                     let value = self.transform_expr(value_expr, ctx)?;
 
@@ -3926,10 +4011,7 @@ mod tests {
             args: vec![Expr::Ident("p".to_string())],
         };
         // Build pred(p) as p.valid
-        let pred = Expr::Field(
-            Box::new(Expr::Ident("p".to_string())),
-            "valid".to_string(),
-        );
+        let pred = Expr::Field(Box::new(Expr::Ident("p".to_string())), "valid".to_string());
         // Build conjunction
         let body = Expr::Conjunction(vec![contains, pred]);
 
@@ -3944,7 +4026,11 @@ mod tests {
         };
 
         let result = translator.transform_expr(&exists, &ctx);
-        assert!(result.is_ok(), "exists should transform successfully: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "exists should transform successfully: {:?}",
+            result
+        );
 
         // Check the result is a method call to .any()
         let exec_expr = result.unwrap();
@@ -4025,7 +4111,11 @@ mod tests {
         };
 
         let result = translator.transform_expr(&forall, &ctx);
-        assert!(result.is_ok(), "forall collection check should transform: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "forall collection check should transform: {:?}",
+            result
+        );
 
         // Check the result is a method call to .all()
         let exec_expr = result.unwrap();
@@ -4072,8 +4162,10 @@ mod tests {
                 assert_eq!(elems.len(), 2, "Should have 2 tuple elements");
                 // First should be clone of s (or Var if not recognized as clone)
                 assert!(
-                    matches!(&elems[0], ExecExpr::Clone(_)) || matches!(&elems[0], ExecExpr::Var(_)),
-                    "First element should be Clone or Var, got {:?}", elems[0]
+                    matches!(&elems[0], ExecExpr::Clone(_))
+                        || matches!(&elems[0], ExecExpr::Var(_)),
+                    "First element should be Clone or Var, got {:?}",
+                    elems[0]
                 );
                 // Second should be empty vec
                 assert!(matches!(&elems[1], ExecExpr::VecLit(v) if v.is_empty()));
@@ -4122,7 +4214,10 @@ mod tests {
         assert_eq!(info.func_name, "LProposerProcessRequest");
         assert_eq!(info.input_args.len(), 2, "Should have 2 input args");
         assert_eq!(info.output_fields.len(), 1, "Should have 1 output field");
-        assert_eq!(info.output_fields[0], ("s_".to_string(), "proposer".to_string()));
+        assert_eq!(
+            info.output_fields[0],
+            ("s_".to_string(), "proposer".to_string())
+        );
     }
 
     #[test]
@@ -4168,7 +4263,10 @@ mod tests {
 
         // Create context with a field substitution
         let mut field_substitutions = HashMap::new();
-        field_substitutions.insert(("s_".to_string(), "proposer".to_string()), "s_proposer".to_string());
+        field_substitutions.insert(
+            ("s_".to_string(), "proposer".to_string()),
+            "s_proposer".to_string(),
+        );
 
         let ctx = TransformContext {
             config: &config,
@@ -4220,8 +4318,14 @@ mod tests {
             Expr::Call {
                 func: crate::ast::Path::single("LProposerProcess1b".to_string()),
                 args: vec![
-                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "proposer".to_string()),
-                    Expr::Field(Box::new(Expr::Ident("s_".to_string())), "proposer".to_string()),
+                    Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "proposer".to_string(),
+                    ),
+                    Expr::Field(
+                        Box::new(Expr::Ident("s_".to_string())),
+                        "proposer".to_string(),
+                    ),
                     Expr::Ident("received_packet".to_string()),
                 ],
             },
@@ -4229,8 +4333,14 @@ mod tests {
             Expr::Call {
                 func: crate::ast::Path::single("LAcceptorTruncateLog".to_string()),
                 args: vec![
-                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "acceptor".to_string()),
-                    Expr::Field(Box::new(Expr::Ident("s_".to_string())), "acceptor".to_string()),
+                    Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "acceptor".to_string(),
+                    ),
+                    Expr::Field(
+                        Box::new(Expr::Ident("s_".to_string())),
+                        "acceptor".to_string(),
+                    ),
                     Expr::Ident("truncation_point".to_string()),
                 ],
             },
@@ -4249,18 +4359,27 @@ mod tests {
                 Box::new(Expr::Struct {
                     name: crate::ast::Path::single("LReplica".to_string()),
                     fields: vec![
-                        ("constants".to_string(), Expr::Field(
-                            Box::new(Expr::Ident("s".to_string())),
+                        (
                             "constants".to_string(),
-                        )),
-                        ("proposer".to_string(), Expr::Field(
-                            Box::new(Expr::Ident("s_".to_string())),
+                            Expr::Field(
+                                Box::new(Expr::Ident("s".to_string())),
+                                "constants".to_string(),
+                            ),
+                        ),
+                        (
                             "proposer".to_string(),
-                        )),
-                        ("acceptor".to_string(), Expr::Field(
-                            Box::new(Expr::Ident("s_".to_string())),
+                            Expr::Field(
+                                Box::new(Expr::Ident("s_".to_string())),
+                                "proposer".to_string(),
+                            ),
+                        ),
+                        (
                             "acceptor".to_string(),
-                        )),
+                            Expr::Field(
+                                Box::new(Expr::Ident("s_".to_string())),
+                                "acceptor".to_string(),
+                            ),
+                        ),
                     ],
                 }),
             ),
@@ -4275,7 +4394,11 @@ mod tests {
         // 3. Tuple((struct, Seq::empty()))
         match result.unwrap() {
             ExecExpr::Block(stmts) => {
-                assert!(stmts.len() >= 2, "Should have at least 2 statements (let bindings), got {}", stmts.len());
+                assert!(
+                    stmts.len() >= 2,
+                    "Should have at least 2 statements (let bindings), got {}",
+                    stmts.len()
+                );
 
                 // Check first let binding
                 match &stmts[0] {
@@ -4321,8 +4444,14 @@ mod tests {
             Expr::Call {
                 func: crate::ast::Path::single("LAcceptorProcess1a".to_string()),
                 args: vec![
-                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "acceptor".to_string()),
-                    Expr::Field(Box::new(Expr::Ident("s_".to_string())), "acceptor".to_string()),
+                    Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "acceptor".to_string(),
+                    ),
+                    Expr::Field(
+                        Box::new(Expr::Ident("s_".to_string())),
+                        "acceptor".to_string(),
+                    ),
                     Expr::Ident("received_packet".to_string()),
                     Expr::Ident("sent_packets".to_string()),
                 ],
@@ -4333,14 +4462,20 @@ mod tests {
                 Box::new(Expr::Struct {
                     name: crate::ast::Path::single("LReplica".to_string()),
                     fields: vec![
-                        ("constants".to_string(), Expr::Field(
-                            Box::new(Expr::Ident("s".to_string())),
+                        (
                             "constants".to_string(),
-                        )),
-                        ("acceptor".to_string(), Expr::Field(
-                            Box::new(Expr::Ident("s_".to_string())),
+                            Expr::Field(
+                                Box::new(Expr::Ident("s".to_string())),
+                                "constants".to_string(),
+                            ),
+                        ),
+                        (
                             "acceptor".to_string(),
-                        )),
+                            Expr::Field(
+                                Box::new(Expr::Ident("s_".to_string())),
+                                "acceptor".to_string(),
+                            ),
+                        ),
                     ],
                 }),
             ),
@@ -4354,13 +4489,25 @@ mod tests {
         // 2. (CReplica { ..., acceptor: s_acceptor }, sent_packets)
         match result.unwrap() {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 2, "Should have 2 statements: let binding and tuple return");
+                assert_eq!(
+                    stmts.len(),
+                    2,
+                    "Should have 2 statements: let binding and tuple return"
+                );
 
                 // Check let binding has tuple pattern
                 match &stmts[0] {
                     ExecExpr::Let { pattern, .. } => {
-                        assert!(pattern.contains("s_acceptor"), "Pattern should contain s_acceptor: {}", pattern);
-                        assert!(pattern.contains("sent_packets"), "Pattern should contain sent_packets: {}", pattern);
+                        assert!(
+                            pattern.contains("s_acceptor"),
+                            "Pattern should contain s_acceptor: {}",
+                            pattern
+                        );
+                        assert!(
+                            pattern.contains("sent_packets"),
+                            "Pattern should contain sent_packets: {}",
+                            pattern
+                        );
                     }
                     other => panic!("Expected Let for first statement, got {:?}", other),
                 }
@@ -4372,14 +4519,22 @@ mod tests {
                         // First element should be struct
                         match &elements[0] {
                             ExecExpr::Struct { .. } => {}
-                            other => panic!("Expected Struct as first tuple element, got {:?}", other),
+                            other => {
+                                panic!("Expected Struct as first tuple element, got {:?}", other)
+                            }
                         }
                         // Second element should be sent_packets variable
                         match &elements[1] {
                             ExecExpr::Var(name) => {
-                                assert_eq!(name, "sent_packets", "Second element should be sent_packets");
+                                assert_eq!(
+                                    name, "sent_packets",
+                                    "Second element should be sent_packets"
+                                );
                             }
-                            other => panic!("Expected Var(sent_packets) as second tuple element, got {:?}", other),
+                            other => panic!(
+                                "Expected Var(sent_packets) as second tuple element, got {:?}",
+                                other
+                            ),
                         }
                     }
                     other => panic!("Expected Tuple as second statement, got {:?}", other),
@@ -4490,11 +4645,17 @@ mod tests {
         let conjunction = Expr::Conjunction(vec![forall1, forall2, forall3]);
 
         let result = translator.transform_expr(&conjunction, &ctx);
-        assert!(result.is_ok(), "Should transform map filter conjunction: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Should transform map filter conjunction: {:?}",
+            result
+        );
 
         // Should generate: votes.iter().filter(|(opn, _)| opn >= log_truncation_point).collect()
         match result.unwrap() {
-            ExecExpr::MethodCall { method, receiver, .. } => {
+            ExecExpr::MethodCall {
+                method, receiver, ..
+            } => {
                 assert_eq!(method, "collect", "Should end with .collect()");
                 match receiver.as_ref() {
                     ExecExpr::MethodCall { method, args, .. } => {
@@ -4502,7 +4663,10 @@ mod tests {
                         assert_eq!(args.len(), 1, "Filter should have closure arg");
                         match &args[0] {
                             ExecExpr::Closure { params, .. } => {
-                                assert!(params[0].contains("opn"), "Closure param should contain opn");
+                                assert!(
+                                    params[0].contains("opn"),
+                                    "Closure param should contain opn"
+                                );
                             }
                             _ => panic!("Expected Closure"),
                         }
@@ -4542,17 +4706,20 @@ mod tests {
             method: "contains".to_string(),
             args: vec![Expr::Ident("item".to_string())],
         };
-        assert_eq!(translator.expr_to_simple_string(&method_call), "list.contains(item)");
+        assert_eq!(
+            translator.expr_to_simple_string(&method_call),
+            "list.contains(item)"
+        );
 
         // Test: function call with C prefix
         let func_call = Expr::Call {
             func: crate::ast::Path::single("BalLeq".to_string()),
-            args: vec![
-                Expr::Ident("a".to_string()),
-                Expr::Ident("b".to_string()),
-            ],
+            args: vec![Expr::Ident("a".to_string()), Expr::Ident("b".to_string())],
         };
-        assert_eq!(translator.expr_to_simple_string(&func_call), "CBalLeq(a, b)");
+        assert_eq!(
+            translator.expr_to_simple_string(&func_call),
+            "CBalLeq(a, b)"
+        );
 
         // Test: is expression
         let is_expr = Expr::Is(
@@ -4562,7 +4729,10 @@ mod tests {
             )),
             "RslMessage1a".to_string(),
         );
-        assert_eq!(translator.expr_to_simple_string(&is_expr), "inp.msg is RslMessage1a");
+        assert_eq!(
+            translator.expr_to_simple_string(&is_expr),
+            "inp.msg is RslMessage1a"
+        );
 
         // Test: comparison
         let lt = Expr::Lt(
@@ -4829,8 +4999,10 @@ mod tests {
     #[test]
     fn test_configurable_validity_predicate_name() {
         // Test that the validity predicate name is configurable
-        let mut config = TranslatorConfig::default();
-        config.validity_predicate_name = "valid".to_string();
+        let config = TranslatorConfig {
+            validity_predicate_name: "valid".to_string(),
+            ..Default::default()
+        };
 
         let translator = Translator::new(config);
 
@@ -4846,8 +5018,10 @@ mod tests {
     #[test]
     fn test_generate_map_filter_loop() {
         // Test that generate_loops_for_verification produces loop code with invariants
-        let mut config = TranslatorConfig::default();
-        config.generate_loops_for_verification = true;
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
 
         let translator = Translator::new(config);
 
@@ -4919,17 +5093,38 @@ mod tests {
 
                 // Statement 7: ForInIter with invariants
                 match &stmts[7] {
-                    ExecExpr::ForInIter { var, iter_name, invariants, body, .. } => {
+                    ExecExpr::ForInIter {
+                        var,
+                        iter_name,
+                        invariants,
+                        body,
+                        ..
+                    } => {
                         assert_eq!(var, "opn", "Loop variable should be opn");
                         assert_eq!(iter_name, "votes_keys", "Should iterate votes_keys");
 
                         // Should have 5 invariants for map filter pattern
                         assert_eq!(invariants.len(), 5, "Should have 5 invariants");
-                        assert!(invariants[0].contains("seen_keys.subset_of"), "First invariant: seen subset");
-                        assert!(invariants[1].contains("seen_keys.contains"), "Second invariant: seen in source");
-                        assert!(invariants[2].contains("result@.contains_key"), "Third invariant: result satisfies filter");
-                        assert!(invariants[3].contains("seen_keys.contains"), "Fourth invariant: result from seen");
-                        assert!(invariants[4].contains("result@.contains_key"), "Fifth invariant: all matching in result");
+                        assert!(
+                            invariants[0].contains("seen_keys.subset_of"),
+                            "First invariant: seen subset"
+                        );
+                        assert!(
+                            invariants[1].contains("seen_keys.contains"),
+                            "Second invariant: seen in source"
+                        );
+                        assert!(
+                            invariants[2].contains("result@.contains_key"),
+                            "Third invariant: result satisfies filter"
+                        );
+                        assert!(
+                            invariants[3].contains("seen_keys.contains"),
+                            "Fourth invariant: result from seen"
+                        );
+                        assert!(
+                            invariants[4].contains("result@.contains_key"),
+                            "Fifth invariant: all matching in result"
+                        );
 
                         // Body should contain in-loop assertions, proof block, and if
                         match body.as_ref() {
@@ -4993,7 +5188,10 @@ mod tests {
     #[test]
     fn test_generate_loops_config_default_false() {
         let config = TranslatorConfig::default();
-        assert!(!config.generate_loops_for_verification, "Default should be false");
+        assert!(
+            !config.generate_loops_for_verification,
+            "Default should be false"
+        );
     }
 
     #[test]
@@ -5036,11 +5234,8 @@ mod tests {
         let config = TranslatorConfig::default();
         let translator = Translator::new(config);
 
-        let invariants = translator.generate_map_filter_invariants(
-            "votes",
-            "opn",
-            "*opn >= threshold",
-        );
+        let invariants =
+            translator.generate_map_filter_invariants("votes", "opn", "*opn >= threshold");
 
         assert_eq!(invariants.len(), 5, "Should generate 5 invariants");
 
@@ -5112,15 +5307,15 @@ mod tests {
         let config = TranslatorConfig::default();
         let translator = Translator::new(config);
 
-        let assertions = translator.generate_post_loop_assertions(
-            "m_keys",
-            "votes",
-            "opn",
-            "*opn >= threshold",
-        );
+        let assertions =
+            translator.generate_post_loop_assertions("m_keys", "votes", "opn", "*opn >= threshold");
 
         // Should generate 7 post-loop statements
-        assert_eq!(assertions.len(), 7, "Should generate 7 post-loop statements");
+        assert_eq!(
+            assertions.len(),
+            7,
+            "Should generate 7 post-loop statements"
+        );
 
         // 0: Assert (seen_keys.subset_of)
         match &assertions[0] {
@@ -5182,8 +5377,10 @@ mod tests {
     fn test_generated_loop_code_output() {
         use crate::printer::Printer;
 
-        let mut config = TranslatorConfig::default();
-        config.generate_loops_for_verification = true;
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
 
         let translator = Translator::new(config);
 
@@ -5205,18 +5402,33 @@ mod tests {
         let code = printer.print_expr_to_string(&loop_expr);
 
         // Print for manual inspection (cargo test -- --nocapture)
-        println!("\n=== Generated Map Filter Loop ===\n{}\n=================================\n", code);
+        println!(
+            "\n=== Generated Map Filter Loop ===\n{}\n=================================\n",
+            code
+        );
 
         // Verify key patterns are present in the output
         assert!(code.contains("broadcast use"), "Should have broadcast use");
         assert!(code.contains("votes.keys()"), "Should get keys from votes");
-        assert!(code.contains("ghost mut seen_keys"), "Should have ghost variable");
-        assert!(code.contains("for opn in iter:"), "Should have for-in-iter loop");
+        assert!(
+            code.contains("ghost mut seen_keys"),
+            "Should have ghost variable"
+        );
+        assert!(
+            code.contains("for opn in iter:"),
+            "Should have for-in-iter loop"
+        );
         assert!(code.contains("invariant"), "Should have invariants");
-        assert!(code.contains("seen_keys.subset_of"), "Should have subset invariant");
+        assert!(
+            code.contains("seen_keys.subset_of"),
+            "Should have subset invariant"
+        );
         assert!(code.contains("proof"), "Should have proof blocks");
         assert!(code.contains("votes.get"), "Should get value from votes");
         assert!(code.contains("result.insert"), "Should insert into result");
-        assert!(code.contains("subset_len_equal_implies_equal"), "Should call lemma");
+        assert!(
+            code.contains("subset_len_equal_implies_equal"),
+            "Should call lemma"
+        );
     }
 }
