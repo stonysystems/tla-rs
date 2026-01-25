@@ -1185,10 +1185,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - TypeGenerator generates View trait with well_formed/view functions
       - Test: `cargo run -- generate-types --input src/protocol/RSL/acceptor.rs`
       - Generates CAcceptor with all fields and correct View impl
-    - [ ] Add wrapper methods that convert functional style to &mut self pattern
-    - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.)
-    - [ ] Add min_vote_opn optimization helper
-- [ ] Run full system tests with generated implementation
+    - [ ] Add wrapper methods that convert functional style to &mut self pattern (deferred - see docs/dev/phase5-wrapper-methods-plan.md)
+    - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.) (deferred)
+    - [ ] Add min_vote_opn optimization helper (deferred)
+- [ ] Run full system tests with generated implementation (blocked by wrapper methods)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
     - test_generated_vs_manual_equivalence() compares generated vs manual output
     - Verifies keys >= log_truncation_point preserved correctly
