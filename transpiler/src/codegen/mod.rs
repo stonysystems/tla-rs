@@ -134,23 +134,23 @@ impl TypeGenerator {
             self.indent
         ));
 
-        if fields.is_empty() {
+        // Collect fields that need well_formed checks
+        let fields_needing_check: Vec<_> = fields
+            .iter()
+            .filter(|f| self.needs_well_formed(&f.ty))
+            .collect();
+
+        if fields_needing_check.is_empty() {
+            // All fields are primitives, just return true
             code.push_str(&format!("{}{}true\n", self.indent, self.indent));
         } else {
-            // Generate conjunction of well_formed calls for each field
-            for (i, field) in fields.iter().enumerate() {
+            // Generate conjunction of well_formed calls
+            for (i, field) in fields_needing_check.iter().enumerate() {
                 let prefix = if i == 0 { "    " } else { "&&& " };
-                if self.needs_well_formed(&field.ty) {
-                    code.push_str(&format!(
-                        "{}{}{}self.{}.well_formed()\n",
-                        self.indent, self.indent, prefix, field.name
-                    ));
-                } else {
-                    // Primitive types are always well-formed
-                    if i == 0 && fields.len() == 1 {
-                        code.push_str(&format!("{}{}true\n", self.indent, self.indent));
-                    }
-                }
+                code.push_str(&format!(
+                    "{}{}{}self.{}.well_formed()\n",
+                    self.indent, self.indent, prefix, field.name
+                ));
             }
         }
 

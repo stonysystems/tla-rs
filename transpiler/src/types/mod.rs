@@ -232,12 +232,18 @@ impl TypeRegistry {
 pub struct TypeParser<'a> {
     content: &'a str,
     pos: usize,
+    /// Whether we're currently inside a verus! block
+    in_verus_block: bool,
 }
 
 impl<'a> TypeParser<'a> {
     /// Create a new type parser
     pub fn new(content: &'a str) -> Self {
-        Self { content, pos: 0 }
+        Self {
+            content,
+            pos: 0,
+            in_verus_block: false,
+        }
     }
 
     /// Parse all type definitions from the content
@@ -311,6 +317,8 @@ impl<'a> TypeParser<'a> {
 
     /// Parse type definitions inside a verus! block
     fn parse_verus_block_types(&mut self) -> TranspileResult<Vec<TypeDef>> {
+        // Mark that we're inside a verus! block - all types are spec types
+        self.in_verus_block = true;
         let mut types = Vec::new();
         let mut brace_depth = 1;
 
@@ -353,6 +361,8 @@ impl<'a> TypeParser<'a> {
             self.skip_verus_item(&mut brace_depth);
         }
 
+        // Reset flag when exiting verus! block
+        self.in_verus_block = false;
         Ok(types)
     }
 
@@ -412,8 +422,9 @@ impl<'a> TypeParser<'a> {
         };
         self.skip_whitespace();
 
-        // Check if it's a spec type (starts with L) or exec type (starts with C)
-        let is_spec = name.starts_with('L');
+        // Types inside verus! blocks are always spec types
+        // Otherwise, check if name starts with L prefix
+        let is_spec = self.in_verus_block || name.starts_with('L');
 
         // Parse fields
         if self.peek() != Some('{') {
@@ -488,7 +499,9 @@ impl<'a> TypeParser<'a> {
         };
         self.skip_whitespace();
 
-        let is_spec = name.starts_with('L');
+        // Types inside verus! blocks are always spec types
+        // Otherwise, check if name starts with L prefix
+        let is_spec = self.in_verus_block || name.starts_with('L');
 
         // Parse variants
         self.expect('{')?;

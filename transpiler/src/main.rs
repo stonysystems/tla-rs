@@ -187,7 +187,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
         Commands::GenerateTypes { input, output } => {
             use verus_transpiler::config::NamingConfig;
             use verus_transpiler::types::TypeDef;
-            use verus_transpiler::{TypeGenerator, TypeParser, TypeRegistry};
+            use verus_transpiler::{TypeParser, TypeRegistry};
 
             if cli.verbose {
                 eprintln!("Generating types from: {}", input.display());
@@ -228,31 +228,16 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 return Err(miette::miette!("No spec types found in input file"));
             }
 
-            // Generate exec types
+            // Generate exec types using the registry function
             let config = NamingConfig::default();
-            let generator = TypeGenerator::new(config);
-            let mut all_code = String::new();
-            all_code.push_str("// Auto-generated exec types\n");
-            all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
-            all_code.push_str("use crate::runtime::{View, ExecType};\n\n");
+            let generated = verus_transpiler::codegen::generate_all_types(&registry, &config);
 
-            for struct_def in registry.structs.values() {
-                let generated = generator.generate_struct(struct_def);
-                all_code.push_str(&generated.code);
-                all_code.push_str("\n\n");
-                for warning in &generated.warnings {
-                    eprintln!("Warning: {}", warning);
-                }
+            // Print any warnings
+            for warning in &generated.warnings {
+                eprintln!("Warning: {}", warning);
             }
 
-            for enum_def in registry.enums.values() {
-                let generated = generator.generate_enum(enum_def);
-                all_code.push_str(&generated.code);
-                all_code.push_str("\n\n");
-                for warning in &generated.warnings {
-                    eprintln!("Warning: {}", warning);
-                }
-            }
+            let all_code = generated.code;
 
             // Output
             if let Some(output_path) = output {
