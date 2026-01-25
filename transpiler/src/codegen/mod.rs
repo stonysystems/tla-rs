@@ -254,11 +254,7 @@ impl TypeGenerator {
         code.push_str(&format!("{}{}{} {{\n", self.indent, self.indent, spec_name));
 
         for field in fields {
-            let view_expr = if self.needs_view(&field.ty) {
-                format!("self.{}@", field.name)
-            } else {
-                format!("self.{}", field.name)
-            };
+            let view_expr = self.generate_view_field_expr(&field.name, &field.ty);
             code.push_str(&format!(
                 "{}{}{}{}: {},\n",
                 self.indent, self.indent, self.indent, field.name, view_expr
@@ -318,11 +314,8 @@ impl TypeGenerator {
 
                 let mut views = Vec::new();
                 for (i, ty) in types.iter().enumerate() {
-                    if self.needs_view(ty) {
-                        views.push(format!("v{}@", i));
-                    } else {
-                        views.push(format!("*v{}", i));
-                    }
+                    let view_expr = self.generate_view_variant_field_expr(&format!("v{}", i), ty);
+                    views.push(view_expr);
                 }
 
                 format!(
@@ -342,11 +335,7 @@ impl TypeGenerator {
 
                 let mut field_views = Vec::new();
                 for field in fields {
-                    let view_expr = if self.needs_view(&field.ty) {
-                        format!("{}@", field.name)
-                    } else {
-                        format!("*{}", field.name)
-                    };
+                    let view_expr = self.generate_view_variant_field_expr(&field.name, &field.ty);
                     field_views.push(format!("{}: {}", field.name, view_expr));
                 }
 
@@ -413,6 +402,34 @@ impl TypeGenerator {
     fn needs_view(&self, ty: &Type) -> bool {
         needs_view_check(ty)
     }
+
+    /// Generate the expression for a field in a View impl
+    /// Handles:
+    /// - Types needing @ operator (structs, collections, etc.)
+    /// - Types needing `as int` conversion (int, nat -> i64, u64)
+    /// - Simple types that need no conversion
+    fn generate_view_field_expr(&self, field_name: &str, ty: &Type) -> String {
+        if self.needs_view(ty) {
+            format!("self.{}@", field_name)
+        } else if needs_as_int_conversion(ty) {
+            format!("self.{} as int", field_name)
+        } else {
+            format!("self.{}", field_name)
+        }
+    }
+
+    /// Generate the expression for a variant field in a View impl
+    /// Similar to generate_view_field_expr but for enum variant bindings
+    /// (no `self.` prefix, uses `*` for dereferencing)
+    fn generate_view_variant_field_expr(&self, binding_name: &str, ty: &Type) -> String {
+        if self.needs_view(ty) {
+            format!("{}@", binding_name)
+        } else if needs_as_int_conversion(ty) {
+            format!("*{} as int", binding_name)
+        } else {
+            format!("*{}", binding_name)
+        }
+    }
 }
 
 /// Check if a type needs well_formed validation (standalone function for recursion)
@@ -434,6 +451,16 @@ fn needs_view_check(ty: &Type) -> bool {
         Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => true,
         Type::Tuple(types) => types.iter().any(needs_view_check),
         Type::Reference { ty, .. } => needs_view_check(ty),
+    }
+}
+
+/// Check if a type needs `as int` conversion in View impl
+/// This applies to Int and Nat types which are translated to i64/u64 in exec
+fn needs_as_int_conversion(ty: &Type) -> bool {
+    match ty {
+        Type::Int | Type::Nat => true,
+        Type::Reference { ty, .. } => needs_as_int_conversion(ty),
+        _ => false,
     }
 }
 
@@ -663,5 +690,82 @@ mod tests {
         // L followed by lowercase -> prepend C (not replace)
         // (e.g., "LearnerTuple" should become "CLearnerTuple", not "CearnerTuple")
         assert_eq!(config.get_exec_type("LearnerTuple"), "CLearnerTuple");
+    }
+
+    #[test]
+    fn test_view_impl_as_int_conversion() {
+        // Test that int fields get `as int` conversion in View impl
+        let generator = TypeGenerator::new(make_config());
+
+        let spec = StructDef {
+            name: "Ballot".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "seqno".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "proposer_id".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Check that View impl contains `as int` conversions
+        assert!(
+            result.code.contains("seqno: self.seqno as int"),
+            "Should have 'as int' for seqno: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("proposer_id: self.proposer_id as int"),
+            "Should have 'as int' for proposer_id: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_view_impl_mixed_fields() {
+        // Test struct with both int fields and complex type fields
+        let generator = TypeGenerator::new(make_config());
+
+        let spec = StructDef {
+            name: "LRequest".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "client".to_string(),
+                    ty: Type::Named(Path::single("AbstractEndPoint".to_string())),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "seqno".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // client should use @ operator
+        assert!(
+            result.code.contains("client: self.client@"),
+            "Should have '@' for client: {}",
+            result.code
+        );
+        // seqno should use as int
+        assert!(
+            result.code.contains("seqno: self.seqno as int"),
+            "Should have 'as int' for seqno: {}",
+            result.code
+        );
     }
 }

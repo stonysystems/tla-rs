@@ -25,7 +25,7 @@ impl View for CRequest {
     open spec fn view(&self) -> Request {
         Request {
             client: self.client@,
-            seqno: self.seqno,
+            seqno: self.seqno as int,
             request: self.request@,
         }
     }
@@ -51,29 +51,32 @@ impl View for CReply {
     open spec fn view(&self) -> Reply {
         Reply {
             client: self.client@,
-            seqno: self.seqno,
+            seqno: self.seqno as int,
             reply: self.reply@,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct CClockReading {
-    pub t: i64,
+pub struct CVote {
+    pub max_value_bal: CBallot,
+    pub max_val: CRequestBatch,
 }
 
-impl CClockReading {
+impl CVote {
     pub open spec fn well_formed(&self) -> bool {
-        true
+            self.max_value_bal.well_formed()
+        &&& self.max_val.well_formed()
     }
 }
 
-impl View for CClockReading {
-    type V = ClockReading;
+impl View for CVote {
+    type V = Vote;
 
-    open spec fn view(&self) -> ClockReading {
-        ClockReading {
-            t: self.t,
+    open spec fn view(&self) -> Vote {
+        Vote {
+            max_value_bal: self.max_value_bal@,
+            max_val: self.max_val@,
         }
     }
 }
@@ -103,6 +106,27 @@ impl View for CLearnerTuple {
 }
 
 #[derive(Clone)]
+pub struct CClockReading {
+    pub t: i64,
+}
+
+impl CClockReading {
+    pub open spec fn well_formed(&self) -> bool {
+        true
+    }
+}
+
+impl View for CClockReading {
+    type V = ClockReading;
+
+    open spec fn view(&self) -> ClockReading {
+        ClockReading {
+            t: self.t as int,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct CBallot {
     pub seqno: i64,
     pub proposer_id: i64,
@@ -119,32 +143,8 @@ impl View for CBallot {
 
     open spec fn view(&self) -> Ballot {
         Ballot {
-            seqno: self.seqno,
-            proposer_id: self.proposer_id,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CVote {
-    pub max_value_bal: CBallot,
-    pub max_val: CRequestBatch,
-}
-
-impl CVote {
-    pub open spec fn well_formed(&self) -> bool {
-            self.max_value_bal.well_formed()
-        &&& self.max_val.well_formed()
-    }
-}
-
-impl View for CVote {
-    type V = Vote;
-
-    open spec fn view(&self) -> Vote {
-        Vote {
-            max_value_bal: self.max_value_bal@,
-            max_val: self.max_val@,
+            seqno: self.seqno as int,
+            proposer_id: self.proposer_id as int,
         }
     }
 }
