@@ -824,15 +824,23 @@ impl Translator {
 
     /// Translate spec name to exec name (L* -> C*)
     fn translate_name(&self, spec_name: &str) -> String {
-        if spec_name.starts_with(&self.config.spec_prefix) {
-            format!(
-                "{}{}",
-                self.config.exec_prefix,
-                &spec_name[self.config.spec_prefix.len()..]
-            )
-        } else {
-            format!("{}{}", self.config.exec_prefix, spec_name)
+        // Check if type is in explicit remapping
+        if let Some(remapped) = self.config.type_remapping.get(spec_name) {
+            return remapped.clone();
         }
+
+        // Check if type starts with spec prefix (e.g., "L") followed by an uppercase letter
+        // This distinguishes LAcceptor (L prefix) from LearnerTuple (part of "Learner")
+        if spec_name.starts_with(&self.config.spec_prefix) {
+            let rest = &spec_name[self.config.spec_prefix.len()..];
+            // Only strip prefix if followed by uppercase letter (real prefix pattern like LAcceptor)
+            if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                return format!("{}{}", self.config.exec_prefix, rest);
+            }
+        }
+
+        // Otherwise, prepend exec prefix to the full name
+        format!("{}{}", self.config.exec_prefix, spec_name)
     }
 
     /// Derive nested struct name from field name
@@ -3708,8 +3716,15 @@ mod tests {
     #[test]
     fn test_translate_name() {
         let translator = Translator::default();
+        // L prefix followed by uppercase -> strip L, add C
         assert_eq!(translator.translate_name("LAcceptor"), "CAcceptor");
+        assert_eq!(translator.translate_name("LLearner"), "CLearner");
+        // No L prefix -> add C
         assert_eq!(translator.translate_name("Ballot"), "CBallot");
+        // L is part of word (not prefix) -> add C, keep full name
+        // LearnerTuple starts with L but 'e' is lowercase, so "Learner" is the word
+        assert_eq!(translator.translate_name("LearnerTuple"), "CLearnerTuple");
+        assert_eq!(translator.translate_name("Listen"), "CListen");
     }
 
     #[test]

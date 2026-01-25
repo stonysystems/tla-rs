@@ -27,14 +27,16 @@ $TRANSPILER generate-types \
     --config "$PROJECT_ROOT/src/protocol/RSL/types_transpile.toml" \
     --output "$PROJECT_ROOT/src/generated/RSL/types_gen.rs"
 
-# Regenerate acceptor functions (if needed in future)
-# echo ""
-# echo "Regenerating acceptor functions..."
-# $TRANSPILER \
-#     --input "$PROJECT_ROOT/src/protocol/RSL/acceptor.rs" \
-#     --annotations "$PROJECT_ROOT/src/protocol/RSL/acceptor.automan" \
-#     --config "$PROJECT_ROOT/src/protocol/RSL/transpile.toml" \
-#     --output "$PROJECT_ROOT/src/generated/RSL/acceptor_gen.rs"
+# Regenerate all RSL module functions
+for module in learner executor proposer replica broadcast; do
+    echo ""
+    echo "Regenerating $module functions..."
+    $TRANSPILER \
+        --input "$PROJECT_ROOT/src/protocol/RSL/${module}.rs" \
+        --annotations "$PROJECT_ROOT/src/protocol/RSL/${module}.automan" \
+        --config "$PROJECT_ROOT/src/protocol/RSL/transpile.toml" \
+        --output "$PROJECT_ROOT/src/generated/RSL/${module}_gen.rs"
+done
 
 echo ""
 echo "=== Regeneration complete ==="

@@ -1345,11 +1345,16 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
   - Both compile with Verus (456 verified, 0 errors)
   - Full combination would require merge script (lower priority)
 
-- [ ] **C2-C5: Generate other RSL modules** (deferred)
-  - Proposer, Learner, Executor, Replica
-  - Same pattern as C1 - transpiler can already generate functions
-  - Types generator can generate corresponding exec types
-  - Deferred: Focus on fixing remaining gaps in acceptor first
+- [x] **C2-C5: Generate other RSL modules** ✅ [26:01:25]
+  - All modules generated successfully:
+    - `learner_gen.rs` - 135 LOC (4 functions)
+    - `executor_gen.rs` - 199 LOC (5 functions)
+    - `proposer_gen.rs` - 396 LOC (11 functions)
+    - `replica_gen.rs` - 682 LOC (many dispatch functions)
+    - `broadcast_gen.rs` - 38 LOC (1 function)
+  - Fixed bug: `translate_name()` incorrectly stripped 'L' from "LearnerTuple" → "CearnerTuple"
+  - Fix: Only strip prefix if followed by uppercase letter
+  - Plan: docs/dev/phase-c2-c5-rsl-modules-plan.md
 
 #### Phase D: Verification and Testing
 
