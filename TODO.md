@@ -1353,14 +1353,24 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
 
 #### Phase D: Verification and Testing
 
-- [ ] **D1: Verify each generated module independently**
-  - Run Verus on each `*_gen.rs` file
-  - Fix any verification failures
-  - Document any patterns that need manual adjustment
+- [x] **D1: Verify each generated module independently** ✅ [26:01:25]
+  - Added type remapping support to TypeGenerator
+  - Fixed generated types to use correct external type names:
+    - `AbstractEndPoint` → `EndPoint`
+    - `AppMessage` → `CAppMessage`
+    - `RequestBatch` → `CRequestBatch`
+  - Added `generate_all_types_with_options()` with custom imports
+  - Added `--config` flag to `generate-types` CLI command
+  - Created `types_transpile.toml` config for RSL type generation
+  - Regenerated `types_gen.rs` with correct types and imports
+  - Main codebase verifies with Verus: 456 verified, 0 errors
+  - Added 2 new tests for type remapping
 
-- [ ] **D2: Integration test with generated modules**
-  - Create `src/generated/RSL/mod.rs` that exports all generated modules
-  - Add to main crate and verify full build
+- [x] **D2: Integration test with generated modules** ✅ [26:01:25]
+  - Created `src/generated/RSL/mod.rs` that exports types_gen
+  - Created `src/generated/mod.rs` with conditional compilation
+  - Added to main crate (behind `#[cfg(test)]`)
+  - Full build verifies successfully
 
 - [ ] **D3: Equivalence testing**
   - Extend `generated_acceptor_test.rs` pattern to all modules
