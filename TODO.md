@@ -1151,8 +1151,8 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - Generated code in /tmp/generated_acceptor.rs for reference
   - Main codebase still verifies: 456 verified, 0 errors
 
-#### Phase 5: Replace Manual Implementation
-- [ ] Once transpiler output is verified, replace `src/implementation/RSL/` with generated code
+#### Phase 5: Replace Manual Implementation (Future Work)
+- [ ] Once transpiler output is verified, replace `src/implementation/RSL/` with generated code (blocked - requires deferred sub-tasks below)
   - **Gap Analysis** [26:01:25, 10:30]: Generated code needs significant adaptation
   - Manual implementation has ~785 lines vs generated ~170 lines
   - Key differences requiring manual adaptation:
