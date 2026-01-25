@@ -1260,6 +1260,126 @@ The generated code is structurally correct and matches the expected Verus exec f
 
 ---
 
+### Goal: Fully Transpile Paxos (RSL) Spec to Verified Implementation
+
+**Objective**: Generate a complete, verifiable RSL implementation from specs using the transpiler. The manual implementation in `src/implementation/RSL/` will be kept as reference.
+
+#### Current State
+- ✅ Transpiler generates function bodies for all RSL predicates
+- ✅ Loop-based code generation with Verus invariants
+- ✅ Custom imports support
+- ✅ Generated code compiles with Verus (456 verified, 0 errors when using existing types)
+- ❌ Generated code relies on manually-defined types (CAcceptor, CBallot, etc.)
+- ❌ No View trait generation
+- ❌ No struct/type definitions generated
+
+#### Phase A: Type Definition Generation (~400 LOC transpiler changes)
+
+Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`, `Votes` specs.
+
+- [x] **A1: Parse spec struct definitions from verus! blocks** ✅
+  - Extended `TypeParser` to handle `verus! { pub struct LAcceptor { ... } }`
+  - Added `try_enter_verus_block()` and `parse_verus_block_types()` methods
+  - Extract field names and types (including Seq, Map types)
+  - Added tests: `test_parse_verus_block_struct`, `test_parse_verus_block_multiple_types`,
+    `test_parse_verus_block_with_complex_functions`, `test_parse_real_acceptor_format`
+  - Files: `transpiler/src/types/mod.rs`
+
+- [ ] **A2: Generate exec struct definitions**
+  - Map spec types to exec types: `int→i64`, `Seq→Vec`, `Map→HashMap`, `Set→HashSet`
+  - Generate `#[derive(Clone)]` attribute
+  - Add optimization fields (e.g., `min_vote_opn`) via config
+  - Files: `transpiler/src/codegen/mod.rs`
+
+- [ ] **A3: Generate View trait implementations**
+  - Generate `impl View for CAcceptor { type V = LAcceptor; ... }`
+  - Handle nested view calls for struct fields
+  - Handle collection abstractification (e.g., `abstractify_cvotes`)
+  - Files: `transpiler/src/codegen/mod.rs`
+
+- [ ] **A4: Generate validity predicates**
+  - Generate `abstractable()` spec function
+  - Generate `valid()` spec function (calls abstractable + field.valid())
+  - Handle recursive validity for nested structs
+  - Files: `transpiler/src/codegen/mod.rs`
+
+#### Phase B: Full RSL Type Generation
+
+- [ ] **B1: Create type annotation file for RSL**
+  - New file: `src/protocol/RSL/types.automan`
+  - Annotate which spec types need exec counterparts
+  - Specify type mappings and custom field handling
+
+- [ ] **B2: Generate all RSL types**
+  - Run transpiler to generate: `src/generated/RSL/types_gen.rs`
+  - Types: CAcceptor, CBallot, CVote, CVotes, CReplicaConstants, CConfiguration, etc.
+
+- [ ] **B3: Verify generated types compile with Verus**
+  - Add generated types module to build
+  - Ensure View trait implementations verify
+
+#### Phase C: Complete Generated Implementation
+
+- [ ] **C1: Generate complete acceptor module**
+  - Combine generated types + generated functions
+  - Output: `src/generated/RSL/acceptor_gen.rs`
+  - Include all imports, struct defs, View impls, functions
+
+- [ ] **C2: Generate complete proposer module**
+  - Output: `src/generated/RSL/proposer_gen.rs`
+
+- [ ] **C3: Generate complete learner module**
+  - Output: `src/generated/RSL/learner_gen.rs`
+
+- [ ] **C4: Generate complete executor module**
+  - Output: `src/generated/RSL/executor_gen.rs`
+
+- [ ] **C5: Generate complete replica module**
+  - Output: `src/generated/RSL/replica_gen.rs`
+
+#### Phase D: Verification and Testing
+
+- [ ] **D1: Verify each generated module independently**
+  - Run Verus on each `*_gen.rs` file
+  - Fix any verification failures
+  - Document any patterns that need manual adjustment
+
+- [ ] **D2: Integration test with generated modules**
+  - Create `src/generated/RSL/mod.rs` that exports all generated modules
+  - Add to main crate and verify full build
+
+- [ ] **D3: Equivalence testing**
+  - Extend `generated_acceptor_test.rs` pattern to all modules
+  - For each function: verify generated output matches manual implementation behavior
+
+- [ ] **D4: Performance comparison**
+  - Compare verification time: generated vs manual
+  - Compare runtime performance if applicable
+
+#### Phase E: Documentation and Cleanup
+
+- [ ] **E1: Document the full transpilation workflow**
+  - How to add new protocols
+  - How to customize type generation
+  - How to handle edge cases
+
+- [ ] **E2: Create regeneration script**
+  - Script to regenerate all RSL implementation from specs
+  - Include in CI to ensure generated code stays in sync with specs
+
+- [ ] **E3: Final cleanup**
+  - Remove redundant test files
+  - Update README with generated implementation section
+
+#### Success Criteria
+1. All RSL modules can be regenerated from specs using transpiler
+2. Generated code verifies with Verus (0 errors)
+3. Generated functions produce equivalent outputs to manual implementation
+4. Manual implementation kept in `src/implementation/RSL/` as reference
+5. Generated implementation in `src/generated/RSL/` as primary
+
+---
+
 ### Completed: Fix CI Formatting and Clippy Failures ✅ [26:01:25]
 
 - [x] **Fix GitHub CI test failures** [2026-01-25]

@@ -251,6 +251,13 @@ impl<'a> TypeParser<'a> {
                 break;
             }
 
+            // Try to enter a verus! block
+            if self.try_enter_verus_block()? {
+                // Parse types inside the verus! block
+                types.extend(self.parse_verus_block_types()?);
+                continue;
+            }
+
             // Try to parse a struct
             if let Some(s) = self.try_parse_struct()? {
                 types.push(TypeDef::Struct(s));
@@ -274,6 +281,107 @@ impl<'a> TypeParser<'a> {
         }
 
         Ok(types)
+    }
+
+    /// Try to detect and enter a verus! { ... } block
+    fn try_enter_verus_block(&mut self) -> TranspileResult<bool> {
+        let start_pos = self.pos;
+
+        // Look for "verus!" pattern
+        if !self.try_consume("verus") {
+            return Ok(false);
+        }
+        self.skip_whitespace();
+
+        if !self.try_consume("!") {
+            self.pos = start_pos;
+            return Ok(false);
+        }
+        self.skip_whitespace();
+
+        // Expect opening brace
+        if self.peek() != Some('{') {
+            self.pos = start_pos;
+            return Ok(false);
+        }
+        self.advance(); // consume '{'
+
+        Ok(true)
+    }
+
+    /// Parse type definitions inside a verus! block
+    fn parse_verus_block_types(&mut self) -> TranspileResult<Vec<TypeDef>> {
+        let mut types = Vec::new();
+        let mut brace_depth = 1;
+
+        while brace_depth > 0 && self.pos < self.content.len() {
+            self.skip_whitespace_and_comments();
+
+            if self.pos >= self.content.len() {
+                break;
+            }
+
+            // Check for closing brace
+            if self.peek() == Some('}') {
+                brace_depth -= 1;
+                self.advance();
+                if brace_depth == 0 {
+                    break;
+                }
+                continue;
+            }
+
+            // Try to parse a struct
+            if let Some(s) = self.try_parse_struct()? {
+                types.push(TypeDef::Struct(s));
+                continue;
+            }
+
+            // Try to parse an enum
+            if let Some(e) = self.try_parse_enum()? {
+                types.push(TypeDef::Enum(e));
+                continue;
+            }
+
+            // Try to parse a type alias
+            if let Some(a) = self.try_parse_type_alias()? {
+                types.push(TypeDef::Alias(a));
+                continue;
+            }
+
+            // Skip other items (functions, etc.) while tracking braces
+            self.skip_verus_item(&mut brace_depth);
+        }
+
+        Ok(types)
+    }
+
+    /// Skip a verus item while tracking brace depth
+    fn skip_verus_item(&mut self, brace_depth: &mut i32) {
+        loop {
+            match self.peek() {
+                Some('{') => {
+                    *brace_depth += 1;
+                    self.advance();
+                }
+                Some('}') => {
+                    // Don't consume the closing brace here - let the caller handle it
+                    break;
+                }
+                Some(_) => {
+                    self.advance();
+                    // Check if we've reached the end of an item
+                    // (semicolon at depth 1 or closing brace)
+                    if self.pos > 0 {
+                        let prev = self.content[..self.pos].chars().last();
+                        if prev == Some(';') || prev == Some('}') {
+                            break;
+                        }
+                    }
+                }
+                None => break,
+            }
+        }
     }
 
     /// Try to parse a struct definition
@@ -1005,5 +1113,197 @@ mod tests {
         );
         assert_eq!(registry.get_exec_type_name("LState", &config), "CState");
         assert_eq!(registry.get_exec_type_name("Ballot", &config), "CBallot");
+    }
+
+    #[test]
+    fn test_parse_verus_block_struct() {
+        let source = r#"
+            verus! {
+                pub struct LAcceptor {
+                    pub constants: LReplicaConstants,
+                    pub max_bal: Ballot,
+                    pub votes: Votes,
+                    pub last_checkpointed_operation: Seq<OperationNumber>,
+                    pub log_truncation_point: OperationNumber,
+                }
+
+                pub open spec fn LAcceptorInit(s: LAcceptor) -> bool {
+                    s.max_bal == Ballot::default()
+                }
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        // Should parse the struct from inside the verus! block
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "LAcceptor");
+                assert_eq!(s.fields.len(), 5);
+                assert!(s.is_spec);
+                assert_eq!(s.fields[0].name, "constants");
+                assert_eq!(s.fields[1].name, "max_bal");
+                assert_eq!(s.fields[2].name, "votes");
+                assert_eq!(s.fields[3].name, "last_checkpointed_operation");
+                assert_eq!(s.fields[4].name, "log_truncation_point");
+            }
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_verus_block_multiple_types() {
+        let source = r#"
+            verus! {
+                pub struct LAcceptor {
+                    pub max_bal: Ballot,
+                }
+
+                pub type Votes = Map<OperationNumber, Vote>;
+
+                pub enum LMessage {
+                    Msg1a { bal: Ballot },
+                    Msg2a,
+                }
+
+                pub open spec fn some_pred(x: int) -> bool {
+                    x > 0
+                }
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        // Should parse struct, type alias, and enum from inside verus! block
+        assert_eq!(types.len(), 3);
+
+        // Check struct
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "LAcceptor");
+            }
+            _ => panic!("Expected struct at index 0"),
+        }
+
+        // Check type alias
+        match &types[1] {
+            TypeDef::Alias(a) => {
+                assert_eq!(a.name, "Votes");
+            }
+            _ => panic!("Expected type alias at index 1"),
+        }
+
+        // Check enum
+        match &types[2] {
+            TypeDef::Enum(e) => {
+                assert_eq!(e.name, "LMessage");
+                assert_eq!(e.variants.len(), 2);
+            }
+            _ => panic!("Expected enum at index 2"),
+        }
+    }
+
+    #[test]
+    fn test_parse_verus_block_with_complex_functions() {
+        // Test that we correctly skip complex spec functions without breaking
+        let source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                }
+
+                pub open spec fn complex_pred(s: LState, s_: LState) -> bool {
+                    if s.value > 0 {
+                        &&& s_.value == s.value + 1
+                        &&& some_other_condition()
+                    } else {
+                        s_ == s
+                    }
+                }
+
+                pub open spec fn another_fn(x: int, y: int) -> bool
+                    recommends x > 0
+                {
+                    x + y > 0
+                }
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        // Should only parse the struct, skipping the functions
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "LState");
+                assert_eq!(s.fields.len(), 1);
+            }
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_real_acceptor_format() {
+        // Test parsing real RSL acceptor format (no spaces after colons)
+        let source = r#"
+verus! {
+    pub struct LAcceptor {
+        pub constants:LReplicaConstants,
+        pub max_bal:Ballot,
+        pub votes:Votes,
+        pub last_checkpointed_operation:Seq<OperationNumber>,
+        pub log_truncation_point:OperationNumber,
+    }
+
+    pub open spec fn IsLogTruncationPointValid(log_truncation_point:OperationNumber, last_checkpointed_operation:Seq<OperationNumber>,
+                                              config:LConfiguration) -> bool
+    {
+        true
+    }
+
+    pub open spec fn RemoveVotesBeforeLogTruncationPoint(votes:Votes, votes_:Votes, log_truncation_point:OperationNumber) -> bool
+    {
+        &&& (forall |opn:OperationNumber| votes_.contains_key(opn) ==> votes.contains_key(opn) && votes_[opn] == votes[opn])
+        &&& (forall |opn:OperationNumber| opn < log_truncation_point ==> !votes_.contains_key(opn))
+    }
+}
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "LAcceptor");
+                assert_eq!(s.fields.len(), 5);
+                assert!(s.is_spec);
+
+                // Check field names
+                assert_eq!(s.fields[0].name, "constants");
+                assert_eq!(s.fields[1].name, "max_bal");
+                assert_eq!(s.fields[2].name, "votes");
+                assert_eq!(s.fields[3].name, "last_checkpointed_operation");
+                assert_eq!(s.fields[4].name, "log_truncation_point");
+
+                // Check field types
+                match &s.fields[0].ty {
+                    Type::Named(path) => assert_eq!(path.segments[0], "LReplicaConstants"),
+                    _ => panic!("Expected Named type for constants"),
+                }
+                match &s.fields[3].ty {
+                    Type::Seq(inner) => match inner.as_ref() {
+                        Type::Named(path) => assert_eq!(path.segments[0], "OperationNumber"),
+                        _ => panic!("Expected Named type inside Seq"),
+                    },
+                    _ => panic!("Expected Seq type for last_checkpointed_operation"),
+                }
+            }
+            _ => panic!("Expected struct"),
+        }
     }
 }
