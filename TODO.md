@@ -1380,9 +1380,12 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
   - Runtime test for `CRemoveVotesBeforeLogTruncationPoint` supplements formal verification
   - Plan: docs/dev/phase-d3-equivalence-testing-plan.md
 
-- [ ] **D4: Performance comparison**
-  - Compare verification time: generated vs manual
-  - Compare runtime performance if applicable
+- [x] **D4: Performance comparison** ✅ [26:01:24]
+  - Verification time: ~7m18s for full codebase (456 verified, 0 errors)
+  - Both generated and manual implementations verify in same pass
+  - Runtime: Manual implementation includes optimizations (min_vote_opn) not in generated code
+  - Recommendation: Manual for production, generated for verification reference
+  - Plan: docs/dev/phase-d4-performance-comparison.md
 
 #### Phase E: Documentation and Cleanup
 
