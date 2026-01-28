@@ -1539,13 +1539,16 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - Added `find_self_referential_struct_literal()` and `transform_struct_with_field_substitution()`
   - Generates intermediate variable from map filter, substitutes in struct construction
   - learner_gen.rs now generates correct code for `CLearnerForgetOperationsBefore`
+  - **Note**: replica_gen.rs and proposer_gen.rs have different self-reference patterns that need separate fix
 - [x] Fix spec constraints emitted as code ✅ [26:01:28]
   - Added `is_input_only_expression()` helper to detect preconditions
   - Modified conjunction handling to filter out spec-level constraints
 - [x] Add loop generation for sequence comprehension ✅ [26:01:28]
   - Added `try_extract_output_seq_comprehension()` to detect length + forall patterns
   - Now uses input-derived length instead of output reference
-- [ ] Remove all `#[cfg(test)]` from generated module imports
+- [ ] Fix self-reference in replica_gen.rs (s_.nextHeartbeatTime pattern)
+- [ ] Fix self-reference in proposer_gen.rs (s_.current_state, s_.request_queue patterns)
+- [ ] Remove all `#[cfg(test)]` from generated module imports (blocked by above)
 - [ ] Ensure full codebase verifies with Verus including generated code
 - [ ] Update CI to verify generated code
 
