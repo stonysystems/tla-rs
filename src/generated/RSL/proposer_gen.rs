@@ -316,22 +316,15 @@ ensures
     LProposerProcessHeartbeat(s@, result@, p@, clock@),
 {
     let s_election_state = CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
-    if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-        (0 && vec![])
+    CProposer { constants: s.constants, current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+        0
     } else {
-        (s.current_state && s.request_queue)
-    };
-    CProposer {
-        constants: s.constants,
-        current_state: s_.current_state,
-        request_queue: s_.request_queue,
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-        next_operation_number_to_propose: s.next_operation_number_to_propose,
-        received_1b_packets: s.received_1b_packets,
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-        incomplete_batch_timer: s.incomplete_batch_timer,
-        election_state: s_election_state,
-    }
+        s.current_state
+    }, request_queue: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+        vec![]
+    } else {
+        s.request_queue
+    }, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, received_1b_packets: s.received_1b_packets, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, election_state: s_election_state, ..s.clone() }
 
 }
 
@@ -365,22 +358,15 @@ ensures
     LProposerCheckForQuorumOfViewSuspicions(s@, result@, clock@),
 {
     let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
-    if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-        (0 && vec![])
+    CProposer { constants: s.constants, current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+        0
     } else {
-        (s.current_state && s.request_queue)
-    };
-    CProposer {
-        constants: s.constants,
-        current_state: s_.current_state,
-        request_queue: s_.request_queue,
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-        next_operation_number_to_propose: s.next_operation_number_to_propose,
-        received_1b_packets: s.received_1b_packets,
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-        incomplete_batch_timer: s.incomplete_batch_timer,
-        election_state: s_election_state,
-    }
+        s.current_state
+    }, request_queue: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+        vec![]
+    } else {
+        s.request_queue
+    }, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, received_1b_packets: s.received_1b_packets, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, election_state: s_election_state, ..s.clone() }
 
 }
 

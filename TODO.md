@@ -1550,8 +1550,11 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - When struct literal and field assignment both exist, skip generating separate struct from field_assignments
   - Substitute field values from field_assignments when processing struct literal in other_exprs
 - [ ] Fix self-reference in replica_gen.rs LSchedulerNext (helper calls inside if-expressions)
-- [ ] Fix self-reference in proposer_gen.rs (conditional field assignments pattern)
-- [ ] Remove all `#[cfg(test)]` from generated module imports (blocked by above)
+- [x] Fix self-reference in proposer_gen.rs (conditional field assignments pattern) ✅ [26:01:28]
+  - Added `try_extract_conditional_field_assignments()` to detect if-expression field assignments
+  - Added `extract_field_assignments_from_branch()` and `extract_single_field_assignment()` helpers
+  - Generates conditional expressions for field values: `if cond { val1 } else { val2 }`
+- [ ] Remove all `#[cfg(test)]` from generated module imports (blocked by LSchedulerNext)
 - [ ] Ensure full codebase verifies with Verus including generated code
 - [ ] Update CI to verify generated code
 

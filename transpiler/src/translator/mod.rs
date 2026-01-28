@@ -2900,6 +2900,7 @@ impl Translator {
                 else_branch: Some(else_br),
             } = expr
             {
+                // First, try the helper call pattern
                 if let Some(helper_info) = self.detect_helper_call(then_branch, ctx) {
                     // Check if else branch is output.field == source
                     if let Some(copy_source) =
@@ -2923,6 +2924,27 @@ impl Translator {
                             }
                         }
                     }
+                }
+
+                // Pattern 5: Conditional field assignments
+                // if cond { s_.field1 == val1 && s_.field2 == val2 } else { s_.field1 == val3 && s_.field2 == val4 }
+                if let Some(conditional_fields) =
+                    self.try_extract_conditional_field_assignments(if_cond, then_branch, else_br, ctx)
+                {
+                    // Add each conditional field to field_assignments
+                    for (output_var, field_name, then_expr, else_expr) in conditional_fields {
+                        // Generate: if cond { then_val } else { else_val }
+                        let conditional_expr = Expr::If {
+                            cond: if_cond.clone(),
+                            then_branch: Box::new(then_expr),
+                            else_branch: Some(Box::new(else_expr)),
+                        };
+                        field_assignments
+                            .entry(output_var)
+                            .or_default()
+                            .push((field_name, conditional_expr));
+                    }
+                    continue;
                 }
             }
             other_exprs.push(expr.clone());
@@ -3933,6 +3955,110 @@ impl Translator {
         // - lower bound: 0 <= idx or idx >= 0
         // - upper bound: idx < output.field.len()
         true
+    }
+
+    /// Try to extract conditional field assignments from an if-expression.
+    ///
+    /// Pattern: if cond { s_.f1 == v1 && s_.f2 == v2 } else { s_.f1 == v3 && s_.f2 == v4 }
+    /// Returns: Vec<(output_var, field_name, then_expr, else_expr)>
+    fn try_extract_conditional_field_assignments(
+        &self,
+        _cond: &Expr,
+        then_branch: &Expr,
+        else_branch: &Expr,
+        ctx: &TransformContext,
+    ) -> Option<Vec<(String, String, Expr, Expr)>> {
+        // Extract field assignments from then branch
+        let then_assignments = self.extract_field_assignments_from_branch(then_branch, ctx)?;
+        // Extract field assignments from else branch
+        let else_assignments = self.extract_field_assignments_from_branch(else_branch, ctx)?;
+
+        // Check that we have matching field names in both branches
+        let mut results = Vec::new();
+        for (output_var, field_name, then_val) in &then_assignments {
+            // Find matching assignment in else branch
+            for (else_out, else_field, else_val) in &else_assignments {
+                if output_var == else_out && field_name == else_field {
+                    results.push((
+                        output_var.clone(),
+                        field_name.clone(),
+                        then_val.clone(),
+                        else_val.clone(),
+                    ));
+                }
+            }
+        }
+
+        if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        }
+    }
+
+    /// Extract field assignments from a branch expression (could be conjunction or single assignment)
+    fn extract_field_assignments_from_branch(
+        &self,
+        expr: &Expr,
+        ctx: &TransformContext,
+    ) -> Option<Vec<(String, String, Expr)>> {
+        let mut assignments = Vec::new();
+
+        // Handle conjunction: s_.f1 == v1 && s_.f2 == v2
+        if let Expr::Conjunction(parts) = expr {
+            for part in parts {
+                if let Some((out, field, val)) = self.extract_single_field_assignment(part, ctx) {
+                    assignments.push((out, field, val));
+                }
+            }
+        }
+        // Handle binary AND: s_.f1 == v1 && s_.f2 == v2
+        else if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = expr {
+            if let Some((out, field, val)) = self.extract_single_field_assignment(lhs, ctx) {
+                assignments.push((out, field, val));
+            }
+            if let Some((out, field, val)) = self.extract_single_field_assignment(rhs, ctx) {
+                assignments.push((out, field, val));
+            }
+        }
+        // Handle single assignment: s_.field == val
+        else if let Some((out, field, val)) = self.extract_single_field_assignment(expr, ctx) {
+            assignments.push((out, field, val));
+        }
+
+        if assignments.is_empty() {
+            None
+        } else {
+            Some(assignments)
+        }
+    }
+
+    /// Extract a single field assignment: s_.field == value
+    /// Returns (output_var, field_name, value_expr)
+    fn extract_single_field_assignment(
+        &self,
+        expr: &Expr,
+        ctx: &TransformContext,
+    ) -> Option<(String, String, Expr)> {
+        if let Expr::Eq(lhs, rhs) = expr {
+            // Check: s_.field == value
+            if let Expr::Field(base, field) = lhs.as_ref() {
+                if let Expr::Ident(var_name) = base.as_ref() {
+                    if ctx.is_output(var_name) {
+                        return Some((var_name.clone(), field.clone(), (**rhs).clone()));
+                    }
+                }
+            }
+            // Also check: value == s_.field
+            if let Expr::Field(base, field) = rhs.as_ref() {
+                if let Expr::Ident(var_name) = base.as_ref() {
+                    if ctx.is_output(var_name) {
+                        return Some((var_name.clone(), field.clone(), (**lhs).clone()));
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Try to recognize a conjunction of foralls as a map filter pattern.
