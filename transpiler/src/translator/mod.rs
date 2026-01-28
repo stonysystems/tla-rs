@@ -285,6 +285,21 @@ impl<'a> TransformContext<'a> {
         self.output_params.contains(&name.to_string())
     }
 
+    /// Check if a path like "s_.field" belongs to an output variable
+    /// Returns true if the base (s_) is an output parameter
+    pub fn is_output_field_path(&self, path: &str) -> bool {
+        // Try direct match first
+        if self.output_params.contains(&path.to_string()) {
+            return true;
+        }
+        // Check if it's a field path like "s_.field"
+        if let Some(dot_pos) = path.find('.') {
+            let base = &path[..dot_pos];
+            return self.output_params.contains(&base.to_string());
+        }
+        false
+    }
+
     /// Check if a variable is an input parameter (passed by reference)
     pub fn is_input(&self, name: &str) -> bool {
         self.input_params.contains(&name.to_string())
@@ -344,8 +359,7 @@ impl Translator {
 
             // Binary operations: both sides must be input-only
             Expr::Binary(lhs, _, rhs) => {
-                Self::is_input_only_expression(lhs, ctx)
-                    && Self::is_input_only_expression(rhs, ctx)
+                Self::is_input_only_expression(lhs, ctx) && Self::is_input_only_expression(rhs, ctx)
             }
 
             // Comparison operations
@@ -355,8 +369,7 @@ impl Translator {
             | Expr::Le(lhs, rhs)
             | Expr::Gt(lhs, rhs)
             | Expr::Ge(lhs, rhs) => {
-                Self::is_input_only_expression(lhs, ctx)
-                    && Self::is_input_only_expression(rhs, ctx)
+                Self::is_input_only_expression(lhs, ctx) && Self::is_input_only_expression(rhs, ctx)
             }
 
             // Unary not
@@ -366,17 +379,13 @@ impl Translator {
             Expr::Field(base, _) => Self::is_input_only_expression(base, ctx),
 
             // Method call: receiver and args must be input-only
-            Expr::MethodCall {
-                receiver, args, ..
-            } => {
+            Expr::MethodCall { receiver, args, .. } => {
                 Self::is_input_only_expression(receiver, ctx)
                     && args.iter().all(|a| Self::is_input_only_expression(a, ctx))
             }
 
             // Function call: all args must be input-only
-            Expr::Call { args, .. } => {
-                args.iter().all(|a| Self::is_input_only_expression(a, ctx))
-            }
+            Expr::Call { args, .. } => args.iter().all(|a| Self::is_input_only_expression(a, ctx)),
 
             // Index: base and index must be input-only
             Expr::Index(base, idx) => {
@@ -426,9 +435,9 @@ impl Translator {
             }
 
             // Map literals: all keys and values must be input-only
-            Expr::MapLit(pairs) => pairs
-                .iter()
-                .all(|(k, v)| Self::is_input_only_expression(k, ctx) && Self::is_input_only_expression(v, ctx)),
+            Expr::MapLit(pairs) => pairs.iter().all(|(k, v)| {
+                Self::is_input_only_expression(k, ctx) && Self::is_input_only_expression(v, ctx)
+            }),
 
             // Empty collections are always input-only
             Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty => true,
@@ -437,20 +446,21 @@ impl Translator {
             Expr::View(base) => Self::is_input_only_expression(base, ctx),
 
             // Structs: all field values must be input-only
-            Expr::Struct { fields, .. } => {
-                fields.iter().all(|(_, v)| Self::is_input_only_expression(v, ctx))
-            }
+            Expr::Struct { fields, .. } => fields
+                .iter()
+                .all(|(_, v)| Self::is_input_only_expression(v, ctx)),
 
             // StructUpdate: base and all field values must be input-only
             Expr::StructUpdate { base, fields, .. } => {
                 Self::is_input_only_expression(base, ctx)
-                    && fields.iter().all(|(_, v)| Self::is_input_only_expression(v, ctx))
+                    && fields
+                        .iter()
+                        .all(|(_, v)| Self::is_input_only_expression(v, ctx))
             }
 
             // Implication and biconditional
             Expr::Implies(lhs, rhs) | Expr::Iff(lhs, rhs) => {
-                Self::is_input_only_expression(lhs, ctx)
-                    && Self::is_input_only_expression(rhs, ctx)
+                Self::is_input_only_expression(lhs, ctx) && Self::is_input_only_expression(rhs, ctx)
             }
 
             // Cast: inner must be input-only
@@ -459,7 +469,9 @@ impl Translator {
             // Match: scrutinee and all arm bodies must be input-only
             Expr::Match { scrutinee, arms } => {
                 Self::is_input_only_expression(scrutinee, ctx)
-                    && arms.iter().all(|arm| Self::is_input_only_expression(&arm.body, ctx))
+                    && arms
+                        .iter()
+                        .all(|arm| Self::is_input_only_expression(&arm.body, ctx))
             }
 
             // Default: if we can't determine, assume it's not input-only
@@ -1750,28 +1762,65 @@ impl Translator {
 
                 // Next, check if this is a map filter conjunction pattern
                 // (multiple foralls that together define filtering a map)
-                if let Some((source_map, _output_map, key_var, filter_pred)) =
+                if let Some((source_map, output_map, key_var, filter_pred)) =
                     self.try_extract_map_filter_conjunction(exprs, ctx)
                 {
-                    // Generate: source.iter().filter(|(k, _)| predicate).collect()
+                    // Generate: source.iter().filter(|(k, _)| predicate).cloned().collect()
                     let filter_expr = self.transform_expr(&filter_pred, ctx)?;
 
-                    return Ok(ExecExpr::MethodCall {
+                    let filter_collect = ExecExpr::MethodCall {
                         receiver: Box::new(ExecExpr::MethodCall {
                             receiver: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var(source_map)),
-                                method: "iter".to_string(),
-                                args: vec![],
+                                receiver: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                    method: "iter".to_string(),
+                                    args: vec![],
+                                }),
+                                method: "filter".to_string(),
+                                args: vec![ExecExpr::Closure {
+                                    params: vec![format!("({}, _)", key_var)],
+                                    body: Box::new(filter_expr),
+                                }],
                             }),
-                            method: "filter".to_string(),
-                            args: vec![ExecExpr::Closure {
-                                params: vec![format!("({}, _)", key_var)],
-                                body: Box::new(filter_expr),
-                            }],
+                            method: "cloned".to_string(),
+                            args: vec![],
                         }),
                         method: "collect".to_string(),
                         args: vec![],
-                    });
+                    };
+
+                    // Check if there's a struct literal that uses this map as a self-referential field
+                    // Pattern: s_ == Struct{..., field: s_.field} where field is output_map
+                    if let Some((output_var, struct_expr_with_self_ref)) =
+                        self.find_self_referential_struct_literal(exprs, &output_map, ctx)
+                    {
+                        // Extract the field name from output_map (e.g., "s_.unexecuted_learner_state" -> "unexecuted_learner_state")
+                        let field_name = self.extract_field_name_from_output_map(&output_map);
+
+                        // Generate an intermediate variable name
+                        let intermediate_var = format!("__{}", output_map.replace('.', "_"));
+
+                        // Generate let binding: let __intermediate = filter_collect;
+                        let let_binding = ExecExpr::Let {
+                            pattern: intermediate_var.clone(),
+                            ty: None,
+                            value: Box::new(filter_collect),
+                        };
+
+                        // Transform the struct, substituting the self-referential field
+                        let struct_result = self.transform_struct_with_field_substitution(
+                            &struct_expr_with_self_ref,
+                            &output_var,
+                            &field_name,
+                            &intermediate_var,
+                            ctx,
+                        )?;
+
+                        return Ok(ExecExpr::Block(vec![let_binding, struct_result]));
+                    }
+
+                    // No self-referential struct literal, return just the filter
+                    return Ok(filter_collect);
                 }
 
                 // Next, process any helper calls in the conjunction
@@ -2293,7 +2342,13 @@ impl Translator {
                                 .iter()
                                 .map(|c| self.transform_expr(c, ctx))
                                 .collect();
-                            Ok(self.generate_chain_any_loop(container_exprs?, &var_name, pred_expr))
+                            Ok(
+                                self.generate_chain_any_loop(
+                                    container_exprs?,
+                                    &var_name,
+                                    pred_expr,
+                                ),
+                            )
                         }
                     } else if containers.len() == 1 {
                         // Single container: container.iter().any(|x| pred(x))
@@ -3299,10 +3354,17 @@ impl Translator {
                         }
 
                         // Check assignment: output[i] == element_expr
-                        if let Some(element_expr) =
-                            self.extract_direct_seq_element_assignment(assign_expr, &index_var, &output_name)
-                        {
-                            return Some((output_name.clone(), length_expr, index_var, element_expr));
+                        if let Some(element_expr) = self.extract_direct_seq_element_assignment(
+                            assign_expr,
+                            &index_var,
+                            &output_name,
+                        ) {
+                            return Some((
+                                output_name.clone(),
+                                length_expr,
+                                index_var,
+                                element_expr,
+                            ));
                         }
                     }
                 }
@@ -3353,7 +3415,9 @@ impl Translator {
             Expr::Conjunction(parts) => {
                 // Need: lower bound check (0 <= idx) and upper bound check (idx < output.len())
                 let has_lower = parts.iter().any(|p| self.is_lower_bound_check(p, idx_var));
-                let has_upper = parts.iter().any(|p| self.is_upper_bound_check(p, idx_var, output_name));
+                let has_upper = parts
+                    .iter()
+                    .any(|p| self.is_upper_bound_check(p, idx_var, output_name));
                 has_lower && has_upper
             }
             Expr::Binary(lhs, crate::ast::BinOp::And, rhs) => {
@@ -3822,22 +3886,55 @@ impl Translator {
         let mut filter_predicate: Option<Expr> = None;
 
         for (_, body) in &foralls {
+            // Pattern 0: Biconditional domain definition
+            // output.contains_key(k) <==> filter_pred && source.contains_key(k)
+            if let Expr::Iff(lhs, rhs) = body {
+                // Check which side has output.contains_key(k)
+                if let Some(map_name) = self.extract_contains_key_source(lhs, key_var) {
+                    if ctx.is_output_field_path(&map_name) {
+                        output_map = Some(map_name.clone());
+                        // The RHS is: filter_pred && source.contains_key(k)
+                        if let Some((src, filter)) = self.extract_source_and_filter(rhs, key_var) {
+                            source_map = Some(src);
+                            // Only set filter if it's not just "true"
+                            if !matches!(filter, Expr::Literal(Literal::Bool(true))) {
+                                filter_predicate = Some(filter);
+                            }
+                        }
+                        continue;
+                    }
+                }
+                if let Some(map_name) = self.extract_contains_key_source(rhs, key_var) {
+                    if ctx.is_output_field_path(&map_name) {
+                        output_map = Some(map_name.clone());
+                        // The LHS is: filter_pred && source.contains_key(k)
+                        if let Some((src, filter)) = self.extract_source_and_filter(lhs, key_var) {
+                            source_map = Some(src);
+                            if !matches!(filter, Expr::Literal(Literal::Bool(true))) {
+                                filter_predicate = Some(filter);
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+
             // Pattern 1: Preservation - output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]
             if let Expr::Implies(premise, conclusion) = body {
                 // Check for output.contains_key(k) in premise
                 if let Some(map_name) = self.extract_contains_key_source(premise, key_var) {
-                    if ctx.is_output(&map_name) {
+                    if ctx.is_output_field_path(&map_name) {
                         output_map = Some(map_name.clone());
                         // Try to find source in conclusion
                         if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = conclusion.as_ref()
                         {
                             if let Some(src) = self.extract_contains_key_source(lhs, key_var) {
-                                if !ctx.is_output(&src) {
+                                if !ctx.is_output_field_path(&src) {
                                     source_map = Some(src);
                                 }
                             }
                             if let Some(src) = self.extract_contains_key_source(rhs, key_var) {
-                                if !ctx.is_output(&src) {
+                                if !ctx.is_output_field_path(&src) {
                                     source_map = Some(src);
                                 }
                             }
@@ -3845,7 +3942,7 @@ impl Translator {
                         if let Expr::Conjunction(parts) = conclusion.as_ref() {
                             for part in parts {
                                 if let Some(src) = self.extract_contains_key_source(part, key_var) {
-                                    if !ctx.is_output(&src) {
+                                    if !ctx.is_output_field_path(&src) {
                                         source_map = Some(src);
                                     }
                                 }
@@ -3859,7 +3956,7 @@ impl Translator {
                 // Check if conclusion is negation of contains_key on output
                 if let Expr::Not(inner) = conclusion.as_ref() {
                     if let Some(map_name) = self.extract_contains_key_source(inner, key_var) {
-                        if ctx.is_output(&map_name) {
+                        if ctx.is_output_field_path(&map_name) {
                             output_map = Some(map_name.clone());
                             // The premise is the exclusion condition, we want the opposite for filter
                             // If k < threshold excludes, then k >= threshold includes
@@ -3881,19 +3978,19 @@ impl Translator {
 
                 // Pattern 3: Inclusion - k >= threshold && source.contains_key(k) ==> output.contains_key(k)
                 if let Some(map_name) = self.extract_contains_key_source(conclusion, key_var) {
-                    if ctx.is_output(&map_name) {
+                    if ctx.is_output_field_path(&map_name) {
                         output_map = Some(map_name.clone());
                         // The premise contains the filter predicate and source membership
                         if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = premise.as_ref() {
                             if let Some(src) = self.extract_contains_key_source(lhs, key_var) {
-                                if !ctx.is_output(&src) {
+                                if !ctx.is_output_field_path(&src) {
                                     source_map = Some(src);
                                     // The other part is the filter
                                     filter_predicate = Some((**rhs).clone());
                                 }
                             }
                             if let Some(src) = self.extract_contains_key_source(rhs, key_var) {
-                                if !ctx.is_output(&src) {
+                                if !ctx.is_output_field_path(&src) {
                                     source_map = Some(src);
                                     // The other part is the filter
                                     filter_predicate = Some((**lhs).clone());
@@ -3910,6 +4007,106 @@ impl Translator {
             Some((src, out, key_var.clone(), filter))
         } else {
             None
+        }
+    }
+
+    /// Find a struct literal in the expressions that has a self-referential field
+    /// Pattern: s_ == Struct{..., field: s_.field}
+    /// Returns (output_var_name, struct_expr) if found
+    fn find_self_referential_struct_literal(
+        &self,
+        exprs: &[Expr],
+        output_map: &str,
+        ctx: &TransformContext,
+    ) -> Option<(String, Expr)> {
+        for expr in exprs {
+            // Look for: output_var == Struct{...}
+            if let Expr::Eq(lhs, rhs) = expr {
+                if let Expr::Ident(var_name) = lhs.as_ref() {
+                    if ctx.is_output(var_name) {
+                        if let Expr::Struct { fields, .. } = rhs.as_ref() {
+                            // Check if any field is self-referential (references the output)
+                            for (field_name, field_expr) in fields {
+                                if self.is_self_referential_field(field_expr, var_name, field_name)
+                                {
+                                    // Check if this field corresponds to the output_map
+                                    // output_map might be "s_.unexecuted_learner_state"
+                                    // or just the field name
+                                    let expected_ref = format!("{}.{}", var_name, field_name);
+                                    if output_map == expected_ref
+                                        || output_map.ends_with(field_name)
+                                    {
+                                        return Some((var_name.clone(), rhs.as_ref().clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if a field expression is self-referential
+    /// Pattern: output.field where output is the output variable
+    fn is_self_referential_field(
+        &self,
+        field_expr: &Expr,
+        output_var: &str,
+        _expected_field: &str,
+    ) -> bool {
+        // Check for: output_var.field_name
+        if let Expr::Field(base, _field_name) = field_expr {
+            if let Expr::Ident(var_name) = base.as_ref() {
+                return var_name == output_var;
+            }
+        }
+        false
+    }
+
+    /// Extract the field name from an output map reference
+    /// "s_.unexecuted_learner_state" -> "unexecuted_learner_state"
+    fn extract_field_name_from_output_map(&self, output_map: &str) -> String {
+        if let Some(dot_pos) = output_map.rfind('.') {
+            output_map[dot_pos + 1..].to_string()
+        } else {
+            output_map.to_string()
+        }
+    }
+
+    /// Transform a struct with a field substitution for self-referential field
+    fn transform_struct_with_field_substitution(
+        &self,
+        struct_expr: &Expr,
+        _output_var: &str,
+        self_ref_field: &str,
+        replacement_var: &str,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        if let Expr::Struct { name, fields } = struct_expr {
+            let exec_name = self.translate_name(name.last().unwrap_or("Unknown"));
+            let translated_fields: TranspileResult<Vec<_>> = fields
+                .iter()
+                .map(|(fname, fexpr)| {
+                    let expr = if fname == self_ref_field {
+                        // Substitute with the intermediate variable
+                        ExecExpr::Var(replacement_var.to_string())
+                    } else {
+                        let e = self.transform_expr(fexpr, ctx)?;
+                        // Clone input parameters when assigning to struct fields
+                        self.clone_if_input_ref(e, ctx)
+                    };
+                    Ok((fname.clone(), expr))
+                })
+                .collect();
+            Ok(ExecExpr::Struct {
+                name: exec_name,
+                fields: translated_fields?,
+            })
+        } else {
+            // Fallback to normal transformation
+            self.transform_expr(struct_expr, ctx)
         }
     }
 
@@ -5620,27 +5817,35 @@ mod tests {
             result
         );
 
-        // Should generate: votes.iter().filter(|(opn, _)| opn >= log_truncation_point).collect()
+        // Should generate: votes.iter().filter(|(opn, _)| opn >= log_truncation_point).cloned().collect()
         match result.unwrap() {
             ExecExpr::MethodCall {
                 method, receiver, ..
             } => {
                 assert_eq!(method, "collect", "Should end with .collect()");
                 match receiver.as_ref() {
-                    ExecExpr::MethodCall { method, args, .. } => {
-                        assert_eq!(method, "filter", "Should have .filter()");
-                        assert_eq!(args.len(), 1, "Filter should have closure arg");
-                        match &args[0] {
-                            ExecExpr::Closure { params, .. } => {
-                                assert!(
-                                    params[0].contains("opn"),
-                                    "Closure param should contain opn"
-                                );
+                    ExecExpr::MethodCall {
+                        method, receiver, ..
+                    } => {
+                        assert_eq!(method, "cloned", "Should have .cloned() before collect");
+                        match receiver.as_ref() {
+                            ExecExpr::MethodCall { method, args, .. } => {
+                                assert_eq!(method, "filter", "Should have .filter()");
+                                assert_eq!(args.len(), 1, "Filter should have closure arg");
+                                match &args[0] {
+                                    ExecExpr::Closure { params, .. } => {
+                                        assert!(
+                                            params[0].contains("opn"),
+                                            "Closure param should contain opn"
+                                        );
+                                    }
+                                    _ => panic!("Expected Closure"),
+                                }
                             }
-                            _ => panic!("Expected Closure"),
+                            _ => panic!("Expected MethodCall for filter"),
                         }
                     }
-                    _ => panic!("Expected MethodCall for filter"),
+                    _ => panic!("Expected MethodCall for cloned"),
                 }
             }
             other => panic!("Expected MethodCall with collect, got {:?}", other),

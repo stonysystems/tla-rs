@@ -1533,7 +1533,12 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
 
 #### F4: Remove #[cfg(test)] Guards Permanently
 **Blocked by:** Known transpiler limitations documented in F3-regeneration-notes.md
-- [ ] Fix self-referential pattern bug (s_ undefined)
+- [x] Fix self-referential pattern bug (s_ undefined) ✅ [26:01:28]
+  - Added `is_output_field_path()` to detect field paths like `s_.field`
+  - Added `Expr::Iff` (biconditional) handling in `try_extract_map_filter_conjunction`
+  - Added `find_self_referential_struct_literal()` and `transform_struct_with_field_substitution()`
+  - Generates intermediate variable from map filter, substitutes in struct construction
+  - learner_gen.rs now generates correct code for `CLearnerForgetOperationsBefore`
 - [x] Fix spec constraints emitted as code ✅ [26:01:28]
   - Added `is_input_only_expression()` helper to detect preconditions
   - Modified conjunction handling to filter out spec-level constraints
