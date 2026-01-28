@@ -5,14 +5,21 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
+use crate::common::collections::hashmaps::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::protocol::RSL::acceptor::*;
+use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::common::upper_bound_i::*;
+use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::types::*;
+use crate::protocol::RSL::configuration::*;
 
 verus! {
 
@@ -28,14 +35,14 @@ ensures
     (CProposer {
     constants: c.clone(),
     current_state: 0,
-    request_queue: Cempty(),
+    request_queue: vec![],
     max_ballot_i_sent_1a: CBallot {
         seqno: 0,
         proposer_id: c.my_index,
     },
     next_operation_number_to_propose: 0,
-    received_1b_packets: Cempty(),
-    highest_seqno_requested_by_client_this_view: Cempty(),
+    received_1b_packets: HashSet::new(),
+    highest_seqno_requested_by_client_this_view: HashMap::new(),
 }, (s.incomplete_batch_timer is IncompleteBatchTimerOff))
 
 }
@@ -102,14 +109,14 @@ if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalL
     request_queue: (s.election_state.requests_received_prev_epochs + s.election_state.requests_received_this_epoch),
     max_ballot_i_sent_1a: s.election_state.current_view,
     next_operation_number_to_propose: s.next_operation_number_to_propose,
-    received_1b_packets: Cempty(),
-    highest_seqno_requested_by_client_this_view: Cempty(),
+    received_1b_packets: HashSet::new(),
+    highest_seqno_requested_by_client_this_view: HashMap::new(),
     incomplete_batch_timer: s.incomplete_batch_timer,
     election_state: s.election_state,
 }, sent_packets)
 
     } else {
-        (s.clone(), Cempty())
+        (s.clone(), vec![])
     }
 }
 
@@ -166,14 +173,13 @@ if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && 
 }, sent_packets)
 
     } else {
-        (s.clone(), Cempty())
+        (s.clone(), vec![])
     }
 }
 
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CRslPacket>))
 requires
     s.valid(),
-    clock.valid(),
     log_truncation_point.valid(),
     CLProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
     CLAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
@@ -230,36 +236,47 @@ ensures
     LProposerNominateOldValueAndSend2a(s@, result.0@, log_truncation_point@, result.1@),
 {
     let opn = s.next_operation_number_to_propose;
-    s.received_1b_packets.iter().any(|p| (CValIsHighestNumberedProposal(&p.msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && (CProposer {
-    constants: s.constants,
-    current_state: s.current_state,
-    request_queue: s.request_queue,
-    max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-    next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
-    received_1b_packets: s.received_1b_packets,
-    highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-    incomplete_batch_timer: s.incomplete_batch_timer,
-    election_state: s.election_state,
-} && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a {
+        let mut found: bool = false;
+    let p_iter = s.received_1b_packets.iter();
+    for p in iter:p_iter
+    invariant
+        found ==> exists|i: int| 0 <= i < p_iter@.0 && /* pred at i */,
+    {
+        if (CValIsHighestNumberedProposal(&p.msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && (CProposer {
+            constants: s.constants,
+            current_state: s.current_state,
+            request_queue: s.request_queue,
+            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+            next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
+            received_1b_packets: s.received_1b_packets,
+            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
+            incomplete_batch_timer: s.incomplete_batch_timer,
+            election_state: s.election_state,
+        } && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: p.msg.get_votes().index(opn).max_val,
-}, sent_packets))))
+}, sent_packets))) {
+                        found = true;
+            break;
+
+        }
+    }
+    found
+
 
 }
 
 pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &i64) -> (result: (CProposer, Vec<CRslPacket>))
 requires
     s.valid(),
-    clock.valid(),
-    log_truncation_point.valid(),
 ensures
     result.0.valid(),
     result.1.valid(),
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
 {
 if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_operation_number_to_propose) {
-        (s.clone(), Cempty())
+        (s.clone(), vec![])
     } else {
         if !CAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
             CProposerNominateOldValueAndSend2a(&s, s_, &log_truncation_point, sent_packets)
@@ -280,9 +297,9 @@ if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
         when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
     },
     election_state: s.election_state,
-}, Cempty())
+}, vec![])
                 } else {
-                    (s.clone(), Cempty())
+                    (s.clone(), vec![])
                 }
             }
         }
@@ -293,7 +310,6 @@ pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CRslPacket, clock: &i64
 requires
     s.valid(),
     p.valid(),
-    clock.valid(),
     p.msg is RslMessageHeartbeat,
 ensures
     result.valid(),
@@ -301,7 +317,7 @@ ensures
 {
     let s_election_state = CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
     if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-        (0 && Cempty())
+        (0 && vec![])
     } else {
         (s.current_state && s.request_queue)
     };
@@ -322,7 +338,6 @@ ensures
 pub exec fn CProposerCheckForViewTimeout(s: &CProposer, clock: &i64) -> (result: CProposer)
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.valid(),
     LProposerCheckForViewTimeout(s@, result@, clock@),
@@ -345,14 +360,13 @@ ensures
 pub exec fn CProposerCheckForQuorumOfViewSuspicions(s: &CProposer, clock: &i64) -> (result: CProposer)
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.valid(),
     LProposerCheckForQuorumOfViewSuspicions(s@, result@, clock@),
 {
     let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
     if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-        (0 && Cempty())
+        (0 && vec![])
     } else {
         (s.current_state && s.request_queue)
     };

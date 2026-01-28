@@ -5,13 +5,17 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
+use crate::common::collections::hashmaps::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::protocol::RSL::acceptor::*;
+use crate::implementation::RSL::LearnerImpl::CLearner;
+use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -29,7 +33,7 @@ CLearner {
             seqno: 0,
             proposer_id: 0,
         },
-        unexecuted_learner_state: Cempty(),
+        unexecuted_learner_state: HashMap::new(),
     }
 }
 

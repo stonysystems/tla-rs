@@ -1,0 +1,30 @@
+# Configuration for transpiling RSL broadcast spec to implementation
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+"LConfiguration" = "CConfiguration"
+"RslMessage" = "CRslMessage"
+"RslPacket" = "CRslPacket"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::seq::*;",
+    "use crate::common::native::io_s::EndPoint;",
+    "use crate::implementation::RSL::types_i::*;",
+    "use crate::implementation::RSL::cconstants::*;",
+    "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::cconfiguration::*;",
+    "use crate::protocol::RSL::broadcast::*;",
+    "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::RSL::configuration::*;",
+]

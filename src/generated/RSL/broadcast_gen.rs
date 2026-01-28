@@ -2,24 +2,21 @@
 // DO NOT EDIT MANUALLY
 
 use vstd::prelude::*;
-use vstd::map::*;
-use vstd::set::*;
-use std::collections::HashMap;
-use crate::common::collections::sets::*;
+use vstd::seq::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::cbroadcast::*;
-use crate::protocol::RSL::acceptor::*;
+use crate::implementation::RSL::cconfiguration::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
+use crate::protocol::RSL::configuration::*;
 
 verus! {
 
 pub exec fn CBroadcastToEveryone(c: &CConfiguration, myidx: &i64, m: &CRslMessage) -> (result: Vec<CRslPacket>)
 requires
     c.valid(),
-    myidx.valid(),
     m.valid(),
 ensures
     result.valid(),

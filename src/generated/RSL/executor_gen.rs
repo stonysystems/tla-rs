@@ -5,13 +5,18 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
+use crate::common::collections::hashmaps::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::protocol::RSL::acceptor::*;
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::CStateMachine::*;
+use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -33,7 +38,7 @@ CExecutor {
         },
         next_op_to_execute: COutstandingOperation::OutstandingOpUnknown {
         },
-        reply_cache: Cempty(),
+        reply_cache: HashMap::new(),
     }
 }
 
@@ -141,7 +146,7 @@ ensures
     },
 }])
     } else {
-        (s.clone(), Cempty())
+        (s.clone(), vec![])
     }
 
 }
@@ -164,7 +169,7 @@ if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.get_logTrun
         (s.clone(), sent_packets)
 
     } else {
-        (s.clone(), Cempty())
+        (s.clone(), vec![])
     }
 }
 
@@ -192,7 +197,7 @@ if ((inp.msg.get_seqno_req() == s.reply_cache.index(inp.src).seqno) && CReplicaC
 }]
 
     } else {
-        Cempty()
+        vec![]
     }
 }
 

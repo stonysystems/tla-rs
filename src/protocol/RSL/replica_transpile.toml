@@ -1,0 +1,48 @@
+# Configuration for transpiling RSL replica spec to implementation
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+"LReplica" = "CReplica"
+"LScheduler" = "CScheduler"
+"LReplicaConstants" = "CReplicaConstants"
+"RslPacket" = "CRslPacket"
+"RslIo" = "CRslIo"
+"ClockReading" = "CClockReading"
+"Ballot" = "CBallot"
+"OperationNumber" = "u64"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::map::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashMap;",
+    "use std::collections::HashSet;",
+    "use crate::common::collections::sets::*;",
+    "use crate::common::collections::hashsets::*;",
+    "use crate::common::collections::hashmaps::*;",
+    "use crate::common::native::io_s::EndPoint;",
+    "use crate::implementation::RSL::types_i::*;",
+    "use crate::implementation::RSL::cconstants::*;",
+    "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::implementation::RSL::ReplicaModel::*;",
+    "use crate::implementation::RSL::ProposerImpl::CProposer;",
+    "use crate::implementation::RSL::acceptorimpl::CAcceptor;",
+    "use crate::implementation::RSL::LearnerImpl::CLearner;",
+    "use crate::implementation::RSL::ExecutorImpl::CExecutor;",
+    "use crate::implementation::RSL::ElectionImpl::CElectionState;",
+    "use crate::implementation::common::upper_bound_i::*;",
+    "use crate::protocol::RSL::replica::*;",
+    "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::RSL::configuration::*;",
+]

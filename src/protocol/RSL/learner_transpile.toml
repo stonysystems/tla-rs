@@ -1,0 +1,45 @@
+# Configuration for transpiling RSL learner spec to implementation
+# This configures the transpiler to match the existing RSL codebase conventions
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+# RSL-specific type mappings
+"LLearner" = "CLearner"
+"LReplicaConstants" = "CReplicaConstants"
+"Ballot" = "CBallot"
+"RslPacket" = "CRslPacket"
+"OperationNumber" = "u64"
+"LearnerState" = "CLearnerState"
+"LearnerTuple" = "CLearnerTuple"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+# RSL uses 'valid()' instead of 'well_formed()'
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+# Generate explicit for loops instead of iterators for better Verus verification
+generate_loops_for_verification = true
+# Custom imports for learner module
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::map::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashMap;",
+    "use std::collections::HashSet;",
+    "use crate::common::collections::sets::*;",
+    "use crate::common::collections::hashsets::*;",
+    "use crate::common::collections::hashmaps::*;",
+    "use crate::common::native::io_s::EndPoint;",
+    "use crate::implementation::RSL::types_i::*;",
+    "use crate::implementation::RSL::cconstants::*;",
+    "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::implementation::RSL::LearnerImpl::CLearner;",
+    "use crate::protocol::RSL::learner::*;",
+    "use crate::protocol::RSL::types::*;",
+]
