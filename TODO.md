@@ -1546,8 +1546,11 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
 - [x] Add loop generation for sequence comprehension ✅ [26:01:28]
   - Added `try_extract_output_seq_comprehension()` to detect length + forall patterns
   - Now uses input-derived length instead of output reference
-- [ ] Fix self-reference in replica_gen.rs (s_.nextHeartbeatTime pattern)
-- [ ] Fix self-reference in proposer_gen.rs (s_.current_state, s_.request_queue patterns)
+- [x] Fix simple self-reference in replica_gen.rs (s_.nextHeartbeatTime pattern) ✅ [26:01:28]
+  - When struct literal and field assignment both exist, skip generating separate struct from field_assignments
+  - Substitute field values from field_assignments when processing struct literal in other_exprs
+- [ ] Fix self-reference in replica_gen.rs LSchedulerNext (helper calls inside if-expressions)
+- [ ] Fix self-reference in proposer_gen.rs (conditional field assignments pattern)
 - [ ] Remove all `#[cfg(test)]` from generated module imports (blocked by above)
 - [ ] Ensure full codebase verifies with Verus including generated code
 - [ ] Update CI to verify generated code

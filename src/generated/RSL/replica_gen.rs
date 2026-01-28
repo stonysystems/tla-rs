@@ -483,14 +483,7 @@ if (clock.t < s.nextHeartbeatTime) {
     suspicious: s.proposer.election_state.current_view_suspectors.contains(s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,
 });
-        ((CReplica { nextHeartbeatTime: CUpperBoundedAddition(&clock.t, &s.constants.all.params.heartbeat_period, &s.constants.all.params.max_integer_val), ..s.clone() }, CReplica {
-    constants: s.constants,
-    nextHeartbeatTime: s_.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
-}), sent_packets)
+        (CReplica { constants: s.constants, nextHeartbeatTime: CUpperBoundedAddition(&clock.t, &s.constants.all.params.heartbeat_period, &s.constants.all.params.max_integer_val), proposer: s.proposer, acceptor: s.acceptor, learner: s.learner, executor: s.executor, ..s.clone() }, sent_packets)
 
     }
 }
@@ -549,22 +542,6 @@ ensures
     LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
 {
     let s_ = CReplicaNextProcessHeartbeat(&s, &ios.index(0).get_r(), &ios.index(1).get_t(), CExtractSentPacketsFromIos(&ios));
-    (ios.len() > 1);
-    (ios.index(1) is ReadClock);
-        let mut all_match: bool = true;
-    let io_iter = ios.subrange(2, (ios.len() as i64)).iter();
-    for io in iter:io_iter
-    invariant
-        all_match <==> forall|i: int| 0 <= i < io_iter@.0 ==> /* pred at i */,
-    {
-        if !(io is Send) {
-                        all_match = false;
-            break;
-
-        }
-    }
-    all_match
-;
     s_
 
 }
@@ -620,21 +597,15 @@ ensures
     result.valid(),
     LReplicaNextProcessPacket(s@, result@, ios@),
 {
-    (ios.len() >= 1);
-    if (ios.index(0) is TimeoutReceive) {
-                (ios.len() == 1);
+if (ios.index(0) is TimeoutReceive) {
         s.clone()
-
     } else {
-                (ios.index(0) is Receive);
         if (ios.index(0).get_r().msg is RslMessageHeartbeat) {
             CReplicaNextReadClockAndProcessPacket(&s, s_, &ios)
         } else {
             CReplicaNextProcessPacketWithoutReadingClock(&s, s_, &ios)
         }
-
     }
-
 }
 
 pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &i64, ios: &Vec<CRslIo>) -> (result: CReplica)
@@ -648,55 +619,45 @@ ensures
     let sent_packets = CExtractSentPacketsFromIos(&ios);
     if (nextActionIndex == 1) {
                 let s_ = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s, &sent_packets);
-        CSpontaneousIos(&ios, 0);
         s_
 
     } else {
         if (nextActionIndex == 2) {
                         let s_ = CReplicaNextSpontaneousMaybeEnterPhase2(&s, &sent_packets);
-            CSpontaneousIos(&ios, 0);
             s_
 
         } else {
             if (nextActionIndex == 3) {
                                 let s_ = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, CSpontaneousClock(&ios), &sent_packets);
-                CSpontaneousIos(&ios, 1);
                 s_
 
             } else {
                 if (nextActionIndex == 4) {
                                         let s_ = CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&s, &sent_packets);
-                    CSpontaneousIos(&ios, 0);
                     s_
 
                 } else {
                     if (nextActionIndex == 5) {
                                                 let s_ = CReplicaNextSpontaneousMaybeMakeDecision(&s, &sent_packets);
-                        CSpontaneousIos(&ios, 0);
                         s_
 
                     } else {
                         if (nextActionIndex == 6) {
                                                         let s_ = CReplicaNextSpontaneousMaybeExecute(&s, &sent_packets);
-                            CSpontaneousIos(&ios, 0);
                             s_
 
                         } else {
                             if (nextActionIndex == 7) {
                                                                 let s_ = CReplicaNextReadClockCheckForViewTimeout(&s, CSpontaneousClock(&ios), &sent_packets);
-                                CSpontaneousIos(&ios, 1);
                                 s_
 
                             } else {
                                 if (nextActionIndex == 8) {
                                                                         let s_ = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, CSpontaneousClock(&ios), &sent_packets);
-                                    CSpontaneousIos(&ios, 1);
                                     s_
 
                                 } else {
                                                                         let s_ = CReplicaNextReadClockMaybeSendHeartbeat(&s, CSpontaneousClock(&ios), &sent_packets);
-                                    (nextActionIndex == 9);
-                                    CSpontaneousIos(&ios, 1);
                                     s_
 
                                 }

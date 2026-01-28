@@ -3010,12 +3010,36 @@ impl Translator {
         if !field_assignments.is_empty() || !pre_translated.is_empty() {
             let mut results = Vec::new();
 
+            // Check if any other_expr is a struct literal (s_ == Struct{...}) that
+            // corresponds to an output with field assignments. If so, we should NOT
+            // generate a separate struct from field_assignments - instead, we'll
+            // substitute field values when processing the struct literal.
+            let mut outputs_with_struct_literals: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for expr in &other_exprs {
+                if let Expr::Eq(lhs, rhs) = expr {
+                    if let Expr::Ident(output_name) = lhs.as_ref() {
+                        if ctx.is_output(output_name) {
+                            if let Expr::Struct { .. } = rhs.as_ref() {
+                                outputs_with_struct_literals.insert(output_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
             // Collect all output variable names
             let mut all_outputs: std::collections::HashSet<String> =
                 field_assignments.keys().cloned().collect();
             all_outputs.extend(pre_translated.keys().cloned());
 
             for output_name in all_outputs {
+                // Skip outputs that have a corresponding struct literal in other_exprs
+                // Those will be handled with substitution in the other_exprs loop
+                if outputs_with_struct_literals.contains(&output_name) {
+                    continue;
+                }
+
                 // Get the struct name from the output parameter's type
                 let struct_name = ctx
                     .get_output_struct_name(&output_name)
@@ -3067,11 +3091,82 @@ impl Translator {
             }
 
             // Add any other expressions, filtering out input-only preconditions
+            // Also handle self-referential struct literals by substituting field values
             for expr in other_exprs {
                 // Skip input-only expressions - these are preconditions
                 if Self::is_input_only_expression(&expr, ctx) {
                     continue;
                 }
+
+                // Check if this is s_ == Struct{...} with self-referential fields
+                if let Expr::Eq(lhs, rhs) = &expr {
+                    if let Expr::Ident(output_name) = lhs.as_ref() {
+                        if ctx.is_output(output_name) {
+                            if let Expr::Struct { name, fields } = rhs.as_ref() {
+                                // Check for self-referential fields and substitute from field_assignments
+                                let exec_name =
+                                    self.translate_name(name.last().unwrap_or("Unknown"));
+                                let base_name = output_name.trim_end_matches('_');
+                                let base_input = if ctx.input_params.contains(&base_name.to_string())
+                                {
+                                    Some(base_name.to_string())
+                                } else {
+                                    None
+                                };
+
+                                let translated_fields: TranspileResult<Vec<_>> = fields
+                                    .iter()
+                                    .map(|(fname, fexpr)| {
+                                        // Check if this field is self-referential (field: output.field)
+                                        if let Expr::Field(field_base, field_name) = fexpr {
+                                            if let Expr::Ident(ref_name) = field_base.as_ref() {
+                                                if ref_name == output_name && field_name == fname {
+                                                    // Self-referential! Look for field assignment
+                                                    if let Some(assignments) =
+                                                        field_assignments.get(output_name)
+                                                    {
+                                                        for (assigned_field, assigned_expr) in
+                                                            assignments
+                                                        {
+                                                            if assigned_field == fname {
+                                                                let e = self.transform_expr(
+                                                                    assigned_expr,
+                                                                    ctx,
+                                                                )?;
+                                                                return Ok((fname.clone(), e));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // Normal field - transform as usual
+                                        let e = self.transform_expr(fexpr, ctx)?;
+                                        let e = self.clone_if_input_ref(e, ctx);
+                                        Ok((fname.clone(), e))
+                                    })
+                                    .collect();
+
+                                if let Some(base) = base_input {
+                                    results.push(ExecExpr::StructUpdate {
+                                        name: exec_name,
+                                        base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(
+                                            base,
+                                        )))),
+                                        fields: translated_fields?,
+                                    });
+                                } else {
+                                    results.push(ExecExpr::Struct {
+                                        name: exec_name,
+                                        fields: translated_fields?,
+                                    });
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 results.push(self.transform_expr(&expr, ctx)?);
             }
 
