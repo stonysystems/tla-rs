@@ -1505,9 +1505,14 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - [ ] Recursive spec functions - Still uses iterator patterns
   - [ ] `&mut self` pattern vs functional style - Different approach, works
   - [ ] Proof blocks and assertions - Not generated (may not be needed for simple cases)
-- [ ] **F2.5**: Fix transpiler to generate loop-based code (not iterators) for:
-  - [ ] Map/Set filtering operations
-  - [ ] Sequence filtering operations
+- [x] **F2.5**: Fix transpiler to generate loop-based code (not iterators) ✅ [26:01:28]
+  - [x] Added `generate_loops_for_verification` config option
+  - [x] Implemented `generate_any_loop`, `generate_all_loop`, `generate_chain_any_loop`
+  - [x] Added `ExecExpr::Break` variant for break statements
+  - [x] Fixed printer to wrap Block expressions in braces for if conditions
+  - [x] Integrated into exists/forall quantifier handling
+  - [x] Election module regenerated with loop-based patterns
+  - Plan: docs/dev/F2.5-loop-generation-plan.md
 - [ ] **F2.6**: Add loop invariant generation for common patterns
 - [x] **F2.7**: Attempt Verus verification on generated election code [26:01:28]
   - **Finding**: Generated code compiles when included but other generated modules have errors
