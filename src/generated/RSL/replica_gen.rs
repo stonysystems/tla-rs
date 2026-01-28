@@ -694,11 +694,11 @@ ensures
     result.valid(),
     LSchedulerNext(s@, result@, ios@),
 {
-(CScheduler { nextActionIndex: ((s.nextActionIndex + 1) % CReplicaNumActions()), ..s.clone() }, if (s.nextActionIndex == 0) {
-    CReplicaNextProcessPacket(&s.replica, &s_.replica, &ios)
-} else {
-    CReplicaNoReceiveNext(&s.replica, &s.nextActionIndex, &s_.replica, &ios)
-})
+CScheduler { nextActionIndex: ((s.nextActionIndex + 1) % CReplicaNumActions()), replica: if (s.nextActionIndex == 0) {
+        CReplicaNextProcessPacket(&s.replica, &ios)
+    } else {
+        CReplicaNoReceiveNext(&s.replica, &s.nextActionIndex, &ios)
+    }, ..s.clone() }
 }
 
 } // verus!

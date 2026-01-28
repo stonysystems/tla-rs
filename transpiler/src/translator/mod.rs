@@ -2946,6 +2946,31 @@ impl Translator {
                     }
                     continue;
                 }
+
+                // Pattern 6: Conditional helper calls that compute output fields
+                // if cond { Helper1(s.field, s_.field, ios) } else { Helper2(s.field, idx, s_.field, ios) }
+                if let Some(conditional_helper_info) =
+                    self.try_extract_conditional_helper_calls(if_cond, then_branch, else_br, ctx)
+                {
+                    // Transform the condition
+                    if let Ok(cond_expr) = self.transform_expr(if_cond, ctx) {
+                        // Add each output field from the helper calls as a pre-translated conditional
+                        for (output_var, field_name, then_call, else_call) in conditional_helper_info
+                        {
+                            // Create a conditional ExecExpr that calls the appropriate helper
+                            let conditional_exec = ExecExpr::If {
+                                cond: Box::new(cond_expr.clone()),
+                                then_branch: Box::new(then_call),
+                                else_branch: Some(Box::new(else_call)),
+                            };
+                            pre_translated
+                                .entry(output_var)
+                                .or_default()
+                                .push((field_name, conditional_exec));
+                        }
+                        continue;
+                    }
+                }
             }
             other_exprs.push(expr.clone());
         }
@@ -4030,6 +4055,59 @@ impl Translator {
             None
         } else {
             Some(assignments)
+        }
+    }
+
+    /// Try to extract conditional helper calls that compute output fields.
+    ///
+    /// Pattern: if cond { Helper1(s.field, s_.field, ios) } else { Helper2(s.field, idx, s_.field, ios) }
+    /// Returns: Vec<(output_var, field_name, then_exec_expr, else_exec_expr)>
+    /// where each exec_expr is a transformed function call (already an ExecExpr)
+    fn try_extract_conditional_helper_calls(
+        &self,
+        _cond: &Expr,
+        then_branch: &Expr,
+        else_branch: &Expr,
+        ctx: &TransformContext,
+    ) -> Option<Vec<(String, String, ExecExpr, ExecExpr)>> {
+        // Detect helper call in then branch
+        let then_info = self.detect_helper_call(then_branch, ctx)?;
+        // Detect helper call in else branch
+        let else_info = self.detect_helper_call(else_branch, ctx)?;
+
+        // Check that both have matching output fields
+        let mut results = Vec::new();
+        for (then_out_var, then_field) in &then_info.output_fields {
+            for (else_out_var, else_field) in &else_info.output_fields {
+                if then_out_var == else_out_var && then_field == else_field {
+                    // The helper call already has input_args transformed
+                    // Create exec function call expressions
+                    let then_call = self.create_exec_helper_call(&then_info);
+                    let else_call = self.create_exec_helper_call(&else_info);
+                    results.push((
+                        then_out_var.clone(),
+                        then_field.clone(),
+                        then_call,
+                        else_call,
+                    ));
+                }
+            }
+        }
+
+        if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        }
+    }
+
+    /// Create an exec function call expression from helper call info
+    fn create_exec_helper_call(&self, info: &HelperCallInfo) -> ExecExpr {
+        // Translate function name (L -> C prefix)
+        let exec_func_name = self.translate_name(&info.func_name);
+        ExecExpr::Call {
+            func: exec_func_name,
+            args: info.input_args.clone(),
         }
     }
 
