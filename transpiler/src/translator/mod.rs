@@ -408,7 +408,7 @@ impl Translator {
                     && Self::is_input_only_expression(then_branch, ctx)
                     && else_branch
                         .as_ref()
-                        .map_or(true, |e| Self::is_input_only_expression(e, ctx))
+                        .is_none_or(|e| Self::is_input_only_expression(e, ctx))
             }
 
             // Quantifiers typically reference output or define constraints on output
@@ -554,13 +554,25 @@ impl Translator {
                     match expr.as_ref() {
                         ExecExpr::Var(name) if name == loop_var => format!("*{}", name),
                         ExecExpr::Var(name) => format!("*{}", name),
-                        _ => format!("{}{}", op, self.expr_to_invariant_string_with_var(expr, loop_var)),
+                        _ => format!(
+                            "{}{}",
+                            op,
+                            self.expr_to_invariant_string_with_var(expr, loop_var)
+                        ),
                     }
                 } else {
-                    format!("{}{}", op, self.expr_to_invariant_string_with_var(expr, loop_var))
+                    format!(
+                        "{}{}",
+                        op,
+                        self.expr_to_invariant_string_with_var(expr, loop_var)
+                    )
                 }
             }
-            ExecExpr::If { cond, then_branch, else_branch } => {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 let cond_str = self.expr_to_invariant_string_with_var(cond, loop_var);
                 let then_str = self.expr_to_invariant_string_with_var(then_branch, loop_var);
                 if let Some(else_expr) = else_branch {
@@ -574,7 +586,11 @@ impl Translator {
                 let fields_str: Vec<String> = fields
                     .iter()
                     .map(|(field_name, field_val)| {
-                        format!("{}: {}", field_name, self.expr_to_invariant_string_with_var(field_val, loop_var))
+                        format!(
+                            "{}: {}",
+                            field_name,
+                            self.expr_to_invariant_string_with_var(field_val, loop_var)
+                        )
                     })
                     .collect();
                 format!("{} {{ {} }}", name, fields_str.join(", "))
@@ -671,7 +687,11 @@ impl Translator {
                     format!("{}{}", op, self.expr_to_invariant_string(expr))
                 }
             }
-            ExecExpr::If { cond, then_branch, else_branch } => {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 let cond_str = self.expr_to_invariant_string(cond);
                 let then_str = self.expr_to_invariant_string(then_branch);
                 if let Some(else_expr) = else_branch {
@@ -685,7 +705,11 @@ impl Translator {
                 let fields_str: Vec<String> = fields
                     .iter()
                     .map(|(field_name, field_val)| {
-                        format!("{}: {}", field_name, self.expr_to_invariant_string(field_val))
+                        format!(
+                            "{}: {}",
+                            field_name,
+                            self.expr_to_invariant_string(field_val)
+                        )
                     })
                     .collect();
                 format!("{} {{ {} }}", name, fields_str.join(", "))
@@ -697,9 +721,7 @@ impl Translator {
                     .collect();
                 format!("({})", elems_str.join(", "))
             }
-            ExecExpr::Clone(inner) => {
-                self.expr_to_invariant_string(inner)
-            }
+            ExecExpr::Clone(inner) => self.expr_to_invariant_string(inner),
             ExecExpr::VecLit(elems) => {
                 let elems_str: Vec<String> = elems
                     .iter()
@@ -1292,10 +1314,8 @@ impl Translator {
         for (idx, container) in containers.into_iter().enumerate() {
             let iter_name = format!("{}_{}_iter", var_name, idx);
             // Substitute with index for this specific iterator
-            let indexed_pred = pred_str.replace(
-                &format!("*{}", var_name),
-                &format!("{}@.1[i]", iter_name),
-            );
+            let indexed_pred =
+                pred_str.replace(&format!("*{}", var_name), &format!("{}@.1[i]", iter_name));
 
             let loop_stmt = ExecExpr::ForInIter {
                 var: var_name.to_string(),
@@ -1305,12 +1325,10 @@ impl Translator {
                     method: "iter".to_string(),
                     args: vec![],
                 }),
-                invariants: vec![
-                    format!(
-                        "found ==> exists|i: int| 0 <= i < {}@.0 && {}",
-                        iter_name, indexed_pred
-                    ),
-                ],
+                invariants: vec![format!(
+                    "found ==> exists|i: int| 0 <= i < {}@.0 && {}",
+                    iter_name, indexed_pred
+                )],
                 body: Box::new(ExecExpr::If {
                     cond: Box::new(predicate.clone()),
                     then_branch: Box::new(ExecExpr::Block(vec![
@@ -3140,9 +3158,12 @@ impl Translator {
 
                 // Pattern 5: Conditional field assignments
                 // if cond { s_.field1 == val1 && s_.field2 == val2 } else { s_.field1 == val3 && s_.field2 == val4 }
-                if let Some(conditional_fields) =
-                    self.try_extract_conditional_field_assignments(if_cond, then_branch, else_br, ctx)
-                {
+                if let Some(conditional_fields) = self.try_extract_conditional_field_assignments(
+                    if_cond,
+                    then_branch,
+                    else_br,
+                    ctx,
+                ) {
                     // Add each conditional field to field_assignments
                     for (output_var, field_name, then_expr, else_expr) in conditional_fields {
                         // Generate: if cond { then_val } else { else_val }
@@ -3167,7 +3188,8 @@ impl Translator {
                     // Transform the condition
                     if let Ok(cond_expr) = self.transform_expr(if_cond, ctx) {
                         // Add each output field from the helper calls as a pre-translated conditional
-                        for (output_var, field_name, then_call, else_call) in conditional_helper_info
+                        for (output_var, field_name, then_call, else_call) in
+                            conditional_helper_info
                         {
                             // Create a conditional ExecExpr that calls the appropriate helper
                             let conditional_exec = ExecExpr::If {
@@ -3366,12 +3388,12 @@ impl Translator {
                                 let exec_name =
                                     self.translate_name(name.last().unwrap_or("Unknown"));
                                 let base_name = output_name.trim_end_matches('_');
-                                let base_input = if ctx.input_params.contains(&base_name.to_string())
-                                {
-                                    Some(base_name.to_string())
-                                } else {
-                                    None
-                                };
+                                let base_input =
+                                    if ctx.input_params.contains(&base_name.to_string()) {
+                                        Some(base_name.to_string())
+                                    } else {
+                                        None
+                                    };
 
                                 let translated_fields: TranspileResult<Vec<_>> = fields
                                     .iter()
@@ -7137,10 +7159,7 @@ mod tests {
         );
 
         // Test field access
-        let field = ExecExpr::Field(
-            Box::new(ExecExpr::Var("p".to_string())),
-            "src".to_string(),
-        );
+        let field = ExecExpr::Field(Box::new(ExecExpr::Var("p".to_string())), "src".to_string());
         assert_eq!(
             translator.expr_to_invariant_string_with_var(&field, "p"),
             "p.src"
