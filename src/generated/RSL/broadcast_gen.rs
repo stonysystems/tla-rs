@@ -22,14 +22,11 @@ ensures
     result.valid(),
     LBroadcastToEveryone(c@, myidx@, m@, result@),
 {
-    (sent_packets.len() == c.replica_ids.len());
-    ((0 <= myidx) && (myidx < c.replica_ids.len()));
-    (0..sent_packets.len()).map(|idx| CPacket {
+(0..c.replica_ids.len()).map(|idx| CPacket {
     dst: c.replica_ids.index(idx),
     src: c.replica_ids.index(myidx),
     msg: m.clone(),
 }).collect()
-
 }
 
 } // verus!

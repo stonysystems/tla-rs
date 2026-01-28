@@ -327,6 +327,146 @@ impl Translator {
         }
     }
 
+    /// Check if an expression only references input parameters (or literals/constants).
+    /// Such expressions are preconditions and should not be emitted as executable code.
+    /// Returns true if the expression is a "pure input" expression that:
+    /// - Only references input parameters and literals
+    /// - Does not reference any output parameters
+    /// - Does not define any output (not an assignment to output)
+    fn is_input_only_expression(expr: &Expr, ctx: &TransformContext) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            // Identifiers: only input if it's an input param, not an output
+            Expr::Ident(name) => ctx.is_input(name) && !ctx.is_output(name),
+
+            // Literals are always input-only
+            Expr::Literal(_) => true,
+
+            // Binary operations: both sides must be input-only
+            Expr::Binary(lhs, _, rhs) => {
+                Self::is_input_only_expression(lhs, ctx)
+                    && Self::is_input_only_expression(rhs, ctx)
+            }
+
+            // Comparison operations
+            Expr::Eq(lhs, rhs)
+            | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs)
+            | Expr::Le(lhs, rhs)
+            | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs) => {
+                Self::is_input_only_expression(lhs, ctx)
+                    && Self::is_input_only_expression(rhs, ctx)
+            }
+
+            // Unary not
+            Expr::Not(inner) => Self::is_input_only_expression(inner, ctx),
+
+            // Field access: base must be input-only
+            Expr::Field(base, _) => Self::is_input_only_expression(base, ctx),
+
+            // Method call: receiver and args must be input-only
+            Expr::MethodCall {
+                receiver, args, ..
+            } => {
+                Self::is_input_only_expression(receiver, ctx)
+                    && args.iter().all(|a| Self::is_input_only_expression(a, ctx))
+            }
+
+            // Function call: all args must be input-only
+            Expr::Call { args, .. } => {
+                args.iter().all(|a| Self::is_input_only_expression(a, ctx))
+            }
+
+            // Index: base and index must be input-only
+            Expr::Index(base, idx) => {
+                Self::is_input_only_expression(base, ctx)
+                    && Self::is_input_only_expression(idx, ctx)
+            }
+
+            // Conjunction/disjunction: all parts must be input-only
+            Expr::Conjunction(parts) | Expr::Disjunction(parts) => {
+                parts.iter().all(|p| Self::is_input_only_expression(p, ctx))
+            }
+
+            // If expressions: all parts must be input-only
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                Self::is_input_only_expression(cond, ctx)
+                    && Self::is_input_only_expression(then_branch, ctx)
+                    && else_branch
+                        .as_ref()
+                        .map_or(true, |e| Self::is_input_only_expression(e, ctx))
+            }
+
+            // Quantifiers typically reference output or define constraints on output
+            // so they are not input-only (unless they don't reference outputs)
+            Expr::Forall { body, .. } | Expr::Exists { body, .. } => {
+                Self::is_input_only_expression(body, ctx)
+            }
+
+            // Arrow access (enum variant): base must be input-only
+            Expr::Arrow(base, _) => Self::is_input_only_expression(base, ctx),
+
+            // Is check: base must be input-only
+            Expr::Is(base, _) => Self::is_input_only_expression(base, ctx),
+
+            // Let bindings: value and body must be input-only
+            Expr::Let { value, body, .. } => {
+                Self::is_input_only_expression(value, ctx)
+                    && Self::is_input_only_expression(body, ctx)
+            }
+
+            // Collection literals: all elements must be input-only
+            Expr::SeqLit(elems) | Expr::SetLit(elems) => {
+                elems.iter().all(|e| Self::is_input_only_expression(e, ctx))
+            }
+
+            // Map literals: all keys and values must be input-only
+            Expr::MapLit(pairs) => pairs
+                .iter()
+                .all(|(k, v)| Self::is_input_only_expression(k, ctx) && Self::is_input_only_expression(v, ctx)),
+
+            // Empty collections are always input-only
+            Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty => true,
+
+            // View operator: base must be input-only
+            Expr::View(base) => Self::is_input_only_expression(base, ctx),
+
+            // Structs: all field values must be input-only
+            Expr::Struct { fields, .. } => {
+                fields.iter().all(|(_, v)| Self::is_input_only_expression(v, ctx))
+            }
+
+            // StructUpdate: base and all field values must be input-only
+            Expr::StructUpdate { base, fields, .. } => {
+                Self::is_input_only_expression(base, ctx)
+                    && fields.iter().all(|(_, v)| Self::is_input_only_expression(v, ctx))
+            }
+
+            // Implication and biconditional
+            Expr::Implies(lhs, rhs) | Expr::Iff(lhs, rhs) => {
+                Self::is_input_only_expression(lhs, ctx)
+                    && Self::is_input_only_expression(rhs, ctx)
+            }
+
+            // Cast: inner must be input-only
+            Expr::Cast(inner, _) => Self::is_input_only_expression(inner, ctx),
+
+            // Match: scrutinee and all arm bodies must be input-only
+            Expr::Match { scrutinee, arms } => {
+                Self::is_input_only_expression(scrutinee, ctx)
+                    && arms.iter().all(|arm| Self::is_input_only_expression(&arm.body, ctx))
+            }
+
+            // Default: if we can't determine, assume it's not input-only
+            _ => false,
+        }
+    }
+
     /// Convert an ExecExpr to a string representation for use in invariants.
     /// This produces a Verus spec-level expression string.
     fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
@@ -1507,7 +1647,38 @@ impl Translator {
             }
 
             Expr::Conjunction(exprs) => {
-                // First, check if this is a map update with insert pattern
+                // First, check if this is an output sequence comprehension pattern:
+                // - output.len() == input_length_expr (length constraint)
+                // - forall |i| 0 <= i < output.len() ==> output[i] == element_expr
+                // When both are present, generate: (0..input_length_expr).map(|i| element_expr).collect()
+                if let Some((output_name, length_expr, index_var, element_expr)) =
+                    self.try_extract_output_seq_comprehension(exprs, ctx)
+                {
+                    // Generate: (0..length_expr).map(|i| element_expr).collect()
+                    let length = self.transform_expr(&length_expr, ctx)?;
+                    let element = self.transform_expr(&element_expr, ctx)?;
+
+                    // Filter out the output name from the result since we're computing it here
+                    let _ = output_name; // Used for verification but we're generating the whole value
+
+                    return Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Range {
+                                start: Box::new(ExecExpr::Literal("0".to_string())),
+                                end: Box::new(length),
+                            }),
+                            method: "map".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![index_var],
+                                body: Box::new(element),
+                            }],
+                        }),
+                        method: "collect".to_string(),
+                        args: vec![],
+                    });
+                }
+
+                // Next, check if this is a map update with insert pattern
                 // (domain biconditional forall + value conditional forall)
                 if let Some((
                     source_map,
@@ -1709,7 +1880,31 @@ impl Translator {
                     }
                 } else {
                     // No outputs detected, transform as block
-                    let stmts: TranspileResult<Vec<_>> = exprs_to_process
+                    // But first filter out spec-level constraints:
+                    // - Input-only expressions (preconditions)
+                    // - Equality constraints that aren't output assignments
+                    // - Unmatched quantifiers (spec constraints)
+                    let filtered_exprs: Vec<_> = exprs_to_process
+                        .iter()
+                        .filter(|e| {
+                            // Skip input-only expressions (preconditions)
+                            if Self::is_input_only_expression(e, &updated_ctx) {
+                                return false;
+                            }
+                            // Skip equality constraints that aren't output assignments
+                            if let Expr::Eq(lhs, rhs) = e {
+                                // Only keep if one side is a direct output variable
+                                let lhs_is_output = matches!(lhs.as_ref(), Expr::Ident(name) if updated_ctx.is_output(name));
+                                let rhs_is_output = matches!(rhs.as_ref(), Expr::Ident(name) if updated_ctx.is_output(name));
+                                if !lhs_is_output && !rhs_is_output {
+                                    return false;
+                                }
+                            }
+                            true
+                        })
+                        .collect();
+
+                    let stmts: TranspileResult<Vec<_>> = filtered_exprs
                         .iter()
                         .map(|e| self.transform_expr(e, &updated_ctx))
                         .collect();
@@ -2242,7 +2437,48 @@ impl Translator {
                         continue;
                     }
                 }
+                // Also check if RHS is an output parameter: expr == s_
+                if let Expr::Ident(name) = rhs.as_ref() {
+                    if ctx.is_output(name) && !exclude_outputs.contains(name) {
+                        // Check if LHS is an input param - if so, generate clone
+                        if let Expr::Ident(lhs_name) = lhs.as_ref() {
+                            if ctx.input_params.contains(lhs_name) {
+                                output_exprs.push((
+                                    name.clone(),
+                                    ExecExpr::Clone(Box::new(ExecExpr::Var(lhs_name.clone()))),
+                                ));
+                                continue;
+                            }
+                        }
+                        let transformed = self.transform_expr(lhs, ctx)?;
+                        output_exprs.push((name.clone(), transformed));
+                        continue;
+                    }
+                }
+
+                // Skip equality constraints that are NOT direct output assignments
+                // These are spec-level constraints (like `output.len() == expected_len`)
+                // that don't translate to executable code
+                continue;
             }
+
+            // Skip input-only expressions - these are preconditions that should not
+            // be emitted as executable code (they belong in requires clause)
+            if Self::is_input_only_expression(expr, ctx) {
+                // Skip this expression - it's a precondition constraint
+                continue;
+            }
+
+            // Skip quantifier expressions that don't produce direct output assignments
+            // (they define constraints, not computations, unless handled by special patterns)
+            // Note: quantifiers that define output values should be handled by special patterns
+            // earlier in the conjunction handling (like seq comprehension, map filter, etc.)
+            if matches!(expr, Expr::Forall { .. } | Expr::Exists { .. }) {
+                // Forall/exists that weren't handled by special patterns should be skipped
+                // They're spec-level constraints
+                continue;
+            }
+
             // Not an output assignment, add to other expressions
             let transformed = self.transform_expr(expr, ctx)?;
             other_exprs.push(transformed);
@@ -2775,8 +3011,12 @@ impl Translator {
                 }
             }
 
-            // Add any other expressions
+            // Add any other expressions, filtering out input-only preconditions
             for expr in other_exprs {
+                // Skip input-only expressions - these are preconditions
+                if Self::is_input_only_expression(&expr, ctx) {
+                    continue;
+                }
                 results.push(self.transform_expr(&expr, ctx)?);
             }
 
@@ -3002,6 +3242,236 @@ impl Translator {
 
     /// Try to extract map update with value pattern from conjunction of foralls.
     ///
+    /// Try to extract output sequence comprehension pattern from a conjunction.
+    /// Pattern: conjunction of:
+    /// 1. Length constraint: output.len() == input_length_expr
+    /// 2. Element forall: forall |i| 0 <= i < output.len() ==> output[i] == element_expr
+    ///
+    /// Returns: (output_name, input_length_expr, index_var, element_expr)
+    fn try_extract_output_seq_comprehension(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> Option<(String, Expr, String, Expr)> {
+        use crate::ast::Expr;
+
+        // Look for length constraint: output.len() == input_length_expr
+        // where output is an output parameter
+        let mut length_constraints: Vec<(String, Expr)> = Vec::new();
+        for expr in exprs {
+            if let Expr::Eq(lhs, rhs) = expr {
+                // Check output.len() == rhs
+                if let Some(output_name) = self.extract_output_len_call(lhs, ctx) {
+                    // Check that rhs doesn't reference the output
+                    if Self::is_input_only_expression(rhs, ctx) {
+                        length_constraints.push((output_name, *rhs.clone()));
+                    }
+                }
+                // Check lhs == output.len()
+                else if let Some(output_name) = self.extract_output_len_call(rhs, ctx) {
+                    // Check that lhs doesn't reference the output
+                    if Self::is_input_only_expression(lhs, ctx) {
+                        length_constraints.push((output_name, *lhs.clone()));
+                    }
+                }
+            }
+        }
+
+        if length_constraints.is_empty() {
+            return None;
+        }
+
+        // For each output with a length constraint, look for corresponding forall
+        for (output_name, length_expr) in length_constraints {
+            // Look for forall |i| 0 <= i < output.len() ==> output[i] == element_expr
+            for expr in exprs {
+                if let Expr::Forall { vars, body, .. } = expr {
+                    if vars.len() != 1 {
+                        continue;
+                    }
+                    let index_var = vars[0].name_string();
+
+                    // Body should be: bounds ==> assignment
+                    if let Expr::Implies(bounds_expr, assign_expr) = body.as_ref() {
+                        // Check bounds: 0 <= i < output.len()
+                        if !self.is_seq_bounds(bounds_expr, &index_var, &output_name) {
+                            continue;
+                        }
+
+                        // Check assignment: output[i] == element_expr
+                        if let Some(element_expr) =
+                            self.extract_direct_seq_element_assignment(assign_expr, &index_var, &output_name)
+                        {
+                            return Some((output_name.clone(), length_expr, index_var, element_expr));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract output name if expr is output.len() and output is an output parameter
+    fn extract_output_len_call(&self, expr: &Expr, ctx: &TransformContext) -> Option<String> {
+        use crate::ast::Expr;
+        if let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        {
+            if method == "len" && args.is_empty() {
+                if let Expr::Ident(name) = receiver.as_ref() {
+                    if ctx.is_output(name) {
+                        return Some(name.clone());
+                    }
+                }
+                // Also check for output.field.len() pattern
+                if let Expr::Field(base, _) = receiver.as_ref() {
+                    if let Expr::Ident(name) = base.as_ref() {
+                        if ctx.is_output(name) {
+                            return Some(name.clone());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if bounds_expr is: 0 <= idx < output.len()
+    fn is_seq_bounds(&self, bounds_expr: &Expr, idx_var: &str, output_name: &str) -> bool {
+        use crate::ast::Expr;
+
+        // Common patterns:
+        // 1. Conjunction: 0 <= idx &&& idx < output.len()
+        // 2. Binary and: (0 <= idx) && (idx < output.len())
+        // 3. Chained: 0 <= idx < output.len() (parsed as conjunction of comparisons)
+
+        match bounds_expr {
+            Expr::Conjunction(parts) => {
+                // Need: lower bound check (0 <= idx) and upper bound check (idx < output.len())
+                let has_lower = parts.iter().any(|p| self.is_lower_bound_check(p, idx_var));
+                let has_upper = parts.iter().any(|p| self.is_upper_bound_check(p, idx_var, output_name));
+                has_lower && has_upper
+            }
+            Expr::Binary(lhs, crate::ast::BinOp::And, rhs) => {
+                // Check both sub-expressions
+                let lhs_is_lower = self.is_lower_bound_check(lhs, idx_var);
+                let rhs_is_lower = self.is_lower_bound_check(rhs, idx_var);
+                let lhs_is_upper = self.is_upper_bound_check(lhs, idx_var, output_name);
+                let rhs_is_upper = self.is_upper_bound_check(rhs, idx_var, output_name);
+
+                (lhs_is_lower && rhs_is_upper) || (rhs_is_lower && lhs_is_upper)
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if expr is: 0 <= idx
+    fn is_lower_bound_check(&self, expr: &Expr, idx_var: &str) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::Le(lhs, rhs) => {
+                // 0 <= idx
+                matches!(lhs.as_ref(), Expr::Literal(crate::ast::Literal::Int(0)))
+                    && matches!(rhs.as_ref(), Expr::Ident(v) if v == idx_var)
+            }
+            Expr::Ge(lhs, rhs) => {
+                // idx >= 0
+                matches!(lhs.as_ref(), Expr::Ident(v) if v == idx_var)
+                    && matches!(rhs.as_ref(), Expr::Literal(crate::ast::Literal::Int(0)))
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if expr is: idx < output.len()
+    fn is_upper_bound_check(&self, expr: &Expr, idx_var: &str, output_name: &str) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::Lt(lhs, rhs) => {
+                // idx < output.len()
+                let lhs_is_idx = matches!(lhs.as_ref(), Expr::Ident(v) if v == idx_var);
+                let rhs_is_len = self.is_output_len(rhs, output_name);
+                lhs_is_idx && rhs_is_len
+            }
+            Expr::Gt(lhs, rhs) => {
+                // output.len() > idx
+                let lhs_is_len = self.is_output_len(lhs, output_name);
+                let rhs_is_idx = matches!(rhs.as_ref(), Expr::Ident(v) if v == idx_var);
+                lhs_is_len && rhs_is_idx
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if expr is output.len()
+    fn is_output_len(&self, expr: &Expr, output_name: &str) -> bool {
+        use crate::ast::Expr;
+        if let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        {
+            if method == "len" && args.is_empty() {
+                if let Expr::Ident(name) = receiver.as_ref() {
+                    return name == output_name;
+                }
+            }
+        }
+        false
+    }
+
+    /// Extract element expression from: output[i] == element_expr or output[i] =~= element_expr
+    fn extract_direct_seq_element_assignment(
+        &self,
+        expr: &Expr,
+        idx_var: &str,
+        output_name: &str,
+    ) -> Option<Expr> {
+        use crate::ast::Expr;
+
+        match expr {
+            Expr::Eq(lhs, rhs) => {
+                // output[i] == element_expr
+                if self.is_output_indexed(lhs, idx_var, output_name) {
+                    return Some(*rhs.clone());
+                }
+                // element_expr == output[i]
+                if self.is_output_indexed(rhs, idx_var, output_name) {
+                    return Some(*lhs.clone());
+                }
+            }
+            // Also handle extensional equality (=~=) which parses as MethodCall
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } if method == "ext_equal" && args.len() == 1 => {
+                if self.is_output_indexed(receiver, idx_var, output_name) {
+                    return Some(args[0].clone());
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Check if expr is output[idx_var]
+    fn is_output_indexed(&self, expr: &Expr, idx_var: &str, output_name: &str) -> bool {
+        use crate::ast::Expr;
+        if let Expr::Index(base, idx) = expr {
+            let base_is_output = matches!(base.as_ref(), Expr::Ident(name) if name == output_name);
+            let idx_is_var = matches!(idx.as_ref(), Expr::Ident(v) if v == idx_var);
+            base_is_output && idx_is_var
+        } else {
+            false
+        }
+    }
+
     /// Pattern: conjunction of:
     /// 1. Domain: forall |k| output.dom().contains(k) <==> filter && (source.contains(k) || k == new_key)
     /// 2. Value: forall |k| output.dom().contains(k) ==> output[k] == (if k == new_key then new_value else source[k])

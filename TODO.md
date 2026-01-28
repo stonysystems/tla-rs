@@ -1534,8 +1534,12 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
 #### F4: Remove #[cfg(test)] Guards Permanently
 **Blocked by:** Known transpiler limitations documented in F3-regeneration-notes.md
 - [ ] Fix self-referential pattern bug (s_ undefined)
-- [ ] Fix spec constraints emitted as code
-- [ ] Add loop generation for sequence comprehension
+- [x] Fix spec constraints emitted as code ✅ [26:01:28]
+  - Added `is_input_only_expression()` helper to detect preconditions
+  - Modified conjunction handling to filter out spec-level constraints
+- [x] Add loop generation for sequence comprehension ✅ [26:01:28]
+  - Added `try_extract_output_seq_comprehension()` to detect length + forall patterns
+  - Now uses input-derived length instead of output reference
 - [ ] Remove all `#[cfg(test)]` from generated module imports
 - [ ] Ensure full codebase verifies with Verus including generated code
 - [ ] Update CI to verify generated code
