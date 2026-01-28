@@ -1,21 +1,21 @@
+use crate::protocol::RSL::broadcast::*;
+use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::types::Ballot;
+use crate::protocol::RSL::types::RequestBatch;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::configuration::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::broadcast::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::types::RequestBatch;
-use crate::protocol::RSL::types::Ballot;
 // use crate::protocol::RSL::types::AppState;
-use crate::protocol::RSL::types::ReplyCache;
-use crate::protocol::RSL::message::*;
-use crate::protocol::RSL::state_machine::*;
-use crate::services::RSL::app_state_machine::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::message::*;
+use crate::protocol::RSL::state_machine::*;
+use crate::protocol::RSL::types::ReplyCache;
+use crate::services::RSL::app_state_machine::*;
 
 verus! {
     pub enum OutstandingOperation {
@@ -90,7 +90,7 @@ verus! {
     //         requests.len() == replies.len(),
     //         forall |r:Reply| replies.contains(r) ==> r is Reply,
     //     ensures
-    //         forall |p: RslPacket| GetPacketsFromReplies(me, requests, replies).contains(p) 
+    //         forall |p: RslPacket| GetPacketsFromReplies(me, requests, replies).contains(p)
     //             ==> p.src == me && p.msg is RslMessageReply
     // {
 
@@ -101,7 +101,7 @@ verus! {
         // ensures
         //     (forall |c:AbstractEndPoint| r.dom().contains(c) ==> r[c].client == c),
         //     (forall |c:AbstractEndPoint| r.dom().contains(c) ==> exists |req_idx:int| 0 <= req_idx < replies.len()
-        //                                                     && replies[req_idx].client == c 
+        //                                                     && replies[req_idx].client == c
         //                                                     && r[c] == replies[req_idx])
     {
         if replies.len() == 0 {
@@ -113,10 +113,10 @@ verus! {
 
     // pub proof fn lemma_LClientsInReplies(replies:Seq<Reply>)
     //     ensures
-    //         forall |c:AbstractEndPoint| LClientsInReplies(replies).dom().contains(c) 
+    //         forall |c:AbstractEndPoint| LClientsInReplies(replies).dom().contains(c)
     //             ==> LClientsInReplies(replies)[c].client == c,
-    //         forall |c:AbstractEndPoint| LClientsInReplies(replies).dom().contains(c) 
-    //             ==> exists |req_idx: int| 
+    //         forall |c:AbstractEndPoint| LClientsInReplies(replies).dom().contains(c)
+    //             ==> exists |req_idx: int|
     //                 0 <= req_idx < replies.len()
     //                 && replies[req_idx].client == c
     //                 && LClientsInReplies(replies)[c] == replies[req_idx]
@@ -124,11 +124,11 @@ verus! {
 
     // }
 
-    pub open spec fn RepliesAreReplyType(replies:Seq<RslPacket>) -> bool 
+    pub open spec fn RepliesAreReplyType(replies:Seq<RslPacket>) -> bool
     {
         forall |p:RslPacket| replies.contains(p) ==> p.msg is RslMessageReply
     }
-    
+
 
     pub open spec fn UpdateNewCache(c:ReplyCache, c_:ReplyCache, replies:Seq<Reply>) -> bool
     {
@@ -144,8 +144,8 @@ verus! {
     }
 
     pub open spec fn LExecutorExecute(
-        s:LExecutor, 
-        s_:LExecutor, 
+        s:LExecutor,
+        s_:LExecutor,
         sent_packets:Seq<RslPacket>
     ) -> bool
         recommends
@@ -164,13 +164,13 @@ verus! {
         &&& s_.max_bal_reflected == if BalLeq(s.max_bal_reflected, s.next_op_to_execute->bal) {s.next_op_to_execute->bal} else {s.max_bal_reflected}
         &&& s_.next_op_to_execute == OutstandingOperation::OutstandingOpUnknown{}
         &&& UpdateNewCache(s.reply_cache, s_.reply_cache, replies)
-        &&& sent_packets == GetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index], batch, replies)  
+        &&& sent_packets == GetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index], batch, replies)
         &&& RepliesAreReplyType(sent_packets)
     }
 
     pub open spec fn LExecutorProcessAppStateSupply(
-        s:LExecutor, 
-        s_:LExecutor, 
+        s:LExecutor,
+        s_:LExecutor,
         inp:RslPacket
     ) -> bool
         recommends
@@ -190,16 +190,16 @@ verus! {
     }
 
     pub open spec fn LExecutorProcessAppStateRequest(
-        s:LExecutor, 
-        s_:LExecutor, 
-        inp:RslPacket, 
+        s:LExecutor,
+        s_:LExecutor,
+        inp:RslPacket,
         sent_packets:Seq<RslPacket>
-    ) -> bool 
+    ) -> bool
         recommends
             inp.msg is RslMessageAppStateRequest,
     {
         let m = inp.msg;
-        if s.constants.all.config.replica_ids.contains(inp.src) 
+        if s.constants.all.config.replica_ids.contains(inp.src)
             && BalLeq(s.max_bal_reflected, m->bal_state_req)
             && s.ops_complete >= m->opn_state_req
             && LReplicaConstantsValid(s.constants)
@@ -222,35 +222,35 @@ verus! {
     }
 
     pub open spec fn LExecutorProcessStartingPhase2(
-        s:LExecutor, 
-        s_:LExecutor, 
-        inp:RslPacket, 
+        s:LExecutor,
+        s_:LExecutor,
+        inp:RslPacket,
         sent_packets:Seq<RslPacket>
-    ) -> bool 
+    ) -> bool
         recommends inp.msg is RslMessageStartingPhase2
     {
-        if s.constants.all.config.replica_ids.contains(inp.src) 
+        if s.constants.all.config.replica_ids.contains(inp.src)
             && inp.msg->logTruncationPoint_2 > s.ops_complete
         {
             &&& s_ == s
-            &&& LBroadcastToEveryone(s.constants.all.config, s.constants.my_index, 
+            &&& LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
                                     RslMessage::RslMessageAppStateRequest{
-                                        bal_state_req:inp.msg->bal_2, 
+                                        bal_state_req:inp.msg->bal_2,
                                         opn_state_req:inp.msg->logTruncationPoint_2
                                     },
                                     sent_packets)
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LExecutorProcessRequest(
-        s:LExecutor, 
-        inp:RslPacket, 
+        s:LExecutor,
+        inp:RslPacket,
         sent_packets:Seq<RslPacket>
-    ) -> bool 
-        recommends 
+    ) -> bool
+        recommends
             inp.msg is RslMessageRequest,
             s.reply_cache.contains_key(inp.src),
             s.reply_cache[inp.src] is Reply,

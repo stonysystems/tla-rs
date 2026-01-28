@@ -1,14 +1,14 @@
+use crate::protocol::RSL::broadcast::*;
+use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::message::*;
+use crate::protocol::RSL::state_machine::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::configuration::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::broadcast::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::message::*;
-use crate::protocol::RSL::state_machine::*;
-use crate::protocol::RSL::election::*;
 
 use crate::protocol::common::upper_bound::*;
 
@@ -79,14 +79,14 @@ verus! {
     }
 
     pub open spec fn LExistVotesHasProposalLargeThanOpn(p:RslPacket, op:OperationNumber) -> bool
-        recommends 
+        recommends
             p.msg is RslMessage1b
     {
         exists |opn:OperationNumber| p.msg->votes.contains_key(opn) && opn > op
     }
 
     pub open spec fn LExistsAcceptorHasProposalLargeThanOpn(S:Set<RslPacket>, op:OperationNumber) -> bool
-    recommends 
+    recommends
             LSetOfMessage1b(S)
     {
         // exists p :: p in S && exists opn :: opn in p.msg.votes && opn > op
@@ -94,21 +94,21 @@ verus! {
     }
 
     pub open spec fn LAllAcceptorsHadNoProposal(S:Set<RslPacket>, opn:OperationNumber) -> bool
-    recommends 
+    recommends
             LSetOfMessage1b(S)
     {
         forall |p:RslPacket| S.contains(p) ==> !p.msg->votes.contains_key(opn)
     }
 
     pub open spec fn Lmax_balInS(c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
-    recommends 
+    recommends
             LSetOfMessage1b(S)
     {
         forall |p:RslPacket| S.contains(p) && p.msg->votes.contains_key(opn) ==> BalLeq(p.msg->votes[opn].max_value_bal, c)
     }
 
     pub open spec fn LExistsBallotInS(v:RequestBatch, c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
-    recommends 
+    recommends
             LSetOfMessage1b(S)
     {
         exists |p:RslPacket| S.contains(p)
@@ -118,7 +118,7 @@ verus! {
     }
 
     pub open spec fn LValIsHighestNumberedProposalAtBallot(v:RequestBatch, c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
-    recommends 
+    recommends
             LSetOfMessage1b(S)
     {
         &&& Lmax_balInS(c, S, opn)
@@ -126,7 +126,7 @@ verus! {
     }
 
     pub open spec fn LValIsHighestNumberedProposal(v:RequestBatch, S:Set<RslPacket>, opn:OperationNumber) -> bool
-    recommends 
+    recommends
             LSetOfMessage1b(S)
     {
         // exists c :: c in S && opn in c.msg.votes && LValIsHighestNumberedProposalAtBallot(v, c, S, opn)
@@ -150,7 +150,7 @@ verus! {
     }
 
     pub open spec fn LProposerInit(s:LProposer, c:LReplicaConstants) -> bool
-    recommends 
+    recommends
             WellFormedLConfiguration(c.all.config)
     {
         &&& s.constants == c
@@ -165,18 +165,18 @@ verus! {
     }
 
     pub open spec fn LProposerProcessRequest(
-        s:LProposer, 
-        s_:LProposer, 
+        s:LProposer,
+        s_:LProposer,
         packet:RslPacket
     ) -> bool
-    recommends 
+    recommends
             packet.msg is RslMessageRequest
     {
         let val = Request{client:packet.src, seqno:packet.msg->seqno_req, request:packet.msg->val};
         &&& ElectionStateReflectReceivedRequest(s.election_state, s_.election_state, val)
         &&& if s.current_state != 0
             && (!s.highest_seqno_requested_by_client_this_view.contains_key(val.client)
-                || val.seqno > s.highest_seqno_requested_by_client_this_view[val.client]) 
+                || val.seqno > s.highest_seqno_requested_by_client_this_view[val.client])
             {
                 s_ == LProposer{
                     constants:s.constants,
@@ -205,8 +205,8 @@ verus! {
     }
 
     pub open spec fn LProposerMaybeEnterNewViewAndSend1a(
-        s:LProposer, 
-        s_:LProposer, 
+        s:LProposer,
+        s_:LProposer,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -224,21 +224,21 @@ verus! {
                 incomplete_batch_timer:s.incomplete_batch_timer,
                 election_state:s.election_state
             }
-            &&& LBroadcastToEveryone(s.constants.all.config, s.constants.my_index, 
-                                    RslMessage::RslMessage1a{bal_1a:s.election_state.current_view}, 
+            &&& LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                                    RslMessage::RslMessage1a{bal_1a:s.election_state.current_view},
                                     sent_packets)
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LProposerProcess1b(
-        s:LProposer, 
-        s_:LProposer, 
+        s:LProposer,
+        s_:LProposer,
         p:RslPacket
     ) -> bool
-    recommends 
+    recommends
             p.msg is RslMessage1b,
             s.constants.all.config.replica_ids.contains(p.src),
             p.msg->bal_1b == s.max_ballot_i_sent_1a,
@@ -259,15 +259,15 @@ verus! {
     }
 
     pub open spec fn LProposerMaybeEnterPhase2(
-        s:LProposer, 
-        s_:LProposer, 
-        log_truncation_point:OperationNumber, 
+        s:LProposer,
+        s_:LProposer,
+        log_truncation_point:OperationNumber,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
-        if s.received_1b_packets.len() >= LMinQuorumSize(s.constants.all.config) 
+        if s.received_1b_packets.len() >= LMinQuorumSize(s.constants.all.config)
             && LSetOfMessage1bAboutBallot(s.received_1b_packets, s.max_ballot_i_sent_1a)
-            && s.current_state == 1 
+            && s.current_state == 1
         {
             &&& s_ == LProposer{
                 constants:s.constants,
@@ -289,15 +289,15 @@ verus! {
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
-    
+
     pub open spec fn LProposerNominateNewValueAndSend2a(
-        s:LProposer, 
-        s_:LProposer, 
-        clock:int, 
+        s:LProposer,
+        s_:LProposer,
+        clock:int,
         log_truncation_point:OperationNumber,
         sent_packets:Seq<RslPacket>
     ) -> bool
-    recommends 
+    recommends
             LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
             LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose)
     {
@@ -316,7 +316,7 @@ verus! {
             next_operation_number_to_propose:s.next_operation_number_to_propose + 1,
             received_1b_packets:s.received_1b_packets,
             highest_seqno_requested_by_client_this_view:s.highest_seqno_requested_by_client_this_view,
-            incomplete_batch_timer: if s.request_queue.len() > batchSize 
+            incomplete_batch_timer: if s.request_queue.len() > batchSize
                                     {
                                         IncompleteBatchTimer::IncompleteBatchTimerOn{when:UpperBoundedAddition(clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val)}
                                     } else {
@@ -324,15 +324,15 @@ verus! {
                                     },
             election_state:s.election_state
         }
-        &&& LBroadcastToEveryone(s.constants.all.config, s.constants.my_index, 
-                                RslMessage::RslMessage2a{bal_2a:s.max_ballot_i_sent_1a, opn_2a:opn, val_2a:v}, 
+        &&& LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                                RslMessage::RslMessage2a{bal_2a:s.max_ballot_i_sent_1a, opn_2a:opn, val_2a:v},
                                 sent_packets)
     }
 
     pub open spec fn LProposerNominateOldValueAndSend2a(
-        s:LProposer, 
-        s_:LProposer, 
-        log_truncation_point:OperationNumber, 
+        s:LProposer,
+        s_:LProposer,
+        log_truncation_point:OperationNumber,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
@@ -352,21 +352,21 @@ verus! {
                                 incomplete_batch_timer:s.incomplete_batch_timer,
                                 election_state:s.election_state
                             }
-                            && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index, 
-                                RslMessage::RslMessage2a{bal_2a:s.max_ballot_i_sent_1a, opn_2a:opn, val_2a:p.msg->votes[opn].max_val}, 
+                            && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                                RslMessage::RslMessage2a{bal_2a:s.max_ballot_i_sent_1a, opn_2a:opn, val_2a:p.msg->votes[opn].max_val},
                                 sent_packets)
     }
 
     pub open spec fn LProposerMaybeNominateValueAndSend2a(
-        s:LProposer, 
-        s_:LProposer, 
-        clock:int, 
-        log_truncation_point:int, 
+        s:LProposer,
+        s_:LProposer,
+        clock:int,
+        log_truncation_point:int,
         sent_packets:Seq<RslPacket>
-    ) -> bool 
+    ) -> bool
     {
         if !LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose) {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         } else if !LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose) {
             LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets)
@@ -389,18 +389,18 @@ verus! {
             }
             &&& sent_packets == Seq::<RslPacket>::empty()
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LProposerProcessHeartbeat(
-        s:LProposer, 
-        s_:LProposer, 
-        p:RslPacket, 
+        s:LProposer,
+        s_:LProposer,
+        p:RslPacket,
         clock:int
     ) -> bool
-    recommends 
+    recommends
             p.msg is RslMessageHeartbeat
     {
         &&& ElectionStateProcessHeartbeat(s.election_state, s_.election_state, p, clock)
@@ -423,8 +423,8 @@ verus! {
     }
 
     pub open spec fn LProposerCheckForViewTimeout(
-        s:LProposer, 
-        s_:LProposer, 
+        s:LProposer,
+        s_:LProposer,
         clock:int
     ) -> bool
     {
@@ -443,10 +443,10 @@ verus! {
     }
 
     pub open spec fn LProposerCheckForQuorumOfViewSuspicions(
-        s:LProposer, 
-        s_:LProposer, 
+        s:LProposer,
+        s_:LProposer,
         clock:int
-    ) -> bool 
+    ) -> bool
     {
         &&& ElectionStateCheckForQuorumOfViewSuspicions(s.election_state, s_.election_state, clock)
         &&& (if BalLt(s.election_state.current_view, s_.election_state.current_view) {
@@ -468,10 +468,10 @@ verus! {
     }
 
     pub open spec fn LProposerResetViewTimerDueToExecution(
-        s:LProposer, 
-        s_:LProposer, 
+        s:LProposer,
+        s_:LProposer,
         val:RequestBatch
-    ) -> bool    
+    ) -> bool
     {
         &&& ElectionStateReflectExecutedRequestBatch(s.election_state, s_.election_state, val)
         &&& s_ == LProposer{
@@ -487,7 +487,7 @@ verus! {
         }
     }
 
-    
+
     /*
     s_ == LProposer{
         constants:s.constants,

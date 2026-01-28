@@ -2,13 +2,13 @@
 //!
 //! Not really a translation so much as a re-implementation
 
-use vstd::bytes::*;
 use std::hash::Hash;
+use vstd::bytes::*;
 // use vstd::function::*;
 use crate::implementation::common::function::*;
+use std::collections::HashMap;
 use vstd::prelude::*;
 use vstd::slice::*;
-use std::collections::HashMap;
 
 use crate::implementation::common::function::*;
 use crate::verus_extra::choose_v::*;
@@ -570,7 +570,7 @@ impl<K , V> Marshalable for HashMap<K,V>
 where
     K: Marshalable + Clone + Eq + Hash,
     V: Marshalable + Clone,{
-    
+
     #[verifier(external_body)]
   open spec fn view_equal(&self, other: &Self) -> bool {
     let s1 = self.keys().cloned().collect::<Vec<K>>()@;

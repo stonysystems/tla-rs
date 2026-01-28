@@ -12,14 +12,14 @@
 // By transitivity, both implementations produce equivalent outputs for the same inputs.
 // The runtime tests below supplement the formal verification for debugging and documentation.
 
-use vstd::prelude::*;
 use std::collections::HashMap;
+use vstd::prelude::*;
 
 use crate::implementation::RSL::acceptorimpl::*;
-use crate::implementation::RSL::types_i::*;
+use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::types::*;
 

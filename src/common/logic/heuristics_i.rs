@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
-use vstd::prelude::*;
 use super::temporal_s::*;
 use crate::common::collections::maps2::*;
+use vstd::prelude::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

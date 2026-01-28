@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
-use vstd::prelude::*;
 use std::collections::HashMap;
+use vstd::prelude::*;
 
 use crate::common::framework::args_t::{abstractify_args, Args};
 use crate::common::framework::environment_s::*;
@@ -13,6 +13,4 @@ use vstd::set_lib::lemma_set_properties;
 use vstd::view::*;
 use vstd::{modes::*, prelude::*, seq::*, set::*, *};
 
-verus!{
-
-}
+verus! {}

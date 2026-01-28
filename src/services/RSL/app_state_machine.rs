@@ -1,7 +1,6 @@
-use vstd::prelude::*;
 use vstd::modes::*;
 use vstd::multiset::*;
-
+use vstd::prelude::*;
 
 verus! {
     pub type AppState = u64;
@@ -22,7 +21,7 @@ verus! {
     pub open spec fn CappedIncr(v:u64) -> u64
     {
         if v == 0xffff_ffff_ffff_ffff {
-            v 
+            v
         } else {
             (v + 1) as u64
         }

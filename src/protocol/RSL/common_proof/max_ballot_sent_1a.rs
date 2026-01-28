@@ -1,24 +1,24 @@
+use crate::protocol::RSL::common_proof::actions::*;
+use crate::protocol::RSL::common_proof::assumptions::*;
+use crate::protocol::RSL::common_proof::constants::*;
+use crate::protocol::RSL::common_proof::packet_sending::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::common_proof::assumptions::*;
-use crate::protocol::RSL::common_proof::constants::*;
-use crate::protocol::RSL::common_proof::actions::*;
-use crate::protocol::RSL::common_proof::packet_sending::*;
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
     pub proof fn lemma_max_balISent1aHasMeAsProposer(
         b:Behavior<RslState>,
         c:LConstants,
@@ -37,14 +37,14 @@ verus!{
           lemma_ConstantsAllConsistent(b, c, i-1);
           lemma_ConstantsAllConsistent(b, c, i);
           lemma_max_balISent1aHasMeAsProposer(b, c, i-1, idx);
-      
+
           if b[i].replicas[idx].replica.proposer.max_ballot_i_sent_1a != b[i-1].replicas[idx].replica.proposer.max_ballot_i_sent_1a
           {
             let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
           }
         }
     }
-    
+
     pub proof fn lemma_Received1bPacketsAreFrommax_balISent1a(
         b: Behavior<RslState>,
         c: LConstants,
@@ -58,7 +58,7 @@ verus!{
         ensures
             ({
                 let s = b[i].replicas[idx].replica.proposer;
-                &&&(forall |p: RslPacket| s.received_1b_packets.contains(p) ==> 
+                &&&(forall |p: RslPacket| s.received_1b_packets.contains(p) ==>
                     p.msg is RslMessage1b &&
                     p.msg->bal_1b == s.max_ballot_i_sent_1a &&
                     c.config.replica_ids.contains(p.src) &&
@@ -72,10 +72,10 @@ verus!{
             lemma_ConstantsAllConsistent(b, c, i - 1);
             lemma_AssumptionsMakeValidTransition(b, c, i - 1);
             lemma_Received1bPacketsAreFrommax_balISent1a(b, c, i - 1, idx);
-    
+
             let s = b[i - 1].replicas[idx].replica.proposer;
             let s_prime = b[i].replicas[idx].replica.proposer;
-    
+
             assert forall |p: RslPacket| s_prime.received_1b_packets.contains(p)
                 implies p.msg is RslMessage1b
                     && p.msg->bal_1b == s.max_ballot_i_sent_1a
@@ -86,7 +86,7 @@ verus!{
                     lemma_PacketProcessedImpliesPacketSent(b[i - 1], b[i], idx, ios, p);
                 }
             };
-    
+
             assert forall |p1: RslPacket, p2: RslPacket|
                 s_prime.received_1b_packets.contains(p1)
                 && s_prime.received_1b_packets.contains(p2)
@@ -99,5 +99,5 @@ verus!{
             };
         }
     }
-  
+
 }

@@ -5,8 +5,8 @@ use vstd::{set::*, set_lib::*};
 // use crate::protocol::RSL::constants::*;
 // use crate::protocol::RSL::broadcast::*;
 // use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::message::*;
+use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
 
 verus! {
@@ -17,7 +17,7 @@ verus! {
     }
 
     pub open spec fn HandleRequestBatchHidden(state:AppState, batch:RequestBatch) -> (rc:(Seq<AppState>, Seq<Reply>))
-        // ensures 
+        // ensures
         //     rc.0.len() == batch.len() + 1,
         //     rc.1.len() == batch.len(),
         //     forall |i:int| 0 <= i < batch.len() ==> rc.1[i] is Reply,
@@ -28,12 +28,12 @@ verus! {
         } else {
             let (restStates, restReplies) = HandleRequestBatchHidden(state, batch.drop_last());
             let (new_state, reply) = AppHandleRequest(restStates.last(), batch.last().request);
-            (restStates+seq![new_state], restReplies+seq![Reply{client:batch.last().client, seqno:batch.last().seqno, reply}]) 
+            (restStates+seq![new_state], restReplies+seq![Reply{client:batch.last().client, seqno:batch.last().seqno, reply}])
         }
     }
 
     // pub proof fn lemma_HandleRequestBatchHidden(state:AppState, batch:RequestBatch)
-    //     ensures 
+    //     ensures
     //         HandleRequestBatchHidden(state, batch).0.len() == batch.len() + 1,
     //         HandleRequestBatchHidden(state, batch).1.len() == batch.len(),
     //         forall |i: int| 0 <= i < batch.len() ==> HandleRequestBatchHidden(state, batch).1.index(i) is Reply
@@ -41,7 +41,7 @@ verus! {
 
     // }
 
-    
+
     pub proof fn lemma_HandleRequestBatchHidden(
         state: AppState,
         batch: RequestBatch,

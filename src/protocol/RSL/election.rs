@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::configuration::*;
@@ -6,6 +5,7 @@ use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 

@@ -1,33 +1,23 @@
-use crate::implementation::common::function::*;
-use vstd::prelude::*;
-use vstd::slice::*;
-use crate::verus_extra::seq_lib_v::*;
-use crate::common::native::io_s::*;
-use crate::protocol::RSL::environment::*;
 use crate::common::collections::seq_is_unique_v::seq_is_unique;
 use crate::common::framework::args_t::*;
 use crate::common::framework::environment_s::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;
+use crate::common::native::io_s::*;
+use crate::implementation::common::function::*;
 use crate::implementation::RSL::{
-    replicaimpl_class::*, 
-    cmessage::*, cbroadcast::*, 
-    cconstants::*, cconfiguration::*,
-    cparameters::*,
-    replicaimpl_delivery::*, 
-    netrsl_i::*, 
-    ReplicaImpl::*,
-    replicaimpl_read_clock::*,
-    replicaimpl_process_packet_no_clock::*,
-    replicaimpl_process_packet_x::*,
-    replicaimpl_no_receive_clock::*,
-    replicaimpl_no_receive_no_clock::*,
-    replicaimpl_main::*,
-    cmd_line_parser::*,
-    host_s::*,
+    cbroadcast::*, cconfiguration::*, cconstants::*, cmd_line_parser::*, cmessage::*,
+    cparameters::*, host_s::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
+    replicaimpl_main::*, replicaimpl_no_receive_clock::*, replicaimpl_no_receive_no_clock::*,
+    replicaimpl_process_packet_no_clock::*, replicaimpl_process_packet_x::*,
+    replicaimpl_read_clock::*, ReplicaImpl::*,
 };
+use crate::protocol::RSL::environment::*;
+use crate::verus_extra::seq_lib_v::*;
+use vstd::prelude::*;
+use vstd::slice::*;
 
-verus!{
+verus! {
     pub struct HostState{
         pub replica_impl:ReplicaImpl,
     }

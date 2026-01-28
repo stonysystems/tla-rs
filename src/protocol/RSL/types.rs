@@ -1,8 +1,8 @@
 // #![allow(unused_imports)]
 // #![allow(unused_attributes)]
-use vstd::prelude::*;
 use vstd::modes::*;
 use vstd::multiset::*;
+use vstd::prelude::*;
 
 use vstd::{set::*, set_lib::*};
 
@@ -42,7 +42,7 @@ verus! {
     pub type Votes = Map<OperationNumber, Vote>;
 
     pub struct LearnerTuple {
-        pub received_2b_message_senders:Set<AbstractEndPoint>, 
+        pub received_2b_message_senders:Set<AbstractEndPoint>,
         pub candidate_learned_value:RequestBatch,
     }
 
@@ -61,7 +61,7 @@ verus! {
     }
 
     pub proof fn lemma_BalLtMiddle(ba:Ballot, bb:Ballot)
-        requires 
+        requires
             !BalLt(ba, bb),
             ba != bb,
         ensures

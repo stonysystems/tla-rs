@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::*;
@@ -19,6 +18,7 @@ use std::collections::HashSet;
 use std::collections::*;
 use vstd::hash_set::HashSetWithView;
 use vstd::invariant;
+use vstd::prelude::*;
 use vstd::std_specs::hash::*;
 use vstd::{hash_map::*, map::*, prelude::*, seq::*, set::*};
 
@@ -129,7 +129,7 @@ impl CProposer{
     }
 
     #[verifier(external_body)]
-    pub fn CIsAfterLogTruncationPoint(opn:COperationNumber, S:&HashSet<CPacket>) -> (res:bool) 
+    pub fn CIsAfterLogTruncationPoint(opn:COperationNumber, S:&HashSet<CPacket>) -> (res:bool)
         ensures
             ({
                 let lr = LIsAfterLogTruncationPoint(opn as int, S@.map(|p:CPacket| p@));
@@ -961,7 +961,7 @@ impl CProposer{
 
     // #[verifier(external_body)]
     pub fn CProposerProcess1b(&mut self, pkt:CPacket)
-        requires 
+        requires
             old(self).valid(),
             pkt.valid(),
             pkt.msg is CMessage1b,
@@ -1380,7 +1380,7 @@ impl CProposer{
 
         outboundpackets
     }
-    
+
     // #[verifier(external_body)]
     pub fn CProposerNominateOldValueAndSend2a(&mut self, log_truncation_point:COperationNumber) -> (sent_packets:OutboundPackets)
         requires
@@ -1465,7 +1465,7 @@ impl CProposer{
                                 //     broadcast: broadcast
                                 // };
                                 // assert(LProposerNominateOldValueAndSend2a(ss, self@, slog_truncate, out@));
-                            } 
+                            }
                             // else {
                             //     let ghost out = OutboundPackets::Broadcast {
                             //         broadcast: CBroadcast::CBroadcastNop{},
@@ -1514,7 +1514,7 @@ impl CProposer{
             assume(LProposerNominateOldValueAndSend2a(ss, self@, log_truncation_point as int, outboundpackets@));
             outboundpackets
         }
-        
+
     }
 
     pub fn CProposerMaybeNominateValueAndSend2a(&mut self, clock:u64, log_truncation_point:COperationNumber) -> (sent_packets:OutboundPackets)
@@ -1590,9 +1590,9 @@ impl CProposer{
     #[verifier(external_body)]
     pub fn OpnNotExistsInVotes(s:&HashSet<CPacket>, opn:COperationNumber) -> (res:bool)
     {
-        let m_iter = s.iter(); 
+        let m_iter = s.iter();
         let mut found = false;
-        for p in iter:m_iter 
+        for p in iter:m_iter
         {
             match &p.msg {
                 CMessage::CMessage1b {bal_1b, log_truncation_point, votes} => {
@@ -1613,7 +1613,7 @@ impl CProposer{
     {
         let m_keys = m.keys();
         let mut res = 0;
-        for k in iter:m_keys 
+        for k in iter:m_keys
         {
             if *k > res {
                 res = *k;
@@ -1625,10 +1625,10 @@ impl CProposer{
     #[verifier(external_body)]
     pub fn GetMaxOpnWithProposalFromSet(s:&HashSet<CPacket>) -> (res:(COperationNumber, bool))
     {
-        let m_iter = s.iter(); 
+        let m_iter = s.iter();
         let mut candidateOpn = 0;
         let mut found = false;
-        for p in iter:m_iter 
+        for p in iter:m_iter
         {
             match &p.msg {
                 CMessage::CMessage1b {bal_1b, log_truncation_point, votes} => {
@@ -1651,9 +1651,9 @@ impl CProposer{
     #[verifier(external_body)]
     pub fn GetMaxLogTruncatePoint(s:&HashSet<CPacket>) -> (res:COperationNumber)
     {
-        let m_iter = s.iter(); 
+        let m_iter = s.iter();
         let mut candidateOpn = 0;
-        for p in iter:m_iter 
+        for p in iter:m_iter
         {
             match &p.msg {
                 CMessage::CMessage1b {bal_1b, log_truncation_point, votes} => {

@@ -1,7 +1,7 @@
-use vstd::prelude::*;
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::types_i::*;
+use vstd::prelude::*;
 // use crate::implementation::lock::message_i::*;
 use crate::implementation::RSL::acceptorimpl::*;
 use crate::implementation::RSL::cbroadcast::*;
@@ -10,17 +10,18 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::learnerimpl::*;
 use crate::implementation::RSL::ExecutorImpl::*;
 use crate::implementation::RSL::ProposerImpl::*;
-use crate::implementation::RSL::{ProposerImpl::*, cconfiguration::*, cconstants::*};
-use crate::protocol::RSL::{replica::*, environment::*};
+use crate::implementation::RSL::{cconfiguration::*, cconstants::*, ProposerImpl::*};
+use crate::protocol::RSL::{environment::*, replica::*};
 // use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::{
-    acceptor::*, constants::*, executor::*, learner::*, message::*, proposer::*, types::*, constants::*, configuration::*
-};
-use crate::protocol::common::upper_bound::*;
-use std::collections::*;
-use vstd::{map::*, map_lib::*, prelude::*, seq::*};
-use vstd::std_specs::hash::*;
 use crate::common::collections::vecs::*;
+use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::{
+    acceptor::*, configuration::*, constants::*, constants::*, executor::*, learner::*, message::*,
+    proposer::*, types::*,
+};
+use std::collections::*;
+use vstd::std_specs::hash::*;
+use vstd::{map::*, map_lib::*, prelude::*, seq::*};
 
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
@@ -173,13 +174,13 @@ impl CReplica{
                                 assert(LReplicaNextProcessRequest(ss, self@, sp, outpackets@));
                                 outpackets
                             }
-                            else 
+                            else
                             {
                                 assert(ss.executor.reply_cache.contains_key(sp.src));
                                 assert(sp.msg->seqno_req > ss.executor.reply_cache[sp.src].seqno);
 
                                 self.proposer.CProposerProcessRequest(received_packet);
-                                
+
                                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                                 let outpackets = OutboundPackets::PacketSequence{
                                     s:pkt_vec,
@@ -220,7 +221,7 @@ impl CReplica{
                     outpackets
                 }
             }
-            _ => { 
+            _ => {
                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                 let outpackets = OutboundPackets::PacketSequence{
                     s:pkt_vec,
@@ -266,7 +267,7 @@ impl CReplica{
         let mut res = true;
         let m_iter = s.iter();
         assert(m_iter@.0 == 0);
-        
+
         for p in iter: m_iter
         {
             if p.src == pkt.src {
@@ -331,7 +332,7 @@ impl CReplica{
                     assert(LReplicaNextProcess1b(ss, self@, sp, outpackets@));
                     outpackets
                 }
-                else 
+                else
                 {
                     // don't know why, if has been proved contains, but else cannot infer that doesn't contain.
                     assume(!ss.proposer.constants.all.config.replica_ids.contains(sp.src));
@@ -462,7 +463,7 @@ impl CReplica{
                     s:pkt_vec,
                 };
                 assert(outpackets@ == Seq::<RslPacket>::empty());
-                
+
                 outpackets
             }
             _ => {
@@ -471,7 +472,7 @@ impl CReplica{
                     s:pkt_vec,
                 };
                 assert(outpackets@ == Seq::<RslPacket>::empty());
-                
+
                 outpackets
             }
         }
@@ -498,7 +499,7 @@ impl CReplica{
             s:pkt_vec,
         };
         assert(outpackets@ == Seq::<RslPacket>::empty());
-        
+
         outpackets
     }
 
@@ -531,7 +532,7 @@ impl CReplica{
                     s:pkt_vec,
                 };
                 assert(outpackets@ == Seq::<RslPacket>::empty());
-                
+
                 outpackets
             }
             _ => {
@@ -540,7 +541,7 @@ impl CReplica{
                     s:pkt_vec,
                 };
                 assert(outpackets@ == Seq::<RslPacket>::empty());
-                
+
                 outpackets
             }
         }
@@ -589,7 +590,7 @@ impl CReplica{
             s:pkt_vec,
         };
         assert(outpackets@ == Seq::<RslPacket>::empty());
-        
+
         outpackets
     }
 
@@ -675,7 +676,7 @@ impl CReplica{
                                 assert(outpackets@ == Seq::<RslPacket>::empty());
                                 assert(LReplicaNextSpontaneousMaybeMakeDecision(ss, self@, outpackets@));
                                 outpackets
-                            } 
+                            }
                             else {
                                 assume(ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len() < LMinQuorumSize(ss.learner.constants.all.config));
                                 let mut pkt_vec: Vec<CPacket> = Vec::new();
@@ -713,7 +714,7 @@ impl CReplica{
                     s:pkt_vec,
                 };
                 assert(outpackets@ == Seq::<RslPacket>::empty());
-                
+
                 outpackets
             }
         }
@@ -745,7 +746,7 @@ impl CReplica{
                         s:pkt_vec,
                     };
                     assert(outpackets@ == Seq::<RslPacket>::empty());
-                    
+
                     outpackets
                 }
             }
@@ -755,9 +756,9 @@ impl CReplica{
                     s:pkt_vec,
                 };
                 assert(outpackets@ == Seq::<RslPacket>::empty());
-                
+
                 outpackets
-            } 
+            }
         }
     }
 
@@ -789,10 +790,10 @@ impl CReplica{
         } else {
             let t = CUpperBoundedAddition(clock, self.constants.all.params.heartbeat_period, self.constants.all.params.max_integer_val);
             self.nextHeartbeatTime = t;
-            let msg = CMessage::CMessageHeartbeat { 
-                bal_heartbeat: self.proposer.election_state.current_view, 
-                suspicious: self.proposer.election_state.current_view_suspectors.contains(&self.constants.my_index), 
-                opn_ckpt: self.executor.ops_complete 
+            let msg = CMessage::CMessageHeartbeat {
+                bal_heartbeat: self.proposer.election_state.current_view,
+                suspicious: self.proposer.election_state.current_view_suspectors.contains(&self.constants.my_index),
+                opn_ckpt: self.executor.ops_complete
             };
             let broadcast = CBroadcast::BuildBroadcastToEveryone(&self.constants.all.config, self.constants.my_index, msg);
             let outpackets = OutboundPackets::Broadcast{broadcast:broadcast};
@@ -823,7 +824,7 @@ impl CReplica{
             s:pkt_vec,
         };
         assert(outpackets@ == Seq::<RslPacket>::empty());
-        
+
         outpackets
     }
 
@@ -846,7 +847,7 @@ impl CReplica{
             s:pkt_vec,
         };
         assert(outpackets@ == Seq::<RslPacket>::empty());
-        
+
         outpackets
     }
 
@@ -870,7 +871,7 @@ impl CReplica{
         let mut find = false;
         let mut target = 0;
         while i < self.acceptor.last_checkpointed_operation.len()
-            invariant 
+            invariant
                 self.valid(),
                 ss == self@,
                 find ==> ss.acceptor.last_checkpointed_operation.contains(target as int),
@@ -879,7 +880,7 @@ impl CReplica{
         {
             let opn = self.acceptor.last_checkpointed_operation[i];
             assert(self.acceptor.last_checkpointed_operation@.contains(opn));
-            if CIsLogTruncationPointValid(opn, &self.acceptor.last_checkpointed_operation, &self.constants.all.config) 
+            if CIsLogTruncationPointValid(opn, &self.acceptor.last_checkpointed_operation, &self.constants.all.config)
             {
                 find = true;
                 target = opn;
@@ -904,7 +905,7 @@ impl CReplica{
                 assert(target as int > ss.acceptor.log_truncation_point);
                 assert(exists |op:OperationNumber| ss.acceptor.last_checkpointed_operation.contains(op)
                             && IsLogTruncationPointValid(op, ss.acceptor.last_checkpointed_operation, ss.constants.all.config)
-                            && op > ss.acceptor.log_truncation_point); 
+                            && op > ss.acceptor.log_truncation_point);
                 self.acceptor.CAcceptorTruncateLog(target);
                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                 let outpackets = OutboundPackets::PacketSequence{
@@ -922,7 +923,7 @@ impl CReplica{
                 assert(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(ss, self@, outpackets@));
                 outpackets
             }
-        } 
+        }
         else {
             // this brunch cannot be reached, use assume to pass the verification.
             let mut pkt_vec: Vec<CPacket> = Vec::new();
@@ -953,7 +954,7 @@ impl CReplica{
         }
     }
 
-    
+
 
     #[verifier(external_body)]
     pub fn CGetHighestValueAmongMajority(checkpoints:&Vec<COperationNumber>, n:usize) -> (res:COperationNumber)

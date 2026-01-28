@@ -1,4 +1,3 @@
-
 use vstd::prelude::*;
 use vstd::*;
 
@@ -10,7 +9,7 @@ verus! {
         UpperBoundInfinite{},
     }
 
-    pub open spec fn LeqUpperBound(x:int, u:UpperBound) -> bool 
+    pub open spec fn LeqUpperBound(x:int, u:UpperBound) -> bool
     {
         match u {
             UpperBound::UpperBoundFinite{n} => x <= n,

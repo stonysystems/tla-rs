@@ -1,8 +1,8 @@
 #![allow(unused_imports)]
-use vstd::prelude::*;
 use super::environment_s::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;
+use vstd::prelude::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

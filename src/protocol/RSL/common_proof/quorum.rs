@@ -1,29 +1,29 @@
-use vstd::prelude::*;
-use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
-use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::configuration::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::proposer::*;
-use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::common_proof::actions::*;
 use crate::protocol::RSL::common_proof::assumptions::*;
 use crate::protocol::RSL::common_proof::constants::*;
-use crate::protocol::RSL::common_proof::actions::*;
 use crate::protocol::RSL::common_proof::message1b::*;
 use crate::protocol::RSL::common_proof::message2a::*;
 use crate::protocol::RSL::common_proof::message2b::*;
+use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::types::*;
+use vstd::prelude::*;
+use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
+use vstd::{set::*, set_lib::*};
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
 use crate::common::collections::sets::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
     #[verifier::external_body]
     pub proof fn lemma_GetIndicesFromNodes(
         nodes: Set<AbstractEndPoint>,
@@ -33,13 +33,13 @@ verus!{
             WellFormedLConfiguration(config),
             forall |node: AbstractEndPoint| nodes.contains(node) ==> config.replica_ids.contains(node),
         ensures
-            forall |idx: int| indices.contains(idx) ==> 
+            forall |idx: int| indices.contains(idx) ==>
                 0 <= idx < config.replica_ids.len() && nodes.contains(config.replica_ids[idx]),
             forall |node: AbstractEndPoint| nodes.contains(node) ==> indices.contains(GetReplicaIndex(node, config)),
             indices.len() == nodes.len(),
     {
         let indices_out = Set::new(|idx:int| 0 <= idx < config.replica_ids.len() && nodes.contains(config.replica_ids[idx]));
-        
+
         // Define function mapping indices to nodes.
         let f = |idx: int| -> AbstractEndPoint {
             if 0 <= idx && idx < config.replica_ids.len() {
@@ -49,22 +49,22 @@ verus!{
                 arbitrary()
             }
         };
-        
-        assert forall |idx1: int, idx2: int| 
+
+        assert forall |idx1: int, idx2: int|
             indices_out.contains(idx1) && indices_out.contains(idx2) &&
             nodes.contains(f(idx1)) && nodes.contains(f(idx2)) && f(idx1) == f(idx2)
             implies idx1 == idx2
         by {
             assert(ReplicasDistinct(config.replica_ids, idx1, idx2));
         };
-        
-        assert forall |node: AbstractEndPoint| nodes.contains(node) 
+
+        assert forall |node: AbstractEndPoint| nodes.contains(node)
             implies exists |idx: int| indices_out.contains(idx) && node == f(idx)
         by {
             let idx = GetReplicaIndex(node, config);
             assert(indices_out.contains(idx) && node == f(idx));
         };
-        
+
         lemma_MapSetCardinalityOver(indices_out, nodes, f);
         indices_out
     }
@@ -87,17 +87,17 @@ verus!{
     {
         // Construct the set of src nodes from the given packets.
         let nodes = packets.map(|p:RslPacket| p.src);
-    
+
         // Derive the set of indices from the set of nodes.
         let indices_out = lemma_GetIndicesFromNodes(nodes, config);
-        
+
         let f = |p: RslPacket| -> AbstractEndPoint{
             p.src
         };
 
-        // Show that the cardinalities match (|indices| == |packets|). 
+        // Show that the cardinalities match (|indices| == |packets|).
         lemma_MapSetCardinalityOver(packets, nodes, f);
-    
+
         indices_out
     }
 

@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use super::{
     acceptorimpl::CAcceptor,
     cconfiguration::CConfiguration,
@@ -11,6 +10,7 @@ use super::{
     ReplicaImpl::CReplica,
 };
 use crate::common::native::io_s::NetEvent;
+use vstd::prelude::*;
 // use crate::implementation::common::generic_marshalling::G;
 use crate::implementation::RSL::cmessage::CPacket;
 use crate::implementation::RSL::learnerimpl::CLearner;
@@ -20,10 +20,8 @@ use crate::protocol::RSL::environment::RslIo;
 use crate::protocol::RSL::replica::LReplica;
 use crate::protocol::RSL::replica::LScheduler;
 use crate::{
-    common::native::io_s::*,
-    implementation::common::upper_bound_i::CUpperBound,
-    implementation::RSL::types_i::*,
-    protocol::RSL::executor,
+    common::native::io_s::*, implementation::common::upper_bound_i::CUpperBound,
+    implementation::RSL::types_i::*, protocol::RSL::executor,
 };
 use std::collections::{HashMap, HashSet};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
@@ -43,9 +41,9 @@ verus! {
 
     // #[verifier(external_body)]
     //     fn new() -> Self{
-    //         let rcs = CReplicaConstants{my_index: 0, 
+    //         let rcs = CReplicaConstants{my_index: 0,
     //             all: CConstants {
-    //                 config: CConfiguration{replica_ids: vec![]}, 
+    //                 config: CConfiguration{replica_ids: vec![]},
     //                 params: CParameters{
     //                     max_log_length: 0,
     //                     baseline_view_timeout_period: 0,
@@ -53,7 +51,7 @@ verus! {
     //                     max_integer_val: u64::MAX,
     //                     max_batch_size: 0,
     //                     max_batch_delay: 0
-    //                 } 
+    //                 }
     //             }
     //         };
     //         let election_state = CElectionState{
@@ -130,7 +128,7 @@ verus! {
     {
         &&& self.replica.abstractable()
         &&& self.replica.valid()
-        &&& 0 <= self.nextActionIndex 
+        &&& 0 <= self.nextActionIndex
         &&& self.nextActionIndex < 10
         // &&& self.netClient.is_Some()
         // &&& self.netClient.get_Some_0().valid()
@@ -218,7 +216,7 @@ verus! {
     #[verifier::external_body]
     pub fn Replica_Init(constants:CReplicaConstants) -> (rc:Self)
         requires constants.valid(),
-        ensures 
+        ensures
             rc.replica.constants == constants,
             rc.valid(),
     {

@@ -1,24 +1,24 @@
+use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::common_proof::assumptions::*;
+use crate::protocol::RSL::common_proof::constants::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::executor::*;
-use crate::protocol::RSL::replica::*;
-use crate::protocol::RSL::common_proof::assumptions::*;
-use crate::protocol::RSL::common_proof::constants::*;
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
     // proof fn choose_satisfies<T>(p: spec_fn(T) -> bool)
     //     ensures p(choose |x: T| p(x))
     // {}
@@ -243,7 +243,7 @@ verus!{
     {
         assert(ps.environment.nextStep is LEnvStepHostIos);
         assert(ps.environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let (idx, ios) = choose |idx: int, ios: Seq<RslIo>| 
+        let (idx, ios) = choose |idx: int, ios: Seq<RslIo>|
             RslNextOneReplica(ps, ps_prime, idx, ios) && ios.contains(LIoOp::Send{s:p});
         let nextActionIndex = ps.replicas[idx].nextActionIndex;
         assume(RslNextOneReplica(ps, ps_prime, idx, ios) && ios.contains(LIoOp::Send{s:p}));
@@ -266,5 +266,5 @@ verus!{
         }
         (idx, ios)
     }
-    
+
 }

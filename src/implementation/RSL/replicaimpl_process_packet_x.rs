@@ -1,22 +1,17 @@
+use crate::common::native::io_s::*;
 use crate::implementation::common::function::*;
+use crate::implementation::RSL::{
+    cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
+    replicaimpl_process_packet_no_clock::*, replicaimpl_read_clock::*, ReplicaImpl::*,
+};
+use crate::protocol::RSL::environment::*;
+use crate::verus_extra::seq_lib_v::*;
 use vstd::prelude::*;
 use vstd::slice::*;
-use crate::verus_extra::seq_lib_v::*;
-use crate::common::native::io_s::*;
-use crate::protocol::RSL::environment::*;
-use crate::implementation::RSL::{
-    replicaimpl_class::*, 
-    cmessage::*, cbroadcast::*, 
-    replicaimpl_delivery::*, 
-    netrsl_i::*, 
-    ReplicaImpl::*,
-    replicaimpl_read_clock::*,
-    replicaimpl_process_packet_no_clock::*,
-};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
-verus!{
+verus! {
     pub fn replica_next_process_packet_timeout(r:&mut ReplicaImpl)
     {
 
@@ -62,13 +57,13 @@ verus!{
                 match cpacket.msg {
                     CMessage::CMessageHeartbeat{bal_heartbeat, suspicious, opn_ckpt} => {
                         // println!("receive heartbeat");
-                        // let (is_ok, event_log, ios) = 
+                        // let (is_ok, event_log, ios) =
                         ok = replica_next_process_packet_heartbeat(r, netc, cpacket);
                         // net_event = event_log;
                         // ios_his = ios;
                     }
                     _ => {
-                        // let (is_ok, event_log, ios) = 
+                        // let (is_ok, event_log, ios) =
                         // ok = is_ok;
                         // net_event = event_log;
                         // ios_his = ios;

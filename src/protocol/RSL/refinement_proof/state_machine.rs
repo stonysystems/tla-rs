@@ -1,15 +1,15 @@
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::environment::*;
 
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::services::RSL::app_state_machine::*;
 
-verus!{
+verus! {
     pub struct RSLSystemState{
         pub server_addresses:Set<AbstractEndPoint>,
         pub app:AppState,
@@ -28,21 +28,21 @@ verus!{
     pub open spec fn RslSystemNextServerExecutesRequest(s:RSLSystemState, s_:RSLSystemState, req:Request) -> bool
     {
         && s_.server_addresses == s.server_addresses
-        && s_.requests == s.requests + set![req] 
+        && s_.requests == s.requests + set![req]
         && s_.app == AppHandleRequest(s.app, req.request).0
         && s_.replies == s.replies + set![Reply{client:req.client, seqno:req.seqno, reply:AppHandleRequest(s.app, req.request).1}]
     }
 
     pub open spec fn RslStateSequenceReflectsBatchExecution(s:RSLSystemState, s_:RSLSystemState, intermediate_states:Seq<RSLSystemState>,
-                                                 batch:Seq<Request>) -> bool 
+                                                 batch:Seq<Request>) -> bool
     {
         &&& intermediate_states.len() == batch.len() + 1
-        &&& intermediate_states[0] == s 
+        &&& intermediate_states[0] == s
         &&& intermediate_states.last() == s_
         &&& forall |i:int| 0 <= i < batch.len() ==> RslSystemNextServerExecutesRequest(intermediate_states[i], intermediate_states[i+1], batch[i])
     }
 
-    pub open spec fn RslSystemNext(s:RSLSystemState, s_:RSLSystemState) -> bool 
+    pub open spec fn RslSystemNext(s:RSLSystemState, s_:RSLSystemState) -> bool
     {
         exists |intermediate_states:Seq<RSLSystemState>, batch:Seq<Request>| RslStateSequenceReflectsBatchExecution(s, s_, intermediate_states, batch)
     }

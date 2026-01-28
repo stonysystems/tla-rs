@@ -1,16 +1,15 @@
-use vstd::prelude::*;
 use std::collections::*;
-
+use vstd::prelude::*;
 
 verus! {
-    // pub fn FindIndexInSeq<T>(s: Seq<T>, v: T) -> (r:int)    
+    // pub fn FindIndexInSeq<T>(s: Seq<T>, v: T) -> (r:int)
     //     ensures
     //         if r >= 0 {
     //             r < s.len() && s.index(r) == v
     //         } else {
     //             !s.contains(v)
     //         }
-    //     decreases s.len()  
+    //     decreases s.len()
     // {
     //     if s.len() == 0 {
     //         -1
@@ -27,7 +26,7 @@ verus! {
     // }
 
 
-    pub open spec fn FindIndexInSeq<T>(s: Seq<T>, v: T) -> int 
+    pub open spec fn FindIndexInSeq<T>(s: Seq<T>, v: T) -> int
         decreases s.len()
     {
         if s.len() == 0 {
@@ -44,7 +43,7 @@ verus! {
         }
     }
 
-   
+
 
     #[verifier::external_body]
     pub proof fn lemma_FindIndexInSeq<T>(s:Seq<T>, v:T)
@@ -87,7 +86,7 @@ verus! {
     //         assert(s.index(0) == v);
     //     } else {
     //         let r = FindIndexInSeq(s.subrange(1, s.len() as int), v);
-    
+
     //         if r == -1 {
     //             // lemma_subrange_excludes_first_element(s, v);
     //             assert(!s.subrange(1, s.len() as int).contains(v));

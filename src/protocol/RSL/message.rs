@@ -1,7 +1,7 @@
-use vstd::prelude::*;
-use vstd::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
+use vstd::prelude::*;
+use vstd::*;
 
 verus! {
     pub enum RslMessage {

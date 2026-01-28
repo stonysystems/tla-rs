@@ -1,10 +1,10 @@
 use crate::common::collections::comparable::*;
 use std::collections::*;
-use vstd::prelude::*;
-use vstd::view::*;
-use vstd::std_specs::hash::*;
 use std::hash::Hash;
-verus!{
+use vstd::prelude::*;
+use vstd::std_specs::hash::*;
+use vstd::view::*;
+verus! {
     #[verifier(external_body)]
     pub fn union_sets<T>(s1:&HashSet<T>, s2:&HashSet<T>) -> (res:HashSet<T>)
     where

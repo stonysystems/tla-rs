@@ -1,26 +1,20 @@
+use super::host_s::EventResults;
+use crate::common::native::io_s::*;
 use crate::implementation::common::function::*;
+use crate::implementation::RSL::{
+    cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
+    replicaimpl_no_receive_clock::*, replicaimpl_no_receive_no_clock::*,
+    replicaimpl_process_packet_no_clock::*, replicaimpl_process_packet_x::*,
+    replicaimpl_read_clock::*, ReplicaImpl::*,
+};
+use crate::protocol::RSL::environment::*;
+use crate::verus_extra::seq_lib_v::*;
 use vstd::prelude::*;
 use vstd::slice::*;
-use crate::verus_extra::seq_lib_v::*;
-use crate::common::native::io_s::*;
-use crate::protocol::RSL::environment::*;
-use crate::implementation::RSL::{
-    replicaimpl_class::*, 
-    cmessage::*, cbroadcast::*, 
-    replicaimpl_delivery::*, 
-    netrsl_i::*, 
-    ReplicaImpl::*,
-    replicaimpl_read_clock::*,
-    replicaimpl_process_packet_no_clock::*,
-    replicaimpl_process_packet_x::*,
-    replicaimpl_no_receive_clock::*,
-    replicaimpl_no_receive_no_clock::*,
-};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use super::host_s::EventResults;
 
-verus!{
+verus! {
 
     // #[verifier(external_body)]
     pub fn roll_action_index(a: u64) -> (a_prime: u64)
@@ -35,13 +29,13 @@ verus!{
             a + 1
         }
     }
-    
+
 
     pub fn ReplicaNextMainProcessPacketX(r:&mut ReplicaImpl, netc:&mut NetClient) -> (res: (bool, Ghost<EventResults>, Ghost<Seq<RslIo>>))
         requires
             old(r).valid(),
             old(r).nextActionIndex == 0,
-    // ensures 
+    // ensures
     // // result: (bool, Seq<UdpEvent>, Seq<RslIo>)| {
     // // let (ok, net_event_log, ios) = result;
     //     r.valid(),
@@ -49,7 +43,7 @@ verus!{
     //     r.env().valid()
     //     r.valid && r.env().ok.ok(),
     //     r.env() == old(r.env())
-    //     r.valid() 
+    //     r.valid()
     //     && (Q_LScheduler_Next(old(r.AbstractifyToLScheduler()), r.AbstractifyToLScheduler(), res.2)
     //     || HostNextIgnoreUnsendable(old(r.AbstractifyToLScheduler()), r.AbstractifyToLScheduler(), res.1)),
     //     RawIoConsistentWithSpecIO(net_event_log, ios)
@@ -120,11 +114,11 @@ verus!{
 
         (ok, Ghost(event_results), ios)
     }
-    
+
     #[verifier(external_body)]
     pub fn ReplicaNextMainNoClock(r:&mut ReplicaImpl, netc:&mut NetClient) -> (res: (bool, Ghost<EventResults>, Ghost<Seq<RslIo>>))
     {
-        
+
         let curActionIndex = r.nextActionIndex;
         let ghost mut net_event = Seq::<NetEvent>::empty();
         let ghost mut ios_his = Seq::<RslIo>::empty();
@@ -140,7 +134,7 @@ verus!{
         if !ok {
             return (ok, Ghost(event_results), Ghost(ios_his));
         }
-        
+
         let nextActionIndex_prime = r.nextActionIndex +1;
         r.nextActionIndex = nextActionIndex_prime;
 
@@ -164,7 +158,7 @@ verus!{
         if !ok {
             return (ok, Ghost(event_results), Ghost(ios_his));
         }
-        
+
         let nextActionIndex_prime = roll_action_index(r.nextActionIndex);
         r.nextActionIndex = nextActionIndex_prime;
 

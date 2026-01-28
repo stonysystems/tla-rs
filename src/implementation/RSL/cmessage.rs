@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::common::native::io_s::*;
@@ -10,13 +9,14 @@ use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::*;
-use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
-use vstd::{set::*, set_lib::*};
-use vstd::std_specs::hash::*;
 use std::hash::{Hash, Hasher};
 use std::mem;
-use std::collections::hash_map::DefaultHasher;
+use vstd::prelude::*;
+use vstd::std_specs::hash::*;
+use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
+use vstd::{set::*, set_lib::*};
 
 verus! {
 
@@ -137,11 +137,11 @@ verus! {
     impl CMessage{
 
         pub fn clone_up_to_view(&self) -> (res: Self)
-        ensures 
+        ensures
             // res.abstractable(),
             // res.valid(),
             res@ == self@
-                
+
     {
         match self {
             CMessage::CMessageInvalid {} => CMessage::CMessageInvalid {},
@@ -268,7 +268,7 @@ verus! {
 
     }
 
-    
+
     #[verifier(external_body)]
     pub broadcast proof fn axiom_cmessage_view()
         ensures forall |p1:CMessage, p2:CMessage| p1@ == p2@ ==> p1 == p2
@@ -435,10 +435,7 @@ impl Hash for CMessage {
                 opn_ckpt.hash(state);
             }
 
-            CMessage::CMessageReply {
-                seqno_reply,
-                reply,
-            } => {
+            CMessage::CMessageReply { seqno_reply, reply } => {
                 seqno_reply.hash(state);
                 reply.hash(state);
             }

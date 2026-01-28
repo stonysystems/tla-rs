@@ -1,17 +1,17 @@
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::state_machine::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::state_machine::*;
 
-use crate::common::framework::environment_s::*;
 use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::services::RSL::app_state_machine::*;
 
-verus!{
+verus! {
     pub open spec fn GetAppStateFromRequestBatches(batches:Seq<RequestBatch>) -> AppState
         decreases batches.len()
     {
@@ -30,7 +30,7 @@ verus!{
         let result = HandleRequestBatch(prev_state, batches[batch_num]);
         result.1[req_num]
     }
-  
+
     pub proof fn lemma_GetReplyFromRequestBatchesMatchesInSubsequence(batches1:Seq<RequestBatch>, batches2:Seq<RequestBatch>, batch_num:int, req_num:int)
         requires 0 <= batch_num < batches1.len() <= batches2.len(),
                 batches1 == batches2.subrange(0, batches1.len() as int),

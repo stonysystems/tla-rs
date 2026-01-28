@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::ExecutorImpl::OutboundPackets::PacketSequence;
@@ -6,8 +5,12 @@ use crate::protocol::RSL::state_machine::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
 use std::collections::HashMap;
+use vstd::prelude::*;
 // use crate::implementation::RSL::types_i::abstractify_crequestbatch;
 // use crate::implementation::RSL::message_i::*;
+use crate::common::collections::vecs::*;
+use crate::common::framework::environment_s::*;
+use crate::common::native::io_s::*;
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::RSL::appinterface::*;
@@ -19,14 +22,11 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::implementation::RSL::ElectionImpl::*;
-use crate::protocol::RSL::{constants::*, environment::*, message::*};
-use crate::protocol::RSL::executor::*;
 use crate::implementation::RSL::ExecutorImpl::OutboundPackets::Broadcast;
-use crate::services::RSL::app_state_machine::*;
-use crate::common::framework::environment_s::*;
-use crate::common::native::io_s::*;
-use crate::common::collections::vecs::*;
 use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::{constants::*, environment::*, message::*};
+use crate::services::RSL::app_state_machine::*;
 use vstd::std_specs::hash::*;
 use vstd::{prelude::*, seq::*, seq_lib::*};
 
@@ -218,7 +218,7 @@ impl CExecutor{
                 }
             };
             assert(pkt@ == spkt);
-        
+
             let mut first:Vec<CPacket> = Vec::new();
             first.push(pkt);
             assert(first@.map(|i, p:CPacket| p@) == seq![spkt]);
@@ -262,7 +262,7 @@ impl CExecutor{
             assert(forall|c: EndPoint| res@.contains_key(c) ==> (exists|req_idx: int| 0 <= req_idx < temp.len()
                 && temp[req_idx].client == c
                 && res@[c] == temp[req_idx]));
-            // assert(forall |i:int| #![trigger temp[i]] 0 <= i < temp.len() ==> 
+            // assert(forall |i:int| #![trigger temp[i]] 0 <= i < temp.len() ==>
             //     (exists |j:int| #![trigger replies[j]] 0 <= j < replies.len() && temp[i] == replies[j]));
             assert(temp@.map(|i, r:CReply| r@) == replies@.map(|i, r:CReply| r@).drop_first());
             assert(abstractify_creplycache(&res) == LClientsInReplies(temp@.map(|i, r:CReply| r@)));
@@ -307,12 +307,12 @@ impl CExecutor{
 
         let nc = Self::CClientsInReplies(&replies);
         let mut updated_cache = HashMap::<EndPoint, CReply>::new();
-        
+
         let c_keys = c.keys();
         assert(c_keys@.0 == 0);
         assert(c_keys@.1.to_set() =~= c@.dom());
 
-        for k in iter:c_keys 
+        for k in iter:c_keys
             invariant
                 creplycache_is_valid(c),
                 creplycache_is_valid(&updated_cache),
@@ -335,7 +335,7 @@ impl CExecutor{
         let nc_keys = nc.keys();
         assert(nc_keys@.0 == 0);
         assert(nc_keys@.1.to_set() =~= nc@.dom());
-        for k in iter:nc_keys 
+        for k in iter:nc_keys
             invariant
                 creplycache_is_valid(&nc),
                 creplycache_is_valid(&updated_cache),
@@ -460,7 +460,7 @@ impl CExecutor{
             self.valid(),
             res.valid(),
             LExecutorProcessAppStateRequest(
-                old(self)@, 
+                old(self)@,
                 self@,
                 inp@,
                 res@)
@@ -517,7 +517,7 @@ impl CExecutor{
                     assert(pkt_vec@.map(|i, p:CPacket| p@) == pkt_seq);
                     assert(ss == self@);
                     assert(LExecutorProcessAppStateRequest(
-                        ss, 
+                        ss,
                         self@,
                         sp,
                         outpackets@));
@@ -529,7 +529,7 @@ impl CExecutor{
                     };
                     assert(pkt_vec@.map(|i, p:CPacket| p@)  == Seq::<RslPacket>::empty());
                     assert(LExecutorProcessAppStateRequest(
-                        ss, 
+                        ss,
                         self@,
                         sp,
                         outpackets@));
@@ -558,7 +558,7 @@ impl CExecutor{
             self.valid(),
             res.valid(),
             LExecutorProcessStartingPhase2(
-                old(self)@, 
+                old(self)@,
                 self@,
                 inp@,
                 res@)
@@ -644,9 +644,9 @@ impl CExecutor{
                             assert(msg@ == smsg);
 
                             let pkt = CPacket{
-                                src: self.constants.all.config.replica_ids[self.constants.my_index as usize].clone_up_to_view(), 
+                                src: self.constants.all.config.replica_ids[self.constants.my_index as usize].clone_up_to_view(),
                                 dst: v.client.clone_up_to_view(),
-                                msg: msg, 
+                                msg: msg,
                             };
 
                             let ghost spkt = LPacket{

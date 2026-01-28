@@ -1,5 +1,5 @@
 pub mod CStateMachine;
-pub mod ElectionImpl;   
+pub mod ElectionImpl;
 pub mod ExecutorImpl;
 pub mod ProposerImpl;
 pub mod ReplicaImpl;
@@ -13,19 +13,19 @@ pub mod cparameters;
 pub mod learnerimpl;
 pub mod replicaimpl_class;
 // pub mod test;
-pub mod netrsl_i;
-pub mod types_i;
-pub mod replicaimpl_delivery;
-pub mod replicaimpl_read_clock;
-pub mod replicaimpl_process_packet_x;
-pub mod replicaimpl_process_packet_no_clock;
-pub mod replicaimpl_no_receive_clock;
-pub mod replicaimpl_no_receive_no_clock;
-pub mod replicaimpl_main;
 pub mod cmd_line_parser;
-pub mod host_i;
-pub mod host_s;
 #[cfg(test)]
 pub mod generated_acceptor_test;
 #[cfg(test)]
 pub mod generated_acceptor_v3;
+pub mod host_i;
+pub mod host_s;
+pub mod netrsl_i;
+pub mod replicaimpl_delivery;
+pub mod replicaimpl_main;
+pub mod replicaimpl_no_receive_clock;
+pub mod replicaimpl_no_receive_no_clock;
+pub mod replicaimpl_process_packet_no_clock;
+pub mod replicaimpl_process_packet_x;
+pub mod replicaimpl_read_clock;
+pub mod types_i;

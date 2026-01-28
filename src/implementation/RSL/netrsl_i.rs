@@ -1,7 +1,7 @@
-use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::{endpoints_contain, seq_is_unique};
 use crate::common::framework::environment_s::*;
 use crate::common::framework::environment_s::*;
+use vstd::prelude::*;
 // use crate::common::native::io_s::AbstractEndPoint::*;
 use crate::common::native::io_s::*;
 use crate::common::native::io_s::{abstractify_end_points, EndPoint};
@@ -310,7 +310,7 @@ verus! {
                 }
             }
         }
-        
+
 
         match CMessage::deserialize(&buffer, 0)
         {

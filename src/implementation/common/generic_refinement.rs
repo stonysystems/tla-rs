@@ -1,10 +1,10 @@
 #![allow(unused_imports)]
-use vstd::prelude::*;
 use std::net;
+use vstd::prelude::*;
 
 use std::collections::*;
-use vstd::{modes::*, prelude::*, seq::*, *};
 use vstd::view::*;
+use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {
 
@@ -118,7 +118,7 @@ verus! {
 
     #[verifier::external_body]
     pub proof fn lemma_AbstractifySet_SizeUnchange2<T:vstd::view::View>(s:HashSet<T>)
-        ensures 
+        ensures
         ({
             let ss = s@.map(|i:T| i@);
             &&& s@.len() == ss.len()
@@ -185,7 +185,7 @@ verus! {
     }
 
     // pub proof fn lemma_AbstractifySet_Insert1<T, CT>(s1:Set<CT>, s2:Set<CT>, e:CT, Refine:spec_fn(CT) -> T)
-    //     requires 
+    //     requires
 
     // pub proof fn lemma_HashSetView_SizeUnchange<CT: std::cmp::Eq + std::hash::Hash>(s:HashSet<CT>, ss:Set<CT>)
     //     requires
@@ -346,7 +346,7 @@ verus! {
                     let ck = choose |ck:KT| new_m@.contains_key(ck) && ck@ == k;
                     new_m@[ck]@
                 }
-            ); 
+            );
             &&& s_new_m == s_old_m.insert(k@, v@)
         })
     {
@@ -372,7 +372,7 @@ verus! {
     //                 let ck = choose |ck:KT| new_m@.contains_key(ck) && ck@ == k;
     //                 new_m@[ck]@
     //             }
-    //         ); 
+    //         );
     //         &&& s_new_m == s_old_m.insert(k@, v@)
     //     })
     // {
@@ -398,7 +398,7 @@ verus! {
                     let ck = choose |ck:KT| new_m@.contains_key(ck) && ck@ == k;
                     RefineValue(new_m@[ck])
                 }
-            ); 
+            );
             &&& s_new_m == s_old_m.insert(k@, RefineValue(v))
         })
     {
@@ -424,7 +424,7 @@ verus! {
     //                 let ck = choose |ck:KT| new_m@.contains_key(ck) && ck@ == k;
     //                 RefineValue(new_m@[ck])
     //             }
-    //         ); 
+    //         );
     //         &&& s_new_m == s_old_m.insert(k@, RefineValue(v))
     //     })
     // {
@@ -450,7 +450,7 @@ verus! {
                     let ck = choose |ck:CKT| new_m@.contains_key(ck) && RefineKey(ck) == sk;
                     new_m@[ck]@
                 }
-            ); 
+            );
             &&& s_new_m == s_old_m.remove(RefineKey(k))
         })
     {

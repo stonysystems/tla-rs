@@ -1,7 +1,8 @@
-use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::*;
 use crate::common::collections::sets::*;
-use crate::common::collections::{vecs::*, hashsets::*};
+use crate::common::collections::{hashsets::*, vecs::*};
+use crate::common::framework::environment_s::*;
+use crate::common::native::io_s::*;
 use crate::implementation::common::{generic_refinement::*, upper_bound::*, upper_bound_i::*};
 use crate::implementation::RSL::{cconfiguration::*, cconstants::*, cmessage::*, types_i::*};
 use crate::protocol::common::upper_bound::*;
@@ -12,10 +13,9 @@ use std::collections::hash_set::Iter;
 use std::collections::HashSet;
 use std::collections::*;
 use std::result;
-use crate::common::framework::environment_s::*;
-use crate::common::native::io_s::*;
 use vstd::hash_set::HashSetWithView;
 use vstd::invariant;
+use vstd::prelude::*;
 use vstd::std_specs::hash::*;
 use vstd::{hash_map::*, map::*, prelude::*, seq::*, set::*};
 
@@ -644,7 +644,7 @@ impl CElectionState
         ensures
         ({
             let ss = self@;
-            && r == exists |req:Request| (ss.requests_received_prev_epochs.contains(req) 
+            && r == exists |req:Request| (ss.requests_received_prev_epochs.contains(req)
                                         || ss.requests_received_this_epoch.contains(req))
                                         && RequestsMatch(req, target@)
         })
@@ -710,8 +710,8 @@ impl CElectionState
         assert(!found);
         assert(forall |n:int| 0 <= n < ss.requests_received_this_epoch.len() ==> !RequestsMatch(ss.requests_received_this_epoch[n], starget));
         assert(forall |req:Request| ss.requests_received_prev_epochs.contains(req) ==> !RequestsMatch(req, starget));
-        
-        assert(!(exists |req:Request| (ss.requests_received_prev_epochs.contains(req) 
+
+        assert(!(exists |req:Request| (ss.requests_received_prev_epochs.contains(req)
         || ss.requests_received_this_epoch.contains(req))
         && RequestsMatch(req, starget)));
 
@@ -719,19 +719,19 @@ impl CElectionState
     }
 
     #[verifier(external_body)]
-    pub fn FindEarlierRequestsInSet(& self, target:CRequest) -> (r:bool) 
+    pub fn FindEarlierRequestsInSet(& self, target:CRequest) -> (r:bool)
         requires
             self.valid(),
             target.valid(),
         ensures
         ({
             let ss = self@;
-            && r == exists |req:Request| (ss.requests_received_prev_epochs.contains(req) 
+            && r == exists |req:Request| (ss.requests_received_prev_epochs.contains(req)
                                         || ss.requests_received_this_epoch.contains(req))
                                         && RequestsMatch(req, target@)
         })
     {
-        let header = CRequestHeader{client:target.client.clone_up_to_view(), seqno:target.seqno};   
+        let header = CRequestHeader{client:target.client.clone_up_to_view(), seqno:target.seqno};
         let b1 = self.prev_req_set.contains(&header);
         if b1 {
             true
@@ -761,7 +761,7 @@ impl CElectionState
         }
     }
 
-    
+
 
     // #[verifier(external_body)]
     pub fn CElectionStateReflectReceivedRequest(
@@ -913,7 +913,7 @@ impl CElectionState
         let mut new_seq = Vec::new();
         // let mut new_set:HashSet<CRequestHeader> = HashSet::new();
 
-        while i < len 
+        while i < len
         {
             let header = CRequestHeader{client:requests[i].client.clone_up_to_view(), seqno:requests[i].seqno};
             if Self::CRequestSatisfiedBy(&requests[i], r) {

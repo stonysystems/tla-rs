@@ -1,16 +1,16 @@
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::environment::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::environment::*;
 
 use crate::protocol::RSL::common_proof::assumptions::*;
 
-use crate::common::logic::temporal_s::*;
 use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
 
-verus!{
+verus! {
     pub open spec fn ConstantsAllConsistentInv(ps:RslState) -> bool
     {
         &&& ps.constants.config.replica_ids.len() == ps.replicas.len()
@@ -78,8 +78,8 @@ verus!{
     {
         assert(IsValidBehaviorPrefix(b, c, i));
     }
-    
-    // #[verifier(spinoff_prover)] 
+
+    // #[verifier(spinoff_prover)]
     pub proof fn lemma_ConstantsAllConsistent(
         b:Behavior<RslState>,
         c:LConstants,
@@ -92,7 +92,7 @@ verus!{
         decreases i
     {
         TemporalAssist();
-        // lemma_ValidPrefixHolds(b, c, i); 
+        // lemma_ValidPrefixHolds(b, c, i);
         if i > 0
         {
           lemma_ConstantsAllConsistent(b, c, i-1);

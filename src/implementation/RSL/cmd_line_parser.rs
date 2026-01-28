@@ -1,26 +1,18 @@
-use crate::implementation::common::function::*;
-use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::{get_host_index, seq_is_unique, test_unique};
 use crate::common::framework::args_t::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;
 use crate::implementation::common::cmd_line_parser_i::*;
+use crate::implementation::common::function::*;
 use crate::implementation::RSL::{
-    cconfiguration::*,
-    replicaimpl_class::*, 
-    cmessage::*, cbroadcast::*, 
-    replicaimpl_delivery::*, 
-    netrsl_i::*, 
-    ReplicaImpl::*,
-    replicaimpl_read_clock::*,
-    replicaimpl_process_packet_no_clock::*,
-    replicaimpl_process_packet_x::*,
-    replicaimpl_no_receive_clock::*,
-    replicaimpl_no_receive_no_clock::*,
-    replicaimpl_main::*,
+    cbroadcast::*, cconfiguration::*, cmessage::*, netrsl_i::*, replicaimpl_class::*,
+    replicaimpl_delivery::*, replicaimpl_main::*, replicaimpl_no_receive_clock::*,
+    replicaimpl_no_receive_no_clock::*, replicaimpl_process_packet_no_clock::*,
+    replicaimpl_process_packet_x::*, replicaimpl_read_clock::*, ReplicaImpl::*,
 };
+use vstd::prelude::*;
 
-verus!{
+verus! {
     #[verifier(external_body)]
     pub fn parse_cmd_line(me: &EndPoint, args: &Args) -> (rc: (Option<(CConfiguration, usize)>))
     {

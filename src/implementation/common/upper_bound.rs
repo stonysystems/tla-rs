@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use crate::common::collections::seq_is_unique_v::*;
 use crate::common::collections::seqs::*;
 use crate::common::framework::environment_s::*;
@@ -9,6 +8,7 @@ use crate::implementation::RSL::cconfiguration::*;
 use crate::protocol::common::upper_bound::*;
 use crate::services::RSL::app_state_machine::*;
 use std::collections::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 

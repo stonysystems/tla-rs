@@ -1,5 +1,5 @@
-use vstd::prelude::*;
 use std::collections::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 // use std::collections::Vector;
@@ -540,4 +540,3 @@ verus! {
     }
 
 }
-

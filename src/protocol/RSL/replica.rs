@@ -1,18 +1,18 @@
+use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::broadcast::*;
+use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::message::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::state_machine::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::configuration::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::broadcast::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::message::*;
-use crate::protocol::RSL::state_machine::*;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::executor::*;
-use crate::protocol::RSL::learner::*;
-use crate::protocol::RSL::proposer::*;
 
 use crate::protocol::common::upper_bound::*;
 
@@ -32,7 +32,7 @@ verus! {
     }
 
     pub open spec fn LReplicaInit(r:LReplica, c:LReplicaConstants) -> bool
-        recommends 
+        recommends
             WellFormedLConfiguration(c.all.config)
     {
         &&& r.constants == c
@@ -44,9 +44,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextProcessInvalid(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageInvalid
@@ -56,9 +56,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextProcessRequest(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageRequest
@@ -84,9 +84,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextProcess1a(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessage1a
@@ -104,9 +104,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextProcess1b(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessage1b
@@ -128,15 +128,15 @@ verus! {
                 executor:s.executor
             }
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
-    
+
     pub open spec fn LReplicaNextProcessStartingPhase2(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageStartingPhase2
@@ -153,9 +153,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextProcess2a(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessage2a
@@ -175,15 +175,15 @@ verus! {
                 executor:s.executor
             }
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LReplicaNextProcess2b(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessage2b
@@ -202,27 +202,27 @@ verus! {
             }
             &&& sent_packets == Seq::<RslPacket>::empty()
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LReplicaNextProcessReply(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageReply
     {
-        &&& s_ == s 
+        &&& s_ == s
         &&& sent_packets == Seq::<RslPacket>::empty()
     }
 
     pub open spec fn LReplicaNextProcessAppStateSupply(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageAppStateSupply
@@ -242,15 +242,15 @@ verus! {
             }
             &&& sent_packets == Seq::<RslPacket>::empty()
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LReplicaNextProcessAppStateRequest(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageAppStateRequest
@@ -267,10 +267,10 @@ verus! {
     }
 
     pub open spec fn LReplicaNextProcessHeartbeat(
-        s:LReplica, 
-        s_:LReplica, 
-        received_packet:RslPacket, 
-        clock:int, 
+        s:LReplica,
+        s_:LReplica,
+        received_packet:RslPacket,
+        clock:int,
         sent_packets:Seq<RslPacket>
     ) -> bool
     recommends received_packet.msg is RslMessageHeartbeat
@@ -289,8 +289,8 @@ verus! {
     }
 
     pub open spec fn LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(
-        s:LReplica, 
-        s_:LReplica, 
+        s:LReplica,
+        s_:LReplica,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -306,8 +306,8 @@ verus! {
     }
 
     pub open spec fn LReplicaNextSpontaneousMaybeEnterPhase2(
-        s:LReplica, 
-        s_:LReplica, 
+        s:LReplica,
+        s_:LReplica,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -323,9 +323,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextReadClockMaybeNominateValueAndSend2a(
-        s:LReplica, 
-        s_:LReplica, 
-        clock:ClockReading, 
+        s:LReplica,
+        s_:LReplica,
+        clock:ClockReading,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -341,8 +341,8 @@ verus! {
     }
 
     pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
-        s:LReplica, 
-        s_:LReplica, 
+        s:LReplica,
+        s_:LReplica,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -360,16 +360,16 @@ verus! {
                                         }
                                         &&& sent_packets == Seq::<RslPacket>::empty()
                                     } else {
-                                        &&& s_ == s 
+                                        &&& s_ == s
                                         &&& sent_packets == Seq::<RslPacket>::empty()
                                     }
     }
 
     pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(
-        s:LReplica, 
-        s_:LReplica, 
+        s:LReplica,
+        s_:LReplica,
         sent_packets:Seq<RslPacket>
-    ) -> bool 
+    ) -> bool
     {
         let opn = s.executor.ops_complete;
         if s.executor.next_op_to_execute is OutstandingOpUnknown
@@ -388,14 +388,14 @@ verus! {
             }
             &&& sent_packets == Seq::<RslPacket>::empty()
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LReplicaNextSpontaneousMaybeExecute(
-        s:LReplica, 
-        s_:LReplica, 
+        s:LReplica,
+        s_:LReplica,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -416,21 +416,21 @@ verus! {
                 executor:s_.executor
             }
         } else {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         }
     }
 
     pub open spec fn LReplicaNextReadClockMaybeSendHeartbeat(
-        s:LReplica, 
-        s_:LReplica, 
-        clock:ClockReading, 
+        s:LReplica,
+        s_:LReplica,
+        clock:ClockReading,
         sent_packets:Seq<RslPacket>
-    ) -> bool 
+    ) -> bool
     {
         if clock.t < s.nextHeartbeatTime
         {
-            &&& s_ == s 
+            &&& s_ == s
             &&& sent_packets == Seq::<RslPacket>::empty()
         } else {
             &&& s_.nextHeartbeatTime == UpperBoundedAddition(clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val)
@@ -453,9 +453,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextReadClockCheckForViewTimeout(
-        s:LReplica, 
-        s_:LReplica, 
-        clock:ClockReading, 
+        s:LReplica,
+        s_:LReplica,
+        clock:ClockReading,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -472,9 +472,9 @@ verus! {
     }
 
     pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(
-        s:LReplica, 
-        s_:LReplica, 
-        clock:ClockReading, 
+        s:LReplica,
+        s_:LReplica,
+        clock:ClockReading,
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
@@ -505,7 +505,7 @@ verus! {
     }
 
     #[verifier::external_body]
-    pub proof fn lemma_ExtractSentPacketsFromIos(ios:Seq<RslIo>) 
+    pub proof fn lemma_ExtractSentPacketsFromIos(ios:Seq<RslIo>)
         ensures forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) <==> ios.contains(LIoOp::Send{s:p})
     {
 
@@ -534,10 +534,10 @@ verus! {
                 let pkts = front_p + rest_p;
                 SeqConcatenate(front_p, rest_p);
                 assert(forall |p:RslPacket| front_p.contains(p) || rest_p.contains(p) <==> pkts.contains(p));
-                assert(forall |p:RslPacket| pkts.contains(p) ==> ios.contains(LIoOp::Send{s:p})); 
+                assert(forall |p:RslPacket| pkts.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
                 assert(forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p}));
 
-                
+
                 // assert(forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p));
 
                 // assert(forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) <==> ios.contains(LIoOp::Send{s:p}));
@@ -551,7 +551,7 @@ verus! {
         ensures forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p)
     {
         assume(forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p));
-    } 
+    }
 
     pub proof fn SeqConcatenate<T>(s1:Seq<T>, s2:Seq<T>)
         ensures forall |i:T| s1.contains(i) || s2.contains(i) <==> (s1+s2).contains(i)
@@ -575,9 +575,9 @@ verus! {
 
         assert(forall |i:T| s.contains(i) ==> s1.contains(i) || s2.contains(i));
     }
-    
 
-    pub open spec fn LReplicaNextReadClockAndProcessPacket(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool 
+
+    pub open spec fn LReplicaNextReadClockAndProcessPacket(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool
         recommends
             ios.len() >= 1,
             ios[0] is Receive,
@@ -589,7 +589,7 @@ verus! {
         &&& LReplicaNextProcessHeartbeat(s, s_, ios[0]->r, ios[1]->t, ExtractSentPacketsFromIos(ios))
     }
 
-    pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool 
+    pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool
         recommends
             ios.len() >= 1,
             ios[0] is Receive,
@@ -612,7 +612,7 @@ verus! {
             }
     }
 
-    pub open spec fn LReplicaNextProcessPacket(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool 
+    pub open spec fn LReplicaNextProcessPacket(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool
     {
         &&& ios.len() >= 1
         &&& if ios[0] is TimeoutReceive {
@@ -697,7 +697,7 @@ verus! {
         &&& s.nextActionIndex == 0
     }
 
-    pub open spec fn LSchedulerNext(s:LScheduler, s_:LScheduler, ios:Seq<RslIo>) -> bool 
+    pub open spec fn LSchedulerNext(s:LScheduler, s_:LScheduler, ios:Seq<RslIo>) -> bool
     {
         &&& s_.nextActionIndex == (s.nextActionIndex + 1) % LReplicaNumActions()
         &&& if s.nextActionIndex == 0 {

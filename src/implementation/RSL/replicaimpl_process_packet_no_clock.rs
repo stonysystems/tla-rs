@@ -1,14 +1,17 @@
+use crate::common::native::io_s::*;
 use crate::implementation::common::function::*;
+use crate::implementation::RSL::{
+    cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
+    ReplicaImpl::*,
+};
+use crate::protocol::RSL::environment::*;
+use crate::verus_extra::seq_lib_v::*;
 use vstd::prelude::*;
 use vstd::slice::*;
-use crate::verus_extra::seq_lib_v::*;
-use crate::common::native::io_s::*;
-use crate::protocol::RSL::environment::*;
-use crate::implementation::RSL::{replicaimpl_class::*, cmessage::*, cbroadcast::*, replicaimpl_delivery::*, netrsl_i::*, ReplicaImpl::*};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
-verus!{
+verus! {
 
     pub fn replica_next_process_packet_invalid(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket)
     {
@@ -17,7 +20,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_request(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcessRequest(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -25,7 +28,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_1a(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcess1a(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -33,7 +36,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_1b(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcess1b(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -41,7 +44,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_starting_phase2(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcessStartingPhase2(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -49,7 +52,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_2a(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcess2a(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -57,7 +60,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_2b(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcess2b(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -65,7 +68,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_reply(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcessReply(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -73,7 +76,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_appstate_request(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcessAppStateRequest(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
@@ -81,7 +84,7 @@ verus!{
 
     #[verifier(external_body)]
     pub fn replica_next_process_packet_appstate_supply(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
-    {   
+    {
         let outpackets = CReplica::CReplicaNextProcessAppStateSupply(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok

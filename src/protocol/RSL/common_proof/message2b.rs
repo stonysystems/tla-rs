@@ -1,28 +1,28 @@
+use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::common_proof::actions::*;
+use crate::protocol::RSL::common_proof::assumptions::*;
+use crate::protocol::RSL::common_proof::constants::*;
+use crate::protocol::RSL::common_proof::environment::*;
+use crate::protocol::RSL::common_proof::message2a::*;
+use crate::protocol::RSL::common_proof::packet_sending::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::learner::*;
-use crate::protocol::RSL::replica::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::common_proof::assumptions::*;
-use crate::protocol::RSL::common_proof::constants::*;
-use crate::protocol::RSL::common_proof::actions::*;
-use crate::protocol::RSL::common_proof::message2a::*;
-use crate::protocol::RSL::common_proof::environment::*;
-use crate::protocol::RSL::common_proof::packet_sending::*;
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
     // #[verifier::external_body]
     pub proof fn lemma_2bMessageHasCorresponding2aMessage(
         b:Behavior<RslState>,
@@ -37,7 +37,7 @@ verus!{
                 b[i].environment.sentPackets.contains(p_2b),
                 c.config.replica_ids.contains(p_2b.src),
                 p_2b.msg is RslMessage2b,
-        ensures 
+        ensures
                 b[i].environment.sentPackets.contains(p_2a),
                 c.config.replica_ids.contains(p_2a.src),
                 p_2a.msg is RslMessage2a,
@@ -57,25 +57,25 @@ verus!{
             assume(p_2a.msg->val_2a == p_2b.msg->val_2b);
             return arbitrary();
         }
-    
+
         if b[i-1].environment.sentPackets.contains(p_2b)
         {
             let p_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i-1, p_2b);
             lemma_PacketStaysInSentPackets(b, c, i-1, i, p_2a);
             return p_2a;
         }
-    
+
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_ConstantsAllConsistent(b, c, i-1);
-    
+
         let (idx, ios) = lemma_ActionThatSends2bIsProcess2a(b[i-1], b[i], p_2b);
         let p_2a = ios[0]->r;
 
         let s = b[i-1].replicas[idx].replica.acceptor;
         let s_ = b[i].replicas[idx].replica.acceptor;
         let nextActionIndex = b[i-1].replicas[idx].nextActionIndex;
-        
+
         let e = b[i-1].environment;
         let e_ = b[i].environment;
 
@@ -167,10 +167,10 @@ verus!{
         lemma_ReplicaConstantsAllConsistent(b, c, i, idx);
         lemma_ReplicaConstantsAllConsistent(b, c, i+1, idx);
         lemma_AssumptionsMakeValidTransition(b, c, i);
-    
+
         let s = b[i].replicas[idx].replica.acceptor;
         let s_ = b[i+1].replicas[idx].replica.acceptor;
-    
+
         if s_.votes[opn].max_val != s.votes[opn].max_val
         {
             let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i, idx);
@@ -178,7 +178,7 @@ verus!{
             let s = b[i].replicas[idx].replica.acceptor;
             let s_ = b[i+1].replicas[idx].replica.acceptor;
             let nextActionIndex = b[i].replicas[idx].nextActionIndex;
-            
+
             let e = b[i].environment;
             let e_ = b[i+1].environment;
 
@@ -229,7 +229,7 @@ verus!{
                 0 <= i,
                 0 <= idx < b[i].replicas.len(),
                 b[i].replicas[idx].replica.acceptor.votes.contains_key(opn),
-        ensures 
+        ensures
                 b[i].environment.sentPackets.contains(p),
                 c.config.replica_ids.contains(p.src),
                 p.msg is RslMessage2a,
@@ -249,22 +249,22 @@ verus!{
             assume(p.msg->val_2a == b[i].replicas[idx].replica.acceptor.votes[opn].max_val);
             return p;
         }
-    
+
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_ConstantsAllConsistent(b, c, i-1);
-    
+
         let s = b[i-1].replicas[idx].replica.acceptor;
         let s_ = b[i].replicas[idx].replica.acceptor;
-    
+
         if s_.votes == s.votes
         {
           let p = lemma_VoteWithOpnImplies2aSent(b, c, i-1, idx, opn);
           return p;
         }
-    
+
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
-        
+
 
 
         if s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
@@ -276,7 +276,7 @@ verus!{
         let s = b[i-1].replicas[idx].replica.acceptor;
         let s_ = b[i].replicas[idx].replica.acceptor;
         let nextActionIndex = b[i-1].replicas[idx].nextActionIndex;
-        
+
         let e = b[i-1].environment;
         let e_ = b[i].environment;
 
@@ -303,7 +303,7 @@ verus!{
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
-    
+
         let p = ios[0]->r;
         // let p = arbitrary();
         assert(b[i].environment.sentPackets.contains(p));
@@ -366,15 +366,15 @@ verus!{
             });
             return arbitrary(); // Placeholder return value
         }
-    
+
         lemma_AssumptionsMakeValidTransition(b, c, i - 1);
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_ConstantsAllConsistent(b, c, i - 1);
-    
+
         let v = p.msg->val_2b;
         let opn = p.msg->opn_2b;
         let bal = p.msg->bal_2b;
-    
+
         if b[i - 1].environment.sentPackets.contains(p) {
             let acceptor_idx = lemma_2bMessageImplicationsForCAcceptor(b, c, i - 1, p);
             let s = b[i - 1].replicas[acceptor_idx].replica.acceptor;
@@ -385,7 +385,7 @@ verus!{
                 // // let s = b[i-1].replicas[idx].replica.acceptor;
                 // // let s_ = b[i].replicas[idx].replica.acceptor;
                 // let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-                
+
                 // let e = b[i-1].environment;
                 // let e_ = b[i].environment;
 
@@ -422,7 +422,7 @@ verus!{
             }
             return acceptor_idx;
         }
-    
+
         assert(p.msg is RslMessage2b);
         assert(!b[i - 1].environment.sentPackets.contains(p));
         assert(b[i].environment.sentPackets.contains(p));
@@ -432,7 +432,7 @@ verus!{
         let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
 
         let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-                
+
         let e = b[i-1].environment;
         let e_ = b[i].environment;
 
@@ -464,16 +464,16 @@ verus!{
         assert(e.sentPackets.contains(ios[0]->r));
         assert(pkts.contains(p));
 
-        
+
         assert(p.msg->bal_2b == recv.msg->bal_2a);
         assert(s_.max_bal == recv.msg->bal_2a);
         assert(BalLeq(p.msg->bal_2b, b[i].replicas[acceptor_idx].replica.acceptor.max_bal));
         assert(p.msg->opn_2b == recv.msg->opn_2a);
-        assert(p.msg->opn_2b >= s_.log_truncation_point ==> 
+        assert(p.msg->opn_2b >= s_.log_truncation_point ==>
             s_.votes.contains_key(p.msg->opn_2b) &&
             BalLeq(p.msg->bal_2b, s_.votes[p.msg->opn_2b].max_value_bal) &&
             (s_.votes[p.msg->opn_2b].max_value_bal == p.msg->bal_2b ==> s_.votes[p.msg->opn_2b].max_val == p.msg->val_2b));
-        
+
         return acceptor_idx;
     }
 }

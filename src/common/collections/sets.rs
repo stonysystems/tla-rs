@@ -1,6 +1,5 @@
-
 use vstd::prelude::*;
-verus!{
+verus! {
     pub open spec fn Injective<X,Y>(f: spec_fn(X) -> Y) -> bool
     {
         forall |x1:X, x2:X| #![trigger f(x1), f(x2)] f(x1) == f(x2) ==> x1 == x2
@@ -44,10 +43,10 @@ verus!{
         recommends s.len() > 0
     {
         choose |m: int|
-            s.contains(m) && 
+            s.contains(m) &&
             forall |i: int| s.contains(i) ==> m >= i
     }
-    
+
     #[verifier::external_body]
     pub proof fn lemma_intsetmax_ensures(s: Set<int>)
         requires s.len() > 0
@@ -116,7 +115,7 @@ verus!{
     {
         if (x.subset_of(y)) {
 
-        } 
+        }
         if (x==y) {
 
         }
@@ -132,18 +131,18 @@ verus!{
         //     assert(0 <= y.len());
         // } else {
         //     let e: T = choose |e: T| x.contains(e);
-    
+
         //     let x_ = x.remove(e);
         //     let y_ = y.remove(e);
-    
+
         //     assert(y.contains(e));
-    
+
         //     spec_apply(subset_remove(x, y, e));
 
         //     spec_apply(set_remove_len(x, e));
 
         //     spec_apply(set_remove_len(y, e));
-    
+
         //     subset_cardinality(x_, y_);
 
         //     assert(x.len() == x_.len() + 1);
@@ -157,7 +156,7 @@ verus!{
         requires forall |y:T| s.contains(y) ==> y != x
         ensures s.insert(x).len() == s.len() + 1
     {
-        
+
     }
 
     #[verifier::external_body]
@@ -168,5 +167,5 @@ verus!{
     ensures
         s1 == s2
     {}
-    
+
 }

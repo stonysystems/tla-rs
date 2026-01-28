@@ -1,9 +1,9 @@
-use vstd::prelude::*;
-use vstd::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::message::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
+use crate::protocol::RSL::message::*;
+use crate::protocol::RSL::types::*;
+use vstd::prelude::*;
+use vstd::*;
 
 verus! {
     pub type RslEnvironment = LEnvironment<AbstractEndPoint, RslMessage>;

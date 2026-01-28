@@ -1,22 +1,17 @@
+use crate::common::native::io_s::*;
 use crate::implementation::common::function::*;
+use crate::implementation::RSL::{
+    cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
+    replicaimpl_process_packet_no_clock::*, replicaimpl_read_clock::*, ReplicaImpl::*,
+};
+use crate::protocol::RSL::environment::*;
+use crate::verus_extra::seq_lib_v::*;
 use vstd::prelude::*;
 use vstd::slice::*;
-use crate::verus_extra::seq_lib_v::*;
-use crate::common::native::io_s::*;
-use crate::protocol::RSL::environment::*;
-use crate::implementation::RSL::{
-    replicaimpl_class::*, 
-    cmessage::*, cbroadcast::*, 
-    replicaimpl_delivery::*, 
-    netrsl_i::*, 
-    ReplicaImpl::*,
-    replicaimpl_read_clock::*,
-    replicaimpl_process_packet_no_clock::*,
-};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
-verus!{
+verus! {
     #[verifier(external_body)]
     pub fn replica_no_receive_read_clock_next_maybe_nominate_value_send_2a(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
     {

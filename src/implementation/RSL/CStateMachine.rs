@@ -1,4 +1,3 @@
-use vstd::prelude::*;
 use crate::common::collections::vecs::*;
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::RSL::appinterface::*;
@@ -7,6 +6,7 @@ use crate::protocol::RSL::state_machine::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
 use std::collections::HashMap;
+use vstd::prelude::*;
 use vstd::{prelude::*, seq::*, seq_lib::*};
 
 verus! {
@@ -87,24 +87,24 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
         assert(replies@.len()==rs_prime.len());
         assert(states@.last()@ == ss_prime.last());
 
-        
+
         let ghost expected_reply = Reply {
             client: batch[batch.len()-1].client@,
             seqno: batch[batch.len()-1].seqno as int,
             reply: reply@,
         };
-        
+
         let ghost expected = rest_replies@.map(|i, x:CReply| x@) + seq![expected_reply];
         assert(rs_prime == expected);
-        
+
         //Endpoints and Replies are not holding across refinement
         assume(replies@[replies.len()-1]@.client == rs_prime.last().client);
         assert(replies@[replies.len()-1]@.seqno == rs_prime.last().seqno);
         assume(replies@[replies.len()-1]@.reply == rs_prime.last().reply);
         assert(replies@[replies@.len()-1]@ == expected_reply);
         assert(rs_prime[rs_prime.len()-1] == expected_reply);
-        
-        assert(replies@.last()@ == rs_prime.last()); 
+
+        assert(replies@.last()@ == rs_prime.last());
         assert(states@.map(|i, x: CAppState| x@) == ss_prime);
         assert(replies@.map(|i, x: CReply| x@) == rs_prime);
         assert(

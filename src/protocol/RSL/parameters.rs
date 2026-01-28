@@ -1,5 +1,5 @@
-use vstd::prelude::*;
 use crate::protocol::common::upper_bound::*;
+use vstd::prelude::*;
 use vstd::*;
 
 verus! {

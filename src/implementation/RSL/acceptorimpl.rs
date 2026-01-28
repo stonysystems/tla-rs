@@ -1,7 +1,7 @@
-use vstd::prelude::*;
 use super::types_i::COperationNumber;
 use crate::common::collections::sets::*;
 use std::collections::HashMap;
+use vstd::prelude::*;
 
 // use std::iter::Map;
 use std::hash::RandomState;
@@ -524,8 +524,8 @@ verus! {
 
                 if self.log_truncation_point <= opn_2a {
                     let new_min_vote_opn = Self::CAddVoteAndRemoveOldOnes_optimized(
-                        &mut self.votes, 
-                        opn_2a, 
+                        &mut self.votes,
+                        opn_2a,
                         & CVote {
                             max_value_bal: bal_2a,
                             max_val: val_2b_cloned,
@@ -717,7 +717,7 @@ verus! {
             if s[0] > target {
                 assume(temp + 1 < 0xffff_ffff_ffff_ffff);
                 temp + 1
-            } else 
+            } else
             {
                 temp
             }
@@ -742,11 +742,11 @@ verus! {
         } else {
             let rest = truncate_vecu64(s, 1, s.len());
             let temp = CCountLargerOrEqualInSeq(&rest, target);
-            assert(temp == CountMatchesInSeq(ss.subrange(1, ss.len() as int), |x:int| x >= target as int)); 
+            assert(temp == CountMatchesInSeq(ss.subrange(1, ss.len() as int), |x:int| x >= target as int));
             if s[0] >= target {
                 assume(temp + 1 < 0xffff_ffff_ffff_ffff);
                 temp + 1
-            } else 
+            } else
             {
                 temp
             }

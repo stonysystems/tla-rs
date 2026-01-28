@@ -1,9 +1,9 @@
 #![allow(unused_imports)]
 #![allow(unused_attributes)]
 #![verus::trusted]
-use vstd::prelude::*;
 use vstd::modes::*;
 use vstd::multiset::*;
+use vstd::prelude::*;
 
 use crate::implementation::common::marshalling::Marshalable;
 
@@ -125,10 +125,10 @@ verus! {
     }
 
     pub proof fn my_proof(x: bool) {
-        
+
         // assert!(x==true);
         assert(1 + 1 == 2);
-        
+
     }
 
     #[verifier(external_body)]

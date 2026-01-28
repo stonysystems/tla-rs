@@ -1,28 +1,28 @@
+use crate::protocol::RSL::common_proof::actions::*;
+use crate::protocol::RSL::common_proof::assumptions::*;
+use crate::protocol::RSL::common_proof::chosen::*;
+use crate::protocol::RSL::common_proof::constants::*;
+use crate::protocol::RSL::common_proof::environment::*;
+use crate::protocol::RSL::common_proof::message2a::*;
+use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::configuration::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::common_proof::assumptions::*;
-use crate::protocol::RSL::common_proof::constants::*;
-use crate::protocol::RSL::common_proof::actions::*;
-use crate::protocol::RSL::common_proof::message2a::*;
-use crate::protocol::RSL::common_proof::chosen::*;
-use crate::protocol::RSL::common_proof::environment::*;
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
 use crate::common::collections::sets::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
 
     pub open spec fn IsValidQuorumOf2bsSequence(ps:RslState, qs:Seq<QuorumOf2bs>) -> bool
     {
@@ -151,19 +151,19 @@ verus!{
           let qs = Seq::<QuorumOf2bs>::empty();
           return qs;
         }
-      
+
         let qs = lemma_GetMaximalQuorumOf2bsSequenceWithinBound(b, c, i, bound-1);
         if !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == qs.len()
         {
           return arbitrary();
         }
-      
+
         assert(qs.len() == bound - 1);
         let q = choose |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound - 1;
         let new_qs = qs + seq![q];
         new_qs
     }
-      
+
     pub proof fn lemma_GetMaximalQuorumOf2bsSequence(
         b:Behavior<RslState>,
         c:LConstants,
@@ -178,7 +178,7 @@ verus!{
         let qs = lemma_GetMaximalQuorumOf2bsSequenceWithinBound(b, c, i, bound);
         qs
     }
-    
+
     pub proof fn lemma_IfValidQuorumOf2bsSequenceNowThenNext(
         b: Behavior<RslState>,
         c: LConstants,
@@ -194,13 +194,13 @@ verus!{
     {
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_ConstantsAllConsistent(b, c, i + 1);
-    
+
         assert forall|opn: int| 0 <= opn < qs.len() implies
             qs[opn].opn == opn && IsValidQuorumOf2bs(b[i + 1], qs[opn])
         by {
             assert(qs[opn].opn == opn);
             assert(IsValidQuorumOf2bs(b[i], qs[opn]));
-            
+
             assert forall|idx: int| qs[opn].indices.contains(idx) implies
                  b[i + 1].environment.sentPackets.contains(qs[opn].packets[idx])
             by {
@@ -227,7 +227,7 @@ verus!{
     {
         let batches1 = GetSequenceOfRequestBatches(qs1);
         let batches2 = GetSequenceOfRequestBatches(qs2);
-    
+
         if qs1.len() > qs2.len() {
             assert(IsValidQuorumOf2bs(b[i], qs1[qs2.len() as int]) && qs1[qs2.len() as int].opn == qs2.len());
             assert(false);
@@ -236,7 +236,7 @@ verus!{
             assert(IsValidQuorumOf2bs(b[i], qs2[qs1.len() as int]) && qs2[qs1.len() as int].opn == qs1.len());
             assert(false);
         }
-        
+
         assert forall|opn: int| 0 <= opn < qs1.len() implies
             batches1[opn] == batches2[opn]
         by {
@@ -245,7 +245,7 @@ verus!{
             lemma_SequenceOfRequestBatchesNthElement(qs2, opn);
         }
     }
-     
+
     #[verifier::external_body]
     pub proof fn lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence(
         b: Behavior<RslState>,
@@ -265,12 +265,12 @@ verus!{
     {
         let batches1 = GetSequenceOfRequestBatches(qs_regular);
         let batches2 = GetSequenceOfRequestBatches(qs_maximal);
-    
+
         if qs_regular.len() > qs_maximal.len() {
             assert(IsValidQuorumOf2bs(b[i], qs_regular[qs_maximal.len() as int]) && qs_regular[qs_maximal.len() as int].opn == qs_maximal.len());
             assert(false);
         }
-        
+
         assert forall |opn: int| 0 <= opn < qs_regular.len() implies batches1[opn] == batches2[opn] by {
             lemma_ChosenQuorumsMatchValue(b, c, i, qs_regular[opn], qs_maximal[opn]);
             lemma_SequenceOfRequestBatchesNthElement(qs_regular, opn);

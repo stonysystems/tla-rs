@@ -1,21 +1,21 @@
+use crate::protocol::RSL::common_proof::assumptions::*;
+use crate::protocol::RSL::common_proof::constants::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::replica::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::environment::*;
-use crate::protocol::RSL::replica::*;
-use crate::protocol::RSL::common_proof::assumptions::*;
-use crate::protocol::RSL::common_proof::constants::*;
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
     pub open spec fn PacketProcessedViaIos(
         ps:RslState,
         ps_:RslState,
@@ -89,10 +89,10 @@ verus!{
         let id = ps.constants.config.replica_ids[idx];
         let e = ps.environment;
         let e_ = ps_.environment;
-    
+
         assert(IsValidLIoOp(LIoOp::Receive{r:inp}, id, ps.environment));
         assert(e.nextStep == LEnvStep::LEnvStepHostIos{actor:ps.constants.config.replica_ids[idx], ios:ios});
-        
+
         let pkts = ExtractSentPacketsFromIos(ios);
         // assume(forall |p:RslPacket| pkts.contains(p) <==> ios.contains(LIoOp::Send{s:p}));
         assert(e.sentPackets.contains(inp));
@@ -116,14 +116,14 @@ verus!{
     {
         let ps = b[i];
         let ps_ = b[i+1];
-    
+
         lemma_AssumptionsMakeValidTransition(b, c, i);
         lemma_ConstantsAllConsistent(b, c, i);
-    
+
         let id = ps.constants.config.replica_ids[idx];
         let e = ps.environment;
         let e_ = ps_.environment;
-    
+
         assert(IsValidLIoOp(LIoOp::Receive{r:inp}, id, ps.environment));
         assert(e.sentPackets.contains(inp));
     }

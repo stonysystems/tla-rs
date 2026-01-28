@@ -105,7 +105,7 @@ verus! {
             CAppStateIsAbstractable(&s),
             AbstractifyCAppStateToAppState(&s) == AppInitialize(),
     {
-        0 
+        0
     }
 
     pub fn CappendIncrImpl(v:&u64) -> (rc:u64)

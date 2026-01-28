@@ -1,14 +1,14 @@
+use crate::common::native::io_s::*;
 use crate::implementation::common::function::*;
+use crate::implementation::RSL::{cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*};
+use crate::protocol::RSL::environment::*;
+use crate::verus_extra::seq_lib_v::*;
 use vstd::prelude::*;
 use vstd::slice::*;
-use crate::verus_extra::seq_lib_v::*;
-use crate::common::native::io_s::*;
-use crate::protocol::RSL::environment::*;
-use crate::implementation::RSL::{replicaimpl_class::*, cmessage::*, cbroadcast::*, netrsl_i::*};
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
-verus!{
+verus! {
     pub fn deliver_packet(r: &mut ReplicaImpl, netc:&mut NetClient, packet:&Option<CPacket>) -> (ok:bool)
     {
         let mut ok:bool = true;
@@ -23,7 +23,7 @@ verus!{
         }
         if !ok {
             // print
-        } 
+        }
         ok
     }
 
@@ -34,7 +34,7 @@ verus!{
 
         if !ok {
             // print
-        } 
+        }
         ok
     }
 
@@ -45,7 +45,7 @@ verus!{
 
         if !ok {
             // print
-        } 
+        }
         ok
     }
 

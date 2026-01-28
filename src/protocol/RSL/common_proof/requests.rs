@@ -1,25 +1,25 @@
+use crate::protocol::RSL::common_proof::assumptions::*;
+use crate::protocol::RSL::common_proof::constants::*;
+use crate::protocol::RSL::constants::*;
+use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::distributed_system::*;
-use crate::protocol::RSL::constants::*;
-use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::common_proof::assumptions::*;
-use crate::protocol::RSL::common_proof::constants::*;
 
-use crate::common::logic::temporal_s::*;
-use crate::common::logic::heuristics_i::*;
-use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::LEnvStep;
-use crate::common::native::io_s::*;
 use crate::common::collections::maps2::*;
+use crate::common::framework::environment_s::LEnvStep;
+use crate::common::framework::environment_s::*;
+use crate::common::logic::heuristics_i::*;
+use crate::common::logic::temporal_s::*;
+use crate::common::native::io_s::*;
 
-verus!{
+verus! {
     // #[verifier::external_body]
     pub proof fn lemma_RemoveAllSatisfiedRequestsInSequenceProducesSubsequence(
-        s_:Seq<Request>, 
-        s:Seq<Request>, 
+        s_:Seq<Request>,
+        s:Seq<Request>,
         r:Request
     )
         requires s_ == RemoveAllSatisfiedRequestsInSequence(s, r)
@@ -47,8 +47,8 @@ verus!{
     }
 
     pub proof fn lemma_RemoveExecutedRequestBatchProducesSubsequence(
-        s_:Seq<Request>, 
-        s:Seq<Request>, 
+        s_:Seq<Request>,
+        s:Seq<Request>,
         batch:RequestBatch
     )
         requires s_ == RemoveExecutedRequestBatch(s, batch)

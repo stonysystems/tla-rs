@@ -1,12 +1,12 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use vstd::prelude::*;
-use std::collections::HashSet;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::appinterface::CAppMessage;
 use crate::implementation::RSL::types_i::CRequestBatch;
 use crate::protocol::RSL::types::*;
+use std::collections::HashSet;
+use vstd::prelude::*;
 
 verus! {
 

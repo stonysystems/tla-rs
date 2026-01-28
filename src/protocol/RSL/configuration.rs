@@ -1,9 +1,9 @@
-use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
-use vstd::{set::*, set_lib::*};
-use crate::protocol::RSL::types::*;
+use crate::common::collections::seqs::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
-use crate::common::collections::seqs::*;
+use crate::protocol::RSL::types::*;
+use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
+use vstd::{set::*, set_lib::*};
 
 verus! {
     pub struct LConfiguration {
@@ -42,7 +42,7 @@ verus! {
     pub open spec fn GetReplicaIndex(id:AbstractEndPoint, c:LConfiguration) -> (idx:int)
         recommends
             c.replica_ids.contains(id)
-        // ensures 
+        // ensures
         //     // let idx = GetReplicaIndex(id, c);
         //     IsReplicaIndex(idx, id, c)
     {
