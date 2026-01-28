@@ -1,0 +1,29 @@
+// Mode annotations for election.rs spec functions
+// + = input (read-only)
+// - = output (computed)
+
+module RSL::election {
+    // struct ElectionState initialization
+    // es is output, c is input
+    ElectionStateInit(-, +);
+
+    // Process heartbeat from another replica
+    // es=input state, es_=output state, p=input packet, clock=input time
+    ElectionStateProcessHeartbeat(+, -, +, +);
+
+    // Check if current view has timed out
+    // es=input state, es_=output state, clock=input time
+    ElectionStateCheckForViewTimeout(+, -, +);
+
+    // Check if quorum of replicas suspect current view
+    // es=input state, es_=output state, clock=input time
+    ElectionStateCheckForQuorumOfViewSuspicions(+, -, +);
+
+    // Reflect a received client request
+    // es=input state, es_=output state, req=input request
+    ElectionStateReflectReceivedRequest(+, -, +);
+
+    // Reflect execution of a request batch
+    // es=input state, es_=output state, batch=input batch
+    ElectionStateReflectExecutedRequestBatch(+, -, +);
+}

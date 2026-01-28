@@ -944,14 +944,55 @@ impl Translator {
         }
     }
 
+    /// Check if a type is a primitive type that doesn't have a valid() predicate
+    fn is_primitive_type(ty: &crate::ast::Type) -> bool {
+        use crate::ast::Type;
+        match ty {
+            Type::Bool | Type::Int | Type::Nat | Type::Unit => true,
+            Type::Named(path) => {
+                // Get the last segment of the path as the type name
+                if let Some(name) = path.last() {
+                    // Common primitive type names
+                    matches!(
+                        name,
+                        "int"
+                            | "nat"
+                            | "bool"
+                            | "i8"
+                            | "i16"
+                            | "i32"
+                            | "i64"
+                            | "i128"
+                            | "isize"
+                            | "u8"
+                            | "u16"
+                            | "u32"
+                            | "u64"
+                            | "u128"
+                            | "usize"
+                            | "char"
+                            | "str"
+                            | "f32"
+                            | "f64"
+                    )
+                } else {
+                    false
+                }
+            }
+            Type::Reference { ty, .. } => Self::is_primitive_type(ty),
+            _ => false,
+        }
+    }
+
     /// Build requires clauses
     fn build_requires(&self, func: &AnnotatedFunction) -> Vec<String> {
         let mut requires = Vec::new();
 
         // Add validity requirements for input params (configurable predicate name)
+        // Skip primitive types as they don't have valid() predicates
         let validity_pred = &self.config.validity_predicate_name;
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
-            if *mode == ParameterMode::Input {
+            if *mode == ParameterMode::Input && !Self::is_primitive_type(&param.ty) {
                 requires.push(format!("{}.{}()", param.name, validity_pred));
             }
         }
@@ -1440,6 +1481,31 @@ impl Translator {
             Expr::Eq(lhs, rhs) => self.transform_equality(lhs, rhs, ctx),
 
             Expr::Call { func, args } => {
+                let func_name = func.last().unwrap_or("unknown");
+
+                // Check for empty collection constructors: Set::empty(), Seq::empty(), Map::empty()
+                // These should be converted to proper constructors, not translated with C prefix
+                if func_name == "empty" && args.is_empty() {
+                    // Get the type from the path (e.g., "Set" from "Set::<int>::empty")
+                    if !func.segments.is_empty() {
+                        let type_part = &func.segments[0];
+                        // Check if it's a collection type (may have type params like "Set::<int>")
+                        if type_part.starts_with("Set") {
+                            return Ok(ExecExpr::Call {
+                                func: "HashSet::new".to_string(),
+                                args: vec![],
+                            });
+                        } else if type_part.starts_with("Seq") {
+                            return Ok(ExecExpr::VecLit(vec![]));
+                        } else if type_part.starts_with("Map") {
+                            return Ok(ExecExpr::Call {
+                                func: "HashMap::new".to_string(),
+                                args: vec![],
+                            });
+                        }
+                    }
+                }
+
                 // Transform arguments, adding reference prefixes where appropriate
                 let translated_args: TranspileResult<Vec<_>> = args
                     .iter()
@@ -1471,7 +1537,6 @@ impl Translator {
                         }
                     })
                     .collect();
-                let func_name = func.last().unwrap_or("unknown");
                 Ok(ExecExpr::Call {
                     func: self.translate_name(func_name),
                     args: translated_args?,
@@ -1768,27 +1833,60 @@ impl Translator {
                 let var = &vars[0];
                 let var_name = var.name_string();
 
-                // Try to extract container and predicate from body
-                if let Some((container, predicate)) =
-                    self.extract_exists_container_and_pred(body, &var_name)
+                // Try to extract container(s) and predicate from body
+                // Handles both single container and disjunction of containers
+                if let Some((containers, predicate)) =
+                    self.extract_exists_containers_and_pred(body, &var_name)
                 {
-                    // Transform: exists |x| container.contains(x) && pred(x)
-                    // To: container.iter().any(|x| pred(x))
-                    let container_expr = self.transform_expr(&container, ctx)?;
                     let pred_expr = self.transform_expr(&predicate, ctx)?;
 
-                    Ok(ExecExpr::MethodCall {
-                        receiver: Box::new(ExecExpr::MethodCall {
-                            receiver: Box::new(container_expr),
+                    if containers.len() == 1 {
+                        // Single container: container.iter().any(|x| pred(x))
+                        let container_expr = self.transform_expr(&containers[0], ctx)?;
+                        Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(container_expr),
+                                method: "iter".to_string(),
+                                args: vec![],
+                            }),
+                            method: "any".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![var_name],
+                                body: Box::new(pred_expr),
+                            }],
+                        })
+                    } else {
+                        // Multiple containers: container1.iter().chain(container2.iter()).any(|x| pred(x))
+                        // Build the chained iterator
+                        let first_container = self.transform_expr(&containers[0], ctx)?;
+                        let mut chained = ExecExpr::MethodCall {
+                            receiver: Box::new(first_container),
                             method: "iter".to_string(),
                             args: vec![],
-                        }),
-                        method: "any".to_string(),
-                        args: vec![ExecExpr::Closure {
-                            params: vec![var_name],
-                            body: Box::new(pred_expr),
-                        }],
-                    })
+                        };
+
+                        for container in containers.iter().skip(1) {
+                            let container_expr = self.transform_expr(container, ctx)?;
+                            chained = ExecExpr::MethodCall {
+                                receiver: Box::new(chained),
+                                method: "chain".to_string(),
+                                args: vec![ExecExpr::MethodCall {
+                                    receiver: Box::new(container_expr),
+                                    method: "iter".to_string(),
+                                    args: vec![],
+                                }],
+                            };
+                        }
+
+                        Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(chained),
+                            method: "any".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![var_name],
+                                body: Box::new(pred_expr),
+                            }],
+                        })
+                    }
                 } else {
                     // Fallback: try to handle simple exists without container extraction
                     // Pattern: exists |x| pred(x) where pred doesn't have container.contains(x)
@@ -1798,7 +1896,7 @@ impl Translator {
                             var_name, var_name, var_name
                         ),
                         span: None,
-                        help: Some("Restructure to: exists |x| container.contains(x) && predicate(x)".to_string()),
+                        help: Some("Restructure to: exists |x| container.contains(x) && predicate(x) or (c1.contains(x) || c2.contains(x)) && predicate(x)".to_string()),
                     })
                 }
             }
@@ -3090,21 +3188,75 @@ impl Translator {
         matches!(expr, Expr::Ident(name) if name == var_name)
     }
 
-    /// Extract container and predicate from exists body
+    /// Extract containers from a disjunction of contains calls
+    /// Handles: (container1.contains(x) || container2.contains(x))
+    /// Returns a list of container expressions
+    fn extract_contains_disjunction(&self, expr: &Expr, element_var: &str) -> Option<Vec<Expr>> {
+        use crate::ast::Expr;
+
+        // Check for disjunction
+        if let Expr::Disjunction(parts) = expr {
+            let mut containers = Vec::new();
+            for part in parts {
+                if let Some(container) = self.extract_contains_receiver(part, element_var) {
+                    containers.push(container);
+                } else {
+                    // Not a pure disjunction of contains calls
+                    return None;
+                }
+            }
+            if !containers.is_empty() {
+                return Some(containers);
+            }
+        }
+
+        // Check for binary ||
+        if let Expr::Binary(lhs, crate::ast::BinOp::Or, rhs) = expr {
+            let mut containers = Vec::new();
+            // Try to extract from lhs
+            if let Some(container) = self.extract_contains_receiver(lhs, element_var) {
+                containers.push(container);
+            } else if let Some(mut nested) = self.extract_contains_disjunction(lhs, element_var) {
+                containers.append(&mut nested);
+            } else {
+                return None;
+            }
+            // Try to extract from rhs
+            if let Some(container) = self.extract_contains_receiver(rhs, element_var) {
+                containers.push(container);
+            } else if let Some(mut nested) = self.extract_contains_disjunction(rhs, element_var) {
+                containers.append(&mut nested);
+            } else {
+                return None;
+            }
+            return Some(containers);
+        }
+
+        // Single contains
+        if let Some(container) = self.extract_contains_receiver(expr, element_var) {
+            return Some(vec![container]);
+        }
+
+        None
+    }
+
+    /// Extract container(s) and predicate from exists body
     /// Handles: container.contains(x) && pred(x)
-    /// Returns (container, predicate_without_contains)
-    fn extract_exists_container_and_pred(
+    /// Also handles: (container1.contains(x) || container2.contains(x)) && pred(x)
+    /// Returns (containers, predicate_without_contains)
+    fn extract_exists_containers_and_pred(
         &self,
         body: &Expr,
         var_name: &str,
-    ) -> Option<(Expr, Expr)> {
+    ) -> Option<(Vec<Expr>, Expr)> {
         use crate::ast::Expr;
 
-        // Check for conjunction: container.contains(x) && pred(x)
+        // Check for conjunction: (container_expr) && pred(x)
         if let Expr::Conjunction(parts) = body {
             for (i, part) in parts.iter().enumerate() {
-                if let Some(container) = self.extract_contains_receiver(part, var_name) {
-                    // Found container.contains(x), rest is predicate
+                // Try to extract containers from this part (single or disjunction)
+                if let Some(containers) = self.extract_contains_disjunction(part, var_name) {
+                    // Found container(s), rest is predicate
                     let other_parts: Vec<Expr> = parts
                         .iter()
                         .enumerate()
@@ -3120,26 +3272,46 @@ impl Translator {
                         Expr::Conjunction(other_parts)
                     };
 
-                    return Some((container, predicate));
+                    return Some((containers, predicate));
                 }
             }
         }
 
-        // Check for binary &&: container.contains(x) && pred(x)
+        // Check for binary &&: (container_expr) && pred(x)
         if let Expr::Binary(lhs, crate::ast::BinOp::And, rhs) = body {
-            if let Some(container) = self.extract_contains_receiver(lhs, var_name) {
-                return Some((container, (**rhs).clone()));
+            if let Some(containers) = self.extract_contains_disjunction(lhs, var_name) {
+                return Some((containers, (**rhs).clone()));
             }
-            if let Some(container) = self.extract_contains_receiver(rhs, var_name) {
-                return Some((container, (**lhs).clone()));
+            if let Some(containers) = self.extract_contains_disjunction(rhs, var_name) {
+                return Some((containers, (**lhs).clone()));
             }
         }
 
-        // Check for just container.contains(x) without additional predicate
-        if let Some(container) = self.extract_contains_receiver(body, var_name) {
-            return Some((container, Expr::Literal(crate::ast::Literal::Bool(true))));
+        // Check for just container.contains(x) or disjunction without additional predicate
+        if let Some(containers) = self.extract_contains_disjunction(body, var_name) {
+            return Some((containers, Expr::Literal(crate::ast::Literal::Bool(true))));
         }
 
+        None
+    }
+
+    /// Extract container and predicate from exists body (single container case)
+    /// Handles: container.contains(x) && pred(x)
+    /// Returns (container, predicate_without_contains)
+    #[cfg(test)]
+    fn extract_exists_container_and_pred(
+        &self,
+        body: &Expr,
+        var_name: &str,
+    ) -> Option<(Expr, Expr)> {
+        // Use the new function and extract single container
+        if let Some((containers, predicate)) =
+            self.extract_exists_containers_and_pred(body, var_name)
+        {
+            if containers.len() == 1 {
+                return Some((containers.into_iter().next().unwrap(), predicate));
+            }
+        }
         None
     }
 
@@ -4082,6 +4254,53 @@ mod tests {
             assert_eq!(name, "S");
         } else {
             panic!("Container should be identifier");
+        }
+
+        // Predicate should be the call expression
+        assert!(matches!(predicate, Expr::Call { .. }));
+    }
+
+    #[test]
+    fn test_extract_exists_disjunction_containers() {
+        let translator = Translator::default();
+
+        // Test: (S1.contains(x) || S2.contains(x)) && pred(x)
+        let contains1 = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("S1".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("x".to_string())],
+        };
+        let contains2 = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("S2".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("x".to_string())],
+        };
+        let disjunction = Expr::Disjunction(vec![contains1, contains2]);
+        let pred = Expr::Call {
+            func: crate::ast::Path::single("some_pred".to_string()),
+            args: vec![Expr::Ident("x".to_string())],
+        };
+        let body = Expr::Conjunction(vec![disjunction, pred.clone()]);
+
+        let result = translator.extract_exists_containers_and_pred(&body, "x");
+        assert!(result.is_some());
+        let (containers, predicate) = result.unwrap();
+
+        // Should have 2 containers
+        assert_eq!(containers.len(), 2);
+
+        // First container should be S1
+        if let Expr::Ident(name) = &containers[0] {
+            assert_eq!(name, "S1");
+        } else {
+            panic!("First container should be identifier");
+        }
+
+        // Second container should be S2
+        if let Expr::Ident(name) = &containers[1] {
+            assert_eq!(name, "S2");
+        } else {
+            panic!("Second container should be identifier");
         }
 
         // Predicate should be the call expression
