@@ -1513,7 +1513,17 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - [x] Integrated into exists/forall quantifier handling
   - [x] Election module regenerated with loop-based patterns
   - Plan: docs/dev/F2.5-loop-generation-plan.md
-- [ ] **F2.6**: Add loop invariant generation for common patterns
+- [x] **F2.6**: Add loop invariant generation for common patterns [26:01:28]
+  - [x] Added `expr_to_invariant_string_with_var()` to convert predicates to invariant strings
+  - [x] Added `substitute_var_with_index()` to replace loop var with indexed iterator access
+  - [x] Updated `generate_any_loop` to produce proper invariants (exists pattern)
+  - [x] Updated `generate_all_loop` to produce proper invariants (forall pattern)
+  - [x] Updated `generate_chain_any_loop` to produce proper invariants
+  - [x] Handle "is" expressions in invariants (variant names not dereferenced)
+  - [x] Added comprehensive tests for invariant generation
+  - [x] Regenerated replica_gen.rs and proposer_gen.rs with proper invariants
+  - Note: Complex predicates with struct construction produce `/* unsupported expr */`
+  - Plan: docs/dev/F2.6-loop-invariant-plan.md
 - [x] **F2.7**: Attempt Verus verification on generated election code [26:01:28]
   - **Finding**: Generated code compiles when included but other generated modules have errors
   - **Finding**: All generated modules need proper imports (module-specific configs)

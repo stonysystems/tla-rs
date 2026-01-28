@@ -481,11 +481,97 @@ impl Translator {
 
     /// Convert an ExecExpr to a string representation for use in invariants.
     /// This produces a Verus spec-level expression string.
-    fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
+    ///
+    /// `loop_var` is the name of the loop variable that should be dereferenced (e.g., "p", "io").
+    /// Only references to this variable will get a `*` prefix.
+    fn expr_to_invariant_string_with_var(&self, expr: &ExecExpr, loop_var: &str) -> String {
         match expr {
             ExecExpr::Var(name) => {
-                // In invariants, we often need to dereference the loop variable
-                // because it's a reference to the key
+                // Only dereference the loop variable
+                if name == loop_var {
+                    format!("*{}", name)
+                } else if name.starts_with('*') {
+                    // Already has dereference
+                    name.clone()
+                } else {
+                    // Non-loop variable - don't dereference
+                    name.clone()
+                }
+            }
+            ExecExpr::Binary { lhs, op, rhs } => {
+                // For "is" expressions, the RHS is a variant name (not a variable to deref)
+                if op == "is" {
+                    let lhs_str = self.expr_to_invariant_string_with_var(lhs, loop_var);
+                    // RHS is the variant name - strip any * we might have added
+                    let rhs_str = match rhs.as_ref() {
+                        ExecExpr::Var(name) => name.trim_start_matches('*').to_string(),
+                        _ => self.expr_to_invariant_string_with_var(rhs, loop_var),
+                    };
+                    format!("{} {} {}", lhs_str, op, rhs_str)
+                } else {
+                    format!(
+                        "{} {} {}",
+                        self.expr_to_invariant_string_with_var(lhs, loop_var),
+                        op,
+                        self.expr_to_invariant_string_with_var(rhs, loop_var)
+                    )
+                }
+            }
+            ExecExpr::Field(base, field) => {
+                let base_str = self.expr_to_invariant_string_with_var(base, loop_var);
+                // Remove dereference for field access
+                let base_str = base_str.trim_start_matches('*');
+                format!("{}.{}", base_str, field)
+            }
+            ExecExpr::Literal(lit) => lit.clone(),
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                let recv_str = self.expr_to_invariant_string_with_var(receiver, loop_var);
+                let recv_str = recv_str.trim_start_matches('*');
+                if args.is_empty() {
+                    format!("{}.{}()", recv_str, method)
+                } else {
+                    let args_str: Vec<String> = args
+                        .iter()
+                        .map(|a| self.expr_to_invariant_string_with_var(a, loop_var))
+                        .collect();
+                    format!("{}.{}({})", recv_str, method, args_str.join(", "))
+                }
+            }
+            ExecExpr::Call { func, args } => {
+                let args_str: Vec<String> = args
+                    .iter()
+                    .map(|a| self.expr_to_invariant_string_with_var(a, loop_var))
+                    .collect();
+                format!("{}({})", func, args_str.join(", "))
+            }
+            ExecExpr::Unary { op, expr } => {
+                // For dereference, check if we're already dereferencing the loop var
+                if op == "*" {
+                    match expr.as_ref() {
+                        ExecExpr::Var(name) if name == loop_var => format!("*{}", name),
+                        ExecExpr::Var(name) => format!("*{}", name),
+                        _ => format!("{}{}", op, self.expr_to_invariant_string_with_var(expr, loop_var)),
+                    }
+                } else {
+                    format!("{}{}", op, self.expr_to_invariant_string_with_var(expr, loop_var))
+                }
+            }
+            _ => "/* unsupported expr */".to_string(),
+        }
+    }
+
+    /// Convert an ExecExpr to a string representation for use in invariants.
+    /// This produces a Verus spec-level expression string.
+    /// Assumes any variable should be dereferenced (legacy behavior).
+    fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
+        // For backward compatibility, deref all Var expressions
+        // This is used by map_filter which has a different pattern
+        match expr {
+            ExecExpr::Var(name) => {
                 if name.starts_with('*') {
                     name.clone()
                 } else {
@@ -502,7 +588,6 @@ impl Translator {
             }
             ExecExpr::Field(base, field) => {
                 let base_str = self.expr_to_invariant_string(base);
-                // Remove dereference for field access
                 let base_str = base_str.trim_start_matches('*');
                 format!("{}.{}", base_str, field)
             }
@@ -532,10 +617,7 @@ impl Translator {
                 format!("{}({})", func, args_str.join(", "))
             }
             ExecExpr::Unary { op, expr } => {
-                // For dereference, don't add another * to the inner expression
                 if op == "*" {
-                    // Just return the inner expression without additional dereference
-                    // since Var already adds * for loop variables
                     match expr.as_ref() {
                         ExecExpr::Var(name) => format!("*{}", name),
                         _ => format!("{}{}", op, self.expr_to_invariant_string(expr)),
@@ -546,6 +628,25 @@ impl Translator {
             }
             _ => "/* unsupported expr */".to_string(),
         }
+    }
+
+    /// Substitute loop variable references with indexed iterator access in invariant strings.
+    ///
+    /// For a loop variable `x` in a `for x in iter:x_iter` loop, invariants need to reference
+    /// elements by index: `x_iter@.1[i]`. This function replaces both `*x` and standalone `x`
+    /// with `x_iter@.1[i]`.
+    fn substitute_var_with_index(&self, pred_str: &str, var_name: &str) -> String {
+        let indexed = format!("{}_iter@.1[i]", var_name);
+
+        // First replace *var_name (dereferenced form)
+        let dereferenced = format!("*{}", var_name);
+        let result = pred_str.replace(&dereferenced, &indexed);
+
+        // Then replace var_name when it appears at start of field access (var_name.)
+        // This handles cases like "p.src" where we stripped the * for field access
+        let field_access = format!("{}.", var_name);
+        let indexed_field = format!("{}.", indexed);
+        result.replace(&field_access, &indexed_field)
     }
 
     /// Generate loop invariants for map filter pattern.
@@ -933,6 +1034,10 @@ impl Translator {
         var_name: &str,
         predicate: ExecExpr,
     ) -> ExecExpr {
+        // Convert predicate to invariant string and substitute indexed access
+        let pred_str = self.expr_to_invariant_string_with_var(&predicate, var_name);
+        let indexed_pred = self.substitute_var_with_index(&pred_str, var_name);
+
         let stmts = vec![
             // let mut found = false;
             ExecExpr::Let {
@@ -952,8 +1057,8 @@ impl Translator {
                 invariants: vec![
                     // found ==> exists|i: int| 0 <= i < idx && pred(container[i])
                     format!(
-                        "found ==> exists|i: int| 0 <= i < {}_iter@.0 && /* pred at i */",
-                        var_name
+                        "found ==> exists|i: int| 0 <= i < {}_iter@.0 && {}",
+                        var_name, indexed_pred
                     ),
                 ],
                 body: Box::new(ExecExpr::If {
@@ -964,7 +1069,7 @@ impl Translator {
                             op: "=".to_string(),
                             rhs: Box::new(ExecExpr::Literal("true".to_string())),
                         },
-                        // break - represented as a comment since ExecExpr doesn't have Break variant
+                        // break
                         ExecExpr::Break,
                     ])),
                     else_branch: None,
@@ -999,6 +1104,10 @@ impl Translator {
         var_name: &str,
         predicate: ExecExpr,
     ) -> ExecExpr {
+        // Convert predicate to invariant string and substitute indexed access
+        let pred_str = self.expr_to_invariant_string_with_var(&predicate, var_name);
+        let indexed_pred = self.substitute_var_with_index(&pred_str, var_name);
+
         let stmts = vec![
             // let mut all_match = true;
             ExecExpr::Let {
@@ -1018,8 +1127,8 @@ impl Translator {
                 invariants: vec![
                     // all_match <==> forall|i: int| 0 <= i < idx ==> pred(container[i])
                     format!(
-                        "all_match <==> forall|i: int| 0 <= i < {}_iter@.0 ==> /* pred at i */",
-                        var_name
+                        "all_match <==> forall|i: int| 0 <= i < {}_iter@.0 ==> {}",
+                        var_name, indexed_pred
                     ),
                 ],
                 body: Box::new(ExecExpr::If {
@@ -1076,6 +1185,9 @@ impl Translator {
         var_name: &str,
         predicate: ExecExpr,
     ) -> ExecExpr {
+        // Convert predicate to invariant string
+        let pred_str = self.expr_to_invariant_string_with_var(&predicate, var_name);
+
         let mut stmts = vec![
             // let mut found = false;
             ExecExpr::Let {
@@ -1090,15 +1202,27 @@ impl Translator {
         let mut remaining_loops: Vec<ExecExpr> = Vec::new();
 
         for (idx, container) in containers.into_iter().enumerate() {
+            let iter_name = format!("{}_{}_iter", var_name, idx);
+            // Substitute with index for this specific iterator
+            let indexed_pred = pred_str.replace(
+                &format!("*{}", var_name),
+                &format!("{}@.1[i]", iter_name),
+            );
+
             let loop_stmt = ExecExpr::ForInIter {
                 var: var_name.to_string(),
-                iter_name: format!("{}_{}_iter", var_name, idx),
+                iter_name: iter_name.clone(),
                 iter_source: Box::new(ExecExpr::MethodCall {
                     receiver: Box::new(container),
                     method: "iter".to_string(),
                     args: vec![],
                 }),
-                invariants: vec![],
+                invariants: vec![
+                    format!(
+                        "found ==> exists|i: int| 0 <= i < {}@.0 && {}",
+                        iter_name, indexed_pred
+                    ),
+                ],
                 body: Box::new(ExecExpr::If {
                     cond: Box::new(predicate.clone()),
                     then_branch: Box::new(ExecExpr::Block(vec![
@@ -6903,5 +7027,180 @@ mod tests {
             code.contains("subset_len_equal_implies_equal"),
             "Should call lemma"
         );
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string_with_var() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test that only the loop variable gets dereferenced
+        let var_loop = ExecExpr::Var("p".to_string());
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&var_loop, "p"),
+            "*p"
+        );
+
+        // Test that other variables don't get dereferenced
+        let var_other = ExecExpr::Var("received_packet".to_string());
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&var_other, "p"),
+            "received_packet"
+        );
+
+        // Test field access
+        let field = ExecExpr::Field(
+            Box::new(ExecExpr::Var("p".to_string())),
+            "src".to_string(),
+        );
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&field, "p"),
+            "p.src"
+        );
+
+        // Test "is" expression - variant name should not be dereferenced
+        let is_expr = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("io".to_string())),
+            op: "is".to_string(),
+            rhs: Box::new(ExecExpr::Var("Send".to_string())),
+        };
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&is_expr, "io"),
+            "*io is Send"
+        );
+
+        // Test binary != with loop var and non-loop var
+        let binary = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("p".to_string())),
+                "src".to_string(),
+            )),
+            op: "!=".to_string(),
+            rhs: Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("received_packet".to_string())),
+                "src".to_string(),
+            )),
+        };
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&binary, "p"),
+            "p.src != received_packet.src"
+        );
+    }
+
+    #[test]
+    fn test_substitute_var_with_index() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Basic substitution with dereference
+        let pred = "*p is Send";
+        let result = translator.substitute_var_with_index(pred, "p");
+        assert_eq!(result, "p_iter@.1[i] is Send");
+
+        // Multiple occurrences with dereference
+        let pred2 = "*p.src != other && *p.valid";
+        let result2 = translator.substitute_var_with_index(pred2, "p");
+        assert_eq!(result2, "p_iter@.1[i].src != other && p_iter@.1[i].valid");
+
+        // Field access without dereference (from stripped field access)
+        let pred3 = "p.src != received_packet.src";
+        let result3 = translator.substitute_var_with_index(pred3, "p");
+        assert_eq!(result3, "p_iter@.1[i].src != received_packet.src");
+    }
+
+    #[test]
+    fn test_generate_any_loop_has_proper_invariant() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        // Create a simple predicate: p.src != other.src
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("p".to_string())),
+                "src".to_string(),
+            )),
+            op: "!=".to_string(),
+            rhs: Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("other".to_string())),
+                "src".to_string(),
+            )),
+        };
+
+        let container = ExecExpr::Var("packets".to_string());
+        let result = translator.generate_any_loop(container, "p", predicate);
+
+        // Get the invariants from the generated loop
+        if let ExecExpr::Block(stmts) = result {
+            // Second statement should be ForInIter
+            if let ExecExpr::ForInIter { invariants, .. } = &stmts[1] {
+                assert_eq!(invariants.len(), 1, "Should have 1 invariant");
+                // Invariant should reference p_iter@.1[i], not *p
+                assert!(
+                    invariants[0].contains("p_iter@.1[i].src"),
+                    "Invariant should use indexed access: {}",
+                    invariants[0]
+                );
+                assert!(
+                    invariants[0].contains("other.src"),
+                    "Invariant should keep other.src as is: {}",
+                    invariants[0]
+                );
+            } else {
+                panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_generate_all_loop_has_proper_invariant() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        // Create a simple predicate: io is Send
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("io".to_string())),
+            op: "is".to_string(),
+            rhs: Box::new(ExecExpr::Var("Send".to_string())),
+        };
+
+        let container = ExecExpr::Var("ios".to_string());
+        let result = translator.generate_all_loop(container, "io", predicate);
+
+        // Get the invariants from the generated loop
+        if let ExecExpr::Block(stmts) = result {
+            // Second statement should be ForInIter
+            if let ExecExpr::ForInIter { invariants, .. } = &stmts[1] {
+                assert_eq!(invariants.len(), 1, "Should have 1 invariant");
+                // Invariant should reference io_iter@.1[i], not *io
+                assert!(
+                    invariants[0].contains("io_iter@.1[i]"),
+                    "Invariant should use indexed access: {}",
+                    invariants[0]
+                );
+                // Variant name Send should not have a *
+                assert!(
+                    invariants[0].contains("is Send"),
+                    "Variant name should not be dereferenced: {}",
+                    invariants[0]
+                );
+                assert!(
+                    !invariants[0].contains("is *Send"),
+                    "Variant name should not have *: {}",
+                    invariants[0]
+                );
+            } else {
+                panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
     }
 }
