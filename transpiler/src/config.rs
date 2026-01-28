@@ -178,6 +178,12 @@ pub struct OutputConfig {
     /// Custom imports to include before verus! block
     #[serde(default)]
     pub custom_imports: Vec<String>,
+
+    /// Whether to generate explicit for loops instead of iterator chains.
+    /// When true, generates Verus-verifiable loop code with placeholders for invariants.
+    /// When false (default), generates iterator-based code (.iter().filter().collect()).
+    #[serde(default)]
+    pub generate_loops_for_verification: bool,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -198,6 +204,7 @@ impl Default for OutputConfig {
             include_debug_comments: false,
             output_dir: None,
             custom_imports: Vec::new(),
+            generate_loops_for_verification: false,
         }
     }
 }

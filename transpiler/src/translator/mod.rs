@@ -246,6 +246,10 @@ pub enum ExecExpr {
     /// Broadcast use statement
     /// Generates: `broadcast use path;`
     BroadcastUse(String),
+
+    /// Break statement
+    /// Generates: `break;`
+    Break,
 }
 
 /// Context for expression transformation
@@ -751,6 +755,249 @@ impl Translator {
         stmts.extend(post_loop_assertions);
         // result
         stmts.push(ExecExpr::Var("result".to_string()));
+
+        ExecExpr::Block(stmts)
+    }
+
+    /// Generate explicit for loop for `.iter().any()` pattern.
+    /// Used when `generate_loops_for_verification` is enabled.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// {
+    ///     let mut found = false;
+    ///     for x in container.iter() {
+    ///         if pred(&x) {
+    ///             found = true;
+    ///             break;
+    ///         }
+    ///     }
+    ///     found
+    /// }
+    /// ```
+    fn generate_any_loop(
+        &self,
+        container: ExecExpr,
+        var_name: &str,
+        predicate: ExecExpr,
+    ) -> ExecExpr {
+        let stmts = vec![
+            // let mut found = false;
+            ExecExpr::Let {
+                pattern: "mut found".to_string(),
+                ty: Some(ExecType::Named("bool".to_string())),
+                value: Box::new(ExecExpr::Literal("false".to_string())),
+            },
+            // for x in container.iter() { ... }
+            ExecExpr::ForInIter {
+                var: var_name.to_string(),
+                iter_name: format!("{}_iter", var_name),
+                iter_source: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(container),
+                    method: "iter".to_string(),
+                    args: vec![],
+                }),
+                invariants: vec![
+                    // found ==> exists|i: int| 0 <= i < idx && pred(container[i])
+                    format!(
+                        "found ==> exists|i: int| 0 <= i < {}_iter@.0 && /* pred at i */",
+                        var_name
+                    ),
+                ],
+                body: Box::new(ExecExpr::If {
+                    cond: Box::new(predicate),
+                    then_branch: Box::new(ExecExpr::Block(vec![
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("found".to_string())),
+                            op: "=".to_string(),
+                            rhs: Box::new(ExecExpr::Literal("true".to_string())),
+                        },
+                        // break - represented as a comment since ExecExpr doesn't have Break variant
+                        ExecExpr::Break,
+                    ])),
+                    else_branch: None,
+                }),
+            },
+            // found
+            ExecExpr::Var("found".to_string()),
+        ];
+
+        ExecExpr::Block(stmts)
+    }
+
+    /// Generate explicit for loop for `.iter().all()` pattern.
+    /// Used when `generate_loops_for_verification` is enabled.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// {
+    ///     let mut all_match = true;
+    ///     for x in container.iter() {
+    ///         if !pred(&x) {
+    ///             all_match = false;
+    ///             break;
+    ///         }
+    ///     }
+    ///     all_match
+    /// }
+    /// ```
+    fn generate_all_loop(
+        &self,
+        container: ExecExpr,
+        var_name: &str,
+        predicate: ExecExpr,
+    ) -> ExecExpr {
+        let stmts = vec![
+            // let mut all_match = true;
+            ExecExpr::Let {
+                pattern: "mut all_match".to_string(),
+                ty: Some(ExecType::Named("bool".to_string())),
+                value: Box::new(ExecExpr::Literal("true".to_string())),
+            },
+            // for x in container.iter() { ... }
+            ExecExpr::ForInIter {
+                var: var_name.to_string(),
+                iter_name: format!("{}_iter", var_name),
+                iter_source: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(container),
+                    method: "iter".to_string(),
+                    args: vec![],
+                }),
+                invariants: vec![
+                    // all_match <==> forall|i: int| 0 <= i < idx ==> pred(container[i])
+                    format!(
+                        "all_match <==> forall|i: int| 0 <= i < {}_iter@.0 ==> /* pred at i */",
+                        var_name
+                    ),
+                ],
+                body: Box::new(ExecExpr::If {
+                    cond: Box::new(ExecExpr::Unary {
+                        op: "!".to_string(),
+                        expr: Box::new(predicate),
+                    }),
+                    then_branch: Box::new(ExecExpr::Block(vec![
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("all_match".to_string())),
+                            op: "=".to_string(),
+                            rhs: Box::new(ExecExpr::Literal("false".to_string())),
+                        },
+                        // break
+                        ExecExpr::Break,
+                    ])),
+                    else_branch: None,
+                }),
+            },
+            // all_match
+            ExecExpr::Var("all_match".to_string()),
+        ];
+
+        ExecExpr::Block(stmts)
+    }
+
+    /// Generate explicit for loops for `.iter().chain(other.iter()).any()` pattern.
+    /// Used when `generate_loops_for_verification` is enabled.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// {
+    ///     let mut found = false;
+    ///     for x in c1.iter() {
+    ///         if pred(&x) {
+    ///             found = true;
+    ///             break;
+    ///         }
+    ///     }
+    ///     if !found {
+    ///         for x in c2.iter() {
+    ///             if pred(&x) {
+    ///                 found = true;
+    ///                 break;
+    ///             }
+    ///         }
+    ///     }
+    ///     found
+    /// }
+    /// ```
+    fn generate_chain_any_loop(
+        &self,
+        containers: Vec<ExecExpr>,
+        var_name: &str,
+        predicate: ExecExpr,
+    ) -> ExecExpr {
+        let mut stmts = vec![
+            // let mut found = false;
+            ExecExpr::Let {
+                pattern: "mut found".to_string(),
+                ty: Some(ExecType::Named("bool".to_string())),
+                value: Box::new(ExecExpr::Literal("false".to_string())),
+            },
+        ];
+
+        // Generate a loop for each container
+        // Each subsequent loop is wrapped in `if !found { ... }`
+        let mut remaining_loops: Vec<ExecExpr> = Vec::new();
+
+        for (idx, container) in containers.into_iter().enumerate() {
+            let loop_stmt = ExecExpr::ForInIter {
+                var: var_name.to_string(),
+                iter_name: format!("{}_{}_iter", var_name, idx),
+                iter_source: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(container),
+                    method: "iter".to_string(),
+                    args: vec![],
+                }),
+                invariants: vec![],
+                body: Box::new(ExecExpr::If {
+                    cond: Box::new(predicate.clone()),
+                    then_branch: Box::new(ExecExpr::Block(vec![
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("found".to_string())),
+                            op: "=".to_string(),
+                            rhs: Box::new(ExecExpr::Literal("true".to_string())),
+                        },
+                        ExecExpr::Break,
+                    ])),
+                    else_branch: None,
+                }),
+            };
+
+            if idx == 0 {
+                // First container loop goes directly in stmts
+                stmts.push(loop_stmt);
+            } else {
+                // Subsequent loops wrapped in if !found
+                remaining_loops.push(loop_stmt);
+            }
+        }
+
+        // Wrap remaining loops in nested if !found blocks
+        if !remaining_loops.is_empty() {
+            let mut nested = remaining_loops.pop().unwrap();
+            while let Some(loop_stmt) = remaining_loops.pop() {
+                nested = ExecExpr::Block(vec![
+                    loop_stmt,
+                    ExecExpr::If {
+                        cond: Box::new(ExecExpr::Unary {
+                            op: "!".to_string(),
+                            expr: Box::new(ExecExpr::Var("found".to_string())),
+                        }),
+                        then_branch: Box::new(nested),
+                        else_branch: None,
+                    },
+                ]);
+            }
+            stmts.push(ExecExpr::If {
+                cond: Box::new(ExecExpr::Unary {
+                    op: "!".to_string(),
+                    expr: Box::new(ExecExpr::Var("found".to_string())),
+                }),
+                then_branch: Box::new(nested),
+                else_branch: None,
+            });
+        }
+
+        // found
+        stmts.push(ExecExpr::Var("found".to_string()));
 
         ExecExpr::Block(stmts)
     }
@@ -1840,7 +2087,20 @@ impl Translator {
                 {
                     let pred_expr = self.transform_expr(&predicate, ctx)?;
 
-                    if containers.len() == 1 {
+                    if self.config.generate_loops_for_verification {
+                        // Generate explicit for loops for Verus verification
+                        if containers.len() == 1 {
+                            let container_expr = self.transform_expr(&containers[0], ctx)?;
+                            Ok(self.generate_any_loop(container_expr, &var_name, pred_expr))
+                        } else {
+                            // Multiple containers: generate sequential loops
+                            let container_exprs: TranspileResult<Vec<_>> = containers
+                                .iter()
+                                .map(|c| self.transform_expr(c, ctx))
+                                .collect();
+                            Ok(self.generate_chain_any_loop(container_exprs?, &var_name, pred_expr))
+                        }
+                    } else if containers.len() == 1 {
                         // Single container: container.iter().any(|x| pred(x))
                         let container_expr = self.transform_expr(&containers[0], ctx)?;
                         Ok(ExecExpr::MethodCall {
@@ -3852,23 +4112,28 @@ impl Translator {
                 element_var,
                 predicate,
             } => {
-                // Generate: container.iter().all(|x| predicate)
                 // Pattern: forall |x| container.contains(x) ==> pred(x)
                 let container_expr = self.transform_expr(container, ctx)?;
                 let pred_expr = self.transform_expr(predicate, ctx)?;
 
-                Ok(ExecExpr::MethodCall {
-                    receiver: Box::new(ExecExpr::MethodCall {
-                        receiver: Box::new(container_expr),
-                        method: "iter".to_string(),
-                        args: vec![],
-                    }),
-                    method: "all".to_string(),
-                    args: vec![ExecExpr::Closure {
-                        params: vec![element_var.clone()],
-                        body: Box::new(pred_expr),
-                    }],
-                })
+                if self.config.generate_loops_for_verification {
+                    // Generate explicit for loop for Verus verification
+                    Ok(self.generate_all_loop(container_expr, element_var, pred_expr))
+                } else {
+                    // Generate: container.iter().all(|x| predicate)
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(container_expr),
+                            method: "iter".to_string(),
+                            args: vec![],
+                        }),
+                        method: "all".to_string(),
+                        args: vec![ExecExpr::Closure {
+                            params: vec![element_var.clone()],
+                            body: Box::new(pred_expr),
+                        }],
+                    })
+                }
             }
         }
     }

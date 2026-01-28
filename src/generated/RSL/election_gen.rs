@@ -159,7 +159,30 @@ ensures
     result.valid(),
     ElectionStateReflectReceivedRequest(es@, result@, req@),
 {
-if es.requests_received_prev_epochs.iter().chain(es.requests_received_this_epoch.iter()).any(|earlier_req| CRequestsMatch(&earlier_req, &req)) {
+if {
+        let mut found: bool = false;
+        let earlier_req_0_iter = es.requests_received_prev_epochs.iter();
+        for earlier_req in iter:earlier_req_0_iter
+        {
+            if CRequestsMatch(&earlier_req, &req) {
+                                found = true;
+                break;
+
+            }
+        }
+        if !found {
+            let earlier_req_1_iter = es.requests_received_this_epoch.iter();
+            for earlier_req in iter:earlier_req_1_iter
+            {
+                if CRequestsMatch(&earlier_req, &req) {
+                                        found = true;
+                    break;
+
+                }
+            }
+        };
+        found
+    } {
         es.clone()
     } else {
         CElectionState {

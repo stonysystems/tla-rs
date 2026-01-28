@@ -145,6 +145,7 @@ impl Printer {
                             | ExecExpr::Comment(_)
                             | ExecExpr::ProofBlock { .. }
                             | ExecExpr::ForInIter { .. }
+                            | ExecExpr::Break
                     );
                     if !is_last && !has_own_semicolon {
                         self.write(";");
@@ -171,7 +172,18 @@ impl Printer {
                 else_branch,
             } => {
                 self.write("if ");
-                self.print_expr(cond);
+                // If condition is a block expression, wrap it in braces
+                if matches!(cond.as_ref(), ExecExpr::Block(_)) {
+                    self.write("{");
+                    self.newline();
+                    self.current_indent += 1;
+                    self.print_expr(cond);
+                    self.current_indent -= 1;
+                    self.indent();
+                    self.write("}");
+                } else {
+                    self.print_expr(cond);
+                }
                 self.write(" {");
                 self.newline();
                 self.current_indent += 1;
@@ -556,6 +568,10 @@ impl Printer {
                 self.write("broadcast use ");
                 self.write(path);
                 self.write(";");
+            }
+
+            ExecExpr::Break => {
+                self.write("break;");
             }
         }
     }

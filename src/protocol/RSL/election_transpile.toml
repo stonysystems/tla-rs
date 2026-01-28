@@ -21,6 +21,8 @@ generate_validity_predicates = true
 validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
+# Generate explicit for loops instead of iterators for better Verus verification
+generate_loops_for_verification = true
 # Custom imports for election module
 custom_imports = [
     "use vstd::prelude::*;",
