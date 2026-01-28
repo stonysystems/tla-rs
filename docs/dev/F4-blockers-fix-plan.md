@@ -211,6 +211,38 @@ Generated code now correctly uses:
 (0..c.replica_ids.len()).map(|idx| CPacket {...}).collect()
 ```
 
-### Issue 1: Pending
+### Issue 1: Pending (Deferred - Complex)
 
 The self-referential pattern bug still needs to be addressed for learner_gen.rs and replica_gen.rs.
+
+**Analysis (2026-01-28):**
+
+The pattern in `LLearnerForgetOperationsBefore` is:
+```rust
+&&& (forall |k| s_.unexecuted_learner_state.contains_key(k) <==> ...)
+&&& (forall |k| s_.unexecuted_learner_state.contains_key(k) ==> s_[k] == s[k])
+&&& s_ == LLearner{
+    constants:s.constants,
+    max_ballot_seen:s.max_ballot_seen,
+    unexecuted_learner_state: s_.unexecuted_learner_state  // SELF REFERENCE
+}
+```
+
+**Required Changes:**
+1. Detect when struct literal field references output (e.g., `s_.field`)
+2. Find foralls that define that field (domain + value constraints)
+3. Generate intermediate variable: `let __s_field = /* computed from foralls */;`
+4. Substitute intermediate variable in struct construction
+
+**Complexity:**
+- Requires deep analysis of forall bodies to extract map filter patterns
+- Must handle both domain biconditional and value preservation foralls
+- Changes needed in multiple places: conjunction handling, struct construction
+
+**Workaround:**
+- learner_gen.rs and replica_gen.rs remain behind `#[cfg(test)]`
+- These modules can be manually implemented or the transpiler enhanced later
+
+**Affected Functions:**
+- `LLearnerForgetOperationsBefore` (learner.rs)
+- Multiple functions in replica.rs with similar patterns
