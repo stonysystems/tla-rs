@@ -240,7 +240,7 @@ ensures
     let p_iter = s.received_1b_packets.iter();
     for p in iter:p_iter
     invariant
-        found ==> exists|i: int| 0 <= i < p_iter@.0 && CValIsHighestNumberedProposal(&p_iter@.1[i].msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && /* unsupported expr */ && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, /* unsupported expr */, sent_packets),
+        found ==> exists|i: int| 0 <= i < p_iter@.0 && CValIsHighestNumberedProposal(&p_iter@.1[i].msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && CProposer { constants: s.constants, current_state: s.current_state, request_queue: s.request_queue, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose + 1, received_1b_packets: s.received_1b_packets, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, election_state: s.election_state } && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_iter@.1[i].msg.get_votes().index(opn).max_val }, sent_packets),
     {
         if (CValIsHighestNumberedProposal(&p.msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && (CProposer {
             constants: s.constants,

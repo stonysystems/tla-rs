@@ -560,6 +560,51 @@ impl Translator {
                     format!("{}{}", op, self.expr_to_invariant_string_with_var(expr, loop_var))
                 }
             }
+            ExecExpr::If { cond, then_branch, else_branch } => {
+                let cond_str = self.expr_to_invariant_string_with_var(cond, loop_var);
+                let then_str = self.expr_to_invariant_string_with_var(then_branch, loop_var);
+                if let Some(else_expr) = else_branch {
+                    let else_str = self.expr_to_invariant_string_with_var(else_expr, loop_var);
+                    format!("if {} {{ {} }} else {{ {} }}", cond_str, then_str, else_str)
+                } else {
+                    format!("if {} {{ {} }}", cond_str, then_str)
+                }
+            }
+            ExecExpr::Struct { name, fields } => {
+                let fields_str: Vec<String> = fields
+                    .iter()
+                    .map(|(field_name, field_val)| {
+                        format!("{}: {}", field_name, self.expr_to_invariant_string_with_var(field_val, loop_var))
+                    })
+                    .collect();
+                format!("{} {{ {} }}", name, fields_str.join(", "))
+            }
+            ExecExpr::Tuple(elems) => {
+                let elems_str: Vec<String> = elems
+                    .iter()
+                    .map(|e| self.expr_to_invariant_string_with_var(e, loop_var))
+                    .collect();
+                format!("({})", elems_str.join(", "))
+            }
+            ExecExpr::Clone(inner) => {
+                // For invariants, we can usually just use the inner expression
+                self.expr_to_invariant_string_with_var(inner, loop_var)
+            }
+            ExecExpr::VecLit(elems) => {
+                let elems_str: Vec<String> = elems
+                    .iter()
+                    .map(|e| self.expr_to_invariant_string_with_var(e, loop_var))
+                    .collect();
+                format!("seq![{}]", elems_str.join(", "))
+            }
+            ExecExpr::Block(stmts) => {
+                // For a block, convert the last statement (if any)
+                if let Some(last) = stmts.last() {
+                    self.expr_to_invariant_string_with_var(last, loop_var)
+                } else {
+                    "()".to_string()
+                }
+            }
             _ => "/* unsupported expr */".to_string(),
         }
     }
@@ -624,6 +669,49 @@ impl Translator {
                     }
                 } else {
                     format!("{}{}", op, self.expr_to_invariant_string(expr))
+                }
+            }
+            ExecExpr::If { cond, then_branch, else_branch } => {
+                let cond_str = self.expr_to_invariant_string(cond);
+                let then_str = self.expr_to_invariant_string(then_branch);
+                if let Some(else_expr) = else_branch {
+                    let else_str = self.expr_to_invariant_string(else_expr);
+                    format!("if {} {{ {} }} else {{ {} }}", cond_str, then_str, else_str)
+                } else {
+                    format!("if {} {{ {} }}", cond_str, then_str)
+                }
+            }
+            ExecExpr::Struct { name, fields } => {
+                let fields_str: Vec<String> = fields
+                    .iter()
+                    .map(|(field_name, field_val)| {
+                        format!("{}: {}", field_name, self.expr_to_invariant_string(field_val))
+                    })
+                    .collect();
+                format!("{} {{ {} }}", name, fields_str.join(", "))
+            }
+            ExecExpr::Tuple(elems) => {
+                let elems_str: Vec<String> = elems
+                    .iter()
+                    .map(|e| self.expr_to_invariant_string(e))
+                    .collect();
+                format!("({})", elems_str.join(", "))
+            }
+            ExecExpr::Clone(inner) => {
+                self.expr_to_invariant_string(inner)
+            }
+            ExecExpr::VecLit(elems) => {
+                let elems_str: Vec<String> = elems
+                    .iter()
+                    .map(|e| self.expr_to_invariant_string(e))
+                    .collect();
+                format!("seq![{}]", elems_str.join(", "))
+            }
+            ExecExpr::Block(stmts) => {
+                if let Some(last) = stmts.last() {
+                    self.expr_to_invariant_string(last)
+                } else {
+                    "()".to_string()
                 }
             }
             _ => "/* unsupported expr */".to_string(),
@@ -7202,5 +7290,80 @@ mod tests {
         } else {
             panic!("Expected Block");
         }
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string_if_expression() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test if-then-else expression
+        let if_expr = ExecExpr::If {
+            cond: Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Var("x".to_string())),
+                op: ">".to_string(),
+                rhs: Box::new(ExecExpr::Literal("0".to_string())),
+            }),
+            then_branch: Box::new(ExecExpr::Literal("true".to_string())),
+            else_branch: Some(Box::new(ExecExpr::Literal("false".to_string()))),
+        };
+        let result = translator.expr_to_invariant_string_with_var(&if_expr, "x");
+        assert_eq!(result, "if *x > 0 { true } else { false }");
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string_struct() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test struct expression
+        let struct_expr = ExecExpr::Struct {
+            name: "Point".to_string(),
+            fields: vec![
+                ("x".to_string(), ExecExpr::Literal("1".to_string())),
+                ("y".to_string(), ExecExpr::Literal("2".to_string())),
+            ],
+        };
+        let result = translator.expr_to_invariant_string_with_var(&struct_expr, "p");
+        assert_eq!(result, "Point { x: 1, y: 2 }");
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string_tuple() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test tuple expression
+        let tuple_expr = ExecExpr::Tuple(vec![
+            ExecExpr::Literal("1".to_string()),
+            ExecExpr::Literal("2".to_string()),
+        ]);
+        let result = translator.expr_to_invariant_string_with_var(&tuple_expr, "x");
+        assert_eq!(result, "(1, 2)");
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string_clone() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test clone expression - should just return the inner value
+        let clone_expr = ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string())));
+        let result = translator.expr_to_invariant_string_with_var(&clone_expr, "x");
+        assert_eq!(result, "s");
+    }
+
+    #[test]
+    fn test_expr_to_invariant_string_vec_lit() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Test vec literal expression - should become seq![]
+        let vec_expr = ExecExpr::VecLit(vec![
+            ExecExpr::Literal("1".to_string()),
+            ExecExpr::Literal("2".to_string()),
+        ]);
+        let result = translator.expr_to_invariant_string_with_var(&vec_expr, "x");
+        assert_eq!(result, "seq![1, 2]");
     }
 }

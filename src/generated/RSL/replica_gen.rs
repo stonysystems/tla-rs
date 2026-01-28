@@ -387,7 +387,7 @@ ensures
     let opn_iter = s.acceptor.last_checkpointed_operation.iter();
     for opn in iter:opn_iter
     invariant
-        found ==> exists|i: int| 0 <= i < opn_iter@.0 && CIsLogTruncationPointValid(&opn_iter@.1[i], &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && /* unsupported expr */,
+        found ==> exists|i: int| 0 <= i < opn_iter@.0 && CIsLogTruncationPointValid(&opn_iter@.1[i], &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if opn_iter@.1[i] > s.acceptor.log_truncation_point { (CReplica { constants: s.constants, nextHeartbeatTime: s.nextHeartbeatTime, proposer: s.proposer, acceptor: s_acceptor, learner: s.learner, executor: s.executor }, seq![]) } else { (s, seq![]) },
     {
         if (CIsLogTruncationPointValid(&opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if (opn > s.acceptor.log_truncation_point) {
                         let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &opn);
