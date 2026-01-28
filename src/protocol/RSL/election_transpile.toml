@@ -1,0 +1,43 @@
+# Configuration for transpiling RSL election spec to implementation
+# This configures the transpiler to match the existing RSL codebase conventions
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+# RSL-specific type mappings
+"ElectionState" = "CElectionState"
+"LReplicaConstants" = "CReplicaConstants"
+"Ballot" = "CBallot"
+"RslPacket" = "CPacket"
+"Request" = "CRequest"
+"RequestBatch" = "CRequestBatch"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+# RSL uses 'valid()' instead of 'well_formed()'
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+# Custom imports for election module
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::map::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashSet;",
+    "use crate::common::collections::sets::*;",
+    "use crate::common::collections::hashsets::*;",
+    "use crate::common::collections::vecs::*;",
+    "use crate::common::native::io_s::EndPoint;",
+    "use crate::implementation::RSL::types_i::*;",
+    "use crate::implementation::RSL::cconstants::*;",
+    "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::cconfiguration::*;",
+    "use crate::implementation::RSL::ElectionImpl::CElectionState;",
+    "use crate::implementation::common::upper_bound_i::*;",
+    "use crate::protocol::RSL::election::*;",
+    "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::RSL::configuration::*;",
+]

@@ -7,3 +7,4 @@ pub mod executor_gen;
 pub mod proposer_gen;
 pub mod replica_gen;
 pub mod broadcast_gen;
+pub mod election_gen;
