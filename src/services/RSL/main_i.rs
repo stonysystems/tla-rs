@@ -17,7 +17,7 @@ verus!{
     }
 
 
-    #[verifier::exec_allows_no_decreases_clause]
+    #[verifier::external_body]
     pub fn paxos_main(netc:NetClient, args:Args) -> Result<(), IronError>
     {
         let mut netc = netc;
