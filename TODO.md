@@ -1807,7 +1807,12 @@ Some helper functions are recursive (e.g., `RemoveAllSatisfiedRequestsInSequence
   - Implemented `contains_self_call()` helper to detect self-calls in expression tree
   - Added 4 tests for recursive detection
   - See docs/dev/h4.1-detect-recursive-functions.md
-- [ ] Generate `decreases` clause for termination
+- [x] Generate `decreases` clause for termination ✅ [26:01:29]
+  - Added `decreases: Vec<String>` field to `ExecFunction`
+  - Implemented `build_decreases()` in translator to generate decreases from spec
+  - Added printer support for decreases clause output
+  - Automatically infers `param.len()` for Seq parameters if no explicit decreases
+  - Added test_print_decreases test
 - [ ] Generate loop-based or recursive exec implementation
 - [ ] Add loop invariants for recursive-to-iterative transformation
 

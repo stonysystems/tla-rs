@@ -1,0 +1,244 @@
+
+running 182 tests
+test annotation::tests::test_parse_function_line ... ok
+test annotation::tests::test_parse_helper_empty_return_type ... ok
+test annotation::tests::test_parse_helper_function ... ok
+test annotation::tests::test_parse_helper_bool_return ... ok
+test annotation::tests::test_parse_empty_module ... ok
+test annotation::tests::test_parse_helper_missing_return_type ... ok
+test annotation::tests::test_parse_helper_with_generic_return ... ok
+test annotation::tests::test_parse_mixed_predicates_and_helpers ... ok
+test annotation::tests::test_parse_module ... ok
+test annotation::tests::test_parse_simple_annotation ... ok
+test annotation::tests::test_parse_multiple_modules ... ok
+test annotation::tests::test_parse_with_comments ... ok
+test ast::tests::test_parameter_mode ... ok
+test ast::tests::test_variable_mode ... ok
+test ast::tests::test_path_construction ... ok
+test build_integration::tests::test_build_rs_template ... ok
+test build_integration::tests::test_config_builder ... ok
+test build_integration::tests::test_default_config ... ok
+test build_integration::tests::test_scons_helper ... ok
+test checker::tests::test_collection_check ... ok
+test checker::tests::test_map_comprehension_value ... ok
+test checker::tests::test_map_conditional_value ... ok
+test checker::tests::test_map_domain_biconditional_contains_key ... ok
+test checker::tests::test_map_domain_biconditional ... ok
+test checker::tests::test_map_preservation ... ok
+test checker::tests::test_saturation_check_fails ... ok
+test checker::tests::test_saturation_check_passes ... ok
+test checker::tests::test_seq_comprehension_simple ... ok
+test checker::tests::test_seq_comprehension_upper_bound_only ... ok
+test checker::tests::test_seq_comprehension_with_conjunction_bounds ... ok
+test checker::tests::test_template_match_detailed_multiple_vars ... ok
+test checker::tests::test_set_comprehension ... ok
+test checker::tests::test_template_match_detailed_unrecognized ... ok
+test checker::tests::test_template_match_multiple_vars ... ok
+test checker::tests::test_template_match_non_forall ... ok
+test checker::tests::test_validate_function ... ok
+test codegen::template_codegen::tests::test_generate_copy ... ok
+test codegen::template_codegen::tests::test_generate_simple_assignment ... ok
+test codegen::tests::test_generate_simple_struct ... ok
+test codegen::tests::test_generate_enum ... ok
+test codegen::tests::test_generate_struct_with_collections ... ok
+test codegen::tests::test_generate_struct_with_primitives ... ok
+test codegen::tests::test_naming_config_get_exec_type ... ok
+test codegen::tests::test_translate_type ... ok
+test codegen::tests::test_type_remapping ... ok
+test codegen::tests::test_type_remapping_in_collections ... ok
+test codegen::tests::test_view_impl_as_int_conversion ... ok
+test codegen::tests::test_view_impl_mixed_fields ... ok
+test config::tests::test_default_config ... ok
+test config::tests::test_get_exec_type_with_prefix ... ok
+test config::tests::test_get_exec_type_with_remapping ... ok
+test config::tests::test_get_exec_type_without_prefix ... ok
+test config::tests::test_custom_imports_in_output ... ok
+test error::tests::test_diagnostic_accumulator ... ok
+test error::tests::test_into_result_with_errors ... ok
+test error::tests::test_into_result_without_errors ... ok
+test config::tests::test_parse_toml ... ok
+test config::tests::test_module_config ... ok
+test moder::tests::test_analyze_conditional ... ok
+test moder::tests::test_analyze_field_assignment ... ok
+test moder::tests::test_analyze_conjunction ... ok
+test moder::tests::test_annotate_function ... ok
+test moder::tests::test_analyze_simple_equality ... ok
+test moder::tests::test_assignment_tracker ... ok
+test moder::tests::test_detect_branch_mismatch_conflict ... ok
+test config::tests::test_roundtrip_toml ... ok
+test moder::tests::test_detect_input_assignment_conflict ... ok
+test moder::tests::test_detect_non_recursive_function ... ok
+test moder::tests::test_detect_recursive_calls_different_function ... ok
+test moder::tests::test_detect_recursive_function ... ok
+test moder::tests::test_detect_recursive_in_nested_if ... ok
+test moder::tests::test_member_path ... ok
+test moder::tests::test_no_conflict_valid_expression ... ok
+test parser::tests::test_parse_arrow_operator ... ok
+test parser::tests::test_parse_ghost_parameter ... ok
+test parser::tests::test_parse_forall_with_trigger ... ok
+test parser::tests::test_parse_simple_spec_fn ... ok
+test parser::tests::test_parse_requires_ensures_decreases ... ok
+test parser::tests::test_parse_spec_fn_with_conjunction ... ok
+test parser::tests::test_parse_spec_fn_with_forall ... ok
+test parser::tests::test_parse_spec_fn_with_if ... ok
+test parser::tests::test_parse_struct_construction ... ok
+test parser::tests::test_parse_struct_construction_in_condition ... ok
+test parser::tests::test_parse_tracked_parameter ... ok
+test parser::tests::test_parse_view_operator ... ok
+test parser::tests::test_parser_creation ... ok
+test printer::tests::test_print_assume_assert ... ok
+test printer::tests::test_print_broadcast_use ... ok
+test printer::tests::test_print_decreases ... ok
+test printer::tests::test_print_for_in_iter ... ok
+test printer::tests::test_print_ghost_var ... ok
+test printer::tests::test_print_proof_block ... ok
+test printer::tests::test_printer_basic ... ok
+test runtime::tests::test_deep_clone_hashmap ... ok
+test runtime::tests::test_deep_clone_primitive ... ok
+test runtime::tests::test_deep_clone_vec ... ok
+test runtime::tests::test_validated_invalid ... ok
+test runtime::tests::test_validated_valid ... ok
+test runtime::tests::test_validated_view ... ok
+test runtime::tests::test_view_hashmap ... ok
+test runtime::tests::test_view_option ... ok
+test runtime::tests::test_view_primitive ... ok
+test runtime::tests::test_view_vec ... ok
+test templates::tests::test_match_expression_confidence ... ok
+test templates::tests::test_seq_comprehension_match ... ok
+test templates::tests::test_simple_assignment_match ... ok
+test templates::tests::test_struct_construction_match ... ok
+test templates::tests::test_unrecognized_pattern ... ok
+test tests::test_custom_imports_in_output ... ok
+test tests::test_transpiler_creation ... ok
+test tests::test_inline_type_generation ... ok
+test tests::test_wrapper_generation_config_defaults ... ok
+test tests::test_inline_type_generation_disabled_by_default ... ok
+test translator::tests::test_build_helper_spec_call ... ok
+test translator::tests::test_clone_input_ref_in_struct_field ... ok
+test tests::test_wrapper_generation_disabled ... ok
+test translator::tests::test_configurable_validity_predicate_name ... ok
+test translator::tests::test_detect_helper_call_with_output ... ok
+test tests::test_wrapper_generation_simple ... ok
+test translator::tests::test_collection_check_template ... ok
+test translator::tests::test_exec_type_to_string ... ok
+test translator::tests::test_expr_to_invariant_string_clone ... ok
+test translator::tests::test_expr_to_invariant_string ... ok
+test translator::tests::test_exists_with_container_contains ... ok
+test translator::tests::test_expr_to_invariant_string_if_expression ... ok
+test translator::tests::test_expr_to_invariant_string_struct ... ok
+test translator::tests::test_expr_to_invariant_string_tuple ... ok
+test translator::tests::test_expr_to_invariant_string_vec_lit ... ok
+test translator::tests::test_expr_to_invariant_string_with_var ... ok
+test translator::tests::test_expr_to_simple_string ... ok
+test translator::tests::test_extract_exists_container_and_pred ... ok
+test translator::tests::test_extract_exists_disjunction_containers ... ok
+test translator::tests::test_extract_source_and_filter ... ok
+test translator::tests::test_extract_source_dom_contains ... ok
+test translator::tests::test_extract_source_from_conditional_value ... ok
+test translator::tests::test_field_substitution ... ok
+test translator::tests::test_generate_all_loop_has_proper_invariant ... ok
+test translator::tests::test_generate_any_loop_has_proper_invariant ... ok
+test translator::tests::test_generate_helper_let_binding ... ok
+test translator::tests::test_generate_in_loop_assertions ... ok
+test translator::tests::test_generate_loops_config_default_false ... ok
+test translator::tests::test_generate_map_filter_invariants ... ok
+test translator::tests::test_generate_map_filter_loop ... ok
+test translator::tests::test_generate_post_loop_assertions ... ok
+test translator::tests::test_generate_pre_loop_assertions ... ok
+test translator::tests::test_generated_loop_code_output ... ok
+test translator::tests::test_helper_call_with_both_field_and_param_outputs ... ok
+test translator::tests::test_map_filter_conjunction ... ok
+test translator::tests::test_map_update_with_insert_pattern ... ok
+test translator::tests::test_no_clone_for_non_input_in_struct_field ... ok
+test translator::tests::test_seq_init_pattern ... ok
+test translator::tests::test_multiple_helper_calls_in_conjunction ... ok
+test translator::tests::test_substitute_var_with_index ... ok
+test translator::tests::test_transform_binary_comparison ... ok
+test translator::tests::test_transform_clone_output ... ok
+test translator::tests::test_transform_field_access ... ok
+test translator::tests::test_transform_literal ... ok
+test translator::tests::test_transform_if_else ... ok
+test translator::tests::test_transform_map_empty ... ok
+test translator::tests::test_transform_seq_empty ... ok
+test translator::tests::test_transform_set_empty ... ok
+test translator::tests::test_translate_helper_bool_return ... ok
+test translator::tests::test_translate_helper_seq_return ... ok
+test translator::tests::test_translate_name ... ok
+test translator::tests::test_translate_helper_simple ... ok
+test translator::tests::test_translate_type ... ok
+test translator::tests::test_translate_type_string_generic ... ok
+test translator::tests::test_translate_type_string_simple ... ok
+test translator::tests::test_tuple_return_generation ... ok
+test types::tests::test_exec_type_name ... ok
+test types::tests::test_parse_enum ... ok
+test types::tests::test_parse_generic_struct ... ok
+test types::tests::test_parse_real_acceptor_format ... ok
+test types::tests::test_parse_simple_struct ... ok
+test types::tests::test_parse_type_alias ... ok
+test types::tests::test_parse_verus_block_multiple_types ... ok
+test types::tests::test_parse_verus_block_struct ... ok
+test types::tests::test_parse_verus_block_with_complex_functions ... ok
+test types::tests::test_parse_with_use_statements_before_verus ... ok
+test types::tests::test_register_enum ... ok
+test types::tests::test_register_struct ... ok
+test types::tests::test_registry_creation ... ok
+
+test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 1 test
+test tests::test_cli_parsing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 15 tests
+test test_code_generation_struct ... ok
+test test_error_types ... ok
+test test_assignment_tracker ... ok
+test test_mode_annotation_parsing ... ok
+test test_expression_transformation ... ok
+test test_full_transpilation_simple ... ok
+test test_generate_enum_from_parsed_type ... ok
+test test_generate_all_types_from_registry ... ok
+test test_printer_output ... ok
+test test_parse_verus_block_and_generate_types ... ok
+test test_template_matching_struct_construction ... ok
+test test_template_matching_seq_comprehension ... ok
+test test_transpiler_pipeline ... ok
+test test_type_registry_operations ... ok
+test test_type_translation ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 14 tests
+test test_diagnostic_accumulator_collects_all_errors ... ok
+test test_annotation_wrong_parameter_count ... ok
+test test_error_messages_contain_context ... ok
+test test_error_messages_have_suggestions ... ok
+test test_input_assignment_conflict ... ok
+test test_invalid_annotation_syntax ... ok
+test test_saturation_missing_field_assignment ... ok
+test test_saturation_no_assignments ... ok
+test test_missing_annotation_for_function ... ok
+test test_unsupported_quantifier_multiple_vars ... ok
+test test_unsupported_quantifier_complex_body ... ok
+test test_use_before_assignment_conflict ... ok
+test test_translator_exists_not_supported ... ok
+test test_translator_forall_without_template ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 7 tests
+test src/build_integration/mod.rs - build_integration::run_build (line 80) ... ignored
+test src/lib.rs - (line 18) ... ignored
+test src/runtime/mod.rs - runtime::View (line 25) ... ignored
+test src/translator/mod.rs - translator::Translator::generate_all_loop (line 1201) ... ignored
+test src/translator/mod.rs - translator::Translator::generate_any_loop (line 1131) ... ignored
+test src/translator/mod.rs - translator::Translator::generate_chain_any_loop (line 1274) ... ignored
+test src/translator/mod.rs - translator::Translator::generate_map_filter_loop (line 962) ... ignored
+
+test result: ok. 0 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

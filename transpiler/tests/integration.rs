@@ -88,6 +88,7 @@ fn test_printer_output() {
             "result.0.well_formed()".to_string(),
             "LTestFunction(input@, result.0@, result.1@)".to_string(),
         ],
+        decreases: vec![],
         body: ExecExpr::Tuple(vec![
             ExecExpr::Clone(Box::new(ExecExpr::Var("input".to_string()))),
             ExecExpr::VecLit(vec![]),

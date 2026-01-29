@@ -68,6 +68,8 @@ pub struct ExecFunction {
     pub requires: Vec<String>,
     /// Ensures clauses (linking to spec)
     pub ensures: Vec<String>,
+    /// Decreases clauses (for recursive functions)
+    pub decreases: Vec<String>,
     /// Function body
     pub body: ExecExpr,
 }
@@ -1456,6 +1458,7 @@ impl Translator {
             return_type,
             requires,
             ensures,
+            decreases: Vec::new(), // Predicates are not recursive
             body,
         })
     }
@@ -1487,14 +1490,46 @@ impl Translator {
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
+        // Build decreases clause for recursive functions
+        let decreases = self.build_decreases(func);
+
         Ok(ExecFunction {
             name: exec_name,
             params,
             return_type,
             requires,
             ensures,
+            decreases,
             body,
         })
+    }
+
+    /// Build decreases clauses for recursive functions
+    fn build_decreases(&self, func: &AnnotatedFunction) -> Vec<String> {
+        if !func.is_recursive {
+            return Vec::new();
+        }
+
+        // If the spec function has explicit decreases clauses, use them
+        if !func.spec_fn.decreases.is_empty() {
+            return func
+                .spec_fn
+                .decreases
+                .iter()
+                .map(|expr| self.expr_to_simple_string(expr))
+                .collect();
+        }
+
+        // Otherwise, try to infer decreases from function structure
+        // For functions operating on sequences, typically use first param's length
+        for param in &func.spec_fn.params {
+            if let crate::ast::Type::Seq(_) = &param.ty {
+                return vec![format!("{}.len()", param.name)];
+            }
+        }
+
+        // Default: empty (will require manual annotation)
+        Vec::new()
     }
 
     /// Translate helper function parameters (all inputs passed by reference)

@@ -82,6 +82,21 @@ impl Printer {
             self.current_indent -= 1;
         }
 
+        // Print decreases (for recursive functions)
+        if !func.decreases.is_empty() {
+            self.indent();
+            self.write("decreases");
+            self.newline();
+            self.current_indent += 1;
+            for dec in &func.decreases {
+                self.indent();
+                self.write(dec);
+                self.write(",");
+                self.newline();
+            }
+            self.current_indent -= 1;
+        }
+
         // Print body
         self.indent();
         self.write("{");
@@ -623,6 +638,7 @@ mod tests {
             return_type: ExecType::Named("CState".to_string()),
             requires: vec!["s.well_formed()".to_string()],
             ensures: vec!["result.well_formed()".to_string()],
+            decreases: vec![],
             body: ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string()))),
         };
 
@@ -630,6 +646,33 @@ mod tests {
         assert!(output.contains("pub exec fn CTestFn"));
         assert!(output.contains("requires"));
         assert!(output.contains("ensures"));
+    }
+
+    #[test]
+    fn test_print_decreases() {
+        let func = ExecFunction {
+            name: "CRecursiveFn".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Vec(Box::new(ExecType::Named(
+                        "CRequest".to_string(),
+                    )))),
+                    false,
+                ),
+                is_reference: true,
+            }],
+            return_type: ExecType::Vec(Box::new(ExecType::Named("CRequest".to_string()))),
+            requires: vec!["s.valid()".to_string()],
+            ensures: vec!["result.valid()".to_string()],
+            decreases: vec!["s.len()".to_string()],
+            body: ExecExpr::VecLit(vec![]),
+        };
+
+        let output = print_function(&func);
+        assert!(output.contains("pub exec fn CRecursiveFn"));
+        assert!(output.contains("decreases"));
+        assert!(output.contains("s.len()"));
     }
 
     #[test]
