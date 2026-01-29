@@ -1745,18 +1745,28 @@ See: docs/dev/h1-helper-function-inventory.md
 - [ ] `executor.rs` helper functions
 - [ ] `replica.rs` helper functions
 
-#### H2: Extend Annotation Format for Helper Functions
+#### H2: Extend Annotation Format for Helper Functions ✅ [26:01:29]
 
-- [ ] Design annotation syntax for helper functions (all parameters are inputs, return value is output)
-  ```
-  // Option A: Explicit helper marker
-  helper ComputeSuccessorView(+, +) -> Ballot;
+See: docs/dev/h2-annotation-format-extension.md
 
-  // Option B: Infer from return type (non-bool = helper function)
-  ComputeSuccessorView(+, +);
-  ```
-- [ ] Update `annotation/mod.rs` to parse helper function annotations
-- [ ] Add `FunctionKind` enum: `Predicate` vs `HelperFunction`
+- [x] Design annotation syntax for helper functions (all parameters are inputs, return value is output)
+  - Chose Option A: Explicit `helper` keyword prefix
+  - Format: `helper FunctionName(+, +) -> ReturnType;`
+  - Predicates unchanged: `FunctionName(+, -, +);`
+- [x] Update `annotation/mod.rs` to parse helper function annotations
+  - `parse_function_line()` now handles `helper` prefix
+  - Parses optional `-> Type` return type for helpers
+  - Returns error if helper missing return type
+- [x] Add `FunctionKind` enum: `Predicate` vs `Helper`
+  - Added to `ast/mod.rs`
+  - Updated `FunctionAnnotation` with `kind` and `return_type` fields
+- [x] Added 7 new tests for helper function parsing
+  - `test_parse_helper_function`
+  - `test_parse_helper_with_generic_return`
+  - `test_parse_helper_bool_return`
+  - `test_parse_helper_missing_return_type`
+  - `test_parse_helper_empty_return_type`
+  - `test_parse_mixed_predicates_and_helpers`
 
 #### H3: Implement Helper Function Translation
 

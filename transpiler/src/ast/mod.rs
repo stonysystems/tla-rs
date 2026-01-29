@@ -96,6 +96,16 @@ pub enum ParameterMode {
     Output,
 }
 
+/// Function kind distinguishing predicates from helper functions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FunctionKind {
+    /// Predicate function returning bool with input/output parameters
+    #[default]
+    Predicate,
+    /// Helper function returning a value (all parameters are inputs)
+    Helper,
+}
+
 /// Variable mode for Verus ghost/tracked/exec distinction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VariableMode {

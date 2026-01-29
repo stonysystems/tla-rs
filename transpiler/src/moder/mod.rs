@@ -646,7 +646,9 @@ mod tests {
 
         let annotation = FunctionAnnotation {
             name: "TestFn".to_string(),
+            kind: crate::ast::FunctionKind::Predicate,
             param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
         };
 
         let mut analyzer = ModeAnalyzer::new();

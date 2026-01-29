@@ -6,12 +6,13 @@
 //! Format example:
 //! ```text
 //! module RSL::Acceptor {
-//!     LAcceptorInit(-, +);           // (out, in) - a is output, c is input
-//!     LAcceptorProcess1a(+, -, +, -); // (in, out, in, out)
+//!     LAcceptorInit(-, +);           // Predicate: first param is output
+//!     LAcceptorProcess1a(+, -, +, -); // Predicate: in, out, in, out
+//!     helper ComputeSuccessorView(+, +) -> Ballot; // Helper function
 //! }
 //! ```
 
-use crate::ast::ParameterMode;
+use crate::ast::{FunctionKind, ParameterMode};
 use crate::error::{TranspileError, TranspileResult};
 use std::collections::HashMap;
 
@@ -29,8 +30,12 @@ pub struct ModuleAnnotations {
 pub struct FunctionAnnotation {
     /// Function name
     pub name: String,
+    /// Function kind (predicate or helper)
+    pub kind: FunctionKind,
     /// Parameter modes in order
     pub param_modes: Vec<ParameterMode>,
+    /// Return type for helper functions (e.g., "Ballot", "Seq<Request>")
+    pub return_type: Option<String>,
 }
 
 /// Parser for .automan annotation files
@@ -133,8 +138,11 @@ impl AnnotationParser {
     }
 
     /// Parse a single function annotation line
+    ///
+    /// Formats supported:
+    /// - Predicate: `FunctionName(+, -, +);`
+    /// - Helper: `helper FunctionName(+, +) -> ReturnType;`
     pub fn parse_function_line(&self, line: &str) -> TranspileResult<FunctionAnnotation> {
-        // Simple parser for format: FunctionName(+, -, +);
         let line = line.trim();
         if line.is_empty() || line.starts_with("//") {
             return Err(TranspileError::Annotation {
@@ -142,6 +150,16 @@ impl AnnotationParser {
                 span: None,
             });
         }
+
+        // Check for helper function prefix
+        let (kind, line) = if line.starts_with("helper ") {
+            (
+                FunctionKind::Helper,
+                line.strip_prefix("helper ").unwrap().trim(),
+            )
+        } else {
+            (FunctionKind::Predicate, line)
+        };
 
         // Find function name and modes
         let paren_start = line.find('(').ok_or_else(|| TranspileError::Annotation {
@@ -157,9 +175,13 @@ impl AnnotationParser {
         let name = line[..paren_start].trim().to_string();
         let modes_str = &line[paren_start + 1..paren_end];
 
+        // Parse parameter modes
         let mut param_modes = Vec::new();
         for mode_char in modes_str.split(',') {
             let mode_char = mode_char.trim();
+            if mode_char.is_empty() {
+                continue; // Skip empty entries (e.g., trailing comma)
+            }
             match mode_char {
                 "+" => param_modes.push(ParameterMode::Input),
                 "-" => param_modes.push(ParameterMode::Output),
@@ -172,7 +194,37 @@ impl AnnotationParser {
             }
         }
 
-        Ok(FunctionAnnotation { name, param_modes })
+        // Parse return type for helper functions
+        let return_type = if kind == FunctionKind::Helper {
+            let after_paren = &line[paren_end + 1..];
+            if let Some(arrow_pos) = after_paren.find("->") {
+                let type_str = after_paren[arrow_pos + 2..]
+                    .trim()
+                    .trim_end_matches(';')
+                    .trim();
+                if type_str.is_empty() {
+                    return Err(TranspileError::Annotation {
+                        message: "Helper function missing return type after ->".to_string(),
+                        span: None,
+                    });
+                }
+                Some(type_str.to_string())
+            } else {
+                return Err(TranspileError::Annotation {
+                    message: "Helper function requires return type (-> Type)".to_string(),
+                    span: None,
+                });
+            }
+        } else {
+            None
+        };
+
+        Ok(FunctionAnnotation {
+            name,
+            kind,
+            param_modes,
+            return_type,
+        })
     }
 }
 
@@ -195,11 +247,13 @@ mod tests {
 
         let annotation = result.unwrap();
         assert_eq!(annotation.name, "LAcceptorProcess1a");
+        assert_eq!(annotation.kind, FunctionKind::Predicate);
         assert_eq!(annotation.param_modes.len(), 4);
         assert_eq!(annotation.param_modes[0], ParameterMode::Input);
         assert_eq!(annotation.param_modes[1], ParameterMode::Output);
         assert_eq!(annotation.param_modes[2], ParameterMode::Input);
         assert_eq!(annotation.param_modes[3], ParameterMode::Output);
+        assert!(annotation.return_type.is_none());
     }
 
     #[test]
@@ -210,7 +264,63 @@ mod tests {
 
         let annotation = result.unwrap();
         assert_eq!(annotation.name, "NodeInit");
+        assert_eq!(annotation.kind, FunctionKind::Predicate);
         assert_eq!(annotation.param_modes.len(), 2);
+        assert!(annotation.return_type.is_none());
+    }
+
+    #[test]
+    fn test_parse_helper_function() {
+        let parser = AnnotationParser::new(String::new());
+        let result = parser.parse_function_line("helper ComputeSuccessorView(+, +) -> Ballot;");
+        assert!(result.is_ok());
+
+        let annotation = result.unwrap();
+        assert_eq!(annotation.name, "ComputeSuccessorView");
+        assert_eq!(annotation.kind, FunctionKind::Helper);
+        assert_eq!(annotation.param_modes.len(), 2);
+        assert_eq!(annotation.param_modes[0], ParameterMode::Input);
+        assert_eq!(annotation.param_modes[1], ParameterMode::Input);
+        assert_eq!(annotation.return_type, Some("Ballot".to_string()));
+    }
+
+    #[test]
+    fn test_parse_helper_with_generic_return() {
+        let parser = AnnotationParser::new(String::new());
+        let result =
+            parser.parse_function_line("helper BoundRequestSequence(+, +) -> Seq<Request>;");
+        assert!(result.is_ok());
+
+        let annotation = result.unwrap();
+        assert_eq!(annotation.name, "BoundRequestSequence");
+        assert_eq!(annotation.kind, FunctionKind::Helper);
+        assert_eq!(annotation.return_type, Some("Seq<Request>".to_string()));
+    }
+
+    #[test]
+    fn test_parse_helper_bool_return() {
+        let parser = AnnotationParser::new(String::new());
+        let result = parser.parse_function_line("helper RequestsMatch(+, +) -> bool;");
+        assert!(result.is_ok());
+
+        let annotation = result.unwrap();
+        assert_eq!(annotation.name, "RequestsMatch");
+        assert_eq!(annotation.kind, FunctionKind::Helper);
+        assert_eq!(annotation.return_type, Some("bool".to_string()));
+    }
+
+    #[test]
+    fn test_parse_helper_missing_return_type() {
+        let parser = AnnotationParser::new(String::new());
+        let result = parser.parse_function_line("helper MissingReturn(+, +);");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_helper_empty_return_type() {
+        let parser = AnnotationParser::new(String::new());
+        let result = parser.parse_function_line("helper EmptyReturn(+, +) -> ;");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -299,5 +409,54 @@ mod tests {
         assert_eq!(modules.len(), 1);
         assert_eq!(modules[0].module_path, "Empty::Module");
         assert!(modules[0].functions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_mixed_predicates_and_helpers() {
+        let source = r#"
+            module RSL::Election {
+                // Predicates
+                ElectionStateInit(-, +);
+                ElectionStateProcessHeartbeat(+, -, +, +);
+
+                // Helper functions
+                helper ComputeSuccessorView(+, +) -> Ballot;
+                helper BoundRequestSequence(+, +) -> Seq<Request>;
+                helper RequestsMatch(+, +) -> bool;
+            }
+        "#;
+
+        let parser = AnnotationParser::new(source.to_string());
+        let modules = parser.parse().unwrap();
+        assert_eq!(modules.len(), 1);
+
+        let module = &modules[0];
+        assert_eq!(module.module_path, "RSL::Election");
+        assert_eq!(module.functions.len(), 5);
+
+        // Check predicates
+        let init = module.functions.get("ElectionStateInit").unwrap();
+        assert_eq!(init.kind, FunctionKind::Predicate);
+        assert!(init.return_type.is_none());
+
+        let heartbeat = module
+            .functions
+            .get("ElectionStateProcessHeartbeat")
+            .unwrap();
+        assert_eq!(heartbeat.kind, FunctionKind::Predicate);
+        assert_eq!(heartbeat.param_modes.len(), 4);
+
+        // Check helpers
+        let compute = module.functions.get("ComputeSuccessorView").unwrap();
+        assert_eq!(compute.kind, FunctionKind::Helper);
+        assert_eq!(compute.return_type, Some("Ballot".to_string()));
+
+        let bound = module.functions.get("BoundRequestSequence").unwrap();
+        assert_eq!(bound.kind, FunctionKind::Helper);
+        assert_eq!(bound.return_type, Some("Seq<Request>".to_string()));
+
+        let matches = module.functions.get("RequestsMatch").unwrap();
+        assert_eq!(matches.kind, FunctionKind::Helper);
+        assert_eq!(matches.return_type, Some("bool".to_string()));
     }
 }
