@@ -3,7 +3,7 @@
 //! This module transforms validated spec predicates into executable Rust/Verus
 //! functions with proper proof linkage.
 
-use crate::ast::{BinOp, Expr, Literal, ParameterMode, Type};
+use crate::ast::{BinOp, Expr, FunctionKind, Literal, ParameterMode, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
@@ -1399,6 +1399,15 @@ impl Translator {
             });
         }
 
+        // Dispatch based on function kind
+        match func.kind {
+            FunctionKind::Helper => self.translate_helper(func),
+            FunctionKind::Predicate => self.translate_predicate(func),
+        }
+    }
+
+    /// Translate a predicate (existing logic)
+    fn translate_predicate(&self, func: &AnnotatedFunction) -> TranspileResult<ExecFunction> {
         // Generate exec function name
         let exec_name = self.translate_name(&func.spec_fn.name);
 
@@ -1449,6 +1458,167 @@ impl Translator {
             ensures,
             body,
         })
+    }
+
+    /// Translate a helper function (all params are inputs, return value is computed)
+    fn translate_helper(&self, func: &AnnotatedFunction) -> TranspileResult<ExecFunction> {
+        // Generate exec function name
+        let exec_name = self.translate_name(&func.spec_fn.name);
+
+        // Translate parameters (all inputs for helpers)
+        let params = self.translate_helper_params(func);
+
+        // Build return type from annotation
+        let return_type = self.build_helper_return_type(func)?;
+
+        // Build requires clauses (validity for inputs)
+        let requires = self.build_helper_requires(func);
+
+        // Build ensures clauses (result.valid() + result@ == spec_call)
+        let ensures = self.build_helper_ensures(func);
+
+        // Transform function body - no output extraction needed
+        let ctx = TransformContext {
+            config: &self.config,
+            output_params: Vec::new(), // helpers have no output params
+            input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+        let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
+
+        Ok(ExecFunction {
+            name: exec_name,
+            params,
+            return_type,
+            requires,
+            ensures,
+            body,
+        })
+    }
+
+    /// Translate helper function parameters (all inputs passed by reference)
+    fn translate_helper_params(&self, func: &AnnotatedFunction) -> Vec<ExecParameter> {
+        func.spec_fn
+            .params
+            .iter()
+            .map(|param| ExecParameter {
+                name: param.name.clone(),
+                ty: ExecType::Reference(Box::new(self.translate_type(&param.ty)), false),
+                is_reference: true,
+            })
+            .collect()
+    }
+
+    /// Build return type for helper function from annotation
+    fn build_helper_return_type(&self, func: &AnnotatedFunction) -> TranspileResult<ExecType> {
+        if let Some(ref return_type_str) = func.return_type {
+            Ok(self.translate_type_string(return_type_str))
+        } else {
+            // Fall back to the spec function's return type
+            Ok(self.translate_type(&func.spec_fn.return_type))
+        }
+    }
+
+    /// Translate a type string from annotation to ExecType
+    fn translate_type_string(&self, type_str: &str) -> ExecType {
+        // Handle generic types like Seq<Request>
+        if let Some(open) = type_str.find('<') {
+            let base = &type_str[..open];
+            let inner_end = type_str.rfind('>').unwrap_or(type_str.len());
+            let inner = &type_str[open + 1..inner_end];
+
+            match base {
+                "Seq" => ExecType::Vec(Box::new(self.translate_type_string(inner))),
+                "Set" => ExecType::Generic(
+                    "HashSet".to_string(),
+                    vec![self.translate_type_string(inner)],
+                ),
+                "Map" => {
+                    // Handle Map<K, V>
+                    let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+                    if parts.len() == 2 {
+                        ExecType::HashMap(
+                            Box::new(self.translate_type_string(parts[0])),
+                            Box::new(self.translate_type_string(parts[1])),
+                        )
+                    } else {
+                        ExecType::Named(self.translate_name(type_str))
+                    }
+                }
+                _ => ExecType::Generic(
+                    self.translate_name(base),
+                    vec![self.translate_type_string(inner)],
+                ),
+            }
+        } else {
+            // Simple named type
+            match type_str {
+                "bool" => ExecType::Named("bool".to_string()),
+                "int" => ExecType::Named("i64".to_string()),
+                "nat" => ExecType::Named("u64".to_string()),
+                _ => ExecType::Named(self.translate_name(type_str)),
+            }
+        }
+    }
+
+    /// Build requires clauses for helper function
+    fn build_helper_requires(&self, func: &AnnotatedFunction) -> Vec<String> {
+        let mut requires = Vec::new();
+
+        // Add validity requirements for all input params
+        let validity_pred = &self.config.validity_predicate_name;
+        for param in &func.spec_fn.params {
+            if !Self::is_primitive_type(&param.ty) {
+                requires.push(format!("{}.{}()", param.name, validity_pred));
+            }
+        }
+
+        // Add recommends clauses from the spec as requires
+        for recommends_expr in &func.spec_fn.recommends {
+            requires.push(self.expr_to_requires_string(recommends_expr));
+        }
+
+        requires
+    }
+
+    /// Build ensures clauses for helper function
+    fn build_helper_ensures(&self, func: &AnnotatedFunction) -> Vec<String> {
+        let mut ensures = Vec::new();
+
+        // Check if return type is primitive
+        let is_primitive = if let Some(ref return_type_str) = func.return_type {
+            matches!(
+                return_type_str.as_str(),
+                "bool" | "int" | "nat" | "i64" | "u64"
+            )
+        } else {
+            Self::is_primitive_type(&func.spec_fn.return_type)
+        };
+
+        // Add result.valid() if not primitive
+        if !is_primitive {
+            let validity_pred = &self.config.validity_predicate_name;
+            ensures.push(format!("result.{}()", validity_pred));
+        }
+
+        // Add linkage to spec: result@ == spec_fn(param1@, param2@, ...)
+        let spec_call = self.build_helper_spec_call(func);
+        ensures.push(spec_call);
+
+        ensures
+    }
+
+    /// Build spec call for helper function ensures clause
+    fn build_helper_spec_call(&self, func: &AnnotatedFunction) -> String {
+        let args: Vec<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .map(|param| format!("{}@", param.name))
+            .collect();
+
+        format!("result@ == {}({})", func.spec_fn.name, args.join(", "))
     }
 
     /// Translate spec name to exec name (L* -> C*)
@@ -7384,5 +7554,313 @@ mod tests {
         ]);
         let result = translator.expr_to_invariant_string_with_var(&vec_expr, "x");
         assert_eq!(result, "seq![1, 2]");
+    }
+
+    #[test]
+    fn test_translate_type_string_simple() {
+        let translator = Translator::default();
+
+        // Simple type
+        assert!(matches!(
+            translator.translate_type_string("Ballot"),
+            ExecType::Named(n) if n == "CBallot"
+        ));
+
+        // Primitive types
+        assert!(matches!(
+            translator.translate_type_string("bool"),
+            ExecType::Named(n) if n == "bool"
+        ));
+        assert!(matches!(
+            translator.translate_type_string("int"),
+            ExecType::Named(n) if n == "i64"
+        ));
+        assert!(matches!(
+            translator.translate_type_string("nat"),
+            ExecType::Named(n) if n == "u64"
+        ));
+    }
+
+    #[test]
+    fn test_translate_type_string_generic() {
+        let translator = Translator::default();
+
+        // Seq<Request> -> Vec<CRequest>
+        let seq_type = translator.translate_type_string("Seq<Request>");
+        assert!(matches!(seq_type, ExecType::Vec(_)));
+
+        // Set<int> -> HashSet<i64>
+        let set_type = translator.translate_type_string("Set<int>");
+        match set_type {
+            ExecType::Generic(name, args) => {
+                assert_eq!(name, "HashSet");
+                assert_eq!(args.len(), 1);
+            }
+            _ => panic!("Expected Generic type for Set<int>"),
+        }
+    }
+
+    #[test]
+    fn test_translate_helper_simple() {
+        use crate::ast::{Generics, Parameter, Path};
+
+        let translator = Translator::default();
+
+        // Create a simple helper function: ComputeSuccessorView(b: Ballot, c: LConstants) -> Ballot
+        let spec_fn = crate::ast::SpecFunction {
+            name: "ComputeSuccessorView".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "b".to_string(),
+                    ty: Type::Named(Path::single("Ballot".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "c".to_string(),
+                    ty: Type::Named(Path::single("LConstants".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Named(Path::single("Ballot".to_string())),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Struct {
+                name: Path::single("Ballot".to_string()),
+                fields: vec![
+                    ("seqno".to_string(), Expr::Literal(Literal::Int(0))),
+                    ("proposer_id".to_string(), Expr::Literal(Literal::Int(0))),
+                ],
+            },
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Ballot".to_string()),
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated).unwrap();
+
+        // Check function name
+        assert_eq!(result.name, "CComputeSuccessorView");
+
+        // All parameters should be inputs (references)
+        assert_eq!(result.params.len(), 2);
+        for param in &result.params {
+            assert!(param.is_reference);
+        }
+
+        // Return type should be CBallot
+        assert!(matches!(&result.return_type, ExecType::Named(n) if n == "CBallot"));
+
+        // Requires should include validity checks
+        // Default validity predicate is "well_formed"
+        assert!(result
+            .requires
+            .iter()
+            .any(|r| r.contains("b.well_formed()")));
+        assert!(result
+            .requires
+            .iter()
+            .any(|r| r.contains("c.well_formed()")));
+
+        // Ensures should include result.valid() and spec linkage
+        // Default validity predicate is "well_formed"
+        assert!(result
+            .ensures
+            .iter()
+            .any(|e| e.contains("result.well_formed()")));
+        assert!(result
+            .ensures
+            .iter()
+            .any(|e| e.contains("result@ == ComputeSuccessorView(b@, c@)")));
+    }
+
+    #[test]
+    fn test_translate_helper_bool_return() {
+        use crate::ast::{Generics, Parameter, Path};
+
+        let translator = Translator::default();
+
+        // Create a helper function returning bool: RequestsMatch(a, b) -> bool
+        let spec_fn = crate::ast::SpecFunction {
+            name: "RequestsMatch".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "a".to_string(),
+                    ty: Type::Named(Path::single("Request".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "b".to_string(),
+                    ty: Type::Named(Path::single("Request".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("bool".to_string()),
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated).unwrap();
+
+        // Return type should be bool
+        assert!(matches!(&result.return_type, ExecType::Named(n) if n == "bool"));
+
+        // For bool return, no result.valid() should be generated
+        // For bool return, no result.well_formed() should be generated
+        assert!(!result
+            .ensures
+            .iter()
+            .any(|e| e.contains("result.well_formed()")));
+
+        // But spec linkage should still be present
+        assert!(result
+            .ensures
+            .iter()
+            .any(|e| e.contains("result@ == RequestsMatch(a@, b@)")));
+    }
+
+    #[test]
+    fn test_translate_helper_seq_return() {
+        use crate::ast::{Generics, Parameter, Path};
+
+        let translator = Translator::default();
+
+        // Create a helper function returning Seq<Request>
+        let spec_fn = crate::ast::SpecFunction {
+            name: "BoundRequestSequence".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "bound".to_string(),
+                    ty: Type::Named(Path::single("UpperBound".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Ident("s".to_string()),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Seq<Request>".to_string()),
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated).unwrap();
+
+        // Return type should be Vec<CRequest>
+        assert!(matches!(&result.return_type, ExecType::Vec(_)));
+
+        // Check spec linkage
+        assert!(result
+            .ensures
+            .iter()
+            .any(|e| e.contains("result@ == BoundRequestSequence(s@, bound@)")));
+    }
+
+    #[test]
+    fn test_build_helper_spec_call() {
+        use crate::ast::{Generics, Parameter, Path};
+
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "MyHelper".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "a".to_string(),
+                    ty: Type::Named(Path::single("TypeA".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "b".to_string(),
+                    ty: Type::Named(Path::single("TypeB".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "c".to_string(),
+                    ty: Type::Named(Path::single("TypeC".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Named(Path::single("Result".to_string())),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
+            return_type: Some("Result".to_string()),
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_helper_spec_call(&annotated);
+        assert_eq!(spec_call, "result@ == MyHelper(a@, b@, c@)");
     }
 }

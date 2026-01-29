@@ -1778,22 +1778,26 @@ See: docs/dev/h3-helper-function-translation.md
   - Updated ModeAnalyzer::annotate() to accept and propagate kind
   - Updated check_functionalizable() to handle helper vs predicate
   - Helper functions: no output params, always functionalizable
-- [ ] H3.2: Add `translate_helper()` method to translator (~100 LOC)
-  - All params as inputs (passed by reference)
-  - Return type from annotation
-  - Simpler body transformation (no output extraction)
-- [ ] H3.3: Handle different return types (~30 LOC)
-  - Struct types (e.g., `-> Ballot` → `CBallot`)
-  - Collection types (e.g., `-> Seq<Request>` → `Vec<CRequest>`)
-  - Primitive types (e.g., `-> bool`, `-> int` → `i64`)
-- [ ] H3.4: Generate proper `ensures` clause for helpers (~30 LOC)
-  ```rust
-  pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBallot)
-  ensures
-      result.valid(),
-      result@ == ComputeSuccessorView(b@, c@),
-  ```
-- [ ] H3.5: Update transpile pipeline to pass FunctionKind (~20 LOC)
+- [x] H3.2: Add `translate_helper()` method to translator ✅ [26:01:29]
+  - Added `translate_helper()` method with all params as inputs (passed by reference)
+  - Added `translate_helper_params()` for parameter translation
+  - Added `build_helper_return_type()` for return type handling
+  - Added `build_helper_requires()` for validity requirements
+  - Modified `translate()` to dispatch based on FunctionKind
+- [x] H3.3: Handle different return types ✅ [26:01:29]
+  - Added `translate_type_string()` method to parse annotation return types
+  - Handles struct types (e.g., `Ballot` → `CBallot`)
+  - Handles collection types (e.g., `Seq<Request>` → `Vec<CRequest>`)
+  - Handles primitive types (e.g., `bool`, `int` → `i64`, `nat` → `u64`)
+  - Handles generic types including Map and Set
+- [x] H3.4: Generate proper `ensures` clause for helpers ✅ [26:01:29]
+  - Added `build_helper_ensures()` method
+  - Generates `result.valid()` for non-primitive return types
+  - Generates spec linkage: `result@ == SpecFn(param1@, param2@, ...)`
+  - Added `build_helper_spec_call()` helper method
+- [x] H3.5: FunctionKind already propagated ✅ [26:01:29]
+  - FunctionKind is already propagated through the pipeline via AnnotatedFunction
+  - No additional changes needed
 
 #### H4: Handle Recursive Helper Functions
 
