@@ -1833,12 +1833,13 @@ exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -
 }
 ```
 
-#### H5: Update Code Generation Pipeline
+#### H5: Update Code Generation Pipeline ✅ [26:01:29]
 
-- [ ] Modify `transpile_file()` to process helper functions alongside predicates
-- [ ] Generate helper functions BEFORE predicates (dependency order)
-- [ ] Update import generation to exclude manual implementation imports
-- [ ] Add config option: `generate_helper_functions = true`
+Pipeline already supports helper functions:
+- [x] `transpile_file()` processes both predicates and helpers via annotation dispatch
+- [x] Helper functions generated in parse order
+- [x] Tested with election module - all helper functions generated correctly
+- [N/A] No config option needed - helpers processed automatically when annotated
 
 #### H6: Remove Manual Implementation Dependencies
 

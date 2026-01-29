@@ -1,8 +1,11 @@
 // Mode annotations for election.rs spec functions
 // + = input (read-only)
 // - = output (computed)
+// helper keyword marks non-predicate helper functions
 
 module RSL::election {
+    // === Predicates ===
+
     // struct ElectionState initialization
     // es is output, c is input
     ElectionStateInit(-, +);
@@ -26,4 +29,18 @@ module RSL::election {
     // Reflect execution of a request batch
     // es=input state, es_=output state, batch=input batch
     ElectionStateReflectExecutedRequestBatch(+, -, +);
+
+    // === Helper Functions (non-recursive) ===
+
+    // Compute the next ballot in sequence
+    helper ComputeSuccessorView(+, +) -> Ballot;
+
+    // Bound a sequence of requests to a maximum length
+    helper BoundRequestSequence(+, +) -> Seq<Request>;
+
+    // Check if two requests have matching client and seqno
+    helper RequestsMatch(+, +) -> bool;
+
+    // Check if a request is satisfied by another
+    helper RequestSatisfiedBy(+, +) -> bool;
 }

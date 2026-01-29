@@ -57,6 +57,62 @@ impl View for CElectionState {
     }
 }
 
+pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBallot)
+requires
+    b.valid(),
+    c.valid(),
+ensures
+    result.valid(),
+    result@ == ComputeSuccessorView(b@, c@),
+{
+if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
+        CBallot {
+            seqno: b.seqno,
+            proposer_id: (b.proposer_id + 1),
+        }
+    } else {
+        CBallot {
+            seqno: (b.seqno + 1),
+            proposer_id: 0,
+        }
+    }
+}
+
+pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: &CUpperBound) -> (result: Vec<CRequest>)
+requires
+    s.valid(),
+    lengthBound.valid(),
+ensures
+    result.valid(),
+    result@ == BoundRequestSequence(s@, lengthBound@),
+{
+if ((lengthBound is UpperBoundFinite) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {
+        s.subrange(0, lengthBound.get_n())
+    } else {
+        s
+    }
+}
+
+pub exec fn CRequestsMatch(r1: &CRequest, r2: &CRequest) -> (result: bool)
+requires
+    r1.valid(),
+    r2.valid(),
+ensures
+    result@ == RequestsMatch(r1@, r2@),
+{
+((r1 is Request) && ((r2 is Request) && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
+}
+
+pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
+requires
+    r1.valid(),
+    r2.valid(),
+ensures
+    result@ == RequestSatisfiedBy(r1@, r2@),
+{
+((r1 is Request) && ((r2 is Request) && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
+}
+
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)
 requires
     c.valid(),
@@ -257,3 +313,4 @@ CElectionState {
 }
 
 } // verus!
+
