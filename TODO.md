@@ -927,7 +927,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
 - [x] Create `src/protocol/RSL/replica.automan`
 - [x] Create `src/protocol/RSL/broadcast.automan`
 
-#### Phase 2: Run Transpiler and Compare Output (IN PROGRESS)
+#### Phase 2: Run Transpiler and Compare Output ✅ COMPLETE
 **Parser enhancements completed [26:01:24]:**
 - [x] Add turbofish syntax support `::<Type>` for generic type parameters
 - [x] Add `is` keyword for enum variant checks
@@ -1737,13 +1737,13 @@ See: docs/dev/h1-helper-function-inventory.md
 - [x] `LtUpperBound(int, UpperBound) -> bool` - simple
 - [x] `UpperBoundedAddition(int, int, UpperBound) -> int` - simple
 
-**Other RSL modules** (future work):
-- [ ] `broadcast.rs` helper functions
-- [ ] `proposer.rs` helper functions
-- [ ] `acceptor.rs` helper functions
-- [ ] `learner.rs` helper functions
-- [ ] `executor.rs` helper functions
-- [ ] `replica.rs` helper functions
+**Other RSL modules** ✅ [26:01:29]:
+- [x] `broadcast.rs` helper functions - only has BuildLBroadcast (recursive, excluded)
+- [x] `proposer.rs` helper functions - all predicates (no non-bool helpers)
+- [x] `acceptor.rs` helper functions - all predicates, added config
+- [x] `learner.rs` helper functions - all predicates (no non-bool helpers)
+- [x] `executor.rs` helper functions - GetPacketsFromReplies & LClientsInReplies (recursive, excluded)
+- [x] `replica.rs` helper functions - added SpontaneousClock & LReplicaNumActions as helpers
 
 #### H2: Extend Annotation Format for Helper Functions ✅ [26:01:29]
 
