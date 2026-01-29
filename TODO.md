@@ -1802,7 +1802,11 @@ See: docs/dev/h3-helper-function-translation.md
 #### H4: Handle Recursive Helper Functions
 
 Some helper functions are recursive (e.g., `RemoveAllSatisfiedRequestsInSequence`):
-- [ ] Detect recursive spec functions
+- [x] Detect recursive spec functions ✅ [26:01:29]
+  - Added `is_recursive` field to `AnnotatedFunction`
+  - Implemented `contains_self_call()` helper to detect self-calls in expression tree
+  - Added 4 tests for recursive detection
+  - See docs/dev/h4.1-detect-recursive-functions.md
 - [ ] Generate `decreases` clause for termination
 - [ ] Generate loop-based or recursive exec implementation
 - [ ] Add loop invariants for recursive-to-iterative transformation

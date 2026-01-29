@@ -22,6 +22,8 @@ pub struct AnnotatedFunction {
     pub param_modes: Vec<ParameterMode>,
     /// Return type for helper functions (e.g., "Ballot", "Seq<Request>")
     pub return_type: Option<String>,
+    /// Whether this function is recursive (calls itself)
+    pub is_recursive: bool,
     /// Whether this can be functionalized
     pub is_functionalizable: bool,
     /// Reason if not functionalizable
@@ -149,6 +151,9 @@ impl ModeAnalyzer {
         let kind = annotation.kind;
         let return_type = annotation.return_type.clone();
 
+        // Check if function is recursive
+        let is_recursive = Self::is_recursive(&spec_fn);
+
         // Check if function can be functionalized (different logic for helpers vs predicates)
         let (is_functionalizable, reason) =
             self.check_functionalizable(&spec_fn, &param_modes, kind);
@@ -158,6 +163,7 @@ impl ModeAnalyzer {
             kind,
             param_modes,
             return_type,
+            is_recursive,
             is_functionalizable,
             non_functionalizable_reason: reason,
         })
@@ -192,6 +198,143 @@ impl ModeAnalyzer {
                 }
                 (true, None)
             }
+        }
+    }
+
+    /// Detect if a function is recursive (contains calls to itself)
+    fn is_recursive(spec_fn: &SpecFunction) -> bool {
+        Self::contains_self_call(&spec_fn.body, &spec_fn.name)
+    }
+
+    /// Check if an expression contains a call to the given function name
+    fn contains_self_call(expr: &Expr, func_name: &str) -> bool {
+        match expr {
+            // Check function calls - primary way recursion occurs
+            Expr::Call { func, args } => {
+                // Check if this is a call to the same function
+                if func.segments.last().map(|s| s.as_str()) == Some(func_name) {
+                    return true;
+                }
+                // Check arguments recursively
+                args.iter()
+                    .any(|arg| Self::contains_self_call(arg, func_name))
+            }
+
+            // Check method calls (receiver.method(args))
+            Expr::MethodCall {
+                receiver,
+                method: _,
+                args,
+            } => {
+                Self::contains_self_call(receiver, func_name)
+                    || args
+                        .iter()
+                        .any(|arg| Self::contains_self_call(arg, func_name))
+            }
+
+            // Binary expressions (arithmetic, logical, comparison)
+            Expr::Binary(left, _, right)
+            | Expr::Eq(left, right)
+            | Expr::Ne(left, right)
+            | Expr::Lt(left, right)
+            | Expr::Le(left, right)
+            | Expr::Gt(left, right)
+            | Expr::Ge(left, right)
+            | Expr::Implies(left, right)
+            | Expr::Iff(left, right) => {
+                Self::contains_self_call(left, func_name)
+                    || Self::contains_self_call(right, func_name)
+            }
+
+            // Unary expressions
+            Expr::Not(inner) | Expr::View(inner) | Expr::Unary(_, inner) => {
+                Self::contains_self_call(inner, func_name)
+            }
+
+            // Field/arrow access
+            Expr::Field(base, _) | Expr::Arrow(base, _) => {
+                Self::contains_self_call(base, func_name)
+            }
+
+            // Index access
+            Expr::Index(base, idx) => {
+                Self::contains_self_call(base, func_name)
+                    || Self::contains_self_call(idx, func_name)
+            }
+
+            // Conditional
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                Self::contains_self_call(cond, func_name)
+                    || Self::contains_self_call(then_branch, func_name)
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::contains_self_call(e, func_name))
+            }
+
+            // Match expression
+            Expr::Match { scrutinee, arms } => {
+                Self::contains_self_call(scrutinee, func_name)
+                    || arms
+                        .iter()
+                        .any(|arm| Self::contains_self_call(&arm.body, func_name))
+            }
+
+            // Struct construction
+            Expr::Struct { name: _, fields } => fields
+                .iter()
+                .any(|(_, value)| Self::contains_self_call(value, func_name)),
+
+            // Struct update
+            Expr::StructUpdate { base, fields, .. } => {
+                Self::contains_self_call(base, func_name)
+                    || fields
+                        .iter()
+                        .any(|(_, value)| Self::contains_self_call(value, func_name))
+            }
+
+            // Collection literals
+            Expr::SeqLit(elements) | Expr::SetLit(elements) => elements
+                .iter()
+                .any(|e| Self::contains_self_call(e, func_name)),
+
+            // Map literal
+            Expr::MapLit(pairs) => pairs.iter().any(|(k, v)| {
+                Self::contains_self_call(k, func_name) || Self::contains_self_call(v, func_name)
+            }),
+
+            // Conjunction/disjunction
+            Expr::Conjunction(clauses) | Expr::Disjunction(clauses) => clauses
+                .iter()
+                .any(|c| Self::contains_self_call(c, func_name)),
+
+            // Quantifiers
+            Expr::Forall {
+                vars: _,
+                triggers: _,
+                body,
+            } => Self::contains_self_call(body, func_name),
+
+            Expr::Exists { vars: _, body } => Self::contains_self_call(body, func_name),
+
+            // Is/Cast
+            Expr::Is(base, _) | Expr::Cast(base, _) => Self::contains_self_call(base, func_name),
+
+            // Let binding
+            Expr::Let { value, body, .. } => {
+                Self::contains_self_call(value, func_name)
+                    || Self::contains_self_call(body, func_name)
+            }
+
+            // Terminals - no recursion possible
+            Expr::Ident(_)
+            | Expr::Literal(_)
+            | Expr::SeqEmpty
+            | Expr::SetEmpty
+            | Expr::MapEmpty => false,
         }
     }
 
@@ -620,7 +763,7 @@ impl Default for ModeAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, Path, Type};
+    use crate::ast::{BinOp, Expr, Literal, Path, Type};
 
     #[test]
     fn test_member_path() {
@@ -840,5 +983,113 @@ mod tests {
 
         let conflicts = analyzer.detect_conflicts(&expr, &input_params, &output_params);
         assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_detect_recursive_function() {
+        // Create a recursive function: F(x) = if x == 0 then 1 else F(x-1)
+        let spec_fn = SpecFunction {
+            name: "Factorial".to_string(),
+            generics: Default::default(),
+            params: vec![],
+            return_type: Type::Int,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::If {
+                cond: Box::new(Expr::Eq(
+                    Box::new(Expr::Ident("x".to_string())),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+                then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+                else_branch: Some(Box::new(Expr::Call {
+                    func: Path::single("Factorial".to_string()),
+                    args: vec![Expr::Binary(
+                        Box::new(Expr::Ident("x".to_string())),
+                        BinOp::Sub,
+                        Box::new(Expr::Literal(Literal::Int(1))),
+                    )],
+                })),
+            },
+            span: None,
+        };
+
+        assert!(ModeAnalyzer::is_recursive(&spec_fn));
+    }
+
+    #[test]
+    fn test_detect_non_recursive_function() {
+        // Create a non-recursive function: F(x) = x + 1
+        let spec_fn = SpecFunction {
+            name: "Increment".to_string(),
+            generics: Default::default(),
+            params: vec![],
+            return_type: Type::Int,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Binary(
+                Box::new(Expr::Ident("x".to_string())),
+                BinOp::Add,
+                Box::new(Expr::Literal(Literal::Int(1))),
+            ),
+            span: None,
+        };
+
+        assert!(!ModeAnalyzer::is_recursive(&spec_fn));
+    }
+
+    #[test]
+    fn test_detect_recursive_in_nested_if() {
+        // Create a function with recursion in nested branch
+        let spec_fn = SpecFunction {
+            name: "NestedRecursive".to_string(),
+            generics: Default::default(),
+            params: vec![],
+            return_type: Type::Int,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::If {
+                cond: Box::new(Expr::Literal(Literal::Bool(true))),
+                then_branch: Box::new(Expr::If {
+                    cond: Box::new(Expr::Literal(Literal::Bool(false))),
+                    then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+                    else_branch: Some(Box::new(Expr::Call {
+                        func: Path::single("NestedRecursive".to_string()),
+                        args: vec![],
+                    })),
+                }),
+                else_branch: None,
+            },
+            span: None,
+        };
+
+        assert!(ModeAnalyzer::is_recursive(&spec_fn));
+    }
+
+    #[test]
+    fn test_detect_recursive_calls_different_function() {
+        // Calling a different function should not count as recursive
+        let spec_fn = SpecFunction {
+            name: "MyFunction".to_string(),
+            generics: Default::default(),
+            params: vec![],
+            return_type: Type::Int,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Call {
+                func: Path::single("OtherFunction".to_string()),
+                args: vec![Expr::Ident("x".to_string())],
+            },
+            span: None,
+        };
+
+        assert!(!ModeAnalyzer::is_recursive(&spec_fn));
     }
 }

@@ -7646,6 +7646,7 @@ mod tests {
             kind: FunctionKind::Helper,
             param_modes: vec![ParameterMode::Input, ParameterMode::Input],
             return_type: Some("Ballot".to_string()),
+            is_recursive: false,
             is_functionalizable: true,
             non_functionalizable_reason: None,
         };
@@ -7727,6 +7728,7 @@ mod tests {
             kind: FunctionKind::Helper,
             param_modes: vec![ParameterMode::Input, ParameterMode::Input],
             return_type: Some("bool".to_string()),
+            is_recursive: false,
             is_functionalizable: true,
             non_functionalizable_reason: None,
         };
@@ -7790,6 +7792,7 @@ mod tests {
             kind: FunctionKind::Helper,
             param_modes: vec![ParameterMode::Input, ParameterMode::Input],
             return_type: Some("Seq<Request>".to_string()),
+            is_recursive: false,
             is_functionalizable: true,
             non_functionalizable_reason: None,
         };
@@ -7856,6 +7859,7 @@ mod tests {
                 ParameterMode::Input,
             ],
             return_type: Some("Result".to_string()),
+            is_recursive: false,
             is_functionalizable: true,
             non_functionalizable_reason: None,
         };
