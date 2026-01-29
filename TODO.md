@@ -1578,6 +1578,67 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - Full codebase including manual implementation verifies successfully
 - [ ] Update CI to verify generated code (requires Verus in CI)
 
+#### G: Standalone Generated Code (No Manual Code Dependencies)
+
+**Goal**: Generated code must be fully self-contained and not import any manually-written implementation code. Use `election.rs` as the test case.
+
+**Rationale**:
+- Generated code currently imports types from manual implementations (e.g., `CElectionState` from `ElectionImpl.rs`)
+- This defeats the purpose of code generation - generated code should be independently verifiable
+- All types (structs, enums) must be generated alongside functions
+
+**Test Case**: `election.rs` → `election_gen.rs`
+
+##### G1: Audit Current Import Dependencies ✅ [26:01:29, 04:40]
+- [x] List all imports from manual code in `election_gen.rs`:
+  - `use crate::implementation::common::upper_bound_i::*` → `CUpperBoundedAddition` function
+  - `use crate::implementation::RSL::cconfiguration::*` → `CConfiguration` type, helper functions
+  - `use crate::implementation::RSL::cconstants::*` → `CReplicaConstants` type
+  - `use crate::implementation::RSL::cmessage::*` → `CRslPacket`, `CRslMessage` types
+  - `use crate::implementation::RSL::types_i::*` → `CBallot`, `CRequest`, etc.
+  - `use crate::implementation::RSL::ElectionImpl::CElectionState` → Main state type
+- [x] Document which types need to be generated:
+  - **Primary**: `CElectionState` - the main state struct for election
+  - **Dependencies** (from types_i.rs): `CBallot`, `CRequest`
+  - **Dependencies** (from cconstants.rs): `CReplicaConstants`
+  - **Dependencies** (from cmessage.rs): `CRslPacket`, `CRslMessage` (enums)
+  - **Dependencies** (from cconfiguration.rs): `CConfiguration`
+  - **Helper functions**: `CUpperBoundedAddition`, `CBalLt`, `CGetReplicaIndex`, etc.
+
+##### G2: Generate All Required Types
+- [ ] Generate `CElectionState` struct with View trait
+- [ ] Generate `CBallot` struct (or import from generated types_gen.rs)
+- [ ] Generate all other required exec types
+- [ ] Ensure generated types have:
+  - `#[derive(Clone)]` attribute
+  - `View` trait implementation mapping to spec type
+  - `valid()` / `well_formed()` predicate
+
+##### G3: Update Transpiler for Self-Contained Output
+- [ ] Modify transpiler to generate types inline or in companion file
+- [ ] Remove manual code imports from `custom_imports` config
+- [ ] Add option to generate "standalone" module with all dependencies
+- [ ] Update `election_transpile.toml` to not import from `ElectionImpl.rs`
+
+##### G4: ~~Fix Printer Bug - Invalid Loop Syntax~~ NOT A BUG ✅ [26:01:29, 04:35]
+- [x] Verified: `iter:` prefix is VALID Verus syntax (not invalid Rust)
+  - Manual implementation uses `for p in iter:m_iter` (e.g., ProposerImpl.rs:143)
+  - Generated code correctly uses same syntax (e.g., election_gen.rs:165)
+  - Full codebase verifies with Verus: 437 verified, 0 errors
+  - This is Verus-specific iteration syntax for iterating over an iterator
+
+##### G5: Make election_gen.rs Compile Standalone
+- [ ] Regenerate `election_gen.rs` with all types included
+- [ ] Remove `#[cfg(test)]` guard for testing
+- [ ] Verify compilation with Verus
+- [ ] Document any remaining issues
+
+##### G6: Success Criteria
+- [ ] `election_gen.rs` has zero imports from `src/implementation/RSL/`
+- [ ] `election_gen.rs` compiles with Verus (syntax correct)
+- [ ] `election_gen.rs` verifies with Verus (proofs pass)
+- [ ] Pattern can be applied to other RSL modules
+
 ---
 
 ### Completed: Fix CI Formatting and Clippy Failures ✅ [26:01:25]
