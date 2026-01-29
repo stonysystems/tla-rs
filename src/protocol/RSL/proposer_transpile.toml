@@ -18,6 +18,11 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
+# Generate CProposer inline instead of importing from ProposerImpl.rs
+generate_inline_types = true
+# Custom imports for proposer module
+# Note: Still need implementation imports for shared infrastructure types.
+# CElectionState needed from ElectionImpl until election module is fully generated.
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
@@ -32,7 +37,7 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    "use crate::implementation::RSL::ProposerImpl::CProposer;",
+    # CProposer now generated inline with generate_inline_types = true
     "use crate::implementation::RSL::ElectionImpl::CElectionState;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::protocol::RSL::proposer::*;",

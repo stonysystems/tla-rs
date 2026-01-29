@@ -21,6 +21,13 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
+# Generate CReplica and CScheduler inline
+generate_inline_types = true
+# Custom imports for replica module
+# Note: Still need implementation imports for shared infrastructure types.
+# Sub-module state types (CProposer, CAcceptor, CLearner, CExecutor, CElectionState)
+# are needed from their respective Impl files until all modules are generated.
+# ReplicaModel contains host-level models that orchestrate the sub-modules.
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",

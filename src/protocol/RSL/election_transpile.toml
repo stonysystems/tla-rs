@@ -26,8 +26,10 @@ generate_loops_for_verification = true
 # Generate CElectionState inline instead of importing from ElectionImpl.rs
 generate_inline_types = true
 # Custom imports for election module
-# Note: Still need implementation imports for shared types (CBallot, CReplicaConstants, etc.)
-# Only CElectionState is generated inline since it's specific to this module
+# Note: Shared infrastructure types (types_i, cconstants, cmessage, cconfiguration)
+# contain marshalling-enabled types that can't easily be generated.
+# Future work: move these to src/common/rsl_types/ for better organization.
+# CElectionState is generated inline (module-specific state).
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",

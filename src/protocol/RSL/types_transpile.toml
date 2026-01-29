@@ -18,6 +18,11 @@ validity_predicate_name = "well_formed"
 generate_clone = true
 include_debug_comments = false
 # Custom imports for RSL types
+# Note: CAppMessage and CRequestBatch are complex types with:
+# - Marshalling support via define_struct_and_derive_marshalable!
+# - Network serialization for the protocol
+# These cannot easily be generated and should eventually be moved to
+# a shared location like src/common/rsl_types/.
 custom_imports = [
     "use vstd::prelude::*;",
     "use std::collections::HashSet;",

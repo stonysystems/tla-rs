@@ -1861,12 +1861,21 @@ Pipeline already supports helper functions:
 
 #### H6: Remove Manual Implementation Dependencies
 
-- [ ] Audit all generated files for imports from `src/implementation/`
-- [ ] For each import, either:
+- [x] Audit all generated files for imports from `src/implementation/`
+  - See `docs/dev/h6-dependency-audit.md` for full audit results
+  - Categories: infrastructure types (shared), module-specific types (can generate)
+- [x] For each import, either:
   - Generate the function/type inline, OR
   - Import from `src/generated/` (other generated modules)
-- [ ] Update `*_transpile.toml` configs to remove manual imports
-- [ ] Verify generated code compiles without any `src/implementation/` imports
+  - **Result**: Module-specific types (CElectionState, CLearner, etc.) can be generated inline
+  - **Blocker**: Infrastructure types (types_i, cmessage, cconstants) have marshalling support
+    and cannot easily be generated. Future: move to `src/common/rsl_types/`
+- [x] Update `*_transpile.toml` configs to enable `generate_inline_types = true`
+  - Updated: learner, executor, proposer, replica, election configs
+  - Added documentation comments explaining remaining dependencies
+- [PARTIAL] Verify generated code compiles without any `src/implementation/` imports
+  - **Achievable now**: Module-specific state types generated inline
+  - **Not achievable now**: Infrastructure types require restructuring
 
 #### H7: Test with Election Module
 

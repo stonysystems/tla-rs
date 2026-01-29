@@ -24,7 +24,12 @@ generate_clone = true
 include_debug_comments = false
 # Generate explicit for loops instead of iterators for better Verus verification
 generate_loops_for_verification = true
+# Generate CLearner inline instead of importing from LearnerImpl.rs
+generate_inline_types = true
 # Custom imports for learner module
+# Note: Still need implementation imports for shared infrastructure types
+# (types_i, cconstants, cmessage, cbroadcast). These contain marshalling-enabled
+# types that can't easily be generated. Future work: move to shared location.
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
@@ -39,7 +44,7 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    "use crate::implementation::RSL::LearnerImpl::CLearner;",
+    # CLearner now generated inline with generate_inline_types = true
     "use crate::protocol::RSL::learner::*;",
     "use crate::protocol::RSL::types::*;",
 ]
