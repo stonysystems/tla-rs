@@ -1192,11 +1192,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - See docs/dev/wrapper-methods-implementation.md
     - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.) (deferred)
     - [ ] Add min_vote_opn optimization helper (deferred)
-- [ ] Run full system tests with generated implementation (blocked by wrapper methods)
+- [ ] Run full system tests with generated implementation (blocked by deferred optimized variants)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
     - test_generated_vs_manual_equivalence() compares generated vs manual output
     - Verifies keys >= log_truncation_point preserved correctly
     - Verifies values match original
+  - [x] Wrapper methods now implemented [26:01:29, 06:30]
+    - Unblocks this task once optimized variants are added
 - [x] Document any manual adjustments needed [26:01:25, 12:00]
   - Created docs/dev/generated-code-integration.md
   - Documents struct definitions, View trait, method adaptation, type mappings
