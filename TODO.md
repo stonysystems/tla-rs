@@ -1582,7 +1582,14 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - Verified locally: 437 verified, 0 errors
   - Generated code in src/generated/RSL/ is guarded by #[cfg(test)]
   - Full codebase including manual implementation verifies successfully
-- [ ] Update CI to verify generated code (requires Verus in CI)
+- [x] Update CI to verify generated code ✅ [26:01:29]
+  - Added `verify` job to .github/workflows/ci.yml
+  - Downloads Verus rolling release (v0.2026.01.28.0c41268) from GitHub
+  - Uses ubuntu-22.04 for pre-built binary compatibility
+  - Installs Rust 1.93.0 (required by current Verus)
+  - Caches Verus binary for faster subsequent runs
+  - Runs `scons --verus-path=$HOME/verus` to verify codebase
+  - Created docs/dev/verus-ci-setup-plan.md documenting the setup
 
 #### G: Standalone Generated Code (No Manual Code Dependencies)
 
