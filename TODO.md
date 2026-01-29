@@ -1880,11 +1880,19 @@ Pipeline already supports helper functions:
 #### H7: Test with Election Module
 
 Use `election.rs` as the test case:
-- [ ] Add helper function annotations to `election.automan`
-- [ ] Generate all helper functions for election module
-- [ ] Remove all imports from `ElectionImpl.rs`
-- [ ] Verify generated `election_gen.rs` is fully self-contained
-- [ ] Run Verus verification on standalone election module
+- [x] Add helper function annotations to `election.automan`
+  - Added: ComputeSuccessorView, BoundRequestSequence, RequestsMatch, RequestSatisfiedBy
+  - Excluded recursive: RemoveAllSatisfiedRequestsInSequence, RemoveExecutedRequestBatch
+- [x] Generate all helper functions for election module
+  - Generated 9 functions: 4 helpers + 5 predicates
+  - CElectionState struct generated inline
+- [PARTIAL] Remove all imports from `ElectionImpl.rs`
+  - Generated code still needs infrastructure imports (types_i, cconstants, etc.)
+  - Recursive helpers still need manual implementation
+- [N/A] Verify generated `election_gen.rs` is fully self-contained
+  - Not achievable: infrastructure types need shared imports (see H6)
+- [BLOCKED] Run Verus verification on standalone election module
+  - Requires Verus verifier (not available in this environment)
 
 #### H8: Apply to All RSL Modules
 
