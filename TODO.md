@@ -1813,8 +1813,17 @@ Some helper functions are recursive (e.g., `RemoveAllSatisfiedRequestsInSequence
   - Added printer support for decreases clause output
   - Automatically infers `param.len()` for Seq parameters if no explicit decreases
   - Added test_print_decreases test
-- [ ] Generate loop-based or recursive exec implementation
-- [ ] Add loop invariants for recursive-to-iterative transformation
+- [x] Reject recursive functions with clear error ✅ [26:01:29]
+  - Added check in translate() to reject recursive functions
+  - Returns error explaining recursive functions need manual implementation
+  - Added test_recursive_function_rejected test
+- [ ] ~~Generate loop-based or recursive exec implementation~~ (DEFERRED)
+- [ ] ~~Add loop invariants for recursive-to-iterative transformation~~ (DEFERRED)
+
+**Note**: Full recursive function translation requires complex proof block generation.
+Manual implementations in `ElectionImpl.rs` show the complexity (proof blocks, helper functions).
+For now, recursive functions must be implemented manually - the transpiler will detect and
+skip them with a clear error message.
 
 Example transformation:
 ```rust

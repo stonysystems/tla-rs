@@ -1401,6 +1401,21 @@ impl Translator {
             });
         }
 
+        // Recursive functions are not yet supported for automatic translation.
+        // They require complex proof blocks and helper functions.
+        // Use manual implementation instead.
+        if func.is_recursive {
+            return Err(TranspileError::CodeGen {
+                message: format!(
+                    "Function '{}' is recursive and cannot be automatically translated. \
+                     Recursive functions require manual implementation with proof blocks. \
+                     Remove from annotation file or implement manually.",
+                    func.spec_fn.name
+                ),
+                span: None,
+            });
+        }
+
         // Dispatch based on function kind
         match func.kind {
             FunctionKind::Helper => self.translate_helper(func),
@@ -7901,5 +7916,53 @@ mod tests {
 
         let spec_call = translator.build_helper_spec_call(&annotated);
         assert_eq!(spec_call, "result@ == MyHelper(a@, b@, c@)");
+    }
+
+    #[test]
+    fn test_recursive_function_rejected() {
+        use crate::ast::{Generics, Parameter, Path};
+
+        let translator = Translator::default();
+
+        // Create a recursive function
+        let spec_fn = crate::ast::SpecFunction {
+            name: "RecursiveFunc".to_string(),
+            generics: Generics::default(),
+            params: vec![Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                mode: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![Expr::MethodCall {
+                receiver: Box::new(Expr::Ident("s".to_string())),
+                method: "len".to_string(),
+                args: vec![],
+            }],
+            body: Expr::Ident("s".to_string()),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Request>".to_string()),
+            is_recursive: true, // Mark as recursive
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("recursive"));
+        assert!(msg.contains("cannot be automatically translated"));
     }
 }
