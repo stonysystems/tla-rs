@@ -151,9 +151,7 @@ module RSL::replica {
     // Pure predicate (all inputs)
     SpontaneousIos(+, +);
 
-    // Helper: Get clock from spontaneous I/O
-    // Pure function (input, returns output)
-    SpontaneousClock(+);
+    // SpontaneousClock moved to helper section below
 
     // Read clock and process packet (for heartbeat)
     // s (input): current replica state
@@ -192,6 +190,10 @@ module RSL::replica {
     LSchedulerNext(+, -, +);
 
     // Helper: Number of replica actions
-    // Pure constant
-    LReplicaNumActions();
+    // Non-recursive constant function
+    helper LReplicaNumActions() -> int;
+
+    // Helper: Get clock from spontaneous I/O
+    // Non-recursive helper
+    helper SpontaneousClock(+) -> ClockReading;
 }

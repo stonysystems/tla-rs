@@ -27,6 +27,64 @@ use crate::protocol::RSL::configuration::*;
 
 verus! {
 
+#[derive(Clone)]
+pub struct CReplica {
+    pub constants: CReplicaConstants,
+    pub nextHeartbeatTime: i64,
+    pub proposer: CProposer,
+    pub acceptor: CAcceptor,
+    pub learner: CLearner,
+    pub executor: CExecutor,
+}
+
+impl CReplica {
+    pub open spec fn valid(&self) -> bool {
+            self.constants.valid()
+        &&& self.proposer.valid()
+        &&& self.acceptor.valid()
+        &&& self.learner.valid()
+        &&& self.executor.valid()
+    }
+}
+
+impl View for CReplica {
+    type V = LReplica;
+
+    open spec fn view(&self) -> LReplica {
+        LReplica {
+            constants: self.constants@,
+            nextHeartbeatTime: self.nextHeartbeatTime as int,
+            proposer: self.proposer@,
+            acceptor: self.acceptor@,
+            learner: self.learner@,
+            executor: self.executor@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CScheduler {
+    pub replica: CReplica,
+    pub nextActionIndex: i64,
+}
+
+impl CScheduler {
+    pub open spec fn valid(&self) -> bool {
+            self.replica.valid()
+    }
+}
+
+impl View for CScheduler {
+    type V = LScheduler;
+
+    open spec fn view(&self) -> LScheduler {
+        LScheduler {
+            replica: self.replica@,
+            nextActionIndex: self.nextActionIndex as int,
+        }
+    }
+}
+
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
     c.valid(),
@@ -604,6 +662,30 @@ if (ios.index(0) is TimeoutReceive) {
             CReplicaNextReadClockAndProcessPacket(&s, s_, &ios)
         } else {
             CReplicaNextProcessPacketWithoutReadingClock(&s, s_, &ios)
+        }
+    }
+}
+
+pub exec fn CReplicaNumActions() -> (result: i64)ensures
+    result@ == LReplicaNumActions(),
+{
+10
+}
+
+pub exec fn CSpontaneousClock(ios: &Vec<CRslIo>) -> (result: CClockReading)
+requires
+    ios.valid(),
+ensures
+    result.valid(),
+    result@ == SpontaneousClock(ios@),
+{
+if CSpontaneousIos(&ios, 1) {
+        CClockReading {
+            t: ios.index(0).get_t(),
+        }
+    } else {
+        CClockReading {
+            t: 0,
         }
     }
 }

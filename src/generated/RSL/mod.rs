@@ -1,6 +1,7 @@
 // Auto-generated RSL types and functions module
 // DO NOT EDIT MANUALLY
 
+pub mod acceptor_gen;
 pub mod broadcast_gen;
 pub mod election_gen;
 pub mod executor_gen;

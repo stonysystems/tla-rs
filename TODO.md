@@ -1896,22 +1896,35 @@ Use `election.rs` as the test case:
 
 #### H8: Apply to All RSL Modules
 
-- [ ] Create helper function annotations for all RSL spec files
-- [ ] Regenerate all RSL modules with helper functions
-- [ ] Verify all generated modules are self-contained
-- [ ] Update CI to verify no manual implementation imports
+- [x] Create helper function annotations for all RSL spec files
+  - Added `helper SpontaneousClock` and `helper LReplicaNumActions` to replica.automan
+  - Most other non-bool functions are recursive (need manual impl)
+  - Recursive helpers: GetPacketsFromReplies, LClientsInReplies, ExtractSentPacketsFromIos, BuildLBroadcast
+- [x] Regenerate all RSL modules with helper functions
+  - Created acceptor_transpile.toml (was missing)
+  - Regenerated all modules: election, replica, acceptor, learner, executor, proposer, broadcast
+  - Updated mod.rs to include acceptor_gen
+- [PARTIAL] Verify all generated modules are self-contained
+  - All modules still need infrastructure imports (see H6 audit)
+  - Recursive helpers not generated (rejected with clear error)
+- [N/A] Update CI to verify no manual implementation imports
+  - Not achievable until infrastructure types restructured
 
 #### Success Criteria
 
-1. [ ] All spec functions (predicates AND helpers) have generated exec implementations
-2. [ ] Generated code has ZERO imports from `src/implementation/RSL/`
-3. [ ] Generated code only imports from:
-   - `vstd::*` (Verus standard library)
-   - `src/protocol/RSL/` (spec definitions for ensures clauses)
-   - `src/generated/RSL/` (other generated modules)
-   - `src/common/` (shared utilities like collections)
-4. [ ] All generated modules verify with Verus (0 errors)
-5. [ ] Generated code is functionally equivalent to manual implementation
+1. [PARTIAL] All spec functions (predicates AND helpers) have generated exec implementations
+   - Non-recursive predicates and helpers: ✅ Generated
+   - Recursive helpers: ❌ Rejected with clear error (need manual impl)
+2. [PARTIAL] Generated code has ZERO imports from `src/implementation/RSL/`
+   - Module-specific types (CElectionState, etc.): ✅ Generated inline
+   - Infrastructure types (types_i, cmessage, cconstants): ❌ Require shared imports
+3. [PARTIAL] Generated code only imports from allowed sources
+   - ✅ `vstd::*`, `src/protocol/RSL/`, `src/common/`
+   - ❌ Still needs `src/implementation/RSL/` for infrastructure types
+4. [BLOCKED] All generated modules verify with Verus (0 errors)
+   - Requires Verus verifier environment
+5. [N/A] Generated code is functionally equivalent to manual implementation
+   - Requires Verus verification to confirm
 
 ---
 

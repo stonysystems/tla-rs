@@ -1,0 +1,39 @@
+# Configuration for transpiling RSL acceptor spec to implementation
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[remapping]
+"LAcceptor" = "CAcceptor"
+"LReplicaConstants" = "CReplicaConstants"
+"Ballot" = "CBallot"
+"RslPacket" = "CRslPacket"
+"Vote" = "CVote"
+"OperationNumber" = "u64"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+# Generate CAcceptor inline
+generate_inline_types = true
+# Custom imports for acceptor module
+# Note: Shared infrastructure types needed for CBallot, CMessage, etc.
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::map::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashMap;",
+    "use crate::common::collections::hashmaps::*;",
+    "use crate::common::native::io_s::EndPoint;",
+    "use crate::implementation::RSL::types_i::*;",
+    "use crate::implementation::RSL::cconstants::*;",
+    "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::protocol::RSL::acceptor::*;",
+    "use crate::protocol::RSL::types::*;",
+]

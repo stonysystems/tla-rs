@@ -14,7 +14,6 @@ use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::ProposerImpl::CProposer;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::implementation::common::upper_bound_i::*;
 use crate::protocol::RSL::proposer::*;
@@ -22,6 +21,78 @@ use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::configuration::*;
 
 verus! {
+
+#[derive(Clone)]
+pub struct CProposer {
+    pub constants: CReplicaConstants,
+    pub current_state: i64,
+    pub request_queue: Vec<CRequest>,
+    pub max_ballot_i_sent_1a: CBallot,
+    pub next_operation_number_to_propose: i64,
+    pub received_1b_packets: HashSet<CRslPacket>,
+    pub highest_seqno_requested_by_client_this_view: HashMap<CAbstractEndPoint, i64>,
+    pub incomplete_batch_timer: CIncompleteBatchTimer,
+    pub election_state: CElectionState,
+}
+
+impl CProposer {
+    pub open spec fn valid(&self) -> bool {
+            self.constants.valid()
+        &&& self.request_queue.valid()
+        &&& self.max_ballot_i_sent_1a.valid()
+        &&& self.received_1b_packets.valid()
+        &&& self.highest_seqno_requested_by_client_this_view.valid()
+        &&& self.incomplete_batch_timer.valid()
+        &&& self.election_state.valid()
+    }
+}
+
+impl View for CProposer {
+    type V = LProposer;
+
+    open spec fn view(&self) -> LProposer {
+        LProposer {
+            constants: self.constants@,
+            current_state: self.current_state as int,
+            request_queue: self.request_queue@,
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a@,
+            next_operation_number_to_propose: self.next_operation_number_to_propose as int,
+            received_1b_packets: self.received_1b_packets@,
+            highest_seqno_requested_by_client_this_view: self.highest_seqno_requested_by_client_this_view@,
+            incomplete_batch_timer: self.incomplete_batch_timer@,
+            election_state: self.election_state@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CIncompleteBatchTimer {
+    IncompleteBatchTimerOn {
+        when: i64,
+    },
+    IncompleteBatchTimerOff {
+    },
+}
+
+impl CIncompleteBatchTimer {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CIncompleteBatchTimer::IncompleteBatchTimerOn { when } => true,
+            CIncompleteBatchTimer::IncompleteBatchTimerOff {  } => true,
+        }
+    }
+}
+
+impl View for CIncompleteBatchTimer {
+    type V = IncompleteBatchTimer;
+
+    open spec fn view(&self) -> IncompleteBatchTimer {
+        match self {
+            CIncompleteBatchTimer::IncompleteBatchTimerOn { when } => IncompleteBatchTimer::IncompleteBatchTimerOn { when: *when as int },
+            CIncompleteBatchTimer::IncompleteBatchTimerOff {  } => IncompleteBatchTimer::IncompleteBatchTimerOff {  },
+        }
+    }
+}
 
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
