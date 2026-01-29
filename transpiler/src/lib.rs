@@ -77,6 +77,10 @@ pub struct TranspilerConfig {
     pub generate_inline_types: bool,
     /// Type remapping table for custom type name mappings
     pub type_remapping: std::collections::HashMap<String, String>,
+    /// Whether to generate wrapper methods in an impl block for &mut self pattern.
+    pub generate_wrapper_methods: bool,
+    /// The type name for the impl block when generating wrapper methods.
+    pub wrapper_impl_type: Option<String>,
 }
 
 /// Main transpiler orchestrating the pipeline
@@ -156,6 +160,9 @@ impl Transpiler {
             }
         }
 
+        // Collect all translated functions
+        let mut exec_functions = Vec::new();
+
         for spec_fn in spec_fns {
             // Find matching annotation
             let annotation = annotations
@@ -175,6 +182,22 @@ impl Transpiler {
                     // Print
                     let fn_output = printer.print_function(&exec_fn);
                     output.push_str(&fn_output);
+                    output.push('\n');
+
+                    // Collect for wrapper generation
+                    if self.config.generate_wrapper_methods {
+                        exec_functions.push(exec_fn);
+                    }
+                }
+            }
+        }
+
+        // Generate wrapper methods if configured
+        if self.config.generate_wrapper_methods {
+            if let Some(ref impl_type) = self.config.wrapper_impl_type {
+                let wrappers = self.generate_wrappers(&exec_functions, impl_type);
+                if !wrappers.is_empty() {
+                    output.push_str(&wrappers);
                     output.push('\n');
                 }
             }
@@ -249,6 +272,9 @@ impl Transpiler {
             }
         }
 
+        // Collect all translated functions
+        let mut exec_functions = Vec::new();
+
         for spec_fn in spec_fns {
             let annotation = annotations
                 .iter()
@@ -261,6 +287,22 @@ impl Transpiler {
                     let exec_fn = translator.translate(&annotated)?;
                     output.push_str(&printer.print_function(&exec_fn));
                     output.push('\n');
+
+                    // Collect for wrapper generation
+                    if self.config.generate_wrapper_methods {
+                        exec_functions.push(exec_fn);
+                    }
+                }
+            }
+        }
+
+        // Generate wrapper methods if configured
+        if self.config.generate_wrapper_methods {
+            if let Some(ref impl_type) = self.config.wrapper_impl_type {
+                let wrappers = self.generate_wrappers(&exec_functions, impl_type);
+                if !wrappers.is_empty() {
+                    output.push_str(&wrappers);
+                    output.push('\n');
                 }
             }
         }
@@ -268,6 +310,197 @@ impl Transpiler {
         output.push_str("} // verus!\n");
 
         Ok(output)
+    }
+
+    /// Generate wrapper methods for functions that take the impl type as first parameter.
+    /// The wrappers convert functional-style `fn foo(&Type, ...) -> Type`
+    /// to `impl Type { fn foo(&mut self, ...) }` pattern.
+    fn generate_wrappers(&self, exec_functions: &[ExecFunction], impl_type: &str) -> String {
+        let mut wrappers = Vec::new();
+        let validity_pred = &self.config.translator.validity_predicate_name;
+
+        for func in exec_functions {
+            // Check if this function is a wrapper candidate:
+            // - First param is a reference to impl_type
+            // - Return type contains impl_type
+            if !self.is_wrapper_candidate(func, impl_type) {
+                continue;
+            }
+
+            // Generate wrapper method
+            if let Some(wrapper) = self.generate_single_wrapper(func, impl_type, validity_pred) {
+                wrappers.push(wrapper);
+            }
+        }
+
+        if wrappers.is_empty() {
+            return String::new();
+        }
+
+        // Wrap in impl block
+        let mut output = format!("impl {} {{\n", impl_type);
+        for wrapper in wrappers {
+            output.push_str(&wrapper);
+            output.push('\n');
+        }
+        output.push_str("}\n");
+        output
+    }
+
+    /// Check if a function is a candidate for wrapper generation.
+    fn is_wrapper_candidate(&self, func: &ExecFunction, impl_type: &str) -> bool {
+        // Must have at least one parameter
+        if func.params.is_empty() {
+            return false;
+        }
+
+        // First param must be a reference to impl_type
+        let first_param = &func.params[0];
+        if !first_param.is_reference {
+            return false;
+        }
+
+        // Check if the type matches impl_type
+        let type_str = first_param.ty.to_rust_string();
+        if !type_str.contains(impl_type) {
+            return false;
+        }
+
+        // Return type must contain impl_type
+        let return_str = func.return_type.to_rust_string();
+        return_str.contains(impl_type)
+    }
+
+    /// Generate a single wrapper method for a function.
+    fn generate_single_wrapper(
+        &self,
+        func: &ExecFunction,
+        impl_type: &str,
+        validity_pred: &str,
+    ) -> Option<String> {
+        let mut output = String::new();
+        let indent = "    ";
+
+        // Generate method signature
+        // Convert function name to method name (remove type prefix if present)
+        let method_name = func.name.strip_prefix(impl_type).unwrap_or(&func.name);
+        let method_name = method_name.strip_prefix('_').unwrap_or(method_name);
+
+        // Generate parameter list (skip first param, which becomes &mut self)
+        let other_params: Vec<String> = func
+            .params
+            .iter()
+            .skip(1)
+            .map(|p| {
+                if p.is_reference {
+                    format!("{}: &{}", p.name, p.ty.to_rust_string())
+                } else {
+                    format!("{}: {}", p.name, p.ty.to_rust_string())
+                }
+            })
+            .collect();
+
+        // Determine return type
+        // If return is just impl_type, return nothing (mutates self)
+        // If return is tuple (impl_type, Other), return Other
+        let return_type = self.extract_non_self_return_type(&func.return_type, impl_type);
+
+        // Generate signature
+        output.push_str(&format!("{}pub fn {}(&mut self", indent, method_name));
+        if !other_params.is_empty() {
+            output.push_str(", ");
+            output.push_str(&other_params.join(", "));
+        }
+        output.push(')');
+        if let Some(ref ret) = return_type {
+            output.push_str(&format!(" -> {}", ret));
+        }
+        output.push('\n');
+
+        // Generate requires clause
+        output.push_str(&format!("{}requires\n", indent));
+        output.push_str(&format!(
+            "{}{}old(self).{}(),\n",
+            indent, indent, validity_pred
+        ));
+
+        // Generate ensures clause
+        output.push_str(&format!("{}ensures\n", indent));
+        output.push_str(&format!("{}{}self.{}(),\n", indent, indent, validity_pred));
+
+        // Generate body
+        output.push_str(&format!("{}{{\n", indent));
+
+        // Generate call to original function
+        let _self_param = &func.params[0].name;
+        let other_args: Vec<&str> = func
+            .params
+            .iter()
+            .skip(1)
+            .map(|p| p.name.as_str())
+            .collect();
+
+        if return_type.is_some() {
+            // Return is tuple, extract and update self
+            output.push_str(&format!(
+                "{}{}let (new_self, result) = {}(self",
+                indent, indent, func.name
+            ));
+            for arg in &other_args {
+                output.push_str(&format!(", {}", arg));
+            }
+            output.push_str(");\n");
+            output.push_str(&format!("{}{}*self = new_self;\n", indent, indent));
+            output.push_str(&format!("{}{}result\n", indent, indent));
+        } else {
+            // Return is just state, update self
+            output.push_str(&format!("{}{}*self = {}(self", indent, indent, func.name));
+            for arg in &other_args {
+                output.push_str(&format!(", {}", arg));
+            }
+            output.push_str(");\n");
+        }
+
+        output.push_str(&format!("{}}}\n", indent));
+
+        Some(output)
+    }
+
+    /// Extract the non-self part of the return type.
+    /// If return is `TypeName`, returns None (just updating self).
+    /// If return is `(TypeName, Other)`, returns Some("Other").
+    fn extract_non_self_return_type(
+        &self,
+        return_type: &translator::ExecType,
+        impl_type: &str,
+    ) -> Option<String> {
+        let type_str = return_type.to_rust_string();
+
+        // If it's just the impl_type, no separate return
+        if type_str == impl_type {
+            return None;
+        }
+
+        // If it's a tuple containing impl_type
+        if type_str.starts_with('(') && type_str.contains(impl_type) {
+            // Parse tuple and extract non-impl_type components
+            // For now, assume simple (ImplType, Other) pattern
+            let inner = type_str.trim_start_matches('(').trim_end_matches(')');
+            let parts: Vec<&str> = inner.split(',').map(|s: &str| s.trim()).collect();
+            let other_parts: Vec<&str> = parts
+                .into_iter()
+                .filter(|p: &&str| !p.contains(impl_type))
+                .collect();
+            if !other_parts.is_empty() {
+                if other_parts.len() == 1 {
+                    return Some(other_parts[0].to_string());
+                } else {
+                    return Some(format!("({})", other_parts.join(", ")));
+                }
+            }
+        }
+
+        None
     }
 }
 
@@ -428,6 +661,124 @@ mod tests {
         assert!(
             !result.contains("pub struct CState"),
             "Should NOT generate CState struct when inline types disabled: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_wrapper_generation_config_defaults() {
+        let config = TranspilerConfig::default();
+        assert!(
+            !config.generate_wrapper_methods,
+            "generate_wrapper_methods should be false by default"
+        );
+        assert!(
+            config.wrapper_impl_type.is_none(),
+            "wrapper_impl_type should be None by default"
+        );
+    }
+
+    #[test]
+    fn test_wrapper_generation_simple() {
+        let config = TranspilerConfig {
+            generate_wrapper_methods: true,
+            wrapper_impl_type: Some("CState".to_string()),
+            ..Default::default()
+        };
+
+        let transpiler = Transpiler::new(config);
+
+        // Create spec with function that takes state and returns new state
+        let spec_source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                }
+
+                pub open spec fn StateUpdate(s: LState, s_: LState, delta: int) -> bool {
+                    s_.value == s.value + delta
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                StateUpdate(+, -, +);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Check that wrapper impl block is generated
+        assert!(
+            result.contains("impl CState {"),
+            "Should generate impl CState block: {}",
+            result
+        );
+
+        // Check that wrapper method is generated
+        assert!(
+            result.contains("pub fn Update(&mut self"),
+            "Should generate Update wrapper method: {}",
+            result
+        );
+
+        // Check that wrapper has requires/ensures
+        assert!(
+            result.contains("old(self).well_formed()"),
+            "Should have old(self) in requires: {}",
+            result
+        );
+        assert!(
+            result.contains("self.well_formed()"),
+            "Should have self.well_formed() in ensures: {}",
+            result
+        );
+
+        // Check that wrapper calls original function
+        assert!(
+            result.contains("*self = CStateUpdate(self"),
+            "Should call CStateUpdate and assign to *self: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_wrapper_generation_disabled() {
+        let config = TranspilerConfig {
+            generate_wrapper_methods: false,
+            wrapper_impl_type: Some("CState".to_string()),
+            ..Default::default()
+        };
+
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                }
+
+                pub open spec fn StateUpdate(s: LState, s_: LState, delta: int) -> bool {
+                    s_.value == s.value + delta
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                StateUpdate(+, -, +);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Should NOT generate wrapper when disabled
+        assert!(
+            !result.contains("impl CState {"),
+            "Should NOT generate impl CState block when disabled: {}",
             result
         );
     }

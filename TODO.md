@@ -1185,7 +1185,11 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - TypeGenerator generates View trait with well_formed/view functions
       - Test: `cargo run -- generate-types --input src/protocol/RSL/acceptor.rs`
       - Generates CAcceptor with all fields and correct View impl
-    - [ ] Add wrapper methods that convert functional style to &mut self pattern (deferred - see docs/dev/phase5-wrapper-methods-plan.md)
+    - [x] Add wrapper methods that convert functional style to &mut self pattern ✅ [26:01:29, 06:30]
+      - Added `generate_wrapper_methods` and `wrapper_impl_type` config options
+      - Implemented `generate_wrappers()`, `is_wrapper_candidate()`, `generate_single_wrapper()`
+      - Wrapper converts `fn foo(&Type, ...) -> Type` to `impl Type { fn foo(&mut self, ...) }`
+      - See docs/dev/wrapper-methods-implementation.md
     - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.) (deferred)
     - [ ] Add min_vote_opn optimization helper (deferred)
 - [ ] Run full system tests with generated implementation (blocked by wrapper methods)

@@ -191,6 +191,18 @@ pub struct OutputConfig {
     /// This makes the output self-contained without depending on manual implementation code.
     #[serde(default)]
     pub generate_inline_types: bool,
+
+    /// Whether to generate wrapper methods in an impl block for &mut self pattern.
+    /// When true, generates wrapper methods that call the functional-style generated
+    /// functions and update `*self` with the result.
+    #[serde(default)]
+    pub generate_wrapper_methods: bool,
+
+    /// The type name for the impl block when generating wrapper methods.
+    /// Required when `generate_wrapper_methods` is true.
+    /// Example: "CElectionState"
+    #[serde(default)]
+    pub wrapper_impl_type: Option<String>,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -213,6 +225,8 @@ impl Default for OutputConfig {
             custom_imports: Vec::new(),
             generate_loops_for_verification: false,
             generate_inline_types: false,
+            generate_wrapper_methods: false,
+            wrapper_impl_type: None,
         }
     }
 }

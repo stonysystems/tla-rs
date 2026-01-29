@@ -303,6 +303,8 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
         custom_imports: file_config.output.custom_imports,
         generate_inline_types: file_config.output.generate_inline_types,
         type_remapping: file_config.remapping,
+        generate_wrapper_methods: file_config.output.generate_wrapper_methods,
+        wrapper_impl_type: file_config.output.wrapper_impl_type,
         ..TranspilerConfig::default()
     })
 }
