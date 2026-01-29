@@ -28,7 +28,8 @@ module RSL::election {
 
     // Reflect execution of a request batch
     // es=input state, es_=output state, batch=input batch
-    ElectionStateReflectExecutedRequestBatch(+, -, +);
+    // DISABLED: Calls recursive helper CRemoveExecutedRequestBatch (not yet implemented)
+    // ElectionStateReflectExecutedRequestBatch(+, -, +);
 
     // === Helper Functions (non-recursive) ===
 

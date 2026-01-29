@@ -293,24 +293,4 @@ if {
     }
 }
 
-pub exec fn CElectionStateReflectExecutedRequestBatch(es: &CElectionState, batch: &CRequestBatch) -> (result: CElectionState)
-requires
-    es.valid(),
-    batch.valid(),
-ensures
-    result.valid(),
-    ElectionStateReflectExecutedRequestBatch(es@, result@, batch@),
-{
-CElectionState {
-        constants: es.constants,
-        current_view: es.current_view,
-        current_view_suspectors: es.current_view_suspectors,
-        epoch_end_time: es.epoch_end_time,
-        epoch_length: es.epoch_length,
-        requests_received_this_epoch: CRemoveExecutedRequestBatch(&es.requests_received_this_epoch, &batch),
-        requests_received_prev_epochs: CRemoveExecutedRequestBatch(&es.requests_received_prev_epochs, &batch),
-    }
-}
-
 } // verus!
-
