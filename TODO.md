@@ -1276,10 +1276,12 @@ The generated code is structurally correct and matches the expected Verus exec f
 - ✅ Transpiler generates function bodies for all RSL predicates
 - ✅ Loop-based code generation with Verus invariants
 - ✅ Custom imports support
-- ✅ Generated code compiles with Verus (456 verified, 0 errors when using existing types)
-- ❌ Generated code relies on manually-defined types (CAcceptor, CBallot, etc.)
-- ❌ No View trait generation
-- ❌ No struct/type definitions generated
+- ✅ Generated code compiles with Verus (437 verified, 0 errors)
+- ✅ Type definitions generated (CAcceptor, CBallot, etc.) with View trait
+- ✅ Inline type generation supported (`generate_inline_types = true`)
+- ❌ **Helper functions not generated** - only predicates (Init/Next actions) are transpiled
+- ❌ **Generated code calls manual implementations** for helper functions (e.g., `CComputeSuccessorView`)
+- ❌ Generated code not fully self-contained (imports from `src/implementation/RSL/`)
 
 #### Phase A: Type Definition Generation (~400 LOC transpiler changes)
 
@@ -1422,6 +1424,8 @@ Goal: Generate `CAcceptor`, `CBallot`, `CVotes` etc. from `LAcceptor`, `LBallot`
 3. ⚠️ Generated functions produce equivalent outputs to manual implementation - PARTIAL
 4. ✅ Manual implementation kept in `src/implementation/RSL/` as reference
 5. ✅ Generated implementation in `src/generated/RSL/` as primary
+6. ❌ **Helper functions generated** - NOT ACHIEVED (see Phase H)
+7. ❌ **No manual implementation imports** - Generated code must be fully self-contained (see Phase H)
 
 ---
 
@@ -1689,6 +1693,148 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - Set `generate_inline_types = true` in config
   - Module-specific types get generated inline
   - Shared types remain as imports
+
+---
+
+### Phase H: Generate Helper Functions (Not Just Predicates)
+
+**Goal**: Make generated code fully self-contained by generating exec implementations for ALL spec functions, not just predicates. Generated code must NOT call any manual implementation code.
+
+**Problem Statement**:
+- Currently, the transpiler only generates exec code for **predicates** (Init/Next actions with input/output parameters)
+- **Helper functions** like `ComputeSuccessorView`, `BoundRequestSequence`, etc. are not generated
+- Generated code imports and calls manual implementations (e.g., `CComputeSuccessorView` from `ElectionImpl.rs`)
+- This defeats the goal of fully automated code generation
+
+**Reference**: AutoMan (Dafny) generates both predicates AND helper functions.
+
+#### H1: Inventory Helper Functions in RSL Specs
+
+Identify all helper functions that need exec implementations:
+
+**election.rs**:
+- [ ] `ComputeSuccessorView(b: Ballot, c: LConstants) -> Ballot` - compute next view
+- [ ] `BoundRequestSequence(s: Seq<Request>, lengthBound: UpperBound) -> Seq<Request>` - bound sequence length
+- [ ] `RequestsMatch(r1: Request, r2: Request) -> bool` - check if requests match
+- [ ] `RequestSatisfiedBy(r1: Request, r2: Request) -> bool` - check if request satisfied
+- [ ] `RemoveAllSatisfiedRequestsInSequence(s: Seq<Request>, r: Request) -> Seq<Request>` - recursive filter
+- [ ] `RemoveExecutedRequestBatch(reqs: Seq<Request>, batch: RequestBatch) -> Seq<Request>` - recursive filter
+
+**Other RSL modules** (to be inventoried):
+- [ ] `broadcast.rs` helper functions
+- [ ] `proposer.rs` helper functions
+- [ ] `acceptor.rs` helper functions
+- [ ] `learner.rs` helper functions
+- [ ] `executor.rs` helper functions
+- [ ] `replica.rs` helper functions
+- [ ] `configuration.rs` helper functions
+- [ ] `types.rs` helper functions
+
+#### H2: Extend Annotation Format for Helper Functions
+
+- [ ] Design annotation syntax for helper functions (all parameters are inputs, return value is output)
+  ```
+  // Option A: Explicit helper marker
+  helper ComputeSuccessorView(+, +) -> Ballot;
+
+  // Option B: Infer from return type (non-bool = helper function)
+  ComputeSuccessorView(+, +);
+  ```
+- [ ] Update `annotation/mod.rs` to parse helper function annotations
+- [ ] Add `FunctionKind` enum: `Predicate` vs `HelperFunction`
+
+#### H3: Implement Helper Function Translation
+
+- [ ] Add `translate_helper_function()` method to translator
+- [ ] Handle different return types (not just `-> bool`):
+  - Struct types (e.g., `-> Ballot`)
+  - Collection types (e.g., `-> Seq<Request>`)
+  - Primitive types (e.g., `-> bool`, `-> int`)
+- [ ] Generate proper `ensures` clause linking to spec:
+  ```rust
+  pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBallot)
+  ensures
+      result.valid(),
+      result@ == ComputeSuccessorView(b@, c@),
+  ```
+
+#### H4: Handle Recursive Helper Functions
+
+Some helper functions are recursive (e.g., `RemoveAllSatisfiedRequestsInSequence`):
+- [ ] Detect recursive spec functions
+- [ ] Generate `decreases` clause for termination
+- [ ] Generate loop-based or recursive exec implementation
+- [ ] Add loop invariants for recursive-to-iterative transformation
+
+Example transformation:
+```rust
+// Spec (recursive):
+spec fn RemoveAllSatisfiedRequestsInSequence(s: Seq<Request>, r: Request) -> Seq<Request>
+    decreases s.len()
+{
+    if s.len() == 0 { Seq::empty() }
+    else if RequestSatisfiedBy(s[0], r) { RemoveAllSatisfiedRequestsInSequence(s.drop_first(), r) }
+    else { seq![s[0]] + RemoveAllSatisfiedRequestsInSequence(s.drop_first(), r) }
+}
+
+// Exec (iterative):
+exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> Vec<CRequest>
+{
+    let mut result = vec![];
+    for i in 0..s.len()
+        invariant ...
+    {
+        if !CRequestSatisfiedBy(&s[i], r) {
+            result.push(s[i].clone());
+        }
+    }
+    result
+}
+```
+
+#### H5: Update Code Generation Pipeline
+
+- [ ] Modify `transpile_file()` to process helper functions alongside predicates
+- [ ] Generate helper functions BEFORE predicates (dependency order)
+- [ ] Update import generation to exclude manual implementation imports
+- [ ] Add config option: `generate_helper_functions = true`
+
+#### H6: Remove Manual Implementation Dependencies
+
+- [ ] Audit all generated files for imports from `src/implementation/`
+- [ ] For each import, either:
+  - Generate the function/type inline, OR
+  - Import from `src/generated/` (other generated modules)
+- [ ] Update `*_transpile.toml` configs to remove manual imports
+- [ ] Verify generated code compiles without any `src/implementation/` imports
+
+#### H7: Test with Election Module
+
+Use `election.rs` as the test case:
+- [ ] Add helper function annotations to `election.automan`
+- [ ] Generate all helper functions for election module
+- [ ] Remove all imports from `ElectionImpl.rs`
+- [ ] Verify generated `election_gen.rs` is fully self-contained
+- [ ] Run Verus verification on standalone election module
+
+#### H8: Apply to All RSL Modules
+
+- [ ] Create helper function annotations for all RSL spec files
+- [ ] Regenerate all RSL modules with helper functions
+- [ ] Verify all generated modules are self-contained
+- [ ] Update CI to verify no manual implementation imports
+
+#### Success Criteria
+
+1. [ ] All spec functions (predicates AND helpers) have generated exec implementations
+2. [ ] Generated code has ZERO imports from `src/implementation/RSL/`
+3. [ ] Generated code only imports from:
+   - `vstd::*` (Verus standard library)
+   - `src/protocol/RSL/` (spec definitions for ensures clauses)
+   - `src/generated/RSL/` (other generated modules)
+   - `src/common/` (shared utilities like collections)
+4. [ ] All generated modules verify with Verus (0 errors)
+5. [ ] Generated code is functionally equivalent to manual implementation
 
 ---
 
