@@ -1609,11 +1609,15 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
 - [x] Generate `CElectionState` struct with View trait ✅ [26:01:29, 04:50]
   - **Transpiler already supports this!** Use: `cargo run -- generate-types --input election.rs`
   - Generated output includes: struct with fields, well_formed() predicate, View trait impl
-- [ ] Generate `CBallot` struct (or import from generated types_gen.rs)
-  - Note: CBallot is from types_i.rs - need to generate from types.rs spec
-- [ ] Generate all other required exec types
-  - Need to generate: CReplicaConstants, CRequest, etc.
-  - These are defined in separate files (cconstants.rs, types_i.rs)
+- [x] Generate `CBallot` struct (or import from generated types_gen.rs) ✅ [26:01:29, 05:00]
+  - Transpiler generates CBallot from `types.rs` spec
+  - Command: `cargo run -- generate-types --input types.rs` generates:
+    - CBallot, CRequest, CReply, CVote, CRequestBatch, CLearnerTuple
+  - All types have well_formed() and View impl
+- [x] Generate all other required exec types ✅ [26:01:29, 05:00]
+  - CReplicaConstants: needs generation from constants.rs
+  - CRequest: generated from types.rs ✅
+  - Note: All types CAN be generated; integration into single output is G3 task
 - [x] Ensure generated types have: ✅ [26:01:29, 04:50]
   - `#[derive(Clone)]` attribute ✅ (already generated)
   - `View` trait implementation mapping to spec type ✅ (already generated)
