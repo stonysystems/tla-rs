@@ -70,6 +70,13 @@ pub struct TranspilerConfig {
     pub printer: PrinterConfig,
     /// Custom imports to include in generated code (before verus! block)
     pub custom_imports: Vec<String>,
+    /// Whether to generate type definitions inline from the spec file.
+    /// When true, parses struct/enum definitions from the spec file and generates
+    /// corresponding exec types with View trait implementations.
+    /// This makes the output self-contained without depending on manual implementation code.
+    pub generate_inline_types: bool,
+    /// Type remapping table for custom type name mappings
+    pub type_remapping: std::collections::HashMap<String, String>,
 }
 
 /// Main transpiler orchestrating the pipeline
@@ -114,6 +121,39 @@ impl Transpiler {
         }
 
         output.push_str("verus! {\n\n");
+
+        // Generate inline types if configured
+        if self.config.generate_inline_types {
+            let type_defs = types::parse_types_from_file(spec_path)?;
+            let registry = types::build_registry(type_defs);
+            let naming_config = crate::config::NamingConfig {
+                spec_prefix: self.config.translator.spec_prefix.clone(),
+                exec_prefix: self.config.translator.exec_prefix.clone(),
+                ..Default::default()
+            };
+            let type_gen = TypeGenerator::with_remapping(
+                naming_config.clone(),
+                self.config.type_remapping.clone(),
+            );
+
+            // Generate structs
+            for struct_def in registry.structs.values() {
+                if struct_def.is_spec {
+                    let generated = type_gen.generate_struct(struct_def);
+                    output.push_str(&generated.code);
+                    output.push('\n');
+                }
+            }
+
+            // Generate enums
+            for enum_def in registry.enums.values() {
+                if enum_def.is_spec {
+                    let generated = type_gen.generate_enum(enum_def);
+                    output.push_str(&generated.code);
+                    output.push('\n');
+                }
+            }
+        }
 
         for spec_fn in spec_fns {
             // Find matching annotation
@@ -172,6 +212,40 @@ impl Transpiler {
         }
 
         output.push_str("verus! {\n\n");
+
+        // Generate inline types if configured
+        if self.config.generate_inline_types {
+            let mut type_parser = types::TypeParser::new(spec_source);
+            let type_defs = type_parser.parse_types()?;
+            let registry = types::build_registry(type_defs);
+            let naming_config = crate::config::NamingConfig {
+                spec_prefix: self.config.translator.spec_prefix.clone(),
+                exec_prefix: self.config.translator.exec_prefix.clone(),
+                ..Default::default()
+            };
+            let type_gen = TypeGenerator::with_remapping(
+                naming_config.clone(),
+                self.config.type_remapping.clone(),
+            );
+
+            // Generate structs
+            for struct_def in registry.structs.values() {
+                if struct_def.is_spec {
+                    let generated = type_gen.generate_struct(struct_def);
+                    output.push_str(&generated.code);
+                    output.push('\n');
+                }
+            }
+
+            // Generate enums
+            for enum_def in registry.enums.values() {
+                if enum_def.is_spec {
+                    let generated = type_gen.generate_enum(enum_def);
+                    output.push_str(&generated.code);
+                    output.push('\n');
+                }
+            }
+        }
 
         for spec_fn in spec_fns {
             let annotation = annotations
@@ -252,6 +326,107 @@ mod tests {
         assert!(
             import_pos < verus_pos,
             "Custom imports should appear before verus! block"
+        );
+    }
+
+    #[test]
+    fn test_inline_type_generation() {
+        let config = TranspilerConfig {
+            generate_inline_types: true,
+            ..Default::default()
+        };
+
+        let transpiler = Transpiler::new(config);
+
+        // Spec source with struct and function
+        let spec_source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                    pub active: bool,
+                }
+
+                pub open spec fn StateInit(s: LState) -> bool {
+                    s.value == 0 && s.active
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                StateInit(-);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Check that generated types appear in output
+        assert!(
+            result.contains("pub struct CState"),
+            "Should generate CState struct: {}",
+            result
+        );
+        assert!(
+            result.contains("impl CState"),
+            "Should generate impl block for CState: {}",
+            result
+        );
+        assert!(
+            result.contains("fn well_formed"),
+            "Should generate well_formed predicate: {}",
+            result
+        );
+        assert!(
+            result.contains("impl View for CState"),
+            "Should generate View impl for CState: {}",
+            result
+        );
+
+        // Check that functions are also generated
+        assert!(
+            result.contains("pub exec fn CStateInit"),
+            "Should generate CStateInit function: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_inline_type_generation_disabled_by_default() {
+        let config = TranspilerConfig::default();
+        assert!(
+            !config.generate_inline_types,
+            "generate_inline_types should be false by default"
+        );
+
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                }
+
+                pub open spec fn StateInit(s: LState) -> bool {
+                    s.value == 0
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                StateInit(-);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Should NOT generate types when disabled
+        assert!(
+            !result.contains("pub struct CState"),
+            "Should NOT generate CState struct when inline types disabled: {}",
+            result
         );
     }
 }

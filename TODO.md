@@ -1623,11 +1623,20 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
   - `View` trait implementation mapping to spec type ✅ (already generated)
   - `valid()` / `well_formed()` predicate ✅ (already generated as well_formed)
 
-##### G3: Update Transpiler for Self-Contained Output
-- [ ] Modify transpiler to generate types inline or in companion file
-- [ ] Remove manual code imports from `custom_imports` config
-- [ ] Add option to generate "standalone" module with all dependencies
-- [ ] Update `election_transpile.toml` to not import from `ElectionImpl.rs`
+##### G3: Update Transpiler for Self-Contained Output ✅ [26:01:29, 05:15]
+- [x] Modify transpiler to generate types inline or in companion file ✅
+  - Added `generate_inline_types` option to `TranspilerConfig` in lib.rs
+  - Added `generate_inline_types` option to `OutputConfig` in config.rs
+  - Modified `transpile_file` and `transpile_source` to generate types inline
+  - Types are generated BEFORE functions inside the verus! block
+- [x] Add option to generate "standalone" module with all dependencies ✅
+  - `generate_inline_types = true` enables self-contained output
+  - Added `type_remapping` for custom type name mappings
+- [x] Add tests for inline type generation ✅
+  - `test_inline_type_generation` verifies types are generated
+  - `test_inline_type_generation_disabled_by_default` verifies backward compatibility
+- [ ] Remove manual code imports from `custom_imports` config (deferred to G5)
+- [ ] Update `election_transpile.toml` to not import from `ElectionImpl.rs` (deferred to G5)
 
 ##### G4: ~~Fix Printer Bug - Invalid Loop Syntax~~ NOT A BUG ✅ [26:01:29, 04:35]
 - [x] Verified: `iter:` prefix is VALID Verus syntax (not invalid Rust)

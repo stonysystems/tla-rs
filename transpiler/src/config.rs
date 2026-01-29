@@ -184,6 +184,13 @@ pub struct OutputConfig {
     /// When false (default), generates iterator-based code (.iter().filter().collect()).
     #[serde(default)]
     pub generate_loops_for_verification: bool,
+
+    /// Whether to generate type definitions inline from the spec file.
+    /// When true, parses struct/enum definitions from the spec file and generates
+    /// corresponding exec types with View trait implementations.
+    /// This makes the output self-contained without depending on manual implementation code.
+    #[serde(default)]
+    pub generate_inline_types: bool,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -205,6 +212,7 @@ impl Default for OutputConfig {
             output_dir: None,
             custom_imports: Vec::new(),
             generate_loops_for_verification: false,
+            generate_inline_types: false,
         }
     }
 }
