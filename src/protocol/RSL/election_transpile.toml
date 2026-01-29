@@ -23,7 +23,11 @@ generate_clone = true
 include_debug_comments = false
 # Generate explicit for loops instead of iterators for better Verus verification
 generate_loops_for_verification = true
+# Generate CElectionState inline instead of importing from ElectionImpl.rs
+generate_inline_types = true
 # Custom imports for election module
+# Note: Still need implementation imports for shared types (CBallot, CReplicaConstants, etc.)
+# Only CElectionState is generated inline since it's specific to this module
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
@@ -37,7 +41,6 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cconfiguration::*;",
-    "use crate::implementation::RSL::ElectionImpl::CElectionState;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::protocol::RSL::election::*;",
     "use crate::protocol::RSL::types::*;",

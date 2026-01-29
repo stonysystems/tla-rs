@@ -34,6 +34,8 @@ pub struct TypeGenerator {
     remapping: HashMap<String, String>,
     /// Indentation string
     indent: String,
+    /// Name of the validity predicate (e.g., "well_formed" or "valid")
+    validity_predicate_name: String,
 }
 
 impl TypeGenerator {
@@ -43,6 +45,7 @@ impl TypeGenerator {
             config,
             remapping: HashMap::new(),
             indent: "    ".to_string(),
+            validity_predicate_name: "well_formed".to_string(),
         }
     }
 
@@ -52,6 +55,21 @@ impl TypeGenerator {
             config,
             remapping,
             indent: "    ".to_string(),
+            validity_predicate_name: "well_formed".to_string(),
+        }
+    }
+
+    /// Create a new type generator with remapping table and validity predicate name
+    pub fn with_options(
+        config: NamingConfig,
+        remapping: HashMap<String, String>,
+        validity_predicate_name: String,
+    ) -> Self {
+        Self {
+            config,
+            remapping,
+            indent: "    ".to_string(),
+            validity_predicate_name,
         }
     }
 
@@ -140,15 +158,16 @@ impl TypeGenerator {
         }
     }
 
-    /// Generate well_formed predicate for a struct
+    /// Generate validity predicate for a struct
     fn generate_well_formed_struct(&self, exec_name: &str, fields: &[FieldDef]) -> String {
+        let pred_name = &self.validity_predicate_name;
         let mut code = format!("impl {} {{\n", exec_name);
         code.push_str(&format!(
-            "{}pub open spec fn well_formed(&self) -> bool {{\n",
-            self.indent
+            "{}pub open spec fn {}(&self) -> bool {{\n",
+            self.indent, pred_name
         ));
 
-        // Collect fields that need well_formed checks
+        // Collect fields that need validity checks
         let fields_needing_check: Vec<_> = fields
             .iter()
             .filter(|f| self.needs_well_formed(&f.ty))
@@ -158,12 +177,12 @@ impl TypeGenerator {
             // All fields are primitives, just return true
             code.push_str(&format!("{}{}true\n", self.indent, self.indent));
         } else {
-            // Generate conjunction of well_formed calls
+            // Generate conjunction of validity calls
             for (i, field) in fields_needing_check.iter().enumerate() {
                 let prefix = if i == 0 { "    " } else { "&&& " };
                 code.push_str(&format!(
-                    "{}{}{}self.{}.well_formed()\n",
-                    self.indent, self.indent, prefix, field.name
+                    "{}{}{}self.{}.{}()\n",
+                    self.indent, self.indent, prefix, field.name, pred_name
                 ));
             }
         }
@@ -173,12 +192,13 @@ impl TypeGenerator {
         code
     }
 
-    /// Generate well_formed predicate for an enum
+    /// Generate validity predicate for an enum
     fn generate_well_formed_enum(&self, exec_name: &str, variants: &[VariantDef]) -> String {
+        let pred_name = &self.validity_predicate_name;
         let mut code = format!("impl {} {{\n", exec_name);
         code.push_str(&format!(
-            "{}pub open spec fn well_formed(&self) -> bool {{\n",
-            self.indent
+            "{}pub open spec fn {}(&self) -> bool {{\n",
+            self.indent, pred_name
         ));
         code.push_str(&format!("{}{}match self {{\n", self.indent, self.indent));
 
@@ -192,9 +212,10 @@ impl TypeGenerator {
         code
     }
 
-    /// Generate a match arm for well_formed check
+    /// Generate a match arm for validity check
     fn generate_well_formed_variant_arm(&self, enum_name: &str, variant: &VariantDef) -> String {
         let arm_indent = format!("{}{}{}", self.indent, self.indent, self.indent);
+        let pred_name = &self.validity_predicate_name;
 
         match &variant.fields {
             VariantFields::Unit => {
@@ -207,7 +228,7 @@ impl TypeGenerator {
                 let mut checks = Vec::new();
                 for (i, ty) in types.iter().enumerate() {
                     if self.needs_well_formed(ty) {
-                        checks.push(format!("v{}.well_formed()", i));
+                        checks.push(format!("v{}.{}()", i, pred_name));
                     }
                 }
 
@@ -234,7 +255,7 @@ impl TypeGenerator {
                 let mut checks = Vec::new();
                 for field in fields {
                     if self.needs_well_formed(&field.ty) {
-                        checks.push(format!("{}.well_formed()", field.name));
+                        checks.push(format!("{}.{}()", field.name, pred_name));
                     }
                 }
 

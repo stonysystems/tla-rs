@@ -131,9 +131,10 @@ impl Transpiler {
                 exec_prefix: self.config.translator.exec_prefix.clone(),
                 ..Default::default()
             };
-            let type_gen = TypeGenerator::with_remapping(
+            let type_gen = TypeGenerator::with_options(
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
+                self.config.translator.validity_predicate_name.clone(),
             );
 
             // Generate structs
@@ -223,9 +224,10 @@ impl Transpiler {
                 exec_prefix: self.config.translator.exec_prefix.clone(),
                 ..Default::default()
             };
-            let type_gen = TypeGenerator::with_remapping(
+            let type_gen = TypeGenerator::with_options(
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
+                self.config.translator.validity_predicate_name.clone(),
             );
 
             // Generate structs

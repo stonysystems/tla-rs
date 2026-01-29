@@ -301,6 +301,8 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             ..TranslatorConfig::default()
         },
         custom_imports: file_config.output.custom_imports,
+        generate_inline_types: file_config.output.generate_inline_types,
+        type_remapping: file_config.remapping,
         ..TranspilerConfig::default()
     })
 }
