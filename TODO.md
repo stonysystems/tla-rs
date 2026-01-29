@@ -1708,27 +1708,42 @@ Use `protocol/RSL/election.rs` as a focused test case for making transpiler gene
 
 **Reference**: AutoMan (Dafny) generates both predicates AND helper functions.
 
-#### H1: Inventory Helper Functions in RSL Specs
+#### H1: Inventory Helper Functions in RSL Specs ✅ [26:01:29]
 
-Identify all helper functions that need exec implementations:
+Identify all helper functions that need exec implementations.
+See: docs/dev/h1-helper-function-inventory.md
 
-**election.rs**:
-- [ ] `ComputeSuccessorView(b: Ballot, c: LConstants) -> Ballot` - compute next view
-- [ ] `BoundRequestSequence(s: Seq<Request>, lengthBound: UpperBound) -> Seq<Request>` - bound sequence length
-- [ ] `RequestsMatch(r1: Request, r2: Request) -> bool` - check if requests match
-- [ ] `RequestSatisfiedBy(r1: Request, r2: Request) -> bool` - check if request satisfied
-- [ ] `RemoveAllSatisfiedRequestsInSequence(s: Seq<Request>, r: Request) -> Seq<Request>` - recursive filter
-- [ ] `RemoveExecutedRequestBatch(reqs: Seq<Request>, batch: RequestBatch) -> Seq<Request>` - recursive filter
+**election.rs** (6 helpers): ✅
+- [x] `ComputeSuccessorView(b: Ballot, c: LConstants) -> Ballot` - simple
+- [x] `BoundRequestSequence(s: Seq<Request>, lengthBound: UpperBound) -> Seq<Request>` - simple
+- [x] `RequestsMatch(r1: Request, r2: Request) -> bool` - simple
+- [x] `RequestSatisfiedBy(r1: Request, r2: Request) -> bool` - simple
+- [x] `RemoveAllSatisfiedRequestsInSequence(s: Seq<Request>, r: Request) -> Seq<Request>` - **recursive**
+- [x] `RemoveExecutedRequestBatch(reqs: Seq<Request>, batch: RequestBatch) -> Seq<Request>` - **recursive**
 
-**Other RSL modules** (to be inventoried):
+**types.rs** (2 helpers): ✅
+- [x] `BalLt(Ballot, Ballot) -> bool` - simple
+- [x] `BalLeq(Ballot, Ballot) -> bool` - simple
+
+**configuration.rs** (5 helpers): ✅
+- [x] `LMinQuorumSize(LConfiguration) -> int` - simple
+- [x] `ReplicasDistinct(Seq, int, int) -> bool` - simple
+- [x] `ReplicasIsUnique(Seq) -> bool` - quantifier
+- [x] `WellFormedLConfiguration(LConfiguration) -> bool` - quantifier
+- [x] `GetReplicaIndex(EndPoint, LConfiguration) -> int` - calls FindIndexInSeq
+
+**upper_bound.rs** (3 helpers): ✅
+- [x] `LeqUpperBound(int, UpperBound) -> bool` - simple
+- [x] `LtUpperBound(int, UpperBound) -> bool` - simple
+- [x] `UpperBoundedAddition(int, int, UpperBound) -> int` - simple
+
+**Other RSL modules** (future work):
 - [ ] `broadcast.rs` helper functions
 - [ ] `proposer.rs` helper functions
 - [ ] `acceptor.rs` helper functions
 - [ ] `learner.rs` helper functions
 - [ ] `executor.rs` helper functions
 - [ ] `replica.rs` helper functions
-- [ ] `configuration.rs` helper functions
-- [ ] `types.rs` helper functions
 
 #### H2: Extend Annotation Format for Helper Functions
 
