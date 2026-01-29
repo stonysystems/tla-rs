@@ -1045,7 +1045,9 @@ mod tests {
                 body: Expr::Literal(Literal::Bool(true)),
                 span: None,
             },
+            kind: crate::ast::FunctionKind::Predicate,
             param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
             is_functionalizable: true,
             non_functionalizable_reason: None,
         }

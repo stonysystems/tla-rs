@@ -1770,18 +1770,30 @@ See: docs/dev/h2-annotation-format-extension.md
 
 #### H3: Implement Helper Function Translation
 
-- [ ] Add `translate_helper_function()` method to translator
-- [ ] Handle different return types (not just `-> bool`):
-  - Struct types (e.g., `-> Ballot`)
-  - Collection types (e.g., `-> Seq<Request>`)
-  - Primitive types (e.g., `-> bool`, `-> int`)
-- [ ] Generate proper `ensures` clause linking to spec:
+See: docs/dev/h3-helper-function-translation.md
+
+**Sub-tasks**:
+- [x] H3.1: Add `kind` field to AnnotatedFunction ✅ [26:01:29]
+  - Updated moder/mod.rs to include FunctionKind in AnnotatedFunction
+  - Updated ModeAnalyzer::annotate() to accept and propagate kind
+  - Updated check_functionalizable() to handle helper vs predicate
+  - Helper functions: no output params, always functionalizable
+- [ ] H3.2: Add `translate_helper()` method to translator (~100 LOC)
+  - All params as inputs (passed by reference)
+  - Return type from annotation
+  - Simpler body transformation (no output extraction)
+- [ ] H3.3: Handle different return types (~30 LOC)
+  - Struct types (e.g., `-> Ballot` → `CBallot`)
+  - Collection types (e.g., `-> Seq<Request>` → `Vec<CRequest>`)
+  - Primitive types (e.g., `-> bool`, `-> int` → `i64`)
+- [ ] H3.4: Generate proper `ensures` clause for helpers (~30 LOC)
   ```rust
   pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBallot)
   ensures
       result.valid(),
       result@ == ComputeSuccessorView(b@, c@),
   ```
+- [ ] H3.5: Update transpile pipeline to pass FunctionKind (~20 LOC)
 
 #### H4: Handle Recursive Helper Functions
 

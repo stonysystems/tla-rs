@@ -7,7 +7,7 @@
 //! - Classify predicates for translation
 
 use crate::annotation::FunctionAnnotation;
-use crate::ast::{Expr, Parameter, ParameterMode, SpecFunction};
+use crate::ast::{Expr, FunctionKind, Parameter, ParameterMode, SpecFunction};
 use crate::error::{DiagnosticAccumulator, TranspileError, TranspileResult};
 use std::collections::{HashMap, HashSet};
 
@@ -16,8 +16,12 @@ use std::collections::{HashMap, HashSet};
 pub struct AnnotatedFunction {
     /// Original spec function
     pub spec_fn: SpecFunction,
+    /// Function kind (predicate or helper)
+    pub kind: FunctionKind,
     /// Parameter modes (from annotation)
     pub param_modes: Vec<ParameterMode>,
+    /// Return type for helper functions (e.g., "Ballot", "Seq<Request>")
+    pub return_type: Option<String>,
     /// Whether this can be functionalized
     pub is_functionalizable: bool,
     /// Reason if not functionalizable
@@ -142,13 +146,18 @@ impl ModeAnalyzer {
         }
 
         let param_modes = annotation.param_modes.clone();
+        let kind = annotation.kind;
+        let return_type = annotation.return_type.clone();
 
-        // Check if function can be functionalized
-        let (is_functionalizable, reason) = self.check_functionalizable(&spec_fn, &param_modes);
+        // Check if function can be functionalized (different logic for helpers vs predicates)
+        let (is_functionalizable, reason) =
+            self.check_functionalizable(&spec_fn, &param_modes, kind);
 
         Ok(AnnotatedFunction {
             spec_fn,
+            kind,
             param_modes,
+            return_type,
             is_functionalizable,
             non_functionalizable_reason: reason,
         })
@@ -159,15 +168,31 @@ impl ModeAnalyzer {
         &self,
         _spec_fn: &SpecFunction,
         param_modes: &[ParameterMode],
+        kind: FunctionKind,
     ) -> (bool, Option<String>) {
-        // Must have at least one output
-        let has_output = param_modes.contains(&ParameterMode::Output);
-        if !has_output {
-            return (false, Some("No output parameters".to_string()));
+        match kind {
+            FunctionKind::Predicate => {
+                // Predicates must have at least one output
+                let has_output = param_modes.contains(&ParameterMode::Output);
+                if !has_output {
+                    return (false, Some("No output parameters".to_string()));
+                }
+                // TODO: Add more checks (unsupported patterns, etc.)
+                (true, None)
+            }
+            FunctionKind::Helper => {
+                // Helper functions have no output parameters (all inputs)
+                // They are always functionalizable (body is the return value)
+                let has_output = param_modes.contains(&ParameterMode::Output);
+                if has_output {
+                    return (
+                        false,
+                        Some("Helper functions should not have output parameters".to_string()),
+                    );
+                }
+                (true, None)
+            }
         }
-
-        // TODO: Add more checks (unsupported patterns, etc.)
-        (true, None)
     }
 
     /// Classify a predicate based on its structure
