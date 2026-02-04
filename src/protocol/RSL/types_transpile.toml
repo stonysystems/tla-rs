@@ -17,7 +17,7 @@ nat_type = "u64"
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
-validity_predicate_name = "well_formed"
+validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 # Custom imports for RSL types

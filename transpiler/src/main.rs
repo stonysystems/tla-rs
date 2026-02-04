@@ -275,7 +275,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Load config for remappings, naming, and imports if provided
-            let (naming_config, remapping, custom_imports): (NamingConfig, HashMap<String, String>, Vec<String>) =
+            let (naming_config, remapping, custom_imports, validity_predicate_name): (NamingConfig, HashMap<String, String>, Vec<String>, String) =
                 if let Some(config_path) = config {
                     if cli.verbose {
                         eprintln!("Loading config from: {}", config_path.display());
@@ -286,9 +286,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         file_config.naming.clone(),
                         file_config.remapping.clone(),
                         file_config.output.custom_imports.clone(),
+                        file_config.output.validity_predicate_name.clone(),
                     )
                 } else {
-                    (NamingConfig::default(), HashMap::new(), Vec::new())
+                    (NamingConfig::default(), HashMap::new(), Vec::new(), "well_formed".to_string())
                 };
 
             let content = std::fs::read_to_string(input)
@@ -332,6 +333,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 &naming_config,
                 &remapping,
                 &custom_imports,
+                &validity_predicate_name,
             );
 
             // Print any warnings

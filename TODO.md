@@ -1636,16 +1636,20 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - ~~Generated types have wrong field types: `i64` (from spec `int`) vs `u64` (in implementation)~~ ✅ FIXED
     - Added `int_type` and `nat_type` config options to transpiler
     - RSL configs now use `int_type = "u64"` and `nat_type = "u64"`
-  - **Fundamental Problem**: Generated and implementation modules define DUPLICATE types
-    - `types_gen.rs` defines: CBallot, CRequest, CReply, CVote, CLearnerTuple (with `impl View`)
-    - `types_i.rs` defines: same types via `define_struct_and_derive_marshalable!` (inherent `view()`, NO `impl View`)
+  - ~~**Duplicate basic types** between `types_gen.rs` and `types_i.rs`~~ ✅ FIXED
+    - `types_gen.rs` now re-exports from `types_i.rs` via `pub use crate::implementation::RSL::types_i::*`
+    - Only types unique to generated module remain defined: CScheduler, CClockReading, CRslIo
+    - Eliminated all duplicate struct definitions for: CBallot, CRequest, CReply, CVote, CLearnerTuple
+  - ~~Generated code calls `well_formed()` on types that only have `valid()`~~ ✅ FIXED
+    - Changed `types_transpile.toml` to use `validity_predicate_name = "valid"`
+    - Fixed transpiler to pass `validity_predicate_name` through `generate_all_types_with_options()`
+  - **Remaining Problem**: Component files still define DUPLICATE types
     - `acceptor_gen.rs` defines: CAcceptor (conflicts with `acceptorimpl.rs::CAcceptor`)
     - `learner_gen.rs` defines: CLearner (conflicts with `learnerimpl.rs::CLearner`)
     - `executor_gen.rs` defines: CExecutor (conflicts with `ExecutorImpl.rs::CExecutor`)
   - **Critical finding**: Generated module is NOT verified during Verus runs
     - `#[cfg(test)]` excludes it from `verus --crate-type=lib` (confirmed: 0 generated functions in verification output)
     - Generated code has View type mismatches that were never caught (e.g., `Map<u64, CVote>` vs `Map<int, Vote>`)
-    - Generated code calls `well_formed()` on types that don't have it (EndPoint, CAppMessage)
   - **Progress on Option 2** (add `impl View` to implementation types):
     - ✅ Added `impl View for CBallot` to types_i.rs (matches inherent `view()` semantics)
     - ✅ Added `impl View for CVote` to types_i.rs (uses `abstractify_crequestbatch`)
@@ -1653,16 +1657,16 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - ✅ Fixed transpiler `TypeGenerator` to use `int_type`/`nat_type` from config (was hardcoded `i64`/`u64`)
     - ✅ Fixed `generate-types` subcommand to load `[naming]` config from TOML (was using default)
     - ✅ Regenerated types now use `u64` fields matching implementation types
+    - ✅ `types_gen.rs` rewritten to re-export from `types_i.rs` (basic types unified)
+    - ✅ Transpiler `validity_predicate_name` is configurable and passed through correctly
   - **Remaining work for V3.3**:
-    - Add `well_formed()` methods to implementation types (or make transpiler use `valid()`)
-    - Fix generated View impls to use `abstractify_*` functions for deep type conversion
-    - Remove duplicate struct definitions from generated component files
+    - Fix generated View impls in component files to use `abstractify_*` for deep type conversion
+    - Remove duplicate struct definitions from generated component files (acceptor, learner, executor)
     - Handle extra fields in implementation types (e.g., `CAcceptor.min_vote_opn`)
-  - **Why re-exporting from types_i.rs still doesn't work (yet)**:
-    - Implementation types lack `well_formed()` (generated code calls it on CBallot, CRequest, etc.)
-    - EndPoint and CAppMessage also lack `well_formed()` (called transitively)
-    - View conversions differ: types_i uses `abstractify_cvotes()`, types_gen uses `self.votes@`
-    - Component types have extra fields (e.g., `CAcceptor.min_vote_opn`)
+  - **Re-exporting now works for basic types** (CBallot, CVote, CRequest, CReply, CLearnerTuple)
+    - `types_gen.rs` successfully re-exports from `types_i.rs`
+    - All basic types have both `impl View` trait AND `valid()` predicates
+    - Remaining issue: component types (CAcceptor, CLearner, CExecutor) still duplicated in `*_gen.rs` files
 
 - [x] **V3.4: Fix iterator and function generation** ✅ COMPLETE
   - Root cause: Two code paths for map filter generation in transpiler conjunction handler
@@ -1711,7 +1715,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 partial (impl View added, transpiler fixed); V3.6/V3.8 blocked |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 partial (basic types unified, component types remain); V3.6/V3.8 blocked |
 
 **Current State**: With `#[cfg(test)]` guard: **454 verified, 0 errors** ✅ (including hand-written dispatch functions)
 
@@ -1737,17 +1741,19 @@ The fundamental issue is **two parallel type systems** that cannot coexist:
 
 **New finding**: Generated module was NEVER verified by Verus (excluded by `#[cfg(test)]`). Generated View impls have type errors (shallow `@` doesn't do deep key/value conversion needed for spec types).
 
-**Why re-export doesn't work**: Implementation types lack `impl View` trait, so `@` operator fails.
+**Re-export now works for basic types**: `types_gen.rs` re-exports from `types_i.rs`. All basic types
+(CBallot, CVote, CRequest, CReply, CLearnerTuple) have `impl View` trait and `valid()` predicates.
 
-**Why adding `impl View` to implementation types is complex**: The View mappings need deep conversion
-(e.g., `HashMap<u64, CVote>` → `Map<int, Vote>` via abstractify functions), and the transpiler's
-codegen would need to know about these abstractify functions.
+**Remaining blocker**: Component types (CAcceptor, CLearner, CExecutor) are still duplicated in
+`*_gen.rs` files. These have extra fields and need deep View conversion via `abstractify_*` functions.
 
 **Completed fixes**:
 - ✅ `int_type`/`nat_type` config options (u64 instead of i64)
 - ✅ Iterator code generation (loop-based instead of broken filter/map/collect chains)
 - ✅ HashMap filter conjunction handling
 - ✅ Hand-written dispatch functions (CReplicaNextProcessPacket, etc.)
+- ✅ `types_gen.rs` re-exports from `types_i.rs` (basic type duplication eliminated)
+- ✅ `validity_predicate_name` config option (transpiler generates `valid()` instead of `well_formed()`)
 
 **Success Criteria** (all must pass):
 - [ ] `cargo run -- --tla-input TwoPhase.tla --exec-output two_phase.rs` produces runnable code

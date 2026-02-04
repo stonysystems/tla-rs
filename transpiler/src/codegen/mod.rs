@@ -641,7 +641,7 @@ pub fn generate_all_types_with_remapping(
     config: &NamingConfig,
     remapping: &HashMap<String, String>,
 ) -> GeneratedCode {
-    generate_all_types_with_options(registry, config, remapping, &[])
+    generate_all_types_with_options(registry, config, remapping, &[], "well_formed")
 }
 
 /// Generate all types from a type registry with custom remapping and imports
@@ -650,8 +650,13 @@ pub fn generate_all_types_with_options(
     config: &NamingConfig,
     remapping: &HashMap<String, String>,
     custom_imports: &[String],
+    validity_predicate_name: &str,
 ) -> GeneratedCode {
-    let generator = TypeGenerator::with_remapping(config.clone(), remapping.clone());
+    let generator = TypeGenerator::with_options(
+        config.clone(),
+        remapping.clone(),
+        validity_predicate_name.to_string(),
+    );
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
 
@@ -1028,6 +1033,70 @@ mod tests {
         assert!(
             result.code.contains("members: HashSet<EndPoint>"),
             "Should use remapped 'EndPoint' in HashSet: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_custom_validity_predicate_name() {
+        // Test that with_options allows customizing the validity predicate name
+        let generator = TypeGenerator::with_options(
+            make_config(),
+            HashMap::new(),
+            "valid".to_string(),
+        );
+
+        let spec = StructDef {
+            name: "Ballot".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "seqno".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should use "valid" instead of "well_formed"
+        assert!(
+            result.code.contains("fn valid"),
+            "Should use custom validity predicate 'valid': {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("fn well_formed"),
+            "Should NOT contain 'well_formed' when using 'valid': {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_default_validity_predicate_is_well_formed() {
+        // Test that default TypeGenerator uses "well_formed"
+        let generator = TypeGenerator::new(make_config());
+
+        let spec = StructDef {
+            name: "Ballot".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "seqno".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            result.code.contains("fn well_formed"),
+            "Default should use 'well_formed': {}",
             result.code
         );
     }
