@@ -2666,12 +2666,21 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
 
 ### 11.7 Success Criteria
 
-1. [ ] Parse standard TLA+ syntax (TLA+ version 2)
-2. [ ] Generate valid Verus spec functions from TLA+ operators
-3. [ ] Automatically generate mode annotations from primed variables
-4. [ ] Successfully transpile Two-Phase Commit spec end-to-end
-5. [ ] Successfully transpile Single-Decree Paxos spec end-to-end
-6. [ ] Documentation covers all supported constructs
+1. [x] Parse standard TLA+ syntax (TLA+ version 2) ✅
+   - Implemented tokenizer with all TLA+ operators (T1.1-T1.3)
+   - Parser supports module structure, operators, expressions, actions, temporal formulas (T2.1-T2.5)
+2. [x] Generate valid Verus spec functions from TLA+ operators ✅
+   - Expression translation for sets, sequences, functions, quantifiers (T5.1-T5.5)
+   - Module translation with state/constants structs (T6.1-T6.3)
+3. [x] Automatically generate mode annotations from primed variables ✅
+   - Mode annotation generation detects actions vs predicates (T6.4)
+4. [x] Successfully transpile Two-Phase Commit spec end-to-end ✅
+   - TwoPhase.tla example with 3 tests (parsing, translation, type inference)
+5. [x] Successfully transpile Single-Decree Paxos spec end-to-end ✅
+   - Paxos.tla example with 3 tests (parsing, translation, type inference)
+6. [x] Documentation covers all supported constructs ✅
+   - `docs/tla-to-verus-guide.md` - comprehensive translation guide
+   - `docs/tla-transpiler-limitations.md` - limitations and workarounds
 
 ### 11.8 Estimated Complexity
 
