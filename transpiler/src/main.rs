@@ -298,6 +298,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
         translator: TranslatorConfig {
             validity_predicate_name: file_config.output.validity_predicate_name,
             generate_loops_for_verification: file_config.output.generate_loops_for_verification,
+            type_remapping: file_config.remapping.clone(),
             ..TranslatorConfig::default()
         },
         custom_imports: file_config.output.custom_imports,

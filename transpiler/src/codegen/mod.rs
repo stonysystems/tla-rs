@@ -179,7 +179,7 @@ impl TypeGenerator {
         } else {
             // Generate conjunction of validity calls
             for (i, field) in fields_needing_check.iter().enumerate() {
-                let prefix = if i == 0 { "    " } else { "&&& " };
+                let prefix = "&&& ";
                 code.push_str(&format!(
                     "{}{}{}self.{}.{}()\n",
                     self.indent, self.indent, prefix, field.name, pred_name

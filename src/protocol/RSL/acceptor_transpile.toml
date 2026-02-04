@@ -8,7 +8,13 @@ exec_prefix = "C"
 "LAcceptor" = "CAcceptor"
 "LReplicaConstants" = "CReplicaConstants"
 "Ballot" = "CBallot"
-"RslPacket" = "CRslPacket"
+"RslPacket" = "CPacket"
+"RslMessage" = "CMessage"
+"RslMessage1a" = "CMessage1a"
+"RslMessage1b" = "CMessage1b"
+"RslMessage2a" = "CMessage2a"
+"RslMessage2b" = "CMessage2b"
+"RslMessageHeartbeat" = "CMessageHeartbeat"
 "Vote" = "CVote"
 "OperationNumber" = "u64"
 
@@ -33,6 +39,7 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::implementation::RSL::acceptorimpl::CAcceptor;",
     "use crate::protocol::RSL::acceptor::*;",
     "use crate::protocol::RSL::types::*;",
 ]

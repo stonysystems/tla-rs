@@ -1306,12 +1306,14 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     - Fixed: Renamed `CRslPacket` → `CPacket` in acceptor_gen.rs
     - Fixed: Renamed `CRslMessage` → `CMessage` in acceptor_gen.rs
     - Fixed: Renamed `RslMessage*` → `CMessage*` enum variants in acceptor_gen.rs
+  - **Transpiler bugs fixed [2026-02-04]:**
+    1. ~~**AST debug output in requires clauses**~~: Fixed in `translator/mod.rs` - added proper `Forall`, `Exists`, and `Implies` handling in `expr_to_simple_string()` with new helper functions `bindings_to_string()` and `type_to_simple_string()`
+    2. ~~**First expression in `&&&` chains missing prefix**~~: Fixed in `codegen/mod.rs` - always use `&&&` prefix for `well_formed()` predicates
+    3. ~~**Type remapping not propagated to TranslatorConfig**~~: Fixed in `main.rs` - added `type_remapping: file_config.remapping.clone()` to TranslatorConfig initialization
   - **Remaining transpiler bugs (require transpiler code changes):**
-    1. **AST debug output in requires clauses**: `proposer_gen.rs:124` outputs AST debug format (`Forall { vars: [Binding { ...`) instead of valid Verus `forall` syntax
-    2. **Type name mapping errors in config**: `RslPacket → CRslPacket` but actual type is `CPacket`; similar for `RslMessage → CRslMessage` vs `CMessage`
-    3. **Missing type imports**: `CConfiguration` not imported in broadcast_gen.rs
-    4. **First expression in `&&&` chains missing prefix**: transpiler generates first expr without `&&&` but Verus requires it
-    5. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`
+    1. **Enum variant mapping in struct construction**: Transpiler generates `CRslMessage::RslMessage1b` instead of `CMessage::CMessage1b` - need to remap both enum type AND variant names in struct/enum construction
+    2. **Missing type imports**: Generated code references C* functions not imported (e.g., `CConfiguration`, `CUpperBound`, `CGetReplicaIndex`, `CBroadcastToEveryone`, etc.)
+    3. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`
 
 #### 2. Recursive Helper Functions (H4 - Deferred)
 - [ ] **Generate loop-based implementations for recursive functions**

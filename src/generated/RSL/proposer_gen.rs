@@ -5,13 +5,27 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::learnerimpl::CLearner;
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -40,7 +54,7 @@ ensures
 
 }
 
-pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CRslPacket) -> (result: CProposer)
+pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result: CProposer)
 requires
     s.valid(),
     packet.valid(),
@@ -84,7 +98,7 @@ ensures
 
 }
 
-pub exec fn CProposerMaybeEnterNewViewAndSend1a(s: &CProposer) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerMaybeEnterNewViewAndSend1a(s: &CProposer) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -113,7 +127,7 @@ if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalL
     }
 }
 
-pub exec fn CProposerProcess1b(s: &CProposer, p: &CRslPacket) -> (result: CProposer)
+pub exec fn CProposerProcess1b(s: &CProposer, p: &CPacket) -> (result: CProposer)
 requires
     s.valid(),
     p.valid(),
@@ -121,7 +135,7 @@ requires
     s.constants.all.config.replica_ids.contains(p.src),
     (p.msg.get_bal_1b() == s.max_ballot_i_sent_1a),
     (s.current_state == 1),
-    Forall { vars: [Binding { pattern: Ident("other_packet"), ty: Some(Named(Path { segments: ["RslPacket"] })), variable_mode: Exec }], triggers: [], body: Implies(MethodCall { receiver: Field(Ident("s"), "received_1b_packets"), method: "contains", args: [Ident("other_packet")] }, Ne(Field(Ident("other_packet"), "src"), Field(Ident("p"), "src"))) },
+    forall |other_packet: CPacket| (s.received_1b_packets.contains(other_packet) ==> (other_packet.src != p.src)),
 ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
@@ -139,7 +153,7 @@ CProposer {
     }
 }
 
-pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
     log_truncation_point.valid(),
@@ -170,7 +184,7 @@ if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && 
     }
 }
 
-pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
     log_truncation_point.valid(),
@@ -217,7 +231,7 @@ ensures
 
 }
 
-pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
     log_truncation_point.valid(),
@@ -247,7 +261,7 @@ ensures
 
 }
 
-pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &i64) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &i64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -286,7 +300,7 @@ if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
     }
 }
 
-pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CRslPacket, clock: &i64) -> (result: CProposer)
+pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &i64) -> (result: CProposer)
 requires
     s.valid(),
     p.valid(),

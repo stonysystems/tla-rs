@@ -5,13 +5,27 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::learnerimpl::CLearner;
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -35,7 +49,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcessInvalid(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessInvalid(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -48,7 +62,7 @@ ensures
 (s.clone(), vec![])
 }
 
-pub exec fn CReplicaNextProcessRequest(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessRequest(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -76,7 +90,7 @@ if (s.executor.reply_cache.contains_key(received_packet.src) && (received_packet
     }
 }
 
-pub exec fn CReplicaNextProcess1a(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcess1a(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -98,7 +112,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -125,7 +139,7 @@ if (s.proposer.constants.all.config.replica_ids.contains(received_packet.src) &&
     }
 }
 
-pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -147,7 +161,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcess2a(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcess2a(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -175,7 +189,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcess2b(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcess2b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -205,7 +219,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcessReply(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessReply(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -218,7 +232,7 @@ ensures
 (s.clone(), vec![])
 }
 
-pub exec fn CReplicaNextProcessAppStateSupply(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessAppStateSupply(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -245,7 +259,7 @@ if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) &&
     }
 }
 
-pub exec fn CReplicaNextProcessAppStateRequest(s: &CReplica, received_packet: &CRslPacket) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessAppStateRequest(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -267,7 +281,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CRslPacket, clock: &i64) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket, clock: &i64) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -290,7 +304,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s: &CReplica) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -310,7 +324,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextSpontaneousMaybeEnterPhase2(s: &CReplica) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextSpontaneousMaybeEnterPhase2(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -330,7 +344,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextReadClockMaybeNominateValueAndSend2a(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextReadClockMaybeNominateValueAndSend2a(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     clock.valid(),
@@ -351,7 +365,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -375,7 +389,7 @@ s.acceptor.last_checkpointed_operation.iter().any(|opn| (CIsLogTruncationPointVa
 }))
 }
 
-pub exec fn CReplicaNextSpontaneousMaybeMakeDecision(s: &CReplica) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextSpontaneousMaybeMakeDecision(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -401,7 +415,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextSpontaneousMaybeExecute(s: &CReplica) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextSpontaneousMaybeExecute(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -429,7 +443,7 @@ if ((s.executor.next_op_to_execute is OutstandingOpKnown) && (CLtUpperBound(&s.e
     }
 }
 
-pub exec fn CReplicaNextReadClockMaybeSendHeartbeat(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextReadClockMaybeSendHeartbeat(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     clock.valid(),
@@ -451,7 +465,7 @@ if (clock.t < s.nextHeartbeatTime) {
     }
 }
 
-pub exec fn CReplicaNextReadClockCheckForViewTimeout(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextReadClockCheckForViewTimeout(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     clock.valid(),
@@ -472,7 +486,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CRslPacket>))
+pub exec fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     clock.valid(),
@@ -524,16 +538,16 @@ ensures
         ios.drop_first().iter().all(|io| (io is Send));
     match ios.index(0).get_r().msg {
         CRslMessageInvalid {  } => CReplicaNextProcessInvalid(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessageRequest { seqno_req: seqno_req, val: val } => CReplicaNextProcessRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessage1a { bal_1a: bal_1a } => CReplicaNextProcess1a(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessage1b { bal_1b: bal_1b, log_truncation_point: log_truncation_point, votes: votes } => CReplicaNextProcess1b(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessageStartingPhase2 { bal_2: bal_2, logTruncationPoint_2: logTruncationPoint_2 } => CReplicaNextProcessStartingPhase2(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessage2a { bal_2a: bal_2a, opn_2a: opn_2a, val_2a: val_2a } => CReplicaNextProcess2a(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessage2b { bal_2b: bal_2b, opn_2b: opn_2b, val_2b: val_2b } => CReplicaNextProcess2b(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessageReply { seqno_reply: seqno_reply, reply: reply } => CReplicaNextProcessReply(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessageAppStateRequest { bal_state_req: bal_state_req, opn_state_req: opn_state_req } => CReplicaNextProcessAppStateRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessageAppStateSupply { bal_state_supply: bal_state_supply, opn_state_supply: opn_state_supply, app_state: app_state, reply_cache: reply_cache } => CReplicaNextProcessAppStateSupply(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CRslMessageHeartbeat { bal_heartbeat: bal_heartbeat, suspicious: suspicious, opn_ckpt: opn_ckpt } => false,
+        CMessageRequest { seqno_req: seqno_req, val: val } => CReplicaNextProcessRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage1a { bal_1a: bal_1a } => CReplicaNextProcess1a(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage1b { bal_1b: bal_1b, log_truncation_point: log_truncation_point, votes: votes } => CReplicaNextProcess1b(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessageStartingPhase2 { bal_2: bal_2, logTruncationPoint_2: logTruncationPoint_2 } => CReplicaNextProcessStartingPhase2(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage2a { bal_2a: bal_2a, opn_2a: opn_2a, val_2a: val_2a } => CReplicaNextProcess2a(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage2b { bal_2b: bal_2b, opn_2b: opn_2b, val_2b: val_2b } => CReplicaNextProcess2b(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessageReply { seqno_reply: seqno_reply, reply: reply } => CReplicaNextProcessReply(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessageAppStateRequest { bal_state_req: bal_state_req, opn_state_req: opn_state_req } => CReplicaNextProcessAppStateRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessageAppStateSupply { bal_state_supply: bal_state_supply, opn_state_supply: opn_state_supply, app_state: app_state, reply_cache: reply_cache } => CReplicaNextProcessAppStateSupply(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessageHeartbeat { bal_heartbeat: bal_heartbeat, suspicious: suspicious, opn_ckpt: opn_ckpt } => false,
     }
 
 

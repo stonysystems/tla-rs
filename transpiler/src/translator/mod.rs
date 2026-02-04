@@ -3,7 +3,7 @@
 //! This module transforms validated spec predicates into executable Rust/Verus
 //! functions with proper proof linkage.
 
-use crate::ast::{BinOp, Expr, FunctionKind, Literal, ParameterMode, Type};
+use crate::ast::{Binding, BinOp, Expr, FunctionKind, Literal, ParameterMode, Pattern, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
@@ -1975,7 +1975,75 @@ impl Translator {
                 Literal::Int(i) => i.to_string(),
                 Literal::String(s) => format!("\"{}\"", s),
             },
+            Expr::Implies(lhs, rhs) => {
+                format!(
+                    "({} ==> {})",
+                    self.expr_to_simple_string(lhs),
+                    self.expr_to_simple_string(rhs)
+                )
+            }
+            Expr::Forall { vars, triggers: _, body } => {
+                let vars_str = self.bindings_to_string(vars);
+                format!("forall |{}| {}", vars_str, self.expr_to_simple_string(body))
+            }
+            Expr::Exists { vars, body } => {
+                let vars_str = self.bindings_to_string(vars);
+                format!("exists |{}| {}", vars_str, self.expr_to_simple_string(body))
+            }
             _ => format!("{:?}", expr),
+        }
+    }
+
+    /// Convert bindings to string representation for forall/exists
+    fn bindings_to_string(&self, bindings: &[Binding]) -> String {
+        bindings
+            .iter()
+            .map(|b| {
+                let name = match &b.pattern {
+                    Pattern::Ident(n) => n.clone(),
+                    _ => "_".to_string(),
+                };
+                if let Some(ty) = &b.ty {
+                    format!("{}: {}", name, self.type_to_simple_string(ty))
+                } else {
+                    name
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Convert type to simple string representation
+    fn type_to_simple_string(&self, ty: &Type) -> String {
+        match ty {
+            Type::Named(path) => {
+                // Apply naming convention transformation for known types
+                let name = path.segments.last().map(|s| s.as_str()).unwrap_or("_");
+                self.translate_name(name)
+            }
+            Type::Generic(path, args) => {
+                let name = path.segments.last().map(|s| s.as_str()).unwrap_or("_");
+                let args_str: Vec<_> = args.iter().map(|a| self.type_to_simple_string(a)).collect();
+                format!("{}<{}>", name, args_str.join(", "))
+            }
+            Type::Seq(inner) => format!("Seq<{}>", self.type_to_simple_string(inner)),
+            Type::Set(inner) => format!("Set<{}>", self.type_to_simple_string(inner)),
+            Type::Map(k, v) => format!("Map<{}, {}>", self.type_to_simple_string(k), self.type_to_simple_string(v)),
+            Type::Tuple(types) => {
+                let parts: Vec<_> = types.iter().map(|t| self.type_to_simple_string(t)).collect();
+                format!("({})", parts.join(", "))
+            }
+            Type::Bool => "bool".to_string(),
+            Type::Int => "int".to_string(),
+            Type::Nat => "nat".to_string(),
+            Type::Unit => "()".to_string(),
+            Type::Reference { ty, mutable } => {
+                if *mutable {
+                    format!("&mut {}", self.type_to_simple_string(ty))
+                } else {
+                    format!("&{}", self.type_to_simple_string(ty))
+                }
+            }
         }
     }
 

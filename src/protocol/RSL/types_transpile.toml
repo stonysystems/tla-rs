@@ -26,6 +26,7 @@ include_debug_comments = false
 custom_imports = [
     "use vstd::prelude::*;",
     "use std::collections::HashSet;",
+    "use crate::common::collections::hashsets::HashSetWellFormed;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::implementation::RSL::appinterface::CAppMessage;",
     "use crate::implementation::RSL::types_i::CRequestBatch;",

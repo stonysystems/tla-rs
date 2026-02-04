@@ -5,14 +5,27 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::learnerimpl::CLearner;
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -67,7 +80,7 @@ pub exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CPacket) -> (result: (CAccep
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessage1a,
+    inp.msg is RslMessage1a,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -85,7 +98,7 @@ ensures
 }, vec![CPacket {
     src: s.constants.all.config.replica_ids.index(s.constants.my_index),
     dst: inp.src,
-    msg: CMessage::CMessage1b {
+    msg: CRslMessage::RslMessage1b {
         bal_1b: bal,
         log_truncation_point: s.log_truncation_point,
         votes: s.votes,
@@ -102,7 +115,7 @@ pub exec fn CAcceptorProcess2a(s: &CAcceptor, inp: &CPacket) -> (result: (CAccep
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessage2a,
+    inp.msg is RslMessage2a,
     s.constants.all.config.replica_ids.contains(inp.src),
     CBalLeq(s.max_bal, inp.msg.get_bal_2a()),
     CLeqUpperBound(inp.msg.get_opn_2a(), s.constants.all.params.max_integer_val),
@@ -117,7 +130,7 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
+        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2b {
     bal_2b: m.get_bal_2a(),
     opn_2b: m.get_opn_2a(),
     val_2b: m.get_val_2a(),
@@ -139,7 +152,7 @@ pub exec fn CAcceptorProcessHeartbeat(s: &CAcceptor, inp: &CPacket) -> (result: 
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessageHeartbeat,
+    inp.msg is RslMessageHeartbeat,
 ensures
     result.valid(),
     LAcceptorProcessHeartbeat(s@, result@, inp@),

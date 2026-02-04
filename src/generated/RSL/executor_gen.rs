@@ -5,13 +5,27 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::learnerimpl::CLearner;
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -62,7 +76,7 @@ CExecutor {
     }
 }
 
-pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CRslPacket>))
+pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CPacket>))
 requires
     s.valid(),
     s.next_op_to_execute is OutstandingOpKnown,
@@ -94,7 +108,7 @@ ensures
 
 }
 
-pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CRslPacket) -> (result: CExecutor)
+pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CPacket) -> (result: CExecutor)
 requires
     s.valid(),
     inp.valid(),
@@ -118,7 +132,7 @@ ensures
 
 }
 
-pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CRslPacket) -> (result: (CExecutor, Vec<CRslPacket>))
+pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
 requires
     s.valid(),
     inp.valid(),
@@ -146,7 +160,7 @@ ensures
 
 }
 
-pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CRslPacket) -> (result: (CExecutor, Vec<CRslPacket>))
+pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
 requires
     s.valid(),
     inp.valid(),
@@ -168,7 +182,7 @@ if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.get_logTrun
     }
 }
 
-pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CRslPacket) -> (result: Vec<CRslPacket>)
+pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Vec<CPacket>)
 requires
     s.valid(),
     inp.valid(),

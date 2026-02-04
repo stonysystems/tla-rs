@@ -5,13 +5,27 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::common::collections::sets::*;
+use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::learnerimpl::CLearner;
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -94,7 +108,7 @@ CElectionState {
     }
 }
 
-pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CRslPacket, clock: &i64) -> (result: CElectionState)
+pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clock: &i64) -> (result: CElectionState)
 requires
     es.valid(),
     p.valid(),

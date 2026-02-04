@@ -36,6 +36,32 @@ impl View for CLearnerTuple {
 }
 
 #[derive(Clone)]
+pub struct CRequest {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub request: CAppMessage,
+}
+
+impl CRequest {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.client.well_formed()
+        &&& self.request.well_formed()
+    }
+}
+
+impl View for CRequest {
+    type V = Request;
+
+    open spec fn view(&self) -> Request {
+        Request {
+            client: self.client@,
+            seqno: self.seqno as int,
+            request: self.request@,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct CClockReading {
     pub t: i64,
 }
@@ -83,29 +109,6 @@ impl View for CReply {
 }
 
 #[derive(Clone)]
-pub struct CBallot {
-    pub seqno: i64,
-    pub proposer_id: i64,
-}
-
-impl CBallot {
-    pub open spec fn well_formed(&self) -> bool {
-        true
-    }
-}
-
-impl View for CBallot {
-    type V = Ballot;
-
-    open spec fn view(&self) -> Ballot {
-        Ballot {
-            seqno: self.seqno as int,
-            proposer_id: self.proposer_id as int,
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct CVote {
     pub max_value_bal: CBallot,
     pub max_val: CRequestBatch,
@@ -130,27 +133,24 @@ impl View for CVote {
 }
 
 #[derive(Clone)]
-pub struct CRequest {
-    pub client: EndPoint,
+pub struct CBallot {
     pub seqno: i64,
-    pub request: CAppMessage,
+    pub proposer_id: i64,
 }
 
-impl CRequest {
+impl CBallot {
     pub open spec fn well_formed(&self) -> bool {
-        &&& self.client.well_formed()
-        &&& self.request.well_formed()
+        true
     }
 }
 
-impl View for CRequest {
-    type V = Request;
+impl View for CBallot {
+    type V = Ballot;
 
-    open spec fn view(&self) -> Request {
-        Request {
-            client: self.client@,
+    open spec fn view(&self) -> Ballot {
+        Ballot {
             seqno: self.seqno as int,
-            request: self.request@,
+            proposer_id: self.proposer_id as int,
         }
     }
 }
