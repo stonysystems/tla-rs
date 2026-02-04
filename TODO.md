@@ -2510,11 +2510,14 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   Created ExprTranslator with TranslatorConfig (~700 LOC, 18 tests)
 
 #### Phase T6: Module Translation
-- [ ] **T6.1: Translate module structure**
-  - `MODULE Name` → Rust module
-  - `EXTENDS Naturals, Sequences` → `use vstd::prelude::*`
-  - `CONSTANT c` → function parameter or generic
-  - `VARIABLE x` → state struct field
+- [x] **T6.1: Translate module structure** ✅ COMPLETED
+  - `MODULE Name` → Rust module with header comment
+  - `EXTENDS Naturals, Sequences` → `use vstd::prelude::*`, `use vstd::seq::*`
+  - `CONSTANT c` → Constants struct with typed fields
+  - `VARIABLE x` → State struct field with inferred types
+  - ModuleTranslator with configurable prefixes (L/C for spec/exec)
+  - translate_module() and translate_module_with_types() convenience functions
+  - ~300 LOC with 10 new tests for module translation
 
 - [ ] **T6.2: Generate state struct**
   - Collect all variables into a state struct

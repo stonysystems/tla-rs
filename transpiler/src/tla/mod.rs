@@ -15,7 +15,10 @@ pub use ast::{
 };
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};
-pub use translator::{translate_expr, translate_expr_with_config, ExprTranslator, TranslatorConfig};
+pub use translator::{
+    translate_expr, translate_expr_with_config, translate_module, translate_module_with_types,
+    ExprTranslator, ModuleConfig, ModuleTranslator, TranslatorConfig,
+};
 pub use types::{
     ConstraintCollector, DiagnosticSeverity, RecordType, StandardLibrary, TlaType, TypeAnnotations,
     TypeConstraint, TypeDiagnostic, TypeEnv, TypeInference, TypeSubstitution, TypeUnifier,
