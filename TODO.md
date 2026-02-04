@@ -2619,10 +2619,18 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
 
 ### 11.6 Documentation
 
-- [ ] **T10.1: TLA+ to Verus translation guide**
+- [x] **T10.1: TLA+ to Verus translation guide** ✅
   - Document all supported TLA+ constructs
   - Document type annotation format
   - Provide examples for common patterns
+
+  Created comprehensive guide at `docs/tla-to-verus-guide.md` covering:
+  - Module structure translation
+  - Logical, arithmetic, set, sequence, and function operators
+  - Type annotation file format (.tla-types)
+  - CLI usage for translate-tla and pipeline commands
+  - Working examples (Counter, TwoPhase)
+  - Known limitations and best practices
 
 - [ ] **T10.2: Limitations documentation**
   - Unsupported TLA+ features (temporal logic, fairness)
