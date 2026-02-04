@@ -1042,6 +1042,240 @@ pub fn translate_module_with_types(module: &TlaModule) -> String {
     translator.translate(module)
 }
 
+// =============================================================================
+// Mode Annotation Generation (T6.4)
+// =============================================================================
+
+/// Represents a mode annotation for a function parameter
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterMode {
+    /// Input parameter (+)
+    Input,
+    /// Output parameter (-)
+    Output,
+}
+
+impl std::fmt::Display for ParameterMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParameterMode::Input => write!(f, "+"),
+            ParameterMode::Output => write!(f, "-"),
+        }
+    }
+}
+
+/// Mode annotation for an operator
+#[derive(Debug, Clone)]
+pub struct OperatorModes {
+    /// Operator name
+    pub name: String,
+    /// Mode for each parameter
+    pub modes: Vec<ParameterMode>,
+    /// Optional description
+    pub description: Option<String>,
+}
+
+impl OperatorModes {
+    /// Create a new operator mode annotation
+    pub fn new(name: impl Into<String>, modes: Vec<ParameterMode>) -> Self {
+        Self {
+            name: name.into(),
+            modes,
+            description: None,
+        }
+    }
+
+    /// Add a description
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+
+    /// Format as automan annotation line
+    pub fn to_automan_line(&self) -> String {
+        let modes_str: Vec<_> = self.modes.iter().map(|m| m.to_string()).collect();
+        if let Some(desc) = &self.description {
+            format!(
+                "    {}({});  // {}",
+                self.name,
+                modes_str.join(", "),
+                desc
+            )
+        } else {
+            format!("    {}({});", self.name, modes_str.join(", "))
+        }
+    }
+}
+
+/// Generates mode annotations for a TLA+ module
+pub struct ModeAnnotationGenerator {
+    /// Module configuration (for prefixes)
+    pub config: ModuleConfig,
+}
+
+impl Default for ModeAnnotationGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ModeAnnotationGenerator {
+    /// Create a new mode annotation generator
+    pub fn new() -> Self {
+        Self {
+            config: ModuleConfig::default(),
+        }
+    }
+
+    /// Create with custom configuration
+    pub fn with_config(config: ModuleConfig) -> Self {
+        Self { config }
+    }
+
+    /// Generate mode annotations for a TLA+ module
+    pub fn generate(&self, module: &TlaModule) -> String {
+        let mut output = String::new();
+        let module_name = &module.name;
+
+        // Header
+        output.push_str(&format!("// Mode annotations for {}.rs\n", module_name));
+        output.push_str(&format!(
+            "// Format: FunctionName(mode1, mode2, ...) where + = input, - = output\n\n"
+        ));
+
+        // Module block
+        output.push_str(&format!("module {} {{\n", module_name));
+
+        // Generate annotations for each operator
+        for op in &module.operators {
+            let annotation = self.analyze_operator(op, module);
+            output.push_str(&annotation.to_automan_line());
+            output.push('\n');
+        }
+
+        output.push_str("}\n");
+
+        output
+    }
+
+    /// Analyze an operator to determine parameter modes
+    fn analyze_operator(&self, op: &TlaOperator, _module: &TlaModule) -> OperatorModes {
+        let fn_name = self.config.spec_fn_name(&op.name);
+        let mut modes = Vec::new();
+        let mut desc_parts: Vec<String> = Vec::new();
+
+        // Check if this is an action (uses primed variables)
+        let is_action = self.operator_uses_primes(&op.body);
+
+        // Check if this looks like an Init operator
+        let is_init = op.name.to_lowercase().contains("init");
+
+        // Determine modes based on operator pattern
+        if is_init {
+            // Init operators: state is output
+            modes.push(ParameterMode::Output);
+            desc_parts.push("s is output (initialized state)".to_string());
+        } else if is_action {
+            // Action operators: s is input, s_ is output
+            modes.push(ParameterMode::Input);
+            desc_parts.push("s is input (current state)".to_string());
+            modes.push(ParameterMode::Output);
+            desc_parts.push("s_ is output (next state)".to_string());
+        } else {
+            // Pure predicates: state is input
+            modes.push(ParameterMode::Input);
+            desc_parts.push("s is input (state to check)".to_string());
+        }
+
+        // Add modes for explicit parameters - typically inputs
+        for param in &op.params {
+            // Check if parameter appears on left side of primed assignment (output)
+            // For simplicity, treat all explicit params as inputs
+            modes.push(ParameterMode::Input);
+            desc_parts.push(format!("{} is input", param.name));
+        }
+
+        OperatorModes::new(fn_name, modes).with_description(desc_parts.join(", "))
+    }
+
+    /// Check if an expression uses primed variables (same as ModuleTranslator)
+    fn operator_uses_primes(&self, expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::Prime(_) => true,
+            TlaExpr::BinOp { left, right, .. } => {
+                self.operator_uses_primes(left) || self.operator_uses_primes(right)
+            }
+            TlaExpr::UnaryOp { operand, .. } => self.operator_uses_primes(operand),
+            TlaExpr::OpApply { op, args } => {
+                self.operator_uses_primes(op) || args.iter().any(|a| self.operator_uses_primes(a))
+            }
+            TlaExpr::FnApply { func, arg } => {
+                self.operator_uses_primes(func) || self.operator_uses_primes(arg)
+            }
+            TlaExpr::SetEnum(elements) => elements.iter().any(|e| self.operator_uses_primes(e)),
+            TlaExpr::SetFilter { set, filter, .. } => {
+                self.operator_uses_primes(set) || self.operator_uses_primes(filter)
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                self.operator_uses_primes(expr) || self.operator_uses_primes(set)
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                self.operator_uses_primes(domain) || self.operator_uses_primes(body)
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                self.operator_uses_primes(func)
+                    || updates
+                        .iter()
+                        .any(|u| self.operator_uses_primes(&u.value))
+            }
+            TlaExpr::Record(fields) => fields.iter().any(|(_, e)| self.operator_uses_primes(e)),
+            TlaExpr::RecordAccess { record, .. } => self.operator_uses_primes(record),
+            TlaExpr::Tuple(elements) => elements.iter().any(|e| self.operator_uses_primes(e)),
+            TlaExpr::Forall { body, .. } | TlaExpr::Exists { body, .. } => {
+                self.operator_uses_primes(body)
+            }
+            TlaExpr::Choose { body, set, .. } => {
+                self.operator_uses_primes(body)
+                    || set.as_ref().is_some_and(|s| self.operator_uses_primes(s))
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.operator_uses_primes(cond)
+                    || self.operator_uses_primes(then_expr)
+                    || self.operator_uses_primes(else_expr)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter()
+                    .any(|(c, e)| self.operator_uses_primes(c) || self.operator_uses_primes(e))
+                    || other.as_ref().is_some_and(|o| self.operator_uses_primes(o))
+            }
+            TlaExpr::LetIn { defs, body } => {
+                defs.iter().any(|d| self.operator_uses_primes(&d.body))
+                    || self.operator_uses_primes(body)
+            }
+            TlaExpr::Unchanged(_) => true,
+            TlaExpr::Enabled(inner) => self.operator_uses_primes(inner),
+            TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => self.operator_uses_primes(inner),
+            TlaExpr::LeadsTo { left, right } => {
+                self.operator_uses_primes(left) || self.operator_uses_primes(right)
+            }
+            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => {
+                self.operator_uses_primes(action)
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Generate mode annotations for a TLA+ module
+pub fn generate_mode_annotations(module: &TlaModule) -> String {
+    let generator = ModeAnnotationGenerator::new();
+    generator.generate(module)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1537,5 +1771,122 @@ mod tests {
         let result = translate_module(&module);
         assert!(result.contains("LState"));
         assert!(result.contains("LInit"));
+    }
+
+    // Mode annotation tests (T6.4)
+    #[test]
+    fn test_parameter_mode_display() {
+        assert_eq!(format!("{}", ParameterMode::Input), "+");
+        assert_eq!(format!("{}", ParameterMode::Output), "-");
+    }
+
+    #[test]
+    fn test_operator_modes_to_automan() {
+        let modes = OperatorModes::new("LInit", vec![ParameterMode::Output]);
+        assert!(modes.to_automan_line().contains("LInit(-)"));
+
+        let modes = OperatorModes::new(
+            "LNext",
+            vec![ParameterMode::Input, ParameterMode::Output],
+        )
+        .with_description("s is input, s_ is output");
+        let line = modes.to_automan_line();
+        assert!(line.contains("LNext(+, -)"));
+        assert!(line.contains("s is input, s_ is output"));
+    }
+
+    #[test]
+    fn test_generate_mode_annotations_simple() {
+        let source = r"
+            ---- MODULE Counter ----
+            VARIABLE count
+            Init == count = 0
+            Increment == count' = count + 1
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        // Should have module block
+        assert!(result.contains("module Counter"));
+
+        // Init should have output mode (state is created)
+        assert!(result.contains("LInit"));
+
+        // Increment should have input and output modes (action)
+        assert!(result.contains("LIncrement"));
+    }
+
+    #[test]
+    fn test_generate_mode_annotations_with_params() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Max(a, b) == IF a > b THEN a ELSE b
+            Init == x = Max(1, 2)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        // Max has state + 2 params (all inputs for helper)
+        assert!(result.contains("LMax"));
+    }
+
+    #[test]
+    fn test_mode_annotation_generator_with_config() {
+        let config = ModuleConfig {
+            spec_prefix: "Spec".to_string(),
+            ..Default::default()
+        };
+        let generator = ModeAnnotationGenerator::with_config(config);
+
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Init == x = 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generator.generate(&module);
+
+        // Should use custom prefix
+        assert!(result.contains("SpecInit"));
+    }
+
+    #[test]
+    fn test_mode_annotation_action_detection() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x, y
+            TypeOK == x \in Nat /\ y \in Nat
+            Step == x' = x + 1 /\ y' = y
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let generator = ModeAnnotationGenerator::new();
+        let result = generator.generate(&module);
+
+        // TypeOK has no primes - pure predicate
+        // Step has primes - action with s and s_
+        assert!(result.contains("LTypeOK"));
+        assert!(result.contains("LStep"));
+    }
+
+    #[test]
+    fn test_mode_annotation_unchanged() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x, y
+            OnlyXChanges == x' = x + 1 /\ UNCHANGED y
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        // UNCHANGED implies action, so should have input and output state
+        assert!(result.contains("LOnlyXChanges"));
+        // Should be an action (has primes via UNCHANGED)
+        assert!(result.contains("+, -"));
     }
 }

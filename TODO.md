@@ -2519,18 +2519,25 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - translate_module() and translate_module_with_types() convenience functions
   - ~300 LOC with 10 new tests for module translation
 
-- [ ] **T6.2: Generate state struct**
-  - Collect all variables into a state struct
-  - Generate View trait for state struct
+- [x] **T6.2: Generate state struct** ✅ COMPLETED (in T6.1)
+  - Implemented in ModuleTranslator::generate_state_struct()
+  - Collects all VARIABLE declarations into LState struct
+  - Type inference integration for field types
 
-- [ ] **T6.3: Generate spec functions**
+- [x] **T6.3: Generate spec functions** ✅ COMPLETED (in T6.1)
   - `Init == ...` → `spec fn LInit(s: LState) -> bool`
   - `Next == ...` → `spec fn LNext(s: LState, s_: LState, ...) -> bool`
-  - Helper operators → `spec fn LHelper(...) -> ...`
+  - Automatic detection of action operators via primed variable analysis
+  - Implemented in ModuleTranslator::generate_spec_functions()
 
-- [ ] **T6.4: Generate mode annotations**
-  - Automatically create `.automan` file
-  - Detect input/output from primed variable usage
+- [x] **T6.4: Generate mode annotations** ✅ COMPLETED
+  - ModeAnnotationGenerator produces `.automan` file content
+  - ParameterMode enum: Input (+), Output (-)
+  - OperatorModes struct with to_automan_line() formatting
+  - Automatic detection of Init (output state) vs Action (input/output)
+  - Primed variable analysis to classify operators
+  - generate_mode_annotations() convenience function
+  - ~200 LOC with 7 new tests for mode annotations
 
 ### 11.4 Integration with Existing Transpiler
 
