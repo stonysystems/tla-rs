@@ -102,14 +102,14 @@ ensures
         let new_state = temp.0[(temp.0.len() - 1)];
         let replies = temp.1;
         let clients = CClientsInReplies(&replies);
-        let s_reply_cache = UpdateNewCache(&s.reply_cache, &replies);
-    let sent_packets = RepliesAreReplyType();
-    ((CExecutor { constants: s.constants, app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &s.next_op_to_execute->bal) {
+        let s_reply_cache = CExecutor::CUpdateNewCache(&s.reply_cache, &replies);
+    let sent_packets = CExecutor::CGetPacketsFromReplies(&s.constants.all.config.replica_ids[s.constants.my_index as usize], &batch, &replies);
+    (CExecutor { constants: s.constants, app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &s.next_op_to_execute->bal) {
     s.next_op_to_execute->bal
 } else {
     s.max_bal_reflected
 }, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-}, reply_cache: s_reply_cache, ..s.clone() }, GetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index as usize], &batch, &replies)), sent_packets)
+}, reply_cache: s_reply_cache, ..s.clone() }, sent_packets)
 
 
 

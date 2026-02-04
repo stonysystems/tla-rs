@@ -1701,7 +1701,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 - [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 136 errors remaining)
   - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes compilation errors
   - With guard: 455 verified, 0 errors ✅
-  - Without guard: 136 errors (318→283→278→192→152→136 after V3.6.1-V3.6.6)
+  - Without guard: 111 errors (318→283→278→192→152→136→111 after V3.6.1-V3.6.7)
   - **Root causes**: Generated function bodies have type/API mismatches with implementation types
   - Broken down into subtasks below (too large for single commit, ~1000+ LOC changes)
 
@@ -1790,11 +1790,12 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - Also fixed: `Vec<Request>` → `Vec<CRequest>`, `acc = reqs` → `acc = reqs.clone()`
     - Error count: 152 → 136 (16 errors fixed)
 
-  - [ ] **V3.6.7: Fix function signatures and arg counts** (~60 LOC, medium-hard)
-    - Functions called with wrong arg count (e.g., `UpdateNewCache` needs 3 args, called with 2)
-    - `RepliesAreReplyType()` needs 1 arg, called with 0
-    - Function signature mismatches between generated calls and impl definitions
-    - Fixes ~10 E0061 errors
+  - [x] **V3.6.7: Fix function signatures and arg counts** ✅ COMPLETE (~30 LOC, 25 errors fixed)
+    - executor_gen.rs: `UpdateNewCache` → `CExecutor::CUpdateNewCache`, `GetPacketsFromReplies` → `CExecutor::CGetPacketsFromReplies`
+    - executor_gen.rs: Removed spec-only `RepliesAreReplyType()` call (not executable)
+    - replica_gen.rs: Removed extra `&sent_packets` arg from 9 function calls in `CReplicaNoReceiveNext`
+    - replica_gen.rs: Replaced spec `SpontaneousClock(&ios)` with exec `CClockReading { t: ios[0]->t }`
+    - Error count: 136 → 111 (25 errors fixed, all 11 E0061 eliminated + 14 cascade E0308 fixed)
 
   - [ ] **V3.6.8: Fix ensures clause view types** (~200 LOC, HARD - may need transpiler changes)
     - `result.1@` on `Vec<CPacket>` gives `Seq<CPacket>` but spec expects `Seq<RslPacket>`
@@ -1837,7 +1838,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.6 done (136 errors remain) |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.7 done (111 errors remain) |
 
 **Current State**: With `#[cfg(test)]` guard: **455 verified, 0 errors** ✅ (including hand-written dispatch functions + Clone impls)
 
@@ -1852,7 +1853,7 @@ Key issues: (1) ensures clauses use shallow `@` where deep conversion needed, (2
 fields for optimization fields added to impl types, (3) i64/u64 type mismatches, (4) ref/owned
 mismatches, (5) collection operations that don't exist on std types.
 
-**Next step**: V3.6.7 - Fix function signatures and arg counts (~60 LOC)
+**Next step**: V3.6.8 - Fix ensures clause view types (~200 LOC, HARDEST remaining task)
 
 **Type deduplication COMPLETE**: All generated component files now import types from implementation:
 - `types_gen.rs` re-exports basic types from `types_i.rs`

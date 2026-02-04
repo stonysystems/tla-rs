@@ -530,48 +530,51 @@ ensures
     result.valid(),
     LReplicaNoReceiveNext(s@, nextActionIndex@, result@, ios@),
 {
-    let sent_packets = ExtractSentPacketsFromIos(&ios);
     if (*nextActionIndex == 1) {
-                let s_ = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s, &sent_packets);
+                let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s);
         s_
 
     } else {
         if (*nextActionIndex == 2) {
-                        let s_ = CReplicaNextSpontaneousMaybeEnterPhase2(&s, &sent_packets);
+                        let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeEnterPhase2(&s);
             s_
 
         } else {
             if (*nextActionIndex == 3) {
-                                let s_ = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, SpontaneousClock(&ios), &sent_packets);
+                                let clock = CClockReading { t: ios[0]->t };
+                                let (s_, _sent_packets) = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, &clock);
                 s_
 
             } else {
                 if (*nextActionIndex == 4) {
-                                        let s_ = CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&s, &sent_packets);
+                                        let (s_, _sent_packets) = CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&s);
                     s_
 
                 } else {
                     if (*nextActionIndex == 5) {
-                                                let s_ = CReplicaNextSpontaneousMaybeMakeDecision(&s, &sent_packets);
+                                                let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeMakeDecision(&s);
                         s_
 
                     } else {
                         if (*nextActionIndex == 6) {
-                                                        let s_ = CReplicaNextSpontaneousMaybeExecute(&s, &sent_packets);
+                                                        let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeExecute(&s);
                             s_
 
                         } else {
                             if (*nextActionIndex == 7) {
-                                                                let s_ = CReplicaNextReadClockCheckForViewTimeout(&s, SpontaneousClock(&ios), &sent_packets);
+                                                                let clock = CClockReading { t: ios[0]->t };
+                                                                let (s_, _sent_packets) = CReplicaNextReadClockCheckForViewTimeout(&s, &clock);
                                 s_
 
                             } else {
                                 if (*nextActionIndex == 8) {
-                                                                        let s_ = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, SpontaneousClock(&ios), &sent_packets);
+                                                                        let clock = CClockReading { t: ios[0]->t };
+                                                                        let (s_, _sent_packets) = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, &clock);
                                     s_
 
                                 } else {
-                                                                        let s_ = CReplicaNextReadClockMaybeSendHeartbeat(&s, SpontaneousClock(&ios), &sent_packets);
+                                                                        let clock = CClockReading { t: ios[0]->t };
+                                                                        let (s_, _sent_packets) = CReplicaNextReadClockMaybeSendHeartbeat(&s, &clock);
                                     s_
 
                                 }
