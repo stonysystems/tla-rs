@@ -2326,13 +2326,15 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
 ### 11.2 TLA+ Parser Implementation
 
 #### Phase T1: TLA+ Lexer
-- [ ] **T1.1: Implement TLA+ tokenizer**
+- [x] **T1.1: Implement TLA+ tokenizer** [2026-02-04]
   - Handle TLA+ keywords: `VARIABLE`, `CONSTANT`, `EXTENDS`, `MODULE`, `INSTANCE`, `ASSUME`, `THEOREM`
   - Handle operators: `\in`, `\notin`, `\subseteq`, `\cup`, `\cap`, `\X`, `/\`, `\/`, `=>`, `<=>`, `~`, `'`
   - Handle special symbols: `<<`, `>>`, `[`, `]`, `{`, `}`, `DOMAIN`, `EXCEPT`, `@`
   - Handle quantifiers: `\A`, `\E`, `CHOOSE`
   - Handle temporal operators: `[]`, `<>`, `~>`, `-+->`
   - Parse comments: `\*` line comments and `(* ... *)` block comments
+  - Implemented in `transpiler/src/tla/tokenizer.rs` (~800 LOC)
+  - 26 unit tests covering all token types
 
 - [ ] **T1.2: Handle TLA+ number formats**
   - Integers, binary (`\b...`), octal (`\o...`), hex (`\h...`)

@@ -41,6 +41,7 @@ pub mod parser;
 pub mod printer;
 pub mod runtime;
 pub mod templates;
+pub mod tla;
 pub mod translator;
 pub mod types;
 
