@@ -18,6 +18,7 @@ use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::configuration::*;
+use crate::protocol::common::upper_bound::LtUpperBound;
 
 verus! {
 
@@ -161,7 +162,7 @@ pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clo
 requires
     es.valid(),
     p.valid(),
-    p.msg is CRslMessageHeartbeat,
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, clock@),
@@ -169,7 +170,7 @@ ensures
 if !es.constants.all.config.replica_ids.contains(p.src) {
         es.clone()
     } else {
-                let sender_index = CGetReplicaIndex(&p.src, &es.constants.all.config);
+                let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
         if ((p.msg->bal_heartbeat == es.current_view) && p.msg->suspicious) {
             CElectionState {
                 constants: es.constants,
@@ -248,7 +249,7 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, clock@),
 {
-if ((es.current_view_suspectors.len() < CMinQuorumSize(&es.constants.all.config)) || !CLtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
+if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
                 let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);

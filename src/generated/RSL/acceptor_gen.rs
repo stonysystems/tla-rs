@@ -10,8 +10,10 @@ use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::common::upper_bound_i::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::types::*;
+use crate::protocol::common::upper_bound::*;
 
 verus! {
 
@@ -105,7 +107,7 @@ ensures
 {
     let m = inp.msg;
         let bal = inp.msg->bal_1a;
-    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLt(&s.max_bal, &bal) && CReplicaConstantsValid(&s.constants))) {
+    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
         (CAcceptor {
     constants: s.constants,
     max_bal: bal,
@@ -135,7 +137,7 @@ requires
     inp.msg is CMessage2a,
     s.constants.all.config.replica_ids.contains(inp.src),
     CBalLeq(s.max_bal, inp.msg->bal_2a),
-    CLeqUpperBound(inp.msg->opn_2a, s.constants.all.params.max_integer_val),
+    LeqUpperBound(inp.msg->opn_2a, s.constants.all.params.max_integer_val),
 ensures
     result.0.valid(),
     LAcceptorProcess2a(s@, result.0@, inp@, result.1@),
@@ -146,7 +148,7 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
     bal_2b: m->bal_2a,
     opn_2b: m->opn_2a,
     val_2b: m->val_2a,
@@ -174,7 +176,7 @@ ensures
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
 if s.constants.all.config.replica_ids.contains(inp.src) {
-                let sender_index = CGetReplicaIndex(&inp.src, &s.constants.all.config);
+                let sender_index = s.constants.all.config.CGetReplicaIndex(&inp.src);
         if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg->opn_ckpt > s.last_checkpointed_operation[sender_index])) {
             CAcceptor { last_checkpointed_operation: s.last_checkpointed_operation.update(sender_index, inp.msg->opn_ckpt), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
         } else {

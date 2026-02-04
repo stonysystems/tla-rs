@@ -1,6 +1,12 @@
 # Configuration for transpiling RSL election spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Spec-only functions that should not get C-prefix (must be at top level before sections)
+spec_only_functions = [
+    "LtUpperBound",
+    "LeqUpperBound",
+]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -13,23 +19,22 @@ exec_prefix = "C"
 "RslPacket" = "CPacket"
 "Request" = "CRequest"
 "RequestBatch" = "CRequestBatch"
+"RslMessage" = "CMessage"
+"RslMessageHeartbeat" = "CMessage::CMessageHeartbeat"
+
+# Method call mappings: spec functions that become method calls
+[method_calls]
+"LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
+"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
 
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
-# RSL uses 'valid()' instead of 'well_formed()'
 validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
-# Generate explicit for loops instead of iterators for better Verus verification
 generate_loops_for_verification = true
-# Generate CElectionState inline instead of importing from ElectionImpl.rs
 generate_inline_types = true
-# Custom imports for election module
-# Note: Shared infrastructure types (types_i, cconstants, cmessage, cconfiguration)
-# contain marshalling-enabled types that can't easily be generated.
-# Future work: move these to src/common/rsl_types/ for better organization.
-# CElectionState is generated inline (module-specific state).
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
@@ -48,4 +53,5 @@ custom_imports = [
     "use crate::protocol::RSL::election::*;",
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::RSL::configuration::*;",
+    "use crate::protocol::common::upper_bound::LtUpperBound;",
 ]

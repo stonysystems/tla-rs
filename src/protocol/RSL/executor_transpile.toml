@@ -1,5 +1,32 @@
 # Configuration for transpiling RSL executor spec to implementation
 
+# Functions to skip during transpilation (require manual implementation)
+skip_functions = [
+    # Complex map expression that cannot be auto-transpiled
+    "GetPacketsFromReplies",
+    # Spec-only predicates that have no exec implementation
+    "RepliesAreReplyType",
+    "UpdateNewCache",
+]
+
+# Spec-only functions that should NOT get C-prefix
+spec_only_functions = [
+    "LtUpperBound",
+    "LeqUpperBound",
+    "LReplicaConstantsValid",
+    "UpdateNewCache",
+    "RepliesAreReplyType",
+    "GetPacketsFromReplies",
+]
+
+# Function path remapping
+[function_paths]
+"AppInitialize" = "CAppStateInit"
+
+# Method call mappings
+[method_calls]
+"LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -7,9 +34,15 @@ exec_prefix = "C"
 [remapping]
 "LExecutor" = "CExecutor"
 "LReplicaConstants" = "CReplicaConstants"
-"RslPacket" = "CRslPacket"
+"RslPacket" = "CPacket"
 "OperationNumber" = "u64"
 "OutstandingOperation" = "COutstandingOperation"
+"RslMessage" = "CMessage"
+"RslMessageReply" = "CMessage::CMessageReply"
+"RslMessageAppStateRequest" = "CMessage::CMessageAppStateRequest"
+"RslMessageAppStateSupply" = "CMessage::CMessageAppStateSupply"
+"RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
+"RslMessageRequest" = "CMessage::CMessageRequest"
 
 [output]
 generate_abstraction_fns = true
@@ -33,11 +66,14 @@ custom_imports = [
     "use crate::common::collections::hashsets::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
+    "use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;",
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};",
     # CExecutor now generated inline with generate_inline_types = true
     "use crate::implementation::RSL::CStateMachine::*;",
     "use crate::protocol::RSL::executor::*;",
     "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::common::upper_bound::LtUpperBound;",
 ]

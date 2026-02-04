@@ -14,7 +14,7 @@ use crate::protocol::RSL::configuration::*;
 
 verus! {
 
-pub exec fn CBroadcastToEveryone(c: &CConfiguration, myidx: &i64, m: &CRslMessage) -> (result: Vec<CRslPacket>)
+pub exec fn CBroadcastToEveryone(c: &CConfiguration, myidx: &i64, m: &CMessage) -> (result: Vec<CPacket>)
 requires
     c.valid(),
     m.valid(),
@@ -26,31 +26,6 @@ ensures
     src: c.replica_ids[myidx],
     msg: m.clone(),
 }).collect()
-}
-
-pub exec fn CBuildLBroadcast(src: &CAbstractEndPoint, dsts: &Vec<CAbstractEndPoint>, m: &CRslMessage) -> (result: Vec<CPacket>)
-requires
-    src.valid(),
-    m.valid(),
-ensures
-    result@ == BuildLBroadcast(src@, dsts@, m@),
-{
-    let mut result: Vec<RslPacket> = Vec::new();
-    let iter = (0..dsts.len());
-    for i in iter:iter
-    invariant
-        i <= dsts.len(),
-        result.len() == i,
-        result@ == dsts@.take(i as int).map(|x: RslPacket| /* expr */),
-    {
-        result.push(CPacket {
-    dst: dsts[i],
-    src: src.clone(),
-    msg: m.clone(),
-}.clone())
-    }
-    result
-
 }
 
 } // verus!

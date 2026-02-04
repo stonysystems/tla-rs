@@ -10,11 +10,14 @@ use crate::common::collections::sets::*;
 use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
+use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
+use crate::generated::RSL::election_gen::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::ProposerImpl::CIncompleteBatchTimer::CIncompleteBatchTimerOff;
 use crate::implementation::common::upper_bound_i::*;
+use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::configuration::*;
@@ -28,8 +31,8 @@ pub struct CProposer {
     pub request_queue: Vec<CRequest>,
     pub max_ballot_i_sent_1a: CBallot,
     pub next_operation_number_to_propose: i64,
-    pub received_1b_packets: HashSet<CRslPacket>,
-    pub highest_seqno_requested_by_client_this_view: HashMap<CAbstractEndPoint, i64>,
+    pub received_1b_packets: HashSet<CPacket>,
+    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, i64>,
     pub incomplete_batch_timer: CIncompleteBatchTimer,
     pub election_state: CElectionState,
 }
@@ -96,7 +99,7 @@ impl View for CIncompleteBatchTimer {
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
     c.valid(),
-    CWellFormedLConfiguration(c.all.config),
+    WellFormedLConfiguration(c.all.config),
 ensures
     result.valid(),
     LProposerInit(result@, c@),
@@ -119,11 +122,11 @@ ensures
 
 }
 
-pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CRslPacket) -> (result: CProposer)
+pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result: CProposer)
 requires
     s.valid(),
     packet.valid(),
-    packet.msg is CRslMessageRequest,
+    packet.msg is CMessageRequest,
 ensures
     result.valid(),
     LProposerProcessRequest(s@, result@, packet@),
@@ -163,7 +166,7 @@ ensures
 
 }
 
-pub exec fn CProposerMaybeEnterNewViewAndSend1a(s: &CProposer) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerMaybeEnterNewViewAndSend1a(s: &CProposer) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -171,7 +174,7 @@ ensures
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
 if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::CRslMessage1a {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage1a {
     bal_1a: s.election_state.current_view,
 });
         (CProposer {
@@ -191,15 +194,15 @@ if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalL
     }
 }
 
-pub exec fn CProposerProcess1b(s: &CProposer, p: &CRslPacket) -> (result: CProposer)
+pub exec fn CProposerProcess1b(s: &CProposer, p: &CPacket) -> (result: CProposer)
 requires
     s.valid(),
     p.valid(),
-    p.msg is CRslMessage1b,
+    p.msg is CMessage1b,
     s.constants.all.config.replica_ids.contains(p.src),
     (p.msg->bal_1b == s.max_ballot_i_sent_1a),
     (s.current_state == 1),
-    forall |other_packet: CRslPacket| (s.received_1b_packets.contains(other_packet) ==> (other_packet.src != p.src)),
+    forall |other_packet: CPacket| (s.received_1b_packets.contains(other_packet) ==> (other_packet.src != p.src)),
 ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
@@ -217,7 +220,7 @@ CProposer {
     }
 }
 
-pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
     log_truncation_point.valid(),
@@ -225,8 +228,8 @@ ensures
     result.0.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
 {
-if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && (CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::CRslMessageStartingPhase2 {
+if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (LSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
 });
@@ -247,12 +250,12 @@ if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && 
     }
 }
 
-pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
     log_truncation_point.valid(),
-    CProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
-    CAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
+    LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
+    LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures
     result.0.valid(),
     LProposerNominateNewValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
@@ -264,7 +267,7 @@ ensures
     };
         let v = s.request_queue.subrange(0, batchSize);
         let opn = s.next_operation_number_to_propose;
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::CRslMessage2a {
+        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: v,
@@ -293,62 +296,20 @@ ensures
 
 }
 
-pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CRslPacket>))
-requires
-    s.valid(),
-    log_truncation_point.valid(),
-    CProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
-    !CAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
-ensures
-    result.0.valid(),
-    LProposerNominateOldValueAndSend2a(s@, result.0@, log_truncation_point@, result.1@),
-{
-    let opn = s.next_operation_number_to_propose;
-        let mut found: bool = false;
-    let p_iter = s.received_1b_packets.iter();
-    for p in iter:p_iter
-    invariant
-        found ==> exists|i: int| 0 <= i < p_iter@.0 && CValIsHighestNumberedProposal(&/* unsupported expr */.index(opn).max_val, &s.received_1b_packets, &opn) && CProposer { constants: s.constants, current_state: s.current_state, request_queue: s.request_queue, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose + 1, received_1b_packets: s.received_1b_packets, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, election_state: s.election_state } && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::CRslMessage2a { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: /* unsupported expr */.index(opn).max_val }),
-    {
-        if (CValIsHighestNumberedProposal(&p.msg->votes[opn].max_val, &s.received_1b_packets, &opn) && (CProposer {
-            constants: s.constants,
-            current_state: s.current_state,
-            request_queue: s.request_queue,
-            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-            next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
-            received_1b_packets: s.received_1b_packets,
-            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-            incomplete_batch_timer: s.incomplete_batch_timer,
-            election_state: s.election_state,
-        } && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::CRslMessage2a {
-    bal_2a: s.max_ballot_i_sent_1a,
-    opn_2a: opn,
-    val_2a: p.msg->votes[opn].max_val,
-}))) {
-                        found = true;
-            break;
-
-        }
-    }
-    found
-
-
-}
-
-pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &i64) -> (result: (CProposer, Vec<CRslPacket>))
+pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &i64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
 ensures
     result.0.valid(),
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
 {
-if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_operation_number_to_propose) {
+if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_operation_number_to_propose) {
         (s.clone(), vec![])
     } else {
-        if !CAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
-            CProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
+        if !LAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
+            LProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
-            if (CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (clock >= s.incomplete_batch_timer->when))))) {
+            if (LExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (clock >= s.incomplete_batch_timer->when))))) {
                 CProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
                 if ((s.request_queue.len() > 0) && s.incomplete_batch_timer is CIncompleteBatchTimerOff) {
@@ -373,11 +334,11 @@ if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
     }
 }
 
-pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CRslPacket, clock: &i64) -> (result: CProposer)
+pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &i64) -> (result: CProposer)
 requires
     s.valid(),
     p.valid(),
-    p.msg is CRslMessageHeartbeat,
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     LProposerProcessHeartbeat(s@, result@, p@, clock@),
@@ -445,7 +406,7 @@ ensures
     result.valid(),
     LProposerResetViewTimerDueToExecution(s@, result@, val@),
 {
-    let s_election_state = CElectionStateReflectExecutedRequestBatch(&s.election_state, &val);
+    let s_election_state = s.election_state.CElectionStateReflectExecutedRequestBatch(&val);
     CProposer {
         constants: s.constants,
         current_state: s.current_state,

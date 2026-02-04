@@ -1,13 +1,20 @@
 # Configuration for transpiling RSL broadcast spec to implementation
 
+# Functions to skip during transpilation (require manual implementation)
+skip_functions = [
+    # Complex recursive function that cannot be auto-transpiled
+    "BuildLBroadcast",
+]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
 
 [remapping]
 "LConfiguration" = "CConfiguration"
-"RslMessage" = "CRslMessage"
-"RslPacket" = "CRslPacket"
+"RslMessage" = "CMessage"
+"RslPacket" = "CPacket"
+"AbstractEndPoint" = "CAbstractEndPoint"
 
 [output]
 generate_abstraction_fns = true

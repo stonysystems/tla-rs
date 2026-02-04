@@ -1,5 +1,10 @@
 # Configuration for transpiling RSL acceptor spec to implementation
 
+# Spec-only functions (must be at top level before any section)
+spec_only_functions = [
+    "LeqUpperBound",
+]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -17,6 +22,15 @@ exec_prefix = "C"
 "RslMessageHeartbeat" = "CMessageHeartbeat"
 "Vote" = "CVote"
 "OperationNumber" = "u64"
+
+# Method call mappings: spec functions that become method calls
+[method_calls]
+"LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
+"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
+
+# Function paths for cross-module calls
+[function_paths]
+"BroadcastToEveryone" = "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
 
 [output]
 generate_abstraction_fns = true
@@ -39,7 +53,8 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    # CAcceptor is generated inline, no import needed
+    "use crate::implementation::common::upper_bound_i::*;",
     "use crate::protocol::RSL::acceptor::*;",
     "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::common::upper_bound::*;",
 ]

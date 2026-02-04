@@ -1,5 +1,36 @@
 # Configuration for transpiling RSL replica spec to implementation
 
+# Functions to skip during transpilation (require manual implementation)
+skip_functions = [
+    # Complex IO dispatch patterns that cannot be auto-transpiled
+    "LReplicaNextReadClockAndProcessPacket",
+    "LReplicaNextProcessPacketWithoutReadingClock",
+    "LReplicaNextProcessPacket",
+    "SpontaneousClock",
+    # Complex existential with variable scope issues
+    "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
+    # Also skip ExtractSentPacketsFromIos - filter with indexed access
+    "ExtractSentPacketsFromIos",
+]
+
+# Spec-only functions that should NOT get C-prefix
+spec_only_functions = [
+    "WellFormedLConfiguration",
+    "LeqUpperBound",
+    "LtUpperBound",
+    "LReplicaConstantsValid",
+    # Skipped functions should not get C-prefix when referenced
+    "ExtractSentPacketsFromIos",
+    "SpontaneousClock",
+    "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
+    "LReplicaNextProcessPacket",
+]
+
+# Method call mappings
+[method_calls]
+"LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
+"LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -8,11 +39,23 @@ exec_prefix = "C"
 "LReplica" = "CReplica"
 "LScheduler" = "CScheduler"
 "LReplicaConstants" = "CReplicaConstants"
-"RslPacket" = "CRslPacket"
+"RslPacket" = "CPacket"
 "RslIo" = "CRslIo"
 "ClockReading" = "CClockReading"
 "Ballot" = "CBallot"
 "OperationNumber" = "u64"
+"RslMessage" = "CMessage"
+"RslMessage1a" = "CMessage::CMessage1a"
+"RslMessage1b" = "CMessage::CMessage1b"
+"RslMessage2a" = "CMessage::CMessage2a"
+"RslMessage2b" = "CMessage::CMessage2b"
+"RslMessageHeartbeat" = "CMessage::CMessageHeartbeat"
+"RslMessageReply" = "CMessage::CMessageReply"
+"RslMessageRequest" = "CMessage::CMessageRequest"
+"RslMessageAppStateRequest" = "CMessage::CMessageAppStateRequest"
+"RslMessageAppStateSupply" = "CMessage::CMessageAppStateSupply"
+"RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
+"RslMessageInvalid" = "CMessage::CMessageInvalid"
 
 [output]
 generate_abstraction_fns = true
@@ -38,16 +81,20 @@ custom_imports = [
     "use crate::common::collections::hashsets::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
+    "use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;",
+    "use crate::generated::RSL::proposer_gen::*;",
+    "use crate::generated::RSL::acceptor_gen::*;",
+    "use crate::generated::RSL::learner_gen::*;",
+    "use crate::generated::RSL::executor_gen::*;",
+    "use crate::generated::RSL::election_gen::*;",
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    "use crate::implementation::RSL::ProposerImpl::CProposer;",
-    "use crate::implementation::RSL::acceptorimpl::CAcceptor;",
-    "use crate::implementation::RSL::learnerimpl::CLearner;",
-    "use crate::implementation::RSL::ExecutorImpl::CExecutor;",
-    "use crate::implementation::RSL::ElectionImpl::CElectionState;",
     "use crate::implementation::common::upper_bound_i::*;",
+    "use crate::implementation::common::upper_bound::CUpperBoundedAddition;",
+    "use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;",
     "use crate::protocol::RSL::replica::*;",
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::RSL::configuration::*;",
+    "use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};",
 ]

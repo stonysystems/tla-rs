@@ -10,10 +10,16 @@ exec_prefix = "C"
 "LLearner" = "CLearner"
 "LReplicaConstants" = "CReplicaConstants"
 "Ballot" = "CBallot"
-"RslPacket" = "CRslPacket"
+"RslPacket" = "CPacket"
 "OperationNumber" = "u64"
 "LearnerState" = "CLearnerState"
 "LearnerTuple" = "CLearnerTuple"
+"RslMessage" = "CMessage"
+"RslMessage2b" = "CMessage::CMessage2b"
+
+# Method call mappings
+[method_calls]
+"LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
 
 [output]
 generate_abstraction_fns = true
