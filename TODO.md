@@ -1426,6 +1426,185 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
 
 ---
 
+### Phase 10: Remaining Transpiler Issues (Blocking Full Automation)
+
+These are the remaining issues preventing fully automated TLA+ → runnable Rust transpilation.
+
+#### Issue 1: Recursive Helper Function Translation
+
+**Problem**: Transpiler rejects recursive spec functions instead of generating loop-based implementations.
+
+**Affected Functions** (6 total):
+- `RemoveAllSatisfiedRequestsInSequence` - filter sequence by predicate
+- `RemoveExecutedRequestBatch` - remove items from sequence
+- `GetPacketsFromReplies` - build packet list from replies
+- `LClientsInReplies` - extract clients from reply sequence
+- `ExtractSentPacketsFromIos` - filter I/O operations
+- `BuildLBroadcast` - construct broadcast messages
+
+**Solution Tasks**:
+- [x] **R1.1: Analyze recursive patterns in RSL specs** ✅
+  - Categorize: filter, map, fold, or complex recursion
+  - Document each function's pattern type
+  - Reference: manual implementations in `ElectionImpl.rs`, `ExecutorImpl.rs`
+  - **Completed**: See `docs/recursive-pattern-analysis.md` for detailed analysis
+  - Pattern summary: 2 Filter, 2 Map, 2 Fold
+
+- [ ] **R1.2: Implement filter pattern recognition**
+  - Pattern: `if len == 0 { empty } else if pred(head) { recurse(tail) } else { head + recurse(tail) }`
+  - Target: `for i in 0..s.len() { if pred(&s[i]) { result.push(s[i].clone()); } }`
+  - Add `RecursivePattern::Filter` detection in translator
+
+- [ ] **R1.3: Implement map pattern recognition**
+  - Pattern: `if len == 0 { empty } else { f(head) + recurse(tail) }`
+  - Target: `for i in 0..s.len() { result.push(f(&s[i])); }`
+  - Add `RecursivePattern::Map` detection
+
+- [ ] **R1.4: Implement fold/accumulate pattern recognition**
+  - Pattern: `if len == 0 { init } else { combine(head, recurse(tail)) }`
+  - Target: `let mut acc = init; for item in s { acc = combine(item, acc); }`
+  - Add `RecursivePattern::Fold` detection
+
+- [ ] **R1.5: Generate loop invariants for recursive-to-iterative**
+  - Filter invariant: `result@ == s@.take(i).filter(pred)`
+  - Map invariant: `result@ == s@.take(i).map(f)`
+  - Fold invariant: `acc@ == fold(s@.take(i), init, combine)`
+
+- [ ] **R1.6: Add decreases clause inference**
+  - Default: `decreases s.len()` for sequence recursion
+  - Support explicit decreases from spec
+
+- [ ] **R1.7: Test with RSL recursive helpers**
+  - Transpile each of the 6 functions
+  - Verify generated code with Verus
+  - Compare output with manual implementations
+
+**Estimated Effort**: 2-3 days (~600-800 LOC)
+
+#### Issue 2: Infrastructure Type Dependencies
+
+**Problem**: Generated code imports types from manual implementation instead of being self-contained.
+
+**Current Imports from `src/implementation/RSL/`**:
+```rust
+use crate::implementation::RSL::types_i::*;        // CBallot, CRequest, CVote, CReply
+use crate::implementation::RSL::cmessage::*;       // CPacket, CMessage
+use crate::implementation::RSL::cconstants::*;    // CReplicaConstants
+use crate::implementation::RSL::cconfiguration::*; // CConfiguration
+```
+
+**Why These Exist**: Manual types include:
+- Marshalling/serialization for network I/O
+- FFI bindings to C# layer
+- View trait with custom logic
+
+**Solution Tasks**:
+- [ ] **I2.1: Audit infrastructure type usage**
+  - List all types imported from manual implementation
+  - Identify which have marshalling vs pure data
+  - Document dependencies between types
+
+- [ ] **I2.2: Create shared types module**
+  - Create `src/common/rsl_types/` directory
+  - Move pure data types (CBallot, CRequest, etc.)
+  - Keep marshalling in separate module
+
+- [ ] **I2.3: Generate pure types from specs**
+  - Use existing `generate-types` command
+  - Output to `src/generated/RSL/types_gen.rs`
+  - Ensure View trait implementations are correct
+
+- [ ] **I2.4: Update generated code imports**
+  - Change `use crate::implementation::RSL::types_i::*`
+  - To `use crate::generated::RSL::types_gen::*`
+  - Or `use crate::common::rsl_types::*`
+
+- [ ] **I2.5: Handle marshalling separately**
+  - Keep marshalling traits in `src/implementation/`
+  - Use trait impl blocks to add marshalling to generated types
+  - Pattern: `impl Marshallable for CBallot { ... }`
+
+- [ ] **I2.6: Update transpiler configs**
+  - Modify `transpile.toml` custom_imports
+  - Remove imports from `src/implementation/RSL/`
+  - Add imports from new shared location
+
+- [ ] **I2.7: Verify no manual imports remain**
+  - Grep generated code for `implementation::RSL`
+  - Add CI check to prevent regression
+
+**Estimated Effort**: 1-2 days (~300-400 LOC)
+
+#### Issue 3: Verus Verification of Generated Code
+
+**Problem**: Generated modules are wrapped in `#[cfg(test)]` and never verified by Verus.
+
+**Current State**:
+- "437 verified, 0 errors" refers to MANUAL implementation
+- Generated code in `src/generated/RSL/` is excluded from verification
+- Unknown number of verification errors in generated code
+
+**Solution Tasks**:
+- [ ] **V3.1: Create isolated verification test**
+  - New file: `tests/verify_generated.rs`
+  - Import generated modules without `#[cfg(test)]` guard
+  - Run: `verus tests/verify_generated.rs`
+
+- [ ] **V3.2: Document all verification errors**
+  - Run Verus on generated code
+  - Categorize errors: type mismatch, missing proof, invariant failure
+  - Create tracking list in `docs/dev/verification-errors.md`
+
+- [ ] **V3.3: Fix type mismatch errors**
+  - Common: `Map<int, Vote>` vs `HashMap<u64, CVote>`
+  - Solution: Ensure View trait correctly maps types
+  - May need explicit type casts in generated code
+
+- [ ] **V3.4: Fix missing proof errors**
+  - Add `assert` statements for obvious properties
+  - Add `assume` for complex properties (mark for future proof)
+  - Reference manual implementation for proof patterns
+
+- [ ] **V3.5: Fix loop invariant errors**
+  - Generated loops may have incorrect/incomplete invariants
+  - Compare with manual implementation invariants
+  - Strengthen or simplify as needed
+
+- [ ] **V3.6: Remove #[cfg(test)] guards**
+  - Edit `src/generated/mod.rs` - remove guard
+  - Edit `src/lib.rs` - include generated module unconditionally
+  - Verify full codebase still builds
+
+- [ ] **V3.7: Add CI verification job**
+  - Update `.github/workflows/ci.yml`
+  - Add job that runs Verus on full codebase including generated
+  - Fail CI if verification errors
+
+**Estimated Effort**: 1-2 days (mostly debugging, minimal code changes)
+
+#### Summary: Path to Full Automation
+
+| Issue | Tasks | Effort | Dependencies |
+|-------|-------|--------|--------------|
+| Recursive helpers | R1.1-R1.7 | 2-3 days | None |
+| Infrastructure types | I2.1-I2.7 | 1-2 days | None |
+| Verus verification | V3.1-V3.7 | 1-2 days | I2 (partial) |
+
+**Total Estimated Effort**: 4-7 days
+
+**Completion Order**:
+1. Issue 2 (Infrastructure types) - unblocks clean imports
+2. Issue 1 (Recursive helpers) - independent, largest effort
+3. Issue 3 (Verus verification) - final validation
+
+**Success Criteria** (all must pass):
+- [ ] `cargo run -- --tla-input TwoPhase.tla --exec-output two_phase.rs` produces runnable code
+- [ ] `verus two_phase.rs` returns 0 errors
+- [ ] Generated code has ZERO imports from `src/implementation/RSL/`
+- [ ] All 6 recursive helpers generate correct loop-based implementations
+
+---
+
 ### Future: Add More Protocol Examples
 
 Extend the project with additional distributed systems protocols, from simple to complex. These protocols should have existing TLA+ specifications that can be translated to Verus specs.
