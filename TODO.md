@@ -1286,9 +1286,10 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
   - Fixed: Correct Verus zip extraction path (`verus-x86-linux/` not `verus-${VERSION}-x86-linux/`)
   - Fixed: Added chmod +x for verus binary (execute permission not preserved in zip)
   - Fixed: Correct verus binary path to scons (`~/verus/verus` not `~/verus`)
-- [ ] **Fix Verus compilation errors** - CI now runs Verus but code has 495 compilation errors:
-  - `CMessage` type not found in `replicaimpl_process_packet_*.rs`
-  - These are pre-existing issues exposed by the new Verus verification job
+- [x] **Fix Verus compilation errors** [2026-02-04] - Fixed macro crate path in marshalling.rs:
+  - Root cause: `::builtin_macros::verus!` should be `::verus_builtin_macros::verus!`
+  - The crate name changed in Verus; updated 5 occurrences in `src/implementation/common/marshalling.rs`
+  - Result: 454 verified, 0 errors with Verus 0.2026.01.14
 - [ ] **Verify generated code with Verus** - Generated modules guarded by `#[cfg(test)]`, need verification
   - Blockers identified [2026-02-04]:
     1. EndPoint import fails - defined via macro inside `verus!` block, macro expansion fails on non-test builds
