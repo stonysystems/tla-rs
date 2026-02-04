@@ -527,7 +527,16 @@ impl<'a> TlaTokenizer<'a> {
             }
             '=' => {
                 if self.match_char('=') {
-                    TlaTokenKind::DefEq
+                    // Could be == or ==== (module closing)
+                    let mut eq_count = 2;
+                    while self.match_char('=') {
+                        eq_count += 1;
+                    }
+                    if eq_count >= 4 {
+                        TlaTokenKind::ModuleDashes
+                    } else {
+                        TlaTokenKind::DefEq
+                    }
                 } else if self.match_char('>') {
                     TlaTokenKind::Implies
                 } else if self.match_char('<') {

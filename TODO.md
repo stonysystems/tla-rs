@@ -2348,11 +2348,14 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Supports: \n, \t, \r, \\, \"
 
 #### Phase T2: TLA+ Parser
-- [ ] **T2.1: Parse module structure**
+- [x] **T2.1: Parse module structure** ✅ [2026-02-04]
+  - Implemented in `transpiler/src/tla/parser.rs` (~1360 LOC)
   - `---- MODULE Name ----` headers
   - `EXTENDS` declarations
   - `CONSTANT` and `VARIABLE` declarations
   - Module instances with `INSTANCE`
+  - Also fixed tokenizer to recognize `====` as module closing dashes
+  - 14 unit tests for parser functionality
 
 - [ ] **T2.2: Parse operator definitions**
   - Simple operators: `Op == expr`
