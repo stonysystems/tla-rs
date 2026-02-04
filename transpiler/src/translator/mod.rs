@@ -11860,4 +11860,506 @@ mod tests {
             "Non-recursive function should have empty decreases"
         );
     }
+
+    // ========================================================================
+    // RSL Recursive Helper Tests (R1.7)
+    // These tests verify transpilation of the 6 RSL recursive spec functions
+    // ========================================================================
+
+    /// Test RSL pattern: RemoveAllSatisfiedRequestsInSequence (Filter)
+    /// Pattern: if s.len() == 0 { empty } else if pred(s[0]) { recurse(tail) } else { s[0] + recurse(tail) }
+    #[test]
+    fn test_rsl_remove_all_satisfied_requests_filter() {
+        let translator = Translator::default();
+
+        // RemoveAllSatisfiedRequestsInSequence(s: Seq<Request>, r: Request) -> Seq<Request>
+        // if s.len() == 0 { Seq::empty() }
+        // else if RequestSatisfiedBy(s[0], r) { recurse(s.drop_first(), r) }  // skip satisfied
+        // else { seq![s[0]] + recurse(s.drop_first(), r) }  // keep unsatisfied
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("s")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(func_call("RequestSatisfiedBy", vec![seq_head("s"), ident("r")])),
+                then_branch: Box::new(func_call(
+                    "RemoveAllSatisfiedRequestsInSequence",
+                    vec![drop_first("s"), ident("r")],
+                )),
+                else_branch: Some(Box::new(Expr::Binary(
+                    Box::new(seq_lit(seq_head("s"))),
+                    BinOp::Add,
+                    Box::new(func_call(
+                        "RemoveAllSatisfiedRequestsInSequence",
+                        vec![drop_first("s"), ident("r")],
+                    )),
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "RemoveAllSatisfiedRequestsInSequence".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "r".to_string(),
+                    ty: Type::Named(Path::single("Request".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("s"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Vec<CRequest>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "RemoveAllSatisfiedRequestsInSequence should translate: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CRemoveAllSatisfiedRequestsInSequence");
+
+        // Should generate loop-based code
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for filter pattern");
+    }
+
+    /// Test RSL pattern: ExtractSentPacketsFromIos (Filter)
+    /// Pattern: if ios.len() == 0 { empty } else if ios[0] is Send { s[0]->s + recurse } else { recurse }
+    #[test]
+    fn test_rsl_extract_sent_packets_filter() {
+        let translator = Translator::default();
+
+        // ExtractSentPacketsFromIos(ios: Seq<RslIo>) -> Seq<RslPacket>
+        // if ios.len() == 0 { Seq::empty() }
+        // else if ios[0] is Send { seq![ios[0]->s] + recurse(ios.drop_first()) }
+        // else { recurse(ios.drop_first()) }
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("ios")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(Expr::Is(Box::new(seq_head("ios")), "Send".to_string())),
+                then_branch: Box::new(Expr::Binary(
+                    Box::new(seq_lit(Expr::Arrow(Box::new(seq_head("ios")), "s".to_string()))),
+                    BinOp::Add,
+                    Box::new(func_call("ExtractSentPacketsFromIos", vec![drop_first("ios")])),
+                )),
+                else_branch: Some(Box::new(func_call(
+                    "ExtractSentPacketsFromIos",
+                    vec![drop_first("ios")],
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "ExtractSentPacketsFromIos".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "ios".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("RslIo".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("RslPacket".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("ios"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Vec<CRslPacket>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "ExtractSentPacketsFromIos should translate: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CExtractSentPacketsFromIos");
+    }
+
+    /// Test RSL pattern: BuildLBroadcast (Map)
+    /// Pattern: if dsts.len() == 0 { empty } else { seq![LPacket{...}] + recurse(dsts.skip(1)) }
+    #[test]
+    fn test_rsl_build_lbroadcast_map() {
+        let translator = Translator::default();
+
+        // BuildLBroadcast(src: AbstractEndPoint, dsts: Seq<AbstractEndPoint>, m: RslMessage) -> Seq<RslPacket>
+        // if dsts.len() == 0 { Seq::empty() }
+        // else { seq![LPacket{dst: dsts[0], src: src, msg: m}] + BuildLBroadcast(src, dsts.skip(1), m) }
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("dsts")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(Expr::Struct {
+                    name: Path::single("LPacket".to_string()),
+                    fields: vec![
+                        ("dst".to_string(), seq_head("dsts")),
+                        ("src".to_string(), ident("src")),
+                        ("msg".to_string(), ident("m")),
+                    ],
+                })),
+                BinOp::Add,
+                Box::new(func_call(
+                    "BuildLBroadcast",
+                    vec![
+                        ident("src"),
+                        method_call(ident("dsts"), "skip", vec![Expr::Literal(Literal::Int(1))]),
+                        ident("m"),
+                    ],
+                )),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "BuildLBroadcast".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "src".to_string(),
+                    ty: Type::Named(Path::single("AbstractEndPoint".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "dsts".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("AbstractEndPoint".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "m".to_string(),
+                    ty: Type::Named(Path::single("RslMessage".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("RslPacket".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("dsts"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Vec<CRslPacket>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "BuildLBroadcast should translate: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CBuildLBroadcast");
+
+        // Should generate loop-based code (map pattern)
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for map pattern");
+    }
+
+    /// Test RSL pattern: GetPacketsFromReplies (Map with two sequences)
+    /// Pattern: zipping two sequences with transformation
+    #[test]
+    fn test_rsl_get_packets_from_replies_map() {
+        let translator = Translator::default();
+
+        // GetPacketsFromReplies(me: AbstractEndPoint, requests: Seq<Request>, replies: Seq<Reply>) -> Seq<RslPacket>
+        // Dual-sequence map pattern - processes two sequences in parallel
+        // For now, test basic structure recognition
+        let body = Expr::If {
+            cond: Box::new(Expr::Eq(
+                Box::new(method_call(ident("requests"), "len", vec![])),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(Expr::Struct {
+                    name: Path::single("LPacket".to_string()),
+                    fields: vec![
+                        ("dst".to_string(), Expr::Field(Box::new(seq_head("requests")), "client".to_string())),
+                        ("src".to_string(), ident("me")),
+                        ("msg".to_string(), Expr::Struct {
+                            name: Path::single("RslMessage::Reply".to_string()),
+                            fields: vec![("r".to_string(), seq_head("replies"))],
+                        }),
+                    ],
+                })),
+                BinOp::Add,
+                Box::new(func_call(
+                    "GetPacketsFromReplies",
+                    vec![ident("me"), drop_first("requests"), drop_first("replies")],
+                )),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "GetPacketsFromReplies".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "me".to_string(),
+                    ty: Type::Named(Path::single("AbstractEndPoint".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "requests".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "replies".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Reply".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("RslPacket".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("requests"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Vec<CRslPacket>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        // This is a more complex dual-sequence pattern - may need manual implementation
+        // The test validates the translator handles it gracefully
+        assert!(result.is_ok(), "GetPacketsFromReplies should translate (may need manual refinement): {:?}", result);
+    }
+
+    /// Test RSL pattern: RemoveExecutedRequestBatch (Fold)
+    /// Pattern: if batch.len() == 0 { reqs } else { recurse(transform(reqs, batch[0]), batch.drop_first()) }
+    #[test]
+    fn test_rsl_remove_executed_request_batch_fold() {
+        let translator = Translator::default();
+
+        // RemoveExecutedRequestBatch(reqs: Seq<Request>, batch: RequestBatch) -> Seq<Request>
+        // if batch.len() == 0 { reqs }
+        // else { RemoveExecutedRequestBatch(RemoveAllSatisfiedRequestsInSequence(reqs, batch[0]), batch.drop_first()) }
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("batch")),
+            then_branch: Box::new(ident("reqs")),
+            else_branch: Some(Box::new(func_call(
+                "RemoveExecutedRequestBatch",
+                vec![
+                    func_call("RemoveAllSatisfiedRequestsInSequence", vec![ident("reqs"), seq_head("batch")]),
+                    drop_first("batch"),
+                ],
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "RemoveExecutedRequestBatch".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "reqs".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "batch".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("batch"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Vec<CRequest>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "RemoveExecutedRequestBatch should translate: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CRemoveExecutedRequestBatch");
+
+        // Should detect fold pattern with accumulator
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for fold pattern");
+    }
+
+    /// Test RSL pattern: LClientsInReplies (Fold to Map)
+    /// Pattern: if replies.len() == 0 { Map::empty() } else { recurse(tail).insert(key, value) }
+    #[test]
+    fn test_rsl_lclients_in_replies_fold_to_map() {
+        let translator = Translator::default();
+
+        // LClientsInReplies(replies: Seq<Reply>) -> ReplyCache (Map<AbstractEndPoint, Reply>)
+        // if replies.len() == 0 { Map::empty() }
+        // else { LClientsInReplies(replies.drop_first()).insert(replies[0].client, replies[0]) }
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("replies")),
+            then_branch: Box::new(Expr::MapEmpty),
+            else_branch: Some(Box::new(Expr::MethodCall {
+                receiver: Box::new(func_call("LClientsInReplies", vec![drop_first("replies")])),
+                method: "insert".to_string(),
+                args: vec![
+                    Expr::Field(Box::new(seq_head("replies")), "client".to_string()),
+                    seq_head("replies"),
+                ],
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "LClientsInReplies".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "replies".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Reply".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Map(
+                Box::new(Type::Named(Path::single("AbstractEndPoint".to_string()))),
+                Box::new(Type::Named(Path::single("Reply".to_string()))),
+            ),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("replies"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("HashMap<CAbstractEndPoint, CReply>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "LClientsInReplies should translate: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        // Note: LClientsInReplies -> CClientsInReplies (L prefix stripped, C prefix added)
+        assert_eq!(exec_fn.name, "CClientsInReplies");
+
+        // Should detect fold-build pattern
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for fold-to-map pattern");
+    }
 }

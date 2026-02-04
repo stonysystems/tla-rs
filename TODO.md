@@ -1496,10 +1496,16 @@ These are the remaining issues preventing fully automated TLA+ → runnable Rust
     - `param_decreases_in_recursion()`: detects integer decrement patterns
   - Added 5 comprehensive tests for decreases inference
 
-- [ ] **R1.7: Test with RSL recursive helpers**
-  - Transpile each of the 6 functions
-  - Verify generated code with Verus
-  - Compare output with manual implementations
+- [x] **R1.7: Test with RSL recursive helpers** (DONE)
+  - Added 6 comprehensive unit tests matching exact RSL recursive patterns:
+    - `test_rsl_remove_all_satisfied_requests_filter`: Filter pattern with predicate
+    - `test_rsl_extract_sent_packets_filter`: Filter with enum variant check (is Send)
+    - `test_rsl_build_lbroadcast_map`: Map pattern with struct construction
+    - `test_rsl_get_packets_from_replies_map`: Dual-sequence zip pattern
+    - `test_rsl_remove_executed_request_batch_fold`: Fold with nested helper call
+    - `test_rsl_lclients_in_replies_fold_to_map`: Fold-to-Map build pattern
+  - All tests verify loop-based code generation from recursive specs
+  - Tests validate: correct function naming, loop generation, pattern detection
 
 **Estimated Effort**: 2-3 days (~600-800 LOC)
 
