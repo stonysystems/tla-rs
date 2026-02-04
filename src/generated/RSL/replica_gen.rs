@@ -53,6 +53,10 @@ ensures
     CReplica {
         constants: c.clone(),
         nextHeartbeatTime: 0,
+        acceptor: r_acceptor,
+        executor: r_executor,
+        proposer: r_proposer,
+        learner: r_learner,
     }
 
 }
@@ -678,6 +682,7 @@ ensures
     let s_replica = CReplicaInit(&c);
     CScheduler {
         nextActionIndex: 0,
+        replica: s_replica,
     }
 
 }

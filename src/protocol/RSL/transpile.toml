@@ -64,6 +64,8 @@ exec_prefix = "C"
 "Receive" = "CReceive"
 "TimeoutReceive" = "CTimeoutReceive"
 "ReadClock" = "CReadClock"
+# IncompleteBatchTimer enum variants (for field initialization in struct construction)
+"IncompleteBatchTimerOff" = "CIncompleteBatchTimer::CIncompleteBatchTimerOff"
 
 # Method call mappings: spec functions that should become method calls in exec code
 # Format: "SpecFuncName" = { method_name = "ExecMethodName", receiver_arg_index = N }

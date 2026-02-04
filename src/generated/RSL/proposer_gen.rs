@@ -47,18 +47,20 @@ ensures
     LProposerInit(result@, c@),
 {
     let s_election_state = crate::generated::RSL::election_gen::CElectionStateInit(&c);
-    (CProposer {
-    constants: c.clone(),
-    current_state: 0,
-    request_queue: vec![],
-    max_ballot_i_sent_1a: CBallot {
-        seqno: 0,
-        proposer_id: c.my_index,
-    },
-    next_operation_number_to_propose: 0,
-    received_1b_packets: HashSet::new(),
-    highest_seqno_requested_by_client_this_view: HashMap::new(),
-}, (s.incomplete_batch_timer is CIncompleteBatchTimerOff))
+    CProposer {
+        constants: c.clone(),
+        current_state: 0,
+        request_queue: vec![],
+        max_ballot_i_sent_1a: CBallot {
+            seqno: 0,
+            proposer_id: c.my_index,
+        },
+        next_operation_number_to_propose: 0,
+        received_1b_packets: HashSet::new(),
+        highest_seqno_requested_by_client_this_view: HashMap::new(),
+        incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOff,
+        election_state: s_election_state,
+    }
 
 }
 
@@ -228,7 +230,7 @@ ensures
             when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
         }
     } else {
-        CIncompleteBatchTimer::CIncompleteBatchTimerOff {
+        CIncompleteBatchTimer::CIncompleteBatchTimer::CIncompleteBatchTimerOff {
         }
     },
     election_state: s.election_state,
@@ -286,7 +288,7 @@ if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
             if (CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && ((s.incomplete_batch_timer is CIncompleteBatchTimerOn) && (clock >= s.incomplete_batch_timer.get_when()))))) {
                 CProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
-                if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOff)) {
+                if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimer::CIncompleteBatchTimerOff)) {
                     (CProposer {
     constants: s.constants,
     current_state: s.current_state,

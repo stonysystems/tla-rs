@@ -3685,6 +3685,27 @@ impl Translator {
                     }
                 }
             }
+            // Pattern 3b: s_.field is Variant (field should be initialized to enum variant)
+            // Example: s.incomplete_batch_timer is IncompleteBatchTimerOff
+            // Becomes: incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOff
+            else if let Expr::Is(base_expr, variant) = expr {
+                if let Expr::Field(base, field) = base_expr.as_ref() {
+                    if let Expr::Ident(name) = base.as_ref() {
+                        if ctx.is_output(name) {
+                            // Translate the variant name using remapping
+                            // The remapping should provide the fully qualified path like
+                            // "IncompleteBatchTimerOff" -> "CIncompleteBatchTimer::CIncompleteBatchTimerOff"
+                            let translated_variant = self.translate_name(variant);
+                            // Store as a Var expression with the translated variant name
+                            pre_translated
+                                .entry(name.clone())
+                                .or_default()
+                                .push((field.clone(), ExecExpr::Var(translated_variant)));
+                            continue;
+                        }
+                    }
+                }
+            }
             // Pattern 4: if cond { helper_call(..., output.field, ...) } else { output.field == input.field }
             // This pattern sets a field conditionally via helper predicate
             else if let Expr::If {
@@ -3916,6 +3937,20 @@ impl Translator {
                 // Add pre-translated nested struct fields
                 if let Some(nested_fields) = pre_translated.remove(&output_name) {
                     translated_fields.extend(nested_fields);
+                }
+
+                // Add fields from helper call substitutions (e.g., election_state from ElectionStateInit)
+                // Look for substitutions where the output variable matches (with trailing _ removed)
+                let output_base = output_name.trim_end_matches('_');
+                for ((subst_var, field_name), var_name) in &ctx.field_substitutions {
+                    let subst_base = subst_var.trim_end_matches('_');
+                    if subst_base == output_base {
+                        // Check if this field is already in translated_fields
+                        let already_present = translated_fields.iter().any(|(f, _)| f == field_name);
+                        if !already_present {
+                            translated_fields.push((field_name.clone(), ExecExpr::Var(var_name.clone())));
+                        }
+                    }
                 }
 
                 if let Some(base) = base_input {

@@ -107,7 +107,7 @@ ensures
 } else {
     s.max_bal_reflected
 }, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-}, ..s.clone() }, CGetPacketsFromReplies(s.constants.all.config.replica_ids.index(s.constants.my_index), &batch, &replies)), sent_packets)
+}, reply_cache: s_reply_cache, ..s.clone() }, CGetPacketsFromReplies(s.constants.all.config.replica_ids.index(s.constants.my_index), &batch, &replies)), sent_packets)
 
 
 
