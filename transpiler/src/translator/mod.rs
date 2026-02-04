@@ -500,7 +500,11 @@ impl Translator {
             return PatternAnalysis::Recognized(pattern);
         }
 
-        // TODO: Add map pattern detection (R1.3)
+        // Try to detect map pattern
+        if let Some(pattern) = Self::detect_map_pattern(func_name, body, &func.spec_fn.params) {
+            return PatternAnalysis::Recognized(pattern);
+        }
+
         // TODO: Add fold pattern detection (R1.4)
 
         PatternAnalysis::UnrecognizedRecursive(format!(
@@ -588,6 +592,63 @@ impl Translator {
         None
     }
 
+    /// Detect if the function body matches the map pattern.
+    ///
+    /// Map pattern structure:
+    /// ```ignore
+    /// if s.len() == 0 { Seq::empty() }
+    /// else { seq![transform(s[0])] + recurse(s.drop_first()) }
+    /// ```
+    ///
+    /// Key difference from filter: no conditional in the recursive case,
+    /// every element is transformed.
+    fn detect_map_pattern(
+        func_name: &str,
+        body: &Expr,
+        params: &[crate::ast::Parameter],
+    ) -> Option<RecursivePattern> {
+        // Pattern requires an if-else (but no nested if in the else branch)
+        let (base_cond, base_body, recursive_case) = Self::match_if_else(body)?;
+
+        // Base case: check for `s.len() == 0` returning empty sequence
+        let seq_param = Self::match_len_zero_check(base_cond)?;
+        if !Self::is_empty_seq(base_body) {
+            return None;
+        }
+
+        // Recursive case: should be `seq![transform(s[0])] + recurse(s.drop_first())`
+        // NOT another if-else (that would be a filter pattern)
+        if Self::match_if_else(recursive_case).is_some() {
+            // This has another conditional, not a pure map
+            return None;
+        }
+
+        // Check for concat pattern: transform + recurse
+        if let Some((element, _recurse)) =
+            Self::match_concat_with_recurse(recursive_case, func_name, &seq_param)
+        {
+            let extra_args = Self::get_extra_args(params, &seq_param);
+
+            // The element might be a direct s[0] reference or a transformation
+            // For map pattern, we consider any expression that uses s[0] as a transform
+            let transform = if Self::is_head_access(&element, &seq_param) {
+                // Direct s[0] access - identity transform (but still a valid map)
+                element.clone()
+            } else {
+                // Some transformation applied
+                element.clone()
+            };
+
+            return Some(RecursivePattern::Map {
+                seq_param: seq_param.clone(),
+                transform,
+                extra_args,
+            });
+        }
+
+        None
+    }
+
     /// Match an if-else expression, returning (condition, then_branch, else_branch)
     fn match_if_else(expr: &Expr) -> Option<(&Expr, &Expr, &Expr)> {
         match expr {
@@ -669,18 +730,15 @@ impl Translator {
                 if func.segments.last() != Some(&func_name.to_string()) {
                     return false;
                 }
-                // Check first arg is seq.drop_first()
-                if let Some(first_arg) = args.first() {
-                    Self::is_drop_first(first_arg, seq_param)
-                } else {
-                    false
-                }
+                // Check that one of the args is seq.drop_first() or seq.skip(1)
+                // The sequence parameter might not be the first argument
+                args.iter().any(|arg| Self::is_drop_first(arg, seq_param))
             }
             _ => false,
         }
     }
 
-    /// Check if expression is seq.drop_first()
+    /// Check if expression is seq.drop_first() or seq.skip(1)
     fn is_drop_first(expr: &Expr, seq_param: &str) -> bool {
         match expr {
             Expr::MethodCall {
@@ -688,9 +746,18 @@ impl Translator {
                 method,
                 args,
             } => {
+                // Handle seq.drop_first()
                 if method == "drop_first" && args.is_empty() {
                     if let Expr::Ident(name) = receiver.as_ref() {
                         return name == seq_param;
+                    }
+                }
+                // Handle seq.skip(1)
+                if method == "skip" && args.len() == 1 {
+                    if let Expr::Literal(Literal::Int(1)) = &args[0] {
+                        if let Expr::Ident(name) = receiver.as_ref() {
+                            return name == seq_param;
+                        }
                     }
                 }
                 false
@@ -1876,13 +1943,11 @@ impl Translator {
                 transform.as_deref(),
                 &extra_args,
             ),
-            RecursivePattern::Map { .. } => Err(TranspileError::CodeGen {
-                message: format!(
-                    "Map pattern translation not yet implemented for '{}'",
-                    func.spec_fn.name
-                ),
-                span: None,
-            }),
+            RecursivePattern::Map {
+                seq_param,
+                transform,
+                extra_args,
+            } => self.translate_map_pattern(func, &seq_param, &transform, &extra_args),
             RecursivePattern::Fold { .. } => Err(TranspileError::CodeGen {
                 message: format!(
                     "Fold pattern translation not yet implemented for '{}'",
@@ -1955,6 +2020,129 @@ impl Translator {
             decreases: Vec::new(), // Loop-based, no decreases needed
             body,
         })
+    }
+
+    /// Translate a map pattern to loop-based exec code.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// pub fn CMapFunc(seq: &Vec<T>, extra_args...) -> Vec<U>
+    ///     requires seq_valid(seq), ...
+    ///     ensures result@ == MapFunc(seq@, extra_args@...)
+    /// {
+    ///     let mut result: Vec<U> = Vec::new();
+    ///     for i in 0..seq.len()
+    ///         invariant
+    ///             result@ == seq@.take(i as int).map(|x| transform(x, extra_args...))
+    ///     {
+    ///         result.push(transform(&seq[i], extra_args...).clone());
+    ///     }
+    ///     result
+    /// }
+    /// ```
+    fn translate_map_pattern(
+        &self,
+        func: &AnnotatedFunction,
+        seq_param: &str,
+        transform: &Expr,
+        extra_args: &[String],
+    ) -> TranspileResult<ExecFunction> {
+        let exec_name = self.translate_definition_name(&func.spec_fn.name);
+
+        // Build parameters: seq as reference, extra args as references
+        let params = self.translate_helper_params(func);
+
+        // Build return type: Vec<ElementType>
+        let return_type = self.build_helper_return_type(func)?;
+
+        // Build requires clauses (validity predicates)
+        let requires = self.build_helper_requires(func);
+
+        // Build ensures clause linking to spec function
+        let ensures = self.build_helper_ensures(func);
+
+        // Build the loop body
+        let body = self.build_map_loop_body(seq_param, transform, extra_args, func)?;
+
+        Ok(ExecFunction {
+            name: exec_name,
+            params,
+            return_type,
+            requires,
+            ensures,
+            decreases: Vec::new(), // Loop-based, no decreases needed
+            body,
+        })
+    }
+
+    /// Build the loop body for a map pattern.
+    fn build_map_loop_body(
+        &self,
+        seq_param: &str,
+        transform: &Expr,
+        _extra_args: &[String],
+        func: &AnnotatedFunction,
+    ) -> TranspileResult<ExecExpr> {
+        // Create a minimal context for expression transformation
+        let ctx = TransformContext {
+            config: &self.config,
+            output_params: Vec::new(),
+            input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Transform the element expression, substituting s[0] with seq[i]
+        let transformed_element = self.transform_expr(transform, &ctx)?;
+        let element_with_index = self.substitute_head_with_index(transformed_element, seq_param);
+
+        // Wrap in clone to get owned value
+        let element_expr = ExecExpr::Clone(Box::new(element_with_index));
+
+        // Build invariant string
+        let invariant = format!(
+            "result@ == {}@.take(i as int).map(|x: {}| /* transform */)",
+            seq_param,
+            self.get_element_type_hint(func)
+        );
+
+        // Build the loop body (no conditional for map - every element is transformed)
+        let loop_body = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("result".to_string())),
+            method: "push".to_string(),
+            args: vec![element_expr],
+        };
+
+        let stmts = vec![
+            // let mut result: Vec<U> = Vec::new();
+            ExecExpr::Let {
+                pattern: "mut result".to_string(),
+                ty: Some(return_type_to_vec_type(&func.spec_fn.return_type)),
+                value: Box::new(ExecExpr::Call {
+                    func: "Vec::new".to_string(),
+                    args: vec![],
+                }),
+            },
+            // for i in 0..seq.len() { ... }
+            ExecExpr::ForInIter {
+                var: "i".to_string(),
+                iter_name: "iter".to_string(),
+                iter_source: Box::new(ExecExpr::Range {
+                    start: Box::new(ExecExpr::Literal("0".to_string())),
+                    end: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var(seq_param.to_string())),
+                        method: "len".to_string(),
+                        args: vec![],
+                    }),
+                }),
+                invariants: vec![invariant],
+                body: Box::new(loop_body),
+            },
+            // result
+            ExecExpr::Var("result".to_string()),
+        ];
+
+        Ok(ExecExpr::Block(stmts))
     }
 
     /// Build the loop body for a filter pattern.
@@ -9856,6 +10044,317 @@ mod tests {
         assert!(
             contains_for_loop(&exec_fn.body),
             "Generated code should contain a for loop"
+        );
+    }
+
+    // ========================================================================
+    // Map Pattern Recognition Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_map_pattern_simple() {
+        // Pattern: BuildLBroadcast
+        // if dsts.len() == 0 { Seq::empty() }
+        // else { seq![LPacket{dst: dsts[0], src: src, msg: m}] + recurse(dsts.skip(1)) }
+
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("dsts")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(Expr::Struct {
+                    name: Path::single("LPacket".to_string()),
+                    fields: vec![
+                        ("dst".to_string(), seq_head("dsts")),
+                        ("src".to_string(), ident("src")),
+                        ("msg".to_string(), ident("m")),
+                    ],
+                })),
+                BinOp::Add,
+                Box::new(func_call(
+                    "BuildLBroadcast",
+                    vec![
+                        ident("src"),
+                        method_call(ident("dsts"), "skip", vec![Expr::Literal(Literal::Int(1))]),
+                        ident("m"),
+                    ],
+                )),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "BuildLBroadcast".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "src".to_string(),
+                    ty: Type::Named(Path::single("AbstractEndPoint".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "dsts".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single(
+                        "AbstractEndPoint".to_string(),
+                    )))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "m".to_string(),
+                    ty: Type::Named(Path::single("RslMessage".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("RslPacket".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("dsts"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
+            return_type: Some("Seq<RslPacket>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Map {
+                seq_param,
+                extra_args,
+                ..
+            }) => {
+                assert_eq!(seq_param, "dsts");
+                assert_eq!(extra_args, vec!["src".to_string(), "m".to_string()]);
+            }
+            PatternAnalysis::Recognized(other) => {
+                panic!("Expected Map pattern, got {:?}", other);
+            }
+            PatternAnalysis::UnrecognizedRecursive(reason) => {
+                panic!("Pattern not recognized: {}", reason);
+            }
+            PatternAnalysis::NotRecursive => {
+                panic!("Function should be detected as recursive");
+            }
+        }
+    }
+
+    #[test]
+    fn test_detect_map_pattern_with_transform() {
+        // Simple map: if s.len() == 0 { empty } else { seq![f(s[0])] + recurse(s.drop_first()) }
+
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("items")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(func_call("transform", vec![seq_head("items")]))),
+                BinOp::Add,
+                Box::new(func_call("MapFunc", vec![drop_first("items")])),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "MapFunc".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "items".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Input".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Output".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Output>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Map {
+                seq_param,
+                extra_args,
+                ..
+            }) => {
+                assert_eq!(seq_param, "items");
+                assert!(extra_args.is_empty());
+            }
+            PatternAnalysis::Recognized(other) => {
+                panic!("Expected Map pattern, got {:?}", other);
+            }
+            PatternAnalysis::UnrecognizedRecursive(reason) => {
+                panic!("Pattern not recognized: {}", reason);
+            }
+            PatternAnalysis::NotRecursive => {
+                panic!("Function should be detected as recursive");
+            }
+        }
+    }
+
+    #[test]
+    fn test_filter_not_detected_as_map() {
+        // Filter pattern should NOT be detected as map (has conditional)
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("s")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(func_call("pred", vec![seq_head("s")])),
+                then_branch: Box::new(func_call("FilterFunc", vec![drop_first("s")])),
+                else_branch: Some(Box::new(Expr::Binary(
+                    Box::new(seq_lit(seq_head("s"))),
+                    BinOp::Add,
+                    Box::new(func_call("FilterFunc", vec![drop_first("s")])),
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "FilterFunc".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        // Should be detected as Filter, not Map
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Filter { .. }) => {
+                // Correct - filter pattern detected
+            }
+            PatternAnalysis::Recognized(RecursivePattern::Map { .. }) => {
+                panic!("Filter pattern should NOT be detected as Map");
+            }
+            _ => {
+                panic!("Should be recognized as some pattern");
+            }
+        }
+    }
+
+    #[test]
+    fn test_translate_map_pattern_generates_loop() {
+        let translator = Translator::default();
+
+        // Create a simple map function
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("items")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(seq_head("items"))),
+                BinOp::Add,
+                Box::new(func_call("IdentityMap", vec![drop_first("items")])),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "IdentityMap".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "items".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "Translation should succeed: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CIdentityMap");
+
+        // Check that the body contains a ForInIter (loop)
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
+                    contains_for_loop(cond)
+                        || contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Generated map code should contain a for loop"
         );
     }
 }

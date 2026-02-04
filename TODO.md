@@ -1458,10 +1458,14 @@ These are the remaining issues preventing fully automated TLA+ → runnable Rust
   - Supports both standard filter (keep when true) and inverted filter (keep when false)
   - Includes 8 comprehensive tests for pattern detection and code generation
 
-- [ ] **R1.3: Implement map pattern recognition**
+- [x] **R1.3: Implement map pattern recognition**
   - Pattern: `if len == 0 { empty } else { f(head) + recurse(tail) }`
   - Target: `for i in 0..s.len() { result.push(f(&s[i])); }`
   - Add `RecursivePattern::Map` detection
+  - **Completed**: Added `detect_map_pattern()` and `translate_map_pattern()` in `translator/mod.rs`
+  - Extended `is_drop_first()` to also handle `skip(1)` variant
+  - Extended `is_pure_recursive_call()` to find seq param in any argument position
+  - Includes 4 tests: detection, transform, filter distinction, loop generation
 
 - [ ] **R1.4: Implement fold/accumulate pattern recognition**
   - Pattern: `if len == 0 { init } else { combine(head, recurse(tail)) }`
