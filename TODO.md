@@ -2473,8 +2473,8 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - fallback_type() recursively resolves nested unresolved types
   - ~150 LOC with 7 new tests for diagnostics
 
-#### Phase T5: Expression Translation
-- [ ] **T5.1: Translate set operations**
+#### Phase T5: Expression Translation ✅ COMPLETED
+- [x] **T5.1: Translate set operations** ✅
   - `\in` → `.contains()`
   - `\cup` → `union()`
   - `\cap` → `intersect()`
@@ -2483,13 +2483,13 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - `{x \in S : P(x)}` → `filter` comprehension
   - `{f(x) : x \in S}` → `map` comprehension
 
-- [ ] **T5.2: Translate function/map operations**
-  - `[x \in S |-> f(x)]` → `Map::new(|x| f(x))`
-  - `f[x]` → `f.get(x)` or `f[x]`
+- [x] **T5.2: Translate function/map operations** ✅
+  - `[x \in S |-> f(x)]` → `Map::new(S, |x| f(x))`
+  - `f[x]` → `f[x]`
   - `DOMAIN f` → `f.dom()`
-  - `[f EXCEPT ![i] = v]` → `f.update(i, v)`
+  - `[f EXCEPT ![i] = v]` → `f.insert(i, v)`
 
-- [ ] **T5.3: Translate sequence operations**
+- [x] **T5.3: Translate sequence operations** ✅
   - `<<a, b, c>>` → `seq![a, b, c]`
   - `Append(s, x)` → `s.push(x)`
   - `Head(s)` → `s[0]`
@@ -2497,15 +2497,17 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - `Len(s)` → `s.len()`
   - `SubSeq(s, m, n)` → `s.subrange(m-1, n)` (TLA+ is 1-indexed)
 
-- [ ] **T5.4: Translate quantifiers**
+- [x] **T5.4: Translate quantifiers** ✅
   - `\A x \in S : P(x)` → `forall |x| S.contains(x) ==> P(x)`
   - `\E x \in S : P(x)` → `exists |x| S.contains(x) && P(x)`
   - `CHOOSE x \in S : P(x)` → `choose |x| S.contains(x) && P(x)`
 
-- [ ] **T5.5: Translate actions**
-  - `x' = expr` → output parameter assignment pattern
-  - `UNCHANGED <<x, y>>` → `x_ == x && y_ == y`
-  - Automatically detect input/output parameters from primed variables
+- [x] **T5.5: Translate actions** ✅
+  - `x'` → `x_` (primed variables as output parameters)
+  - `UNCHANGED <<x, y>>` → `(x_ == x && y_ == y)`
+  - Temporal operators (always, eventually, leads_to, fairness)
+
+  Created ExprTranslator with TranslatorConfig (~700 LOC, 18 tests)
 
 #### Phase T6: Module Translation
 - [ ] **T6.1: Translate module structure**
