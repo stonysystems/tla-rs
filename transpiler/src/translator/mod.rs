@@ -2560,6 +2560,17 @@ impl Translator {
                     }
                 }
 
+                // Check if this is a helper call with output parameters
+                // A helper call has output parameters if any argument is an output variable
+                // In that case, we should only pass input arguments and the call returns the outputs
+                if let Some(helper_info) = self.detect_helper_call(expr, ctx) {
+                    // This is a helper call - use only input args (outputs are stripped)
+                    return Ok(ExecExpr::Call {
+                        func: self.translate_name(&helper_info.func_name),
+                        args: helper_info.input_args,
+                    });
+                }
+
                 // Transform arguments, adding reference prefixes where appropriate
                 let translated_args: TranspileResult<Vec<_>> = args
                     .iter()

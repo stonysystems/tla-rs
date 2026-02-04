@@ -13,12 +13,15 @@ use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::common::upper_bound_i::*;
+use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::learner::*;
@@ -27,6 +30,8 @@ use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
+use crate::protocol::common::upper_bound::*;
+use crate::generated::RSL::types_gen::CClockReading;
 
 verus! {
 
@@ -257,7 +262,7 @@ ensures
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: p.msg.get_votes().index(opn).max_val,
-}, sent_packets))))
+}))))
 
 }
 
@@ -273,10 +278,10 @@ if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
         (s.clone(), vec![])
     } else {
         if !CAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
-            CProposerNominateOldValueAndSend2a(&s, s_, &log_truncation_point, sent_packets)
+            CProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
             if (CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && ((s.incomplete_batch_timer is CIncompleteBatchTimerOn) && (clock >= s.incomplete_batch_timer.get_when()))))) {
-                CProposerNominateNewValueAndSend2a(&s, s_, &clock, &log_truncation_point, sent_packets)
+                CProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
                 if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOff)) {
                     (CProposer {

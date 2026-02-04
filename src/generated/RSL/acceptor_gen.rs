@@ -13,12 +13,15 @@ use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::CProposer;
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::CExecutor;
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::common::upper_bound_i::*;
+use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::learner::*;
@@ -27,6 +30,8 @@ use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
+use crate::protocol::common::upper_bound::*;
+use crate::generated::RSL::types_gen::CClockReading;
 
 verus! {
 

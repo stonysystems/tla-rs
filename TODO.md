@@ -1314,8 +1314,12 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     5. ~~**Index expression AST debug output**~~: Fixed in `translator/mod.rs` - added `Expr::Index` handling in `expr_to_simple_string()`
     6. ~~**Match pattern missing enum type prefix**~~: Fixed in `translator/mod.rs` - changed `format_pattern()` to use `translate_path(name)` instead of `translate_name(name.last())` for `Pattern::Struct` and `Pattern::Variant` so match patterns like `CMessage1a { ... }` correctly become `CMessage::CMessage1a { ... }`
   - **Remaining transpiler bugs (require transpiler code changes):**
-    1. **Missing type imports**: Generated code references C* functions not imported (e.g., `CConfiguration`, `CUpperBound`, `CGetReplicaIndex`, `CBroadcastToEveryone`, etc.)
+    1. ~~**Missing type imports (partial fix)**~~: Added imports for `CConfiguration`, `CUpperBound`, `CUpperBoundedAddition`, `COutstandingOperation`, `CIncompleteBatchTimer`, `CClockReading` in `transpile.toml` custom_imports. Still remaining:
+       - **Cross-module function calls**: Generated modules (`replica_gen.rs`) call functions from other generated modules (`acceptor_gen.rs`, `proposer_gen.rs`, etc.) but can't use wildcard imports due to circular import issues
+       - **Spec-only functions with C-prefix**: Transpiler incorrectly adds C-prefix to spec-only functions that have no exec implementation: `CWellFormedLConfiguration`, `CLtUpperBound`, `CExtractSentPacketsFromIos`, `CGetPacketsFromReplies`, `CClientsInReplies`, `CSpontaneousIos`, `CAppInitialize`, `CLProposerCanNominateUsingOperationNumber`, `CLAllAcceptorsHadNoProposal`, `CSetOfMessage1bAboutBallot`, etc.
+       - **Missing type aliases**: `CRslIo`, `CRslPacket`, `CScheduler` need type aliases or remapping
     2. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`
+    3. ~~**Code generation bugs (undefined variables s_, sent_packets)**~~: Fixed in `translator/mod.rs` - added helper call detection in `Expr::Call` handler to use `detect_helper_call()` before argument transformation. When a function call has output parameters (like `LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets)`), the transpiler now correctly strips output args and generates `CProposerNominateOldValueAndSend2a(&s, &log_truncation_point)` instead of passing undefined `s_` and `sent_packets`
 
 #### 2. Recursive Helper Functions (H4 - Deferred)
 - [ ] **Generate loop-based implementations for recursive functions**
