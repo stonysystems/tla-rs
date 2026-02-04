@@ -2975,16 +2975,146 @@ impl Translator {
                 .collect();
         }
 
-        // Otherwise, try to infer decreases from function structure
-        // For functions operating on sequences, typically use first param's length
+        // Try to infer decreases from function body analysis
+        // First, find which sequence parameter is being recursed on (with drop_first/skip)
+        if let Some(seq_param) = self.find_recursed_sequence(func) {
+            return vec![format!("{}.len()", seq_param)];
+        }
+
+        // Fallback: look for any sequence parameter
         for param in &func.spec_fn.params {
             if let crate::ast::Type::Seq(_) = &param.ty {
                 return vec![format!("{}.len()", param.name)];
             }
         }
 
+        // Try integer parameters that might decrease (e.g., countdown patterns)
+        for param in &func.spec_fn.params {
+            if matches!(&param.ty, crate::ast::Type::Int | crate::ast::Type::Nat) {
+                // Check if this parameter decreases in recursive calls
+                if self.param_decreases_in_recursion(func, &param.name) {
+                    return vec![param.name.clone()];
+                }
+            }
+        }
+
         // Default: empty (will require manual annotation)
         Vec::new()
+    }
+
+    /// Find the sequence parameter that is being recursed upon (has drop_first/skip in recursive calls)
+    fn find_recursed_sequence(&self, func: &AnnotatedFunction) -> Option<String> {
+        let func_name = &func.spec_fn.name;
+
+        // Collect all sequence parameters
+        let seq_params: Vec<_> = func.spec_fn.params.iter()
+            .filter(|p| matches!(&p.ty, crate::ast::Type::Seq(_)))
+            .map(|p| p.name.clone())
+            .collect();
+
+        // For each sequence param, check if it's used with drop_first/skip in any recursive call
+        for seq_param in &seq_params {
+            if self.expr_has_drop_first_recursive(&func.spec_fn.body, func_name, seq_param) {
+                return Some(seq_param.clone());
+            }
+        }
+
+        None
+    }
+
+    /// Check if an expression contains a recursive call with drop_first/skip on the given seq param
+    fn expr_has_drop_first_recursive(&self, expr: &Expr, func_name: &str, seq_param: &str) -> bool {
+        match expr {
+            Expr::Call { func, args } => {
+                // Check if this is a recursive call
+                if func.segments.last() == Some(&func_name.to_string()) {
+                    // Check if any arg is seq_param.drop_first() or seq_param.skip(1)
+                    if args.iter().any(|a| Self::is_drop_first(a, seq_param)) {
+                        return true;
+                    }
+                }
+                // Recurse into arguments
+                args.iter().any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                self.expr_has_drop_first_recursive(cond, func_name, seq_param)
+                    || self.expr_has_drop_first_recursive(then_branch, func_name, seq_param)
+                    || else_branch.as_ref().map_or(false, |e| self.expr_has_drop_first_recursive(e, func_name, seq_param))
+            }
+            Expr::Binary(l, _, r) => {
+                self.expr_has_drop_first_recursive(l, func_name, seq_param)
+                    || self.expr_has_drop_first_recursive(r, func_name, seq_param)
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                self.expr_has_drop_first_recursive(receiver, func_name, seq_param)
+                    || args.iter().any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+            }
+            Expr::Let { value, body, .. } => {
+                self.expr_has_drop_first_recursive(value, func_name, seq_param)
+                    || self.expr_has_drop_first_recursive(body, func_name, seq_param)
+            }
+            Expr::Conjunction(exprs) | Expr::Disjunction(exprs) => {
+                exprs.iter().any(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param))
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if an integer parameter decreases in recursive calls (e.g., n-1 pattern)
+    fn param_decreases_in_recursion(&self, func: &AnnotatedFunction, param_name: &str) -> bool {
+        let func_name = &func.spec_fn.name;
+        self.expr_has_decreasing_param(&func.spec_fn.body, func_name, param_name)
+    }
+
+    /// Check if an expression contains a recursive call with a decreasing pattern for the param
+    fn expr_has_decreasing_param(&self, expr: &Expr, func_name: &str, param_name: &str) -> bool {
+        match expr {
+            Expr::Call { func, args } => {
+                // Check if this is a recursive call
+                if func.segments.last() == Some(&func_name.to_string()) {
+                    // Check if any arg is param - 1 or similar decreasing pattern
+                    if args.iter().any(|a| self.is_decreasing_expr(a, param_name)) {
+                        return true;
+                    }
+                }
+                // Recurse into arguments
+                args.iter().any(|a| self.expr_has_decreasing_param(a, func_name, param_name))
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                self.expr_has_decreasing_param(cond, func_name, param_name)
+                    || self.expr_has_decreasing_param(then_branch, func_name, param_name)
+                    || else_branch.as_ref().map_or(false, |e| self.expr_has_decreasing_param(e, func_name, param_name))
+            }
+            Expr::Binary(l, _, r) => {
+                self.expr_has_decreasing_param(l, func_name, param_name)
+                    || self.expr_has_decreasing_param(r, func_name, param_name)
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                self.expr_has_decreasing_param(receiver, func_name, param_name)
+                    || args.iter().any(|a| self.expr_has_decreasing_param(a, func_name, param_name))
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if expression is param - 1 or param - N (decreasing)
+    fn is_decreasing_expr(&self, expr: &Expr, param_name: &str) -> bool {
+        match expr {
+            Expr::Binary(lhs, BinOp::Sub, rhs) => {
+                // Check for param - N pattern
+                if let Expr::Ident(name) = lhs.as_ref() {
+                    if name == param_name {
+                        // Check rhs is a positive literal
+                        if let Expr::Literal(Literal::Int(n)) = rhs.as_ref() {
+                            return *n > 0;
+                        }
+                    }
+                }
+                false
+            }
+            // Also handle (param - 1) with parens (would be same AST)
+            _ => false,
+        }
     }
 
     /// Translate helper function parameters (all inputs passed by reference)
@@ -11452,5 +11582,282 @@ mod tests {
         let expr = Expr::Is(Box::new(seq_head("ios")), "Send".to_string());
         let result = translator.expr_to_spec_string(&expr, &[]);
         assert!(result.contains("is Send"));
+    }
+
+    // ========================================================================
+    // Decreases Clause Inference Tests
+    // ========================================================================
+
+    #[test]
+    fn test_decreases_inferred_from_explicit_spec() {
+        let translator = Translator::default();
+
+        // Create a function with explicit decreases clause
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("s")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(func_call("TestFunc", vec![drop_first("s")]))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "TestFunc".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            // Explicit decreases
+            decreases: vec![method_call(ident("s"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: false,  // Force non-pattern translation
+            non_functionalizable_reason: Some("Testing decreases".to_string()),
+        };
+
+        let decreases = translator.build_decreases(&annotated);
+        assert_eq!(decreases.len(), 1);
+        assert!(decreases[0].contains("s") && decreases[0].contains("len"));
+    }
+
+    #[test]
+    fn test_decreases_inferred_from_drop_first() {
+        let translator = Translator::default();
+
+        // Create a function that uses drop_first on the second param
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("items")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(func_call(
+                "ProcessItems",
+                vec![
+                    ident("config"),  // First param, not recursed
+                    drop_first("items"),  // Second param, recursed with drop_first
+                ],
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "ProcessItems".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "config".to_string(),
+                    ty: Type::Named(Path::single("Config".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "items".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],  // No explicit decreases
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: false,
+            non_functionalizable_reason: Some("Testing decreases".to_string()),
+        };
+
+        let decreases = translator.build_decreases(&annotated);
+        // Should infer items.len() since items is the one with drop_first
+        assert_eq!(decreases.len(), 1);
+        assert!(
+            decreases[0].contains("items") && decreases[0].contains("len"),
+            "Should infer items.len(), got: {:?}",
+            decreases
+        );
+    }
+
+    #[test]
+    fn test_decreases_inferred_from_skip_1() {
+        let translator = Translator::default();
+
+        // Create a function that uses skip(1) instead of drop_first
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("dsts")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(func_call(
+                "BuildBroadcast",
+                vec![
+                    ident("src"),
+                    method_call(ident("dsts"), "skip", vec![Expr::Literal(Literal::Int(1))]),
+                    ident("msg"),
+                ],
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "BuildBroadcast".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "src".to_string(),
+                    ty: Type::Named(Path::single("Endpoint".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "dsts".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Endpoint".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "msg".to_string(),
+                    ty: Type::Named(Path::single("Message".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Packet".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Seq<Packet>".to_string()),
+            is_recursive: true,
+            is_functionalizable: false,
+            non_functionalizable_reason: Some("Testing decreases".to_string()),
+        };
+
+        let decreases = translator.build_decreases(&annotated);
+        // Should infer dsts.len() since dsts uses skip(1)
+        assert_eq!(decreases.len(), 1);
+        assert!(
+            decreases[0].contains("dsts") && decreases[0].contains("len"),
+            "Should infer dsts.len(), got: {:?}",
+            decreases
+        );
+    }
+
+    #[test]
+    fn test_decreases_fallback_to_first_seq_param() {
+        let translator = Translator::default();
+
+        // Create a non-recursive function with seq param but no explicit decreases pattern
+        let body = Expr::Ident("s".to_string());  // Trivial body
+
+        let spec_fn = SpecFunction {
+            name: "SimpleFunc".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,  // Mark as recursive to trigger decreases generation
+            is_functionalizable: false,
+            non_functionalizable_reason: Some("Testing decreases".to_string()),
+        };
+
+        let decreases = translator.build_decreases(&annotated);
+        // Should fallback to s.len() since s is the first seq param
+        assert_eq!(decreases.len(), 1);
+        assert!(
+            decreases[0].contains("s") && decreases[0].contains("len"),
+            "Should fallback to s.len(), got: {:?}",
+            decreases
+        );
+    }
+
+    #[test]
+    fn test_decreases_non_recursive_returns_empty() {
+        let translator = Translator::default();
+
+        let body = Expr::Ident("s".to_string());
+
+        let spec_fn = SpecFunction {
+            name: "NonRecursive".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: false,  // Not recursive
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let decreases = translator.build_decreases(&annotated);
+        // Non-recursive functions should have empty decreases
+        assert!(
+            decreases.is_empty(),
+            "Non-recursive function should have empty decreases"
+        );
     }
 }

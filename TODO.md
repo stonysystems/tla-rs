@@ -1484,9 +1484,17 @@ These are the remaining issues preventing fully automated TLA+ → runnable Rust
   - Added `expr_to_spec_string()` for converting AST expressions to spec-level strings
   - Added 6 tests for invariant generation (filter, map, fold bounds/spec invariants)
 
-- [ ] **R1.6: Add decreases clause inference**
-  - Default: `decreases s.len()` for sequence recursion
-  - Support explicit decreases from spec
+- [x] **R1.6: Add decreases clause inference** (DONE)
+  - Enhanced `build_decreases()` with improved inference:
+    - Uses explicit decreases clauses from spec when present
+    - Analyzes function body to find recursed sequence (via drop_first/skip detection)
+    - Falls back to first sequence parameter if no pattern detected
+    - Supports integer parameter decreasing patterns (n - 1)
+  - Added helper functions:
+    - `find_recursed_sequence()`: identifies which seq param has drop_first/skip in recursive calls
+    - `expr_has_drop_first_recursive()`: recursively searches expression for drop_first patterns
+    - `param_decreases_in_recursion()`: detects integer decrement patterns
+  - Added 5 comprehensive tests for decreases inference
 
 - [ ] **R1.7: Test with RSL recursive helpers**
   - Transpile each of the 6 functions
