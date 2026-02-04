@@ -1340,9 +1340,37 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
 
 #### 4. Verus Verification of Generated Code
 - [ ] **Run Verus verification on all generated modules**
-  - Currently blocked: generated modules excluded via `#[cfg(test)]`
+  - Currently blocked: generated modules excluded via `#[cfg(test)]` (in both `src/lib.rs` and `src/generated/mod.rs`)
+  - **Analysis (2024-02):** When `#[cfg(test)]` is removed, 26 compilation errors occur:
+    1. **Missing function imports** (most are methods on types, not standalone functions):
+       - `CMinQuorumSize` - is a method on `CConfiguration`, not a function
+       - `CGetReplicaIndex` - is a method on `CConfiguration`, not a function
+       - `CReplicaConstantsValid` - is a method on `CReplicaConstants`, not a function
+       - `CIsLogTruncationPointValid` - exists in acceptorimpl.rs but not imported
+       - `CSetOfMessage1bAboutBallot` - exists in ProposerImpl.rs but not imported
+       - `CValIsHighestNumberedProposal` - exists in ProposerImpl.rs but not imported
+       - `CExistsAcceptorHasProposalLargeThanOpn` - exists in ProposerImpl.rs but not imported
+       - `CHandleRequestBatch` - exists in CStateMachine.rs but not imported
+       - `CClientsInReplies` - exists in ExecutorImpl.rs but not imported
+       - `CGetPacketsFromReplies` - exists in ExecutorImpl.rs but not imported
+       - `CRepliesAreReplyType` - spec-only, no exec implementation
+       - `CUpdateNewCache` - exists in ExecutorImpl.rs but not imported
+       - `CElectionStateReflectExecutedRequestBatch` - exists in ElectionImpl.rs but not imported
+       - `AppInitialize` - spec-only function, should NOT have C prefix
+    2. **Code generation bug in proposer_gen.rs:60**: Uses undefined `s` variable in `CProposerInit`
+       - Generated: `}, (s.incomplete_batch_timer is CIncompleteBatchTimerOff))`
+       - Should be: field initialization for `incomplete_batch_timer`
+    3. **Transpiler issue**: Generates function calls for what should be method calls
+       - Spec: `LMinQuorumSize(config)` (function)
+       - Impl: `config.CMinQuorumSize()` (method)
+  - **Blocking issues to fix before verification can proceed:**
+    1. Fix transpiler to generate method calls instead of function calls for methods
+    2. Fix CProposerInit generation to properly initialize all fields
+    3. Add missing imports to custom_imports in transpile.toml
+    4. Add spec-only functions to spec_only_functions list
   - Need to verify: election_gen.rs, learner_gen.rs, executor_gen.rs, proposer_gen.rs, replica_gen.rs, broadcast_gen.rs, acceptor_gen.rs
 - [ ] **Fix any verification failures in generated code**
+  - Blocked by compilation errors above
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations
