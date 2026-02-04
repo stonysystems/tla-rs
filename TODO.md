@@ -1562,15 +1562,22 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Added CBalLt, CBalLeq, CBalEq helper functions to types_gen.rs
   - Added Clone, Copy, PartialEq, Eq, Hash derives and additional methods to CBallot
 
-- [ ] **I2.5: Handle marshalling separately**
-  - Keep marshalling traits in `src/implementation/`
-  - Use trait impl blocks to add marshalling to generated types
-  - Pattern: `impl Marshallable for CBallot { ... }`
+- [x] **I2.5: Handle marshalling separately** ✅ COMPLETED (No code changes needed)
+  - Analysis: Generated code in `types_gen.rs` doesn't need marshalling
+  - Generated code is test-only (`#[cfg(test)]`) and doesn't do network I/O
+  - Marshalling remains in `types_i.rs` via `define_struct_and_derive_marshalable!` macro
+  - Production code continues to use `types_i.rs` with full marshalling support
+  - If future need arises, pattern would be: `impl Marshalable for CBallot { ... }` in types_i.rs
 
-- [ ] **I2.6: Update transpiler configs**
-  - Modify `transpile.toml` custom_imports
-  - Remove imports from `src/implementation/RSL/`
-  - Add imports from new shared location
+- [x] **I2.6: Update transpiler configs** ✅ COMPLETED
+  - Updated all 9 transpile.toml files in `src/protocol/RSL/`:
+    - `transpile.toml` (main config)
+    - `acceptor_transpile.toml`, `broadcast_transpile.toml`, `election_transpile.toml`
+    - `executor_transpile.toml`, `learner_transpile.toml`, `proposer_transpile.toml`
+    - `replica_transpile.toml`, `types_transpile.toml`
+  - Changed imports from `use crate::implementation::RSL::types_i::*;` to `use crate::generated::RSL::types_gen::*;`
+  - Removed redundant individual type imports (CClockReading, CRslIo, CScheduler) since now using `*`
+  - Updated types_transpile.toml to remove circular CRequestBatch import
 
 - [ ] **I2.7: Verify no manual imports remain**
   - Grep generated code for `implementation::RSL`

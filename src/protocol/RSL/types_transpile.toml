@@ -18,17 +18,18 @@ validity_predicate_name = "well_formed"
 generate_clone = true
 include_debug_comments = false
 # Custom imports for RSL types
-# Note: CAppMessage and CRequestBatch are complex types with:
-# - Marshalling support via define_struct_and_derive_marshalable!
-# - Network serialization for the protocol
-# These cannot easily be generated and should eventually be moved to
-# a shared location like src/common/rsl_types/.
+# Note: CAppMessage has marshalling support for network serialization.
+# CRequestBatch is now defined as a type alias in types_gen.rs itself.
 custom_imports = [
     "use vstd::prelude::*;",
-    "use std::collections::HashSet;",
+    "use std::collections::{HashMap, HashSet};",
     "use crate::common::collections::hashsets::HashSetWellFormed;",
+    "use crate::common::framework::environment_s::LIoOp;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::implementation::RSL::appinterface::CAppMessage;",
-    "use crate::implementation::RSL::types_i::CRequestBatch;",
+    "use crate::implementation::RSL::cmessage::CPacket;",
+    "use crate::implementation::RSL::ReplicaImpl::CReplica;",
+    "use crate::protocol::RSL::environment::RslIo;",
+    "use crate::protocol::RSL::replica::LScheduler;",
     "use crate::protocol::RSL::types::*;",
 ]

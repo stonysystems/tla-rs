@@ -191,8 +191,9 @@ custom_imports = [
     "use crate::common::collections::sets::*;",
     "use crate::common::collections::hashsets::*;",
     "use crate::common::native::io_s::EndPoint;",
-    # Implementation types
-    "use crate::implementation::RSL::types_i::*;",
+    # Generated types (pure data types, type aliases, helper functions)
+    "use crate::generated::RSL::types_gen::*;",
+    # Implementation types (component state, marshalling, etc.)
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
@@ -218,10 +219,6 @@ custom_imports = [
     "use crate::protocol::RSL::broadcast::*;",
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::common::upper_bound::*;",
-    # Generated types (only those not in types_i)
-    "use crate::generated::RSL::types_gen::CClockReading;",
-    "use crate::generated::RSL::types_gen::CRslIo;",
-    "use crate::generated::RSL::types_gen::CScheduler;",
 ]
 
 # Module-specific configuration (for future use)
