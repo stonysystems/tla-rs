@@ -453,8 +453,8 @@ impl TypeGenerator {
                 }
             }
             Type::Bool => "bool".to_string(),
-            Type::Int => "i64".to_string(),
-            Type::Nat => "u64".to_string(),
+            Type::Int => self.config.int_type.clone(),
+            Type::Nat => self.config.nat_type.clone(),
             Type::Unit => "()".to_string(),
         }
     }
@@ -855,6 +855,14 @@ mod tests {
             ))))),
             "Vec<CPacket>"
         );
+
+        // Test with custom int_type/nat_type
+        let mut custom_config = NamingConfig::default();
+        custom_config.int_type = "u64".to_string();
+        custom_config.nat_type = "u64".to_string();
+        let custom_gen = TypeGenerator::new(custom_config);
+        assert_eq!(custom_gen.translate_type(&Type::Int), "u64");
+        assert_eq!(custom_gen.translate_type(&Type::Nat), "u64");
     }
 
     #[test]

@@ -1632,7 +1632,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Categorized errors: missing types, missing functions, type mappings
   - **Remaining**: 54 errors need fixing
 
-- [ ] **V3.3: Fix type generation and View mapping** ⚠️ BLOCKED - REQUIRES ARCHITECTURE DECISION
+- [ ] **V3.3: Fix type generation and View mapping** ⚠️ IN PROGRESS
   - ~~Generated types have wrong field types: `i64` (from spec `int`) vs `u64` (in implementation)~~ ✅ FIXED
     - Added `int_type` and `nat_type` config options to transpiler
     - RSL configs now use `int_type = "u64"` and `nat_type = "u64"`
@@ -1642,15 +1642,27 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - `acceptor_gen.rs` defines: CAcceptor (conflicts with `acceptorimpl.rs::CAcceptor`)
     - `learner_gen.rs` defines: CLearner (conflicts with `learnerimpl.rs::CLearner`)
     - `executor_gen.rs` defines: CExecutor (conflicts with `ExecutorImpl.rs::CExecutor`)
-  - **Why re-exporting from types_i.rs doesn't work**:
-    - Implementation types use inherent `view()` methods, NOT the `View` trait
-    - Generated code uses `@` operator which requires `impl View` trait
-    - Implementation structs have extra fields (e.g., `CAcceptor.min_vote_opn`)
+  - **Critical finding**: Generated module is NOT verified during Verus runs
+    - `#[cfg(test)]` excludes it from `verus --crate-type=lib` (confirmed: 0 generated functions in verification output)
+    - Generated code has View type mismatches that were never caught (e.g., `Map<u64, CVote>` vs `Map<int, Vote>`)
+    - Generated code calls `well_formed()` on types that don't have it (EndPoint, CAppMessage)
+  - **Progress on Option 2** (add `impl View` to implementation types):
+    - ✅ Added `impl View for CBallot` to types_i.rs (matches inherent `view()` semantics)
+    - ✅ Added `impl View for CVote` to types_i.rs (uses `abstractify_crequestbatch`)
+    - ✅ CRequest, CReply, CLearnerTuple already have `impl View` in types_i.rs
+    - ✅ Fixed transpiler `TypeGenerator` to use `int_type`/`nat_type` from config (was hardcoded `i64`/`u64`)
+    - ✅ Fixed `generate-types` subcommand to load `[naming]` config from TOML (was using default)
+    - ✅ Regenerated types now use `u64` fields matching implementation types
+  - **Remaining work for V3.3**:
+    - Add `well_formed()` methods to implementation types (or make transpiler use `valid()`)
+    - Fix generated View impls to use `abstractify_*` functions for deep type conversion
+    - Remove duplicate struct definitions from generated component files
+    - Handle extra fields in implementation types (e.g., `CAcceptor.min_vote_opn`)
+  - **Why re-exporting from types_i.rs still doesn't work (yet)**:
+    - Implementation types lack `well_formed()` (generated code calls it on CBallot, CRequest, etc.)
+    - EndPoint and CAppMessage also lack `well_formed()` (called transitively)
     - View conversions differ: types_i uses `abstractify_cvotes()`, types_gen uses `self.votes@`
-  - **Resolution options** (requires architecture decision):
-    1. Keep `#[cfg(test)]` guard (current working state) - generated code verifies independently
-    2. Add `impl View` to implementation types + make generated code not define duplicate structs
-    3. Make transpiler generate code that uses implementation types directly (requires `abstractify_*` support)
+    - Component types have extra fields (e.g., `CAcceptor.min_vote_opn`)
 
 - [x] **V3.4: Fix iterator and function generation** ✅ COMPLETE
   - Root cause: Two code paths for map filter generation in transpiler conjunction handler
@@ -1699,7 +1711,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.7 | ⚠️ Blocked | V3.3 architecture decision needed |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 partial (impl View added, transpiler fixed); V3.6/V3.8 blocked |
 
 **Current State**: With `#[cfg(test)]` guard: **454 verified, 0 errors** ✅ (including hand-written dispatch functions)
 
@@ -1716,12 +1728,14 @@ The fundamental issue is **two parallel type systems** that cannot coexist:
 
 2. **Implementation types** (`types_i.rs`, `acceptorimpl.rs`, etc.):
    - Define same-named types via `define_struct_and_derive_marshalable!` macro
-   - Use inherent `view()` methods (NOT `impl View` trait)
+   - Now have BOTH inherent `view()` AND `impl View` trait (CBallot, CVote, CRequest, CReply, CLearnerTuple)
    - Use deep conversion: `abstractify_cvotes()`, `abstractify_crequestbatch()`
    - Have extra fields (e.g., `CAcceptor.min_vote_opn`)
    - Support marshalling/serialization for network I/O
 
 **Why both can't coexist**: Same type names in different modules create Rust name conflicts.
+
+**New finding**: Generated module was NEVER verified by Verus (excluded by `#[cfg(test)]`). Generated View impls have type errors (shallow `@` doesn't do deep key/value conversion needed for spec types).
 
 **Why re-export doesn't work**: Implementation types lack `impl View` trait, so `@` operator fails.
 

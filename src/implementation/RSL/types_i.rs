@@ -105,6 +105,13 @@ verus! {
         }
     }
 
+    impl View for CBallot {
+        type V = Ballot;
+        open spec fn view(&self) -> Ballot {
+            Ballot{seqno:self.seqno as int, proposer_id:self.proposer_id as int}
+        }
+    }
+
     define_struct_and_derive_marshalable!{
         #[derive(Clone, PartialEq, Eq, Hash)]
         pub struct CRequest {
@@ -356,6 +363,16 @@ verus! {
         pub open spec fn view(self) -> Vote
             recommends self.abstractable()
         {
+            Vote{
+                max_value_bal : self.max_value_bal@,
+                max_val : abstractify_crequestbatch(&self.max_val),
+            }
+        }
+    }
+
+    impl View for CVote {
+        type V = Vote;
+        open spec fn view(&self) -> Vote {
             Vote{
                 max_value_bal : self.max_value_bal@,
                 max_val : abstractify_crequestbatch(&self.max_val),

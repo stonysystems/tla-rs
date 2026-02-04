@@ -274,8 +274,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 eprintln!("Generating types from: {}", input.display());
             }
 
-            // Load config for remappings and imports if provided
-            let (remapping, custom_imports): (HashMap<String, String>, Vec<String>) =
+            // Load config for remappings, naming, and imports if provided
+            let (naming_config, remapping, custom_imports): (NamingConfig, HashMap<String, String>, Vec<String>) =
                 if let Some(config_path) = config {
                     if cli.verbose {
                         eprintln!("Loading config from: {}", config_path.display());
@@ -283,11 +283,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     let file_config = FileConfig::from_file(config_path)
                         .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
                     (
+                        file_config.naming.clone(),
                         file_config.remapping.clone(),
                         file_config.output.custom_imports.clone(),
                     )
                 } else {
-                    (HashMap::new(), Vec::new())
+                    (NamingConfig::default(), HashMap::new(), Vec::new())
                 };
 
             let content = std::fs::read_to_string(input)
@@ -326,7 +327,6 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Generate exec types using the registry function
-            let naming_config = NamingConfig::default();
             let generated = verus_transpiler::codegen::generate_all_types_with_options(
                 &registry,
                 &naming_config,
