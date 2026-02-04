@@ -2,19 +2,69 @@
 // DO NOT EDIT MANUALLY
 
 use vstd::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use crate::common::collections::hashsets::HashSetWellFormed;
 use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::appinterface::CAppMessage;
 use crate::implementation::RSL::cmessage::CPacket;
-use crate::implementation::RSL::types_i::CRequestBatch;
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::protocol::RSL::environment::RslIo;
 use crate::protocol::RSL::replica::LScheduler;
 use crate::protocol::RSL::types::*;
 
 verus! {
+
+// =============================================================================
+// Type Aliases
+// =============================================================================
+
+/// Operation number type alias
+pub type COperationNumber = u64;
+
+/// Request batch type alias
+pub type CRequestBatch = Vec<CRequest>;
+
+/// Reply cache type alias (maps client endpoints to their last reply)
+pub type CReplyCache = HashMap<EndPoint, CReply>;
+
+/// Votes type alias (maps operation numbers to votes)
+pub type CVotes = HashMap<COperationNumber, CVote>;
+
+/// Learner state type alias (maps operation numbers to learner tuples)
+pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
+
+// =============================================================================
+// Well-formed traits for collection types
+// =============================================================================
+
+/// Extension trait providing well_formed for Vec<CRequest>
+pub trait CRequestBatchWellFormed {
+    spec fn well_formed(&self) -> bool;
+}
+
+impl CRequestBatchWellFormed for Vec<CRequest> {
+    #[verifier(inline)]
+    open spec fn well_formed(&self) -> bool {
+        forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].well_formed()
+    }
+}
+
+/// Extension trait providing well_formed for Vec<CLearnerTuple>
+pub trait CLearnerTupleVecWellFormed {
+    spec fn well_formed(&self) -> bool;
+}
+
+impl CLearnerTupleVecWellFormed for Vec<CLearnerTuple> {
+    #[verifier(inline)]
+    open spec fn well_formed(&self) -> bool {
+        forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].well_formed()
+    }
+}
+
+// =============================================================================
+// Struct Definitions
+// =============================================================================
 
 #[derive(Clone)]
 pub struct CVote {
