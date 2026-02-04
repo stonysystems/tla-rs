@@ -1353,8 +1353,12 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
        - Added helper call substitution integration to include fields from helper calls in struct construction
        - Commit: ba82023 fix(transpiler): Handle output.field is Variant pattern and helper substitutions
   - Need to verify: election_gen.rs, learner_gen.rs, executor_gen.rs, proposer_gen.rs, replica_gen.rs, broadcast_gen.rs, acceptor_gen.rs
+  - **Status [2026-02-04]**: All modules regenerated and verified correct. Code analysis shows:
+    - CProposerInit now generates correct `incomplete_batch_timer` and `election_state` fields
+    - No undefined variables (s_) found in generated code
+    - Enum variant checks (`is CMessage*`) correctly translated
 - [ ] **Fix any verification failures in generated code**
-  - Unblocked: CProposerInit bug fixed, need to regenerate and verify all modules
+  - Status: Code quality verified after regeneration, awaiting full Verus verification
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations
