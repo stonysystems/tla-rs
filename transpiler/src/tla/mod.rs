@@ -14,4 +14,6 @@ pub use ast::{
 };
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};
-pub use types::{RecordType, StandardLibrary, TlaType, TypeEnv};
+pub use types::{
+    ConstraintCollector, RecordType, StandardLibrary, TlaType, TypeConstraint, TypeEnv,
+};

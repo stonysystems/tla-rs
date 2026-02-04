@@ -2433,11 +2433,13 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
     - `TypeEnv` for type environment mapping identifiers to types
     - `StandardLibrary` for known TLA+ module type information
     - 10 unit tests
-  - [ ] **T4.1.2: Implement type constraint collection**
+  - [x] **T4.1.2: Implement type constraint collection** ✅ [2026-02-04]
+    - Added `TypeConstraint` enum and `ConstraintCollector` to types.rs (~500 LOC added)
     - Walk AST and collect type constraints from usage patterns
     - Handle `\in Nat`, `\in Int`, `\in BOOLEAN` patterns
     - Handle record field access to infer record types
-    - ~200 LOC
+    - Handle quantifier bounds, function construction, set comprehensions
+    - 6 new tests for constraint collection
   - [ ] **T4.1.3: Implement type unification/resolution**
     - Resolve collected constraints to concrete types
     - Handle conflicts by choosing most specific type or reporting ambiguity
