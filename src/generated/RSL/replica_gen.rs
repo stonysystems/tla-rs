@@ -28,6 +28,7 @@ use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::replica::*;
+use crate::protocol::RSL::environment::RslPacket;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -497,7 +498,7 @@ ensures
 pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)ensures
     result@ == ExtractSentPacketsFromIos(ios@),
 {
-    let mut result: Vec<RslPacket> = Vec::new();
+    let mut result: Vec<CPacket> = Vec::new();
     let iter = (0..ios.len());
     for i in iter:iter
     invariant

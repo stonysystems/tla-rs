@@ -5,7 +5,7 @@ use crate::common::collections::hashsets::HashSetWellFormed;
 use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::appinterface::CAppMessage;
-use crate::implementation::RSL::cmessage::CPacket;
+use crate::implementation::RSL::cmessage::{CMessage, CPacket};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::protocol::RSL::environment::RslIo;
 use crate::protocol::RSL::replica::LScheduler;
@@ -14,6 +14,137 @@ use std::collections::{HashMap, HashSet};
 use vstd::prelude::*;
 
 verus! {
+
+// =============================================================================
+// Type Aliases
+// =============================================================================
+
+/// Concrete operation number type (maps to spec's OperationNumber = int)
+pub type COperationNumber = u64;
+
+/// Concrete request batch type (maps to spec's RequestBatch = Seq<Request>)
+pub type CRequestBatch = Vec<CRequest>;
+
+/// Concrete reply cache type (maps to spec's ReplyCache = Map<AbstractEndPoint, Reply>)
+pub type CReplyCache = HashMap<EndPoint, CReply>;
+
+/// Concrete votes type (maps to spec's Votes = Map<OperationNumber, Vote>)
+pub type CVotes = HashMap<COperationNumber, CVote>;
+
+/// Concrete learner state type (maps to spec's LearnerState = Map<OperationNumber, LearnerTuple>)
+pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
+
+/// Concrete RSL I/O type (maps to spec's RslIo = LIoOp<AbstractEndPoint, RslMessage>)
+pub type CRslIo = LIoOp<EndPoint, CMessage>;
+
+// =============================================================================
+// Ballot Comparison Functions
+// =============================================================================
+
+/// Concrete ballot less-than comparison
+pub fn CBalLt(ba: &CBallot, bb: &CBallot) -> (r: bool)
+    requires
+        ba.well_formed(),
+        bb.well_formed(),
+    ensures
+        r == BalLt(ba@, bb@),
+{
+    ba.seqno < bb.seqno
+        || (ba.seqno == bb.seqno && ba.proposer_id < bb.proposer_id)
+}
+
+/// Concrete ballot less-than-or-equal comparison
+pub fn CBalLeq(ba: &CBallot, bb: &CBallot) -> (r: bool)
+    requires
+        ba.well_formed(),
+        bb.well_formed(),
+    ensures
+        r == BalLeq(ba@, bb@),
+{
+    ba.seqno < bb.seqno
+        || (ba.seqno == bb.seqno && ba.proposer_id <= bb.proposer_id)
+}
+
+// =============================================================================
+// CScheduler Struct
+// =============================================================================
+
+/// Concrete scheduler struct (maps to spec's LScheduler)
+#[derive(Clone)]
+pub struct CScheduler {
+    pub replica: CReplica,
+    pub nextActionIndex: i64,
+}
+
+impl CScheduler {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.replica.valid()
+        &&& 0 <= self.nextActionIndex < 10  // LReplicaNumActions() == 10
+    }
+}
+
+impl View for CScheduler {
+    type V = LScheduler;
+
+    open spec fn view(&self) -> LScheduler {
+        LScheduler {
+            replica: self.replica@,
+            nextActionIndex: self.nextActionIndex as int,
+        }
+    }
+}
+
+// =============================================================================
+// Trait Implementations for Type Aliases
+// =============================================================================
+
+/// Trait for well-formedness of CRequestBatch
+pub trait CRequestBatchWellFormed {
+    spec fn well_formed(&self) -> bool;
+}
+
+impl CRequestBatchWellFormed for CRequestBatch {
+    open spec fn well_formed(&self) -> bool {
+        forall|i: int| 0 <= i < self@.len() ==> (#[trigger] self@[i]).well_formed()
+    }
+}
+
+/// Trait for valid check on CReplyCache
+pub trait CReplyCacheValid {
+    spec fn valid(&self) -> bool;
+}
+
+impl CReplyCacheValid for CReplyCache {
+    open spec fn valid(&self) -> bool {
+        forall|k: EndPoint| self@.contains_key(k) ==> (#[trigger] self@[k]).well_formed()
+    }
+}
+
+/// Trait for valid check on CVotes
+pub trait CVotesValid {
+    spec fn valid(&self) -> bool;
+}
+
+impl CVotesValid for CVotes {
+    open spec fn valid(&self) -> bool {
+        forall|k: COperationNumber| self@.contains_key(k) ==> (#[trigger] self@[k]).well_formed()
+    }
+}
+
+/// Trait for valid check on CLearnerState
+pub trait CLearnerStateValid {
+    spec fn valid(&self) -> bool;
+}
+
+impl CLearnerStateValid for CLearnerState {
+    open spec fn valid(&self) -> bool {
+        forall|k: COperationNumber| self@.contains_key(k) ==> (#[trigger] self@[k]).well_formed()
+    }
+}
+
+// =============================================================================
+// Core Data Structures
+// =============================================================================
 
 #[derive(Clone)]
 pub struct CRequest {
@@ -50,6 +181,11 @@ pub struct CBallot {
 impl CBallot {
     pub open spec fn well_formed(&self) -> bool {
         true
+    }
+
+    /// Alias for well_formed() for compatibility with generated code
+    pub open spec fn valid(&self) -> bool {
+        self.well_formed()
     }
 }
 
