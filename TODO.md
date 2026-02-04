@@ -2357,29 +2357,39 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Also fixed tokenizer to recognize `====` as module closing dashes
   - 14 unit tests for parser functionality
 
-- [ ] **T2.2: Parse operator definitions**
-  - Simple operators: `Op == expr`
-  - Parametrized operators: `Op(a, b) == expr`
-  - Recursive operators with `RECURSIVE`
-  - Infix/prefix/postfix operators
+- [x] **T2.2: Parse operator definitions** ✅ [2026-02-04]
+  - Implemented in T2.1's parser.rs
+  - Simple operators: `Op == expr` ✅
+  - Parametrized operators: `Op(a, b) == expr` ✅
+  - Recursive operators with `RECURSIVE` ✅
+  - Higher-order operators: `Op(F(_), x)` ✅
+  - Note: Custom infix/prefix/postfix operators deferred (rare in practice)
 
-- [ ] **T2.3: Parse expressions**
-  - Set expressions: `{x \in S : P(x)}`, `{f(x) : x \in S}`
-  - Function expressions: `[x \in S |-> f(x)]`, `[f EXCEPT ![i] = v]`
-  - Record expressions: `[a |-> 1, b |-> 2]`
-  - Tuple expressions: `<<a, b, c>>`
-  - IF-THEN-ELSE, CASE, LET-IN
-  - Quantifiers: `\A x \in S : P(x)`, `\E x \in S : P(x)`
+- [x] **T2.3: Parse expressions** ✅ [2026-02-04]
+  - Implemented in T2.1's parser.rs
+  - Set filter: `{x \in S : P(x)}` ✅
+  - Set map: `{f(x) : x \in S}` ✅
+  - Function construction: `[x \in S |-> f(x)]` ✅
+  - Function EXCEPT: `[f EXCEPT ![i] = v]` ✅
+  - Record expressions: `[a |-> 1, b |-> 2]` ✅
+  - Tuple expressions: `<<a, b, c>>` ✅
+  - IF-THEN-ELSE, CASE, LET-IN ✅
+  - Quantifiers: `\A x \in S : P(x)`, `\E x \in S : P(x)` ✅
+  - CHOOSE expression ✅
 
-- [ ] **T2.4: Parse action definitions**
-  - State predicates (Init)
-  - Action predicates (Next) with primed variables (`x'`)
-  - `UNCHANGED` expressions
+- [x] **T2.4: Parse action definitions** ✅ [2026-02-04]
+  - Implemented in T2.1's parser.rs
+  - State predicates (Init) ✅
+  - Action predicates (Next) with primed variables (`x'`) ✅
+  - `UNCHANGED` expressions ✅
 
-- [ ] **T2.5: Parse temporal formulas** (optional, for liveness)
-  - `[]P` (always), `<>P` (eventually)
-  - `P ~> Q` (leads-to)
-  - Fairness: `WF_vars(A)`, `SF_vars(A)`
+- [x] **T2.5: Parse temporal formulas** ✅ [2026-02-04]
+  - Implemented in T2.1's parser.rs
+  - `[]P` (always) ✅
+  - `<>P` (eventually) ✅
+  - `P ~> Q` (leads-to) ✅
+  - `WF_vars(A)` (weak fairness) ✅
+  - `SF_vars(A)` (strong fairness) ✅
 
 #### Phase T3: TLA+ AST Definition
 - [x] **T3.1: Define core AST types** [2026-02-04]

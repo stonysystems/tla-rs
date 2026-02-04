@@ -418,19 +418,31 @@ impl TlaParser {
         Ok(left)
     }
 
-    /// Parse implication expressions
+    /// Parse implication expressions (and leads-to)
     fn parse_implies_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_comparison_expr()?;
 
-        while self.check(TlaTokenKind::Implies) || self.check(TlaTokenKind::Iff) {
-            let op = if self.check(TlaTokenKind::Implies) {
-                TlaBinOp::Implies
+        while self.check(TlaTokenKind::Implies)
+            || self.check(TlaTokenKind::Iff)
+            || self.check(TlaTokenKind::LeadsTo)
+        {
+            if self.check(TlaTokenKind::LeadsTo) {
+                self.advance();
+                let right = self.parse_comparison_expr()?;
+                left = TlaExpr::LeadsTo {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
             } else {
-                TlaBinOp::Iff
-            };
-            self.advance();
-            let right = self.parse_comparison_expr()?;
-            left = TlaExpr::binop(op, left, right);
+                let op = if self.check(TlaTokenKind::Implies) {
+                    TlaBinOp::Implies
+                } else {
+                    TlaBinOp::Iff
+                };
+                self.advance();
+                let right = self.parse_comparison_expr()?;
+                left = TlaExpr::binop(op, left, right);
+            }
         }
 
         Ok(left)
@@ -681,6 +693,27 @@ impl TlaParser {
                 let operand = self.parse_unary_expr()?;
                 Ok(TlaExpr::Eventually(Box::new(operand)))
             }
+            // Fairness operators
+            Some(TlaTokenKind::WeakFairness(vars)) => {
+                self.advance();
+                self.expect(TlaTokenKind::LParen)?;
+                let action = self.parse_expr()?;
+                self.expect(TlaTokenKind::RParen)?;
+                Ok(TlaExpr::WeakFairness {
+                    vars: Box::new(TlaExpr::ident(vars)),
+                    action: Box::new(action),
+                })
+            }
+            Some(TlaTokenKind::StrongFairness(vars)) => {
+                self.advance();
+                self.expect(TlaTokenKind::LParen)?;
+                let action = self.parse_expr()?;
+                self.expect(TlaTokenKind::RParen)?;
+                Ok(TlaExpr::StrongFairness {
+                    vars: Box::new(TlaExpr::ident(vars)),
+                    action: Box::new(action),
+                })
+            }
             Some(kind) => Err(TlaParseError::new(
                 format!("Unexpected token in expression: {:?}", kind),
                 self.current_span(),
@@ -690,6 +723,10 @@ impl TlaParser {
     }
 
     /// Parse set enumeration or comprehension
+    /// Handles:
+    /// - Set enumeration: `{1, 2, 3}`
+    /// - Set filter: `{x \in S : P(x)}`
+    /// - Set map: `{f(x) : x \in S}`
     fn parse_set_expr_inner(&mut self) -> ParseResult<TlaExpr> {
         self.expect(TlaTokenKind::LBrace)?;
 
@@ -704,30 +741,46 @@ impl TlaParser {
 
         // Check for set comprehension patterns
         if self.check(TlaTokenKind::Colon) {
-            // Set filter: {x \in S : P(x)} - but we already parsed x, need to check pattern
-            // This case is tricky, simplified for now
             self.advance();
-            let filter = self.parse_expr()?;
+            let second = self.parse_expr()?;
             self.expect(TlaTokenKind::RBrace)?;
 
-            // Assume first was a variable bound by \in earlier in parsing
-            // This is simplified - proper implementation needs lookahead
+            // Determine if this is filter or map based on structure:
+            // Filter: {x \in S : P(x)} - first is "x \in S", second is predicate
+            // Map: {f(x) : x \in S} - first is expression, second is "x \in S"
             if let TlaExpr::BinOp {
                 op: TlaBinOp::In,
                 left,
                 right,
-            } = first
+            } = &first
             {
-                if let TlaExpr::Ident(var) = *left {
+                // Filter form: {x \in S : P(x)}
+                if let TlaExpr::Ident(var) = left.as_ref() {
                     return Ok(TlaExpr::SetFilter {
-                        var,
-                        set: right,
-                        filter: Box::new(filter),
+                        var: var.clone(),
+                        set: right.clone(),
+                        filter: Box::new(second),
                     });
                 }
             }
 
-            // Fallback: treat as two-element set with colon (unusual)
+            // Check if second is the binding (map form)
+            if let TlaExpr::BinOp {
+                op: TlaBinOp::In,
+                left,
+                right,
+            } = &second
+            {
+                // Map form: {f(x) : x \in S}
+                if let TlaExpr::Ident(var) = left.as_ref() {
+                    return Ok(TlaExpr::SetMap {
+                        expr: Box::new(first),
+                        var: var.clone(),
+                        set: right.clone(),
+                    });
+                }
+            }
+
             return Err(TlaParseError::new(
                 "Invalid set comprehension syntax",
                 self.current_span(),
@@ -1362,5 +1415,94 @@ mod tests {
             TlaExpr::Unchanged(vars) => assert_eq!(vars.len(), 2),
             _ => panic!("Expected Unchanged"),
         }
+    }
+
+    #[test]
+    fn test_parse_leads_to() {
+        let source = r"
+            ---- MODULE Test ----
+            Liveness == P ~> Q
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let op = &module.operators[0];
+        match &op.body {
+            TlaExpr::LeadsTo { left, right } => {
+                assert!(matches!(**left, TlaExpr::Ident(_)));
+                assert!(matches!(**right, TlaExpr::Ident(_)));
+            }
+            _ => panic!("Expected LeadsTo"),
+        }
+    }
+
+    #[test]
+    fn test_parse_set_map() {
+        let source = r"
+            ---- MODULE Test ----
+            Doubles == {x * 2 : x \in S}
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let op = &module.operators[0];
+        match &op.body {
+            TlaExpr::SetMap { var, .. } => assert_eq!(var, "x"),
+            _ => panic!("Expected SetMap, got {:?}", op.body),
+        }
+    }
+
+    #[test]
+    fn test_parse_weak_fairness() {
+        let source = r"
+            ---- MODULE Test ----
+            Fair == WF_vars(Next)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let op = &module.operators[0];
+        match &op.body {
+            TlaExpr::WeakFairness { vars, action } => {
+                if let TlaExpr::Ident(v) = vars.as_ref() {
+                    assert_eq!(v, "vars");
+                } else {
+                    panic!("Expected Ident for vars");
+                }
+                assert!(matches!(**action, TlaExpr::Ident(_)));
+            }
+            _ => panic!("Expected WeakFairness, got {:?}", op.body),
+        }
+    }
+
+    #[test]
+    fn test_parse_strong_fairness() {
+        let source = r"
+            ---- MODULE Test ----
+            Fair == SF_x(Action)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let op = &module.operators[0];
+        match &op.body {
+            TlaExpr::StrongFairness { vars, action } => {
+                if let TlaExpr::Ident(v) = vars.as_ref() {
+                    assert_eq!(v, "x");
+                } else {
+                    panic!("Expected Ident for vars");
+                }
+                assert!(matches!(**action, TlaExpr::Ident(_)));
+            }
+            _ => panic!("Expected StrongFairness, got {:?}", op.body),
+        }
+    }
+
+    #[test]
+    fn test_parse_temporal_spec() {
+        let source = r"
+            ---- MODULE Test ----
+            Spec == Init /\ []Next /\ WF_vars(Next)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.operators.len(), 1);
+        // Just verify it parses without error - complex expression structure
     }
 }

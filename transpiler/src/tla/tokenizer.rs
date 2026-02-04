@@ -108,10 +108,12 @@ pub enum TlaTokenKind {
     False,   // FALSE
 
     // Temporal Operators
-    Always,     // []
-    Eventually, // <>
-    LeadsTo,    // ~>
-    PlusMinus,  // -+->
+    Always,                 // []
+    Eventually,             // <>
+    LeadsTo,                // ~>
+    PlusMinus,              // -+->
+    WeakFairness(String),   // WF_vars (stores the subscript "vars")
+    StrongFairness(String), // SF_vars (stores the subscript "vars")
 
     // Arithmetic Operators
     Plus,
@@ -220,6 +222,8 @@ impl fmt::Display for TlaTokenKind {
             TlaTokenKind::Eventually => write!(f, "<>"),
             TlaTokenKind::LeadsTo => write!(f, "~>"),
             TlaTokenKind::PlusMinus => write!(f, "-+->"),
+            TlaTokenKind::WeakFairness(ref vars) => write!(f, "WF_{}", vars),
+            TlaTokenKind::StrongFairness(ref vars) => write!(f, "SF_{}", vars),
             TlaTokenKind::Plus => write!(f, "+"),
             TlaTokenKind::Minus => write!(f, "-"),
             TlaTokenKind::Star => write!(f, "*"),
@@ -905,7 +909,16 @@ impl<'a> TlaTokenizer<'a> {
             "CHOOSE" => TlaTokenKind::Choose,
             "TRUE" => TlaTokenKind::True,
             "FALSE" => TlaTokenKind::False,
-            _ => TlaTokenKind::Ident(name),
+            _ => {
+                // Check for WF_ and SF_ prefixes (fairness operators)
+                if let Some(subscript) = name.strip_prefix("WF_") {
+                    TlaTokenKind::WeakFairness(subscript.to_string())
+                } else if let Some(subscript) = name.strip_prefix("SF_") {
+                    TlaTokenKind::StrongFairness(subscript.to_string())
+                } else {
+                    TlaTokenKind::Ident(name)
+                }
+            }
         };
 
         Ok(kind)
@@ -1113,6 +1126,18 @@ mod tests {
                 TlaTokenKind::Always,
                 TlaTokenKind::Eventually,
                 TlaTokenKind::LeadsTo,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_fairness_operators() {
+        let kinds = token_kinds("WF_vars SF_x").unwrap();
+        assert_eq!(
+            kinds,
+            vec![
+                TlaTokenKind::WeakFairness("vars".to_string()),
+                TlaTokenKind::StrongFairness("x".to_string()),
             ]
         );
     }
