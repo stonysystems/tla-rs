@@ -329,6 +329,8 @@ pub struct TransformContext<'a> {
     /// Maps (output_var, field) pairs to substitution variable names
     /// e.g., ("s_", "proposer") -> "s_proposer"
     pub field_substitutions: HashMap<(String, String), String>,
+    /// Counter for generating unique temporary variable names
+    pub temp_var_counter: std::cell::RefCell<usize>,
 }
 
 /// Information about a helper predicate call with output arguments
@@ -2308,6 +2310,7 @@ impl Translator {
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Transform the element expression, substituting s[0] with seq[i]
@@ -2494,6 +2497,7 @@ impl Translator {
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Transform init expression
@@ -2587,6 +2591,7 @@ impl Translator {
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Transform the predicate expression, substituting s[0] with seq[i]
@@ -2985,6 +2990,7 @@ impl Translator {
                 .collect(),
             output_types,
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
@@ -3023,6 +3029,7 @@ impl Translator {
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
@@ -3258,7 +3265,15 @@ impl Translator {
                 "bool" => ExecType::Named("bool".to_string()),
                 "int" => ExecType::Named("i64".to_string()),
                 "nat" => ExecType::Named("u64".to_string()),
-                _ => ExecType::Named(self.translate_name(type_str)),
+                _ => {
+                    // Check if type already starts with exec prefix (e.g., CRequest from annotation)
+                    // to avoid double-prefixing (CCRequest)
+                    if type_str.starts_with(&self.config.exec_prefix) {
+                        ExecType::Named(type_str.to_string())
+                    } else {
+                        ExecType::Named(self.translate_name(type_str))
+                    }
+                }
             }
         }
     }
@@ -4257,6 +4272,7 @@ impl Translator {
                         input_params: ctx.input_params.clone(),
                         output_types: ctx.output_types.clone(),
                         field_substitutions: ctx.field_substitutions.clone(),
+                        temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
                     }
                 };
 
@@ -5390,6 +5406,7 @@ impl Translator {
             input_params: ctx.input_params.clone(),
             output_types: ctx.output_types.clone(),
             field_substitutions: new_subs,
+            temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
         }
     }
 
@@ -5849,6 +5866,19 @@ impl Translator {
     }
 
     /// Transform a binary operation
+    ///
+    /// When operands produce Block expressions (e.g., from quantifier loops),
+    /// we hoist them into let bindings to avoid invalid syntax like:
+    /// `a && { let x = ...; loop { ... }; result }`
+    ///
+    /// Instead, we generate:
+    /// ```text
+    /// {
+    ///     let __lhs_result = { loop_block };
+    ///     let __rhs_result = { other_block };
+    ///     __lhs_result && __rhs_result
+    /// }
+    /// ```
     fn transform_binary_op(
         &self,
         lhs: &Expr,
@@ -5858,11 +5888,60 @@ impl Translator {
     ) -> TranspileResult<ExecExpr> {
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
-        Ok(ExecExpr::Binary {
-            lhs: Box::new(lhs_expr),
+
+        // Check if either operand is a Block that needs hoisting
+        let lhs_is_block = matches!(lhs_expr, ExecExpr::Block(_));
+        let rhs_is_block = matches!(rhs_expr, ExecExpr::Block(_));
+
+        if !lhs_is_block && !rhs_is_block {
+            // Simple case: no blocks to hoist
+            return Ok(ExecExpr::Binary {
+                lhs: Box::new(lhs_expr),
+                op: op.to_string(),
+                rhs: Box::new(rhs_expr),
+            });
+        }
+
+        // We need to hoist block expressions into let bindings
+        let mut stmts = Vec::new();
+        let mut counter = ctx.temp_var_counter.borrow_mut();
+
+        let final_lhs = if lhs_is_block {
+            let var_name = format!("__lhs_{}", *counter);
+            *counter += 1;
+            stmts.push(ExecExpr::Let {
+                pattern: var_name.clone(),
+                ty: None,
+                value: Box::new(lhs_expr),
+            });
+            ExecExpr::Var(var_name)
+        } else {
+            lhs_expr
+        };
+
+        let final_rhs = if rhs_is_block {
+            let var_name = format!("__rhs_{}", *counter);
+            *counter += 1;
+            stmts.push(ExecExpr::Let {
+                pattern: var_name.clone(),
+                ty: None,
+                value: Box::new(rhs_expr),
+            });
+            ExecExpr::Var(var_name)
+        } else {
+            rhs_expr
+        };
+
+        drop(counter); // Release the borrow
+
+        // Add the final binary expression
+        stmts.push(ExecExpr::Binary {
+            lhs: Box::new(final_lhs),
             op: op.to_string(),
-            rhs: Box::new(rhs_expr),
-        })
+            rhs: Box::new(final_rhs),
+        });
+
+        Ok(ExecExpr::Block(stmts))
     }
 
     /// Format a literal value
@@ -7894,6 +7973,7 @@ mod tests {
             input_params: vec!["s".to_string(), "inp".to_string()],
             output_types,
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         }
     }
 
@@ -8330,6 +8410,7 @@ mod tests {
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Build: s_ == s &&& sent_packets == Seq::empty()
@@ -8377,6 +8458,7 @@ mod tests {
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Build: LProposerProcessRequest(s.proposer, s_.proposer, received_packet)
@@ -8465,6 +8547,7 @@ mod tests {
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
             field_substitutions,
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Test: s_.proposer should be substituted to s_proposer
@@ -8501,6 +8584,7 @@ mod tests {
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Build the conjunction
@@ -8627,6 +8711,7 @@ mod tests {
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Build the conjunction
@@ -8751,6 +8836,7 @@ mod tests {
             input_params: vec!["votes".to_string(), "log_truncation_point".to_string()],
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Build the three foralls
@@ -9034,6 +9120,7 @@ mod tests {
             input_params: vec!["c".to_string()],
             output_types: HashMap::new(),
             field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         // Build the pattern:
@@ -9129,6 +9216,7 @@ mod tests {
             ],
             output_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
         };
 
         let binding = crate::ast::Binding {

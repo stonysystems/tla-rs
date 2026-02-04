@@ -281,6 +281,7 @@ fn test_expression_transformation() {
         input_params: vec!["inp".to_string()],
         output_types,
         field_substitutions: HashMap::new(),
+        temp_var_counter: std::cell::RefCell::new(0),
     };
 
     // Test method call transformation

@@ -177,7 +177,18 @@ impl Printer {
                     self.write(&ty.to_rust_string());
                 }
                 self.write(" = ");
-                self.print_expr(value);
+                // If value is a Block, wrap it in curly braces
+                if matches!(value.as_ref(), ExecExpr::Block(_)) {
+                    self.write("{");
+                    self.newline();
+                    self.current_indent += 1;
+                    self.print_expr(value);
+                    self.current_indent -= 1;
+                    self.indent();
+                    self.write("}");
+                } else {
+                    self.print_expr(value);
+                }
                 self.write(";");
             }
 
@@ -616,9 +627,17 @@ impl Printer {
             ExecExpr::IsVariant { expr, variant } => {
                 // Verus native syntax: expr is Variant
                 // This works with -> syntax unlike matches!()
+                // Note: variant may contain full path like "CUpperBound::CUpperBoundFinite"
+                // but Verus `is` syntax expects just the variant name "CUpperBoundFinite"
                 self.print_expr(expr);
                 self.write(" is ");
-                self.write(variant);
+                // Extract just the variant name if it contains ::
+                let variant_name = if let Some(pos) = variant.rfind("::") {
+                    &variant[pos + 2..]
+                } else {
+                    variant.as_str()
+                };
+                self.write(variant_name);
             }
 
             ExecExpr::ArrowAccess { base, field } => {

@@ -44,6 +44,7 @@ custom_imports = [
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cconfiguration::*;",
     "use crate::implementation::common::upper_bound_i::*;",
+    "use crate::implementation::common::upper_bound::*;",
     "use crate::protocol::RSL::election::*;",
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::RSL::configuration::*;",

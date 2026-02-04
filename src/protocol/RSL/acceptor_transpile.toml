@@ -39,7 +39,7 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    "use crate::implementation::RSL::acceptorimpl::CAcceptor;",
+    # CAcceptor is generated inline, no import needed
     "use crate::protocol::RSL::acceptor::*;",
     "use crate::protocol::RSL::types::*;",
 ]

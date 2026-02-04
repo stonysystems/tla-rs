@@ -13,29 +13,37 @@ use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
-use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
-use crate::implementation::RSL::ReplicaImpl::CReplica;
-use crate::implementation::RSL::ElectionImpl::CElectionState;
-use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
-use crate::implementation::RSL::appinterface::CAppStateInit;
-use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::common::upper_bound::*;
-use crate::protocol::RSL::configuration::WellFormedLConfiguration;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::learner::*;
-use crate::protocol::RSL::executor::*;
-use crate::protocol::RSL::replica::*;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
-use crate::protocol::common::upper_bound::*;
 
 verus! {
+
+#[derive(Clone)]
+pub struct CLearner {
+    pub constants: CReplicaConstants,
+    pub max_ballot_seen: CBallot,
+    pub unexecuted_learner_state: CLearnerState,
+}
+
+impl CLearner {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.constants.valid()
+        &&& self.max_ballot_seen.valid()
+        &&& self.unexecuted_learner_state.valid()
+    }
+}
+
+impl View for CLearner {
+    type V = LLearner;
+
+    open spec fn view(&self) -> LLearner {
+        LLearner {
+            constants: self.constants@,
+            max_ballot_seen: self.max_ballot_seen@,
+            unexecuted_learner_state: self.unexecuted_learner_state@,
+        }
+    }
+}
 
 pub exec fn CLearnerInit(c: &CReplicaConstants) -> (result: CLearner)
 requires
@@ -54,11 +62,11 @@ CLearner {
     }
 }
 
-pub exec fn CLearnerProcess2b(s: &CLearner, packet: &CPacket) -> (result: CLearner)
+pub exec fn CLearnerProcess2b(s: &CLearner, packet: &CRslPacket) -> (result: CLearner)
 requires
     s.valid(),
     packet.valid(),
-    packet.msg is CMessage2b,
+    packet.msg is CRslMessage2b,
 ensures
     result.valid(),
     LLearnerProcess2b(s@, result@, packet@),
@@ -115,9 +123,10 @@ ensures
 
 }
 
-pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &COperationNumber) -> (result: CLearner)
+pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &u64) -> (result: CLearner)
 requires
     s.valid(),
+    opn.valid(),
 ensures
     result.valid(),
     LLearnerForgetDecision(s@, result@, opn@),
@@ -133,9 +142,10 @@ if s.unexecuted_learner_state.contains_key(opn) {
     }
 }
 
-pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &COperationNumber) -> (result: CLearner)
+pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &u64) -> (result: CLearner)
 requires
     s.valid(),
+    ops_complete.valid(),
 ensures
     result.valid(),
     LLearnerForgetOperationsBefore(s@, result@, ops_complete@),

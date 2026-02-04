@@ -2,42 +2,19 @@
 // DO NOT EDIT MANUALLY
 
 use vstd::prelude::*;
-use vstd::map::*;
-use vstd::set::*;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use crate::common::collections::sets::*;
-use crate::common::collections::hashsets::*;
+use vstd::seq::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
-use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
-use crate::implementation::RSL::ReplicaImpl::CReplica;
-use crate::implementation::RSL::ElectionImpl::CElectionState;
-use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
-use crate::implementation::RSL::appinterface::CAppStateInit;
-use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::common::upper_bound::*;
-use crate::protocol::RSL::configuration::WellFormedLConfiguration;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::proposer::*;
-use crate::protocol::RSL::learner::*;
-use crate::protocol::RSL::executor::*;
-use crate::protocol::RSL::replica::*;
-use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
-use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::configuration::*;
 
 verus! {
 
-pub exec fn CBroadcastToEveryone(c: &CConfiguration, myidx: &i64, m: &CMessage) -> (result: Vec<CPacket>)
+pub exec fn CBroadcastToEveryone(c: &CConfiguration, myidx: &i64, m: &CRslMessage) -> (result: Vec<CRslPacket>)
 requires
     c.valid(),
     m.valid(),
@@ -49,6 +26,31 @@ ensures
     src: c.replica_ids[myidx],
     msg: m.clone(),
 }).collect()
+}
+
+pub exec fn CBuildLBroadcast(src: &CAbstractEndPoint, dsts: &Vec<CAbstractEndPoint>, m: &CRslMessage) -> (result: Vec<CPacket>)
+requires
+    src.valid(),
+    m.valid(),
+ensures
+    result@ == BuildLBroadcast(src@, dsts@, m@),
+{
+    let mut result: Vec<RslPacket> = Vec::new();
+    let iter = (0..dsts.len());
+    for i in iter:iter
+    invariant
+        i <= dsts.len(),
+        result.len() == i,
+        result@ == dsts@.take(i as int).map(|x: RslPacket| /* expr */),
+    {
+        result.push(CPacket {
+    dst: dsts[i],
+    src: src.clone(),
+    msg: m.clone(),
+}.clone())
+    }
+    result
+
 }
 
 } // verus!
