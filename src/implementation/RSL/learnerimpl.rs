@@ -709,4 +709,16 @@ verus! {
             assert(items.len() == m@.len());
         }
     }
+
+    impl View for CLearner {
+        type V = LLearner;
+
+        open spec fn view(&self) -> LLearner {
+            LLearner {
+                constants: self.constants.view(),
+                max_ballot_seen: self.max_ballot_seen.view(),
+                unexecuted_learner_state: abstractify_clearnerstate(self.unexecuted_learner_state),
+            }
+        }
+    }
 }

@@ -1643,10 +1643,13 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - ~~Generated code calls `well_formed()` on types that only have `valid()`~~ ✅ FIXED
     - Changed `types_transpile.toml` to use `validity_predicate_name = "valid"`
     - Fixed transpiler to pass `validity_predicate_name` through `generate_all_types_with_options()`
-  - **Remaining Problem**: Component files still define DUPLICATE types
-    - `acceptor_gen.rs` defines: CAcceptor (conflicts with `acceptorimpl.rs::CAcceptor`)
-    - `learner_gen.rs` defines: CLearner (conflicts with `learnerimpl.rs::CLearner`)
-    - `executor_gen.rs` defines: CExecutor (conflicts with `ExecutorImpl.rs::CExecutor`)
+  - ~~**Duplicate CLearner** between `learner_gen.rs` and `learnerimpl.rs`~~ ✅ FIXED
+    - `learner_gen.rs` now imports CLearner from `learnerimpl.rs` (identical fields, no extra fields)
+    - Added `impl View for CLearner` to `learnerimpl.rs` (deep conversion via `abstractify_clearnerstate`)
+  - **Remaining Problem**: Two component files still define DUPLICATE types
+    - `acceptor_gen.rs` defines CAcceptor - **cannot import from impl yet**: impl has extra `min_vote_opn` field
+    - `executor_gen.rs` defines CExecutor - **cannot import from impl yet**: `ops_complete` is `i64` in gen vs `u64` in impl
+    - `executor_gen.rs` defines COutstandingOperation - variant names differ: gen uses `OutstandingOpKnown` vs impl uses `COutstandingOpKnown`
   - **Critical finding**: Generated module is NOT verified during Verus runs
     - `#[cfg(test)]` excludes it from `verus --crate-type=lib` (confirmed: 0 generated functions in verification output)
     - Generated code has View type mismatches that were never caught (e.g., `Map<u64, CVote>` vs `Map<int, Vote>`)
@@ -1654,19 +1657,24 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - ✅ Added `impl View for CBallot` to types_i.rs (matches inherent `view()` semantics)
     - ✅ Added `impl View for CVote` to types_i.rs (uses `abstractify_crequestbatch`)
     - ✅ CRequest, CReply, CLearnerTuple already have `impl View` in types_i.rs
+    - ✅ Added `impl View for CAcceptor` to acceptorimpl.rs (deep conversion via `abstractify_cvotes`)
+    - ✅ Added `impl View for CLearner` to learnerimpl.rs (deep conversion via `abstractify_clearnerstate`)
+    - ✅ Added `impl View for CExecutor` to ExecutorImpl.rs (deep conversion via `abstractify_creplycache`)
+    - ✅ Added `impl View for COutstandingOperation` to ExecutorImpl.rs (deep conversion via `abstractify_crequestbatch`)
     - ✅ Fixed transpiler `TypeGenerator` to use `int_type`/`nat_type` from config (was hardcoded `i64`/`u64`)
     - ✅ Fixed `generate-types` subcommand to load `[naming]` config from TOML (was using default)
     - ✅ Regenerated types now use `u64` fields matching implementation types
     - ✅ `types_gen.rs` rewritten to re-export from `types_i.rs` (basic types unified)
+    - ✅ `learner_gen.rs` now imports CLearner from `learnerimpl.rs` (struct dedup complete)
     - ✅ Transpiler `validity_predicate_name` is configurable and passed through correctly
   - **Remaining work for V3.3**:
-    - Fix generated View impls in component files to use `abstractify_*` for deep type conversion
-    - Remove duplicate struct definitions from generated component files (acceptor, learner, executor)
-    - Handle extra fields in implementation types (e.g., `CAcceptor.min_vote_opn`)
-  - **Re-exporting now works for basic types** (CBallot, CVote, CRequest, CReply, CLearnerTuple)
-    - `types_gen.rs` successfully re-exports from `types_i.rs`
-    - All basic types have both `impl View` trait AND `valid()` predicates
-    - Remaining issue: component types (CAcceptor, CLearner, CExecutor) still duplicated in `*_gen.rs` files
+    - Fix `acceptor_gen.rs` to handle extra `min_vote_opn` field in impl CAcceptor (or add to generated spec)
+    - Fix `executor_gen.rs` `ops_complete` type mismatch (`i64` → `u64`) and variant naming (`OutstandingOpKnown` → `COutstandingOpKnown`)
+    - Once field/type mismatches resolved, remove remaining duplicate struct defs from gen files
+  - **Re-exporting status** for component types:
+    - ✅ CLearner: fully deduplicated (imports from `learnerimpl.rs`)
+    - ❌ CAcceptor: impl has extra `min_vote_opn` field, gen functions construct without it
+    - ❌ CExecutor: `ops_complete` is `i64` in gen vs `u64` in impl; COutstandingOperation variant names differ
 
 - [x] **V3.4: Fix iterator and function generation** ✅ COMPLETE
   - Root cause: Two code paths for map filter generation in transpiler conjunction handler
@@ -1715,7 +1723,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 partial (basic types unified, component types remain); V3.6/V3.8 blocked |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 partial (basic types + CLearner unified; CAcceptor/CExecutor blocked on field mismatches); V3.6/V3.8 blocked |
 
 **Current State**: With `#[cfg(test)]` guard: **454 verified, 0 errors** ✅ (including hand-written dispatch functions)
 
@@ -1741,11 +1749,12 @@ The fundamental issue is **two parallel type systems** that cannot coexist:
 
 **New finding**: Generated module was NEVER verified by Verus (excluded by `#[cfg(test)]`). Generated View impls have type errors (shallow `@` doesn't do deep key/value conversion needed for spec types).
 
-**Re-export now works for basic types**: `types_gen.rs` re-exports from `types_i.rs`. All basic types
-(CBallot, CVote, CRequest, CReply, CLearnerTuple) have `impl View` trait and `valid()` predicates.
+**Re-export status**: `types_gen.rs` re-exports basic types from `types_i.rs`. `learner_gen.rs` imports
+CLearner from `learnerimpl.rs`. All implementation types now have `impl View` trait for `@` operator.
 
-**Remaining blocker**: Component types (CAcceptor, CLearner, CExecutor) are still duplicated in
-`*_gen.rs` files. These have extra fields and need deep View conversion via `abstractify_*` functions.
+**Remaining blockers for full dedup**: CAcceptor has extra `min_vote_opn` field in impl;
+CExecutor has `ops_complete` type mismatch (`i64` in gen vs `u64` in impl) and COutstandingOperation
+variant naming differences (`OutstandingOpKnown` vs `COutstandingOpKnown`).
 
 **Completed fixes**:
 - ✅ `int_type`/`nat_type` config options (u64 instead of i64)
@@ -1754,6 +1763,8 @@ The fundamental issue is **two parallel type systems** that cannot coexist:
 - ✅ Hand-written dispatch functions (CReplicaNextProcessPacket, etc.)
 - ✅ `types_gen.rs` re-exports from `types_i.rs` (basic type duplication eliminated)
 - ✅ `validity_predicate_name` config option (transpiler generates `valid()` instead of `well_formed()`)
+- ✅ `impl View` added to ALL component types (CAcceptor, CLearner, CExecutor, COutstandingOperation)
+- ✅ `learner_gen.rs` imports CLearner from `learnerimpl.rs` (struct dedup complete)
 
 **Success Criteria** (all must pass):
 - [ ] `cargo run -- --tla-input TwoPhase.tla --exec-output two_phase.rs` produces runnable code

@@ -619,6 +619,20 @@ verus! {
 
 }
 
+    impl View for CAcceptor {
+        type V = LAcceptor;
+
+        open spec fn view(&self) -> LAcceptor {
+            LAcceptor {
+                constants: self.constants.view(),
+                max_bal: self.max_bal.view(),
+                votes: abstractify_cvotes(&self.votes),
+                last_checkpointed_operation: self.last_checkpointed_operation@.map(|i, c: COperationNumber| AbstractifyCOperationNumberToOperationNumber(c)),
+                log_truncation_point: AbstractifyCOperationNumberToOperationNumber(self.log_truncation_point),
+            }
+        }
+    }
+
     pub fn CIsLogTruncationPointValid(log_truncation_point: COperationNumber,last_checkpointed_operation:&Vec<COperationNumber>,config:&CConfiguration) -> (isValid: bool)
         requires
             COperationNumberIsValid(log_truncation_point),

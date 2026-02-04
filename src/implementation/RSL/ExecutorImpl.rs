@@ -81,6 +81,22 @@ impl COutstandingOperation{
 
 }
 
+impl View for COutstandingOperation {
+    type V = OutstandingOperation;
+
+    open spec fn view(&self) -> OutstandingOperation {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                OutstandingOperation::OutstandingOpKnown{
+                    v: abstractify_crequestbatch(v),
+                    bal: bal@,
+                }
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => OutstandingOperation::OutstandingOpUnknown{},
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct CExecutor {
     pub constants: CReplicaConstants,
@@ -700,6 +716,21 @@ impl CExecutor{
 
     }
 
+}
+
+impl View for CExecutor {
+    type V = LExecutor;
+
+    open spec fn view(&self) -> LExecutor {
+        LExecutor {
+            constants: self.constants.view(),
+            app: self.app,
+            ops_complete: self.ops_complete as int,
+            max_bal_reflected: self.max_bal_reflected.view(),
+            next_op_to_execute: self.next_op_to_execute.view(),
+            reply_cache: abstractify_creplycache(&self.reply_cache),
+        }
+    }
 }
 
     #[verifier(external_body)]
