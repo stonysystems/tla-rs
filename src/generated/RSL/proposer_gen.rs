@@ -59,6 +59,8 @@ ensures
         highest_seqno_requested_by_client_this_view: HashMap::new(),
         incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOff,
         election_state: s_election_state,
+        max_opn_with_proposal: 0,
+        max_log_truncation_point: 0,
     }
 
 }
@@ -89,6 +91,8 @@ ensures
             highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.insert(val.client, val.seqno),
             incomplete_batch_timer: s.incomplete_batch_timer,
             election_state: s_election_state,
+            max_opn_with_proposal: s.max_opn_with_proposal,
+            max_log_truncation_point: s.max_log_truncation_point,
         }
     } else {
         CProposer {
@@ -101,6 +105,8 @@ ensures
             highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
             incomplete_batch_timer: s.incomplete_batch_timer,
             election_state: s_election_state,
+            max_opn_with_proposal: s.max_opn_with_proposal,
+            max_log_truncation_point: s.max_log_truncation_point,
         }
     }
 
@@ -128,6 +134,8 @@ if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalL
     highest_seqno_requested_by_client_this_view: HashMap::new(),
     incomplete_batch_timer: s.incomplete_batch_timer,
     election_state: s.election_state,
+    max_opn_with_proposal: s.max_opn_with_proposal,
+    max_log_truncation_point: s.max_log_truncation_point,
 }, sent_packets)
 
     } else {
@@ -158,6 +166,8 @@ CProposer {
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
         incomplete_batch_timer: s.incomplete_batch_timer,
         election_state: s.election_state,
+        max_opn_with_proposal: s.max_opn_with_proposal,
+        max_log_truncation_point: s.max_log_truncation_point,
     }
 }
 
@@ -183,6 +193,8 @@ if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && 
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: s.incomplete_batch_timer,
     election_state: s.election_state,
+    max_opn_with_proposal: s.max_opn_with_proposal,
+    max_log_truncation_point: s.max_log_truncation_point,
 }, sent_packets)
 
     } else {
@@ -228,6 +240,8 @@ ensures
         }
     },
     election_state: s.election_state,
+    max_opn_with_proposal: s.max_opn_with_proposal,
+    max_log_truncation_point: s.max_log_truncation_point,
 }, sent_packets)
 
 
@@ -255,6 +269,8 @@ ensures
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: s.incomplete_batch_timer,
     election_state: s.election_state,
+    max_opn_with_proposal: s.max_opn_with_proposal,
+    max_log_truncation_point: s.max_log_truncation_point,
 } && crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
@@ -292,6 +308,8 @@ if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
         when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
     },
     election_state: s.election_state,
+    max_opn_with_proposal: s.max_opn_with_proposal,
+    max_log_truncation_point: s.max_log_truncation_point,
 }, vec![])
                 } else {
                     (s.clone(), vec![])
@@ -341,6 +359,8 @@ ensures
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
         incomplete_batch_timer: s.incomplete_batch_timer,
         election_state: s_election_state,
+        max_opn_with_proposal: s.max_opn_with_proposal,
+        max_log_truncation_point: s.max_log_truncation_point,
     }
 
 }
@@ -383,6 +403,8 @@ ensures
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
         incomplete_batch_timer: s.incomplete_batch_timer,
         election_state: s_election_state,
+        max_opn_with_proposal: s.max_opn_with_proposal,
+        max_log_truncation_point: s.max_log_truncation_point,
     }
 
 }

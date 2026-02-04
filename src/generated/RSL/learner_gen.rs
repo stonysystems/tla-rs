@@ -16,6 +16,7 @@ use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
 

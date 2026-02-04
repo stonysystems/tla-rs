@@ -13,7 +13,9 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ✅ **454 verified, 0 errors** with `#[cfg(test)]` guard on generated module.
 
-**V3.3 COMPLETE**: All duplicate type definitions eliminated. Generated files now import types from implementation modules. All implementation types have `impl View` trait. Next step: V3.6 (remove `#[cfg(test)]` guards).
+**V3.3 COMPLETE**: All duplicate type definitions eliminated. Generated files now import types from implementation modules. All implementation types have `impl View` trait.
+
+**V3.6 IN PROGRESS**: Removing `#[cfg(test)]` guard exposes 318 compilation errors in generated function bodies. Broken down into 10 subtasks (V3.6.1-V3.6.10). Next: V3.6.1 (fix missing imports).
 
 **Completed**: Transpiler fixes for int/nat types, iterator patterns, HashMap filter conjunctions, hand-written dispatch functions, type deduplication across all generated files.
 
@@ -1696,11 +1698,113 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Manual `acceptorimpl.rs` has identical assumes (with comments like "verus can't infer this")
   - `assume(false)` in dispatch function is correct: unreachable branch (precondition excludes it)
 
-- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ READY (V3.3 complete)
-  - Cannot remove `#[cfg(test)]` guard until type duplication is resolved
+- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 318 errors remaining)
+  - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes 318 compilation errors
   - With guard: 454 verified, 0 errors ✅
-  - Without guard: ~350 errors due to duplicate type definitions
-  - Requires V3.3 architecture decision first
+  - Without guard: 318 errors (down from ~350 after V3.3 dedup)
+  - **Root causes**: Generated function bodies have type/API mismatches with implementation types
+  - Broken down into subtasks below (too large for single commit, ~1000+ LOC changes)
+
+  **V3.6 Error Analysis** (318 errors across 8 generated files):
+
+  | File | Errors | Primary Issues |
+  |------|--------|----------------|
+  | replica_gen.rs | 108 | Vec→Seq view, CReplica ref/owned, arg count, i64→u64 |
+  | proposer_gen.rs | 64 | Missing 2 fields (max_opn_with_proposal, max_log_truncation_point), subrange, i64→u64 |
+  | election_gen.rs | 58 | Missing 2 fields (cur_req_set, prev_req_set), Vec ops, HashSet::from, i64→u64 |
+  | acceptor_gen.rs | 37 | HashMap view (Map<u64,CVote> vs Map<int,Vote>), KeysAdditionalSpecFns, deref |
+  | executor_gen.rs | 31 | HashMap methods, for-loop iterators, arg count, view types |
+  | learner_gen.rs | 22 | KeysAdditionalSpecFns, HashMap::from, HashSet ops, ref/owned |
+  | broadcast_gen.rs | 2 | Vec indexing by u64, view type |
+  | types_gen.rs | 1 | CReplica Clone trait |
+
+  **Error Categories**:
+  1. **E0308 mismatched types (214)**: Most common. Subcategories:
+     - `Vec<CPacket>@` gives `Seq<CPacket>` but spec expects `Seq<LPacket<AbstractEndPoint,...>>` (19 in replica)
+     - `CReplica` vs `&CReplica` owned/ref mismatches (12 in replica)
+     - `&CPacket` vs `CPacket` ref/owned (10 in replica)
+     - `HashMap@` gives `Map<u64,CVote>` but spec expects `Map<int,Vote>` (acceptor)
+     - `i64` vs `u64` type mismatches (generated uses i64 for clock/params, impl uses u64)
+     - `&EndPoint` vs `EndPoint` ref/owned
+     - `CElectionState` vs `&CElectionState`
+     - `CProposer` vs `&CProposer`
+  2. **E0063 missing fields (18)**: CProposer missing `max_opn_with_proposal`+`max_log_truncation_point` (11),
+     CElectionState missing `cur_req_set`+`prev_req_set` (7)
+  3. **E0599 missing methods (24)**: `KeysAdditionalSpecFns` import (18), `.index()` on HashMap (2),
+     `.valid()` on Vec/HashMap (2), `.subrange()` on Vec (2)
+  4. **E0277 trait bounds (16)**: `HashSet::from(Vec)` (4), `HashMap::from(Vec)` (1),
+     `RangeGhostIterator` (8), Vec indexing by u64 (4)
+  5. **E0369 op not supported (8)**: Vec + Vec (5), HashSet + HashSet (3)
+  6. **E0061 arg count (10)**: Wrong number of arguments to functions
+  7. **E0614 cannot deref (3)**: `*opn` on u64
+  8. **E0277 comparison (9)**: `&i64` vs integer
+
+  **Subtasks** (ordered by dependency/priority):
+
+  - [ ] **V3.6.1: Fix missing imports** (~20 LOC, easy)
+    - Add `use vstd::std_specs::hash::KeysAdditionalSpecFns;` to acceptor_gen, learner_gen
+    - Fixes 18 E0599 errors
+
+  - [ ] **V3.6.2: Fix missing struct fields** (~40 LOC, easy)
+    - Add `max_opn_with_proposal: 0` and `max_log_truncation_point: 0` to CProposer constructors (11 sites)
+    - Add `cur_req_set: HashSet::new()` and `prev_req_set: HashSet::new()` to CElectionState constructors (7 sites)
+    - Fixes 18 E0063 errors
+
+  - [ ] **V3.6.3: Fix i64→u64 type mismatches** (~50 LOC, medium)
+    - Generated code uses `i64` for clock params but impl uses `u64`
+    - Change function signatures: `clock: &i64` → `clock: &u64` in election_gen, proposer_gen, replica_gen
+    - Fix `max_batch_size` comparisons (i64 vs usize)
+    - Fixes ~20 E0308/E0277 errors
+
+  - [ ] **V3.6.4: Fix ref/owned mismatches** (~100 LOC, medium)
+    - `CReplica` vs `&CReplica`, `CProposer` vs `&CProposer`, etc.
+    - Generated code passes owned values where refs expected (or vice versa)
+    - Add `&` or `clone()` as needed
+    - Fix `&EndPoint` vs `EndPoint` throughout
+    - Fixes ~50 E0308 errors
+
+  - [ ] **V3.6.5: Fix collection operation mismatches** (~80 LOC, medium-hard)
+    - `Vec + Vec` → `concat_vecs()` or similar
+    - `HashSet + HashSet` → `union_sets()` or similar
+    - `HashSet::from(Vec)` → proper construction
+    - `HashMap::from(Vec)` → proper construction
+    - `.subrange()` on Vec → Verus `subrange` trait or manual slicing
+    - `.index()` on HashMap → `.get()` + unwrap
+    - `.update()` on Vec → proper Verus Vec update
+    - Fixes ~20 E0369/E0277/E0599 errors
+
+  - [ ] **V3.6.6: Fix for-loop iterators** (~30 LOC, medium)
+    - `RangeGhostIterator<usize>` errors in executor_gen, election_gen, replica_gen
+    - Generated loops use `(0..len).map()` which needs Verus iterator traits
+    - May need to rewrite as explicit `while` loops
+    - Fixes ~8 E0277 errors
+
+  - [ ] **V3.6.7: Fix function signatures and arg counts** (~60 LOC, medium-hard)
+    - Functions called with wrong arg count (e.g., `UpdateNewCache` needs 3 args, called with 2)
+    - `RepliesAreReplyType()` needs 1 arg, called with 0
+    - Function signature mismatches between generated calls and impl definitions
+    - Fixes ~10 E0061 errors
+
+  - [ ] **V3.6.8: Fix ensures clause view types** (~200 LOC, HARD - may need transpiler changes)
+    - `result.1@` on `Vec<CPacket>` gives `Seq<CPacket>` but spec expects `Seq<RslPacket>`
+    - `votes@` on `HashMap<u64,CVote>` gives `Map<u64,CVote>` but spec expects `Map<int,Vote>`
+    - Need deep conversion via `abstractify_*` functions in ensures clauses
+    - This is the FUNDAMENTAL issue: generated code uses shallow `@` everywhere
+    - Options: (a) wrap ensures with abstractify, (b) modify transpiler, (c) add intermediate lemmas
+    - Fixes ~80 E0308 errors (the largest category)
+    - **This subtask may need to be further broken down or may require transpiler changes**
+
+  - [ ] **V3.6.9: Fix Vec indexing by u64** (~15 LOC, easy)
+    - Vec/slice cannot be indexed by `u64`, needs `as usize`
+    - `replica_ids[myidx]` where myidx is u64
+    - Fixes ~4 E0277 errors
+
+  - [ ] **V3.6.10: Fix remaining misc errors** (~50 LOC, medium)
+    - CReplica Clone trait (types_gen.rs)
+    - LPacket clone (replica_gen.rs)
+    - `u64` deref errors
+    - CConfiguration vs LConfiguration
+    - Any errors remaining after V3.6.1-V3.6.9
 
 - [x] **V3.7: Hand-write dispatch functions** ✅ COMPLETE
   - Added 3 hand-written dispatch functions to `replica_gen.rs`:
@@ -1714,7 +1818,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - CI job exists in `.github/workflows/ci.yml` (lines 86-125)
   - Blocked until `#[cfg(test)]` guard can be removed (V3.3 → V3.6)
 
-**Estimated Effort**: 1-2 days (mostly debugging, minimal code changes)
+**Estimated Effort**: 3-5 days (V3.6 is substantial: 318 errors across 10 subtasks)
 
 #### Summary: Path to Full Automation
 
@@ -1722,7 +1826,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE (all types deduplicated); V3.6/V3.8 blocked |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6 broken into 10 subtasks (318 errors) |
 
 **Current State**: With `#[cfg(test)]` guard: **454 verified, 0 errors** ✅ (including hand-written dispatch functions)
 
@@ -1730,13 +1834,14 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 implementation modules have been eliminated. Generated files now import types from implementation.
 All implementation types have `impl View` trait for `@` operator support.
 
-**Previous blocker** (now resolved): ~350 compilation errors from duplicate type definitions.
-Root cause was two parallel type systems defining same-named types. Fixed by having generated
-files import from implementation instead of defining their own types.
+**V3.6 Analysis** (updated 2026-02-04): Removing `#[cfg(test)]` guard exposes 318 compilation
+errors in generated function bodies. Root cause: generated code was written for old generated types
+with shallow View mappings, but now uses implementation types with deep View (via `abstractify_*`).
+Key issues: (1) ensures clauses use shallow `@` where deep conversion needed, (2) missing struct
+fields for optimization fields added to impl types, (3) i64/u64 type mismatches, (4) ref/owned
+mismatches, (5) collection operations that don't exist on std types.
 
-**Next step**: V3.6 - Remove `#[cfg(test)]` guards and verify generated functions compile
-alongside implementation code. May still have errors from function body issues (e.g., generated
-View impls using shallow `@` vs deep `abstractify_*` conversions).
+**Next step**: V3.6.1 - Fix missing imports (easiest subtask, ~20 LOC)
 
 **Type deduplication COMPLETE**: All generated component files now import types from implementation:
 - `types_gen.rs` re-exports basic types from `types_i.rs`

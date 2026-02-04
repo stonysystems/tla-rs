@@ -133,6 +133,8 @@ CElectionState {
         epoch_length: c.all.params.baseline_view_timeout_period,
         requests_received_this_epoch: vec![],
         requests_received_prev_epochs: vec![],
+        cur_req_set: HashSet::new(),
+        prev_req_set: HashSet::new(),
     }
 }
 
@@ -158,6 +160,8 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: es.requests_received_this_epoch,
                 requests_received_prev_epochs: es.requests_received_prev_epochs,
+                cur_req_set: es.cur_req_set,
+                prev_req_set: es.prev_req_set,
             }
         } else {
             if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
@@ -174,6 +178,8 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
                     epoch_length: new_epoch_length,
                     requests_received_this_epoch: vec![],
                     requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                    cur_req_set: HashSet::new(),
+                    prev_req_set: HashSet::new(),
                 }
 
             } else {
@@ -204,6 +210,8 @@ if (clock < es.epoch_end_time) {
                 epoch_length: new_epoch_length,
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: es.requests_received_this_epoch,
+                cur_req_set: HashSet::new(),
+                prev_req_set: HashSet::new(),
             }
 
         } else {
@@ -215,6 +223,8 @@ if (clock < es.epoch_end_time) {
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                cur_req_set: HashSet::new(),
+                prev_req_set: HashSet::new(),
             }
         }
     }
@@ -239,6 +249,8 @@ if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()
             epoch_length: new_epoch_length,
             requests_received_this_epoch: vec![],
             requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+            cur_req_set: HashSet::new(),
+            prev_req_set: HashSet::new(),
         }
 
     }
@@ -263,6 +275,8 @@ if es.requests_received_prev_epochs.iter().chain(es.requests_received_this_epoch
             epoch_length: es.epoch_length,
             requests_received_this_epoch: CBoundRequestSequence((es.requests_received_this_epoch + vec![req]), &es.constants.all.params.max_integer_val),
             requests_received_prev_epochs: es.requests_received_prev_epochs,
+            cur_req_set: es.cur_req_set,
+            prev_req_set: es.prev_req_set,
         }
     }
 }
