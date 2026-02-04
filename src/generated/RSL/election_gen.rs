@@ -63,10 +63,8 @@ if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
 
 pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: &CUpperBound) -> (result: Vec<CRequest>)
 requires
-    s.valid(),
     lengthBound.valid(),
 ensures
-    result.valid(),
     result@ == BoundRequestSequence(s@, lengthBound@),
 {
 if (matches!(lengthBound, CUpperBound::CUpperBoundFinite { .. }) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {

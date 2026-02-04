@@ -55,9 +55,9 @@ ensures
     CReplica {
         constants: c.clone(),
         nextHeartbeatTime: 0,
-        executor: r_executor,
         proposer: r_proposer,
         acceptor: r_acceptor,
+        executor: r_executor,
         learner: r_learner,
     }
 
@@ -70,7 +70,6 @@ requires
     received_packet.msg is CMessageInvalid,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessInvalid(s@, result.0@, received_packet@, result.1@),
 {
 (s.clone(), vec![])
@@ -83,7 +82,6 @@ requires
     received_packet.msg is CMessageRequest,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@),
 {
 if (s.executor.reply_cache.contains_key(received_packet.src) && (received_packet.msg.get_seqno_req() <= s.executor.reply_cache[received_packet.src].seqno)) {
@@ -111,7 +109,6 @@ requires
     received_packet.msg is CMessage1a,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@),
 {
     let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&s.acceptor, &received_packet);
@@ -133,7 +130,6 @@ requires
     received_packet.msg is CMessage1b,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@),
 {
 if (s.proposer.constants.all.config.replica_ids.contains(received_packet.src) && ((received_packet.msg.get_bal_1b() == s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && s.proposer.received_1b_packets.iter().all(|other_packet| (other_packet.src != received_packet.src))))) {
@@ -160,7 +156,6 @@ requires
     received_packet.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@),
 {
     let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessStartingPhase2(&s.executor, &received_packet);
@@ -182,7 +177,6 @@ requires
     received_packet.msg is CMessage2a,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@),
 {
     let m = received_packet.msg;
@@ -210,7 +204,6 @@ requires
     received_packet.msg is CMessage2b,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcess2b(s@, result.0@, received_packet@, result.1@),
 {
     let opn = received_packet.msg.get_opn_2b();
@@ -240,7 +233,6 @@ requires
     received_packet.msg is CMessageReply,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessReply(s@, result.0@, received_packet@, result.1@),
 {
 (s.clone(), vec![])
@@ -253,7 +245,6 @@ requires
     received_packet.msg is CMessageAppStateSupply,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@),
 {
 if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg.get_opn_state_supply() > s.executor.ops_complete)) {
@@ -280,7 +271,6 @@ requires
     received_packet.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@),
 {
     let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet);
@@ -302,7 +292,6 @@ requires
     received_packet.msg is CMessageHeartbeat,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, clock@, result.1@),
 {
     let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
@@ -323,7 +312,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
     let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterNewViewAndSend1a(&s.proposer);
@@ -343,7 +331,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@),
 {
     let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point);
@@ -361,10 +348,8 @@ ensures
 pub exec fn CReplicaNextReadClockMaybeNominateValueAndSend2a(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@),
 {
     let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeNominateValueAndSend2a(&s.proposer, &clock.t, &s.acceptor.log_truncation_point);
@@ -384,7 +369,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@),
 {
 s.acceptor.last_checkpointed_operation.iter().any(|opn| (CIsLogTruncationPointValid(&opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if (opn > s.acceptor.log_truncation_point) {
@@ -408,7 +392,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@),
 {
     let opn = s.executor.ops_complete;
@@ -434,7 +417,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@),
 {
 if (matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingOpKnown { .. }) && (LtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
@@ -460,10 +442,8 @@ if (matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingO
 pub exec fn CReplicaNextReadClockMaybeSendHeartbeat(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextReadClockMaybeSendHeartbeat(s@, result.0@, clock@, result.1@),
 {
 if (clock.t < s.nextHeartbeatTime) {
@@ -482,10 +462,8 @@ if (clock.t < s.nextHeartbeatTime) {
 pub exec fn CReplicaNextReadClockCheckForViewTimeout(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@),
 {
     let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForViewTimeout(&s.proposer, &clock.t);
@@ -503,10 +481,8 @@ ensures
 pub exec fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@),
 {
     let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
@@ -524,7 +500,6 @@ ensures
 pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
-    ios.valid(),
     (ios.len() >= 1),
     ios.index(0) is CReceive,
     ios.index(0).get_r().msg is CMessageHeartbeat,
@@ -540,7 +515,6 @@ ensures
 pub exec fn CReplicaNextProcessPacketWithoutReadingClock(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
-    ios.valid(),
     (ios.len() >= 1),
     ios.index(0) is CReceive,
     !ios.index(0).get_r().msg is CMessageHeartbeat,
@@ -570,7 +544,6 @@ ensures
 pub exec fn CReplicaNextProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
-    ios.valid(),
 ensures
     result.valid(),
     LReplicaNextProcessPacket(s@, result@, ios@),
@@ -592,11 +565,7 @@ pub exec fn CReplicaNumActions() -> (result: i64)ensures
 10
 }
 
-pub exec fn CSpontaneousClock(ios: &Vec<CRslIo>) -> (result: CClockReading)
-requires
-    ios.valid(),
-ensures
-    result.valid(),
+pub exec fn CSpontaneousClock(ios: &Vec<CRslIo>) -> (result: CClockReading)ensures
     result@ == SpontaneousClock(ios@),
 {
 if SpontaneousIos(&ios, 1) {
@@ -613,7 +582,6 @@ if SpontaneousIos(&ios, 1) {
 pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &i64, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
-    ios.valid(),
 ensures
     result.valid(),
     LReplicaNoReceiveNext(s@, nextActionIndex@, result@, ios@),
@@ -692,7 +660,6 @@ ensures
 pub exec fn CSchedulerNext(s: &CScheduler, ios: &Vec<CRslIo>) -> (result: CScheduler)
 requires
     s.valid(),
-    ios.valid(),
 ensures
     result.valid(),
     LSchedulerNext(s@, result@, ios@),

@@ -115,7 +115,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
 if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
@@ -170,7 +169,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
 {
 if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
@@ -202,7 +200,6 @@ requires
     LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LProposerNominateNewValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
 {
     let batchSize = if ((s.request_queue.len() <= s.constants.all.params.max_batch_size) || (s.constants.all.params.max_batch_size < 0)) {
@@ -248,7 +245,6 @@ requires
     !LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LProposerNominateOldValueAndSend2a(s@, result.0@, log_truncation_point@, result.1@),
 {
     let opn = s.next_operation_number_to_propose;
@@ -275,7 +271,6 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
 {
 if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_operation_number_to_propose) {
@@ -376,7 +371,6 @@ ensures
 pub exec fn CProposerResetViewTimerDueToExecution(s: &CProposer, val: &CRequestBatch) -> (result: CProposer)
 requires
     s.valid(),
-    val.valid(),
 ensures
     result.valid(),
     LProposerResetViewTimerDueToExecution(s@, result@, val@),

@@ -12,6 +12,12 @@ primitive_types = [
     "CVotes",
     "LearnerState",
     "CLearnerState",
+    # Type aliases to Vec (no valid() method)
+    "RequestBatch",
+    "CRequestBatch",
+    # Generated struct types that are clock readings
+    "CClockReading",
+    "ClockReading",
 ]
 
 # Spec-only functions that should NOT have C-prefix added

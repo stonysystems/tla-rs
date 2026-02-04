@@ -65,7 +65,6 @@ pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &COperationN
 requires
     s.valid(),
     bal.valid(),
-    v.valid(),
     (opn == s.ops_complete),
     s.next_op_to_execute is COutstandingOpUnknown,
 ensures
@@ -93,7 +92,6 @@ requires
     s.constants.CReplicaConstantsValid(),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LExecutorExecute(s@, result.0@, result.1@),
 {
     let batch = s.next_op_to_execute.get_v();
@@ -148,7 +146,6 @@ requires
     inp.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@),
 {
     let m = inp.msg;
@@ -176,7 +173,6 @@ requires
     inp.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@),
 {
 if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.get_logTruncationPoint_2() > s.ops_complete)) {
@@ -200,7 +196,6 @@ requires
     s.reply_cache.index(inp.src) is CReply,
     (inp.msg.get_seqno_req() <= s.reply_cache.index(inp.src).seqno),
 ensures
-    result.valid(),
     LExecutorProcessRequest(s@, inp@, result@),
 {
 if ((inp.msg.get_seqno_req() == s.reply_cache[inp.src].seqno) && s.constants.CReplicaConstantsValid()) {

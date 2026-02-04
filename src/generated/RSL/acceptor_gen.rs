@@ -84,7 +84,6 @@ requires
     inp.msg is CMessage1a,
 ensures
     result.0.valid(),
-    result.1.valid(),
     LAcceptorProcess1a(s@, result.0@, inp@, result.1@),
 {
     let m = inp.msg;
@@ -122,7 +121,6 @@ requires
     LeqUpperBound(inp.msg.get_opn_2a(), s.constants.all.params.max_integer_val),
 ensures
     result.0.valid(),
-    result.1.valid(),
     LAcceptorProcess2a(s@, result.0@, inp@, result.1@),
 {
     let m = inp.msg;

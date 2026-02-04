@@ -1997,8 +1997,27 @@ impl Translator {
             Type::Reference { ty, .. } => self.should_skip_valid(ty),
             Type::Map(_, _) => {
                 // Maps (HashMap) don't have valid() by default
-                // Check if mapped to a type in primitive_types
                 true
+            }
+            Type::Seq(_) => {
+                // Sequences (Vec) don't have valid() by default in std Rust
+                // Vec<T> doesn't have a built-in valid() method
+                true
+            }
+            Type::Set(_) => {
+                // Sets (HashSet) don't have valid() by default
+                true
+            }
+            Type::Generic(path, _) => {
+                // Generic types like Seq<T>, Vec<T> don't have valid() by default
+                if let Some(name) = path.last() {
+                    // Common collection types that don't have valid()
+                    let name_str: &str = name;
+                    matches!(name_str, "Vec" | "Seq" | "Set" | "HashSet" | "HashMap" | "Map")
+                        || self.config.is_primitive_type(name)
+                } else {
+                    false
+                }
             }
             _ => false,
         }
@@ -2011,6 +2030,18 @@ impl Translator {
             type_str,
             "bool" | "int" | "nat" | "i64" | "u64" | "i32" | "u32" | "usize" | "isize"
         ) {
+            return true;
+        }
+
+        // Check for collection types (Vec<T>, Seq<T>, etc.)
+        // These don't have valid() methods in std Rust
+        if type_str.starts_with("Vec<")
+            || type_str.starts_with("Seq<")
+            || type_str.starts_with("Set<")
+            || type_str.starts_with("HashSet<")
+            || type_str.starts_with("HashMap<")
+            || type_str.starts_with("Map<")
+        {
             return true;
         }
 

@@ -45,7 +45,6 @@ requires
     c.valid(),
     m.valid(),
 ensures
-    result.valid(),
     LBroadcastToEveryone(c@, myidx@, m@, result@),
 {
 (0..c.replica_ids.len()).map(|idx| CPacket {
