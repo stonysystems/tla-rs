@@ -2615,9 +2615,16 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Verify generated specs match original TLA+ behavior using TLC model checking
 
 #### Phase T9: Integration Tests
-- [ ] **T9.1: End-to-end tests**
+- [x] **T9.1: End-to-end tests** ✅
   - TLA+ spec → Verus spec → Verus exec → Verus verification
   - Compare generated exec with manually-written implementations
+
+  Implemented in `transpiler/tests/pipeline_e2e_test.rs` with 12 tests:
+  - End-to-end pipeline tests for all 7 TLA+ examples
+  - Generated code structure verification tests
+  - Action operator parameter validation tests
+  - Mode annotation structure tests
+  - Custom configuration tests (prefix, state name)
 
 - [ ] **T9.2: Regression tests**
   - Ensure RSL (current project) could be regenerated from hypothetical TLA+ source
