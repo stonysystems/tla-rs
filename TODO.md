@@ -1268,6 +1268,57 @@ The generated code is structurally correct and matches the expected Verus exec f
 
 ---
 
+### Current: Fix CI Test Failures
+
+- [x] **Fix GitHub CI test failures** [2026-02-04]
+  - Root cause: Verus version `0.2026.01.28.0c41268` in CI workflow doesn't exist
+  - Fixed by updating to `0.2026.02.03.6d23bed` in `.github/workflows/ci.yml`
+
+---
+
+### Remaining Work: Full Paxos Transpilation
+
+The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) specs to verified implementation:
+
+#### 1. CI and Build Issues
+- [x] **Fix CI test failures** - Tests failing on GitHub CI (fixed: updated Verus version)
+- [ ] **Verify generated code with Verus** - Generated modules guarded by `#[cfg(test)]`, need verification
+
+#### 2. Recursive Helper Functions (H4 - Deferred)
+- [ ] **Generate loop-based implementations for recursive functions**
+  - Currently rejected with error message
+  - Recursive helpers: `RemoveAllSatisfiedRequestsInSequence`, `RemoveExecutedRequestBatch`, `GetPacketsFromReplies`, `LClientsInReplies`, `ExtractSentPacketsFromIos`, `BuildLBroadcast`
+  - These still need manual implementation
+- [ ] **Add loop invariants for recursive-to-iterative transformation**
+
+#### 3. Infrastructure Type Dependencies (H6 - Partial)
+- [ ] **Restructure infrastructure types to remove manual implementation dependencies**
+  - Generated code still imports from `src/implementation/RSL/` for:
+    - `types_i.rs` - CBallot, CRequest, etc.
+    - `cmessage.rs` - CRslPacket, CRslMessage
+    - `cconstants.rs` - CReplicaConstants
+    - `cconfiguration.rs` - CConfiguration
+  - Future: Move to `src/common/rsl_types/` or generate from specs
+- [ ] **Update CI to verify no manual implementation imports** (blocked by above)
+
+#### 4. Verus Verification of Generated Code
+- [ ] **Run Verus verification on all generated modules**
+  - Currently blocked: generated modules excluded via `#[cfg(test)]`
+  - Need to verify: election_gen.rs, learner_gen.rs, executor_gen.rs, proposer_gen.rs, replica_gen.rs, broadcast_gen.rs, acceptor_gen.rs
+- [ ] **Fix any verification failures in generated code**
+
+#### 5. Success Criteria (Not Yet Achieved)
+- [ ] All spec functions (predicates AND helpers) have generated exec implementations
+  - Non-recursive: ✅ | Recursive: ❌ (rejected with error)
+- [ ] Generated code has ZERO imports from `src/implementation/RSL/`
+  - Module-specific types: ✅ | Infrastructure types: ❌
+- [ ] All generated modules verify with Verus (0 errors)
+  - Blocked: requires Verus verification environment
+- [ ] Generated code is functionally equivalent to manual implementation
+  - Requires Verus verification to confirm
+
+---
+
 ### Goal: Fully Transpile Paxos (RSL) Spec to Verified Implementation
 
 **Objective**: Generate a complete, verifiable RSL implementation from specs using the transpiler. The manual implementation in `src/implementation/RSL/` will be kept as reference.

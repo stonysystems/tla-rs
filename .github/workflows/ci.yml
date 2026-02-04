@@ -87,7 +87,7 @@ jobs:
     name: Verus Verification
     runs-on: ubuntu-22.04
     env:
-      VERUS_VERSION: "0.2026.01.28.0c41268"
+      VERUS_VERSION: "0.2026.02.03.6d23bed"
     steps:
       - uses: actions/checkout@v4
 
