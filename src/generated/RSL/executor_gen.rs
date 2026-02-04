@@ -65,7 +65,6 @@ pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &COperationN
 requires
     s.valid(),
     bal.valid(),
-    opn.valid(),
     v.valid(),
     (opn == s.ops_complete),
     s.next_op_to_execute is COutstandingOpUnknown,

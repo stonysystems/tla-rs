@@ -1370,13 +1370,16 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     - Enum variant syntax: ✅ RESOLVED - Now generates `matches!` macro for exec code
     - Type compatibility issues: ❌ REMAINING - Generated code has type mismatches between spec types (Map<int, Vote>) and exec types (HashMap<u64, CVote>)
     - Iterator patterns: ❌ REMAINING - Generated filter/map patterns don't handle HashMap correctly
-    - Valid method: ❌ REMAINING - `valid()` called on primitive types (u64, HashMap) that don't have this method
+    - ~~Valid method: ❌ REMAINING - `valid()` called on primitive types (u64, HashMap) that don't have this method~~: ✅ FIXED [2026-02-04]
+      - Added `primitive_types` config option to transpile.toml
+      - Types like `COperationNumber` (u64 alias), `CVotes` (HashMap alias) now skip `valid()` generation
+      - Implemented `should_skip_valid()` method in translator to check both AST primitives and config list
 - [ ] **Fix any verification failures in generated code**
-  - Status: Major syntax issues fixed, type compatibility issues remain
+  - Status: Major syntax issues fixed, `valid()` predicate issue fixed, type compatibility issues remain
   - Remaining blockers:
     1. Type abstraction layer needed for HashMap operations
     2. Iterator patterns need manual implementation or special handling
-    3. `valid()` predicate generation needs type awareness
+    ~~3. `valid()` predicate generation needs type awareness~~: ✅ FIXED
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations

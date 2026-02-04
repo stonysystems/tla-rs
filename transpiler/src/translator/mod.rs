@@ -43,6 +43,9 @@ pub struct TranslatorConfig {
     /// Maps spec function name to method call configuration.
     /// Example: "LMinQuorumSize" -> { method_name: "CMinQuorumSize", receiver_arg_index: 0 }
     pub method_calls: HashMap<String, MethodCallConfig>,
+    /// Primitive types that should NOT have valid() predicates generated.
+    /// These are types that don't have a valid() method (e.g., type aliases to u64, HashMap).
+    pub primitive_types: HashSet<String>,
     /// Whether to generate abstraction functions
     pub generate_abstraction_fns: bool,
     /// Whether to generate validity predicates
@@ -64,11 +67,32 @@ impl Default for TranslatorConfig {
             function_paths: HashMap::new(),
             spec_only_functions: HashSet::new(),
             method_calls: HashMap::new(),
+            primitive_types: HashSet::new(),
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
             generate_loops_for_verification: false,
         }
+    }
+}
+
+impl TranslatorConfig {
+    /// Check if a type should be treated as primitive (no valid() predicate).
+    /// This checks both spec type names and remapped exec type names.
+    pub fn is_primitive_type(&self, type_name: &str) -> bool {
+        // Check if directly in primitive_types list
+        if self.primitive_types.contains(type_name) {
+            return true;
+        }
+
+        // Check if the remapped exec type is in primitive_types
+        if let Some(exec_type) = self.type_remapping.get(type_name) {
+            if self.primitive_types.contains(exec_type) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -1644,9 +1668,10 @@ impl Translator {
         let mut requires = Vec::new();
 
         // Add validity requirements for all input params
+        // Skip primitive types and types in config's primitive_types list
         let validity_pred = &self.config.validity_predicate_name;
         for param in &func.spec_fn.params {
-            if !Self::is_primitive_type(&param.ty) {
+            if !self.should_skip_valid(&param.ty) {
                 requires.push(format!("{}.{}()", param.name, validity_pred));
             }
         }
@@ -1663,18 +1688,15 @@ impl Translator {
     fn build_helper_ensures(&self, func: &AnnotatedFunction) -> Vec<String> {
         let mut ensures = Vec::new();
 
-        // Check if return type is primitive
-        let is_primitive = if let Some(ref return_type_str) = func.return_type {
-            matches!(
-                return_type_str.as_str(),
-                "bool" | "int" | "nat" | "i64" | "u64"
-            )
+        // Check if return type should skip valid() predicate
+        let skip_valid = if let Some(ref return_type_str) = func.return_type {
+            self.should_skip_valid_str(return_type_str)
         } else {
-            Self::is_primitive_type(&func.spec_fn.return_type)
+            self.should_skip_valid(&func.spec_fn.return_type)
         };
 
-        // Add result.valid() if not primitive
-        if !is_primitive {
+        // Add result.valid() if not primitive/skipped
+        if !skip_valid {
             let validity_pred = &self.config.validity_predicate_name;
             ensures.push(format!("result.{}()", validity_pred));
         }
@@ -1929,15 +1951,59 @@ impl Translator {
         }
     }
 
+    /// Check if a type should skip valid() predicate generation.
+    /// Combines AST-level primitive check with config-based primitive_types list.
+    fn should_skip_valid(&self, ty: &crate::ast::Type) -> bool {
+        use crate::ast::Type;
+
+        // First check AST-level primitives
+        if Self::is_primitive_type(ty) {
+            return true;
+        }
+
+        // Then check config-based primitive_types list
+        match ty {
+            Type::Named(path) => {
+                if let Some(name) = path.last() {
+                    // Check if type name is in primitive_types config
+                    self.config.is_primitive_type(name)
+                } else {
+                    false
+                }
+            }
+            Type::Reference { ty, .. } => self.should_skip_valid(ty),
+            Type::Map(_, _) => {
+                // Maps (HashMap) don't have valid() by default
+                // Check if mapped to a type in primitive_types
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if a type string should skip valid() predicate generation.
+    fn should_skip_valid_str(&self, type_str: &str) -> bool {
+        // Check common primitive type strings
+        if matches!(
+            type_str,
+            "bool" | "int" | "nat" | "i64" | "u64" | "i32" | "u32" | "usize" | "isize"
+        ) {
+            return true;
+        }
+
+        // Check config-based primitive_types list
+        self.config.is_primitive_type(type_str)
+    }
+
     /// Build requires clauses
     fn build_requires(&self, func: &AnnotatedFunction) -> Vec<String> {
         let mut requires = Vec::new();
 
         // Add validity requirements for input params (configurable predicate name)
-        // Skip primitive types as they don't have valid() predicates
+        // Skip primitive types and types in config's primitive_types list
         let validity_pred = &self.config.validity_predicate_name;
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
-            if *mode == ParameterMode::Input && !Self::is_primitive_type(&param.ty) {
+            if *mode == ParameterMode::Input && !self.should_skip_valid(&param.ty) {
                 requires.push(format!("{}.{}()", param.name, validity_pred));
             }
         }
@@ -2196,16 +2262,34 @@ impl Translator {
     fn build_ensures(&self, func: &AnnotatedFunction, output_names: &[String]) -> Vec<String> {
         let mut ensures = Vec::new();
 
+        // Build output types map for type checking
+        let output_types: HashMap<String, crate::ast::Type> = func
+            .spec_fn
+            .params
+            .iter()
+            .zip(&func.param_modes)
+            .filter(|(_, m)| **m == ParameterMode::Output)
+            .map(|(p, _)| (p.name.clone(), p.ty.clone()))
+            .collect();
+
         // Add validity ensures for outputs (configurable predicate name)
+        // Skip primitive types and types in config's primitive_types list
         let validity_pred = &self.config.validity_predicate_name;
         for (i, name) in output_names.iter().enumerate() {
-            let accessor = if output_names.len() == 1 {
-                "result".to_string()
-            } else {
-                format!("result.{}", i)
-            };
-            ensures.push(format!("{}.{}()", accessor, validity_pred));
-            let _ = name; // Suppress warning
+            // Check if this output's type should skip valid()
+            let should_skip = output_types
+                .get(name)
+                .map(|ty| self.should_skip_valid(ty))
+                .unwrap_or(false);
+
+            if !should_skip {
+                let accessor = if output_names.len() == 1 {
+                    "result".to_string()
+                } else {
+                    format!("result.{}", i)
+                };
+                ensures.push(format!("{}.{}()", accessor, validity_pred));
+            }
         }
 
         // Add linkage to original spec predicate

@@ -168,7 +168,6 @@ CProposer {
 pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
-    log_truncation_point.valid(),
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -199,7 +198,6 @@ if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && 
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
-    log_truncation_point.valid(),
     LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
     LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures
@@ -246,7 +244,6 @@ ensures
 pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
-    log_truncation_point.valid(),
     LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
     !LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures

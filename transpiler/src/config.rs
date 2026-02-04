@@ -56,6 +56,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub method_calls: HashMap<String, MethodCallConfig>,
 
+    /// Primitive types that should NOT have valid() predicates generated.
+    /// These are types that don't have a valid() method (e.g., type aliases to u64, HashMap).
+    /// Both the spec type name and the remapped exec type name can be listed.
+    /// e.g., ["COperationNumber", "CVotes", "ClearnerState"]
+    #[serde(default)]
+    pub primitive_types: Vec<String>,
+
     /// Output generation configuration
     #[serde(default)]
     pub output: OutputConfig,
@@ -127,6 +134,23 @@ impl TranspilerConfig {
 
         // Default: prepend spec prefix
         format!("{}{}", self.naming.spec_prefix, exec_type)
+    }
+
+    /// Check if a type should be treated as primitive (no valid() predicate).
+    /// This checks both spec type names and remapped exec type names.
+    pub fn is_primitive_type(&self, type_name: &str) -> bool {
+        // Check if directly in primitive_types list
+        if self.primitive_types.contains(&type_name.to_string()) {
+            return true;
+        }
+
+        // Check if the remapped exec type is in primitive_types
+        let exec_type = self.get_exec_type(type_name);
+        if self.primitive_types.contains(&exec_type) {
+            return true;
+        }
+
+        false
     }
 }
 

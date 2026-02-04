@@ -1,6 +1,19 @@
 # Configuration for transpiling RSL spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Primitive types that should NOT have valid() predicates generated.
+# These are type aliases to primitive types (u64, HashMap, etc.) that don't have valid().
+primitive_types = [
+    # Type aliases to u64 (no valid() method)
+    "OperationNumber",
+    "COperationNumber",
+    # Type aliases to HashMap (no valid() method)
+    "Votes",
+    "CVotes",
+    "LearnerState",
+    "CLearnerState",
+]
+
 # Spec-only functions that should NOT have C-prefix added
 # These are functions that only exist in the spec layer and have no exec implementation
 # The transpiler will use their names as-is without adding C-prefix

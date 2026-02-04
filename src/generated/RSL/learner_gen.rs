@@ -121,7 +121,6 @@ ensures
 pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &COperationNumber) -> (result: CLearner)
 requires
     s.valid(),
-    opn.valid(),
 ensures
     result.valid(),
     LLearnerForgetDecision(s@, result@, opn@),
@@ -140,7 +139,6 @@ if s.unexecuted_learner_state.contains_key(opn) {
 pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &COperationNumber) -> (result: CLearner)
 requires
     s.valid(),
-    ops_complete.valid(),
 ensures
     result.valid(),
     LLearnerForgetOperationsBefore(s@, result@, ops_complete@),

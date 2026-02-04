@@ -40,12 +40,7 @@ use crate::generated::RSL::types_gen::CScheduler;
 
 verus! {
 
-pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &COperationNumber) -> (result: CVotes)
-requires
-    votes.valid(),
-    log_truncation_point.valid(),
-ensures
-    result.valid(),
+pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &COperationNumber) -> (result: CVotes)ensures
     RemoveVotesBeforeLogTruncationPoint(votes@, result@, log_truncation_point@),
 {
 votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).cloned().collect()
@@ -53,12 +48,8 @@ votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).cloned().collect()
 
 pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &COperationNumber, new_vote: &CVote, log_truncation_point: &COperationNumber) -> (result: CVotes)
 requires
-    votes.valid(),
-    new_opn.valid(),
     new_vote.valid(),
-    log_truncation_point.valid(),
 ensures
-    result.valid(),
     LAddVoteAndRemoveOldOnes(votes@, result@, new_opn@, new_vote@, log_truncation_point@),
 {
     let mut __result = votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).map(|(opn, __v)| (opn.clone(), votes.index(opn))).collect();
@@ -183,7 +174,6 @@ if s.constants.all.config.replica_ids.contains(inp.src) {
 pub exec fn CAcceptorTruncateLog(s: &CAcceptor, opn: &COperationNumber) -> (result: CAcceptor)
 requires
     s.valid(),
-    opn.valid(),
 ensures
     result.valid(),
     LAcceptorTruncateLog(s@, result@, opn@),
