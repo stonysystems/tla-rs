@@ -110,7 +110,9 @@ jobs:
           wget -q https://github.com/verus-lang/verus/releases/download/release/rolling/${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip
           unzip -q verus-${VERUS_VERSION}-x86-linux.zip -d ~/
           mv ~/verus-x86-linux ~/verus
-          chmod +x ~/verus/verus
+
+      - name: Ensure Verus is executable
+        run: chmod +x ~/verus/verus
 
       - name: Install Rust toolchain for Verus
         uses: dtolnay/rust-toolchain@master
