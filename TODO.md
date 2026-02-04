@@ -20,6 +20,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 8. [Phase 7: Testing & Validation](#8-phase-7-testing--validation)
 9. [Phase 8: Integration & Tooling](#9-phase-8-integration--tooling)
 10. [Milestones](#10-milestones)
+11. [Phase 9: TLA+ to TLA-rs Transpilation](#11-phase-9-tla-to-tla-rs-transpilation)
 
 ---
 
@@ -1297,6 +1298,20 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     3. types_gen.rs syntax - `well_formed()` uses `&&&` syntax outside `verus!` block
   - Fixed: Removed non-existent `hashmaps` import from transpiler configs
   - Fixed: Updated regenerate_rsl.sh to include acceptor and election modules
+  - **Additional fixes [2026-02-04]:**
+    - Fixed: Added `HashSetWellFormed` trait in `hashsets.rs` providing `well_formed()` for `HashSet`
+    - Fixed: Updated types_gen.rs to add `&&&` prefix to first expression in multi-line predicates
+    - Fixed: Added import for `HashSetWellFormed` trait in types_gen.rs
+    - Fixed: Added import for `CAcceptor` from `acceptorimpl` in acceptor_gen.rs
+    - Fixed: Renamed `CRslPacket` → `CPacket` in acceptor_gen.rs
+    - Fixed: Renamed `CRslMessage` → `CMessage` in acceptor_gen.rs
+    - Fixed: Renamed `RslMessage*` → `CMessage*` enum variants in acceptor_gen.rs
+  - **Remaining transpiler bugs (require transpiler code changes):**
+    1. **AST debug output in requires clauses**: `proposer_gen.rs:124` outputs AST debug format (`Forall { vars: [Binding { ...`) instead of valid Verus `forall` syntax
+    2. **Type name mapping errors in config**: `RslPacket → CRslPacket` but actual type is `CPacket`; similar for `RslMessage → CRslMessage` vs `CMessage`
+    3. **Missing type imports**: `CConfiguration` not imported in broadcast_gen.rs
+    4. **First expression in `&&&` chains missing prefix**: transpiler generates first expr without `&&&` but Verus requires it
+    5. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`
 
 #### 2. Recursive Helper Functions (H4 - Deferred)
 - [ ] **Generate loop-based implementations for recursive functions**
@@ -2209,3 +2224,291 @@ cargo run -- --input examples/simple_spec.rs \
 # Verify generated code with Verus
 /home/shuai/tools/verus-x86-linux/verus examples/simple_impl.rs
 ```
+
+---
+
+## 11. Phase 9: TLA+ to TLA-rs Transpilation
+
+This phase adds support for transpiling TLA+ specifications directly to Verus/TLA-rs code, enabling users to start from standard TLA+ specs and generate verified Rust implementations.
+
+### 11.1 Overview
+
+**Goal**: Create a bidirectional transpilation capability:
+1. **TLA+ → TLA-rs**: Parse TLA+ specifications and generate Verus spec functions
+2. **TLA-rs → TLA+**: (Optional) Generate TLA+ from Verus specs for model checking with TLC
+
+**Current State**:
+- `docs/tla-rs-guide.md` documents manual translation patterns from TLA+ to Verus
+- No automated TLA+ parser or transpiler exists
+
+**Reference TLA+ Specifications**:
+- TLA+ Examples repository: https://github.com/tlaplus/Examples
+- Lamport's TLA+ home: https://lamport.azurewebsites.net/tla/tla.html
+
+### 11.2 TLA+ Parser Implementation
+
+#### Phase T1: TLA+ Lexer
+- [ ] **T1.1: Implement TLA+ tokenizer**
+  - Handle TLA+ keywords: `VARIABLE`, `CONSTANT`, `EXTENDS`, `MODULE`, `INSTANCE`, `ASSUME`, `THEOREM`
+  - Handle operators: `\in`, `\notin`, `\subseteq`, `\cup`, `\cap`, `\X`, `/\`, `\/`, `=>`, `<=>`, `~`, `'`
+  - Handle special symbols: `<<`, `>>`, `[`, `]`, `{`, `}`, `DOMAIN`, `EXCEPT`, `@`
+  - Handle quantifiers: `\A`, `\E`, `CHOOSE`
+  - Handle temporal operators: `[]`, `<>`, `~>`, `-+->`
+  - Parse comments: `\*` line comments and `(* ... *)` block comments
+
+- [ ] **T1.2: Handle TLA+ number formats**
+  - Integers, binary (`\b...`), octal (`\o...`), hex (`\h...`)
+  - Set notation: `1..10`, `{1, 2, 3}`
+
+- [ ] **T1.3: Handle TLA+ string formats**
+  - String literals with TLA+ escaping
+
+#### Phase T2: TLA+ Parser
+- [ ] **T2.1: Parse module structure**
+  - `---- MODULE Name ----` headers
+  - `EXTENDS` declarations
+  - `CONSTANT` and `VARIABLE` declarations
+  - Module instances with `INSTANCE`
+
+- [ ] **T2.2: Parse operator definitions**
+  - Simple operators: `Op == expr`
+  - Parametrized operators: `Op(a, b) == expr`
+  - Recursive operators with `RECURSIVE`
+  - Infix/prefix/postfix operators
+
+- [ ] **T2.3: Parse expressions**
+  - Set expressions: `{x \in S : P(x)}`, `{f(x) : x \in S}`
+  - Function expressions: `[x \in S |-> f(x)]`, `[f EXCEPT ![i] = v]`
+  - Record expressions: `[a |-> 1, b |-> 2]`
+  - Tuple expressions: `<<a, b, c>>`
+  - IF-THEN-ELSE, CASE, LET-IN
+  - Quantifiers: `\A x \in S : P(x)`, `\E x \in S : P(x)`
+
+- [ ] **T2.4: Parse action definitions**
+  - State predicates (Init)
+  - Action predicates (Next) with primed variables (`x'`)
+  - `UNCHANGED` expressions
+
+- [ ] **T2.5: Parse temporal formulas** (optional, for liveness)
+  - `[]P` (always), `<>P` (eventually)
+  - `P ~> Q` (leads-to)
+  - Fairness: `WF_vars(A)`, `SF_vars(A)`
+
+#### Phase T3: TLA+ AST Definition
+- [ ] **T3.1: Define core AST types**
+  ```rust
+  enum TlaExpr {
+      Var(String),           // x, x'
+      Const(String),         // CONSTANT c
+      Literal(TlaLiteral),   // 1, "str", TRUE
+      Set { elements: Vec<TlaExpr> },
+      SetComprehension { var: String, set: Box<TlaExpr>, filter: Box<TlaExpr> },
+      Function { param: String, domain: Box<TlaExpr>, body: Box<TlaExpr> },
+      FunctionApp { func: Box<TlaExpr>, arg: Box<TlaExpr> },
+      Record { fields: Vec<(String, TlaExpr)> },
+      Tuple(Vec<TlaExpr>),
+      BinOp { op: TlaBinOp, left: Box<TlaExpr>, right: Box<TlaExpr> },
+      UnaryOp { op: TlaUnaryOp, operand: Box<TlaExpr> },
+      Quantifier { kind: QuantKind, var: String, set: Box<TlaExpr>, body: Box<TlaExpr> },
+      IfThenElse { cond: Box<TlaExpr>, then_: Box<TlaExpr>, else_: Box<TlaExpr> },
+      Case { arms: Vec<(TlaExpr, TlaExpr)>, default: Option<Box<TlaExpr>> },
+      LetIn { bindings: Vec<(String, TlaExpr)>, body: Box<TlaExpr> },
+      Prime(Box<TlaExpr>),   // x'
+      Unchanged(Vec<String>),
+  }
+  ```
+
+- [ ] **T3.2: Define module/operator AST**
+  ```rust
+  struct TlaModule {
+      name: String,
+      extends: Vec<String>,
+      constants: Vec<String>,
+      variables: Vec<String>,
+      operators: Vec<TlaOperator>,
+  }
+
+  struct TlaOperator {
+      name: String,
+      params: Vec<String>,
+      body: TlaExpr,
+      is_recursive: bool,
+  }
+  ```
+
+### 11.3 TLA+ to Verus Translation
+
+#### Phase T4: Type Inference
+- [ ] **T4.1: Infer types from usage patterns**
+  - Variable used with `\in Nat` → `nat`
+  - Variable used with `\in Int` → `int`
+  - Variable used with `\in S` for finite set → `Set<T>`
+  - Record field access → struct field
+  - Function application → Map or function
+
+- [ ] **T4.2: Generate type annotations file**
+  - Create `.tla-types` annotation file for manual type refinement
+  - Allow user to specify concrete types for variables
+
+- [ ] **T4.3: Handle type mismatches**
+  - Emit warnings for ambiguous types
+  - Generate `spec fn` with `any` type where inference fails
+
+#### Phase T5: Expression Translation
+- [ ] **T5.1: Translate set operations**
+  - `\in` → `.contains()`
+  - `\cup` → `union()`
+  - `\cap` → `intersect()`
+  - `\subseteq` → `subset_of()`
+  - `{}` → `Set::empty()`
+  - `{x \in S : P(x)}` → `filter` comprehension
+  - `{f(x) : x \in S}` → `map` comprehension
+
+- [ ] **T5.2: Translate function/map operations**
+  - `[x \in S |-> f(x)]` → `Map::new(|x| f(x))`
+  - `f[x]` → `f.get(x)` or `f[x]`
+  - `DOMAIN f` → `f.dom()`
+  - `[f EXCEPT ![i] = v]` → `f.update(i, v)`
+
+- [ ] **T5.3: Translate sequence operations**
+  - `<<a, b, c>>` → `seq![a, b, c]`
+  - `Append(s, x)` → `s.push(x)`
+  - `Head(s)` → `s[0]`
+  - `Tail(s)` → `s.drop_first()`
+  - `Len(s)` → `s.len()`
+  - `SubSeq(s, m, n)` → `s.subrange(m-1, n)` (TLA+ is 1-indexed)
+
+- [ ] **T5.4: Translate quantifiers**
+  - `\A x \in S : P(x)` → `forall |x| S.contains(x) ==> P(x)`
+  - `\E x \in S : P(x)` → `exists |x| S.contains(x) && P(x)`
+  - `CHOOSE x \in S : P(x)` → `choose |x| S.contains(x) && P(x)`
+
+- [ ] **T5.5: Translate actions**
+  - `x' = expr` → output parameter assignment pattern
+  - `UNCHANGED <<x, y>>` → `x_ == x && y_ == y`
+  - Automatically detect input/output parameters from primed variables
+
+#### Phase T6: Module Translation
+- [ ] **T6.1: Translate module structure**
+  - `MODULE Name` → Rust module
+  - `EXTENDS Naturals, Sequences` → `use vstd::prelude::*`
+  - `CONSTANT c` → function parameter or generic
+  - `VARIABLE x` → state struct field
+
+- [ ] **T6.2: Generate state struct**
+  - Collect all variables into a state struct
+  - Generate View trait for state struct
+
+- [ ] **T6.3: Generate spec functions**
+  - `Init == ...` → `spec fn LInit(s: LState) -> bool`
+  - `Next == ...` → `spec fn LNext(s: LState, s_: LState, ...) -> bool`
+  - Helper operators → `spec fn LHelper(...) -> ...`
+
+- [ ] **T6.4: Generate mode annotations**
+  - Automatically create `.automan` file
+  - Detect input/output from primed variable usage
+
+### 11.4 Integration with Existing Transpiler
+
+#### Phase T7: Pipeline Integration
+- [ ] **T7.1: Add TLA+ input format support to CLI**
+  ```bash
+  cargo run -- --input spec.tla --output spec.rs
+  ```
+
+- [ ] **T7.2: Chain TLA+ → Verus spec → Verus exec**
+  ```bash
+  # Full pipeline: TLA+ → spec → exec
+  cargo run -- --tla-input spec.tla --exec-output impl.rs
+  ```
+
+- [ ] **T7.3: Add type annotation input**
+  ```bash
+  cargo run -- --input spec.tla --types spec.tla-types --output spec.rs
+  ```
+
+### 11.5 Testing Plan
+
+#### Phase T8: Test with Standard TLA+ Examples
+- [ ] **T8.1: Simple examples**
+  - `TwoPhase.tla` (Two-Phase Commit)
+  - `SimplePaxos.tla` (Single-decree Paxos)
+  - `DieHard.tla` (simple puzzle)
+
+- [ ] **T8.2: Medium complexity**
+  - `Raft.tla` (Raft consensus)
+  - `EWD840.tla` (termination detection)
+
+- [ ] **T8.3: Complex examples**
+  - `Paxos.tla` (Multi-Paxos)
+  - `PBFT.tla` (Byzantine fault tolerance)
+
+- [ ] **T8.4: Round-trip testing**
+  - TLA+ → Verus spec → compare semantics
+  - Verify generated specs match original TLA+ behavior using TLC model checking
+
+#### Phase T9: Integration Tests
+- [ ] **T9.1: End-to-end tests**
+  - TLA+ spec → Verus spec → Verus exec → Verus verification
+  - Compare generated exec with manually-written implementations
+
+- [ ] **T9.2: Regression tests**
+  - Ensure RSL (current project) could be regenerated from hypothetical TLA+ source
+  - Document any patterns that don't round-trip cleanly
+
+### 11.6 Documentation
+
+- [ ] **T10.1: TLA+ to Verus translation guide**
+  - Document all supported TLA+ constructs
+  - Document type annotation format
+  - Provide examples for common patterns
+
+- [ ] **T10.2: Limitations documentation**
+  - Unsupported TLA+ features (temporal logic, fairness)
+  - Type inference limitations
+  - Patterns requiring manual intervention
+
+### 11.7 Success Criteria
+
+1. [ ] Parse standard TLA+ syntax (TLA+ version 2)
+2. [ ] Generate valid Verus spec functions from TLA+ operators
+3. [ ] Automatically generate mode annotations from primed variables
+4. [ ] Successfully transpile Two-Phase Commit spec end-to-end
+5. [ ] Successfully transpile Single-Decree Paxos spec end-to-end
+6. [ ] Documentation covers all supported constructs
+
+### 11.8 Estimated Complexity
+
+| Phase | Description | Estimated LOC |
+|-------|-------------|---------------|
+| T1 | TLA+ Lexer | ~500 |
+| T2 | TLA+ Parser | ~1500 |
+| T3 | TLA+ AST | ~300 |
+| T4 | Type Inference | ~600 |
+| T5 | Expression Translation | ~1000 |
+| T6 | Module Translation | ~500 |
+| T7 | Pipeline Integration | ~200 |
+| T8-T9 | Testing | ~1000 |
+| **Total** | | **~5600** |
+
+### 11.9 Alternative: Use Existing TLA+ Tools
+
+Instead of building a TLA+ parser from scratch, consider:
+
+- [ ] **Option A: SANY (TLA+ parser)**
+  - Java-based official TLA+ parser
+  - Could invoke via subprocess and parse JSON/XML output
+  - Pros: Handles all TLA+ syntax correctly
+  - Cons: Java dependency, complex output format
+
+- [ ] **Option B: tree-sitter-tlaplus**
+  - https://github.com/tlaplus-community/tree-sitter-tlaplus
+  - Modern incremental parser with Rust bindings
+  - Pros: Rust-native, well-tested grammar
+  - Cons: May not cover all TLA+ features
+
+- [ ] **Option C: tla-rust (if exists)**
+  - Search for existing Rust TLA+ parsers
+  - Evaluate quality and completeness
+
+**Recommendation**: Start with tree-sitter-tlaplus for parsing, focus effort on Verus translation.

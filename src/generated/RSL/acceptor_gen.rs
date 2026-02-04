@@ -11,6 +11,7 @@ use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::types::*;
 
@@ -62,11 +63,11 @@ CAcceptor {
     }
 }
 
-pub exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CRslPacket) -> (result: (CAcceptor, Vec<CRslPacket>))
+pub exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is RslMessage1a,
+    inp.msg is CMessage1a,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -81,10 +82,10 @@ ensures
     votes: s.votes,
     last_checkpointed_operation: s.last_checkpointed_operation,
     log_truncation_point: s.log_truncation_point,
-}, vec![CRslPacket {
+}, vec![CPacket {
     src: s.constants.all.config.replica_ids.index(s.constants.my_index),
     dst: inp.src,
-    msg: CRslMessage::RslMessage1b {
+    msg: CMessage::CMessage1b {
         bal_1b: bal,
         log_truncation_point: s.log_truncation_point,
         votes: s.votes,
@@ -97,11 +98,11 @@ ensures
 
 }
 
-pub exec fn CAcceptorProcess2a(s: &CAcceptor, inp: &CRslPacket) -> (result: (CAcceptor, Vec<CRslPacket>))
+pub exec fn CAcceptorProcess2a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is RslMessage2a,
+    inp.msg is CMessage2a,
     s.constants.all.config.replica_ids.contains(inp.src),
     CBalLeq(s.max_bal, inp.msg.get_bal_2a()),
     CLeqUpperBound(inp.msg.get_opn_2a(), s.constants.all.params.max_integer_val),
@@ -116,7 +117,7 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2b {
+        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
     bal_2b: m.get_bal_2a(),
     opn_2b: m.get_opn_2a(),
     val_2b: m.get_val_2a(),
@@ -134,11 +135,11 @@ ensures
 
 }
 
-pub exec fn CAcceptorProcessHeartbeat(s: &CAcceptor, inp: &CRslPacket) -> (result: CAcceptor)
+pub exec fn CAcceptorProcessHeartbeat(s: &CAcceptor, inp: &CPacket) -> (result: CAcceptor)
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is RslMessageHeartbeat,
+    inp.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     LAcceptorProcessHeartbeat(s@, result@, inp@),

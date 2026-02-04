@@ -3,6 +3,7 @@
 
 use vstd::prelude::*;
 use std::collections::HashSet;
+use crate::common::collections::hashsets::HashSetWellFormed;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::appinterface::CAppMessage;
 use crate::implementation::RSL::types_i::CRequestBatch;
@@ -18,7 +19,7 @@ pub struct CLearnerTuple {
 
 impl CLearnerTuple {
     pub open spec fn well_formed(&self) -> bool {
-            self.received_2b_message_senders.well_formed()
+        &&& self.received_2b_message_senders.well_formed()
         &&& self.candidate_learned_value.well_formed()
     }
 }
@@ -64,7 +65,7 @@ pub struct CReply {
 
 impl CReply {
     pub open spec fn well_formed(&self) -> bool {
-            self.client.well_formed()
+        &&& self.client.well_formed()
         &&& self.reply.well_formed()
     }
 }
@@ -112,7 +113,7 @@ pub struct CVote {
 
 impl CVote {
     pub open spec fn well_formed(&self) -> bool {
-            self.max_value_bal.well_formed()
+        &&& self.max_value_bal.well_formed()
         &&& self.max_val.well_formed()
     }
 }
@@ -137,7 +138,7 @@ pub struct CRequest {
 
 impl CRequest {
     pub open spec fn well_formed(&self) -> bool {
-            self.client.well_formed()
+        &&& self.client.well_formed()
         &&& self.request.well_formed()
     }
 }
