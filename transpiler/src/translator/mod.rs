@@ -2330,7 +2330,7 @@ impl Translator {
         let element_expr = ExecExpr::Clone(Box::new(element_with_index));
 
         // Build invariants
-        let invariants = self.build_map_invariants(func, seq_param, transform, extra_args);
+        let invariants = self.build_map_invariants(func, seq_param, iterated_seqs, extra_args);
 
         // Build the loop body (no conditional for map - every element is transformed)
         let loop_body = ExecExpr::MethodCall {
@@ -2372,12 +2372,15 @@ impl Translator {
     }
 
     /// Build invariants for map pattern loop
+    ///
+    /// For zip patterns (multiple sequences iterated in parallel), all sequences
+    /// in `iterated_seqs` are truncated with `.take(i as int)`.
     fn build_map_invariants(
         &self,
         func: &AnnotatedFunction,
         seq_param: &str,
-        transform: &Expr,
-        extra_args: &[String],
+        iterated_seqs: &[String],
+        _extra_args: &[String],
     ) -> Vec<String> {
         let mut invariants = Vec::new();
 
@@ -2387,14 +2390,31 @@ impl Translator {
         // Invariant 2: Result length equals iteration count (map produces same length)
         invariants.push("result.len() == i".to_string());
 
-        // Invariant 3: Spec equivalence
-        let transform_str = self.expr_to_spec_string(transform, extra_args);
-        let element_type = self.get_element_type_hint(func);
+        // Invariant 3: Spec equivalence - reference the spec function directly
+        // For map: result@ == MapFunc(iterated_seqs@.take(i), extra_args@...)
+        // This is more robust than trying to inline the transform expression
+        let spec_name = &func.spec_fn.name;
+
+        // Build spec args in original parameter order
+        // Iterated sequences get truncated with .take(i as int)
+        // Extra args get view operator @
+        let spec_args: Vec<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .map(|p| {
+                if iterated_seqs.contains(&p.name) {
+                    format!("{}@.take(i as int)", p.name)
+                } else {
+                    format!("{}@", p.name)
+                }
+            })
+            .collect();
+
         let map_invariant = format!(
-            "result@ == {}@.take(i as int).map(|x: {}| {})",
-            seq_param,
-            element_type,
-            transform_str
+            "result@ == {}({})",
+            spec_name,
+            spec_args.join(", ")
         );
         invariants.push(map_invariant);
 
@@ -11690,9 +11710,10 @@ mod tests {
             invariants
         );
 
-        // Check map spec invariant exists
+        // Check map spec invariant exists - references spec function with truncated sequence
+        // The invariant should be: result@ == BuildPackets(src@, dsts@.take(i as int))
         assert!(
-            invariants.iter().any(|inv| inv.contains(".map(")),
+            invariants.iter().any(|inv| inv.contains("result@ == BuildPackets(") && inv.contains(".take(i as int)")),
             "Should have map spec invariant: {:?}",
             invariants
         );
