@@ -48,6 +48,14 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub spec_only_functions: Vec<String>,
 
+    /// Method call mappings for spec functions that should become method calls in exec code.
+    /// Maps spec function name to method call configuration.
+    /// The value is a struct with method_name and receiver_arg_index (0-based).
+    /// Example: "LMinQuorumSize" -> { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
+    /// This transforms `LMinQuorumSize(config)` to `config.CMinQuorumSize()`
+    #[serde(default)]
+    pub method_calls: HashMap<String, MethodCallConfig>,
+
     /// Output generation configuration
     #[serde(default)]
     pub output: OutputConfig,
@@ -260,6 +268,18 @@ pub struct ModuleConfig {
     pub custom_includes: Vec<String>,
 }
 
+/// Configuration for transforming a spec function call into a method call.
+/// Used when a spec function like `LMinQuorumSize(config)` should become
+/// a method call like `config.CMinQuorumSize()` in exec code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MethodCallConfig {
+    /// The exec method name to call (e.g., "CMinQuorumSize")
+    pub method_name: String,
+    /// The 0-based index of the argument that becomes the receiver (e.g., 0 for first arg)
+    #[serde(default)]
+    pub receiver_arg_index: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,5 +399,30 @@ mod tests {
             config.output.custom_imports[1],
             "use std::collections::HashMap;"
         );
+    }
+
+    #[test]
+    fn test_method_calls_config() {
+        let toml = r#"
+            [method_calls]
+            "LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
+            "GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
+            "LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.method_calls.len(), 3);
+
+        let min_quorum = config.method_calls.get("LMinQuorumSize").unwrap();
+        assert_eq!(min_quorum.method_name, "CMinQuorumSize");
+        assert_eq!(min_quorum.receiver_arg_index, 0);
+
+        let get_replica = config.method_calls.get("GetReplicaIndex").unwrap();
+        assert_eq!(get_replica.method_name, "CGetReplicaIndex");
+        assert_eq!(get_replica.receiver_arg_index, 1);
+
+        let valid = config.method_calls.get("LReplicaConstantsValid").unwrap();
+        assert_eq!(valid.method_name, "CReplicaConstantsValid");
+        assert_eq!(valid.receiver_arg_index, 0);
     }
 }

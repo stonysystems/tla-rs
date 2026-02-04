@@ -14,12 +14,13 @@ use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
+use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
@@ -169,7 +170,7 @@ ensures
     result.1.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
 {
-if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && (CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
+if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
                 let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
@@ -379,7 +380,7 @@ ensures
     result.valid(),
     LProposerResetViewTimerDueToExecution(s@, result@, val@),
 {
-    let s_election_state = CElectionStateReflectExecutedRequestBatch(&s.election_state, &val);
+    let s_election_state = s.election_state.CElectionStateReflectExecutedRequestBatch(&val);
     CProposer {
         constants: s.constants,
         current_state: s.current_state,

@@ -14,12 +14,13 @@ use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
+use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
@@ -88,7 +89,7 @@ requires
     s.valid(),
     s.next_op_to_execute is COutstandingOpKnown,
     LtUpperBound(s.ops_complete, s.constants.all.params.max_integer_val),
-    CReplicaConstantsValid(s.constants),
+    s.constants.CReplicaConstantsValid(),
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -150,7 +151,7 @@ ensures
     LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@),
 {
     let m = inp.msg;
-    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLeq(&s.max_bal_reflected, &m.get_bal_state_req()) && ((s.ops_complete >= m.get_opn_state_req()) && CReplicaConstantsValid(&s.constants)))) {
+    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLeq(&s.max_bal_reflected, &m.get_bal_state_req()) && ((s.ops_complete >= m.get_opn_state_req()) && s.constants.CReplicaConstantsValid()))) {
         (s.clone(), vec![CPacket {
     dst: inp.src,
     src: s.constants.all.config.replica_ids.index(s.constants.my_index),
@@ -201,7 +202,7 @@ ensures
     result.valid(),
     LExecutorProcessRequest(s@, inp@, result@),
 {
-if ((inp.msg.get_seqno_req() == s.reply_cache.index(inp.src).seqno) && CReplicaConstantsValid(&s.constants)) {
+if ((inp.msg.get_seqno_req() == s.reply_cache.index(inp.src).seqno) && s.constants.CReplicaConstantsValid()) {
                 let r = s.reply_cache.index(inp.src);
         vec![CPacket {
     dst: r.client,

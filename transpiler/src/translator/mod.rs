@@ -20,6 +20,9 @@ pub type HelperCallResult = (
     HashSet<String>,
 );
 
+/// Configuration for method call transformation (imported from config module)
+pub use crate::config::MethodCallConfig;
+
 /// Configuration for code generation
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -36,6 +39,10 @@ pub struct TranslatorConfig {
     /// Spec-only functions that should NOT have C-prefix added
     /// These are functions that only exist in the spec layer and have no exec implementation
     pub spec_only_functions: HashSet<String>,
+    /// Method call mappings for spec functions that should become method calls.
+    /// Maps spec function name to method call configuration.
+    /// Example: "LMinQuorumSize" -> { method_name: "CMinQuorumSize", receiver_arg_index: 0 }
+    pub method_calls: HashMap<String, MethodCallConfig>,
     /// Whether to generate abstraction functions
     pub generate_abstraction_fns: bool,
     /// Whether to generate validity predicates
@@ -56,6 +63,7 @@ impl Default for TranslatorConfig {
             type_remapping: HashMap::new(),
             function_paths: HashMap::new(),
             spec_only_functions: HashSet::new(),
+            method_calls: HashMap::new(),
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
@@ -1971,6 +1979,28 @@ impl Translator {
                 format!("{}.{}({})", recv, method, args_str.join(", "))
             }
             Expr::Call { func, args } => {
+                // Check if this should be transformed to a method call
+                if func.segments.len() == 1 {
+                    let func_name = &func.segments[0];
+                    if let Some(method_config) = self.config.method_calls.get(func_name) {
+                        // Transform to method call
+                        if method_config.receiver_arg_index < args.len() {
+                            let receiver = self.expr_to_simple_string(&args[method_config.receiver_arg_index]);
+                            let other_args: Vec<_> = args
+                                .iter()
+                                .enumerate()
+                                .filter(|(i, _)| *i != method_config.receiver_arg_index)
+                                .map(|(_, a)| self.expr_to_simple_string(a))
+                                .collect();
+                            if other_args.is_empty() {
+                                return format!("{}.{}()", receiver, method_config.method_name);
+                            } else {
+                                return format!("{}.{}({})", receiver, method_config.method_name, other_args.join(", "));
+                            }
+                        }
+                    }
+                }
+
                 // Function call: translate function name using translate_name (respects spec_only_functions)
                 let func_name = if func.segments.len() == 1 {
                     self.translate_name(&func.segments[0])
@@ -2608,11 +2638,120 @@ impl Translator {
                 // A helper call has output parameters if any argument is an output variable
                 // In that case, we should only pass input arguments and the call returns the outputs
                 if let Some(helper_info) = self.detect_helper_call(expr, ctx) {
+                    // Check if this should also be transformed to a method call
+                    if let Some(method_config) = self.config.method_calls.get(&helper_info.func_name) {
+                        // The receiver_arg_index refers to position in original args
+                        // We need to figure out which position in input_args this corresponds to
+
+                        let receiver_orig_pos = method_config.receiver_arg_index;
+
+                        // Check if the receiver position is an input (not an output)
+                        let is_receiver_input = if receiver_orig_pos < args.len() {
+                            match &args[receiver_orig_pos] {
+                                Expr::Field(base, _) | Expr::Arrow(base, _) => {
+                                    if let Expr::Ident(name) = base.as_ref() {
+                                        !ctx.is_output(name)
+                                    } else {
+                                        true
+                                    }
+                                }
+                                Expr::Ident(name) => !ctx.is_output(name),
+                                _ => true,
+                            }
+                        } else {
+                            false
+                        };
+
+                        if is_receiver_input {
+                            // Count input args before the receiver in the original args
+                            let inputs_before_receiver = args[..receiver_orig_pos]
+                                .iter()
+                                .filter(|a| {
+                                    match a {
+                                        Expr::Field(base, _) | Expr::Arrow(base, _) => {
+                                            if let Expr::Ident(name) = base.as_ref() {
+                                                !ctx.is_output(name)
+                                            } else {
+                                                true
+                                            }
+                                        }
+                                        Expr::Ident(name) => !ctx.is_output(name),
+                                        _ => true,
+                                    }
+                                })
+                                .count();
+
+                            let receiver_input_pos = inputs_before_receiver;
+
+                            if receiver_input_pos < helper_info.input_args.len() {
+                                // Get the receiver (might have & prefix, remove it for method call)
+                                let receiver = match &helper_info.input_args[receiver_input_pos] {
+                                    ExecExpr::Unary { op, expr } if op == "&" => (**expr).clone(),
+                                    other => other.clone(),
+                                };
+
+                                let other_args: Vec<_> = helper_info.input_args
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(i, _)| *i != receiver_input_pos)
+                                    .map(|(_, a)| a.clone())
+                                    .collect();
+
+                                return Ok(ExecExpr::MethodCall {
+                                    receiver: Box::new(receiver),
+                                    method: method_config.method_name.clone(),
+                                    args: other_args,
+                                });
+                            }
+                        }
+                    }
+
                     // This is a helper call - use only input args (outputs are stripped)
                     return Ok(ExecExpr::Call {
                         func: self.translate_name(&helper_info.func_name),
                         args: helper_info.input_args,
                     });
+                }
+
+                // Check if this should be transformed to a method call
+                // (e.g., LMinQuorumSize(config) -> config.CMinQuorumSize())
+                if func.segments.len() == 1 {
+                    if let Some(method_config) = self.config.method_calls.get(func_name) {
+                        if method_config.receiver_arg_index < args.len() {
+                            // Transform the receiver
+                            let receiver = self.transform_expr(&args[method_config.receiver_arg_index], ctx)?;
+
+                            // Transform remaining arguments (excluding the receiver)
+                            let other_args: TranspileResult<Vec<_>> = args
+                                .iter()
+                                .enumerate()
+                                .filter(|(i, _)| *i != method_config.receiver_arg_index)
+                                .map(|(_, a)| {
+                                    let transformed = self.transform_expr(a, ctx)?;
+                                    // Add reference for field accesses, identifiers, etc.
+                                    let needs_ref = match a {
+                                        Expr::Field(..) | Expr::MethodCall { .. } | Expr::Arrow(..) => true,
+                                        Expr::Ident(name) => !ctx.is_output(name),
+                                        _ => false,
+                                    };
+                                    if needs_ref {
+                                        Ok(ExecExpr::Unary {
+                                            op: "&".to_string(),
+                                            expr: Box::new(transformed),
+                                        })
+                                    } else {
+                                        Ok(transformed)
+                                    }
+                                })
+                                .collect();
+
+                            return Ok(ExecExpr::MethodCall {
+                                receiver: Box::new(receiver),
+                                method: method_config.method_name.clone(),
+                                args: other_args?,
+                            });
+                        }
+                    }
                 }
 
                 // Transform arguments, adding reference prefixes where appropriate
@@ -3280,10 +3419,41 @@ impl Translator {
             format!("({})", output_names.join(", "))
         };
 
-        // Build the function call
-        let call = ExecExpr::Call {
-            func: self.translate_name(&info.func_name),
-            args: info.input_args.clone(),
+        // Build the function call (or method call if configured)
+        let call = if let Some(method_config) = self.config.method_calls.get(&info.func_name) {
+            // This function should be a method call
+            // receiver_arg_index should be 0 in most cases for this pattern
+            if method_config.receiver_arg_index < info.input_args.len() {
+                // Get the receiver (might have & prefix, remove it for method call)
+                let receiver = match &info.input_args[method_config.receiver_arg_index] {
+                    ExecExpr::Unary { op, expr } if op == "&" => (**expr).clone(),
+                    other => other.clone(),
+                };
+
+                let other_args: Vec<_> = info.input_args
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != method_config.receiver_arg_index)
+                    .map(|(_, a)| a.clone())
+                    .collect();
+
+                ExecExpr::MethodCall {
+                    receiver: Box::new(receiver),
+                    method: method_config.method_name.clone(),
+                    args: other_args,
+                }
+            } else {
+                // Fall back to function call if receiver index is invalid
+                ExecExpr::Call {
+                    func: self.translate_name(&info.func_name),
+                    args: info.input_args.clone(),
+                }
+            }
+        } else {
+            ExecExpr::Call {
+                func: self.translate_name(&info.func_name),
+                args: info.input_args.clone(),
+            }
         };
 
         ExecExpr::Let {
@@ -6906,6 +7076,72 @@ mod tests {
 
         let lit_bool = Expr::Literal(Literal::Bool(true));
         assert_eq!(translator.expr_to_simple_string(&lit_bool), "true");
+    }
+
+    #[test]
+    fn test_method_calls_transformation() {
+        use crate::config::MethodCallConfig;
+
+        let mut config = TranslatorConfig::default();
+        config.method_calls.insert(
+            "LMinQuorumSize".to_string(),
+            MethodCallConfig {
+                method_name: "CMinQuorumSize".to_string(),
+                receiver_arg_index: 0,
+            },
+        );
+        config.method_calls.insert(
+            "GetReplicaIndex".to_string(),
+            MethodCallConfig {
+                method_name: "CGetReplicaIndex".to_string(),
+                receiver_arg_index: 1,
+            },
+        );
+        config.method_calls.insert(
+            "LReplicaConstantsValid".to_string(),
+            MethodCallConfig {
+                method_name: "CReplicaConstantsValid".to_string(),
+                receiver_arg_index: 0,
+            },
+        );
+
+        let translator = Translator::new(config);
+
+        // Test LMinQuorumSize(config) -> config.CMinQuorumSize()
+        let call1 = Expr::Call {
+            func: crate::ast::Path::single("LMinQuorumSize".to_string()),
+            args: vec![Expr::Ident("config".to_string())],
+        };
+        assert_eq!(
+            translator.expr_to_simple_string(&call1),
+            "config.CMinQuorumSize()"
+        );
+
+        // Test GetReplicaIndex(id, config) -> config.CGetReplicaIndex(id)
+        let call2 = Expr::Call {
+            func: crate::ast::Path::single("GetReplicaIndex".to_string()),
+            args: vec![
+                Expr::Ident("id".to_string()),
+                Expr::Ident("config".to_string()),
+            ],
+        };
+        assert_eq!(
+            translator.expr_to_simple_string(&call2),
+            "config.CGetReplicaIndex(id)"
+        );
+
+        // Test LReplicaConstantsValid(c) -> c.CReplicaConstantsValid()
+        let call3 = Expr::Call {
+            func: crate::ast::Path::single("LReplicaConstantsValid".to_string()),
+            args: vec![Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "constants".to_string(),
+            )],
+        };
+        assert_eq!(
+            translator.expr_to_simple_string(&call3),
+            "s.constants.CReplicaConstantsValid()"
+        );
     }
 
     #[test]

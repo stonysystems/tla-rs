@@ -19,6 +19,8 @@ spec_only_functions = [
     "LAllAcceptorsHadNoProposal",
     # App state machine (spec-only)
     "AppInitialize",
+    # Executor helpers (spec-only, no exec implementation exists)
+    "LRepliesAreReplyType",
 ]
 
 [naming]
@@ -62,6 +64,21 @@ exec_prefix = "C"
 "Receive" = "CReceive"
 "TimeoutReceive" = "CTimeoutReceive"
 "ReadClock" = "CReadClock"
+
+# Method call mappings: spec functions that should become method calls in exec code
+# Format: "SpecFuncName" = { method_name = "ExecMethodName", receiver_arg_index = N }
+# receiver_arg_index is 0-based: the argument at this index becomes the receiver
+[method_calls]
+# LMinQuorumSize(config) -> config.CMinQuorumSize()
+"LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
+# GetReplicaIndex(id, config) -> config.CGetReplicaIndex(id)
+# Note: argument order is swapped - id is first in spec but config is receiver
+"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
+# LReplicaConstantsValid(c) -> c.CReplicaConstantsValid()
+"LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
+# LElectionStateReflectExecutedRequestBatch(es, es_, val) -> es.CElectionStateReflectExecutedRequestBatch(val)
+# Note: es_ is output, es is receiver, val is input
+"ElectionStateReflectExecutedRequestBatch" = { method_name = "CElectionStateReflectExecutedRequestBatch", receiver_arg_index = 0 }
 
 # Cross-module function paths for generated code
 # Maps spec function base names to their qualified exec paths
@@ -128,12 +145,13 @@ custom_imports = [
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::RSL::cconfiguration::*;",
-    "use crate::implementation::RSL::acceptorimpl::CAcceptor;",
-    "use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};",
+    "use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};",
+    "use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};",
     "use crate::implementation::RSL::learnerimpl::CLearner;",
-    "use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};",
+    "use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};",
     "use crate::implementation::RSL::ReplicaImpl::CReplica;",
     "use crate::implementation::RSL::ElectionImpl::CElectionState;",
+    "use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::*;",
     # Protocol specs

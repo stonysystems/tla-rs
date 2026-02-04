@@ -14,12 +14,13 @@ use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
+use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
@@ -127,7 +128,7 @@ ensures
 if !es.constants.all.config.replica_ids.contains(p.src) {
         es.clone()
     } else {
-                let sender_index = CGetReplicaIndex(&p.src, &es.constants.all.config);
+                let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
         if ((p.msg.get_bal_heartbeat() == es.current_view) && p.msg.get_suspicious()) {
             CElectionState {
                 constants: es.constants,
@@ -206,7 +207,7 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, clock@),
 {
-if ((es.current_view_suspectors.len() < CMinQuorumSize(&es.constants.all.config)) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
+if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
                 let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);

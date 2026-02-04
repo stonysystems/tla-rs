@@ -301,6 +301,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             type_remapping: file_config.remapping.clone(),
             function_paths: file_config.function_paths.clone(),
             spec_only_functions: file_config.spec_only_functions.into_iter().collect(),
+            method_calls: file_config.method_calls.clone(),
             ..TranslatorConfig::default()
         },
         custom_imports: file_config.output.custom_imports,

@@ -14,12 +14,13 @@ use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
+use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
@@ -405,7 +406,7 @@ ensures
     LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@),
 {
     let opn = s.executor.ops_complete;
-    if ((s.executor.next_op_to_execute is COutstandingOpUnknown) && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state.index(opn).received_2b_message_senders.len() >= CMinQuorumSize(&s.learner.constants.all.config)))) {
+    if ((s.executor.next_op_to_execute is COutstandingOpUnknown) && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state.index(opn).received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
                 let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.index(opn).candidate_learned_value);
         (CReplica {
     constants: s.constants,
@@ -430,7 +431,7 @@ ensures
     result.1.valid(),
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@),
 {
-if ((s.executor.next_op_to_execute is COutstandingOpKnown) && (LtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && CReplicaConstantsValid(&s.executor.constants))) {
+if ((s.executor.next_op_to_execute is COutstandingOpKnown) && (LtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
                 let v = s.executor.next_op_to_execute.get_v();
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &v);
         let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);

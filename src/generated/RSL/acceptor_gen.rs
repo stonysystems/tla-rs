@@ -14,12 +14,13 @@ use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::acceptorimpl::CAcceptor;
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
+use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
@@ -95,7 +96,7 @@ ensures
 {
     let m = inp.msg;
         let bal = inp.msg.get_bal_1a();
-    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLt(&s.max_bal, &bal) && CReplicaConstantsValid(&s.constants))) {
+    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
         (CAcceptor {
     constants: s.constants,
     max_bal: bal,
@@ -165,7 +166,7 @@ ensures
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
 if s.constants.all.config.replica_ids.contains(inp.src) {
-                let sender_index = CGetReplicaIndex(&inp.src, &s.constants.all.config);
+                let sender_index = s.constants.all.config.CGetReplicaIndex(&inp.src);
         if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg.get_opn_ckpt() > s.last_checkpointed_operation.index(sender_index))) {
             CAcceptor { last_checkpointed_operation: s.last_checkpointed_operation.update(sender_index, inp.msg.get_opn_ckpt()), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
         } else {
