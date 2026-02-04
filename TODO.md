@@ -1656,7 +1656,12 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 - [ ] `verus two_phase.rs` returns 0 errors
 - [x] Generated code has ZERO imports from `types_i` (pure data types now in `types_gen.rs`)
   - Note: Intentional imports remain for marshalling types (cmessage, cconstants, etc.) per infrastructure audit
-- [ ] All 6 recursive helpers generate correct loop-based implementations
+- [x] All 6 recursive helpers generate correct loop-based implementations
+  - Updated automan files with `helper` prefix and return types for recursive functions
+  - Fixed transpiler to detect zip patterns (multiple sequences iterated in parallel)
+  - Added `iterated_seqs` field to `RecursivePattern::Map` for parallel iteration
+  - Fixed `substitute_head_with_index` to handle `Field`, `Clone`, and `Struct` expressions
+  - All 6 helpers now generate proper `for i in 0..seq.len()` loops with `seq[i]` access
 
 ---
 

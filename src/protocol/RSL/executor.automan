@@ -47,13 +47,15 @@ module RSL::executor {
     // sent_packets (output): cached reply packets
     LExecutorProcessRequest(+, +, -);
 
-    // Helper: Get reply packets from requests and replies
-    // Pure function (all inputs, returns output)
-    GetPacketsFromReplies(+, +, +);
+    // Helper: Get reply packets from requests and replies (RECURSIVE)
+    // Inputs: me (endpoint), requests (sequence), replies (sequence)
+    // Returns: Seq<RslPacket>
+    helper GetPacketsFromReplies(+, +, +) -> Seq<CPacket>;
 
-    // Helper: Build client-to-reply cache from replies
-    // Pure function (input, returns output)
-    LClientsInReplies(+);
+    // Helper: Build client-to-reply cache from replies (RECURSIVE)
+    // Inputs: replies (sequence)
+    // Returns: ReplyCache (Map<EndPoint, Reply>)
+    helper LClientsInReplies(+) -> CReplyCache;
 
     // Helper: Check if all replies are of reply type
     // Pure predicate (all inputs)

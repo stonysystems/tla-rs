@@ -9,10 +9,10 @@ module RSL::broadcast {
     // sent_packets (output): sequence of packets to all replicas
     LBroadcastToEveryone(+, +, +, -);
 
-    // Build broadcast packet sequence
+    // Build broadcast packet sequence (RECURSIVE)
     // src (input): source endpoint
     // dsts (input): sequence of destination endpoints
     // m (input): message to send
-    // Returns: sequence of packets
-    BuildLBroadcast(+, +, +);
+    // Returns: Seq<RslPacket>
+    helper BuildLBroadcast(+, +, +) -> Seq<CPacket>;
 }

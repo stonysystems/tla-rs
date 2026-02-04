@@ -143,9 +143,10 @@ module RSL::replica {
     // sent_packets (output): empty
     LReplicaNextReadClockCheckForQuorumOfViewSuspicions(+, -, +, -);
 
-    // Helper: Extract sent packets from I/O sequence
-    // Pure function (input, returns output)
-    ExtractSentPacketsFromIos(+);
+    // Helper: Extract sent packets from I/O sequence (RECURSIVE)
+    // Inputs: ios (I/O sequence)
+    // Returns: Seq<RslPacket>
+    helper ExtractSentPacketsFromIos(+) -> Seq<CPacket>;
 
     // Helper: Check spontaneous I/O structure
     // Pure predicate (all inputs)

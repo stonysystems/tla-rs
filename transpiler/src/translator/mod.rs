@@ -437,8 +437,15 @@ pub enum RecursivePattern {
 
     /// Map pattern: transforms each element.
     /// (To be implemented in R1.3)
+    ///
+    /// For zip patterns (multiple parallel sequences), all sequences that have
+    /// `drop_first()` in the recursive call are stored in `iterated_seqs`.
     Map {
+        /// Name of the primary sequence parameter (used for len check)
         seq_param: String,
+        /// All sequences that are iterated in parallel (including seq_param)
+        /// These all have `drop_first()` in the recursive call
+        iterated_seqs: Vec<String>,
         transform: Expr,
         extra_args: Vec<String>,
     },
@@ -627,10 +634,15 @@ impl Translator {
         }
 
         // Check for concat pattern: transform + recurse
-        if let Some((element, _recurse)) =
+        if let Some((element, recurse_call)) =
             Self::match_concat_with_recurse(recursive_case, func_name, &seq_param)
         {
-            let extra_args = Self::get_extra_args(params, &seq_param);
+            // Find all sequences that are iterated (have drop_first() in recursive call)
+            // This handles zip patterns where multiple sequences iterate in parallel
+            let iterated_seqs = Self::find_iterated_sequences(recurse_call);
+
+            // Extra args are parameters that are NOT iterated (passed unchanged)
+            let extra_args = Self::get_extra_args_excluding(params, &iterated_seqs);
 
             // The element might be a direct s[0] reference or a transformation
             // For map pattern, we consider any expression that uses s[0] as a transform
@@ -644,6 +656,7 @@ impl Translator {
 
             return Some(RecursivePattern::Map {
                 seq_param: seq_param.clone(),
+                iterated_seqs,
                 transform,
                 extra_args,
             });
@@ -986,6 +999,43 @@ impl Translator {
             .filter(|p| p.name != seq_param)
             .map(|p| p.name.clone())
             .collect()
+    }
+
+    /// Get parameter names that are not in the iterated sequences list
+    fn get_extra_args_excluding(params: &[crate::ast::Parameter], iterated_seqs: &[String]) -> Vec<String> {
+        params
+            .iter()
+            .filter(|p| !iterated_seqs.contains(&p.name))
+            .map(|p| p.name.clone())
+            .collect()
+    }
+
+    /// Find all parameters that have `drop_first()` called on them in the recursive call.
+    /// This is used to detect zip patterns where multiple sequences iterate in parallel.
+    fn find_iterated_sequences(recursive_call: &Expr) -> Vec<String> {
+        let mut iterated = Vec::new();
+
+        if let Expr::Call { args, .. } = recursive_call {
+            for arg in args {
+                // Check if arg is something.drop_first() or something.skip(1)
+                if let Expr::MethodCall { receiver, method, args: method_args } = arg {
+                    let is_drop_first = method == "drop_first" && method_args.is_empty();
+                    let is_skip_1 = method == "skip"
+                        && method_args.len() == 1
+                        && matches!(&method_args[0], Expr::Literal(Literal::Int(1)));
+
+                    if is_drop_first || is_skip_1 {
+                        if let Expr::Ident(name) = receiver.as_ref() {
+                            if !iterated.contains(name) {
+                                iterated.push(name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        iterated
     }
 
     // ========================================================================
@@ -2111,9 +2161,10 @@ impl Translator {
             ),
             RecursivePattern::Map {
                 seq_param,
+                iterated_seqs,
                 transform,
                 extra_args,
-            } => self.translate_map_pattern(func, &seq_param, &transform, &extra_args),
+            } => self.translate_map_pattern(func, &seq_param, &iterated_seqs, &transform, &extra_args),
             RecursivePattern::Fold {
                 seq_param,
                 init,
@@ -2209,6 +2260,7 @@ impl Translator {
         &self,
         func: &AnnotatedFunction,
         seq_param: &str,
+        iterated_seqs: &[String],
         transform: &Expr,
         extra_args: &[String],
     ) -> TranspileResult<ExecFunction> {
@@ -2227,7 +2279,7 @@ impl Translator {
         let ensures = self.build_helper_ensures(func);
 
         // Build the loop body
-        let body = self.build_map_loop_body(seq_param, transform, extra_args, func)?;
+        let body = self.build_map_loop_body(seq_param, iterated_seqs, transform, extra_args, func)?;
 
         Ok(ExecFunction {
             name: exec_name,
@@ -2244,6 +2296,7 @@ impl Translator {
     fn build_map_loop_body(
         &self,
         seq_param: &str,
+        iterated_seqs: &[String],
         transform: &Expr,
         extra_args: &[String],
         func: &AnnotatedFunction,
@@ -2258,8 +2311,9 @@ impl Translator {
         };
 
         // Transform the element expression, substituting s[0] with seq[i]
+        // For zip patterns, substitute [0] with [i] for ALL iterated sequences
         let transformed_element = self.transform_expr(transform, &ctx)?;
-        let element_with_index = self.substitute_head_with_index(transformed_element, seq_param);
+        let element_with_index = self.substitute_heads_with_index(transformed_element, iterated_seqs);
 
         // Wrap in clone to get owned value
         let element_expr = ExecExpr::Clone(Box::new(element_with_index));
@@ -2729,6 +2783,16 @@ impl Translator {
         Ok(self.substitute_head_with_index(transformed, seq_param))
     }
 
+    /// Substitute s[0] patterns with s.index(i) for ALL iterated sequences.
+    /// This handles zip patterns where multiple sequences iterate in parallel.
+    fn substitute_heads_with_index(&self, expr: ExecExpr, iterated_seqs: &[String]) -> ExecExpr {
+        let mut result = expr;
+        for seq_param in iterated_seqs {
+            result = self.substitute_head_with_index(result, seq_param);
+        }
+        result
+    }
+
     /// Substitute s[0] patterns with s.index(i) in an ExecExpr
     fn substitute_head_with_index(&self, expr: ExecExpr, seq_param: &str) -> ExecExpr {
         match expr {
@@ -2798,6 +2862,23 @@ impl Translator {
                     .map(|s| self.substitute_head_with_index(s, seq_param))
                     .collect(),
             ),
+            // Field access - need to recurse into base expression
+            ExecExpr::Field(base, field) => ExecExpr::Field(
+                Box::new(self.substitute_head_with_index(*base, seq_param)),
+                field,
+            ),
+            // Clone - recurse into inner expression
+            ExecExpr::Clone(inner) => ExecExpr::Clone(
+                Box::new(self.substitute_head_with_index(*inner, seq_param)),
+            ),
+            // Struct - recurse into field values
+            ExecExpr::Struct { name, fields } => ExecExpr::Struct {
+                name,
+                fields: fields
+                    .into_iter()
+                    .map(|(f, e)| (f, self.substitute_head_with_index(e, seq_param)))
+                    .collect(),
+            },
             // Other cases pass through unchanged
             other => other,
         }
