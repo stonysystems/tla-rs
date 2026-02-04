@@ -1281,7 +1281,14 @@ The generated code is structurally correct and matches the expected Verus exec f
 The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) specs to verified implementation:
 
 #### 1. CI and Build Issues
-- [x] **Fix CI test failures** - Tests failing on GitHub CI (fixed: updated Verus version to 0.2026.02.03.6d23bed)
+- [x] **Fix CI test failures** [2026-02-04] - GitHub CI Verus verification job configuration:
+  - Fixed: Updated Verus version to `0.2026.02.03.6d23bed`
+  - Fixed: Correct Verus zip extraction path (`verus-x86-linux/` not `verus-${VERSION}-x86-linux/`)
+  - Fixed: Added chmod +x for verus binary (execute permission not preserved in zip)
+  - Fixed: Correct verus binary path to scons (`~/verus/verus` not `~/verus`)
+- [ ] **Fix Verus compilation errors** - CI now runs Verus but code has 495 compilation errors:
+  - `CMessage` type not found in `replicaimpl_process_packet_*.rs`
+  - These are pre-existing issues exposed by the new Verus verification job
 - [ ] **Verify generated code with Verus** - Generated modules guarded by `#[cfg(test)]`, need verification
   - Blockers identified [2026-02-04]:
     1. EndPoint import fails - defined via macro inside `verus!` block, macro expansion fails on non-test builds
