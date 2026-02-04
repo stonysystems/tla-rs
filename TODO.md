@@ -2379,30 +2379,19 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Fairness: `WF_vars(A)`, `SF_vars(A)`
 
 #### Phase T3: TLA+ AST Definition
-- [ ] **T3.1: Define core AST types**
-  ```rust
-  enum TlaExpr {
-      Var(String),           // x, x'
-      Const(String),         // CONSTANT c
-      Literal(TlaLiteral),   // 1, "str", TRUE
-      Set { elements: Vec<TlaExpr> },
-      SetComprehension { var: String, set: Box<TlaExpr>, filter: Box<TlaExpr> },
-      Function { param: String, domain: Box<TlaExpr>, body: Box<TlaExpr> },
-      FunctionApp { func: Box<TlaExpr>, arg: Box<TlaExpr> },
-      Record { fields: Vec<(String, TlaExpr)> },
-      Tuple(Vec<TlaExpr>),
-      BinOp { op: TlaBinOp, left: Box<TlaExpr>, right: Box<TlaExpr> },
-      UnaryOp { op: TlaUnaryOp, operand: Box<TlaExpr> },
-      Quantifier { kind: QuantKind, var: String, set: Box<TlaExpr>, body: Box<TlaExpr> },
-      IfThenElse { cond: Box<TlaExpr>, then_: Box<TlaExpr>, else_: Box<TlaExpr> },
-      Case { arms: Vec<(TlaExpr, TlaExpr)>, default: Option<Box<TlaExpr>> },
-      LetIn { bindings: Vec<(String, TlaExpr)>, body: Box<TlaExpr> },
-      Prime(Box<TlaExpr>),   // x'
-      Unchanged(Vec<String>),
-  }
-  ```
+- [x] **T3.1: Define core AST types** [2026-02-04]
+  - Implemented in `transpiler/src/tla/ast.rs` (~480 LOC)
+  - Core types: `TlaExpr`, `TlaBinOp`, `TlaUnaryOp`, `TlaNumber`
+  - Module types: `TlaModule`, `TlaOperator`, `TlaParam`, `TlaConstantDecl`
+  - Support types: `TlaQuantBound`, `TlaExceptUpdate`, `TlaExceptPath`
+  - Temporal operators: `Always`, `Eventually`, `LeadsTo`, `WeakFairness`, `StrongFairness`
+  - 13 unit tests for AST construction and operations
 
-- [ ] **T3.2: Define module/operator AST**
+- [x] **T3.2: Define module/operator AST** [2026-02-04]
+  - Completed as part of T3.1
+  - `TlaModule`: name, extends, constants, variables, operators, theorems, instances
+  - `TlaOperator`: name, params, body, is_recursive, is_local
+  - `TlaInstance`: module instantiation with substitutions
   ```rust
   struct TlaModule {
       name: String,
