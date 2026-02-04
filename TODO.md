@@ -2426,11 +2426,26 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
 
 #### Phase T4: Type Inference
 - [ ] **T4.1: Infer types from usage patterns**
-  - Variable used with `\in Nat` → `nat`
-  - Variable used with `\in Int` → `int`
-  - Variable used with `\in S` for finite set → `Set<T>`
-  - Record field access → struct field
-  - Function application → Map or function
+  - [x] **T4.1.1: Define TLA+ type system representation** ✅ [2026-02-04]
+    - Implemented in `transpiler/src/tla/types.rs` (~400 LOC)
+    - `TlaType` enum with: `Int`, `Nat`, `Bool`, `String`, `Set<T>`, `Seq<T>`, `Map<K,V>`, `Record`, `Tuple`, `Function`, `Unknown`, `TypeVar`, `Any`
+    - `RecordType` for named and anonymous record types
+    - `TypeEnv` for type environment mapping identifiers to types
+    - `StandardLibrary` for known TLA+ module type information
+    - 10 unit tests
+  - [ ] **T4.1.2: Implement type constraint collection**
+    - Walk AST and collect type constraints from usage patterns
+    - Handle `\in Nat`, `\in Int`, `\in BOOLEAN` patterns
+    - Handle record field access to infer record types
+    - ~200 LOC
+  - [ ] **T4.1.3: Implement type unification/resolution**
+    - Resolve collected constraints to concrete types
+    - Handle conflicts by choosing most specific type or reporting ambiguity
+    - ~150 LOC
+  - [ ] **T4.1.4: Build type environment from module**
+    - Collect types for constants, variables, and operators
+    - Output: mapping from identifier names to inferred types
+    - ~100 LOC
 
 - [ ] **T4.2: Generate type annotations file**
   - Create `.tla-types` annotation file for manual type refinement

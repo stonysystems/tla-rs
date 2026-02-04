@@ -6,6 +6,7 @@
 pub mod ast;
 pub mod parser;
 pub mod tokenizer;
+pub mod types;
 
 pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,
@@ -13,3 +14,4 @@ pub use ast::{
 };
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};
+pub use types::{RecordType, StandardLibrary, TlaType, TypeEnv};
