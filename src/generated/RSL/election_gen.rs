@@ -59,7 +59,7 @@ ensures
     result.valid(),
     result@ == BoundRequestSequence(s@, lengthBound@),
 {
-if ((lengthBound is UpperBoundFinite) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {
+if ((lengthBound is CUpperBoundFinite) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {
         s.subrange(0, lengthBound.get_n())
     } else {
         s
@@ -73,7 +73,7 @@ requires
 ensures
     result@ == RequestsMatch(r1@, r2@),
 {
-((r1 is Request) && ((r2 is Request) && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
+((r1 is CRequest) && ((r2 is CRequest) && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
 }
 
 pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
@@ -83,7 +83,7 @@ requires
 ensures
     result@ == RequestSatisfiedBy(r1@, r2@),
 {
-((r1 is Request) && ((r2 is Request) && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
+((r1 is CRequest) && ((r2 is CRequest) && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
 }
 
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)
@@ -112,7 +112,7 @@ pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clo
 requires
     es.valid(),
     p.valid(),
-    p.msg is RslMessageHeartbeat,
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, clock@),

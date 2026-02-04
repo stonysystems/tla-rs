@@ -53,7 +53,7 @@ pub exec fn CReplicaNextProcessInvalid(s: &CReplica, received_packet: &CPacket) 
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageInvalid,
+    received_packet.msg is CMessageInvalid,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -66,7 +66,7 @@ pub exec fn CReplicaNextProcessRequest(s: &CReplica, received_packet: &CPacket) 
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageRequest,
+    received_packet.msg is CMessageRequest,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -94,7 +94,7 @@ pub exec fn CReplicaNextProcess1a(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessage1a,
+    received_packet.msg is CMessage1a,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -116,7 +116,7 @@ pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessage1b,
+    received_packet.msg is CMessage1b,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -143,7 +143,7 @@ pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CP
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageStartingPhase2,
+    received_packet.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -165,7 +165,7 @@ pub exec fn CReplicaNextProcess2a(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessage2a,
+    received_packet.msg is CMessage2a,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -193,14 +193,14 @@ pub exec fn CReplicaNextProcess2b(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessage2b,
+    received_packet.msg is CMessage2b,
 ensures
     result.0.valid(),
     result.1.valid(),
     LReplicaNextProcess2b(s@, result.0@, received_packet@, result.1@),
 {
     let opn = received_packet.msg.get_opn_2b();
-        let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && (s.executor.next_op_to_execute is OutstandingOpUnknown)));
+        let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && (s.executor.next_op_to_execute is COutstandingOpUnknown)));
     if op_learnable {
                 let s_learner = CLearnerProcess2b(&s.learner, &received_packet);
         (CReplica {
@@ -223,7 +223,7 @@ pub exec fn CReplicaNextProcessReply(s: &CReplica, received_packet: &CPacket) ->
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageReply,
+    received_packet.msg is CMessageReply,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -236,7 +236,7 @@ pub exec fn CReplicaNextProcessAppStateSupply(s: &CReplica, received_packet: &CP
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageAppStateSupply,
+    received_packet.msg is CMessageAppStateSupply,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -263,7 +263,7 @@ pub exec fn CReplicaNextProcessAppStateRequest(s: &CReplica, received_packet: &C
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageAppStateRequest,
+    received_packet.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -285,7 +285,7 @@ pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket
 requires
     s.valid(),
     received_packet.valid(),
-    received_packet.msg is RslMessageHeartbeat,
+    received_packet.msg is CMessageHeartbeat,
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -398,7 +398,7 @@ ensures
     LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@),
 {
     let opn = s.executor.ops_complete;
-    if ((s.executor.next_op_to_execute is OutstandingOpUnknown) && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state.index(opn).received_2b_message_senders.len() >= CMinQuorumSize(&s.learner.constants.all.config)))) {
+    if ((s.executor.next_op_to_execute is COutstandingOpUnknown) && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state.index(opn).received_2b_message_senders.len() >= CMinQuorumSize(&s.learner.constants.all.config)))) {
                 let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.index(opn).candidate_learned_value);
         (CReplica {
     constants: s.constants,
@@ -423,7 +423,7 @@ ensures
     result.1.valid(),
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@),
 {
-if ((s.executor.next_op_to_execute is OutstandingOpKnown) && (CLtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && CReplicaConstantsValid(&s.executor.constants))) {
+if ((s.executor.next_op_to_execute is COutstandingOpKnown) && (CLtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && CReplicaConstantsValid(&s.executor.constants))) {
                 let v = s.executor.next_op_to_execute.get_v();
                 let s_proposer = CProposerResetViewTimerDueToExecution(&s.proposer, &v);
         let s_learner = CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
@@ -455,7 +455,7 @@ ensures
 if (clock.t < s.nextHeartbeatTime) {
         (s.clone(), vec![])
     } else {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessageHeartbeat {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageHeartbeat {
     bal_heartbeat: s.proposer.election_state.current_view,
     suspicious: s.proposer.election_state.current_view_suspectors.contains(s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,
@@ -512,8 +512,8 @@ requires
     s.valid(),
     ios.valid(),
     (ios.len() >= 1),
-    Index(Ident("ios"), Literal(Int(0))) is Receive,
-    Index(Ident("ios"), Literal(Int(0))).get_r().msg is RslMessageHeartbeat,
+    ios.index(0) is CReceive,
+    ios.index(0).get_r().msg is CMessageHeartbeat,
 ensures
     result.valid(),
     LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
@@ -528,16 +528,16 @@ requires
     s.valid(),
     ios.valid(),
     (ios.len() >= 1),
-    Index(Ident("ios"), Literal(Int(0))) is Receive,
-    !Index(Ident("ios"), Literal(Int(0))).get_r().msg is RslMessageHeartbeat,
+    ios.index(0) is CReceive,
+    !ios.index(0).get_r().msg is CMessageHeartbeat,
 ensures
     result.valid(),
     LReplicaNextProcessPacketWithoutReadingClock(s@, result@, ios@),
 {
     let sent_packets = CExtractSentPacketsFromIos(&ios);
-        ios.drop_first().iter().all(|io| (io is Send));
+        ios.drop_first().iter().all(|io| (io is CSend));
     match ios.index(0).get_r().msg {
-        CRslMessageInvalid {  } => CReplicaNextProcessInvalid(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessageInvalid {  } => CReplicaNextProcessInvalid(&s, s_, &ios.index(0).get_r(), &sent_packets),
         CMessageRequest { seqno_req: seqno_req, val: val } => CReplicaNextProcessRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
         CMessage1a { bal_1a: bal_1a } => CReplicaNextProcess1a(&s, s_, &ios.index(0).get_r(), &sent_packets),
         CMessage1b { bal_1b: bal_1b, log_truncation_point: log_truncation_point, votes: votes } => CReplicaNextProcess1b(&s, s_, &ios.index(0).get_r(), &sent_packets),
@@ -561,10 +561,10 @@ ensures
     result.valid(),
     LReplicaNextProcessPacket(s@, result@, ios@),
 {
-if (ios.index(0) is TimeoutReceive) {
+if (ios.index(0) is CTimeoutReceive) {
         s.clone()
     } else {
-        if (ios.index(0).get_r().msg is RslMessageHeartbeat) {
+        if (ios.index(0).get_r().msg is CMessageHeartbeat) {
             CReplicaNextReadClockAndProcessPacket(&s, s_, &ios)
         } else {
             CReplicaNextProcessPacketWithoutReadingClock(&s, s_, &ios)

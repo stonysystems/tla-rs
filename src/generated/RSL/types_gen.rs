@@ -12,30 +12,6 @@ use crate::protocol::RSL::types::*;
 verus! {
 
 #[derive(Clone)]
-pub struct CLearnerTuple {
-    pub received_2b_message_senders: HashSet<EndPoint>,
-    pub candidate_learned_value: CRequestBatch,
-}
-
-impl CLearnerTuple {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.received_2b_message_senders.well_formed()
-        &&& self.candidate_learned_value.well_formed()
-    }
-}
-
-impl View for CLearnerTuple {
-    type V = LearnerTuple;
-
-    open spec fn view(&self) -> LearnerTuple {
-        LearnerTuple {
-            received_2b_message_senders: self.received_2b_message_senders@,
-            candidate_learned_value: self.candidate_learned_value@,
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct CRequest {
     pub client: EndPoint,
     pub seqno: i64,
@@ -57,6 +33,54 @@ impl View for CRequest {
             client: self.client@,
             seqno: self.seqno as int,
             request: self.request@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CVote {
+    pub max_value_bal: CBallot,
+    pub max_val: CRequestBatch,
+}
+
+impl CVote {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.max_value_bal.well_formed()
+        &&& self.max_val.well_formed()
+    }
+}
+
+impl View for CVote {
+    type V = Vote;
+
+    open spec fn view(&self) -> Vote {
+        Vote {
+            max_value_bal: self.max_value_bal@,
+            max_val: self.max_val@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CLearnerTuple {
+    pub received_2b_message_senders: HashSet<EndPoint>,
+    pub candidate_learned_value: CRequestBatch,
+}
+
+impl CLearnerTuple {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.received_2b_message_senders.well_formed()
+        &&& self.candidate_learned_value.well_formed()
+    }
+}
+
+impl View for CLearnerTuple {
+    type V = LearnerTuple;
+
+    open spec fn view(&self) -> LearnerTuple {
+        LearnerTuple {
+            received_2b_message_senders: self.received_2b_message_senders@,
+            candidate_learned_value: self.candidate_learned_value@,
         }
     }
 }
@@ -104,30 +128,6 @@ impl View for CReply {
             client: self.client@,
             seqno: self.seqno as int,
             reply: self.reply@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CVote {
-    pub max_value_bal: CBallot,
-    pub max_val: CRequestBatch,
-}
-
-impl CVote {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.max_value_bal.well_formed()
-        &&& self.max_val.well_formed()
-    }
-}
-
-impl View for CVote {
-    type V = Vote;
-
-    open spec fn view(&self) -> Vote {
-        Vote {
-            max_value_bal: self.max_value_bal@,
-            max_val: self.max_val@,
         }
     }
 }

@@ -29,6 +29,7 @@ exec_prefix = "C"
 "RslMessageAppStateRequest" = "CMessageAppStateRequest"
 "RslMessageAppStateSupply" = "CMessageAppStateSupply"
 "RslMessageStartingPhase2" = "CMessageStartingPhase2"
+"RslMessageInvalid" = "CMessageInvalid"
 # External types that don't follow L->C convention
 "AbstractEndPoint" = "EndPoint"
 "AppMessage" = "CAppMessage"

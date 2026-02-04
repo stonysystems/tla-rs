@@ -50,7 +50,7 @@ ensures
     next_operation_number_to_propose: 0,
     received_1b_packets: HashSet::new(),
     highest_seqno_requested_by_client_this_view: HashMap::new(),
-}, (s.incomplete_batch_timer is IncompleteBatchTimerOff))
+}, (s.incomplete_batch_timer is CIncompleteBatchTimerOff))
 
 }
 
@@ -58,7 +58,7 @@ pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result:
 requires
     s.valid(),
     packet.valid(),
-    packet.msg is RslMessageRequest,
+    packet.msg is CMessageRequest,
 ensures
     result.valid(),
     LProposerProcessRequest(s@, result@, packet@),
@@ -107,7 +107,7 @@ ensures
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
 if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage1a {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage1a {
     bal_1a: s.election_state.current_view,
 });
         (CProposer {
@@ -131,7 +131,7 @@ pub exec fn CProposerProcess1b(s: &CProposer, p: &CPacket) -> (result: CProposer
 requires
     s.valid(),
     p.valid(),
-    p.msg is RslMessage1b,
+    p.msg is CMessage1b,
     s.constants.all.config.replica_ids.contains(p.src),
     (p.msg.get_bal_1b() == s.max_ballot_i_sent_1a),
     (s.current_state == 1),
@@ -163,7 +163,7 @@ ensures
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
 {
 if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && (CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessageStartingPhase2 {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
 });
@@ -202,7 +202,7 @@ ensures
     };
         let v = s.request_queue.subrange(0, batchSize);
         let opn = s.next_operation_number_to_propose;
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a {
+        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: v,
@@ -216,11 +216,11 @@ ensures
     received_1b_packets: s.received_1b_packets,
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: if (s.request_queue.len() > batchSize) {
-        CIncompleteBatchTimer::IncompleteBatchTimerOn {
+        CIncompleteBatchTimer::CIncompleteBatchTimerOn {
             when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
         }
     } else {
-        CIncompleteBatchTimer::IncompleteBatchTimerOff {
+        CIncompleteBatchTimer::CIncompleteBatchTimerOff {
         }
     },
     election_state: s.election_state,
@@ -253,7 +253,7 @@ ensures
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: s.incomplete_batch_timer,
     election_state: s.election_state,
-} && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a {
+} && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: p.msg.get_votes().index(opn).max_val,
@@ -275,10 +275,10 @@ if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
         if !CAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
             CProposerNominateOldValueAndSend2a(&s, s_, &log_truncation_point, sent_packets)
         } else {
-            if (CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && ((s.incomplete_batch_timer is IncompleteBatchTimerOn) && (clock >= s.incomplete_batch_timer.get_when()))))) {
+            if (CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && ((s.incomplete_batch_timer is CIncompleteBatchTimerOn) && (clock >= s.incomplete_batch_timer.get_when()))))) {
                 CProposerNominateNewValueAndSend2a(&s, s_, &clock, &log_truncation_point, sent_packets)
             } else {
-                if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is IncompleteBatchTimerOff)) {
+                if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOff)) {
                     (CProposer {
     constants: s.constants,
     current_state: s.current_state,
@@ -287,7 +287,7 @@ if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
     next_operation_number_to_propose: s.next_operation_number_to_propose,
     received_1b_packets: s.received_1b_packets,
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-    incomplete_batch_timer: CIncompleteBatchTimer::IncompleteBatchTimerOn {
+    incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOn {
         when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
     },
     election_state: s.election_state,
@@ -304,7 +304,7 @@ pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &i64) -
 requires
     s.valid(),
     p.valid(),
-    p.msg is RslMessageHeartbeat,
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     LProposerProcessHeartbeat(s@, result@, p@, clock@),

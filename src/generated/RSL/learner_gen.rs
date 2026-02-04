@@ -51,7 +51,7 @@ pub exec fn CLearnerProcess2b(s: &CLearner, packet: &CPacket) -> (result: CLearn
 requires
     s.valid(),
     packet.valid(),
-    packet.msg is RslMessage2b,
+    packet.msg is CMessage2b,
 ensures
     result.valid(),
     LLearnerProcess2b(s@, result@, packet@),

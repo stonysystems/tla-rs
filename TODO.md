@@ -1310,10 +1310,11 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     1. ~~**AST debug output in requires clauses**~~: Fixed in `translator/mod.rs` - added proper `Forall`, `Exists`, and `Implies` handling in `expr_to_simple_string()` with new helper functions `bindings_to_string()` and `type_to_simple_string()`
     2. ~~**First expression in `&&&` chains missing prefix**~~: Fixed in `codegen/mod.rs` - always use `&&&` prefix for `well_formed()` predicates
     3. ~~**Type remapping not propagated to TranslatorConfig**~~: Fixed in `main.rs` - added `type_remapping: file_config.remapping.clone()` to TranslatorConfig initialization
+    4. ~~**Enum variant mapping in struct construction**~~: Fixed in `translator/mod.rs` - added `translate_path()` function to handle multi-segment paths and paths with `::` in single segments; also fixed `Expr::Is` handling in both `expr_to_requires_string()` and `expr_to_simple_string()` to translate variant names
+    5. ~~**Index expression AST debug output**~~: Fixed in `translator/mod.rs` - added `Expr::Index` handling in `expr_to_simple_string()`
   - **Remaining transpiler bugs (require transpiler code changes):**
-    1. **Enum variant mapping in struct construction**: Transpiler generates `CRslMessage::RslMessage1b` instead of `CMessage::CMessage1b` - need to remap both enum type AND variant names in struct/enum construction
-    2. **Missing type imports**: Generated code references C* functions not imported (e.g., `CConfiguration`, `CUpperBound`, `CGetReplicaIndex`, `CBroadcastToEveryone`, etc.)
-    3. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`
+    1. **Missing type imports**: Generated code references C* functions not imported (e.g., `CConfiguration`, `CUpperBound`, `CGetReplicaIndex`, `CBroadcastToEveryone`, etc.)
+    2. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`
 
 #### 2. Recursive Helper Functions (H4 - Deferred)
 - [ ] **Generate loop-based implementations for recursive functions**

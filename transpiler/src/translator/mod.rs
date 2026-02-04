@@ -3,7 +3,7 @@
 //! This module transforms validated spec predicates into executable Rust/Verus
 //! functions with proper proof linkage.
 
-use crate::ast::{Binding, BinOp, Expr, FunctionKind, Literal, ParameterMode, Pattern, Type};
+use crate::ast::{Binding, BinOp, Expr, FunctionKind, Literal, ParameterMode, Path, Pattern, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
@@ -1692,6 +1692,40 @@ impl Translator {
         format!("{}{}", self.config.exec_prefix, spec_name)
     }
 
+    /// Translate a full path (potentially an enum variant like RslMessage::RslMessage1b)
+    /// Each segment is translated individually:
+    /// - RslMessage::RslMessage1b -> CMessage::CMessage1b
+    ///
+    /// Handles both multi-segment Paths and single-segment paths that contain "::"
+    /// (the parser sometimes stores "Type::Variant" as a single segment)
+    fn translate_path(&self, path: &Path) -> String {
+        if path.segments.len() == 1 {
+            let segment = &path.segments[0];
+            // Check if this single segment contains "::" (parser quirk)
+            if segment.contains("::") {
+                // Split and translate each part
+                let parts: Vec<&str> = segment.split("::").collect();
+                let translated: Vec<String> = parts
+                    .iter()
+                    .map(|s| self.translate_name(s))
+                    .collect();
+                translated.join("::")
+            } else {
+                // Simple name, just translate it
+                self.translate_name(segment.as_str())
+            }
+        } else {
+            // Multi-segment path (enum variant like Type::Variant)
+            // Translate each segment individually
+            let translated_segments: Vec<String> = path
+                .segments
+                .iter()
+                .map(|s| self.translate_name(s))
+                .collect();
+            translated_segments.join("::")
+        }
+    }
+
     /// Derive nested struct name from field name
     /// e.g., "max_bal" -> "CBallot" (assuming Ballot is the type)
     /// Falls back to PascalCase: "max_bal" -> "CMaxBal"
@@ -1862,9 +1896,11 @@ impl Translator {
         // This can be enhanced to properly translate the expression
         match expr {
             Expr::Is(expr, variant) => {
-                // Pattern: inp.msg is RslMessage1a -> inp.msg is CRslMessage1a (or similar check)
+                // Pattern: inp.msg is RslMessage1a -> inp.msg is CMessage1a
                 let base = self.expr_to_simple_string(expr);
-                format!("{} is {}", base, variant)
+                // Translate the variant name using remapping
+                let translated_variant = self.translate_name(variant);
+                format!("{} is {}", base, translated_variant)
             }
             _ => self.expr_to_simple_string(expr),
         }
@@ -1901,7 +1937,9 @@ impl Translator {
                 format!("{}({})", func_name, args_str.join(", "))
             }
             Expr::Is(base, variant) => {
-                format!("{} is {}", self.expr_to_simple_string(base), variant)
+                // Translate the variant name using remapping (e.g., RslMessage1a -> CMessage1a)
+                let translated_variant = self.translate_name(variant);
+                format!("{} is {}", self.expr_to_simple_string(base), translated_variant)
             }
             Expr::Eq(lhs, rhs) => {
                 format!(
@@ -1989,6 +2027,13 @@ impl Translator {
             Expr::Exists { vars, body } => {
                 let vars_str = self.bindings_to_string(vars);
                 format!("exists |{}| {}", vars_str, self.expr_to_simple_string(body))
+            }
+            Expr::Index(base, idx) => {
+                format!(
+                    "{}.index({})",
+                    self.expr_to_simple_string(base),
+                    self.expr_to_simple_string(idx)
+                )
             }
             _ => format!("{:?}", expr),
         }
@@ -2617,7 +2662,9 @@ impl Translator {
             }
 
             Expr::Struct { name, fields } => {
-                let exec_name = self.translate_name(name.last().unwrap_or("Unknown"));
+                // Use translate_path to handle both simple struct names and enum variants
+                // e.g., "Struct" -> "CStruct" or "RslMessage::RslMessage1b" -> "CMessage::CMessage1b"
+                let exec_name = self.translate_path(name);
                 let translated_fields: TranspileResult<Vec<_>> = fields
                     .iter()
                     .map(|(fname, fexpr)| {
@@ -2645,8 +2692,9 @@ impl Translator {
                     })
                     .collect();
                 // Use provided name if available, otherwise try to derive from base
+                // Use translate_path to handle both struct names and enum variants
                 let struct_name = if let Some(n) = name {
-                    self.translate_name(n.last().unwrap_or("Unknown"))
+                    self.translate_path(n)
                 } else {
                     "Unknown".to_string()
                 };
@@ -2686,10 +2734,12 @@ impl Translator {
             // Enum variant check: expr is VariantName
             Expr::Is(inner, variant) => {
                 let inner_expr = self.transform_expr(inner, ctx)?;
+                // Translate the variant name (e.g., RslMessage1a -> CMessage1a)
+                let translated_variant = self.translate_name(variant);
                 Ok(ExecExpr::Binary {
                     lhs: Box::new(inner_expr),
                     op: "is".to_string(),
-                    rhs: Box::new(ExecExpr::Var(variant.clone())),
+                    rhs: Box::new(ExecExpr::Var(translated_variant)),
                 })
             }
 
@@ -5653,6 +5703,52 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_name_with_remapping() {
+        use std::collections::HashMap;
+        let mut remapping = HashMap::new();
+        remapping.insert("RslMessage".to_string(), "CMessage".to_string());
+        remapping.insert("RslMessage1a".to_string(), "CMessage1a".to_string());
+        remapping.insert("RslMessage1b".to_string(), "CMessage1b".to_string());
+
+        let config = TranslatorConfig {
+            type_remapping: remapping,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+
+        // Test remapping takes priority
+        assert_eq!(translator.translate_name("RslMessage"), "CMessage");
+        assert_eq!(translator.translate_name("RslMessage1a"), "CMessage1a");
+        assert_eq!(translator.translate_name("RslMessage1b"), "CMessage1b");
+    }
+
+    #[test]
+    fn test_translate_path() {
+        use std::collections::HashMap;
+        let mut remapping = HashMap::new();
+        remapping.insert("RslMessage".to_string(), "CMessage".to_string());
+        remapping.insert("RslMessage1b".to_string(), "CMessage1b".to_string());
+
+        let config = TranslatorConfig {
+            type_remapping: remapping,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+
+        // Single segment (simple name)
+        let path_single = Path::single("RslMessage".to_string());
+        assert_eq!(translator.translate_path(&path_single), "CMessage");
+
+        // Multi-segment (enum variant)
+        let path_variant = Path::new(vec!["RslMessage".to_string(), "RslMessage1b".to_string()]);
+        assert_eq!(translator.translate_path(&path_variant), "CMessage::CMessage1b");
+
+        // Single segment containing :: (parser quirk - stores "Type::Variant" as one string)
+        let path_combined = Path::single("RslMessage::RslMessage1b".to_string());
+        assert_eq!(translator.translate_path(&path_combined), "CMessage::CMessage1b");
+    }
+
+    #[test]
     fn test_translate_type() {
         let translator = Translator::default();
 
@@ -6716,7 +6812,7 @@ mod tests {
             "CBalLeq(a, b)"
         );
 
-        // Test: is expression
+        // Test: is expression - variant name gets translated with C prefix
         let is_expr = Expr::Is(
             Box::new(Expr::Field(
                 Box::new(Expr::Ident("inp".to_string())),
@@ -6724,9 +6820,10 @@ mod tests {
             )),
             "RslMessage1a".to_string(),
         );
+        // Note: Default translator (without remapping) applies C prefix rule
         assert_eq!(
             translator.expr_to_simple_string(&is_expr),
-            "inp.msg is RslMessage1a"
+            "inp.msg is CRslMessage1a"
         );
 
         // Test: comparison
