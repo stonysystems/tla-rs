@@ -1,8 +1,6 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use vstd::prelude::*;
-use std::collections::{HashMap, HashSet};
 use crate::common::collections::hashsets::HashSetWellFormed;
 use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
@@ -12,59 +10,106 @@ use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::protocol::RSL::environment::RslIo;
 use crate::protocol::RSL::replica::LScheduler;
 use crate::protocol::RSL::types::*;
+use std::collections::{HashMap, HashSet};
+use vstd::prelude::*;
 
 verus! {
 
-// =============================================================================
-// Type Aliases
-// =============================================================================
-
-/// Operation number type alias
-pub type COperationNumber = u64;
-
-/// Request batch type alias
-pub type CRequestBatch = Vec<CRequest>;
-
-/// Reply cache type alias (maps client endpoints to their last reply)
-pub type CReplyCache = HashMap<EndPoint, CReply>;
-
-/// Votes type alias (maps operation numbers to votes)
-pub type CVotes = HashMap<COperationNumber, CVote>;
-
-/// Learner state type alias (maps operation numbers to learner tuples)
-pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
-
-// =============================================================================
-// Well-formed traits for collection types
-// =============================================================================
-
-/// Extension trait providing well_formed for Vec<CRequest>
-pub trait CRequestBatchWellFormed {
-    spec fn well_formed(&self) -> bool;
+#[derive(Clone)]
+pub struct CRequest {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub request: CAppMessage,
 }
 
-impl CRequestBatchWellFormed for Vec<CRequest> {
-    #[verifier(inline)]
-    open spec fn well_formed(&self) -> bool {
-        forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].well_formed()
+impl CRequest {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.client.well_formed()
+        &&& self.request.well_formed()
     }
 }
 
-/// Extension trait providing well_formed for Vec<CLearnerTuple>
-pub trait CLearnerTupleVecWellFormed {
-    spec fn well_formed(&self) -> bool;
-}
+impl View for CRequest {
+    type V = Request;
 
-impl CLearnerTupleVecWellFormed for Vec<CLearnerTuple> {
-    #[verifier(inline)]
-    open spec fn well_formed(&self) -> bool {
-        forall |i: int| #![auto] 0 <= i < self.len() ==> self[i].well_formed()
+    open spec fn view(&self) -> Request {
+        Request {
+            client: self.client@,
+            seqno: self.seqno as int,
+            request: self.request@,
+        }
     }
 }
 
-// =============================================================================
-// Struct Definitions
-// =============================================================================
+#[derive(Clone)]
+pub struct CBallot {
+    pub seqno: i64,
+    pub proposer_id: i64,
+}
+
+impl CBallot {
+    pub open spec fn well_formed(&self) -> bool {
+        true
+    }
+}
+
+impl View for CBallot {
+    type V = Ballot;
+
+    open spec fn view(&self) -> Ballot {
+        Ballot {
+            seqno: self.seqno as int,
+            proposer_id: self.proposer_id as int,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CClockReading {
+    pub t: i64,
+}
+
+impl CClockReading {
+    pub open spec fn well_formed(&self) -> bool {
+        true
+    }
+}
+
+impl View for CClockReading {
+    type V = ClockReading;
+
+    open spec fn view(&self) -> ClockReading {
+        ClockReading {
+            t: self.t as int,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CReply {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub reply: CAppMessage,
+}
+
+impl CReply {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.client.well_formed()
+        &&& self.reply.well_formed()
+    }
+}
+
+impl View for CReply {
+    type V = Reply;
+
+    open spec fn view(&self) -> Reply {
+        Reply {
+            client: self.client@,
+            seqno: self.seqno as int,
+            reply: self.reply@,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct CVote {
@@ -91,138 +136,6 @@ impl View for CVote {
 }
 
 #[derive(Clone)]
-pub struct CRequest {
-    pub client: EndPoint,
-    pub seqno: u64,
-    pub request: CAppMessage,
-}
-
-impl CRequest {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.client.well_formed()
-        &&& self.request.well_formed()
-    }
-}
-
-impl View for CRequest {
-    type V = Request;
-
-    open spec fn view(&self) -> Request {
-        Request {
-            client: self.client@,
-            seqno: self.seqno as int,
-            request: self.request@,
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CBallot {
-    pub seqno: u64,
-    pub proposer_id: u64,
-}
-
-impl CBallot {
-    pub open spec fn well_formed(&self) -> bool {
-        self.proposer_id < 0xFFFF_FFFF_FFFF_FFFF
-    }
-
-    pub open spec fn abstractable(self) -> bool {
-        self.proposer_id < 0xFFFF_FFFF_FFFF_FFFF
-    }
-
-    pub open spec fn valid(self) -> bool {
-        self.abstractable()
-    }
-
-    pub fn is_equal(&self, other: &CBallot) -> (result: bool)
-        ensures
-            result == (self@ == other@)
-    {
-        self.seqno == other.seqno && self.proposer_id == other.proposer_id
-    }
-
-    pub fn clone_up_to_view(&self) -> (res: CBallot)
-        ensures res@ == self@
-    {
-        CBallot {
-            seqno: self.seqno,
-            proposer_id: self.proposer_id,
-        }
-    }
-}
-
-impl View for CBallot {
-    type V = Ballot;
-
-    open spec fn view(&self) -> Ballot {
-        Ballot {
-            seqno: self.seqno as int,
-            proposer_id: self.proposer_id as int,
-        }
-    }
-}
-
-/// Compare two ballots (less than)
-pub fn CBalLt(ba: &CBallot, bb: &CBallot) -> (r: bool)
-    requires
-        ba.valid(),
-        bb.valid(),
-    ensures r == BalLt(ba@, bb@)
-{
-    ba.seqno < bb.seqno
-    || (ba.seqno == bb.seqno && ba.proposer_id < bb.proposer_id)
-}
-
-/// Compare two ballots (less than or equal)
-pub fn CBalLeq(ba: &CBallot, bb: &CBallot) -> (r: bool)
-    requires
-        ba.valid(),
-        bb.valid(),
-    ensures r == BalLeq(ba@, bb@)
-{
-    ba.seqno < bb.seqno
-    || (ba.seqno == bb.seqno && ba.proposer_id <= bb.proposer_id)
-}
-
-/// Compare two ballots (equal)
-pub fn CBalEq(ba: &CBallot, bb: &CBallot) -> (r: bool)
-    requires
-        ba.valid(),
-        bb.valid(),
-    ensures r == (ba@ == bb@)
-{
-    ba.seqno == bb.seqno
-    && ba.proposer_id == bb.proposer_id
-}
-
-#[derive(Clone)]
-pub struct CReply {
-    pub client: EndPoint,
-    pub seqno: u64,
-    pub reply: CAppMessage,
-}
-
-impl CReply {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.client.well_formed()
-        &&& self.reply.well_formed()
-    }
-}
-
-impl View for CReply {
-    type V = Reply;
-
-    open spec fn view(&self) -> Reply {
-        Reply {
-            client: self.client@,
-            seqno: self.seqno as int,
-            reply: self.reply@,
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct CLearnerTuple {
     pub received_2b_message_senders: HashSet<EndPoint>,
     pub candidate_learned_value: CRequestBatch,
@@ -230,7 +143,6 @@ pub struct CLearnerTuple {
 
 impl CLearnerTuple {
     pub open spec fn well_formed(&self) -> bool {
-        &&& self.received_2b_message_senders.well_formed()
         &&& self.candidate_learned_value.well_formed()
     }
 }
@@ -242,126 +154,6 @@ impl View for CLearnerTuple {
         LearnerTuple {
             received_2b_message_senders: self.received_2b_message_senders@,
             candidate_learned_value: self.candidate_learned_value@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CClockReading {
-    pub t: i64,
-}
-
-impl CClockReading {
-    pub open spec fn well_formed(&self) -> bool {
-        true
-    }
-}
-
-impl View for CClockReading {
-    type V = ClockReading;
-
-    open spec fn view(&self) -> ClockReading {
-        ClockReading {
-            t: self.t as int,
-        }
-    }
-}
-
-/// Concrete IO operation type for RSL protocol
-/// Maps to spec type: RslIo = LIoOp<AbstractEndPoint, RslMessage>
-#[derive(Clone)]
-pub enum CRslIo {
-    CSend { s: CPacket },
-    CReceive { r: CPacket },
-    CTimeoutReceive,
-    CReadClock { t: i64 },
-}
-
-impl CRslIo {
-    pub open spec fn well_formed(&self) -> bool {
-        match self {
-            CRslIo::CSend { s } => s.valid(),
-            CRslIo::CReceive { r } => r.valid(),
-            CRslIo::CTimeoutReceive => true,
-            CRslIo::CReadClock { t } => true,
-        }
-    }
-
-    pub open spec fn valid(&self) -> bool {
-        self.well_formed()
-    }
-
-    /// Get the received packet (for CReceive variant)
-    pub fn get_r(&self) -> (result: &CPacket)
-        requires self is CReceive
-        ensures result.valid()
-    {
-        match self {
-            CRslIo::CReceive { r } => r,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Get the send packet (for CSend variant)
-    pub fn get_s(&self) -> (result: &CPacket)
-        requires self is CSend
-        ensures result.valid()
-    {
-        match self {
-            CRslIo::CSend { s } => s,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Get the clock time (for CReadClock variant)
-    pub fn get_t(&self) -> (result: i64)
-        requires self is CReadClock
-    {
-        match self {
-            CRslIo::CReadClock { t } => *t,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl View for CRslIo {
-    type V = RslIo;
-
-    open spec fn view(&self) -> RslIo {
-        match self {
-            CRslIo::CSend { s } => LIoOp::Send { s: s@ },
-            CRslIo::CReceive { r } => LIoOp::Receive { r: r@ },
-            CRslIo::CTimeoutReceive => LIoOp::TimeoutReceive,
-            CRslIo::CReadClock { t } => LIoOp::ReadClock { t: *t as int },
-        }
-    }
-}
-
-/// Concrete scheduler type for RSL protocol
-/// Maps to spec type: LScheduler
-#[derive(Clone)]
-pub struct CScheduler {
-    pub replica: CReplica,
-    pub nextActionIndex: i64,
-}
-
-impl CScheduler {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.replica.valid()
-    }
-
-    pub open spec fn valid(&self) -> bool {
-        self.well_formed()
-    }
-}
-
-impl View for CScheduler {
-    type V = LScheduler;
-
-    open spec fn view(&self) -> LScheduler {
-        LScheduler {
-            replica: self.replica@,
-            nextActionIndex: self.nextActionIndex as int,
         }
     }
 }

@@ -38,6 +38,12 @@ for module in acceptor learner executor proposer replica broadcast election; do
         --output "$PROJECT_ROOT/src/generated/RSL/${module}_gen.rs"
 done
 
+# Format generated code for consistency
+echo ""
+echo "Formatting generated code..."
+cd "$PROJECT_ROOT"
+cargo fmt -- src/generated/RSL/*.rs
+
 echo ""
 echo "=== Regeneration complete ==="
 echo ""

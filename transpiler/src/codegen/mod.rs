@@ -659,11 +659,13 @@ pub fn generate_all_types_with_options(
     all_code.push_str("// Auto-generated concrete types by verus-transpiler\n");
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
 
-    // Custom imports
+    // Custom imports (sorted case-insensitively for rustfmt compatibility)
     if custom_imports.is_empty() {
         all_code.push_str("use vstd::prelude::*;\n\n");
     } else {
-        for import in custom_imports {
+        let mut sorted_imports = custom_imports.to_vec();
+        sorted_imports.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        for import in &sorted_imports {
             all_code.push_str(import);
             if !import.ends_with('\n') {
                 all_code.push('\n');
