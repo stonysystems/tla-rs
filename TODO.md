@@ -1527,10 +1527,12 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 - View trait with custom logic
 
 **Solution Tasks**:
-- [ ] **I2.1: Audit infrastructure type usage**
-  - List all types imported from manual implementation
-  - Identify which have marshalling vs pure data
-  - Document dependencies between types
+- [x] **I2.1: Audit infrastructure type usage** (DONE)
+  - Created comprehensive audit: `docs/infrastructure-type-audit.md`
+  - Identified 12 pure data types (can be generated): CBallot, CRequest, CReply, CVote, etc.
+  - Identified 5 types with marshalling (need manual impl): CMessage, CPacket, CAppMessage
+  - Identified 8 component state types with exec methods: CAcceptor, CProposer, etc.
+  - Documented dependency graph showing what depends on marshalling
 
 - [ ] **I2.2: Create shared types module**
   - Create `src/common/rsl_types/` directory
