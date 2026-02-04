@@ -1627,10 +1627,10 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Compare with manual implementation invariants
   - Strengthen or simplify as needed
 
-- [ ] **V3.6: Remove #[cfg(test)] guards**
-  - Edit `src/generated/mod.rs` - remove guard
-  - Edit `src/lib.rs` - include generated module unconditionally
-  - Verify full codebase still builds
+- [x] **V3.6: Remove #[cfg(test)] guards** [completed 2026-02-04]
+  - Removed `#[cfg(test)]` guard from `src/lib.rs` line 11-12
+  - `src/generated/mod.rs` had no guard (was already unconditional)
+  - Note: Verus verification requires `scons --verus-path=/path/to/verus`
 
 - [ ] **V3.7: Add CI verification job**
   - Update `.github/workflows/ci.yml`
