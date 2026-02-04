@@ -1429,6 +1429,409 @@ impl TypeInference {
     }
 }
 
+// =============================================================================
+// Type Annotations File (.tla-types)
+// =============================================================================
+
+/// Format for type annotation files that allow manual type refinement.
+///
+/// The `.tla-types` file format uses a simple key-value syntax:
+///
+/// ```text
+/// # Type annotations for MyModule.tla
+/// # Edit types below to refine inferred types
+///
+/// [constants]
+/// N: Nat
+/// MaxValue: Int
+///
+/// [variables]
+/// count: Nat
+/// items: Set(Int)
+///
+/// [operators]
+/// Init: Bool
+/// Next: Bool
+/// Add: (Int, Int) -> Int
+///
+/// [records]
+/// State {
+///     x: Int
+///     y: Bool
+/// }
+/// ```
+#[derive(Debug, Default)]
+pub struct TypeAnnotations {
+    /// Types for constants
+    pub constants: HashMap<String, TlaType>,
+    /// Types for variables
+    pub variables: HashMap<String, TlaType>,
+    /// Types for operators
+    pub operators: HashMap<String, TlaType>,
+    /// Record type definitions
+    pub records: HashMap<String, RecordType>,
+}
+
+impl TypeAnnotations {
+    /// Create empty type annotations
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Generate type annotations from a TypeEnv
+    pub fn from_type_env(env: &TypeEnv) -> Self {
+        Self {
+            constants: env.constants.clone(),
+            variables: env.variables.clone(),
+            operators: env.operators.clone(),
+            records: env.records.clone(),
+        }
+    }
+
+    /// Generate the .tla-types file content
+    pub fn to_file_content(&self, module_name: &str) -> String {
+        let mut output = String::new();
+
+        // Header
+        output.push_str(&format!("# Type annotations for {}.tla\n", module_name));
+        output.push_str("# Edit types below to refine inferred types\n");
+        output.push_str("# Lines starting with # are comments\n\n");
+
+        // Constants section
+        if !self.constants.is_empty() {
+            output.push_str("[constants]\n");
+            let mut names: Vec<_> = self.constants.keys().collect();
+            names.sort();
+            for name in names {
+                if let Some(ty) = self.constants.get(name) {
+                    output.push_str(&format!("{}: {}\n", name, ty));
+                }
+            }
+            output.push('\n');
+        }
+
+        // Variables section
+        if !self.variables.is_empty() {
+            output.push_str("[variables]\n");
+            let mut names: Vec<_> = self.variables.keys().collect();
+            names.sort();
+            for name in names {
+                if let Some(ty) = self.variables.get(name) {
+                    // Skip internal variables (from quantifiers, etc.)
+                    if !name.starts_with('_') {
+                        output.push_str(&format!("{}: {}\n", name, ty));
+                    }
+                }
+            }
+            output.push('\n');
+        }
+
+        // Operators section
+        if !self.operators.is_empty() {
+            output.push_str("[operators]\n");
+            let mut names: Vec<_> = self.operators.keys().collect();
+            names.sort();
+            for name in names {
+                if let Some(ty) = self.operators.get(name) {
+                    output.push_str(&format!("{}: {}\n", name, Self::format_operator_type(ty)));
+                }
+            }
+            output.push('\n');
+        }
+
+        // Records section
+        if !self.records.is_empty() {
+            output.push_str("[records]\n");
+            let mut names: Vec<_> = self.records.keys().collect();
+            names.sort();
+            for name in names {
+                if let Some(rec) = self.records.get(name) {
+                    output.push_str(&format!("{} {{\n", name));
+                    let mut field_names: Vec<_> = rec.fields.keys().collect();
+                    field_names.sort();
+                    for field_name in field_names {
+                        if let Some(field_ty) = rec.fields.get(field_name) {
+                            output.push_str(&format!("    {}: {}\n", field_name, field_ty));
+                        }
+                    }
+                    output.push_str("}\n");
+                }
+            }
+        }
+
+        output
+    }
+
+    /// Format an operator type for display
+    fn format_operator_type(ty: &TlaType) -> String {
+        match ty {
+            TlaType::Function { domain, range } => {
+                // Check if domain is a tuple (multi-parameter function)
+                if let TlaType::Tuple(params) = domain.as_ref() {
+                    let param_strs: Vec<_> = params.iter().map(|t| t.to_string()).collect();
+                    format!("({}) -> {}", param_strs.join(", "), range)
+                } else {
+                    format!("({}) -> {}", domain, range)
+                }
+            }
+            _ => ty.to_string(),
+        }
+    }
+
+    /// Parse type annotations from file content
+    pub fn parse(content: &str) -> Result<Self, String> {
+        let mut annotations = TypeAnnotations::new();
+        let mut current_section: Option<&str> = None;
+        let mut current_record_name: Option<String> = None;
+        let mut current_record_fields: HashMap<String, TlaType> = HashMap::new();
+
+        for (line_num, line) in content.lines().enumerate() {
+            let line = line.trim();
+
+            // Skip empty lines and comments
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            // Section headers
+            if line.starts_with('[') && line.ends_with(']') {
+                // Save previous record if any
+                if let Some(rec_name) = current_record_name.take() {
+                    let mut rec = RecordType::named(&rec_name);
+                    rec.fields = std::mem::take(&mut current_record_fields);
+                    annotations.records.insert(rec_name, rec);
+                }
+
+                let section = &line[1..line.len() - 1];
+                current_section = Some(section);
+                continue;
+            }
+
+            // Record start
+            if line.ends_with('{') {
+                if current_section != Some("records") {
+                    return Err(format!(
+                        "Line {}: Record definition outside [records] section",
+                        line_num + 1
+                    ));
+                }
+                let name = line[..line.len() - 1].trim().to_string();
+                current_record_name = Some(name);
+                continue;
+            }
+
+            // Record end
+            if line == "}" {
+                if let Some(rec_name) = current_record_name.take() {
+                    let mut rec = RecordType::named(&rec_name);
+                    rec.fields = std::mem::take(&mut current_record_fields);
+                    annotations.records.insert(rec_name, rec);
+                }
+                continue;
+            }
+
+            // Type annotation: name: Type
+            if let Some(colon_pos) = line.find(':') {
+                let name = line[..colon_pos].trim().to_string();
+                let type_str = line[colon_pos + 1..].trim();
+                let ty = Self::parse_type(type_str)?;
+
+                // Inside a record definition
+                if current_record_name.is_some() {
+                    current_record_fields.insert(name, ty);
+                    continue;
+                }
+
+                // In a section
+                match current_section {
+                    Some("constants") => {
+                        annotations.constants.insert(name, ty);
+                    }
+                    Some("variables") => {
+                        annotations.variables.insert(name, ty);
+                    }
+                    Some("operators") => {
+                        annotations.operators.insert(name, ty);
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Line {}: Type annotation outside a section",
+                            line_num + 1
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Save any remaining record
+        if let Some(rec_name) = current_record_name {
+            let mut rec = RecordType::named(&rec_name);
+            rec.fields = current_record_fields;
+            annotations.records.insert(rec_name, rec);
+        }
+
+        Ok(annotations)
+    }
+
+    /// Parse a type string into a TlaType
+    fn parse_type(s: &str) -> Result<TlaType, String> {
+        let s = s.trim();
+
+        // Basic types
+        match s {
+            "Int" => return Ok(TlaType::Int),
+            "Nat" => return Ok(TlaType::Nat),
+            "Bool" => return Ok(TlaType::Bool),
+            "String" => return Ok(TlaType::String),
+            "Action" => return Ok(TlaType::Action),
+            "Temporal" => return Ok(TlaType::Temporal),
+            "Any" | "?" => return Ok(TlaType::Any),
+            _ => {}
+        }
+
+        // Set(T)
+        if s.starts_with("Set(") && s.ends_with(')') {
+            let inner = &s[4..s.len() - 1];
+            return Ok(TlaType::set(Self::parse_type(inner)?));
+        }
+
+        // Seq(T)
+        if s.starts_with("Seq(") && s.ends_with(')') {
+            let inner = &s[4..s.len() - 1];
+            return Ok(TlaType::seq(Self::parse_type(inner)?));
+        }
+
+        // Map(K, V)
+        if s.starts_with("Map(") && s.ends_with(')') {
+            let inner = &s[4..s.len() - 1];
+            if let Some(comma_pos) = Self::find_top_level_comma(inner) {
+                let key_str = inner[..comma_pos].trim();
+                let value_str = inner[comma_pos + 1..].trim();
+                return Ok(TlaType::map(
+                    Self::parse_type(key_str)?,
+                    Self::parse_type(value_str)?,
+                ));
+            }
+        }
+
+        // Function type: (T1, T2) -> R or [D -> R]
+        if let Some(arrow_pos) = s.find("->") {
+            let domain_str = s[..arrow_pos].trim();
+            let range_str = s[arrow_pos + 2..].trim();
+
+            // Check for [D -> R] syntax
+            if domain_str.starts_with('[') && range_str.ends_with(']') {
+                let domain = Self::parse_type(&domain_str[1..])?;
+                let range = Self::parse_type(&range_str[..range_str.len() - 1])?;
+                return Ok(TlaType::function(domain, range));
+            }
+
+            // (T1, T2) -> R syntax
+            if domain_str.starts_with('(') && domain_str.ends_with(')') {
+                let params_str = &domain_str[1..domain_str.len() - 1];
+                let params = Self::parse_tuple_types(params_str)?;
+                let range = Self::parse_type(range_str)?;
+                if params.len() == 1 {
+                    return Ok(TlaType::function(params.into_iter().next().unwrap(), range));
+                }
+                return Ok(TlaType::function(TlaType::Tuple(params), range));
+            }
+        }
+
+        // Tuple: <<T1, T2>>
+        if s.starts_with("<<") && s.ends_with(">>") {
+            let inner = &s[2..s.len() - 2];
+            let elems = Self::parse_tuple_types(inner)?;
+            return Ok(TlaType::Tuple(elems));
+        }
+
+        // Type variable: T0, T1, etc.
+        if s.starts_with('T') && s.len() > 1 {
+            if let Ok(n) = s[1..].parse::<usize>() {
+                return Ok(TlaType::TypeVar(n));
+            }
+        }
+
+        // Unknown type
+        if s == "Unknown" {
+            return Ok(TlaType::Unknown);
+        }
+
+        Err(format!("Unknown type: {}", s))
+    }
+
+    /// Parse comma-separated types
+    fn parse_tuple_types(s: &str) -> Result<Vec<TlaType>, String> {
+        if s.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut types = Vec::new();
+        let mut current = String::new();
+        let mut depth = 0;
+
+        for c in s.chars() {
+            match c {
+                '(' | '[' | '<' => {
+                    depth += 1;
+                    current.push(c);
+                }
+                ')' | ']' | '>' => {
+                    depth -= 1;
+                    current.push(c);
+                }
+                ',' if depth == 0 => {
+                    types.push(Self::parse_type(current.trim())?);
+                    current.clear();
+                }
+                _ => current.push(c),
+            }
+        }
+
+        if !current.trim().is_empty() {
+            types.push(Self::parse_type(current.trim())?);
+        }
+
+        Ok(types)
+    }
+
+    /// Find the position of a comma at the top level (not inside brackets)
+    fn find_top_level_comma(s: &str) -> Option<usize> {
+        let mut depth = 0;
+        for (i, c) in s.chars().enumerate() {
+            match c {
+                '(' | '[' | '<' => depth += 1,
+                ')' | ']' | '>' => depth -= 1,
+                ',' if depth == 0 => return Some(i),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Merge user-provided annotations with inferred types.
+    /// User annotations take precedence.
+    pub fn merge_with(&self, inferred: &TypeEnv) -> TypeEnv {
+        let mut result = inferred.clone();
+
+        // Override with user-provided annotations
+        for (name, ty) in &self.constants {
+            result.set_constant(name, ty.clone());
+        }
+        for (name, ty) in &self.variables {
+            result.set_variable(name, ty.clone());
+        }
+        for (name, ty) in &self.operators {
+            result.set_operator(name, ty.clone());
+        }
+        for (name, rec) in &self.records {
+            result.register_record(name, rec.clone());
+        }
+
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2161,5 +2564,199 @@ mod tests {
         assert!(env.variables.contains_key("S"));
         assert!(env.variables.contains_key("T"));
         assert!(inference.is_successful());
+    }
+
+    // TypeAnnotations tests
+    #[test]
+    fn test_type_annotations_generate_file() {
+        let mut env = TypeEnv::new();
+        env.set_constant("N", TlaType::Nat);
+        env.set_variable("count", TlaType::Int);
+        env.set_operator("Init", TlaType::Bool);
+
+        let annotations = TypeAnnotations::from_type_env(&env);
+        let content = annotations.to_file_content("Test");
+
+        assert!(content.contains("# Type annotations for Test.tla"));
+        assert!(content.contains("[constants]"));
+        assert!(content.contains("N: Nat"));
+        assert!(content.contains("[variables]"));
+        assert!(content.contains("count: Int"));
+        assert!(content.contains("[operators]"));
+        assert!(content.contains("Init: Bool"));
+    }
+
+    #[test]
+    fn test_type_annotations_parse_basic() {
+        let content = r#"
+            # Test file
+            [constants]
+            N: Nat
+
+            [variables]
+            count: Int
+            enabled: Bool
+
+            [operators]
+            Init: Bool
+        "#;
+
+        let annotations = TypeAnnotations::parse(content).unwrap();
+
+        assert_eq!(annotations.constants.get("N"), Some(&TlaType::Nat));
+        assert_eq!(annotations.variables.get("count"), Some(&TlaType::Int));
+        assert_eq!(annotations.variables.get("enabled"), Some(&TlaType::Bool));
+        assert_eq!(annotations.operators.get("Init"), Some(&TlaType::Bool));
+    }
+
+    #[test]
+    fn test_type_annotations_parse_complex_types() {
+        let content = r#"
+            [variables]
+            items: Set(Int)
+            values: Seq(Nat)
+            mapping: Map(String, Int)
+        "#;
+
+        let annotations = TypeAnnotations::parse(content).unwrap();
+
+        assert_eq!(
+            annotations.variables.get("items"),
+            Some(&TlaType::set(TlaType::Int))
+        );
+        assert_eq!(
+            annotations.variables.get("values"),
+            Some(&TlaType::seq(TlaType::Nat))
+        );
+        assert_eq!(
+            annotations.variables.get("mapping"),
+            Some(&TlaType::map(TlaType::String, TlaType::Int))
+        );
+    }
+
+    #[test]
+    fn test_type_annotations_parse_function_type() {
+        let content = r#"
+            [operators]
+            Add: (Int, Int) -> Int
+            Double: (Nat) -> Nat
+        "#;
+
+        let annotations = TypeAnnotations::parse(content).unwrap();
+
+        // Add should be a function from (Int, Int) tuple to Int
+        let add_type = annotations.operators.get("Add").unwrap();
+        match add_type {
+            TlaType::Function { domain, range } => {
+                assert!(matches!(domain.as_ref(), TlaType::Tuple(_)));
+                assert_eq!(range.as_ref(), &TlaType::Int);
+            }
+            _ => panic!("Expected function type for Add"),
+        }
+    }
+
+    #[test]
+    fn test_type_annotations_parse_records() {
+        let content = r#"
+            [records]
+            State {
+                x: Int
+                y: Bool
+            }
+        "#;
+
+        let annotations = TypeAnnotations::parse(content).unwrap();
+
+        let rec = annotations.records.get("State").unwrap();
+        assert_eq!(rec.get_field("x"), Some(&TlaType::Int));
+        assert_eq!(rec.get_field("y"), Some(&TlaType::Bool));
+    }
+
+    #[test]
+    fn test_type_annotations_roundtrip() {
+        let mut original = TypeAnnotations::new();
+        original.constants.insert("N".to_string(), TlaType::Nat);
+        original
+            .variables
+            .insert("items".to_string(), TlaType::set(TlaType::Int));
+        original.operators.insert("Init".to_string(), TlaType::Bool);
+
+        let content = original.to_file_content("Test");
+        let parsed = TypeAnnotations::parse(&content).unwrap();
+
+        assert_eq!(parsed.constants.get("N"), Some(&TlaType::Nat));
+        assert_eq!(
+            parsed.variables.get("items"),
+            Some(&TlaType::set(TlaType::Int))
+        );
+        assert_eq!(parsed.operators.get("Init"), Some(&TlaType::Bool));
+    }
+
+    #[test]
+    fn test_type_annotations_merge() {
+        // Create inferred types
+        let mut inferred = TypeEnv::new();
+        inferred.set_variable("x", TlaType::Unknown);
+        inferred.set_variable("y", TlaType::Int);
+
+        // User annotations override x's type
+        let mut user_annotations = TypeAnnotations::new();
+        user_annotations
+            .variables
+            .insert("x".to_string(), TlaType::Nat);
+
+        let merged = user_annotations.merge_with(&inferred);
+
+        // x should be overridden to Nat
+        assert_eq!(merged.lookup("x"), Some(&TlaType::Nat));
+        // y should remain Int
+        assert_eq!(merged.lookup("y"), Some(&TlaType::Int));
+    }
+
+    #[test]
+    fn test_type_annotations_parse_tuple_type() {
+        let content = r#"
+            [variables]
+            point: <<Int, Int>>
+            triple: <<Nat, Bool, String>>
+        "#;
+
+        let annotations = TypeAnnotations::parse(content).unwrap();
+
+        assert_eq!(
+            annotations.variables.get("point"),
+            Some(&TlaType::tuple(vec![TlaType::Int, TlaType::Int]))
+        );
+        assert_eq!(
+            annotations.variables.get("triple"),
+            Some(&TlaType::tuple(vec![
+                TlaType::Nat,
+                TlaType::Bool,
+                TlaType::String
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_type_annotations_from_inference() {
+        let source = r"
+            ---- MODULE Counter ----
+            CONSTANT N
+            VARIABLE count
+            Init == count \in Nat /\ N \in Nat
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+        let annotations = TypeAnnotations::from_type_env(&env);
+        let content = annotations.to_file_content("Counter");
+
+        // Should generate valid annotation file
+        assert!(content.contains("[constants]"));
+        assert!(content.contains("N:"));
+        assert!(content.contains("[variables]"));
+        assert!(content.contains("count:"));
     }
 }

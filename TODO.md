@@ -2456,9 +2456,14 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
     - Error tracking via is_successful() and errors()
     - ~140 LOC with 8 new tests for TypeInference API
 
-- [ ] **T4.2: Generate type annotations file**
-  - Create `.tla-types` annotation file for manual type refinement
-  - Allow user to specify concrete types for variables
+- [x] **T4.2: Generate type annotations file** ✅ COMPLETED
+  - Created TypeAnnotations struct for reading/writing `.tla-types` files
+  - File format with [constants], [variables], [operators], [records] sections
+  - Generates annotation file from inferred types
+  - Parses user-provided annotations with type string parsing
+  - Merge function to combine user annotations with inferred types
+  - Supports all TlaType variants: basic, Set, Seq, Map, Tuple, Function
+  - ~300 LOC with 9 new tests for annotation file handling
 
 - [ ] **T4.3: Handle type mismatches**
   - Emit warnings for ambiguous types
