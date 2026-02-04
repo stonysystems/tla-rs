@@ -2,6 +2,22 @@
 
 A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-style specifications into verified executable implementations.
 
+## Tools & Environment
+
+- **Verus**: `/home/shuai/tools/verus-x86-linux/verus` (version 0.2026.01.14.88f7396)
+- **Rust**: 1.92.0-x86_64-unknown-linux-gnu (required by Verus)
+- **Verification command**: `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs`
+- **Build command**: `scons --verus-path=/home/shuai/tools/verus-x86-linux`
+
+## Current Status (2026-02-04)
+
+⚠️ **55 Verus compilation errors** in generated code. These are **fundamental transpiler issues**, not simple missing-type errors. Key problems:
+- Type mismatch: generated types use `i64` but implementation uses `u64`
+- View mapping: generated `x@` produces wrong types, needs abstraction functions
+- Iterator patterns: generated code has syntactically broken filter/map/collect chains
+
+See [Phase 10: Remaining Transpiler Issues](#phase-10-remaining-transpiler-issues-blocking-full-automation) for details.
+
 ## Reference
 
 This plan is based on [AutoMan](https://github.com/stonysystems/automan), which performs similar transformations for Dafny. Our transpiler adapts these concepts for Rust/Verus.
@@ -1334,11 +1350,11 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
 
 #### 3. Infrastructure Type Dependencies (H6 - COMPLETED via I2.x)
 - [x] **Restructure infrastructure types to remove manual implementation dependencies** ✅
-  - I2.1-I2.7 completed: Pure data types now in `types_gen.rs`
+  - I2.1-I2.7 ⚠️ INCOMPLETE: `types_gen.rs` missing type aliases (see Issue 2 below)
   - `types_i.rs` imports eliminated from generated code
   - Remaining `implementation::RSL` imports are intentional (marshalling types per audit)
 - [x] **Update CI to verify no manual implementation imports** ✅
-  - I2.7: Verified no `types_i` imports remain in generated code
+  - I2.7: ⚠️ Generated code has correct imports BUT `types_gen.rs` is missing types
 
 #### 4. Verus Verification of Generated Code
 - [ ] **Run Verus verification on all generated modules**
@@ -1417,7 +1433,7 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
 #### 5. Success Criteria (Partial Progress)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations
   - Non-recursive: ✅ | Recursive: ✅ (R1.5-R1.7 completed loop generation)
-- [x] Generated code has ZERO imports from `types_i` (I2.1-I2.7 completed)
+- [ ] Generated code compiles with Verus (I2.1-I2.7 ⚠️ INCOMPLETE - 54 errors)
   - Pure data types: ✅ Now in `types_gen.rs`
   - Marshalling types: Intentionally kept in `implementation::RSL` per audit
 - [ ] All generated modules verify with Verus (0 errors)
@@ -1542,26 +1558,24 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - The generated types already have View impls mapping to spec types
   - Type aliases (CRequestBatch, etc.) can be added to types_gen.rs in I2.3
 
-- [x] **I2.3: Generate pure types from specs** ✅ COMPLETED
-  - Added type aliases to `src/generated/RSL/types_gen.rs`:
-    - `COperationNumber = u64`
-    - `CRequestBatch = Vec<CRequest>`
-    - `CReplyCache = HashMap<EndPoint, CReply>`
-    - `CVotes = HashMap<COperationNumber, CVote>`
-    - `CLearnerState = HashMap<COperationNumber, CLearnerTuple>`
-  - Added well-formed traits for collection types:
-    - `CRequestBatchWellFormed` for `Vec<CRequest>`
-    - `CLearnerTupleVecWellFormed` for `Vec<CLearnerTuple>`
-  - Removed import of `CRequestBatch` from `types_i.rs`
-  - All View trait implementations already correct in types_gen.rs
+- [ ] **I2.3: Generate pure types from specs** ⚠️ INCOMPLETE
+  - Type aliases were supposedly added but are MISSING from current `types_gen.rs`:
+    - `COperationNumber = u64` - MISSING (causes 9 Verus errors)
+    - `CRequestBatch = Vec<CRequest>` - MISSING (causes 4 Verus errors)
+    - `CReplyCache = HashMap<EndPoint, CReply>` - MISSING
+    - `CVotes = HashMap<COperationNumber, CVote>` - MISSING (causes 4 Verus errors)
+    - `CLearnerState = HashMap<COperationNumber, CLearnerTuple>` - MISSING
+    - `CScheduler` struct - MISSING (causes 5 Verus errors)
+    - `CRslIo` enum - MISSING (causes 3 Verus errors)
+  - **Action needed**: Re-add all missing type aliases to `types_gen.rs`
+  - Current `types_gen.rs` only has: CRequest, CBallot, CClockReading, CReply, CVote, CLearnerTuple
 
-- [x] **I2.4: Update generated code imports** ✅ COMPLETED
-  - Changed `use crate::implementation::RSL::types_i::*`
-  - To `use crate::generated::RSL::types_gen::*`
-  - Updated 7 generated files: acceptor_gen.rs, broadcast_gen.rs, election_gen.rs, executor_gen.rs, learner_gen.rs, proposer_gen.rs, replica_gen.rs
-  - Fixed types_gen.rs to use u64 for CBallot/CRequest/CReply fields (matching types_i.rs)
-  - Added CBalLt, CBalLeq, CBalEq helper functions to types_gen.rs
-  - Added Clone, Copy, PartialEq, Eq, Hash derives and additional methods to CBallot
+- [ ] **I2.4: Update generated code imports** ⚠️ INCOMPLETE
+  - Changed `use crate::implementation::RSL::types_i::*` to `use crate::generated::RSL::types_gen::*` ✓
+  - Updated 7 generated files ✓
+  - **But**: `types_gen.rs` is missing the types being imported, causing 22 type errors
+  - **But**: `CBalLt`, `CBalLeq` functions are MISSING from `types_gen.rs` (causes 11 Verus errors)
+  - **Action needed**: Add missing functions `CBalLt`, `CBalLeq`, `CBalEq` to `types_gen.rs`
 
 - [x] **I2.5: Handle marshalling separately** ✅ COMPLETED (No code changes needed)
   - Analysis: Generated code in `types_gen.rs` doesn't need marshalling
@@ -1580,48 +1594,59 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Removed redundant individual type imports (CClockReading, CRslIo, CScheduler) since now using `*`
   - Updated types_transpile.toml to remove circular CRequestBatch import
 
-- [x] **I2.7: Verify no manual imports remain** ✅ COMPLETED
-  - Verified: No `types_i` imports in generated code
+- [ ] **I2.7: Verify no manual imports remain** ⚠️ BLOCKED
+  - Cannot verify until I2.3 and I2.4 are actually complete
+  - Current status: Generated code compiles but has 54 Verus errors due to missing types/functions
   - Remaining `implementation::RSL` imports are intentional (per infrastructure audit):
     - `cconstants`, `cmessage`, `cbroadcast`, `cconfiguration` (marshalling infrastructure)
     - Component state types: `CAcceptor`, `CProposer`, `CLearner`, `CExecutor`, `CReplica`, `CElectionState`
     - `CAppMessage`, `CPacket` (marshalling for network I/O)
-  - These imports are required as documented in `docs/infrastructure-type-audit.md`
 
-**Issue 2 COMPLETE** - Infrastructure Type Dependencies fully resolved
+**Issue 2 INCOMPLETE** - Missing type aliases and functions in `types_gen.rs`
 
 #### Issue 3: Verus Verification of Generated Code
 
-**Problem**: Generated modules are wrapped in `#[cfg(test)]` and never verified by Verus.
+**Problem**: Generated code has compilation errors when verified with Verus.
 
-**Current State**:
-- "437 verified, 0 errors" refers to MANUAL implementation
-- Generated code in `src/generated/RSL/` is excluded from verification
-- Unknown number of verification errors in generated code
+**Verus Tool Location**: `/home/shuai/tools/verus-x86-linux/verus` (version 0.2026.01.14.88f7396)
+
+**Current State** (as of 2026-02-04):
+- Running `verus --crate-type=lib src/lib.rs` produces **54 compilation errors**
+- Main issues:
+  1. Missing type aliases in `types_gen.rs`: `COperationNumber`, `CVotes`, `CRequestBatch`, `CScheduler`, `CRslIo`
+  2. Missing function imports: `CBalLt` (9 errors), `CBalLeq` (2 errors), `CBroadcastToEveryone` (6 errors)
+  3. Missing executor functions: `CExecutorInit`, `CExecutorProcessRequest`, etc. (8 errors)
+- Error breakdown by type:
+  - `E0412` (cannot find type): 22 errors
+  - `E0425` (cannot find function): 30 errors
+  - `E0422` (cannot find struct): 2 errors
 
 **Solution Tasks**:
 - [x] **V3.1: Create isolated verification test** [completed 2026-02-04]
-  - Enabled generated modules by removing `#[cfg(test)]` guards temporarily
+  - Enabled generated modules by removing `#[cfg(test)]` guards
   - Ran Verus on full codebase: `verus --crate-type lib src/lib.rs`
-  - Identified and categorized verification errors
+  - **Result**: 54 compilation errors identified
 
 - [x] **V3.2: Document all verification errors** [completed 2026-02-04]
   - Created tracking document: `docs/dev/verification-errors.md`
-  - Categorized errors: unsupported expressions, missing imports, type mappings, spec-only functions
-  - Fixed config issues (skip_functions, spec_only_functions, method_calls, custom_imports)
-  - Remaining: primitive type `valid()` and View trait type conversion issues
+  - Categorized errors: missing types, missing functions, type mappings
+  - **Remaining**: 54 errors need fixing
 
-- [x] **V3.3: Fix type mismatch errors** [completed 2026-02-04]
-  - Fixed transpiler `needs_well_formed_with_remapping()` to check remapped types
-  - Added `primitive_types` config option to mark types that don't need `valid()` calls
-  - Added `is_primitive_or_stdlib_type()` helper to recognize u64, Vec, HashMap, HashSet
-  - Updated all RSL module configs to mark `OperationNumber`, `Votes`, `CVotes` as primitives
-  - Regenerated all RSL modules with the fix
+- [ ] **V3.3: Fix type generation and View mapping** ⚠️ BLOCKED - REQUIRES TRANSPILER CHANGES
+  - **Original diagnosis was incorrect** - issue is NOT just missing types
+  - Generated types have wrong field types: `i64` (from spec `int`) vs `u64` (in implementation)
+  - Generated View mapping produces `Map<u64, CVote>` but spec expects `Map<int, Vote>`
+  - **Cannot be fixed by adding type aliases** - fundamentally incompatible types
+  - **Requires transpiler changes**:
+    - Generate `u64` fields to match implementation
+    - Generate proper abstraction calls (e.g., `abstractify_cvotes(x)` instead of `x@`)
 
-- [ ] **V3.4: Fix missing proof errors**
-  - Add `assert` statements for obvious properties
-  - Add `assume` for complex properties (mark for future proof)
-  - Reference manual implementation for proof patterns
+- [ ] **V3.4: Fix iterator and function generation** ⚠️ BLOCKED - REQUIRES TRANSPILER CHANGES
+  - Generated iterator code is syntactically and semantically broken:
+    - `votes.iter().filter(...).cloned().collect()` produces type mismatches
+    - Filter predicates have wrong reference types
+  - Missing functions (`CBalLt`, `CBalLeq`) can be added but won't fix type issues
+  - **Requires transpiler changes** to generate correct loop-based implementations
 
 - [ ] **V3.5: Fix loop invariant errors**
   - Generated loops may have incorrect/incomplete invariants
@@ -1630,38 +1655,55 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 
 - [x] **V3.6: Remove #[cfg(test)] guards** [completed 2026-02-04]
   - Removed `#[cfg(test)]` guard from `src/lib.rs` line 11-12
-  - `src/generated/mod.rs` had no guard (was already unconditional)
+  - Generated modules now included unconditionally
   - Note: Verus verification requires `scons --verus-path=/path/to/verus`
 
-- [x] **V3.7: Add CI verification job** [completed 2026-02-04]
-  - CI job `verify` already exists in `.github/workflows/ci.yml` (lines 86-125)
-  - Downloads Verus ${VERUS_VERSION} and runs `scons --verus-path` on full codebase
-  - Generated modules included via `mod generated;` in `src/lib.rs` (unconditional since V3.6)
-  - CI fails automatically if Verus verification returns errors
+- [ ] **V3.7: Add CI verification job** ⚠️ BLOCKED
+  - CI job exists in `.github/workflows/ci.yml` (lines 86-125)
+  - **Currently failing** due to 54 compilation errors in generated code
+  - Blocked until V3.3 and V3.4 are fixed
 
 **Estimated Effort**: 1-2 days (mostly debugging, minimal code changes)
 
 #### Summary: Path to Full Automation
 
-| Issue | Tasks | Effort | Dependencies |
-|-------|-------|--------|--------------|
-| Recursive helpers | R1.1-R1.7 | 2-3 days | None |
-| Infrastructure types | I2.1-I2.7 | 1-2 days | None |
-| Verus verification | V3.1-V3.7 | 1-2 days | I2 (partial) |
+| Issue | Tasks | Status | Remaining Effort |
+|-------|-------|--------|------------------|
+| Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
+| Infrastructure types | I2.1-I2.7 | ⚠️ Incomplete | ~2 hours |
+| Verus verification | V3.1-V3.7 | ❌ Blocked | ~1 day (after I2) |
 
-**Total Estimated Effort**: 4-7 days
+**Current Blocker**: 55 Verus compilation errors in generated code
 
-**Completion Order**:
-1. Issue 2 (Infrastructure types) - unblocks clean imports
-2. Issue 1 (Recursive helpers) - independent, largest effort
-3. Issue 3 (Verus verification) - final validation
+**Root Cause Analysis** (2026-02-04):
+The errors are NOT just missing types/functions. The fundamental issues are:
+
+1. **Type Mismatch in View**: Generated `CVotes` (`HashMap<u64, CVote>`) has view `Map<u64, CVote>`, but spec functions expect `Map<int, Vote>`. Simply adding types doesn't fix this - the transpiler needs to:
+   - Generate proper abstraction function calls (e.g., `abstractify_cvotes(votes)` instead of `votes@`)
+   - Or generate types that match the implementation's View implementations
+
+2. **Iterator Code Generation**: The transpiler generates broken iterator patterns like:
+   ```rust
+   votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).cloned().collect()
+   ```
+   This produces type mismatches and fails to compile.
+
+3. **Type Conflicts**: Generated types (e.g., `CBallot` with `i64` fields) conflict with implementation types (`CBallot` with `u64` fields). Cannot simply re-export from implementation.
+
+**Attempted Fixes That Didn't Work**:
+- Adding type aliases to `types_gen.rs` - increases errors to 293-356 due to type conflicts
+- Re-exporting types from `implementation::RSL::types_i` - type field mismatches (i64 vs u64)
+
+**Actual Immediate Actions Needed**:
+1. Fix transpiler to generate correct View/abstraction calls in ensures clauses
+2. Fix transpiler to generate compatible types (u64 vs i64)
+3. Fix transpiler iterator code generation (broken filter/map/collect patterns)
 
 **Success Criteria** (all must pass):
 - [ ] `cargo run -- --tla-input TwoPhase.tla --exec-output two_phase.rs` produces runnable code
-- [ ] `verus two_phase.rs` returns 0 errors
-- [x] Generated code has ZERO imports from `types_i` (pure data types now in `types_gen.rs`)
-  - Note: Intentional imports remain for marshalling types (cmessage, cconstants, etc.) per infrastructure audit
-- [x] All 6 recursive helpers generate correct loop-based implementations
+- [ ] `verus --crate-type=lib src/lib.rs` returns 0 errors (currently: 54 errors)
+- [ ] Generated code has ZERO imports from `types_i` (⚠️ imports exist but types are missing)
+- [x] All 6 recursive helpers generate correct loop-based implementations ✅
   - Updated automan files with `helper` prefix and return types for recursive functions
   - Fixed transpiler to detect zip patterns (multiple sequences iterated in parallel)
   - Added `iterated_seqs` field to `RecursivePattern::Map` for parallel iteration
@@ -2382,7 +2424,7 @@ Use `election.rs` as the test case:
 1. [COMPLETE] All spec functions (predicates AND helpers) have generated exec implementations
    - Non-recursive predicates and helpers: ✅ Generated
    - Recursive helpers: ✅ Loop generation completed (R1.5-R1.7)
-2. [COMPLETE] Generated code has ZERO imports from `types_i` (I2.1-I2.7)
+2. [INCOMPLETE] Generated code compiles with Verus - 54 errors due to missing types in `types_gen.rs`
    - Pure data types (CBallot, CRequest, etc.): ✅ Now in `types_gen.rs`
    - Type aliases (CRequestBatch, CVotes, etc.): ✅ Now in `types_gen.rs`
    - Helper functions (CBalLt, CBalLeq, etc.): ✅ Now in `types_gen.rs`
