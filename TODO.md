@@ -1348,13 +1348,13 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     - ✅ Added missing imports to custom_imports: `CIsLogTruncationPointValid`, `CSetOfMessage1bAboutBallot`, `CValIsHighestNumberedProposal`, `CExistsAcceptorHasProposalLargeThanOpn`, `CHandleRequestBatch`, `CClientsInReplies`, `CGetPacketsFromReplies`, `CUpdateNewCache`
     - ✅ Added spec-only function `LRepliesAreReplyType` to spec_only_functions list
   - **Remaining issues:**
-    1. **CProposerInit generation bug**: Uses undefined `s` variable for `incomplete_batch_timer` field
-       - Root cause: `s.incomplete_batch_timer is IncompleteBatchTimerOff` constraint should become field initialization
-       - This is a complex transpiler enhancement requiring detection of `output.field is Variant` pattern
-       - Workaround: Manual fix in generated code or skip `LProposerInit` until transpiler is enhanced
+    1. ~~**CProposerInit generation bug**~~: ✅ FIXED [2026-02-04]
+       - Added pattern 3b in `try_extract_struct_construction()` to detect `output.field is Variant` expressions
+       - Added helper call substitution integration to include fields from helper calls in struct construction
+       - Commit: ba82023 fix(transpiler): Handle output.field is Variant pattern and helper substitutions
   - Need to verify: election_gen.rs, learner_gen.rs, executor_gen.rs, proposer_gen.rs, replica_gen.rs, broadcast_gen.rs, acceptor_gen.rs
 - [ ] **Fix any verification failures in generated code**
-  - Blocked by CProposerInit generation bug
+  - Unblocked: CProposerInit bug fixed, need to regenerate and verify all modules
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations
