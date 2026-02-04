@@ -11,6 +11,7 @@ use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
 use crate::protocol::common::upper_bound::LtUpperBound;
 use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::types::*;
@@ -21,71 +22,6 @@ use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
-
-#[derive(Clone)]
-pub struct CExecutor {
-    pub constants: CReplicaConstants,
-    pub app: CAppState,
-    pub ops_complete: i64,
-    pub max_bal_reflected: CBallot,
-    pub next_op_to_execute: COutstandingOperation,
-    pub reply_cache: CReplyCache,
-}
-
-impl CExecutor {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.constants.valid()
-        &&& self.app.valid()
-        &&& self.max_bal_reflected.valid()
-        &&& self.next_op_to_execute.valid()
-        &&& self.reply_cache.valid()
-    }
-}
-
-impl View for CExecutor {
-    type V = LExecutor;
-
-    open spec fn view(&self) -> LExecutor {
-        LExecutor {
-            constants: self.constants@,
-            app: self.app@,
-            ops_complete: self.ops_complete as int,
-            max_bal_reflected: self.max_bal_reflected@,
-            next_op_to_execute: self.next_op_to_execute@,
-            reply_cache: self.reply_cache@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum COutstandingOperation {
-    OutstandingOpKnown {
-        v: CRequestBatch,
-        bal: CBallot,
-    },
-    OutstandingOpUnknown {
-    },
-}
-
-impl COutstandingOperation {
-    pub open spec fn valid(&self) -> bool {
-        match self {
-            COutstandingOperation::OutstandingOpKnown { v, bal } => v.valid() && bal.valid(),
-            COutstandingOperation::OutstandingOpUnknown {  } => true,
-        }
-    }
-}
-
-impl View for COutstandingOperation {
-    type V = OutstandingOperation;
-
-    open spec fn view(&self) -> OutstandingOperation {
-        match self {
-            COutstandingOperation::OutstandingOpKnown { v, bal } => OutstandingOperation::OutstandingOpKnown { v: v@, bal: bal@ },
-            COutstandingOperation::OutstandingOpUnknown {  } => OutstandingOperation::OutstandingOpUnknown {  },
-        }
-    }
-}
 
 pub exec fn CExecutorInit(c: &CReplicaConstants) -> (result: CExecutor)
 requires

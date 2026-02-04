@@ -5,6 +5,7 @@ use crate::common::collections::sets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
@@ -17,36 +18,6 @@ use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
-
-#[derive(Clone)]
-pub struct CAcceptor {
-    pub constants: CReplicaConstants,
-    pub max_bal: CBallot,
-    pub votes: CVotes,
-    pub last_checkpointed_operation: Vec<u64>,
-    pub log_truncation_point: u64,
-}
-
-impl CAcceptor {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.constants.valid()
-        &&& self.max_bal.valid()
-    }
-}
-
-impl View for CAcceptor {
-    type V = LAcceptor;
-
-    open spec fn view(&self) -> LAcceptor {
-        LAcceptor {
-            constants: self.constants@,
-            max_bal: self.max_bal@,
-            votes: self.votes@,
-            last_checkpointed_operation: self.last_checkpointed_operation@,
-            log_truncation_point: self.log_truncation_point@,
-        }
-    }
-}
 
 pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)ensures
     RemoveVotesBeforeLogTruncationPoint(votes@, result@, log_truncation_point@),
@@ -155,6 +126,7 @@ CAcceptor {
         votes: HashMap::new(),
         log_truncation_point: 0,
         last_checkpointed_operation: (0..c.all.config.replica_ids.len()).map(|_| 0).collect(),
+        min_vote_opn: 0,
     }
 }
 
@@ -176,6 +148,7 @@ ensures
     votes: s.votes,
     last_checkpointed_operation: s.last_checkpointed_operation,
     log_truncation_point: s.log_truncation_point,
+    min_vote_opn: s.min_vote_opn,
 }, vec![CPacket {
     src: s.constants.all.config.replica_ids[s.constants.my_index],
     dst: inp.src,
@@ -267,6 +240,7 @@ if (opn <= s.log_truncation_point) {
             votes: s_votes,
             last_checkpointed_operation: s.last_checkpointed_operation,
             log_truncation_point: opn.clone(),
+            min_vote_opn: s.min_vote_opn,
         }
 
     }
