@@ -2596,9 +2596,12 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   Note: Examples use simplified TLA+ syntax (single-line conjunctions)
   due to parser limitations with multi-line `/\` notation and `..` ranges.
 
-- [ ] **T8.2: Medium complexity**
-  - `Raft.tla` (Raft consensus)
-  - `EWD840.tla` (termination detection)
+- [x] **T8.2: Medium complexity** ✅
+  - `Raft.tla` (Raft consensus - simplified leader election)
+  - `EWD840.tla` (Dijkstra's termination detection algorithm)
+
+  Implemented in `transpiler/tests/tla_examples/` with 6 additional tests
+  (parsing, translation, type inference for each). Total now 14 TLA+ example tests.
 
 - [ ] **T8.3: Complex examples**
   - `Paxos.tla` (Multi-Paxos)

@@ -290,3 +290,244 @@ fn test_simplecounter_type_inference() {
         "Should infer type for MaxCount"
     );
 }
+
+// =============================================================================
+// EWD840 Example Tests (Medium Complexity)
+// =============================================================================
+
+#[test]
+fn test_ewd840_parsing() {
+    let source = read_example("EWD840");
+    let module = parse_module(&source).expect("Failed to parse EWD840.tla");
+
+    assert_eq!(module.name, "EWD840");
+    assert_eq!(module.variables.len(), 4);
+    assert!(module.variables.contains(&"active".to_string()));
+    assert!(module.variables.contains(&"color".to_string()));
+    assert!(module.variables.contains(&"tpos".to_string()));
+    assert!(module.variables.contains(&"tcolor".to_string()));
+
+    // Check constant
+    let const_names: Vec<&str> = module.constants.iter().map(|c| c.name.as_str()).collect();
+    assert!(const_names.contains(&"N"));
+
+    // Check operators
+    let operator_names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(operator_names.contains(&"TypeOK"));
+    assert!(operator_names.contains(&"Init"));
+    assert!(operator_names.contains(&"Terminate"));
+    assert!(operator_names.contains(&"SendMsg"));
+    assert!(operator_names.contains(&"PassToken"));
+    assert!(operator_names.contains(&"InitiateProbe"));
+    assert!(operator_names.contains(&"Terminated"));
+    assert!(operator_names.contains(&"Next"));
+}
+
+#[test]
+fn test_ewd840_translation() {
+    let source = read_example("EWD840");
+    let (verus_code, mode_annotations) = translate_example(&source);
+
+    // Verify state struct has all variables
+    assert!(
+        verus_code.contains("pub struct LState"),
+        "Should contain state struct"
+    );
+    assert!(
+        verus_code.contains("pub active:"),
+        "Should contain active field"
+    );
+    assert!(
+        verus_code.contains("pub tpos:"),
+        "Should contain tpos field"
+    );
+    assert!(
+        verus_code.contains("pub tcolor:"),
+        "Should contain tcolor field"
+    );
+
+    // Verify constants struct
+    assert!(
+        verus_code.contains("LConstants"),
+        "Should contain constants struct"
+    );
+    assert!(verus_code.contains("pub N:"), "Should contain N constant");
+
+    // Verify key operators are translated
+    assert!(
+        verus_code.contains("pub open spec fn LInit"),
+        "Should contain Init spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LPassToken"),
+        "Should contain PassToken spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LTerminated"),
+        "Should contain Terminated spec fn"
+    );
+
+    // Verify mode annotations
+    assert!(
+        mode_annotations.contains("module EWD840"),
+        "Should contain module name"
+    );
+}
+
+#[test]
+fn test_ewd840_type_inference() {
+    let source = read_example("EWD840");
+    let module = parse_module(&source).expect("Failed to parse EWD840.tla");
+
+    let mut inference = TypeInference::new();
+    let type_env = inference.infer_types(&module);
+
+    // Variables should be inferred
+    assert!(
+        type_env.variables.contains_key("active"),
+        "Should infer type for active"
+    );
+    assert!(
+        type_env.variables.contains_key("tpos"),
+        "Should infer type for tpos"
+    );
+    assert!(
+        type_env.variables.contains_key("tcolor"),
+        "Should infer type for tcolor"
+    );
+
+    // Constant should be inferred
+    assert!(
+        type_env.constants.contains_key("N"),
+        "Should infer type for N"
+    );
+}
+
+// =============================================================================
+// Raft Example Tests (Medium Complexity)
+// =============================================================================
+
+#[test]
+fn test_raft_parsing() {
+    let source = read_example("Raft");
+    let module = parse_module(&source).expect("Failed to parse Raft.tla");
+
+    assert_eq!(module.name, "Raft");
+    assert_eq!(module.variables.len(), 4);
+    assert!(module.variables.contains(&"currentTerm".to_string()));
+    assert!(module.variables.contains(&"state".to_string()));
+    assert!(module.variables.contains(&"votedFor".to_string()));
+    assert!(module.variables.contains(&"votesGranted".to_string()));
+
+    // Check constant
+    let const_names: Vec<&str> = module.constants.iter().map(|c| c.name.as_str()).collect();
+    assert!(const_names.contains(&"Server"));
+
+    // Check operators
+    let operator_names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(operator_names.contains(&"Follower"));
+    assert!(operator_names.contains(&"Candidate"));
+    assert!(operator_names.contains(&"Leader"));
+    assert!(operator_names.contains(&"TypeOK"));
+    assert!(operator_names.contains(&"Init"));
+    assert!(operator_names.contains(&"BecomeCandidate"));
+    assert!(operator_names.contains(&"GrantVote"));
+    assert!(operator_names.contains(&"BecomeLeader"));
+    assert!(operator_names.contains(&"StepDown"));
+    assert!(operator_names.contains(&"Next"));
+}
+
+#[test]
+fn test_raft_translation() {
+    let source = read_example("Raft");
+    let (verus_code, mode_annotations) = translate_example(&source);
+
+    // Verify state struct has all variables
+    assert!(
+        verus_code.contains("pub struct LState"),
+        "Should contain state struct"
+    );
+    assert!(
+        verus_code.contains("pub currentTerm:"),
+        "Should contain currentTerm field"
+    );
+    assert!(
+        verus_code.contains("pub state:"),
+        "Should contain state field"
+    );
+    assert!(
+        verus_code.contains("pub votedFor:"),
+        "Should contain votedFor field"
+    );
+    assert!(
+        verus_code.contains("pub votesGranted:"),
+        "Should contain votesGranted field"
+    );
+
+    // Verify constants struct
+    assert!(
+        verus_code.contains("LConstants"),
+        "Should contain constants struct"
+    );
+    assert!(
+        verus_code.contains("pub Server:"),
+        "Should contain Server constant"
+    );
+
+    // Verify key operators are translated
+    assert!(
+        verus_code.contains("pub open spec fn LInit"),
+        "Should contain Init spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LBecomeCandidate"),
+        "Should contain BecomeCandidate spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LBecomeLeader"),
+        "Should contain BecomeLeader spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LGrantVote"),
+        "Should contain GrantVote spec fn"
+    );
+
+    // Verify mode annotations
+    assert!(
+        mode_annotations.contains("module Raft"),
+        "Should contain module name"
+    );
+}
+
+#[test]
+fn test_raft_type_inference() {
+    let source = read_example("Raft");
+    let module = parse_module(&source).expect("Failed to parse Raft.tla");
+
+    let mut inference = TypeInference::new();
+    let type_env = inference.infer_types(&module);
+
+    // Variables should be inferred
+    assert!(
+        type_env.variables.contains_key("currentTerm"),
+        "Should infer type for currentTerm"
+    );
+    assert!(
+        type_env.variables.contains_key("state"),
+        "Should infer type for state"
+    );
+    assert!(
+        type_env.variables.contains_key("votedFor"),
+        "Should infer type for votedFor"
+    );
+    assert!(
+        type_env.variables.contains_key("votesGranted"),
+        "Should infer type for votesGranted"
+    );
+
+    // Constant should be inferred
+    assert!(
+        type_env.constants.contains_key("Server"),
+        "Should infer type for Server"
+    );
+}
