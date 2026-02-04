@@ -2632,10 +2632,18 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Working examples (Counter, TwoPhase)
   - Known limitations and best practices
 
-- [ ] **T10.2: Limitations documentation**
+- [x] **T10.2: Limitations documentation** ✅
   - Unsupported TLA+ features (temporal logic, fairness)
   - Type inference limitations
   - Patterns requiring manual intervention
+
+  Created comprehensive limitations documentation at `docs/tla-transpiler-limitations.md` covering:
+  - Unsupported TLA+ features (temporal logic, fairness, module instantiation, proofs)
+  - Parser limitations (multi-line conjunctions, range operator, recursive definitions)
+  - Type inference limitations (polymorphic operators, higher-order operators)
+  - Translation limitations (infinite sets, untyped equality, choose semantics)
+  - Patterns requiring manual intervention (state machine init, action handlers, concurrency)
+  - Workarounds for common issues
 
 ### 11.7 Success Criteria
 
