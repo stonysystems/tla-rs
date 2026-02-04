@@ -1,6 +1,19 @@
 # Configuration for transpiling RSL spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Functions to skip during transpilation (require manual implementation).
+# These are functions with complex I/O dispatch patterns that cannot be
+# automatically transpiled because they use pattern matching on enum variants
+# from sequences (e.g., ios[0]->r where ios is Vec<CRslIo>).
+skip_functions = [
+    # I/O dispatch functions that match on RslIo enum variants
+    "LReplicaNextReadClockAndProcessPacket",
+    "LReplicaNextProcessPacketWithoutReadingClock",
+    "LReplicaNextProcessPacket",
+    # Helper that extracts clock from I/O sequence
+    "SpontaneousClock",
+]
+
 # Primitive types that should NOT have valid() predicates generated.
 # These are type aliases to primitive types (u64, HashMap, etc.) that don't have valid().
 primitive_types = [

@@ -79,6 +79,9 @@ pub struct TranspilerConfig {
     pub type_remapping: std::collections::HashMap<String, String>,
     /// Whether to generate wrapper methods in an impl block for &mut self pattern.
     pub generate_wrapper_methods: bool,
+    /// Functions to skip during transpilation (require manual implementation).
+    /// These are functions with patterns too complex for automatic transpilation.
+    pub skip_functions: Vec<String>,
     /// The type name for the impl block when generating wrapper methods.
     pub wrapper_impl_type: Option<String>,
 }
@@ -164,6 +167,11 @@ impl Transpiler {
         let mut exec_functions = Vec::new();
 
         for spec_fn in spec_fns {
+            // Check if this function should be skipped
+            if self.config.skip_functions.contains(&spec_fn.name) {
+                continue;
+            }
+
             // Find matching annotation
             let annotation = annotations
                 .iter()
@@ -276,6 +284,11 @@ impl Transpiler {
         let mut exec_functions = Vec::new();
 
         for spec_fn in spec_fns {
+            // Check if this function should be skipped
+            if self.config.skip_functions.contains(&spec_fn.name) {
+                continue;
+            }
+
             let annotation = annotations
                 .iter()
                 .flat_map(|m| m.functions.values())

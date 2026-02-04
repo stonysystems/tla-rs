@@ -63,6 +63,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub primitive_types: Vec<String>,
 
+    /// Functions to skip during transpilation (require manual implementation).
+    /// These are functions that have patterns too complex for automatic transpilation,
+    /// such as dispatch functions that match on I/O sequence enum variants.
+    /// e.g., ["LReplicaNextProcessPacket", "LReplicaNextReadClockAndProcessPacket"]
+    #[serde(default)]
+    pub skip_functions: Vec<String>,
+
     /// Output generation configuration
     #[serde(default)]
     pub output: OutputConfig,
@@ -151,6 +158,13 @@ impl TranspilerConfig {
         }
 
         false
+    }
+
+    /// Check if a function should be skipped during transpilation.
+    /// This is used for functions that require manual implementation due to
+    /// complex patterns that cannot be automatically transpiled.
+    pub fn should_skip_function(&self, func_name: &str) -> bool {
+        self.skip_functions.contains(&func_name.to_string())
     }
 }
 

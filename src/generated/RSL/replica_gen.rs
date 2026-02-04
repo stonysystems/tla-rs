@@ -56,9 +56,9 @@ ensures
         constants: c.clone(),
         nextHeartbeatTime: 0,
         proposer: r_proposer,
-        executor: r_executor,
         acceptor: r_acceptor,
         learner: r_learner,
+        executor: r_executor,
     }
 
 }
@@ -497,86 +497,10 @@ ensures
 
 }
 
-pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
-requires
-    s.valid(),
-    (ios.len() >= 1),
-    ios.index(0) is CReceive,
-    ios.index(0)->r.msg is CMessageHeartbeat,
-ensures
-    result.valid(),
-    LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
-{
-    let s_ = CReplicaNextProcessHeartbeat(&s, &ios[0]->r, &ios[1]->t, ExtractSentPacketsFromIos(&ios));
-    s_
-
-}
-
-pub exec fn CReplicaNextProcessPacketWithoutReadingClock(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
-requires
-    s.valid(),
-    (ios.len() >= 1),
-    ios.index(0) is CReceive,
-    !ios.index(0)->r.msg is CMessageHeartbeat,
-ensures
-    result.valid(),
-    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, ios@),
-{
-    let sent_packets = ExtractSentPacketsFromIos(&ios);
-        ios.drop_first().iter().all(|io| io is CRslIo::CSend);
-    match ios[0]->r.msg {
-        CMessage::CMessageInvalid {  } => CReplicaNextProcessInvalid(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessageRequest { seqno_req: seqno_req, val: val } => CReplicaNextProcessRequest(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessage1a { bal_1a: bal_1a } => CReplicaNextProcess1a(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessage1b { bal_1b: bal_1b, log_truncation_point: log_truncation_point, votes: votes } => CReplicaNextProcess1b(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessageStartingPhase2 { bal_2: bal_2, logTruncationPoint_2: logTruncationPoint_2 } => CReplicaNextProcessStartingPhase2(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessage2a { bal_2a: bal_2a, opn_2a: opn_2a, val_2a: val_2a } => CReplicaNextProcess2a(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessage2b { bal_2b: bal_2b, opn_2b: opn_2b, val_2b: val_2b } => CReplicaNextProcess2b(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessageReply { seqno_reply: seqno_reply, reply: reply } => CReplicaNextProcessReply(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessageAppStateRequest { bal_state_req: bal_state_req, opn_state_req: opn_state_req } => CReplicaNextProcessAppStateRequest(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessageAppStateSupply { bal_state_supply: bal_state_supply, opn_state_supply: opn_state_supply, app_state: app_state, reply_cache: reply_cache } => CReplicaNextProcessAppStateSupply(&s, &ios[0]->r, &sent_packets),
-        CMessage::CMessageHeartbeat { bal_heartbeat: bal_heartbeat, suspicious: suspicious, opn_ckpt: opn_ckpt } => false,
-    }
-
-
-}
-
-pub exec fn CReplicaNextProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
-requires
-    s.valid(),
-ensures
-    result.valid(),
-    LReplicaNextProcessPacket(s@, result@, ios@),
-{
-if ios[0] is CRslIo::CTimeoutReceive {
-        s.clone()
-    } else {
-        if ios[0]->r.msg is CMessage::CMessageHeartbeat {
-            CReplicaNextReadClockAndProcessPacket(&s, &ios)
-        } else {
-            CReplicaNextProcessPacketWithoutReadingClock(&s, &ios)
-        }
-    }
-}
-
 pub exec fn CReplicaNumActions() -> (result: i64)ensures
     result@ == LReplicaNumActions(),
 {
 10
-}
-
-pub exec fn CSpontaneousClock(ios: &Vec<CRslIo>) -> (result: CClockReading)ensures
-    result@ == SpontaneousClock(ios@),
-{
-if SpontaneousIos(&ios, 1) {
-        CClockReading {
-            t: ios[0]->t,
-        }
-    } else {
-        CClockReading {
-            t: 0,
-        }
-    }
 }
 
 pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &i64, ios: &Vec<CRslIo>) -> (result: CReplica)

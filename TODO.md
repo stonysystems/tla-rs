@@ -1389,7 +1389,8 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     - First pass: 441 → 393 (48 errors - enum path, array indexing fixes)
     - Second pass: 393 → 346 (47 errors - valid() on collections fix)
     - Third pass: 346 → ~2 errors (~344 errors fixed - arrow access and `is` syntax fixes)
-  - **Error breakdown (after third pass, ~2 remaining):**
+    - Fourth pass: Added `skip_functions` config to exclude complex I/O dispatch functions
+  - **Error breakdown (after fourth pass):**
     - ~~Type mismatches (152): spec types vs exec types (Map<int, Vote> vs HashMap<u64, CVote>)~~: Mostly fixed by arrow syntax
     - ~~Missing `valid()` method (41): Vec<CPacket>, Vec<CRslIo> don't have valid()~~: ✅ FIXED
     - ~~Missing enum accessor methods (~37): get_bal_1a(), get_opn_2a(), etc. on CMessage~~: ✅ FIXED [2026-02-04]
@@ -1400,6 +1401,10 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     - ~~Argument count mismatches (19): function takes N args but M supplied~~: Review needed
     - ~~Type casting/indexing (8): u64 to usize, i64 comparisons~~: Review needed
     - ~~Other (~109): Vec operations, HashSet conversions, etc.~~: Mostly fixed
+    - **Complex I/O dispatch functions**: ✅ MARKED FOR MANUAL IMPL [2026-02-04]
+      - Added `skip_functions` config option to transpiler
+      - Functions skipped: `LReplicaNextReadClockAndProcessPacket`, `LReplicaNextProcessPacketWithoutReadingClock`, `LReplicaNextProcessPacket`, `SpontaneousClock`
+      - These functions require pattern matching on `CRslIo` enum variants from sequences (`ios[0]->r`)
   - Remaining blockers:
     1. Type abstraction layer needed for HashMap operations
     2. Iterator patterns need manual implementation or special handling
@@ -1407,6 +1412,7 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     ~~4. Missing valid() on collections - need Vec<T>.valid() impl or skip generation~~: ✅ FIXED
     ~~5. Missing enum accessor methods - need to generate or map get_*() methods for CMessage variants~~: ✅ FIXED [2026-02-04]
     ~~6. `valid()` predicate generation needs type awareness~~: ✅ FIXED
+    7. **Manual implementations needed** for I/O dispatch functions (see skip_functions in transpile.toml)
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations

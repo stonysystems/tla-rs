@@ -310,6 +310,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
         type_remapping: file_config.remapping,
         generate_wrapper_methods: file_config.output.generate_wrapper_methods,
         wrapper_impl_type: file_config.output.wrapper_impl_type,
+        skip_functions: file_config.skip_functions,
         ..TranspilerConfig::default()
     })
 }
