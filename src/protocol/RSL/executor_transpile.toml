@@ -36,6 +36,9 @@ spec_only_functions = [
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
+# RSL implementation uses u64 for all numeric types for marshalling compatibility
+int_type = "u64"
+nat_type = "u64"
 
 [remapping]
 "LExecutor" = "CExecutor"

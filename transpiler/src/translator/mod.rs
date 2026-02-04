@@ -56,6 +56,11 @@ pub struct TranslatorConfig {
     /// When true, generates Verus-verifiable loop code with placeholders for invariants.
     /// When false (default), generates iterator-based code (.iter().filter().collect()).
     pub generate_loops_for_verification: bool,
+    /// Rust type to use for spec `int` type (default: "i64")
+    /// Use "u64" for codebases that use unsigned integers
+    pub int_type: String,
+    /// Rust type to use for spec `nat` type (default: "u64")
+    pub nat_type: String,
 }
 
 impl Default for TranslatorConfig {
@@ -72,6 +77,8 @@ impl Default for TranslatorConfig {
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
             generate_loops_for_verification: false,
+            int_type: "i64".to_string(),
+            nat_type: "u64".to_string(),
         }
     }
 }
@@ -3264,8 +3271,8 @@ impl Translator {
             // Simple named type
             match type_str {
                 "bool" => ExecType::Named("bool".to_string()),
-                "int" => ExecType::Named("i64".to_string()),
-                "nat" => ExecType::Named("u64".to_string()),
+                "int" => ExecType::Named(self.config.int_type.clone()),
+                "nat" => ExecType::Named(self.config.nat_type.clone()),
                 _ => {
                     // Check if type already starts with exec prefix (e.g., CRequest from annotation)
                     // to avoid double-prefixing (CCRequest)
@@ -3493,8 +3500,8 @@ impl Translator {
                 ExecType::Reference(Box::new(self.translate_type(ty)), *mutable)
             }
             Type::Bool => ExecType::Named("bool".to_string()),
-            Type::Int => ExecType::Named("i64".to_string()),
-            Type::Nat => ExecType::Named("u64".to_string()),
+            Type::Int => ExecType::Named(self.config.int_type.clone()),
+            Type::Nat => ExecType::Named(self.config.nat_type.clone()),
             Type::Unit => ExecType::Named("()".to_string()),
             Type::Set(inner) => {
                 ExecType::Generic("HashSet".to_string(), vec![self.translate_type(inner)])
@@ -10075,6 +10082,70 @@ mod tests {
                 assert_eq!(args.len(), 1);
             }
             _ => panic!("Expected Generic type for Set<int>"),
+        }
+    }
+
+    #[test]
+    fn test_translate_type_string_custom_int_nat() {
+        // Test with custom int_type and nat_type config
+        let config = TranslatorConfig {
+            int_type: "u64".to_string(),
+            nat_type: "u32".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+
+        // int should use custom int_type
+        assert!(matches!(
+            translator.translate_type_string("int"),
+            ExecType::Named(n) if n == "u64"
+        ));
+
+        // nat should use custom nat_type
+        assert!(matches!(
+            translator.translate_type_string("nat"),
+            ExecType::Named(n) if n == "u32"
+        ));
+
+        // Set<int> should also use custom int_type
+        let set_type = translator.translate_type_string("Set<int>");
+        match set_type {
+            ExecType::Generic(name, args) => {
+                assert_eq!(name, "HashSet");
+                assert_eq!(args.len(), 1);
+                match &args[0] {
+                    ExecType::Named(n) => assert_eq!(n, "u64"),
+                    _ => panic!("Expected Named type for int"),
+                }
+            }
+            _ => panic!("Expected Generic type for Set<int>"),
+        }
+    }
+
+    #[test]
+    fn test_translate_type_custom_int_nat() {
+        use crate::ast::Type;
+
+        // Test translate_type with custom int_type and nat_type
+        let config = TranslatorConfig {
+            int_type: "u64".to_string(),
+            nat_type: "u32".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+
+        // Type::Int should use custom int_type
+        let int_type = translator.translate_type(&Type::Int);
+        match int_type {
+            ExecType::Named(n) => assert_eq!(n, "u64"),
+            _ => panic!("Expected Named type for Int"),
+        }
+
+        // Type::Nat should use custom nat_type
+        let nat_type = translator.translate_type(&Type::Nat);
+        match nat_type {
+            ExecType::Named(n) => assert_eq!(n, "u32"),
+            _ => panic!("Expected Named type for Nat"),
         }
     }
 

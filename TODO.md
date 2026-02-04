@@ -1632,14 +1632,13 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Categorized errors: missing types, missing functions, type mappings
   - **Remaining**: 54 errors need fixing
 
-- [ ] **V3.3: Fix type generation and View mapping** ⚠️ BLOCKED - REQUIRES TRANSPILER CHANGES
+- [ ] **V3.3: Fix type generation and View mapping** ⚠️ PARTIALLY COMPLETE
   - **Original diagnosis was incorrect** - issue is NOT just missing types
-  - Generated types have wrong field types: `i64` (from spec `int`) vs `u64` (in implementation)
+  - ~~Generated types have wrong field types: `i64` (from spec `int`) vs `u64` (in implementation)~~ ✅ FIXED
+    - Added `int_type` and `nat_type` config options to transpiler
+    - RSL configs now use `int_type = "u64"` and `nat_type = "u64"`
   - Generated View mapping produces `Map<u64, CVote>` but spec expects `Map<int, Vote>`
-  - **Cannot be fixed by adding type aliases** - fundamentally incompatible types
-  - **Requires transpiler changes**:
-    - Generate `u64` fields to match implementation
-    - Generate proper abstraction calls (e.g., `abstractify_cvotes(x)` instead of `x@`)
+  - **Remaining issue**: Need to generate proper abstraction calls (e.g., `abstractify_cvotes(x)` instead of `x@`)
 
 - [ ] **V3.4: Fix iterator and function generation** ⚠️ BLOCKED - REQUIRES TRANSPILER CHANGES
   - Generated iterator code is syntactically and semantically broken:
@@ -1696,7 +1695,11 @@ The errors are NOT just missing types/functions. The fundamental issues are:
 
 **Actual Immediate Actions Needed**:
 1. Fix transpiler to generate correct View/abstraction calls in ensures clauses
-2. Fix transpiler to generate compatible types (u64 vs i64)
+2. ~~Fix transpiler to generate compatible types (u64 vs i64)~~ ✅ COMPLETED
+   - Added `int_type` and `nat_type` config options to `NamingConfig` in `config.rs`
+   - Added to `TranslatorConfig` in `translator/mod.rs`
+   - Updated `translate_type` and `translate_type_string` to use configurable types
+   - Updated all RSL transpile.toml files to use `int_type = "u64"` and `nat_type = "u64"`
 3. Fix transpiler iterator code generation (broken filter/map/collect patterns)
 
 **Success Criteria** (all must pass):

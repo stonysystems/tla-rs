@@ -186,6 +186,15 @@ pub struct NamingConfig {
     /// Suffix for exec functions (optional)
     #[serde(default)]
     pub exec_fn_suffix: String,
+
+    /// Rust type to use for spec `int` type (default: "i64")
+    /// Use "u64" for codebases that use unsigned integers
+    #[serde(default = "default_int_type")]
+    pub int_type: String,
+
+    /// Rust type to use for spec `nat` type (default: "u64")
+    #[serde(default = "default_nat_type")]
+    pub nat_type: String,
 }
 
 fn default_spec_prefix() -> String {
@@ -196,6 +205,14 @@ fn default_exec_prefix() -> String {
     "C".to_string()
 }
 
+fn default_int_type() -> String {
+    "i64".to_string()
+}
+
+fn default_nat_type() -> String {
+    "u64".to_string()
+}
+
 impl Default for NamingConfig {
     fn default() -> Self {
         Self {
@@ -203,6 +220,8 @@ impl Default for NamingConfig {
             exec_prefix: default_exec_prefix(),
             spec_fn_suffix: String::new(),
             exec_fn_suffix: String::new(),
+            int_type: default_int_type(),
+            nat_type: default_nat_type(),
         }
     }
 }
