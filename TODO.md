@@ -1700,11 +1700,15 @@ The errors are NOT just missing types/functions. The fundamental issues are:
    - Added to `TranslatorConfig` in `translator/mod.rs`
    - Updated `translate_type` and `translate_type_string` to use configurable types
    - Updated all RSL transpile.toml files to use `int_type = "u64"` and `nat_type = "u64"`
-3. Fix transpiler iterator code generation (broken filter/map/collect patterns)
+3. ~~Fix transpiler iterator code generation (broken filter/map/collect patterns)~~ ✅ PARTIALLY FIXED
+   - Fixed map pattern invariant generation - now references spec function directly instead of
+     inlining transform expression (which produced `/* expr */` placeholders)
+   - Handles zip patterns (multiple parallel sequences) by truncating all iterated sequences
+   - Reduced errors from 54 to 45
 
 **Success Criteria** (all must pass):
 - [ ] `cargo run -- --tla-input TwoPhase.tla --exec-output two_phase.rs` produces runnable code
-- [ ] `verus --crate-type=lib src/lib.rs` returns 0 errors (currently: 54 errors)
+- [ ] `verus --crate-type=lib src/lib.rs` returns 0 errors (currently: 45 errors, down from 54)
 - [ ] Generated code has ZERO imports from `types_i` (⚠️ imports exist but types are missing)
 - [x] All 6 recursive helpers generate correct loop-based implementations ✅
   - Updated automan files with `helper` prefix and return types for recursive functions
