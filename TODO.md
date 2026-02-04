@@ -2465,9 +2465,13 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Supports all TlaType variants: basic, Set, Seq, Map, Tuple, Function
   - ~300 LOC with 9 new tests for annotation file handling
 
-- [ ] **T4.3: Handle type mismatches**
-  - Emit warnings for ambiguous types
-  - Generate `spec fn` with `any` type where inference fails
+- [x] **T4.3: Handle type mismatches** ✅ COMPLETED
+  - Added TypeDiagnostic and DiagnosticSeverity for type inference diagnostics
+  - get_diagnostics() reports errors and warnings for type issues
+  - has_unresolved_type_var() checks for unresolved type variables in types
+  - resolve_with_fallback() replaces unresolved types with Any
+  - fallback_type() recursively resolves nested unresolved types
+  - ~150 LOC with 7 new tests for diagnostics
 
 #### Phase T5: Expression Translation
 - [ ] **T5.1: Translate set operations**

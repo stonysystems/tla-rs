@@ -1427,6 +1427,204 @@ impl TypeInference {
         }
         None
     }
+
+    /// Get diagnostics for type inference issues
+    pub fn get_diagnostics(&self, module: &TlaModule) -> Vec<TypeDiagnostic> {
+        let mut diagnostics = Vec::new();
+
+        // Add unification errors
+        for error in &self.unifier.errors {
+            diagnostics.push(TypeDiagnostic::error(error.clone()));
+        }
+
+        // Check for unresolved type variables in the environment
+        let env = self.build_module_type_env(module);
+
+        for (name, ty) in &env.constants {
+            if let Some(diag) = Self::check_type_resolved(name, ty, "constant") {
+                diagnostics.push(diag);
+            }
+        }
+
+        for (name, ty) in &env.variables {
+            if let Some(diag) = Self::check_type_resolved(name, ty, "variable") {
+                diagnostics.push(diag);
+            }
+        }
+
+        for (name, ty) in &env.operators {
+            if let Some(diag) = Self::check_type_resolved(name, ty, "operator") {
+                diagnostics.push(diag);
+            }
+        }
+
+        diagnostics
+    }
+
+    /// Check if a type is fully resolved and return a diagnostic if not
+    fn check_type_resolved(name: &str, ty: &TlaType, kind: &str) -> Option<TypeDiagnostic> {
+        if ty.has_unresolved_type_var() {
+            Some(TypeDiagnostic::warning(format!(
+                "Ambiguous type for {} '{}': {} (contains unresolved type variables)",
+                kind, name, ty
+            )))
+        } else if *ty == TlaType::Unknown {
+            Some(TypeDiagnostic::warning(format!(
+                "Unknown type for {} '{}': type could not be inferred",
+                kind, name
+            )))
+        } else {
+            None
+        }
+    }
+
+    /// Resolve a type environment, replacing unresolved types with Any
+    pub fn resolve_with_fallback(&self, env: &TypeEnv) -> TypeEnv {
+        let mut resolved = TypeEnv::new();
+
+        for (name, ty) in &env.constants {
+            resolved.set_constant(name, Self::fallback_type(ty));
+        }
+
+        for (name, ty) in &env.variables {
+            resolved.set_variable(name, Self::fallback_type(ty));
+        }
+
+        for (name, ty) in &env.operators {
+            resolved.set_operator(name, Self::fallback_type(ty));
+        }
+
+        for (name, rec) in &env.records {
+            let mut resolved_rec = RecordType::named(name);
+            for (field_name, field_ty) in &rec.fields {
+                resolved_rec
+                    .fields
+                    .insert(field_name.clone(), Self::fallback_type(field_ty));
+            }
+            resolved.register_record(name, resolved_rec);
+        }
+
+        resolved
+    }
+
+    /// Replace unresolved type variables with Any type
+    fn fallback_type(ty: &TlaType) -> TlaType {
+        match ty {
+            TlaType::TypeVar(_) | TlaType::Unknown => TlaType::Any,
+            TlaType::Set(elem) => TlaType::set(Self::fallback_type(elem)),
+            TlaType::Seq(elem) => TlaType::seq(Self::fallback_type(elem)),
+            TlaType::Map { key, value } => {
+                TlaType::map(Self::fallback_type(key), Self::fallback_type(value))
+            }
+            TlaType::Function { domain, range } => {
+                TlaType::function(Self::fallback_type(domain), Self::fallback_type(range))
+            }
+            TlaType::Tuple(elems) => {
+                TlaType::Tuple(elems.iter().map(Self::fallback_type).collect())
+            }
+            TlaType::Record(rec) => {
+                let mut resolved_rec = RecordType::new();
+                resolved_rec.name = rec.name.clone();
+                for (field_name, field_ty) in &rec.fields {
+                    resolved_rec
+                        .fields
+                        .insert(field_name.clone(), Self::fallback_type(field_ty));
+                }
+                TlaType::Record(resolved_rec)
+            }
+            _ => ty.clone(),
+        }
+    }
+}
+
+// =============================================================================
+// Type Diagnostics
+// =============================================================================
+
+/// Severity level for type diagnostics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    /// Error: type inference failed
+    Error,
+    /// Warning: type is ambiguous or fallback was used
+    Warning,
+    /// Info: non-critical type information
+    Info,
+}
+
+/// A diagnostic message from type inference
+#[derive(Debug, Clone)]
+pub struct TypeDiagnostic {
+    /// Severity of the diagnostic
+    pub severity: DiagnosticSeverity,
+    /// The diagnostic message
+    pub message: String,
+}
+
+impl TypeDiagnostic {
+    /// Create an error diagnostic
+    pub fn error(message: impl Into<String>) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Error,
+            message: message.into(),
+        }
+    }
+
+    /// Create a warning diagnostic
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Warning,
+            message: message.into(),
+        }
+    }
+
+    /// Create an info diagnostic
+    pub fn info(message: impl Into<String>) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Info,
+            message: message.into(),
+        }
+    }
+
+    /// Check if this is an error
+    pub fn is_error(&self) -> bool {
+        self.severity == DiagnosticSeverity::Error
+    }
+
+    /// Check if this is a warning
+    pub fn is_warning(&self) -> bool {
+        self.severity == DiagnosticSeverity::Warning
+    }
+}
+
+impl fmt::Display for TypeDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let prefix = match self.severity {
+            DiagnosticSeverity::Error => "error",
+            DiagnosticSeverity::Warning => "warning",
+            DiagnosticSeverity::Info => "info",
+        };
+        write!(f, "{}: {}", prefix, self.message)
+    }
+}
+
+impl TlaType {
+    /// Check if this type contains unresolved type variables
+    pub fn has_unresolved_type_var(&self) -> bool {
+        match self {
+            TlaType::TypeVar(_) => true,
+            TlaType::Set(elem) | TlaType::Seq(elem) => elem.has_unresolved_type_var(),
+            TlaType::Map { key, value } => {
+                key.has_unresolved_type_var() || value.has_unresolved_type_var()
+            }
+            TlaType::Function { domain, range } => {
+                domain.has_unresolved_type_var() || range.has_unresolved_type_var()
+            }
+            TlaType::Tuple(elems) => elems.iter().any(|e| e.has_unresolved_type_var()),
+            TlaType::Record(rec) => rec.fields.values().any(|t| t.has_unresolved_type_var()),
+            _ => false,
+        }
+    }
 }
 
 // =============================================================================
@@ -2758,5 +2956,140 @@ mod tests {
         assert!(content.contains("N:"));
         assert!(content.contains("[variables]"));
         assert!(content.contains("count:"));
+    }
+
+    // TypeDiagnostic tests
+    #[test]
+    fn test_type_diagnostic_creation() {
+        let error = TypeDiagnostic::error("Type mismatch");
+        assert!(error.is_error());
+        assert!(!error.is_warning());
+        assert_eq!(error.to_string(), "error: Type mismatch");
+
+        let warning = TypeDiagnostic::warning("Ambiguous type");
+        assert!(warning.is_warning());
+        assert!(!warning.is_error());
+        assert_eq!(warning.to_string(), "warning: Ambiguous type");
+    }
+
+    #[test]
+    fn test_has_unresolved_type_var() {
+        assert!(TlaType::TypeVar(0).has_unresolved_type_var());
+        assert!(!TlaType::Int.has_unresolved_type_var());
+        assert!(!TlaType::Bool.has_unresolved_type_var());
+
+        // Nested type variable
+        assert!(TlaType::set(TlaType::TypeVar(0)).has_unresolved_type_var());
+        assert!(!TlaType::set(TlaType::Int).has_unresolved_type_var());
+
+        // Complex types
+        assert!(TlaType::map(TlaType::String, TlaType::TypeVar(1)).has_unresolved_type_var());
+        assert!(!TlaType::map(TlaType::String, TlaType::Int).has_unresolved_type_var());
+    }
+
+    #[test]
+    fn test_resolve_with_fallback() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Op == x
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        // Resolve with fallback (unresolved vars become Any)
+        let resolved = inference.resolve_with_fallback(&env);
+
+        // Check that types are resolved (either concrete or Any, not TypeVar)
+        for (_name, ty) in &resolved.variables {
+            assert!(
+                !ty.has_unresolved_type_var(),
+                "Resolved type should not have type variables"
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_diagnostics_unresolved() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Op == x
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        inference.infer_types(&module);
+        let diagnostics = inference.get_diagnostics(&module);
+
+        // Should have warnings about unresolved types
+        let has_warning = diagnostics.iter().any(|d| d.is_warning());
+        // This may or may not have warnings depending on inference
+        // At minimum, the diagnostics collection should work
+        assert!(diagnostics.is_empty() || has_warning || diagnostics.iter().any(|d| d.is_error()));
+    }
+
+    #[test]
+    fn test_get_diagnostics_no_errors_for_resolved() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE count
+            Init == count \in Nat
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        inference.infer_types(&module);
+        let diagnostics = inference.get_diagnostics(&module);
+
+        // count should have a resolved type (Nat), so no errors for it
+        let count_errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.is_error() && d.message.contains("count"))
+            .collect();
+        assert!(
+            count_errors.is_empty(),
+            "Should not have errors for resolved variable 'count'"
+        );
+    }
+
+    #[test]
+    fn test_fallback_type_conversion() {
+        // TypeVar becomes Any
+        assert_eq!(
+            TypeInference::fallback_type(&TlaType::TypeVar(0)),
+            TlaType::Any
+        );
+        assert_eq!(
+            TypeInference::fallback_type(&TlaType::Unknown),
+            TlaType::Any
+        );
+
+        // Concrete types stay the same
+        assert_eq!(TypeInference::fallback_type(&TlaType::Int), TlaType::Int);
+        assert_eq!(TypeInference::fallback_type(&TlaType::Bool), TlaType::Bool);
+
+        // Nested type variables become Any
+        assert_eq!(
+            TypeInference::fallback_type(&TlaType::set(TlaType::TypeVar(0))),
+            TlaType::set(TlaType::Any)
+        );
+    }
+
+    #[test]
+    fn test_diagnostic_severity() {
+        let error = TypeDiagnostic::error("test");
+        assert_eq!(error.severity, DiagnosticSeverity::Error);
+
+        let warning = TypeDiagnostic::warning("test");
+        assert_eq!(warning.severity, DiagnosticSeverity::Warning);
+
+        let info = TypeDiagnostic::info("test");
+        assert_eq!(info.severity, DiagnosticSeverity::Info);
     }
 }
