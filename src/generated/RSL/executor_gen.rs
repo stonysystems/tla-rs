@@ -44,7 +44,7 @@ ensures
 {
 CExecutor {
         constants: c.clone(),
-        app: CAppInitialize(),
+        app: AppInitialize(),
         ops_complete: 0,
         max_bal_reflected: CBallot {
             seqno: 0,
@@ -85,8 +85,8 @@ pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CPacket>
 requires
     s.valid(),
     s.next_op_to_execute is COutstandingOpKnown,
-    CLtUpperBound(s.ops_complete, s.constants.all.params.max_integer_val),
-    CLReplicaConstantsValid(s.constants),
+    LtUpperBound(s.ops_complete, s.constants.all.params.max_integer_val),
+    CReplicaConstantsValid(s.constants),
 ensures
     result.0.valid(),
     result.1.valid(),

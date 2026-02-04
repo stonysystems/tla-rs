@@ -38,7 +38,7 @@ verus! {
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
     c.valid(),
-    CWellFormedLConfiguration(c.all.config),
+    WellFormedLConfiguration(c.all.config),
 ensures
     result.valid(),
     LReplicaInit(result@, c@),
@@ -177,7 +177,7 @@ ensures
     LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@),
 {
     let m = received_packet.msg;
-    if (s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m.get_bal_2a()) && CLeqUpperBound(&m.get_opn_2a(), &s.acceptor.constants.all.params.max_integer_val))) {
+    if (s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m.get_bal_2a()) && LeqUpperBound(&m.get_opn_2a(), &s.acceptor.constants.all.params.max_integer_val))) {
                 let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
         (CReplica {
     constants: s.constants,
@@ -428,7 +428,7 @@ ensures
     result.1.valid(),
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@),
 {
-if ((s.executor.next_op_to_execute is COutstandingOpKnown) && (CLtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && CReplicaConstantsValid(&s.executor.constants))) {
+if ((s.executor.next_op_to_execute is COutstandingOpKnown) && (LtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && CReplicaConstantsValid(&s.executor.constants))) {
                 let v = s.executor.next_op_to_execute.get_v();
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &v);
         let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
@@ -523,7 +523,7 @@ ensures
     result.valid(),
     LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
 {
-    let s_ = CReplicaNextProcessHeartbeat(&s, &ios.index(0).get_r(), &ios.index(1).get_t(), CExtractSentPacketsFromIos(&ios));
+    let s_ = CReplicaNextProcessHeartbeat(&s, &ios.index(0).get_r(), &ios.index(1).get_t(), ExtractSentPacketsFromIos(&ios));
     s_
 
 }
@@ -539,7 +539,7 @@ ensures
     result.valid(),
     LReplicaNextProcessPacketWithoutReadingClock(s@, result@, ios@),
 {
-    let sent_packets = CExtractSentPacketsFromIos(&ios);
+    let sent_packets = ExtractSentPacketsFromIos(&ios);
         ios.drop_first().iter().all(|io| (io is CSend));
     match ios.index(0).get_r().msg {
         CMessage::CMessageInvalid {  } => CReplicaNextProcessInvalid(&s, &ios.index(0).get_r(), &sent_packets),
@@ -590,7 +590,7 @@ ensures
     result.valid(),
     result@ == SpontaneousClock(ios@),
 {
-if CSpontaneousIos(&ios, 1) {
+if SpontaneousIos(&ios, 1) {
         CClockReading {
             t: ios.index(0).get_t(),
         }
@@ -609,7 +609,7 @@ ensures
     result.valid(),
     LReplicaNoReceiveNext(s@, nextActionIndex@, result@, ios@),
 {
-    let sent_packets = CExtractSentPacketsFromIos(&ios);
+    let sent_packets = ExtractSentPacketsFromIos(&ios);
     if (nextActionIndex == 1) {
                 let s_ = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s, &sent_packets);
         s_
@@ -621,7 +621,7 @@ ensures
 
         } else {
             if (nextActionIndex == 3) {
-                                let s_ = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, CSpontaneousClock(&ios), &sent_packets);
+                                let s_ = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, SpontaneousClock(&ios), &sent_packets);
                 s_
 
             } else {
@@ -641,16 +641,16 @@ ensures
 
                         } else {
                             if (nextActionIndex == 7) {
-                                                                let s_ = CReplicaNextReadClockCheckForViewTimeout(&s, CSpontaneousClock(&ios), &sent_packets);
+                                                                let s_ = CReplicaNextReadClockCheckForViewTimeout(&s, SpontaneousClock(&ios), &sent_packets);
                                 s_
 
                             } else {
                                 if (nextActionIndex == 8) {
-                                                                        let s_ = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, CSpontaneousClock(&ios), &sent_packets);
+                                                                        let s_ = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, SpontaneousClock(&ios), &sent_packets);
                                     s_
 
                                 } else {
-                                                                        let s_ = CReplicaNextReadClockMaybeSendHeartbeat(&s, CSpontaneousClock(&ios), &sent_packets);
+                                                                        let s_ = CReplicaNextReadClockMaybeSendHeartbeat(&s, SpontaneousClock(&ios), &sent_packets);
                                     s_
 
                                 }
@@ -667,7 +667,7 @@ ensures
 pub exec fn CSchedulerInit(c: &CReplicaConstants) -> (result: CScheduler)
 requires
     c.valid(),
-    CWellFormedLConfiguration(c.all.config),
+    WellFormedLConfiguration(c.all.config),
 ensures
     result.valid(),
     LSchedulerInit(result@, c@),

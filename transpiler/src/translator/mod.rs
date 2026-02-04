@@ -33,6 +33,9 @@ pub struct TranslatorConfig {
     /// Maps spec function names to their qualified exec paths
     /// e.g., "BroadcastToEveryone" -> "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
     pub function_paths: HashMap<String, String>,
+    /// Spec-only functions that should NOT have C-prefix added
+    /// These are functions that only exist in the spec layer and have no exec implementation
+    pub spec_only_functions: HashSet<String>,
     /// Whether to generate abstraction functions
     pub generate_abstraction_fns: bool,
     /// Whether to generate validity predicates
@@ -52,6 +55,7 @@ impl Default for TranslatorConfig {
             exec_prefix: "C".to_string(),
             type_remapping: HashMap::new(),
             function_paths: HashMap::new(),
+            spec_only_functions: HashSet::new(),
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
@@ -1676,7 +1680,6 @@ impl Translator {
         format!("result@ == {}({})", func.spec_fn.name, args.join(", "))
     }
 
-    /// Translate spec name to exec name (L* -> C*)
     /// Translate spec name to exec name for function DEFINITIONS (L* -> C*)
     /// This never uses qualified paths - just simple name translation.
     fn translate_definition_name(&self, spec_name: &str) -> String {
@@ -1700,7 +1703,8 @@ impl Translator {
     }
 
     /// Translate spec name to exec name for function CALLS (L* -> C* or qualified path)
-    /// This checks function_paths for cross-module calls first, then falls back to simple translation.
+    /// This checks function_paths for cross-module calls first, then spec_only_functions,
+    /// then falls back to simple translation.
     fn translate_name(&self, spec_name: &str) -> String {
         // First check function_paths for qualified paths (cross-module calls)
         // This handles functions like "BroadcastToEveryone" -> "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
@@ -1712,6 +1716,19 @@ impl Translator {
             let base_name = &spec_name[self.config.spec_prefix.len()..];
             if let Some(qualified_path) = self.config.function_paths.get(base_name) {
                 return qualified_path.clone();
+            }
+        }
+
+        // Check if this is a spec-only function (no C-prefix should be added)
+        // These are functions that only exist in the spec layer
+        if self.config.spec_only_functions.contains(spec_name) {
+            return spec_name.to_string();
+        }
+        // Also check with L prefix stripped
+        if spec_name.starts_with(&self.config.spec_prefix) {
+            let base_name = &spec_name[self.config.spec_prefix.len()..];
+            if self.config.spec_only_functions.contains(base_name) {
+                return spec_name.to_string();
             }
         }
 
@@ -1954,9 +1971,9 @@ impl Translator {
                 format!("{}.{}({})", recv, method, args_str.join(", "))
             }
             Expr::Call { func, args } => {
-                // Function call: translate function name with C prefix
+                // Function call: translate function name using translate_name (respects spec_only_functions)
                 let func_name = if func.segments.len() == 1 {
-                    format!("C{}", func.segments[0])
+                    self.translate_name(&func.segments[0])
                 } else {
                     func.segments.join("::")
                 };

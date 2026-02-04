@@ -38,7 +38,7 @@ verus! {
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
     c.valid(),
-    CWellFormedLConfiguration(c.all.config),
+    WellFormedLConfiguration(c.all.config),
 ensures
     result.valid(),
     LProposerInit(result@, c@),
@@ -193,8 +193,8 @@ pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_t
 requires
     s.valid(),
     log_truncation_point.valid(),
-    CLProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
-    CLAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
+    LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
+    LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -240,8 +240,8 @@ pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_poi
 requires
     s.valid(),
     log_truncation_point.valid(),
-    CLProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
-    !CLAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
+    LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
+    !LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures
     result.0.valid(),
     result.1.valid(),
@@ -274,10 +274,10 @@ ensures
     result.1.valid(),
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
 {
-if !CProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_operation_number_to_propose) {
+if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_operation_number_to_propose) {
         (s.clone(), vec![])
     } else {
-        if !CAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
+        if !LAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
             CProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
             if (CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && ((s.incomplete_batch_timer is CIncompleteBatchTimerOn) && (clock >= s.incomplete_batch_timer.get_when()))))) {

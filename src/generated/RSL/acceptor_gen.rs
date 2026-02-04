@@ -123,7 +123,7 @@ requires
     inp.msg is CMessage2a,
     s.constants.all.config.replica_ids.contains(inp.src),
     CBalLeq(s.max_bal, inp.msg.get_bal_2a()),
-    CLeqUpperBound(inp.msg.get_opn_2a(), s.constants.all.params.max_integer_val),
+    LeqUpperBound(inp.msg.get_opn_2a(), s.constants.all.params.max_integer_val),
 ensures
     result.0.valid(),
     result.1.valid(),

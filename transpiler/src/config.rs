@@ -41,6 +41,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub function_paths: HashMap<String, String>,
 
+    /// Spec-only functions that should NOT have C-prefix added
+    /// These are functions that only exist in the spec layer and have no exec implementation
+    /// The transpiler will use their names as-is without adding C-prefix
+    /// e.g., ["WellFormedLConfiguration", "LtUpperBound", "LeqUpperBound"]
+    #[serde(default)]
+    pub spec_only_functions: Vec<String>,
+
     /// Output generation configuration
     #[serde(default)]
     pub output: OutputConfig,

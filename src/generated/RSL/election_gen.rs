@@ -204,7 +204,7 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, clock@),
 {
-if ((es.current_view_suspectors.len() < CMinQuorumSize(&es.constants.all.config)) || !CLtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
+if ((es.current_view_suspectors.len() < CMinQuorumSize(&es.constants.all.config)) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
                 let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);

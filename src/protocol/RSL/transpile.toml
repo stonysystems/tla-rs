@@ -1,6 +1,26 @@
 # Configuration for transpiling RSL spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Spec-only functions that should NOT have C-prefix added
+# These are functions that only exist in the spec layer and have no exec implementation
+# The transpiler will use their names as-is without adding C-prefix
+spec_only_functions = [
+    # Configuration validation (spec-only predicate)
+    "WellFormedLConfiguration",
+    # Upper bound comparisons (spec-only predicates)
+    "LtUpperBound",
+    "LeqUpperBound",
+    # IO extraction helpers (spec-only)
+    "ExtractSentPacketsFromIos",
+    "SpontaneousIos",
+    "SpontaneousClock",
+    # Proposer state predicates (spec-only)
+    "LProposerCanNominateUsingOperationNumber",
+    "LAllAcceptorsHadNoProposal",
+    # App state machine (spec-only)
+    "AppInitialize",
+]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
