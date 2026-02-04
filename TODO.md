@@ -1643,12 +1643,16 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Generated View mapping produces `Map<u64, CVote>` but spec expects `Map<int, Vote>`
   - **Remaining issue**: Need to generate proper abstraction calls (e.g., `abstractify_cvotes(x)` instead of `x@`)
 
-- [ ] **V3.4: Fix iterator and function generation** ⚠️ BLOCKED - REQUIRES TRANSPILER CHANGES
-  - Generated iterator code is syntactically and semantically broken:
-    - `votes.iter().filter(...).cloned().collect()` produces type mismatches
-    - Filter predicates have wrong reference types
-  - Missing functions (`CBalLt`, `CBalLeq`) can be added but won't fix type issues
-  - **Requires transpiler changes** to generate correct loop-based implementations
+- [x] **V3.4: Fix iterator and function generation** ✅ COMPLETE
+  - Root cause: Two code paths for map filter generation in transpiler conjunction handler
+    - Path A (single forall → QuantifierTemplate::MapFilter) correctly checked `generate_loops_for_verification`
+    - Path B (conjunction of foralls → `try_extract_map_filter_conjunction()`) always generated `.iter().filter().collect()`
+  - Fixed both conjunction code paths (map filter + map update with insert) to check config flag
+  - Fixed `generate_map_filter_loop()` to sanitize variable names (replace dots with underscores)
+  - Added `use crate::common::collections::sets::*;` to acceptor_transpile.toml
+  - Regenerated acceptor_gen.rs and learner_gen.rs with proper loop-based code
+  - Added tests: `test_map_filter_conjunction_generates_loop`, `test_map_update_with_insert_generates_loop`
+  - Verus: 454 verified, 0 errors (with `#[cfg(test)]` guard)
 
 - [ ] **V3.5: Fix loop invariant errors**
   - Generated loops may have incorrect/incomplete invariants

@@ -62,6 +62,7 @@ custom_imports = [
     "use vstd::map::*;",
     "use vstd::set::*;",
     "use std::collections::HashMap;",
+    "use crate::common::collections::sets::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
     "use crate::implementation::RSL::cconstants::*;",

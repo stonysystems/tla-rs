@@ -5,29 +5,10 @@ use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
-use crate::implementation::common::upper_bound::*;
-use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
-use crate::implementation::RSL::appinterface::CAppStateInit;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
-use crate::implementation::RSL::ElectionImpl::CElectionState;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
-use crate::implementation::RSL::ProposerImpl::{CIncompleteBatchTimer, CProposer};
-use crate::implementation::RSL::ReplicaImpl::CReplica;
-use crate::protocol::common::upper_bound::*;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::broadcast::*;
-use crate::protocol::RSL::configuration::WellFormedLConfiguration;
-use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::learner::*;
-use crate::protocol::RSL::proposer::*;
-use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -36,6 +17,33 @@ use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
+
+#[derive(Clone)]
+pub struct CLearner {
+    pub constants: CReplicaConstants,
+    pub max_ballot_seen: CBallot,
+    pub unexecuted_learner_state: CLearnerState,
+}
+
+impl CLearner {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.constants.valid()
+        &&& self.max_ballot_seen.valid()
+        &&& self.unexecuted_learner_state.valid()
+    }
+}
+
+impl View for CLearner {
+    type V = LLearner;
+
+    open spec fn view(&self) -> LLearner {
+        LLearner {
+            constants: self.constants@,
+            max_ballot_seen: self.max_ballot_seen@,
+            unexecuted_learner_state: self.unexecuted_learner_state@,
+        }
+    }
+}
 
 pub exec fn CLearnerInit(c: &CReplicaConstants) -> (result: CLearner)
 requires
@@ -115,7 +123,7 @@ ensures
 
 }
 
-pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &COperationNumber) -> (result: CLearner)
+pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &u64) -> (result: CLearner)
 requires
     s.valid(),
 ensures
@@ -133,14 +141,51 @@ if s.unexecuted_learner_state.contains_key(opn) {
     }
 }
 
-pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &COperationNumber) -> (result: CLearner)
+pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &u64) -> (result: CLearner)
 requires
     s.valid(),
 ensures
     result.valid(),
     LLearnerForgetOperationsBefore(s@, result@, ops_complete@),
 {
-    let __s__unexecuted_learner_state = s.unexecuted_learner_state.iter().filter(|(k, _)| (k >= ops_complete)).cloned().collect();
+    let __s__unexecuted_learner_state = {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        let s_unexecuted_learner_state_keys = s.unexecuted_learner_state.keys();
+        assert((s_unexecuted_learner_state_keys@.0 == 0));
+        assume((s_unexecuted_learner_state_keys@.1.len() == s.unexecuted_learner_state@.len()));
+        assert((s_unexecuted_learner_state_keys@.1.to_set() =~= s.unexecuted_learner_state@.dom()));
+        let ghost mut seen_keys: Set<_> = Set::empty();
+        let mut result: HashMap<_, _> = HashMap::new();
+        for k in iter:s_unexecuted_learner_state_keys
+        invariant
+            seen_keys.subset_of(s.unexecuted_learner_state@.dom()),
+            forall |k| seen_keys.contains(k) ==> s.unexecuted_learner_state@.contains_key(k),
+            forall |k| result@.contains_key(k) ==> (*k >= *ops_complete) && s.unexecuted_learner_state@.contains_key(k),
+            forall |k| result@.contains_key(k) ==> seen_keys.contains(k),
+            forall |k| seen_keys.contains(k) && (*k >= *ops_complete) ==> result@.contains_key(k),
+        {
+                        broadcast use vstd::std_specs::hash::group_hash_axioms;
+            assume(s.unexecuted_learner_state@.contains_key(*k));
+            proof{seen_keys = seen_keys.insert(*k)};
+            if (k >= ops_complete) {
+                                let value = s.unexecuted_learner_state.get(k);
+                match value {
+                    Some(v) => result.insert(*k, v.clone()),
+                    None => {},
+                }
+
+            }
+
+        }
+        assert(seen_keys.subset_of(s.unexecuted_learner_state@.dom()));
+        assume((s_unexecuted_learner_state_keys@.0 == s_unexecuted_learner_state_keys@.1.len()));
+        assume((seen_keys.len() == s_unexecuted_learner_state_keys@.0));
+        proof{subset_len_equal_implies_equal(seen_keys, s.unexecuted_learner_state@.dom())};
+        assert((seen_keys == s.unexecuted_learner_state@.dom()));
+        // assert(forall |k| result@.contains_key(k) ==> (*k >= *ops_complete) && s.unexecuted_learner_state@.contains_key(k) && result@[k] == s.unexecuted_learner_state@[k]);
+        // assert(forall |k| s.unexecuted_learner_state@.contains_key(k) && (*k >= *ops_complete) ==> result@.contains_key(k));
+        result
+    };
     CLearner {
         constants: s.constants,
         max_ballot_seen: s.max_ballot_seen,

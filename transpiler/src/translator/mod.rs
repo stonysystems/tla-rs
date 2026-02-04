@@ -1714,7 +1714,7 @@ impl Translator {
         key_var: &str,
         filter_expr: ExecExpr,
     ) -> ExecExpr {
-        let iter_name = format!("{}_keys", source_map);
+        let iter_name = format!("{}_keys", source_map.replace('.', "_"));
 
         // Convert filter expression to string for use in invariants
         let filter_pred = self.expr_to_invariant_string(&filter_expr);
@@ -4162,63 +4162,77 @@ impl Translator {
                     old_value_expr,
                 )) = self.try_extract_map_update_with_value(exprs, ctx)
                 {
-                    // Generate complete map update code:
-                    // {
-                    //   let mut result = source.iter().filter(|(k,_)| filter).map(|(k,v)| (k.clone(), v.clone())).collect();
-                    //   result.insert(new_key.clone(), new_value.clone());
-                    //   result
-                    // }
-                    // But we need to handle the conditional value (if k == new_key then new_value else old_value)
                     let filter_expr = self.transform_expr(&filter_pred, ctx)?;
                     let new_key_expr = self.transform_expr(&new_key, ctx)?;
                     let new_value_expr = self.transform_expr(&new_value, ctx)?;
-                    let old_value = self.transform_expr(&old_value_expr, ctx)?;
 
-                    // Generate: source.iter().filter().map(value_fn).collect() then insert new_key
-                    return Ok(ExecExpr::Block(vec![
-                        ExecExpr::Let {
-                            pattern: "mut __result".to_string(),
-                            ty: None,
-                            value: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::MethodCall {
+                    if self.config.generate_loops_for_verification {
+                        // Generate loop-based filter then insert
+                        let filter_loop = self.generate_map_filter_loop(&source_map, &key_var, filter_expr);
+                        return Ok(ExecExpr::Block(vec![
+                            ExecExpr::Let {
+                                pattern: "mut __result".to_string(),
+                                ty: None,
+                                value: Box::new(filter_loop),
+                            },
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("__result".to_string())),
+                                method: "insert".to_string(),
+                                args: vec![
+                                    ExecExpr::Clone(Box::new(new_key_expr)),
+                                    ExecExpr::Clone(Box::new(new_value_expr)),
+                                ],
+                            },
+                            ExecExpr::Var("__result".to_string()),
+                        ]));
+                    } else {
+                        let old_value = self.transform_expr(&old_value_expr, ctx)?;
+                        // Generate: source.iter().filter().map(value_fn).collect() then insert new_key
+                        return Ok(ExecExpr::Block(vec![
+                            ExecExpr::Let {
+                                pattern: "mut __result".to_string(),
+                                ty: None,
+                                value: Box::new(ExecExpr::MethodCall {
                                     receiver: Box::new(ExecExpr::MethodCall {
                                         receiver: Box::new(ExecExpr::MethodCall {
-                                            receiver: Box::new(ExecExpr::Var(source_map.clone())),
-                                            method: "iter".to_string(),
-                                            args: vec![],
+                                            receiver: Box::new(ExecExpr::MethodCall {
+                                                receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                                method: "iter".to_string(),
+                                                args: vec![],
+                                            }),
+                                            method: "filter".to_string(),
+                                            args: vec![ExecExpr::Closure {
+                                                params: vec![format!("({}, _)", key_var)],
+                                                body: Box::new(filter_expr.clone()),
+                                            }],
                                         }),
-                                        method: "filter".to_string(),
+                                        method: "map".to_string(),
                                         args: vec![ExecExpr::Closure {
-                                            params: vec![format!("({}, _)", key_var)],
-                                            body: Box::new(filter_expr.clone()),
+                                            params: vec![format!("({}, {})", key_var, "__v")],
+                                            body: Box::new(ExecExpr::Tuple(vec![
+                                                ExecExpr::Clone(Box::new(ExecExpr::Var(
+                                                    key_var.clone(),
+                                                ))),
+                                                old_value,
+                                            ])),
                                         }],
                                     }),
-                                    method: "map".to_string(),
-                                    args: vec![ExecExpr::Closure {
-                                        params: vec![format!("({}, {})", key_var, "__v")],
-                                        body: Box::new(ExecExpr::Tuple(vec![
-                                            ExecExpr::Clone(Box::new(ExecExpr::Var(
-                                                key_var.clone(),
-                                            ))),
-                                            old_value,
-                                        ])),
-                                    }],
+                                    method: "collect".to_string(),
+                                    args: vec![],
                                 }),
-                                method: "collect".to_string(),
-                                args: vec![],
-                            }),
-                        },
-                        // Insert new key with new value
-                        ExecExpr::MethodCall {
-                            receiver: Box::new(ExecExpr::Var("__result".to_string())),
-                            method: "insert".to_string(),
-                            args: vec![
-                                ExecExpr::Clone(Box::new(new_key_expr)),
-                                ExecExpr::Clone(Box::new(new_value_expr)),
-                            ],
-                        },
-                        ExecExpr::Var("__result".to_string()),
-                    ]));
+                            },
+                            // Insert new key with new value
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("__result".to_string())),
+                                method: "insert".to_string(),
+                                args: vec![
+                                    ExecExpr::Clone(Box::new(new_key_expr)),
+                                    ExecExpr::Clone(Box::new(new_value_expr)),
+                                ],
+                            },
+                            ExecExpr::Var("__result".to_string()),
+                        ]));
+                    }
                 }
 
                 // Next, check if this is a map filter conjunction pattern
@@ -4226,28 +4240,33 @@ impl Translator {
                 if let Some((source_map, output_map, key_var, filter_pred)) =
                     self.try_extract_map_filter_conjunction(exprs, ctx)
                 {
-                    // Generate: source.iter().filter(|(k, _)| predicate).cloned().collect()
                     let filter_expr = self.transform_expr(&filter_pred, ctx)?;
 
-                    let filter_collect = ExecExpr::MethodCall {
-                        receiver: Box::new(ExecExpr::MethodCall {
+                    let filter_collect = if self.config.generate_loops_for_verification {
+                        // Generate explicit for loop for Verus verification
+                        self.generate_map_filter_loop(&source_map, &key_var, filter_expr)
+                    } else {
+                        // Generate: source.iter().filter(|(k, _)| predicate).cloned().collect()
+                        ExecExpr::MethodCall {
                             receiver: Box::new(ExecExpr::MethodCall {
                                 receiver: Box::new(ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::Var(source_map.clone())),
-                                    method: "iter".to_string(),
-                                    args: vec![],
+                                    receiver: Box::new(ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                        method: "iter".to_string(),
+                                        args: vec![],
+                                    }),
+                                    method: "filter".to_string(),
+                                    args: vec![ExecExpr::Closure {
+                                        params: vec![format!("({}, _)", key_var)],
+                                        body: Box::new(filter_expr),
+                                    }],
                                 }),
-                                method: "filter".to_string(),
-                                args: vec![ExecExpr::Closure {
-                                    params: vec![format!("({}, _)", key_var)],
-                                    body: Box::new(filter_expr),
-                                }],
+                                method: "cloned".to_string(),
+                                args: vec![],
                             }),
-                            method: "cloned".to_string(),
+                            method: "collect".to_string(),
                             args: vec![],
-                        }),
-                        method: "collect".to_string(),
-                        args: vec![],
+                        }
                     };
 
                     // Check if there's a struct literal that uses this map as a self-referential field
@@ -9372,6 +9391,263 @@ mod tests {
                         assert_eq!(name, "__result", "Should return __result");
                     }
                     other => panic!("Expected Var(__result), got {:?}", other),
+                }
+            }
+            other => panic!("Expected Block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_filter_conjunction_generates_loop() {
+        // Same pattern as test_map_filter_conjunction but with generate_loops_for_verification = true
+        // Should generate loop-based code instead of .iter().filter().cloned().collect()
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config.clone());
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["votes_".to_string()],
+            input_params: vec!["votes".to_string(), "log_truncation_point".to_string()],
+            output_types: std::collections::HashMap::new(),
+            field_substitutions: std::collections::HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("opn".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+
+        let forall1 = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("votes_".to_string())),
+                    method: "contains_key".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes".to_string())),
+                        method: "contains_key".to_string(),
+                        args: vec![Expr::Ident("opn".to_string())],
+                    }),
+                    crate::ast::BinOp::And,
+                    Box::new(Expr::Eq(
+                        Box::new(Expr::Index(
+                            Box::new(Expr::Ident("votes_".to_string())),
+                            Box::new(Expr::Ident("opn".to_string())),
+                        )),
+                        Box::new(Expr::Index(
+                            Box::new(Expr::Ident("votes".to_string())),
+                            Box::new(Expr::Ident("opn".to_string())),
+                        )),
+                    )),
+                )),
+            )),
+        };
+
+        let forall2 = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Lt(
+                    Box::new(Expr::Ident("opn".to_string())),
+                    Box::new(Expr::Ident("log_truncation_point".to_string())),
+                )),
+                Box::new(Expr::Not(Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("votes_".to_string())),
+                    method: "contains_key".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }))),
+            )),
+        };
+
+        let forall3 = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ge(
+                        Box::new(Expr::Ident("opn".to_string())),
+                        Box::new(Expr::Ident("log_truncation_point".to_string())),
+                    )),
+                    crate::ast::BinOp::And,
+                    Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes".to_string())),
+                        method: "contains_key".to_string(),
+                        args: vec![Expr::Ident("opn".to_string())],
+                    }),
+                )),
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("votes_".to_string())),
+                    method: "contains_key".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+            )),
+        };
+
+        let conjunction = Expr::Conjunction(vec![forall1, forall2, forall3]);
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(
+            result.is_ok(),
+            "Should transform map filter conjunction with loops: {:?}",
+            result
+        );
+
+        // Should generate a Block (loop-based code), not a MethodCall chain
+        match result.unwrap() {
+            ExecExpr::Block(stmts) => {
+                // Should contain broadcast use, let keys, assertions, ghost var, let result, for loop, etc.
+                assert!(stmts.len() >= 5, "Loop block should have multiple statements, got {}", stmts.len());
+                // Check for the for loop
+                let has_for_loop = stmts.iter().any(|s| matches!(s, ExecExpr::ForInIter { .. }));
+                assert!(has_for_loop, "Should contain a for-in-iter loop");
+                // Should NOT contain .filter()
+                let printed = format!("{:?}", stmts);
+                assert!(!printed.contains("\"filter\""), "Should NOT contain .filter() call");
+            }
+            other => panic!("Expected Block (loop-based code), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_update_with_insert_generates_loop() {
+        // Same pattern as test_map_update_with_insert_pattern but with generate_loops_for_verification = true
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config.clone());
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["votes_".to_string()],
+            input_params: vec![
+                "votes".to_string(),
+                "new_opn".to_string(),
+                "new_vote".to_string(),
+                "log_truncation_point".to_string(),
+            ],
+            output_types: std::collections::HashMap::new(),
+            field_substitutions: std::collections::HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("opn".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+
+        let domain_forall = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Iff(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes_".to_string())),
+                        method: "dom".to_string(),
+                        args: vec![],
+                    }),
+                    method: "contains".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ge(
+                        Box::new(Expr::Ident("opn".to_string())),
+                        Box::new(Expr::Ident("log_truncation_point".to_string())),
+                    )),
+                    crate::ast::BinOp::And,
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::MethodCall {
+                            receiver: Box::new(Expr::MethodCall {
+                                receiver: Box::new(Expr::Ident("votes".to_string())),
+                                method: "dom".to_string(),
+                                args: vec![],
+                            }),
+                            method: "contains".to_string(),
+                            args: vec![Expr::Ident("opn".to_string())],
+                        }),
+                        crate::ast::BinOp::Or,
+                        Box::new(Expr::Eq(
+                            Box::new(Expr::Ident("opn".to_string())),
+                            Box::new(Expr::Ident("new_opn".to_string())),
+                        )),
+                    )),
+                )),
+            )),
+        };
+
+        let value_forall = Expr::Forall {
+            vars: vec![binding.clone()],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("votes_".to_string())),
+                        method: "dom".to_string(),
+                        args: vec![],
+                    }),
+                    method: "contains".to_string(),
+                    args: vec![Expr::Ident("opn".to_string())],
+                }),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Ident("votes_".to_string())),
+                        Box::new(Expr::Ident("opn".to_string())),
+                    )),
+                    Box::new(Expr::If {
+                        cond: Box::new(Expr::Eq(
+                            Box::new(Expr::Ident("opn".to_string())),
+                            Box::new(Expr::Ident("new_opn".to_string())),
+                        )),
+                        then_branch: Box::new(Expr::Ident("new_vote".to_string())),
+                        else_branch: Some(Box::new(Expr::Index(
+                            Box::new(Expr::Ident("votes".to_string())),
+                            Box::new(Expr::Ident("opn".to_string())),
+                        ))),
+                    }),
+                )),
+            )),
+        };
+
+        let conjunction = Expr::Conjunction(vec![domain_forall, value_forall]);
+        let result = translator.transform_expr(&conjunction, &ctx);
+        assert!(
+            result.is_ok(),
+            "Should transform map update with insert with loops: {:?}",
+            result
+        );
+
+        // Should generate a Block with loop + insert
+        match result.unwrap() {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 3, "Block should have 3 statements (let loop, insert, return)");
+                // First should be let binding containing a loop block
+                match &stmts[0] {
+                    ExecExpr::Let { value, .. } => {
+                        match value.as_ref() {
+                            ExecExpr::Block(inner_stmts) => {
+                                let has_for_loop = inner_stmts.iter().any(|s| matches!(s, ExecExpr::ForInIter { .. }));
+                                assert!(has_for_loop, "Inner block should contain a for-in-iter loop");
+                            }
+                            other => panic!("Expected Block for loop code, got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected Let binding, got {:?}", other),
+                }
+                // Second should be insert
+                match &stmts[1] {
+                    ExecExpr::MethodCall { method, .. } => {
+                        assert_eq!(method, "insert", "Should call insert");
+                    }
+                    other => panic!("Expected insert MethodCall, got {:?}", other),
                 }
             }
             other => panic!("Expected Block, got {:?}", other),
