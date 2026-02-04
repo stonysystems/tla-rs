@@ -2336,12 +2336,16 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Implemented in `transpiler/src/tla/tokenizer.rs` (~800 LOC)
   - 26 unit tests covering all token types
 
-- [ ] **T1.2: Handle TLA+ number formats**
+- [x] **T1.2: Handle TLA+ number formats** [2026-02-04]
   - Integers, binary (`\b...`), octal (`\o...`), hex (`\h...`)
-  - Set notation: `1..10`, `{1, 2, 3}`
+  - Set notation: `1..10`, `{1, 2, 3}` (already supported via DotDot token)
+  - Implemented binary, octal, hex scanning in tokenizer
+  - Outputs Rust-style prefixes (0b, 0o, 0x) for easy parsing
+  - 6 new tests for number formats
 
-- [ ] **T1.3: Handle TLA+ string formats**
-  - String literals with TLA+ escaping
+- [x] **T1.3: Handle TLA+ string formats** [2026-02-04]
+  - String literals with TLA+ escaping (already implemented in T1.1)
+  - Supports: \n, \t, \r, \\, \"
 
 #### Phase T2: TLA+ Parser
 - [ ] **T2.1: Parse module structure**

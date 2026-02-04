@@ -610,11 +610,28 @@ impl<'a> TlaTokenizer<'a> {
         Ok(TlaToken::new(kind, Span::new(start, self.position)))
     }
 
-    /// Scan a backslash operator
+    /// Scan a backslash operator or number literal
     fn scan_backslash_operator(
         &mut self,
         start: Position,
     ) -> Result<TlaTokenKind, TlaTokenizerError> {
+        // Check for number literals: \b (binary), \o (octal), \h (hex)
+        match self.peek() {
+            Some('b') | Some('B') => {
+                self.advance();
+                return self.scan_binary_number(start);
+            }
+            Some('o') | Some('O') => {
+                self.advance();
+                return self.scan_octal_number(start);
+            }
+            Some('h') | Some('H') => {
+                self.advance();
+                return self.scan_hex_number(start);
+            }
+            _ => {}
+        }
+
         // Collect the operator name after backslash
         let mut name = String::new();
         while let Some(c) = self.peek() {
@@ -659,6 +676,88 @@ impl<'a> TlaTokenizer<'a> {
                 start,
             )),
         }
+    }
+
+    /// Scan a binary number literal (\b...)
+    fn scan_binary_number(&mut self, start: Position) -> Result<TlaTokenKind, TlaTokenizerError> {
+        let mut value = String::from("0b");
+        let mut has_digits = false;
+
+        while let Some(c) = self.peek() {
+            if c == '0' || c == '1' {
+                value.push(c);
+                self.advance();
+                has_digits = true;
+            } else if c == '_' {
+                // Allow underscores as separators
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        if !has_digits {
+            return Err(TlaTokenizerError::new(
+                "Expected binary digits after \\b",
+                start,
+            ));
+        }
+
+        Ok(TlaTokenKind::Number(value))
+    }
+
+    /// Scan an octal number literal (\o...)
+    fn scan_octal_number(&mut self, start: Position) -> Result<TlaTokenKind, TlaTokenizerError> {
+        let mut value = String::from("0o");
+        let mut has_digits = false;
+
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() && c < '8' {
+                value.push(c);
+                self.advance();
+                has_digits = true;
+            } else if c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        if !has_digits {
+            return Err(TlaTokenizerError::new(
+                "Expected octal digits after \\o",
+                start,
+            ));
+        }
+
+        Ok(TlaTokenKind::Number(value))
+    }
+
+    /// Scan a hexadecimal number literal (\h...)
+    fn scan_hex_number(&mut self, start: Position) -> Result<TlaTokenKind, TlaTokenizerError> {
+        let mut value = String::from("0x");
+        let mut has_digits = false;
+
+        while let Some(c) = self.peek() {
+            if c.is_ascii_hexdigit() {
+                value.push(c);
+                self.advance();
+                has_digits = true;
+            } else if c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        if !has_digits {
+            return Err(TlaTokenizerError::new(
+                "Expected hexadecimal digits after \\h",
+                start,
+            ));
+        }
+
+        Ok(TlaTokenKind::Number(value))
     }
 
     /// Scan a string literal
@@ -867,6 +966,66 @@ mod tests {
                 TlaTokenKind::Number("123456".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn test_binary_numbers() {
+        let kinds = token_kinds(r"\b1010 \B1111 \b0").unwrap();
+        assert_eq!(
+            kinds,
+            vec![
+                TlaTokenKind::Number("0b1010".to_string()),
+                TlaTokenKind::Number("0b1111".to_string()),
+                TlaTokenKind::Number("0b0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_octal_numbers() {
+        let kinds = token_kinds(r"\o777 \O123 \o0").unwrap();
+        assert_eq!(
+            kinds,
+            vec![
+                TlaTokenKind::Number("0o777".to_string()),
+                TlaTokenKind::Number("0o123".to_string()),
+                TlaTokenKind::Number("0o0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_hex_numbers() {
+        let kinds = token_kinds(r"\hFF \H1a2b \h0").unwrap();
+        assert_eq!(
+            kinds,
+            vec![
+                TlaTokenKind::Number("0xFF".to_string()),
+                TlaTokenKind::Number("0x1a2b".to_string()),
+                TlaTokenKind::Number("0x0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_invalid_binary_number() {
+        let result = tokenize(r"\b");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("binary digits"));
+    }
+
+    #[test]
+    fn test_invalid_octal_number() {
+        let result = tokenize(r"\o");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("octal digits"));
+    }
+
+    #[test]
+    fn test_invalid_hex_number() {
+        let result = tokenize(r"\h");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("hexadecimal digits"));
     }
 
     #[test]
