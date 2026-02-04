@@ -19,8 +19,8 @@ use crate::protocol::lock::distributed_system_procotol_i::{ls_init, ls_next, Abs
 use crate::protocol::lock::node::{AbstractConfig, AbstractNode};
 use crate::protocol::lock::types::{LockEnvironment, LockIo, LockMessage, LockPacket};
 use vstd::hash_map::HashMapWithView;
-use vstd::seq_lib::lemma_seq_properties;
-use vstd::set_lib::lemma_set_properties;
+use vstd::seq_lib::group_seq_properties;
+use vstd::set_lib::group_set_properties;
 use vstd::view::*;
 use vstd::{modes::*, prelude::*, seq::*, set::*, *};
 

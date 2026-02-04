@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 use vstd::prelude::*;
-use vstd::set_lib::lemma_set_properties;
+use vstd::set_lib::group_set_properties;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {

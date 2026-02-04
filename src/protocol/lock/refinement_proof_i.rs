@@ -15,8 +15,8 @@ use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::services::lock::abstractservice_s::*;
 
-use vstd::seq_lib::lemma_seq_properties;
-use vstd::set_lib::lemma_set_properties;
+use vstd::seq_lib::group_seq_properties;
+use vstd::set_lib::group_set_properties;
 
 verus! {
     pub open spec fn abstractify_gls_state(gls: AbstractGLSState) -> AbstractLockServiceState {
