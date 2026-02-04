@@ -388,6 +388,82 @@ impl<'a> TransformContext<'a> {
     }
 }
 
+// ============================================================================
+// Recursive Pattern Recognition
+// ============================================================================
+
+/// Recognized patterns in recursive helper functions.
+/// These patterns can be automatically translated to loop-based implementations.
+#[derive(Debug, Clone)]
+pub enum RecursivePattern {
+    /// Filter pattern: keeps elements that satisfy (or don't satisfy) a predicate.
+    ///
+    /// Spec pattern (inverted - keep when predicate is FALSE):
+    /// ```ignore
+    /// if s.len() == 0 { Seq::empty() }
+    /// else if pred(s[0], args...) { recurse(s.drop_first(), args...) }
+    /// else { seq![s[0]] + recurse(s.drop_first(), args...) }
+    /// ```
+    ///
+    /// Spec pattern (standard - keep when predicate is TRUE):
+    /// ```ignore
+    /// if s.len() == 0 { Seq::empty() }
+    /// else if pred(s[0]) { seq![transform(s[0])] + recurse(s.drop_first()) }
+    /// else { recurse(s.drop_first()) }
+    /// ```
+    ///
+    /// Generated exec code:
+    /// ```ignore
+    /// let mut result = Vec::new();
+    /// for i in 0..s.len() {
+    ///     if !pred(&s[i], args...) {  // inverted
+    ///         result.push(s[i].clone());
+    ///     }
+    /// }
+    /// result
+    /// ```
+    Filter {
+        /// Name of the sequence parameter being filtered
+        seq_param: String,
+        /// The predicate expression (condition to check)
+        predicate: Expr,
+        /// Whether to keep elements when predicate is TRUE (standard) or FALSE (inverted)
+        keep_when_true: bool,
+        /// Optional transformation applied to kept elements (for map-filter patterns)
+        transform: Option<Box<Expr>>,
+        /// Additional arguments passed through the recursion
+        extra_args: Vec<String>,
+    },
+
+    /// Map pattern: transforms each element.
+    /// (To be implemented in R1.3)
+    Map {
+        seq_param: String,
+        transform: Expr,
+        extra_args: Vec<String>,
+    },
+
+    /// Fold/accumulate pattern: reduces sequence to single value.
+    /// (To be implemented in R1.4)
+    Fold {
+        seq_param: String,
+        init: Expr,
+        combine: Expr,
+        extra_args: Vec<String>,
+    },
+}
+
+/// Result of analyzing a recursive function for pattern detection.
+#[derive(Debug)]
+pub enum PatternAnalysis {
+    /// Successfully detected a known pattern
+    Recognized(RecursivePattern),
+    /// Function is recursive but pattern not recognized
+    UnrecognizedRecursive(String),
+    /// Function is not recursive
+    NotRecursive,
+}
+
 /// Code translator
 pub struct Translator {
     config: TranslatorConfig,
@@ -398,6 +474,290 @@ impl Translator {
     pub fn new(config: TranslatorConfig) -> Self {
         Self { config }
     }
+
+    // ========================================================================
+    // Recursive Pattern Detection
+    // ========================================================================
+
+    /// Analyze a recursive function to detect if it matches a known pattern.
+    ///
+    /// Currently detects:
+    /// - Filter pattern: conditional inclusion based on predicate
+    ///
+    /// Returns `PatternAnalysis::Recognized` if a pattern is detected,
+    /// `PatternAnalysis::UnrecognizedRecursive` if recursive but unknown pattern,
+    /// `PatternAnalysis::NotRecursive` if not recursive.
+    pub fn detect_recursive_pattern(func: &AnnotatedFunction) -> PatternAnalysis {
+        if !func.is_recursive {
+            return PatternAnalysis::NotRecursive;
+        }
+
+        let func_name = &func.spec_fn.name;
+        let body = &func.spec_fn.body;
+
+        // Try to detect filter pattern
+        if let Some(pattern) = Self::detect_filter_pattern(func_name, body, &func.spec_fn.params) {
+            return PatternAnalysis::Recognized(pattern);
+        }
+
+        // TODO: Add map pattern detection (R1.3)
+        // TODO: Add fold pattern detection (R1.4)
+
+        PatternAnalysis::UnrecognizedRecursive(format!(
+            "Recursive function '{}' does not match any known pattern (filter, map, fold)",
+            func_name
+        ))
+    }
+
+    /// Detect if the function body matches the filter pattern.
+    ///
+    /// Filter pattern structure:
+    /// ```ignore
+    /// if s.len() == 0 { Seq::empty() }
+    /// else if pred(s[0], ...) { recurse(s.drop_first(), ...) }
+    /// else { seq![s[0]] + recurse(s.drop_first(), ...) }
+    /// ```
+    /// OR (inverted):
+    /// ```ignore
+    /// if s.len() == 0 { Seq::empty() }
+    /// else if pred(s[0]) { seq![transform(s[0])] + recurse(s.drop_first()) }
+    /// else { recurse(s.drop_first()) }
+    /// ```
+    fn detect_filter_pattern(
+        func_name: &str,
+        body: &Expr,
+        params: &[crate::ast::Parameter],
+    ) -> Option<RecursivePattern> {
+        // Pattern requires an if-else chain
+        let (base_cond, base_body, inner) = Self::match_if_else(body)?;
+
+        // Base case: check for `s.len() == 0` returning empty sequence
+        let seq_param = Self::match_len_zero_check(base_cond)?;
+        if !Self::is_empty_seq(base_body) {
+            return None;
+        }
+
+        // Inner case: another if-else for the predicate check
+        let (pred_cond, pred_true_body, pred_false_body) = Self::match_if_else(inner)?;
+
+        // Determine if this is standard (keep when true) or inverted (keep when false) filter
+        // by checking which branch contains the recursive call alone vs concatenation
+
+        // Check for inverted filter: pred true -> recurse only, pred false -> concat + recurse
+        if Self::is_pure_recursive_call(pred_true_body, func_name, &seq_param) {
+            // Inverted filter: keep elements when predicate is FALSE
+            if let Some((element, _recurse)) =
+                Self::match_concat_with_recurse(pred_false_body, func_name, &seq_param)
+            {
+                // Verify element is s[0]
+                if Self::is_head_access(&element, &seq_param) {
+                    let extra_args = Self::get_extra_args(params, &seq_param);
+                    return Some(RecursivePattern::Filter {
+                        seq_param: seq_param.clone(),
+                        predicate: pred_cond.clone(),
+                        keep_when_true: false,
+                        transform: None,
+                        extra_args,
+                    });
+                }
+            }
+        }
+
+        // Check for standard filter: pred true -> concat + recurse, pred false -> recurse only
+        if Self::is_pure_recursive_call(pred_false_body, func_name, &seq_param) {
+            if let Some((element, _recurse)) =
+                Self::match_concat_with_recurse(pred_true_body, func_name, &seq_param)
+            {
+                // Check if element is s[0] (no transform) or something else (with transform)
+                let transform = if Self::is_head_access(&element, &seq_param) {
+                    None
+                } else {
+                    Some(Box::new(element.clone()))
+                };
+                let extra_args = Self::get_extra_args(params, &seq_param);
+                return Some(RecursivePattern::Filter {
+                    seq_param: seq_param.clone(),
+                    predicate: pred_cond.clone(),
+                    keep_when_true: true,
+                    transform,
+                    extra_args,
+                });
+            }
+        }
+
+        None
+    }
+
+    /// Match an if-else expression, returning (condition, then_branch, else_branch)
+    fn match_if_else(expr: &Expr) -> Option<(&Expr, &Expr, &Expr)> {
+        match expr {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch: Some(else_branch),
+            } => Some((cond.as_ref(), then_branch.as_ref(), else_branch.as_ref())),
+            _ => None,
+        }
+    }
+
+    /// Match a `s.len() == 0` condition and return the sequence variable name
+    fn match_len_zero_check(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Eq(lhs, rhs) => {
+                // Check lhs.len() == 0
+                if let Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                } = lhs.as_ref()
+                {
+                    if method == "len" && args.is_empty() {
+                        if let Expr::Literal(Literal::Int(0)) = rhs.as_ref() {
+                            if let Expr::Ident(name) = receiver.as_ref() {
+                                return Some(name.clone());
+                            }
+                        }
+                    }
+                }
+                // Check 0 == s.len()
+                if let Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                } = rhs.as_ref()
+                {
+                    if method == "len" && args.is_empty() {
+                        if let Expr::Literal(Literal::Int(0)) = lhs.as_ref() {
+                            if let Expr::Ident(name) = receiver.as_ref() {
+                                return Some(name.clone());
+                            }
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if expression is Seq::empty() or Seq::<T>::empty()
+    fn is_empty_seq(expr: &Expr) -> bool {
+        match expr {
+            Expr::SeqEmpty => true,
+            Expr::Call { func, args } => {
+                args.is_empty()
+                    && (func.segments.last() == Some(&"empty".to_string())
+                        || func
+                            .segments
+                            .iter()
+                            .any(|s| s.starts_with("Seq") && s.contains("empty")))
+            }
+            Expr::MethodCall {
+                receiver: _,
+                method,
+                args,
+            } => method == "empty" && args.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// Check if expression is a pure recursive call (just the recursive call, no concatenation)
+    fn is_pure_recursive_call(expr: &Expr, func_name: &str, seq_param: &str) -> bool {
+        match expr {
+            Expr::Call { func, args } => {
+                // Check function name matches
+                if func.segments.last() != Some(&func_name.to_string()) {
+                    return false;
+                }
+                // Check first arg is seq.drop_first()
+                if let Some(first_arg) = args.first() {
+                    Self::is_drop_first(first_arg, seq_param)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if expression is seq.drop_first()
+    fn is_drop_first(expr: &Expr, seq_param: &str) -> bool {
+        match expr {
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                if method == "drop_first" && args.is_empty() {
+                    if let Expr::Ident(name) = receiver.as_ref() {
+                        return name == seq_param;
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Match seq![element] + recurse(...) or element + recurse(...)
+    /// Returns (element_expr, recurse_call) if matched
+    fn match_concat_with_recurse<'a>(
+        expr: &'a Expr,
+        func_name: &str,
+        seq_param: &str,
+    ) -> Option<(&'a Expr, &'a Expr)> {
+        match expr {
+            Expr::Binary(lhs, BinOp::Add, rhs) => {
+                // Check if rhs is the recursive call
+                if Self::is_pure_recursive_call(rhs, func_name, seq_param) {
+                    // lhs should be seq![element] or just the element
+                    let element = Self::extract_seq_lit_element(lhs)?;
+                    return Some((element, rhs.as_ref()));
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract the single element from seq![element]
+    fn extract_seq_lit_element(expr: &Expr) -> Option<&Expr> {
+        match expr {
+            Expr::SeqLit(elements) if elements.len() == 1 => Some(&elements[0]),
+            // Also handle direct element (for cases like element + recurse)
+            _ => Some(expr),
+        }
+    }
+
+    /// Check if expression is s[0] (head access)
+    fn is_head_access(expr: &Expr, seq_param: &str) -> bool {
+        match expr {
+            Expr::Index(base, idx) => {
+                if let Expr::Ident(name) = base.as_ref() {
+                    if name == seq_param {
+                        if let Expr::Literal(Literal::Int(0)) = idx.as_ref() {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Get parameter names that are not the sequence parameter
+    fn get_extra_args(params: &[crate::ast::Parameter], seq_param: &str) -> Vec<String> {
+        params
+            .iter()
+            .filter(|p| p.name != seq_param)
+            .map(|p| p.name.clone())
+            .collect()
+    }
+
+    // ========================================================================
+    // End Recursive Pattern Detection
+    // ========================================================================
 
     /// Wrap an expression with .clone() if it directly references an input parameter.
     /// Input parameters are passed by reference, so when assigning to struct fields
@@ -1466,25 +1826,394 @@ impl Translator {
             });
         }
 
-        // Recursive functions are not yet supported for automatic translation.
-        // They require complex proof blocks and helper functions.
-        // Use manual implementation instead.
+        // For recursive functions, try to detect and translate known patterns
         if func.is_recursive {
-            return Err(TranspileError::CodeGen {
-                message: format!(
-                    "Function '{}' is recursive and cannot be automatically translated. \
-                     Recursive functions require manual implementation with proof blocks. \
-                     Remove from annotation file or implement manually.",
-                    func.spec_fn.name
-                ),
-                span: None,
-            });
+            match Self::detect_recursive_pattern(func) {
+                PatternAnalysis::Recognized(pattern) => {
+                    return self.translate_recursive_pattern(func, pattern);
+                }
+                PatternAnalysis::UnrecognizedRecursive(reason) => {
+                    return Err(TranspileError::CodeGen {
+                        message: format!(
+                            "Function '{}' is recursive but cannot be automatically translated: {}. \
+                             Consider implementing manually.",
+                            func.spec_fn.name, reason
+                        ),
+                        span: None,
+                    });
+                }
+                PatternAnalysis::NotRecursive => {
+                    // Fall through to normal translation
+                }
+            }
         }
 
         // Dispatch based on function kind
         match func.kind {
             FunctionKind::Helper => self.translate_helper(func),
             FunctionKind::Predicate => self.translate_predicate(func),
+        }
+    }
+
+    /// Translate a recursive function that matches a known pattern.
+    fn translate_recursive_pattern(
+        &self,
+        func: &AnnotatedFunction,
+        pattern: RecursivePattern,
+    ) -> TranspileResult<ExecFunction> {
+        match pattern {
+            RecursivePattern::Filter {
+                seq_param,
+                predicate,
+                keep_when_true,
+                transform,
+                extra_args,
+            } => self.translate_filter_pattern(
+                func,
+                &seq_param,
+                &predicate,
+                keep_when_true,
+                transform.as_deref(),
+                &extra_args,
+            ),
+            RecursivePattern::Map { .. } => Err(TranspileError::CodeGen {
+                message: format!(
+                    "Map pattern translation not yet implemented for '{}'",
+                    func.spec_fn.name
+                ),
+                span: None,
+            }),
+            RecursivePattern::Fold { .. } => Err(TranspileError::CodeGen {
+                message: format!(
+                    "Fold pattern translation not yet implemented for '{}'",
+                    func.spec_fn.name
+                ),
+                span: None,
+            }),
+        }
+    }
+
+    /// Translate a filter pattern to loop-based exec code.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// pub fn CFilterFunc(seq: &Vec<T>, extra_args...) -> Vec<T>
+    ///     requires seq_valid(seq), ...
+    ///     ensures result@ == FilterFunc(seq@, extra_args@...)
+    /// {
+    ///     let mut result: Vec<T> = Vec::new();
+    ///     for i in 0..seq.len()
+    ///         invariant
+    ///             result@ == seq@.take(i as int).filter(|x| pred(x, extra_args...))
+    ///     {
+    ///         if pred(&seq[i], extra_args...) {  // or !pred for inverted
+    ///             result.push(transform(&seq[i]).clone());  // or seq[i].clone() if no transform
+    ///         }
+    ///     }
+    ///     result
+    /// }
+    /// ```
+    fn translate_filter_pattern(
+        &self,
+        func: &AnnotatedFunction,
+        seq_param: &str,
+        predicate: &Expr,
+        keep_when_true: bool,
+        transform: Option<&Expr>,
+        extra_args: &[String],
+    ) -> TranspileResult<ExecFunction> {
+        let exec_name = self.translate_definition_name(&func.spec_fn.name);
+
+        // Build parameters: seq as reference, extra args as references
+        let params = self.translate_helper_params(func);
+
+        // Build return type: Vec<ElementType>
+        let return_type = self.build_helper_return_type(func)?;
+
+        // Build requires clauses (validity predicates)
+        let requires = self.build_helper_requires(func);
+
+        // Build ensures clause linking to spec function
+        let ensures = self.build_helper_ensures(func);
+
+        // Build the loop body
+        let body = self.build_filter_loop_body(
+            seq_param,
+            predicate,
+            keep_when_true,
+            transform,
+            extra_args,
+            func,
+        )?;
+
+        Ok(ExecFunction {
+            name: exec_name,
+            params,
+            return_type,
+            requires,
+            ensures,
+            decreases: Vec::new(), // Loop-based, no decreases needed
+            body,
+        })
+    }
+
+    /// Build the loop body for a filter pattern.
+    fn build_filter_loop_body(
+        &self,
+        seq_param: &str,
+        predicate: &Expr,
+        keep_when_true: bool,
+        transform: Option<&Expr>,
+        extra_args: &[String],
+        func: &AnnotatedFunction,
+    ) -> TranspileResult<ExecExpr> {
+        // Create a minimal context for expression transformation
+        let ctx = TransformContext {
+            config: &self.config,
+            output_params: Vec::new(),
+            input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Transform the predicate expression, substituting s[0] with seq[i]
+        let pred_expr = self.transform_filter_predicate(predicate, seq_param, &ctx)?;
+
+        // Build the condition (negate if inverted filter)
+        let condition = if keep_when_true {
+            pred_expr
+        } else {
+            ExecExpr::Unary {
+                op: "!".to_string(),
+                expr: Box::new(pred_expr),
+            }
+        };
+
+        // Build the element to push
+        let element_expr = if let Some(xform) = transform {
+            // Transform the element using the transform expression
+            self.transform_filter_element(xform, seq_param, &ctx)?
+        } else {
+            // Just clone seq[i]
+            ExecExpr::Clone(Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var(seq_param.to_string())),
+                method: "index".to_string(),
+                args: vec![ExecExpr::Var("i".to_string())],
+            }))
+        };
+
+        // Build invariant string
+        let spec_call = self.build_filter_spec_call_for_invariant(func, seq_param, extra_args);
+        let invariant = format!(
+            "result@ == {}@.take(i as int){}",
+            seq_param,
+            if keep_when_true {
+                format!(".filter(|x: {}| {})", self.get_element_type_hint(func), spec_call)
+            } else {
+                format!(".filter(|x: {}| !{})", self.get_element_type_hint(func), spec_call)
+            }
+        );
+
+        // Build the loop
+        let loop_body = ExecExpr::If {
+            cond: Box::new(condition),
+            then_branch: Box::new(ExecExpr::Block(vec![ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("result".to_string())),
+                method: "push".to_string(),
+                args: vec![element_expr],
+            }])),
+            else_branch: None,
+        };
+
+        let stmts = vec![
+            // let mut result: Vec<T> = Vec::new();
+            ExecExpr::Let {
+                pattern: "mut result".to_string(),
+                ty: Some(return_type_to_vec_type(&func.spec_fn.return_type)),
+                value: Box::new(ExecExpr::Call {
+                    func: "Vec::new".to_string(),
+                    args: vec![],
+                }),
+            },
+            // for i in 0..seq.len() { ... }
+            ExecExpr::ForInIter {
+                var: "i".to_string(),
+                iter_name: "iter".to_string(),
+                iter_source: Box::new(ExecExpr::Range {
+                    start: Box::new(ExecExpr::Literal("0".to_string())),
+                    end: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var(seq_param.to_string())),
+                        method: "len".to_string(),
+                        args: vec![],
+                    }),
+                }),
+                invariants: vec![invariant],
+                body: Box::new(loop_body),
+            },
+            // result
+            ExecExpr::Var("result".to_string()),
+        ];
+
+        Ok(ExecExpr::Block(stmts))
+    }
+
+    /// Transform a filter predicate, substituting s[0] with seq[i]
+    fn transform_filter_predicate(
+        &self,
+        predicate: &Expr,
+        seq_param: &str,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        // First do normal transformation
+        let transformed = self.transform_expr(predicate, ctx)?;
+
+        // Then substitute seq[0] patterns with seq.index(i)
+        Ok(self.substitute_head_with_index(transformed, seq_param))
+    }
+
+    /// Substitute s[0] patterns with s.index(i) in an ExecExpr
+    fn substitute_head_with_index(&self, expr: ExecExpr, seq_param: &str) -> ExecExpr {
+        match expr {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                // Check if this is seq.index(0) or seq[0]
+                if method == "index" && args.len() == 1 {
+                    if let ExecExpr::Var(name) = receiver.as_ref() {
+                        if name == seq_param {
+                            if let ExecExpr::Literal(lit) = &args[0] {
+                                if lit == "0" || lit == "0usize" {
+                                    // Replace with seq.index(i)
+                                    return ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var(
+                                            seq_param.to_string(),
+                                        )),
+                                        method: "index".to_string(),
+                                        args: vec![ExecExpr::Var("i".to_string())],
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+                // Recurse into receiver and args
+                ExecExpr::MethodCall {
+                    receiver: Box::new(self.substitute_head_with_index(*receiver, seq_param)),
+                    method,
+                    args: args
+                        .into_iter()
+                        .map(|a| self.substitute_head_with_index(a, seq_param))
+                        .collect(),
+                }
+            }
+            ExecExpr::Call { func, args } => ExecExpr::Call {
+                func,
+                args: args
+                    .into_iter()
+                    .map(|a| self.substitute_head_with_index(a, seq_param))
+                    .collect(),
+            },
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(self.substitute_head_with_index(*lhs, seq_param)),
+                op,
+                rhs: Box::new(self.substitute_head_with_index(*rhs, seq_param)),
+            },
+            ExecExpr::Unary { op, expr } => ExecExpr::Unary {
+                op,
+                expr: Box::new(self.substitute_head_with_index(*expr, seq_param)),
+            },
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond: Box::new(self.substitute_head_with_index(*cond, seq_param)),
+                then_branch: Box::new(self.substitute_head_with_index(*then_branch, seq_param)),
+                else_branch: else_branch
+                    .map(|e| Box::new(self.substitute_head_with_index(*e, seq_param))),
+            },
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts
+                    .into_iter()
+                    .map(|s| self.substitute_head_with_index(s, seq_param))
+                    .collect(),
+            ),
+            // Other cases pass through unchanged
+            other => other,
+        }
+    }
+
+    /// Transform a filter element expression
+    fn transform_filter_element(
+        &self,
+        transform: &Expr,
+        seq_param: &str,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        let transformed = self.transform_expr(transform, ctx)?;
+        let substituted = self.substitute_head_with_index(transformed, seq_param);
+        // Wrap in clone
+        Ok(ExecExpr::Clone(Box::new(substituted)))
+    }
+
+    /// Build a spec call string for use in invariants
+    fn build_filter_spec_call_for_invariant(
+        &self,
+        func: &AnnotatedFunction,
+        _seq_param: &str,
+        _extra_args: &[String],
+    ) -> String {
+        // For now, just reference the predicate used in the filter
+        // This will be refined when we have better predicate extraction
+        format!("{}(x, ...)", func.spec_fn.name)
+    }
+
+    /// Get element type hint for invariant closures
+    fn get_element_type_hint(&self, func: &AnnotatedFunction) -> String {
+        // Extract element type from return type Seq<T> -> T
+        match &func.spec_fn.return_type {
+            Type::Seq(inner) => self.type_to_string(inner),
+            Type::Generic(path, args) if path.segments.last() == Some(&"Seq".to_string()) => {
+                if let Some(inner) = args.first() {
+                    self.type_to_string(inner)
+                } else {
+                    "_".to_string()
+                }
+            }
+            _ => "_".to_string(),
+        }
+    }
+
+    /// Convert a Type to a string representation
+    fn type_to_string(&self, ty: &Type) -> String {
+        match ty {
+            Type::Named(path) => path.segments.join("::"),
+            Type::Bool => "bool".to_string(),
+            Type::Int => "int".to_string(),
+            Type::Nat => "nat".to_string(),
+            Type::Unit => "()".to_string(),
+            Type::Seq(inner) => format!("Seq<{}>", self.type_to_string(inner)),
+            Type::Set(inner) => format!("Set<{}>", self.type_to_string(inner)),
+            Type::Map(k, v) => {
+                format!("Map<{}, {}>", self.type_to_string(k), self.type_to_string(v))
+            }
+            Type::Generic(path, args) => {
+                let args_str: Vec<_> = args.iter().map(|a| self.type_to_string(a)).collect();
+                format!("{}<{}>", path.segments.join("::"), args_str.join(", "))
+            }
+            Type::Tuple(types) => {
+                let types_str: Vec<_> = types.iter().map(|t| self.type_to_string(t)).collect();
+                format!("({})", types_str.join(", "))
+            }
+            Type::Reference { ty, mutable } => {
+                if *mutable {
+                    format!("&mut {}", self.type_to_string(ty))
+                } else {
+                    format!("&{}", self.type_to_string(ty))
+                }
+            }
         }
     }
 
@@ -6144,6 +6873,55 @@ impl Translator {
     }
 }
 
+/// Convert a spec Seq<T> return type to Vec<T> for exec code
+fn return_type_to_vec_type(ty: &Type) -> ExecType {
+    match ty {
+        Type::Seq(inner) => {
+            let inner_exec = spec_type_to_exec_type(inner);
+            ExecType::Vec(Box::new(inner_exec))
+        }
+        Type::Generic(path, args) if path.segments.last() == Some(&"Seq".to_string()) => {
+            if let Some(inner) = args.first() {
+                let inner_exec = spec_type_to_exec_type(inner);
+                ExecType::Vec(Box::new(inner_exec))
+            } else {
+                ExecType::Vec(Box::new(ExecType::Named("_".to_string())))
+            }
+        }
+        _ => ExecType::Vec(Box::new(ExecType::Named("_".to_string()))),
+    }
+}
+
+/// Convert a spec Type to an exec ExecType
+fn spec_type_to_exec_type(ty: &Type) -> ExecType {
+    match ty {
+        Type::Named(path) => ExecType::Named(path.segments.join("::")),
+        Type::Bool => ExecType::Named("bool".to_string()),
+        Type::Int => ExecType::Named("int".to_string()),
+        Type::Nat => ExecType::Named("nat".to_string()),
+        Type::Unit => ExecType::Named("()".to_string()),
+        Type::Seq(inner) => ExecType::Vec(Box::new(spec_type_to_exec_type(inner))),
+        Type::Set(inner) => ExecType::Generic(
+            "HashSet".to_string(),
+            vec![spec_type_to_exec_type(inner)],
+        ),
+        Type::Map(k, v) => ExecType::HashMap(
+            Box::new(spec_type_to_exec_type(k)),
+            Box::new(spec_type_to_exec_type(v)),
+        ),
+        Type::Generic(path, args) => ExecType::Generic(
+            path.segments.join("::"),
+            args.iter().map(spec_type_to_exec_type).collect(),
+        ),
+        Type::Tuple(types) => {
+            ExecType::Tuple(types.iter().map(spec_type_to_exec_type).collect())
+        }
+        Type::Reference { ty, mutable } => {
+            ExecType::Reference(Box::new(spec_type_to_exec_type(ty)), *mutable)
+        }
+    }
+}
+
 impl Default for Translator {
     fn default() -> Self {
         Self::new(TranslatorConfig::default())
@@ -6153,7 +6931,7 @@ impl Default for Translator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Literal, Path};
+    use crate::ast::{Literal, Path, SpecFunction};
 
     #[test]
     fn test_translate_name() {
@@ -8668,5 +9446,416 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("recursive"));
         assert!(msg.contains("cannot be automatically translated"));
+    }
+
+    // ========================================================================
+    // Filter Pattern Recognition Tests
+    // ========================================================================
+
+    /// Helper to create a simple identifier expression
+    fn ident(name: &str) -> Expr {
+        Expr::Ident(name.to_string())
+    }
+
+    /// Helper to create a method call expression
+    fn method_call(receiver: Expr, method: &str, args: Vec<Expr>) -> Expr {
+        Expr::MethodCall {
+            receiver: Box::new(receiver),
+            method: method.to_string(),
+            args,
+        }
+    }
+
+    /// Helper to create a function call expression
+    fn func_call(name: &str, args: Vec<Expr>) -> Expr {
+        Expr::Call {
+            func: Path::single(name.to_string()),
+            args,
+        }
+    }
+
+    /// Helper to create s[0] (index access)
+    fn seq_head(seq_name: &str) -> Expr {
+        Expr::Index(
+            Box::new(ident(seq_name)),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        )
+    }
+
+    /// Helper to create s.len() == 0
+    fn len_zero_check(seq_name: &str) -> Expr {
+        Expr::Eq(
+            Box::new(method_call(ident(seq_name), "len", vec![])),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        )
+    }
+
+    /// Helper to create s.drop_first()
+    fn drop_first(seq_name: &str) -> Expr {
+        method_call(ident(seq_name), "drop_first", vec![])
+    }
+
+    /// Helper to create seq![element]
+    fn seq_lit(element: Expr) -> Expr {
+        Expr::SeqLit(vec![element])
+    }
+
+    #[test]
+    fn test_detect_inverted_filter_pattern() {
+        // Pattern: RemoveAllSatisfiedRequestsInSequence
+        // if s.len() == 0 { Seq::empty() }
+        // else if pred(s[0], r) { recurse(s.drop_first(), r) }
+        // else { seq![s[0]] + recurse(s.drop_first(), r) }
+
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("s")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(func_call(
+                    "RequestSatisfiedBy",
+                    vec![seq_head("s"), ident("r")],
+                )),
+                then_branch: Box::new(func_call(
+                    "RemoveAllSatisfiedRequestsInSequence",
+                    vec![drop_first("s"), ident("r")],
+                )),
+                else_branch: Some(Box::new(Expr::Binary(
+                    Box::new(seq_lit(seq_head("s"))),
+                    BinOp::Add,
+                    Box::new(func_call(
+                        "RemoveAllSatisfiedRequestsInSequence",
+                        vec![drop_first("s"), ident("r")],
+                    )),
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "RemoveAllSatisfiedRequestsInSequence".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "r".to_string(),
+                    ty: Type::Named(Path::single("Request".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("s"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Seq<Request>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Filter {
+                seq_param,
+                keep_when_true,
+                transform,
+                extra_args,
+                ..
+            }) => {
+                assert_eq!(seq_param, "s");
+                assert!(!keep_when_true, "Should be inverted filter (keep when false)");
+                assert!(transform.is_none(), "No transform for simple filter");
+                assert_eq!(extra_args, vec!["r".to_string()]);
+            }
+            PatternAnalysis::Recognized(other) => {
+                panic!("Expected Filter pattern, got {:?}", other);
+            }
+            PatternAnalysis::UnrecognizedRecursive(reason) => {
+                panic!("Pattern not recognized: {}", reason);
+            }
+            PatternAnalysis::NotRecursive => {
+                panic!("Function should be detected as recursive");
+            }
+        }
+    }
+
+    #[test]
+    fn test_detect_standard_filter_pattern() {
+        // Pattern: ExtractSentPacketsFromIos
+        // if ios.len() == 0 { Seq::empty() }
+        // else if ios[0] is Send { seq![ios[0]->s] + recurse(ios.drop_first()) }
+        // else { recurse(ios.drop_first()) }
+
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("ios")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(Expr::Is(Box::new(seq_head("ios")), "Send".to_string())),
+                then_branch: Box::new(Expr::Binary(
+                    Box::new(seq_lit(Expr::Arrow(
+                        Box::new(seq_head("ios")),
+                        "s".to_string(),
+                    ))),
+                    BinOp::Add,
+                    Box::new(func_call(
+                        "ExtractSentPacketsFromIos",
+                        vec![drop_first("ios")],
+                    )),
+                )),
+                else_branch: Some(Box::new(func_call(
+                    "ExtractSentPacketsFromIos",
+                    vec![drop_first("ios")],
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "ExtractSentPacketsFromIos".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "ios".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("RslIo".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("RslPacket".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("ios"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<RslPacket>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Filter {
+                seq_param,
+                keep_when_true,
+                transform,
+                extra_args,
+                ..
+            }) => {
+                assert_eq!(seq_param, "ios");
+                assert!(keep_when_true, "Should be standard filter (keep when true)");
+                assert!(
+                    transform.is_some(),
+                    "Should have transform (ios[0]->s)"
+                );
+                assert!(extra_args.is_empty(), "No extra args for this function");
+            }
+            PatternAnalysis::Recognized(other) => {
+                panic!("Expected Filter pattern, got {:?}", other);
+            }
+            PatternAnalysis::UnrecognizedRecursive(reason) => {
+                panic!("Pattern not recognized: {}", reason);
+            }
+            PatternAnalysis::NotRecursive => {
+                panic!("Function should be detected as recursive");
+            }
+        }
+    }
+
+    #[test]
+    fn test_non_recursive_returns_not_recursive() {
+        let body = Expr::Literal(Literal::Bool(true));
+
+        let spec_fn = SpecFunction {
+            name: "SimpleFunc".to_string(),
+            generics: Default::default(),
+            params: vec![],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![],
+            return_type: Some("bool".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+        assert!(matches!(analysis, PatternAnalysis::NotRecursive));
+    }
+
+    #[test]
+    fn test_match_len_zero_check() {
+        // Test s.len() == 0
+        let expr1 = len_zero_check("myseq");
+        assert_eq!(
+            Translator::match_len_zero_check(&expr1),
+            Some("myseq".to_string())
+        );
+
+        // Test 0 == s.len() (reversed)
+        let expr2 = Expr::Eq(
+            Box::new(Expr::Literal(Literal::Int(0))),
+            Box::new(method_call(ident("other"), "len", vec![])),
+        );
+        assert_eq!(
+            Translator::match_len_zero_check(&expr2),
+            Some("other".to_string())
+        );
+
+        // Test non-matching expression
+        let expr3 = Expr::Eq(
+            Box::new(method_call(ident("s"), "len", vec![])),
+            Box::new(Expr::Literal(Literal::Int(1))), // Not zero
+        );
+        assert_eq!(Translator::match_len_zero_check(&expr3), None);
+    }
+
+    #[test]
+    fn test_is_empty_seq() {
+        assert!(Translator::is_empty_seq(&Expr::SeqEmpty));
+
+        let call_empty = Expr::Call {
+            func: Path::new(vec!["Seq".to_string(), "empty".to_string()]),
+            args: vec![],
+        };
+        assert!(Translator::is_empty_seq(&call_empty));
+
+        let not_empty = Expr::SeqLit(vec![Expr::Literal(Literal::Int(1))]);
+        assert!(!Translator::is_empty_seq(&not_empty));
+    }
+
+    #[test]
+    fn test_is_drop_first() {
+        let drop = drop_first("myseq");
+        assert!(Translator::is_drop_first(&drop, "myseq"));
+        assert!(!Translator::is_drop_first(&drop, "other"));
+
+        let not_drop = method_call(ident("myseq"), "first", vec![]);
+        assert!(!Translator::is_drop_first(&not_drop, "myseq"));
+    }
+
+    #[test]
+    fn test_is_head_access() {
+        let head = seq_head("s");
+        assert!(Translator::is_head_access(&head, "s"));
+        assert!(!Translator::is_head_access(&head, "other"));
+
+        // s[1] is not head access
+        let not_head = Expr::Index(
+            Box::new(ident("s")),
+            Box::new(Expr::Literal(Literal::Int(1))),
+        );
+        assert!(!Translator::is_head_access(&not_head, "s"));
+    }
+
+    #[test]
+    fn test_translate_filter_pattern_generates_loop() {
+        let translator = Translator::default();
+
+        // Create a simple inverted filter function
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("s")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(func_call("pred", vec![seq_head("s")])),
+                then_branch: Box::new(func_call("FilterFunc", vec![drop_first("s")])),
+                else_branch: Some(Box::new(Expr::Binary(
+                    Box::new(seq_lit(seq_head("s"))),
+                    BinOp::Add,
+                    Box::new(func_call("FilterFunc", vec![drop_first("s")])),
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "FilterFunc".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "Translation should succeed: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CFilterFunc");
+
+        // Check that the body contains a ForInIter (loop)
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
+                    contains_for_loop(cond)
+                        || contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Generated code should contain a for loop"
+        );
     }
 }

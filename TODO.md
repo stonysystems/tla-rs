@@ -1450,10 +1450,13 @@ These are the remaining issues preventing fully automated TLA+ → runnable Rust
   - **Completed**: See `docs/recursive-pattern-analysis.md` for detailed analysis
   - Pattern summary: 2 Filter, 2 Map, 2 Fold
 
-- [ ] **R1.2: Implement filter pattern recognition**
+- [x] **R1.2: Implement filter pattern recognition**
   - Pattern: `if len == 0 { empty } else if pred(head) { recurse(tail) } else { head + recurse(tail) }`
   - Target: `for i in 0..s.len() { if pred(&s[i]) { result.push(s[i].clone()); } }`
   - Add `RecursivePattern::Filter` detection in translator
+  - **Completed**: Added `RecursivePattern` enum, `detect_recursive_pattern()`, `translate_filter_pattern()` in `translator/mod.rs`
+  - Supports both standard filter (keep when true) and inverted filter (keep when false)
+  - Includes 8 comprehensive tests for pattern detection and code generation
 
 - [ ] **R1.3: Implement map pattern recognition**
   - Pattern: `if len == 0 { empty } else { f(head) + recurse(tail) }`
