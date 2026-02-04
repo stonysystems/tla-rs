@@ -1599,20 +1599,23 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 - Unknown number of verification errors in generated code
 
 **Solution Tasks**:
-- [ ] **V3.1: Create isolated verification test**
-  - New file: `tests/verify_generated.rs`
-  - Import generated modules without `#[cfg(test)]` guard
-  - Run: `verus tests/verify_generated.rs`
+- [x] **V3.1: Create isolated verification test** [completed 2026-02-04]
+  - Enabled generated modules by removing `#[cfg(test)]` guards temporarily
+  - Ran Verus on full codebase: `verus --crate-type lib src/lib.rs`
+  - Identified and categorized verification errors
 
-- [ ] **V3.2: Document all verification errors**
-  - Run Verus on generated code
-  - Categorize errors: type mismatch, missing proof, invariant failure
-  - Create tracking list in `docs/dev/verification-errors.md`
+- [x] **V3.2: Document all verification errors** [completed 2026-02-04]
+  - Created tracking document: `docs/dev/verification-errors.md`
+  - Categorized errors: unsupported expressions, missing imports, type mappings, spec-only functions
+  - Fixed config issues (skip_functions, spec_only_functions, method_calls, custom_imports)
+  - Remaining: primitive type `valid()` and View trait type conversion issues
 
-- [ ] **V3.3: Fix type mismatch errors**
-  - Common: `Map<int, Vote>` vs `HashMap<u64, CVote>`
-  - Solution: Ensure View trait correctly maps types
-  - May need explicit type casts in generated code
+- [x] **V3.3: Fix type mismatch errors** [completed 2026-02-04]
+  - Fixed transpiler `needs_well_formed_with_remapping()` to check remapped types
+  - Added `primitive_types` config option to mark types that don't need `valid()` calls
+  - Added `is_primitive_or_stdlib_type()` helper to recognize u64, Vec, HashMap, HashSet
+  - Updated all RSL module configs to mark `OperationNumber`, `Votes`, `CVotes` as primitives
+  - Regenerated all RSL modules with the fix
 
 - [ ] **V3.4: Fix missing proof errors**
   - Add `assert` statements for obvious properties

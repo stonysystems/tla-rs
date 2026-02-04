@@ -36,6 +36,8 @@ pub struct TypeGenerator {
     indent: String,
     /// Name of the validity predicate (e.g., "well_formed" or "valid")
     validity_predicate_name: String,
+    /// Types to treat as primitive (no valid() predicate needed)
+    primitive_types: Vec<String>,
 }
 
 impl TypeGenerator {
@@ -46,6 +48,7 @@ impl TypeGenerator {
             remapping: HashMap::new(),
             indent: "    ".to_string(),
             validity_predicate_name: "well_formed".to_string(),
+            primitive_types: Vec::new(),
         }
     }
 
@@ -56,6 +59,7 @@ impl TypeGenerator {
             remapping,
             indent: "    ".to_string(),
             validity_predicate_name: "well_formed".to_string(),
+            primitive_types: Vec::new(),
         }
     }
 
@@ -70,6 +74,23 @@ impl TypeGenerator {
             remapping,
             indent: "    ".to_string(),
             validity_predicate_name,
+            primitive_types: Vec::new(),
+        }
+    }
+
+    /// Create a new type generator with all options including primitive types list
+    pub fn with_all_options(
+        config: NamingConfig,
+        remapping: HashMap<String, String>,
+        validity_predicate_name: String,
+        primitive_types: Vec<String>,
+    ) -> Self {
+        Self {
+            config,
+            remapping,
+            indent: "    ".to_string(),
+            validity_predicate_name,
+            primitive_types,
         }
     }
 
@@ -439,8 +460,66 @@ impl TypeGenerator {
     }
 
     /// Check if a type needs well_formed validation
+    /// Takes remapping into account - if a type is remapped to a primitive (u64, bool, etc.)
+    /// or stdlib type (Vec, HashMap, HashSet), it doesn't need valid() call.
     fn needs_well_formed(&self, ty: &Type) -> bool {
-        needs_well_formed_check(ty)
+        self.needs_well_formed_with_remapping(ty)
+    }
+
+    /// Check if a type needs well_formed, considering type remapping and primitive_types list.
+    /// Returns true if the type DOES need a valid() call, false if it should be skipped.
+    fn needs_well_formed_with_remapping(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Bool | Type::Int | Type::Nat | Type::Unit => false,
+            Type::Named(path) => {
+                let name = path.last().unwrap_or("Unknown");
+
+                // First check if this type or its remapped name is in primitive_types list
+                if self.primitive_types.contains(&name.to_string()) {
+                    return false;
+                }
+
+                // Check if this type is remapped to a primitive or stdlib type
+                if let Some(remapped) = self.remapping.get(name) {
+                    // Check if remapped name is in primitive_types list
+                    if self.primitive_types.contains(remapped) {
+                        return false;
+                    }
+                    // If remapped to stdlib type, skip valid()
+                    if is_primitive_or_stdlib_type(remapped) {
+                        return false;
+                    }
+                    // Remapped to a custom type that needs valid()
+                    return true;
+                }
+
+                // Not remapped - check if the type name itself is a primitive or stdlib type
+                !is_primitive_or_stdlib_type(name)
+            }
+            Type::Generic(path, args) => {
+                let name = path.last().unwrap_or("Unknown");
+
+                // Check primitive_types list
+                if self.primitive_types.contains(&name.to_string()) {
+                    return false;
+                }
+
+                // Check if this type is remapped to a primitive or stdlib type
+                if let Some(remapped) = self.remapping.get(name) {
+                    if self.primitive_types.contains(remapped) || is_primitive_or_stdlib_type(remapped) {
+                        return false;
+                    }
+                }
+
+                // For generic types, also check the args
+                args.iter().any(|arg| self.needs_well_formed_with_remapping(arg))
+            }
+            // Vec, HashMap, HashSet don't have valid() predicates by default
+            // They contain elements that might need valid() but we can't call valid() on the container
+            Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => false,
+            Type::Tuple(types) => types.iter().any(|t| self.needs_well_formed_with_remapping(t)),
+            Type::Reference { ty, .. } => self.needs_well_formed_with_remapping(ty),
+        }
     }
 
     /// Check if a type needs the view operator (@)
@@ -477,17 +556,6 @@ impl TypeGenerator {
     }
 }
 
-/// Check if a type needs well_formed validation (standalone function for recursion)
-fn needs_well_formed_check(ty: &Type) -> bool {
-    match ty {
-        Type::Bool | Type::Int | Type::Nat | Type::Unit => false,
-        Type::Named(_) | Type::Generic(_, _) => true,
-        Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => true,
-        Type::Tuple(types) => types.iter().any(needs_well_formed_check),
-        Type::Reference { ty, .. } => needs_well_formed_check(ty),
-    }
-}
-
 /// Check if a type needs the view operator (@) (standalone function for recursion)
 fn needs_view_check(ty: &Type) -> bool {
     match ty {
@@ -507,6 +575,40 @@ fn needs_as_int_conversion(ty: &Type) -> bool {
         Type::Reference { ty, .. } => needs_as_int_conversion(ty),
         _ => false,
     }
+}
+
+/// Check if a type name represents a primitive or stdlib type that doesn't have valid()
+fn is_primitive_or_stdlib_type(type_name: &str) -> bool {
+    // Primitive types
+    if matches!(
+        type_name,
+        "bool" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+            | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+            | "int" | "nat" | "()" | "String" | "&str"
+    ) {
+        return true;
+    }
+
+    // Standard library collection types (don't have valid() method)
+    if matches!(
+        type_name,
+        "Vec" | "HashMap" | "HashSet" | "BTreeMap" | "BTreeSet" | "VecDeque"
+    ) {
+        return true;
+    }
+
+    // Check for generic stdlib types like Vec<T>, HashMap<K, V>
+    if type_name.starts_with("Vec<")
+        || type_name.starts_with("HashMap<")
+        || type_name.starts_with("HashSet<")
+        || type_name.starts_with("BTreeMap<")
+        || type_name.starts_with("BTreeSet<")
+        || type_name.starts_with("VecDeque<")
+    {
+        return true;
+    }
+
+    false
 }
 
 impl NamingConfig {

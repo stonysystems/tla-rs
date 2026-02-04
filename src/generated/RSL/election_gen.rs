@@ -37,9 +37,6 @@ impl CElectionState {
     pub open spec fn valid(&self) -> bool {
         &&& self.constants.valid()
         &&& self.current_view.valid()
-        &&& self.current_view_suspectors.valid()
-        &&& self.requests_received_this_epoch.valid()
-        &&& self.requests_received_prev_epochs.valid()
     }
 }
 

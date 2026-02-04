@@ -1,5 +1,11 @@
 # Configuration for transpiling RSL proposer spec to implementation
 
+# Primitive types that don't need valid() predicates
+# OperationNumber is remapped to u64 which is a primitive
+primitive_types = [
+    "OperationNumber",
+]
+
 # Functions to skip during transpilation (require manual implementation)
 skip_functions = [
     # Complex existential quantifier with nested index access that cannot be auto-transpiled

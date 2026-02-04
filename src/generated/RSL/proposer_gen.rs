@@ -40,10 +40,7 @@ pub struct CProposer {
 impl CProposer {
     pub open spec fn valid(&self) -> bool {
         &&& self.constants.valid()
-        &&& self.request_queue.valid()
         &&& self.max_ballot_i_sent_1a.valid()
-        &&& self.received_1b_packets.valid()
-        &&& self.highest_seqno_requested_by_client_this_view.valid()
         &&& self.incomplete_batch_timer.valid()
         &&& self.election_state.valid()
     }
@@ -223,7 +220,6 @@ CProposer {
 pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
-    log_truncation_point.valid(),
 ensures
     result.0.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
@@ -253,7 +249,6 @@ if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && 
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
-    log_truncation_point.valid(),
     LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
     LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
 ensures

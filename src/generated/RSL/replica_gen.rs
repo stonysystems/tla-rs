@@ -102,8 +102,8 @@ ensures
     CReplica {
         constants: c.clone(),
         nextHeartbeatTime: 0,
-        acceptor: r_acceptor,
         executor: r_executor,
+        acceptor: r_acceptor,
         learner: r_learner,
         proposer: r_proposer,
     }

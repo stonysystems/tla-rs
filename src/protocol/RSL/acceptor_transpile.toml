@@ -5,6 +5,15 @@ spec_only_functions = [
     "LeqUpperBound",
 ]
 
+# Primitive types that don't need valid() predicates
+# CVotes is a type alias for HashMap<u64, CVote> - HashMap doesn't have valid()
+# OperationNumber is remapped to u64 which is a primitive
+primitive_types = [
+    "Votes",
+    "CVotes",
+    "OperationNumber",
+]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -22,6 +31,8 @@ exec_prefix = "C"
 "RslMessageHeartbeat" = "CMessageHeartbeat"
 "Vote" = "CVote"
 "OperationNumber" = "u64"
+# Votes is a type alias that should keep its CVotes name but skip valid()
+"Votes" = "CVotes"
 
 # Method call mappings: spec functions that become method calls
 [method_calls]

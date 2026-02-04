@@ -1,6 +1,12 @@
 # Configuration for transpiling RSL learner spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Primitive types that don't need valid() predicates
+# OperationNumber is remapped to u64 which is a primitive
+primitive_types = [
+    "OperationNumber",
+]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

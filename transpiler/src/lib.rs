@@ -139,10 +139,11 @@ impl Transpiler {
                 exec_prefix: self.config.translator.exec_prefix.clone(),
                 ..Default::default()
             };
-            let type_gen = TypeGenerator::with_options(
+            let type_gen = TypeGenerator::with_all_options(
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
                 self.config.translator.validity_predicate_name.clone(),
+                self.config.translator.primitive_types.iter().cloned().collect(),
             );
 
             // Generate structs
@@ -256,10 +257,11 @@ impl Transpiler {
                 exec_prefix: self.config.translator.exec_prefix.clone(),
                 ..Default::default()
             };
-            let type_gen = TypeGenerator::with_options(
+            let type_gen = TypeGenerator::with_all_options(
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
                 self.config.translator.validity_predicate_name.clone(),
+                self.config.translator.primitive_types.iter().cloned().collect(),
             );
 
             // Generate structs

@@ -30,9 +30,6 @@ impl CAcceptor {
     pub open spec fn valid(&self) -> bool {
         &&& self.constants.valid()
         &&& self.max_bal.valid()
-        &&& self.votes.valid()
-        &&& self.last_checkpointed_operation.valid()
-        &&& self.log_truncation_point.valid()
     }
 }
 
@@ -50,12 +47,7 @@ impl View for CAcceptor {
     }
 }
 
-pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)
-requires
-    votes.valid(),
-    log_truncation_point.valid(),
-ensures
-    result.valid(),
+pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)ensures
     RemoveVotesBeforeLogTruncationPoint(votes@, result@, log_truncation_point@),
 {
 votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).cloned().collect()
@@ -63,12 +55,8 @@ votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).cloned().collect()
 
 pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64) -> (result: CVotes)
 requires
-    votes.valid(),
-    new_opn.valid(),
     new_vote.valid(),
-    log_truncation_point.valid(),
 ensures
-    result.valid(),
     LAddVoteAndRemoveOldOnes(votes@, result@, new_opn@, new_vote@, log_truncation_point@),
 {
     let mut __result = votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).map(|(opn, __v)| (opn.clone(), votes[opn])).collect();
@@ -191,7 +179,6 @@ if s.constants.all.config.replica_ids.contains(inp.src) {
 pub exec fn CAcceptorTruncateLog(s: &CAcceptor, opn: &u64) -> (result: CAcceptor)
 requires
     s.valid(),
-    opn.valid(),
 ensures
     result.valid(),
     LAcceptorTruncateLog(s@, result@, opn@),
