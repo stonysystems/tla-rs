@@ -1342,7 +1342,8 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
 
 #### 4. Verus Verification of Generated Code
 - [ ] **Run Verus verification on all generated modules**
-  - Currently blocked: generated modules excluded via `#[cfg(test)]` (in both `src/lib.rs` and `src/generated/mod.rs`)
+  - ✅ V3.6 Complete: `#[cfg(test)]` guard removed from `src/lib.rs` - generated modules now included unconditionally
+  - Verification requires: `scons --verus-path=/path/to/verus`
   - **Progress (2026-02):**
     - ✅ Fixed transpiler to generate method calls for: `LMinQuorumSize`, `GetReplicaIndex`, `LReplicaConstantsValid`, `ElectionStateReflectExecutedRequestBatch`
       - Added `method_calls` config section in transpile.toml
