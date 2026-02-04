@@ -77,8 +77,8 @@ ensures
 {
     let val = CRequest {
         client: packet.src,
-        seqno: packet.msg.get_seqno_req(),
-        request: packet.msg.get_val(),
+        seqno: packet.msg->seqno_req,
+        request: packet.msg->val,
     };
         let s_election_state = crate::generated::RSL::election_gen::CElectionStateReflectReceivedRequest(&s.election_state, &val);
     if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view[val.client]))) {
@@ -144,7 +144,7 @@ requires
     p.valid(),
     p.msg is CMessage1b,
     s.constants.all.config.replica_ids.contains(p.src),
-    (p.msg.get_bal_1b() == s.max_ballot_i_sent_1a),
+    (p.msg->bal_1b == s.max_ballot_i_sent_1a),
     (s.current_state == 1),
     forall |other_packet: CPacket| (s.received_1b_packets.contains(other_packet) ==> (other_packet.src != p.src)),
 ensures
@@ -248,7 +248,7 @@ ensures
     LProposerNominateOldValueAndSend2a(s@, result.0@, log_truncation_point@, result.1@),
 {
     let opn = s.next_operation_number_to_propose;
-    s.received_1b_packets.iter().any(|p| (CProposer::CValIsHighestNumberedProposal(&p.msg.get_votes()[opn].max_val, &s.received_1b_packets, &opn) && (CProposer {
+    s.received_1b_packets.iter().any(|p| (CProposer::CValIsHighestNumberedProposal(&p.msg->votes[opn].max_val, &s.received_1b_packets, &opn) && (CProposer {
     constants: s.constants,
     current_state: s.current_state,
     request_queue: s.request_queue,
@@ -261,7 +261,7 @@ ensures
 } && crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
-    val_2a: p.msg.get_votes()[opn].max_val,
+    val_2a: p.msg->votes[opn].max_val,
 }))))
 
 }
@@ -279,10 +279,10 @@ if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
         if !LAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
             CProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
-            if (CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (matches!(s.incomplete_batch_timer, CIncompleteBatchTimer::CIncompleteBatchTimerOn { .. }) && (clock >= s.incomplete_batch_timer.get_when()))))) {
+            if (CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimer::CIncompleteBatchTimerOn && (clock >= s.incomplete_batch_timer->when))))) {
                 CProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
-                if ((s.request_queue.len() > 0) && matches!(s.incomplete_batch_timer, CIncompleteBatchTimer::CIncompleteBatchTimerOff)) {
+                if ((s.request_queue.len() > 0) && s.incomplete_batch_timer is CIncompleteBatchTimer::CIncompleteBatchTimerOff) {
                     (CProposer {
     constants: s.constants,
     current_state: s.current_state,

@@ -67,8 +67,8 @@ requires
 ensures
     result@ == BoundRequestSequence(s@, lengthBound@),
 {
-if (matches!(lengthBound, CUpperBound::CUpperBoundFinite { .. }) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {
-        s.subrange(0, lengthBound.get_n())
+if (lengthBound is CUpperBound::CUpperBoundFinite && ((0 <= lengthBound->n) && (lengthBound->n < s.len()))) {
+        s.subrange(0, lengthBound->n)
     } else {
         s
     }
@@ -81,7 +81,7 @@ requires
 ensures
     result@ == RequestsMatch(r1@, r2@),
 {
-(matches!(r1, CRequest { .. }) && (matches!(r2, CRequest { .. }) && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
+(r1 is CRequest && (r2 is CRequest && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
 }
 
 pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
@@ -91,7 +91,7 @@ requires
 ensures
     result@ == RequestSatisfiedBy(r1@, r2@),
 {
-(matches!(r1, CRequest { .. }) && (matches!(r2, CRequest { .. }) && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
+(r1 is CRequest && (r2 is CRequest && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
 }
 
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)
@@ -129,7 +129,7 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
         es.clone()
     } else {
                 let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
-        if ((p.msg.get_bal_heartbeat() == es.current_view) && p.msg.get_suspicious()) {
+        if ((p.msg->bal_heartbeat == es.current_view) && p.msg->suspicious) {
             CElectionState {
                 constants: es.constants,
                 current_view: es.current_view,
@@ -140,12 +140,12 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
                 requests_received_prev_epochs: es.requests_received_prev_epochs,
             }
         } else {
-            if CBalLt(&es.current_view, &p.msg.get_bal_heartbeat()) {
+            if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
                                 let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
                 CElectionState {
                     constants: es.constants,
-                    current_view: p.msg.get_bal_heartbeat(),
-                    current_view_suspectors: if p.msg.get_suspicious() {
+                    current_view: p.msg->bal_heartbeat,
+                    current_view_suspectors: if p.msg->suspicious {
                         HashSet::from(vec![sender_index])
                     } else {
                         HashSet::new()

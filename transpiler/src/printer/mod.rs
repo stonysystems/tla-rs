@@ -612,6 +612,21 @@ impl Printer {
                 }
                 self.write(")");
             }
+
+            ExecExpr::IsVariant { expr, variant } => {
+                // Verus native syntax: expr is Variant
+                // This works with -> syntax unlike matches!()
+                self.print_expr(expr);
+                self.write(" is ");
+                self.write(variant);
+            }
+
+            ExecExpr::ArrowAccess { base, field } => {
+                // Verus arrow access syntax for enum variant fields: expr->field
+                self.print_expr(base);
+                self.write("->");
+                self.write(field);
+            }
         }
     }
 

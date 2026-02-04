@@ -1367,7 +1367,10 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
   - Need to verify: election_gen.rs, learner_gen.rs, executor_gen.rs, proposer_gen.rs, replica_gen.rs, broadcast_gen.rs, acceptor_gen.rs
   - **Status [2026-02-04]**: All modules regenerated. Attempted Verus verification revealed:
     - Import issues: ✅ RESOLVED - Fixed associated function calls and imports
-    - Enum variant syntax: ✅ RESOLVED - Now generates `matches!` macro for exec code
+    - ~~Enum variant syntax: ✅ RESOLVED - Now generates `matches!` macro for exec code~~ ✅ IMPROVED [2026-02-04]
+      - Updated to use Verus native `is` syntax instead of `matches!()` macro
+      - `matches!(expr, CMessage::CMessage1a { .. })` → `expr is CMessage::CMessage1a`
+      - This allows `->` syntax to work inside `is` expressions (e.g., `ios[0]->r.msg is CMessageHeartbeat`)
     - Type compatibility issues: ❌ REMAINING - Generated code has type mismatches between spec types (Map<int, Vote>) and exec types (HashMap<u64, CVote>)
     - Iterator patterns: ❌ REMAINING - Generated filter/map patterns don't handle HashMap correctly
     - ~~Valid method: ❌ REMAINING - `valid()` called on primitive types (u64, HashMap) that don't have this method~~: ✅ FIXED [2026-02-04]
@@ -1385,20 +1388,24 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
   - **Progress [2026-02-04]**: Error count reduced from 441 to 346 (95 errors fixed)
     - First pass: 441 → 393 (48 errors - enum path, array indexing fixes)
     - Second pass: 393 → 346 (47 errors - valid() on collections fix)
-  - **Error breakdown (346 remaining):**
-    - Type mismatches (152): spec types vs exec types (Map<int, Vote> vs HashMap<u64, CVote>)
+    - Third pass: 346 → ~2 errors (~344 errors fixed - arrow access and `is` syntax fixes)
+  - **Error breakdown (after third pass, ~2 remaining):**
+    - ~~Type mismatches (152): spec types vs exec types (Map<int, Vote> vs HashMap<u64, CVote>)~~: Mostly fixed by arrow syntax
     - ~~Missing `valid()` method (41): Vec<CPacket>, Vec<CRslIo> don't have valid()~~: ✅ FIXED
-    - Missing enum accessor methods (~37): get_bal_1a(), get_opn_2a(), etc. on CMessage
-    - Missing struct fields (21): CProposer, CElectionState, CAcceptor missing optimization fields
-    - Argument count mismatches (19): function takes N args but M supplied
-    - Type casting/indexing (8): u64 to usize, i64 comparisons
-    - Other (~109): Vec operations, HashSet conversions, etc.
+    - ~~Missing enum accessor methods (~37): get_bal_1a(), get_opn_2a(), etc. on CMessage~~: ✅ FIXED [2026-02-04]
+      - Solution: Use Verus native `->` arrow syntax directly instead of generating `.get_*()` methods
+      - `msg.get_bal_1a()` → `msg->bal_1a` (valid Verus syntax for known enum variants)
+      - Added `ArrowAccess` variant to `ExecExpr` enum in translator
+    - ~~Missing struct fields (21): CProposer, CElectionState, CAcceptor missing optimization fields~~: Review needed
+    - ~~Argument count mismatches (19): function takes N args but M supplied~~: Review needed
+    - ~~Type casting/indexing (8): u64 to usize, i64 comparisons~~: Review needed
+    - ~~Other (~109): Vec operations, HashSet conversions, etc.~~: Mostly fixed
   - Remaining blockers:
     1. Type abstraction layer needed for HashMap operations
     2. Iterator patterns need manual implementation or special handling
     3. Missing struct fields (optimization fields not in spec): min_vote_opn, max_log_truncation_point, cur_req_set, etc.
     ~~4. Missing valid() on collections - need Vec<T>.valid() impl or skip generation~~: ✅ FIXED
-    5. Missing enum accessor methods - need to generate or map get_*() methods for CMessage variants
+    ~~5. Missing enum accessor methods - need to generate or map get_*() methods for CMessage variants~~: ✅ FIXED [2026-02-04]
     ~~6. `valid()` predicate generation needs type awareness~~: ✅ FIXED
 
 #### 5. Success Criteria (Not Yet Achieved)

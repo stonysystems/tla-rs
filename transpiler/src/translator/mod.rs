@@ -303,6 +303,23 @@ pub enum ExecExpr {
         /// Whether the pattern is a struct variant (needs { .. })
         is_struct_variant: bool,
     },
+
+    /// Verus `is` syntax for enum variant checking
+    /// Generates: `expr is Variant`
+    /// This is preferred over matches!() when the expression contains -> syntax
+    IsVariant {
+        expr: Box<ExecExpr>,
+        /// Variant to check (e.g., "CMessage1a")
+        variant: String,
+    },
+
+    /// Arrow access for enum variant fields (Verus syntax)
+    /// Generates: `expr->field`
+    /// Used when accessing fields of a known enum variant (e.g., msg->bal_1a when msg is CMessage1a)
+    ArrowAccess {
+        base: Box<ExecExpr>,
+        field: String,
+    },
 }
 
 /// Context for expression transformation
@@ -2109,8 +2126,8 @@ impl Translator {
                 format!("{}.{}", self.expr_to_simple_string(base), field)
             }
             Expr::Arrow(base, field) => {
-                // Arrow access: expr->field becomes expr.get_field() in exec
-                format!("{}.get_{}()", self.expr_to_simple_string(base), field)
+                // Arrow access: expr->field is valid Verus syntax for enum variant field access
+                format!("{}->{}",self.expr_to_simple_string(base), field)
             }
             Expr::MethodCall {
                 receiver,
@@ -3010,12 +3027,12 @@ impl Translator {
 
             Expr::Arrow(base, field) => {
                 // -> operator (enum variant field access)
-                // In exec code: base.get_field() or match-based access
+                // In Verus, use the -> syntax directly for enum variant field access
+                // This is valid when the variant is known (e.g., msg->bal_1a when msg is CMessage1a)
                 let base_expr = self.transform_expr(base, ctx)?;
-                Ok(ExecExpr::MethodCall {
-                    receiver: Box::new(base_expr),
-                    method: format!("get_{}", field),
-                    args: vec![],
+                Ok(ExecExpr::ArrowAccess {
+                    base: Box::new(base_expr),
+                    field: field.clone(),
                 })
             }
 
@@ -3090,23 +3107,15 @@ impl Translator {
             Expr::Ne(lhs, rhs) => self.transform_binary_op(lhs, rhs, "!=", ctx),
 
             // Enum variant check: expr is VariantName
-            // In exec code, this becomes matches!(expr, Pattern { .. }) or matches!(expr, Pattern)
+            // In exec code, this becomes `expr is Variant` (Verus native syntax)
+            // This is preferred over matches!() because it works with -> syntax
             Expr::Is(inner, variant) => {
                 let inner_expr = self.transform_expr(inner, ctx)?;
                 // Translate the variant name (e.g., RslMessage1a -> CMessage1a)
                 let translated_variant = self.translate_name(variant);
-                // Determine if this is a struct variant (has fields) by checking naming conventions
-                // Most enum variants in this codebase are struct variants (e.g., CMessage1a { ... })
-                // Unit variants like CIncompleteBatchTimerOff don't have fields
-                // For safety, we assume struct variant since most variants are structs
-                // The pattern will include { .. } which works for both struct variants and is harmless for unit variants
-                let is_struct_variant = !translated_variant.ends_with("Off")
-                    && !translated_variant.ends_with("None")
-                    && !translated_variant.ends_with("Unit");
-                Ok(ExecExpr::Matches {
+                Ok(ExecExpr::IsVariant {
                     expr: Box::new(inner_expr),
-                    pattern: translated_variant,
-                    is_struct_variant,
+                    variant: translated_variant,
                 })
             }
 
@@ -7221,12 +7230,12 @@ mod tests {
         );
         assert_eq!(translator.expr_to_simple_string(&field), "obj.field");
 
-        // Test: arrow access (enum field)
+        // Test: arrow access (enum field) - uses Verus -> syntax
         let arrow = Expr::Arrow(
             Box::new(Expr::Ident("msg".to_string())),
             "bal_1a".to_string(),
         );
-        assert_eq!(translator.expr_to_simple_string(&arrow), "msg.get_bal_1a()");
+        assert_eq!(translator.expr_to_simple_string(&arrow), "msg->bal_1a");
 
         // Test: method call
         let method_call = Expr::MethodCall {
