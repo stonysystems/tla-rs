@@ -15,14 +15,16 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
+use crate::implementation::RSL::appinterface::CAppStateInit;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
+use crate::protocol::RSL::configuration::WellFormedLConfiguration;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::learner::*;
@@ -67,7 +69,7 @@ ensures
     result.valid(),
     result@ == BoundRequestSequence(s@, lengthBound@),
 {
-if ((lengthBound is CUpperBoundFinite) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {
+if (matches!(lengthBound, CUpperBound::CUpperBoundFinite { .. }) && ((0 <= lengthBound.get_n()) && (lengthBound.get_n() < s.len()))) {
         s.subrange(0, lengthBound.get_n())
     } else {
         s
@@ -81,7 +83,7 @@ requires
 ensures
     result@ == RequestsMatch(r1@, r2@),
 {
-((r1 is CRequest) && ((r2 is CRequest) && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
+(matches!(r1, CRequest { .. }) && (matches!(r2, CRequest { .. }) && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
 }
 
 pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
@@ -91,7 +93,7 @@ requires
 ensures
     result@ == RequestSatisfiedBy(r1@, r2@),
 {
-((r1 is CRequest) && ((r2 is CRequest) && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
+(matches!(r1, CRequest { .. }) && (matches!(r2, CRequest { .. }) && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
 }
 
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)

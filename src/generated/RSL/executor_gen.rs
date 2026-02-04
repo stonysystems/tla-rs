@@ -15,14 +15,16 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
+use crate::implementation::RSL::appinterface::CAppStateInit;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
+use crate::protocol::RSL::configuration::WellFormedLConfiguration;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::learner::*;
@@ -47,13 +49,13 @@ ensures
 {
 CExecutor {
         constants: c.clone(),
-        app: AppInitialize(),
+        app: CAppStateInit(),
         ops_complete: 0,
         max_bal_reflected: CBallot {
             seqno: 0,
             proposer_id: 0,
         },
-        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
+        next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: HashMap::new(),
     }
@@ -76,7 +78,7 @@ CExecutor {
         app: s.app,
         ops_complete: s.ops_complete,
         max_bal_reflected: s.max_bal_reflected,
-        next_op_to_execute: COutstandingOperation::COutstandingOpKnown {
+        next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpKnown {
             v: v.clone(),
             bal: bal.clone(),
         },
@@ -99,15 +101,15 @@ ensures
         let temp = CHandleRequestBatch(&s.app, &batch);
         let new_state = temp.0.index((temp.0.len() - 1));
         let replies = temp.1;
-        let clients = CClientsInReplies(&replies);
-        let s_reply_cache = CUpdateNewCache(&s.reply_cache, &replies);
-    let sent_packets = CRepliesAreReplyType();
+        let clients = CExecutor::CClientsInReplies(&replies);
+        let s_reply_cache = CExecutor::CUpdateNewCache(&s.reply_cache, &replies);
+    let sent_packets = RepliesAreReplyType();
     ((CExecutor { constants: s.constants, app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &s.next_op_to_execute.get_bal()) {
     s.next_op_to_execute.get_bal()
 } else {
     s.max_bal_reflected
-}, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-}, reply_cache: s_reply_cache, ..s.clone() }, CGetPacketsFromReplies(s.constants.all.config.replica_ids.index(s.constants.my_index), &batch, &replies)), sent_packets)
+}, next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpUnknown {
+}, reply_cache: s_reply_cache, ..s.clone() }, CExecutor::CGetPacketsFromReplies(s.constants.all.config.replica_ids.index(s.constants.my_index), &batch, &replies)), sent_packets)
 
 
 
@@ -133,7 +135,7 @@ ensures
         app: m.get_app_state(),
         ops_complete: m.get_opn_state_supply(),
         max_bal_reflected: m.get_bal_state_supply(),
-        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
+        next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: m.get_reply_cache(),
     }
@@ -155,7 +157,7 @@ ensures
         (s.clone(), vec![CPacket {
     dst: inp.src,
     src: s.constants.all.config.replica_ids.index(s.constants.my_index),
-    msg: CMessage::CMessageAppStateSupply {
+    msg: CMessage::CMessage::CMessageAppStateSupply {
         bal_state_supply: s.max_bal_reflected,
         opn_state_supply: s.ops_complete,
         app_state: s.app,
@@ -179,7 +181,7 @@ ensures
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@),
 {
 if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.get_logTruncationPoint_2() > s.ops_complete)) {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage::CMessageAppStateRequest {
     bal_state_req: inp.msg.get_bal_2(),
     opn_state_req: inp.msg.get_logTruncationPoint_2(),
 });
@@ -207,7 +209,7 @@ if ((inp.msg.get_seqno_req() == s.reply_cache.index(inp.src).seqno) && s.constan
         vec![CPacket {
     dst: r.client,
     src: s.constants.all.config.replica_ids.index(s.constants.my_index),
-    msg: CMessage::CMessageReply {
+    msg: CMessage::CMessage::CMessageReply {
         seqno_reply: r.seqno,
         reply: r.reply,
     },

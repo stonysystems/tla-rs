@@ -17,10 +17,9 @@ spec_only_functions = [
     # Proposer state predicates (spec-only)
     "LProposerCanNominateUsingOperationNumber",
     "LAllAcceptorsHadNoProposal",
-    # App state machine (spec-only)
-    "AppInitialize",
     # Executor helpers (spec-only, no exec implementation exists)
     "LRepliesAreReplyType",
+    "RepliesAreReplyType",
 ]
 
 [naming]
@@ -41,17 +40,18 @@ exec_prefix = "C"
 "RslPacket" = "CPacket"
 "RslMessage" = "CMessage"
 # Message variant mappings (spec uses RslMessage* but exec uses CMessage*)
-"RslMessage1a" = "CMessage1a"
-"RslMessage1b" = "CMessage1b"
-"RslMessage2a" = "CMessage2a"
-"RslMessage2b" = "CMessage2b"
-"RslMessageHeartbeat" = "CMessageHeartbeat"
-"RslMessageReply" = "CMessageReply"
-"RslMessageRequest" = "CMessageRequest"
-"RslMessageAppStateRequest" = "CMessageAppStateRequest"
-"RslMessageAppStateSupply" = "CMessageAppStateSupply"
-"RslMessageStartingPhase2" = "CMessageStartingPhase2"
-"RslMessageInvalid" = "CMessageInvalid"
+# Use full paths for matches! macro compatibility
+"RslMessage1a" = "CMessage::CMessage1a"
+"RslMessage1b" = "CMessage::CMessage1b"
+"RslMessage2a" = "CMessage::CMessage2a"
+"RslMessage2b" = "CMessage::CMessage2b"
+"RslMessageHeartbeat" = "CMessage::CMessageHeartbeat"
+"RslMessageReply" = "CMessage::CMessageReply"
+"RslMessageRequest" = "CMessage::CMessageRequest"
+"RslMessageAppStateRequest" = "CMessage::CMessageAppStateRequest"
+"RslMessageAppStateSupply" = "CMessage::CMessageAppStateSupply"
+"RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
+"RslMessageInvalid" = "CMessage::CMessageInvalid"
 # External types that don't follow L->C convention
 "AbstractEndPoint" = "EndPoint"
 "AppMessage" = "CAppMessage"
@@ -60,12 +60,20 @@ exec_prefix = "C"
 "RslIo" = "CRslIo"
 "LScheduler" = "CScheduler"
 # IO variant mappings (spec LIoOp variants -> concrete CRslIo variants)
-"Send" = "CSend"
-"Receive" = "CReceive"
-"TimeoutReceive" = "CTimeoutReceive"
-"ReadClock" = "CReadClock"
-# IncompleteBatchTimer enum variants (for field initialization in struct construction)
+# Use full paths for matches! macro compatibility
+"Send" = "CRslIo::CSend"
+"Receive" = "CRslIo::CReceive"
+"TimeoutReceive" = "CRslIo::CTimeoutReceive"
+"ReadClock" = "CRslIo::CReadClock"
+# IncompleteBatchTimer enum variants
 "IncompleteBatchTimerOff" = "CIncompleteBatchTimer::CIncompleteBatchTimerOff"
+"IncompleteBatchTimerOn" = "CIncompleteBatchTimer::CIncompleteBatchTimerOn"
+# OutstandingOperation enum variants
+"OutstandingOpUnknown" = "COutstandingOperation::COutstandingOpUnknown"
+"OutstandingOpKnown" = "COutstandingOperation::COutstandingOpKnown"
+# UpperBound enum variants
+"UpperBoundFinite" = "CUpperBound::CUpperBoundFinite"
+"UpperBoundInfinite" = "CUpperBound::CUpperBoundInfinite"
 
 # Method call mappings: spec functions that should become method calls in exec code
 # Format: "SpecFuncName" = { method_name = "ExecMethodName", receiver_arg_index = N }
@@ -123,6 +131,16 @@ exec_prefix = "C"
 "ExecutorProcessAppStateRequest" = "crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest"
 "ExecutorProcessStartingPhase2" = "crate::generated::RSL::executor_gen::CExecutorProcessStartingPhase2"
 "ExecutorProcessRequest" = "crate::generated::RSL::executor_gen::CExecutorProcessRequest"
+# Associated functions on CProposer (manual implementations)
+"SetOfMessage1bAboutBallot" = "CProposer::CSetOfMessage1bAboutBallot"
+"ValIsHighestNumberedProposal" = "CProposer::CValIsHighestNumberedProposal"
+"ExistsAcceptorHasProposalLargeThanOpn" = "CProposer::CExistsAcceptorHasProposalLargeThanOpn"
+# Associated functions on CExecutor (manual implementations, recursive)
+"ClientsInReplies" = "CExecutor::CClientsInReplies"
+"GetPacketsFromReplies" = "CExecutor::CGetPacketsFromReplies"
+"UpdateNewCache" = "CExecutor::CUpdateNewCache"
+# App state machine
+"AppInitialize" = "CAppStateInit"
 
 [output]
 generate_abstraction_fns = true
@@ -148,15 +166,17 @@ custom_imports = [
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::RSL::cconfiguration::*;",
     "use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};",
-    "use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};",
+    "use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};",
     "use crate::implementation::RSL::learnerimpl::CLearner;",
-    "use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};",
+    "use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};",
     "use crate::implementation::RSL::ReplicaImpl::CReplica;",
     "use crate::implementation::RSL::ElectionImpl::CElectionState;",
     "use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;",
+    "use crate::implementation::RSL::appinterface::CAppStateInit;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::*;",
     # Protocol specs
+    "use crate::protocol::RSL::configuration::WellFormedLConfiguration;",
     "use crate::protocol::RSL::acceptor::*;",
     "use crate::protocol::RSL::proposer::*;",
     "use crate::protocol::RSL::learner::*;",

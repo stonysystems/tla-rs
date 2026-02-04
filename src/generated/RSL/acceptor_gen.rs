@@ -15,14 +15,16 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
-use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer, CSetOfMessage1bAboutBallot, CValIsHighestNumberedProposal, CExistsAcceptorHasProposalLargeThanOpn};
+use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation, CClientsInReplies, CGetPacketsFromReplies, CUpdateNewCache};
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::implementation::RSL::ElectionImpl::CElectionState;
 use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
+use crate::implementation::RSL::appinterface::CAppStateInit;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::common::upper_bound::*;
+use crate::protocol::RSL::configuration::WellFormedLConfiguration;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::learner::*;
@@ -106,7 +108,7 @@ ensures
 }, vec![CPacket {
     src: s.constants.all.config.replica_ids.index(s.constants.my_index),
     dst: inp.src,
-    msg: CMessage::CMessage1b {
+    msg: CMessage::CMessage::CMessage1b {
         bal_1b: bal,
         log_truncation_point: s.log_truncation_point,
         votes: s.votes,
@@ -138,7 +140,7 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage::CMessage2b {
     bal_2b: m.get_bal_2a(),
     opn_2b: m.get_opn_2a(),
     val_2b: m.get_val_2a(),

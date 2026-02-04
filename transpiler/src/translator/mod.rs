@@ -269,6 +269,16 @@ pub enum ExecExpr {
     /// Break statement
     /// Generates: `break;`
     Break,
+
+    /// Matches expression for enum variant checking
+    /// Generates: `matches!(expr, Pattern { .. })` or `matches!(expr, Pattern)`
+    Matches {
+        expr: Box<ExecExpr>,
+        /// Pattern to match (e.g., "CIncompleteBatchTimer::CIncompleteBatchTimerOff")
+        pattern: String,
+        /// Whether the pattern is a struct variant (needs { .. })
+        is_struct_variant: bool,
+    },
 }
 
 /// Context for expression transformation
@@ -1952,9 +1962,22 @@ impl Translator {
                 let base = self.expr_to_simple_string(expr);
                 // Translate the variant name using remapping
                 let translated_variant = self.translate_name(variant);
-                format!("{} is {}", base, translated_variant)
+                // For spec mode (is expression), extract just the variant part
+                // since Verus doesn't allow EnumType::Variant in `is` expressions
+                let spec_variant = self.extract_variant_name(&translated_variant);
+                format!("{} is {}", base, spec_variant)
             }
             _ => self.expr_to_simple_string(expr),
+        }
+    }
+
+    /// Extract just the variant name from a potentially qualified path.
+    /// e.g., "CRslIo::CSend" -> "CSend", "CSend" -> "CSend"
+    fn extract_variant_name<'a>(&self, path: &'a str) -> &'a str {
+        if let Some(pos) = path.rfind("::") {
+            &path[pos + 2..]
+        } else {
+            path
         }
     }
 
@@ -2013,7 +2036,10 @@ impl Translator {
             Expr::Is(base, variant) => {
                 // Translate the variant name using remapping (e.g., RslMessage1a -> CMessage1a)
                 let translated_variant = self.translate_name(variant);
-                format!("{} is {}", self.expr_to_simple_string(base), translated_variant)
+                // For spec mode (is expression), extract just the variant part
+                // since Verus doesn't allow EnumType::Variant in `is` expressions
+                let spec_variant = self.extract_variant_name(&translated_variant);
+                format!("{} is {}", self.expr_to_simple_string(base), spec_variant)
             }
             Expr::Eq(lhs, rhs) => {
                 format!(
@@ -2926,14 +2952,23 @@ impl Translator {
             Expr::Ne(lhs, rhs) => self.transform_binary_op(lhs, rhs, "!=", ctx),
 
             // Enum variant check: expr is VariantName
+            // In exec code, this becomes matches!(expr, Pattern { .. }) or matches!(expr, Pattern)
             Expr::Is(inner, variant) => {
                 let inner_expr = self.transform_expr(inner, ctx)?;
                 // Translate the variant name (e.g., RslMessage1a -> CMessage1a)
                 let translated_variant = self.translate_name(variant);
-                Ok(ExecExpr::Binary {
-                    lhs: Box::new(inner_expr),
-                    op: "is".to_string(),
-                    rhs: Box::new(ExecExpr::Var(translated_variant)),
+                // Determine if this is a struct variant (has fields) by checking naming conventions
+                // Most enum variants in this codebase are struct variants (e.g., CMessage1a { ... })
+                // Unit variants like CIncompleteBatchTimerOff don't have fields
+                // For safety, we assume struct variant since most variants are structs
+                // The pattern will include { .. } which works for both struct variants and is harmless for unit variants
+                let is_struct_variant = !translated_variant.ends_with("Off")
+                    && !translated_variant.ends_with("None")
+                    && !translated_variant.ends_with("Unit");
+                Ok(ExecExpr::Matches {
+                    expr: Box::new(inner_expr),
+                    pattern: translated_variant,
+                    is_struct_variant,
                 })
             }
 

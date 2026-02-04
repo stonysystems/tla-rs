@@ -588,6 +588,21 @@ impl Printer {
             ExecExpr::Break => {
                 self.write("break;");
             }
+
+            ExecExpr::Matches {
+                expr,
+                pattern,
+                is_struct_variant,
+            } => {
+                self.write("matches!(");
+                self.print_expr(expr);
+                self.write(", ");
+                self.write(pattern);
+                if *is_struct_variant {
+                    self.write(" { .. }");
+                }
+                self.write(")");
+            }
         }
     }
 

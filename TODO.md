@@ -1348,20 +1348,35 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     - ✅ Fixed transpiler to generate method calls for: `LMinQuorumSize`, `GetReplicaIndex`, `LReplicaConstantsValid`, `ElectionStateReflectExecutedRequestBatch`
       - Added `method_calls` config section in transpile.toml
       - Updated transpiler to handle method calls in both direct calls and helper call bindings
-    - ✅ Added missing imports to custom_imports: `CIsLogTruncationPointValid`, `CSetOfMessage1bAboutBallot`, `CValIsHighestNumberedProposal`, `CExistsAcceptorHasProposalLargeThanOpn`, `CHandleRequestBatch`, `CClientsInReplies`, `CGetPacketsFromReplies`, `CUpdateNewCache`
-    - ✅ Added spec-only function `LRepliesAreReplyType` to spec_only_functions list
+    - ✅ Added missing imports to custom_imports: `CIsLogTruncationPointValid`, `CHandleRequestBatch`
+    - ✅ Added spec-only function `LRepliesAreReplyType`, `RepliesAreReplyType` to spec_only_functions list
+    - ✅ Fixed `CSetOfMessage1bAboutBallot`, `CValIsHighestNumberedProposal`, `CExistsAcceptorHasProposalLargeThanOpn` - now using associated function calls `CProposer::Cfunc()`
+    - ✅ Fixed `CClientsInReplies`, `CGetPacketsFromReplies`, `CUpdateNewCache` - now using associated function calls `CExecutor::Cfunc()`
+    - ✅ Added `AppInitialize` -> `CAppStateInit` function path mapping
+    - ✅ Added `WellFormedLConfiguration` to custom imports
   - **Remaining issues:**
     1. ~~**CProposerInit generation bug**~~: ✅ FIXED [2026-02-04]
        - Added pattern 3b in `try_extract_struct_construction()` to detect `output.field is Variant` expressions
        - Added helper call substitution integration to include fields from helper calls in struct construction
        - Commit: ba82023 fix(transpiler): Handle output.field is Variant pattern and helper substitutions
+    2. ~~**`is Variant` syntax generating invalid Rust**~~: ✅ FIXED [2026-02-04]
+       - Added `ExecExpr::Matches` variant for exec code generation
+       - `matches!(expr, EnumType::Variant { .. })` now generated for exec code
+       - Spec clauses still use `expr is Variant` (valid Verus syntax)
+       - Added full enum paths to remapping (e.g., `"Send" = "CRslIo::CSend"`)
   - Need to verify: election_gen.rs, learner_gen.rs, executor_gen.rs, proposer_gen.rs, replica_gen.rs, broadcast_gen.rs, acceptor_gen.rs
-  - **Status [2026-02-04]**: All modules regenerated and verified correct. Code analysis shows:
-    - CProposerInit now generates correct `incomplete_batch_timer` and `election_state` fields
-    - No undefined variables (s_) found in generated code
-    - Enum variant checks (`is CMessage*`) correctly translated
+  - **Status [2026-02-04]**: All modules regenerated. Attempted Verus verification revealed:
+    - Import issues: ✅ RESOLVED - Fixed associated function calls and imports
+    - Enum variant syntax: ✅ RESOLVED - Now generates `matches!` macro for exec code
+    - Type compatibility issues: ❌ REMAINING - Generated code has type mismatches between spec types (Map<int, Vote>) and exec types (HashMap<u64, CVote>)
+    - Iterator patterns: ❌ REMAINING - Generated filter/map patterns don't handle HashMap correctly
+    - Valid method: ❌ REMAINING - `valid()` called on primitive types (u64, HashMap) that don't have this method
 - [ ] **Fix any verification failures in generated code**
-  - Status: Code quality verified after regeneration, awaiting full Verus verification
+  - Status: Major syntax issues fixed, type compatibility issues remain
+  - Remaining blockers:
+    1. Type abstraction layer needed for HashMap operations
+    2. Iterator patterns need manual implementation or special handling
+    3. `valid()` predicate generation needs type awareness
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations
