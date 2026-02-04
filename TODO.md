@@ -2626,9 +2626,15 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - Mode annotation structure tests
   - Custom configuration tests (prefix, state name)
 
-- [ ] **T9.2: Regression tests**
+- [x] **T9.2: Regression tests** ✅
   - Ensure RSL (current project) could be regenerated from hypothetical TLA+ source
   - Document any patterns that don't round-trip cleanly
+
+  Implemented in `transpiler/tests/regression_test.rs` with 19 tests:
+  - Pattern tests comparing TLA+ transpiler output with RSL patterns
+  - Documents 10 patterns that round-trip cleanly (state struct, init, actions, conditionals, sets, etc.)
+  - Documents 10 patterns requiring manual intervention (temporal logic, fairness, module instantiation, etc.)
+  - RSL-specific pattern comparisons for acceptor.rs and proposer.rs
 
 ### 11.6 Documentation
 
