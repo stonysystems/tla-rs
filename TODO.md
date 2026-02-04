@@ -1698,10 +1698,10 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Manual `acceptorimpl.rs` has identical assumes (with comments like "verus can't infer this")
   - `assume(false)` in dispatch function is correct: unreachable branch (precondition excludes it)
 
-- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 192 errors remaining)
+- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 152 errors remaining)
   - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes compilation errors
   - With guard: 455 verified, 0 errors ✅
-  - Without guard: 192 errors (318→283 after V3.6.1+V3.6.2, 283→278 after V3.6.3, 278→192 after V3.6.4)
+  - Without guard: 152 errors (318→283 after V3.6.1+V3.6.2, 283→278 after V3.6.3, 278→192 after V3.6.4, 192→152 after V3.6.5)
   - **Root causes**: Generated function bodies have type/API mismatches with implementation types
   - Broken down into subtasks below (too large for single commit, ~1000+ LOC changes)
 
@@ -1768,15 +1768,20 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - Fixed CElectionStateReflectExecutedRequestBatch &mut self method call pattern
     - Error count: 278 → 192 (86 errors fixed)
 
-  - [ ] **V3.6.5: Fix collection operation mismatches** (~80 LOC, medium-hard)
-    - `Vec + Vec` → `concat_vecs()` or similar
-    - `HashSet + HashSet` → `union_sets()` or similar
-    - `HashSet::from(Vec)` → proper construction
-    - `HashMap::from(Vec)` → proper construction
-    - `.subrange()` on Vec → Verus `subrange` trait or manual slicing
-    - `.index()` on HashMap → `.get()` + unwrap
-    - `.update()` on Vec → proper Verus Vec update
-    - Fixes ~20 E0369/E0277/E0599 errors
+  - [x] **V3.6.5: Fix collection operation mismatches** ✅ COMPLETE (~80 LOC, 40 errors fixed)
+    - `Vec + Vec` → `concat_vecs(&v1, &v2)` (election_gen 4 sites, proposer_gen 2 sites)
+    - `HashSet + HashSet` → `clone_hashset + insert` pattern (election 2, learner 1, proposer 1)
+    - `HashSet::from(vec![x])` → `{ let mut s = HashSet::new(); s.insert(x); s }` (learner 3, election 3)
+    - `HashMap::from(vec![(k,v)])` → manual construction (learner 1)
+    - `.subrange()` → `truncate_vec()` (election 1, proposer 2)
+    - `.update()` → `update_vec_at()` (acceptor 1)
+    - `.valid()` → `crequestbatch_is_valid()`/`creplycache_is_valid()` (executor 2)
+    - `.index()` → bracket indexing with `HashMapAdditionalSpecFns` import (executor 2)
+    - Vec indexing by u64 → `as usize` (acceptor 2, executor 3)
+    - `sender_index` tuple unpacking: `CGetReplicaIndex` returns `(bool, usize)` (acceptor, election)
+    - `CBoundRequestSequence` rewritten: takes `u64` instead of `CUpperBound` (spec `int` not executable)
+    - Also fixed: forall variable `*opn` deref → type annotation, HashMap insert match arms
+    - Error count: 192 → 152 (40 errors fixed)
 
   - [ ] **V3.6.6: Fix for-loop iterators** (~30 LOC, medium)
     - `RangeGhostIterator<usize>` errors in executor_gen, election_gen, replica_gen
@@ -1831,7 +1836,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.4 done (192 errors remain) |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.5 done (152 errors remain) |
 
 **Current State**: With `#[cfg(test)]` guard: **455 verified, 0 errors** ✅ (including hand-written dispatch functions + Clone impls)
 
@@ -1846,7 +1851,7 @@ Key issues: (1) ensures clauses use shallow `@` where deep conversion needed, (2
 fields for optimization fields added to impl types, (3) i64/u64 type mismatches, (4) ref/owned
 mismatches, (5) collection operations that don't exist on std types.
 
-**Next step**: V3.6.5 - Fix collection operation mismatches (~80 LOC)
+**Next step**: V3.6.6 - Fix for-loop iterators (~30 LOC)
 
 **Type deduplication COMPLETE**: All generated component files now import types from implementation:
 - `types_gen.rs` re-exports basic types from `types_i.rs`

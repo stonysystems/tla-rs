@@ -3,6 +3,7 @@
 
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::*;
@@ -84,7 +85,7 @@ ensures
         CProposer {
             constants: s.constants,
             current_state: s.current_state,
-            request_queue: (s.request_queue + vec![val]),
+            request_queue: concat_vecs(&s.request_queue, &vec![val]),
             max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
             next_operation_number_to_propose: s.next_operation_number_to_propose,
             received_1b_packets: s.received_1b_packets,
@@ -127,7 +128,7 @@ if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalL
         (CProposer {
     constants: s.constants,
     current_state: 1,
-    request_queue: (s.election_state.requests_received_prev_epochs + s.election_state.requests_received_this_epoch),
+    request_queue: concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch),
     max_ballot_i_sent_1a: s.election_state.current_view,
     next_operation_number_to_propose: s.next_operation_number_to_propose,
     received_1b_packets: HashSet::new(),
@@ -162,7 +163,7 @@ CProposer {
         request_queue: s.request_queue,
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
         next_operation_number_to_propose: s.next_operation_number_to_propose,
-        received_1b_packets: (s.received_1b_packets + HashSet::from(vec![p])),
+        received_1b_packets: { let mut new_set = clone_hashset(&s.received_1b_packets); new_set.insert(p.clone()); new_set },
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
         incomplete_batch_timer: s.incomplete_batch_timer,
         election_state: s.election_state,
@@ -216,7 +217,7 @@ ensures
     } else {
         s.constants.all.params.max_batch_size
     };
-        let v = s.request_queue.subrange(0, batchSize);
+        let v = truncate_vec(&s.request_queue, 0, batchSize as usize);
         let opn = s.next_operation_number_to_propose;
         let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
@@ -226,7 +227,7 @@ ensures
     (CProposer {
     constants: s.constants,
     current_state: s.current_state,
-    request_queue: s.request_queue.subrange(batchSize, (s.request_queue.len() as u64)),
+    request_queue: truncate_vec(&s.request_queue, batchSize as usize, s.request_queue.len()),
     max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
     next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
     received_1b_packets: s.received_1b_packets,

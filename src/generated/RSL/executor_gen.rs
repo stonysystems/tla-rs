@@ -20,6 +20,7 @@ use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::std_specs::hash::HashMapAdditionalSpecFns;
 
 verus! {
 
@@ -48,7 +49,7 @@ pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CR
 requires
     s.valid(),
     bal.valid(),
-    v.valid(),
+    crequestbatch_is_valid(v),
     (*opn == s.ops_complete),
     s.next_op_to_execute is COutstandingOpUnknown,
 ensures
@@ -69,7 +70,7 @@ CExecutor {
 }
 
 pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ensures
-    result.valid(),
+    creplycache_is_valid(&result),
     result@ == LClientsInReplies(replies@),
 {
     let mut acc = HashMap::new();
@@ -107,7 +108,7 @@ ensures
 } else {
     s.max_bal_reflected
 }, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-}, reply_cache: s_reply_cache, ..s.clone() }, GetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index], &batch, &replies)), sent_packets)
+}, reply_cache: s_reply_cache, ..s.clone() }, GetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index as usize], &batch, &replies)), sent_packets)
 
 
 
@@ -153,7 +154,7 @@ ensures
     if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLeq(&s.max_bal_reflected, &m->bal_state_req) && ((s.ops_complete >= m->opn_state_req) && s.constants.CReplicaConstantsValid()))) {
         (s.clone(), vec![CPacket {
     dst: inp.src,
-    src: s.constants.all.config.replica_ids[s.constants.my_index],
+    src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
     msg: CMessage::CMessageAppStateSupply {
         bal_state_supply: s.max_bal_reflected,
         opn_state_supply: s.ops_complete,
@@ -194,8 +195,8 @@ requires
     inp.valid(),
     inp.msg is CMessageRequest,
     s.reply_cache.contains_key(&inp.src),
-    s.reply_cache.index(&inp.src) is CReply,
-    (inp.msg->seqno_req <= s.reply_cache.index(&inp.src).seqno),
+    s.reply_cache[&inp.src] is CReply,
+    (inp.msg->seqno_req <= s.reply_cache[&inp.src].seqno),
 ensures
     LExecutorProcessRequest(s@, inp@, result@),
 {
@@ -203,7 +204,7 @@ if ((inp.msg->seqno_req == s.reply_cache[&inp.src].seqno) && s.constants.CReplic
                 let r = s.reply_cache[&inp.src];
         vec![CPacket {
     dst: r.client,
-    src: s.constants.all.config.replica_ids[s.constants.my_index],
+    src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
     msg: CMessage::CMessageReply {
         seqno_reply: r.seqno,
         reply: r.reply,

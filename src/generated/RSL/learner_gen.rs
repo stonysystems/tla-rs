@@ -53,19 +53,21 @@ ensures
     } else {
         if CBalLt(&s.max_ballot_seen, &m->bal_2b) {
                         let tup_ = CLearnerTuple {
-                received_2b_message_senders: HashSet::from(vec![packet.src]),
+                received_2b_message_senders: { let mut hs = HashSet::new(); hs.insert(packet.src.clone()); hs },
                 candidate_learned_value: m->val_2b,
             };
+            let mut new_state = HashMap::new();
+            new_state.insert(opn, tup_);
             CLearner {
                 constants: s.constants,
                 max_ballot_seen: m->bal_2b,
-                unexecuted_learner_state: HashMap::from(vec![(opn, tup_)]),
+                unexecuted_learner_state: new_state,
             }
 
         } else {
             if !s.unexecuted_learner_state.contains_key(&opn) {
                                 let tup_ = CLearnerTuple {
-                    received_2b_message_senders: HashSet::from(vec![packet.src]),
+                    received_2b_message_senders: { let mut hs = HashSet::new(); hs.insert(packet.src.clone()); hs },
                     candidate_learned_value: m->val_2b,
                 };
                 CLearner {
@@ -79,8 +81,10 @@ ensures
                     s.clone()
                 } else {
                                         let tup = s.unexecuted_learner_state[&opn];
+                                        let mut new_senders = clone_hashset(&tup.received_2b_message_senders);
+                                        new_senders.insert(packet.src.clone());
                                         let tup_ = CLearnerTuple {
-                        received_2b_message_senders: (tup.received_2b_message_senders + HashSet::from(vec![packet.src])),
+                        received_2b_message_senders: new_senders,
                         candidate_learned_value: tup.candidate_learned_value,
                     };
                     CLearner {
@@ -135,9 +139,9 @@ ensures
         invariant
             seen_keys.subset_of(s.unexecuted_learner_state@.dom()),
             forall |k| seen_keys.contains(k) ==> s.unexecuted_learner_state@.contains_key(k),
-            forall |k| result@.contains_key(k) ==> (*k >= *ops_complete) && s.unexecuted_learner_state@.contains_key(k),
+            forall |k: u64| result@.contains_key(k) ==> (k >= *ops_complete) && s.unexecuted_learner_state@.contains_key(k),
             forall |k| result@.contains_key(k) ==> seen_keys.contains(k),
-            forall |k| seen_keys.contains(k) && (*k >= *ops_complete) ==> result@.contains_key(k),
+            forall |k: u64| seen_keys.contains(k) && (k >= *ops_complete) ==> result@.contains_key(k),
         {
                         broadcast use vstd::std_specs::hash::group_hash_axioms;
             assume(s.unexecuted_learner_state@.contains_key(*k));
@@ -145,7 +149,7 @@ ensures
             if (k >= ops_complete) {
                                 let value = s.unexecuted_learner_state.get(k);
                 match value {
-                    Some(v) => result.insert(*k, v.clone()),
+                    Some(v) => { result.insert(*k, v.clone()); },
                     None => {},
                 }
 

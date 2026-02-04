@@ -2,6 +2,7 @@
 // DO NOT EDIT MANUALLY
 
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
@@ -34,9 +35,9 @@ pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_
     invariant
         seen_keys.subset_of(votes@.dom()),
         forall |opn| seen_keys.contains(opn) ==> votes@.contains_key(opn),
-        forall |opn| result@.contains_key(opn) ==> (*opn >= *log_truncation_point) && votes@.contains_key(opn),
+        forall |opn: u64| result@.contains_key(opn) ==> (opn >= *log_truncation_point) && votes@.contains_key(opn),
         forall |opn| result@.contains_key(opn) ==> seen_keys.contains(opn),
-        forall |opn| seen_keys.contains(opn) && (*opn >= *log_truncation_point) ==> result@.contains_key(opn),
+        forall |opn: u64| seen_keys.contains(opn) && (opn >= *log_truncation_point) ==> result@.contains_key(opn),
     {
                 broadcast use vstd::std_specs::hash::group_hash_axioms;
         assume(votes@.contains_key(*opn));
@@ -44,7 +45,7 @@ pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_
         if (opn >= log_truncation_point) {
                         let value = votes.get(opn);
             match value {
-                Some(v) => result.insert(*opn, v.clone()),
+                Some(v) => { result.insert(*opn, v.clone()); },
                 None => {},
             }
 
@@ -80,9 +81,9 @@ ensures
         invariant
             seen_keys.subset_of(votes@.dom()),
             forall |opn| seen_keys.contains(opn) ==> votes@.contains_key(opn),
-            forall |opn| result@.contains_key(opn) ==> (*opn >= *log_truncation_point) && votes@.contains_key(opn),
+            forall |opn: u64| result@.contains_key(opn) ==> (opn >= *log_truncation_point) && votes@.contains_key(opn),
             forall |opn| result@.contains_key(opn) ==> seen_keys.contains(opn),
-            forall |opn| seen_keys.contains(opn) && (*opn >= *log_truncation_point) ==> result@.contains_key(opn),
+            forall |opn: u64| seen_keys.contains(opn) && (opn >= *log_truncation_point) ==> result@.contains_key(opn),
         {
                         broadcast use vstd::std_specs::hash::group_hash_axioms;
             assume(votes@.contains_key(*opn));
@@ -90,7 +91,7 @@ ensures
             if (opn >= log_truncation_point) {
                                 let value = votes.get(opn);
                 match value {
-                    Some(v) => result.insert(*opn, v.clone()),
+                    Some(v) => { result.insert(*opn, v.clone()); },
                     None => {},
                 }
 
@@ -151,7 +152,7 @@ ensures
     log_truncation_point: s.log_truncation_point,
     min_vote_opn: s.min_vote_opn,
 }, vec![CPacket {
-    src: s.constants.all.config.replica_ids[s.constants.my_index],
+    src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
     dst: inp.src,
     msg: CMessage::CMessage1b {
         bal_1b: bal,
@@ -212,9 +213,9 @@ ensures
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
 if s.constants.all.config.replica_ids.contains(&inp.src) {
-                let sender_index = s.constants.all.config.CGetReplicaIndex(&inp.src);
-        if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg->opn_ckpt > s.last_checkpointed_operation[sender_index])) {
-            CAcceptor { last_checkpointed_operation: s.last_checkpointed_operation.update(sender_index, inp.msg->opn_ckpt), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
+                let (sender_found, sender_index) = s.constants.all.config.CGetReplicaIndex(&inp.src);
+        if (sender_found && (sender_index < s.last_checkpointed_operation.len()) && (inp.msg->opn_ckpt > s.last_checkpointed_operation[sender_index])) {
+            CAcceptor { last_checkpointed_operation: update_vec_at(&s.last_checkpointed_operation, sender_index, inp.msg->opn_ckpt), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
         } else {
             s.clone()
         }

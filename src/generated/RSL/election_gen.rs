@@ -3,6 +3,7 @@
 
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::*;
@@ -58,14 +59,13 @@ if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
     }
 }
 
-pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: &CUpperBound) -> (result: Vec<CRequest>)
-requires
-    lengthBound.valid(),
+pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: u64) -> (result: Vec<CRequest>)
 ensures
-    result@ == BoundRequestSequence(s@, lengthBound@),
+    result@ == BoundRequestSequence(s@, UpperBound::UpperBoundFinite{n: lengthBound as int}),
 {
-if (lengthBound is CUpperBoundFinite && ((0 <= lengthBound->n) && (lengthBound->n < s.len()))) {
-        s.subrange(0, lengthBound->n)
+    let s_len = s.len() as u64;
+    if (0 <= lengthBound && lengthBound < s_len) {
+        truncate_vec(s, 0, lengthBound as usize)
     } else {
         s.clone()
     }
@@ -150,12 +150,15 @@ ensures
 if !es.constants.all.config.replica_ids.contains(&p.src) {
         es.clone()
     } else {
-                let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
+                let (_sender_found, sender_index) = es.constants.all.config.CGetReplicaIndex(&p.src);
+                let sender_index_u64 = sender_index as u64;
         if ((p.msg->bal_heartbeat == es.current_view) && p.msg->suspicious) {
+            let mut new_suspectors = clone_hashset(&es.current_view_suspectors);
+            new_suspectors.insert(sender_index_u64);
             CElectionState {
                 constants: es.constants,
                 current_view: es.current_view,
-                current_view_suspectors: (es.current_view_suspectors + HashSet::from(vec![sender_index])),
+                current_view_suspectors: new_suspectors,
                 epoch_end_time: es.epoch_end_time,
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: es.requests_received_this_epoch,
@@ -166,18 +169,22 @@ if !es.constants.all.config.replica_ids.contains(&p.src) {
         } else {
             if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
                                 let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
+                let new_suspectors = if p.msg->suspicious {
+                    let mut s = HashSet::new();
+                    s.insert(sender_index_u64);
+                    s
+                } else {
+                    HashSet::new()
+                };
+                let new_prev = concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch);
                 CElectionState {
                     constants: es.constants,
                     current_view: p.msg->bal_heartbeat,
-                    current_view_suspectors: if p.msg->suspicious {
-                        HashSet::from(vec![sender_index])
-                    } else {
-                        HashSet::new()
-                    },
+                    current_view_suspectors: new_suspectors,
                     epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
                     epoch_length: new_epoch_length,
                     requests_received_this_epoch: vec![],
-                    requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                    requests_received_prev_epochs: CBoundRequestSequence(&new_prev, es.constants.all.params.max_integer_val),
                     cur_req_set: HashSet::new(),
                     prev_req_set: HashSet::new(),
                 }
@@ -215,14 +222,17 @@ if (*clock < es.epoch_end_time) {
             }
 
         } else {
+            let mut new_suspectors = clone_hashset(&es.current_view_suspectors);
+            new_suspectors.insert(es.constants.my_index);
+            let new_prev = concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch);
             CElectionState {
                 constants: es.constants,
                 current_view: es.current_view,
-                current_view_suspectors: (es.current_view_suspectors + HashSet::from(vec![es.constants.my_index])),
+                current_view_suspectors: new_suspectors,
                 epoch_end_time: CUpperBoundedAddition(*clock, es.epoch_length, es.constants.all.params.max_integer_val),
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: vec![],
-                requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                requests_received_prev_epochs: CBoundRequestSequence(&new_prev, es.constants.all.params.max_integer_val),
                 cur_req_set: HashSet::new(),
                 prev_req_set: HashSet::new(),
             }
@@ -248,7 +258,7 @@ if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()
             epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
             epoch_length: new_epoch_length,
             requests_received_this_epoch: vec![],
-            requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+            requests_received_prev_epochs: { let new_prev = concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch); CBoundRequestSequence(&new_prev, es.constants.all.params.max_integer_val) },
             cur_req_set: HashSet::new(),
             prev_req_set: HashSet::new(),
         }
@@ -273,7 +283,7 @@ if es.requests_received_prev_epochs.iter().chain(es.requests_received_this_epoch
             current_view_suspectors: es.current_view_suspectors,
             epoch_end_time: es.epoch_end_time,
             epoch_length: es.epoch_length,
-            requests_received_this_epoch: CBoundRequestSequence((es.requests_received_this_epoch + vec![req]), &es.constants.all.params.max_integer_val),
+            requests_received_this_epoch: { let new_reqs = concat_vecs(&es.requests_received_this_epoch, &vec![req.clone()]); CBoundRequestSequence(&new_reqs, es.constants.all.params.max_integer_val) },
             requests_received_prev_epochs: es.requests_received_prev_epochs,
             cur_req_set: es.cur_req_set,
             prev_req_set: es.prev_req_set,
