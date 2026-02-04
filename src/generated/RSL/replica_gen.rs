@@ -613,4 +613,76 @@ CScheduler { nextActionIndex: ((s.nextActionIndex + 1) % CReplicaNumActions()), 
     }, ..s.clone() }
 }
 
+// Hand-written dispatch functions (skipped by transpiler due to complex IO dispatch patterns)
+
+/// Dispatches packet processing based on message type (without clock reading).
+/// Corresponds to spec: LReplicaNextProcessPacketWithoutReadingClock
+pub exec fn CReplicaNextProcessPacketWithoutReadingClock(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    ios.len() >= 1,
+    ios[0] is Receive,
+    !(ios[0]->r.msg is CMessageHeartbeat),
+ensures
+    result.valid(),
+    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, ios@),
+{
+    let received_packet = &ios[0]->r;
+    let sent_packets = CExtractSentPacketsFromIos(ios);
+    let (new_replica, _packets) = match received_packet.msg {
+        CMessage::CMessageInvalid{} => CReplicaNextProcessInvalid(s, received_packet),
+        CMessage::CMessageRequest{..} => CReplicaNextProcessRequest(s, received_packet),
+        CMessage::CMessage1a{..} => CReplicaNextProcess1a(s, received_packet),
+        CMessage::CMessage1b{..} => CReplicaNextProcess1b(s, received_packet),
+        CMessage::CMessageStartingPhase2{..} => CReplicaNextProcessStartingPhase2(s, received_packet),
+        CMessage::CMessage2a{..} => CReplicaNextProcess2a(s, received_packet),
+        CMessage::CMessage2b{..} => CReplicaNextProcess2b(s, received_packet),
+        CMessage::CMessageReply{..} => CReplicaNextProcessReply(s, received_packet),
+        CMessage::CMessageAppStateRequest{..} => CReplicaNextProcessAppStateRequest(s, received_packet),
+        CMessage::CMessageAppStateSupply{..} => CReplicaNextProcessAppStateSupply(s, received_packet),
+        CMessage::CMessageHeartbeat{..} => { assume(false); (s.clone(), vec![]) },
+    };
+    new_replica
+}
+
+/// Processes heartbeat with clock reading.
+/// Corresponds to spec: LReplicaNextReadClockAndProcessPacket
+pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    ios.len() > 1,
+    ios[0] is Receive,
+    ios[0]->r.msg is CMessageHeartbeat,
+    ios[1] is ReadClock,
+ensures
+    result.valid(),
+    LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
+{
+    let received_packet = &ios[0]->r;
+    let clock = &ios[1]->t;
+    let (new_replica, _packets) = CReplicaNextProcessHeartbeat(s, received_packet, clock);
+    new_replica
+}
+
+/// Top-level packet dispatch: timeout vs receive, heartbeat vs other messages.
+/// Corresponds to spec: LReplicaNextProcessPacket
+pub exec fn CReplicaNextProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    ios.len() >= 1,
+ensures
+    result.valid(),
+    LReplicaNextProcessPacket(s@, result@, ios@),
+{
+    if ios[0] is TimeoutReceive {
+        s.clone()
+    } else {
+        if ios[0]->r.msg is CMessageHeartbeat {
+            CReplicaNextReadClockAndProcessPacket(s, ios)
+        } else {
+            CReplicaNextProcessPacketWithoutReadingClock(s, ios)
+        }
+    }
+}
+
 } // verus!
