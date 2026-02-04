@@ -1698,10 +1698,10 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Manual `acceptorimpl.rs` has identical assumes (with comments like "verus can't infer this")
   - `assume(false)` in dispatch function is correct: unreachable branch (precondition excludes it)
 
-- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 318 errors remaining)
-  - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes 318 compilation errors
+- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 278 errors remaining)
+  - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes compilation errors
   - With guard: 454 verified, 0 errors ✅
-  - Without guard: 318 errors (down from ~350 after V3.3 dedup)
+  - Without guard: 278 errors (318→283 after V3.6.1+V3.6.2, 283→278 after V3.6.3)
   - **Root causes**: Generated function bodies have type/API mismatches with implementation types
   - Broken down into subtasks below (too large for single commit, ~1000+ LOC changes)
 
@@ -1750,11 +1750,14 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - Add `cur_req_set: HashSet::new()` and `prev_req_set: HashSet::new()` to CElectionState constructors (7 sites)
     - Fixes 18 E0063 errors
 
-  - [ ] **V3.6.3: Fix i64→u64 type mismatches** (~50 LOC, medium)
-    - Generated code uses `i64` for clock params but impl uses `u64`
-    - Change function signatures: `clock: &i64` → `clock: &u64` in election_gen, proposer_gen, replica_gen
-    - Fix `max_batch_size` comparisons (i64 vs usize)
-    - Fixes ~20 E0308/E0277 errors
+  - [x] **V3.6.3: Fix i64→u64 type mismatches** ✅ COMPLETE (~20 LOC)
+    - Changed `clock: &i64` → `clock: &u64` in election_gen (3), proposer_gen (5), replica_gen (1)
+    - Changed `log_truncation_point: &i64` → `&u64` in proposer_gen (1)
+    - Changed `nextActionIndex: &i64` → `&u64` in replica_gen (1)
+    - Changed `CReplicaNumActions` return type `i64` → `u64`
+    - Changed `CScheduler.nextActionIndex: i64` → `u64` in types_gen
+    - Changed `as i64` → `as u64` in proposer_gen (2 sites)
+    - Error count: 283 → 278 (5 errors fixed)
 
   - [ ] **V3.6.4: Fix ref/owned mismatches** (~100 LOC, medium)
     - `CReplica` vs `&CReplica`, `CProposer` vs `&CProposer`, etc.
@@ -1826,7 +1829,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6 broken into 10 subtasks (318 errors) |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.3 done (278 errors remain) |
 
 **Current State**: With `#[cfg(test)]` guard: **454 verified, 0 errors** ✅ (including hand-written dispatch functions)
 
@@ -1841,7 +1844,7 @@ Key issues: (1) ensures clauses use shallow `@` where deep conversion needed, (2
 fields for optimization fields added to impl types, (3) i64/u64 type mismatches, (4) ref/owned
 mismatches, (5) collection operations that don't exist on std types.
 
-**Next step**: V3.6.1 - Fix missing imports (easiest subtask, ~20 LOC)
+**Next step**: V3.6.4 - Fix ref/owned mismatches (~100 LOC)
 
 **Type deduplication COMPLETE**: All generated component files now import types from implementation:
 - `types_gen.rs` re-exports basic types from `types_i.rs`

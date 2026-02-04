@@ -202,7 +202,7 @@ if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && 
     }
 }
 
-pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
+pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
     LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
@@ -212,7 +212,7 @@ ensures
     LProposerNominateNewValueAndSend2a(s@, result.0@, clock@, log_truncation_point@, result.1@),
 {
     let batchSize = if ((s.request_queue.len() <= s.constants.all.params.max_batch_size) || (s.constants.all.params.max_batch_size < 0)) {
-        (s.request_queue.len() as i64)
+        (s.request_queue.len() as u64)
     } else {
         s.constants.all.params.max_batch_size
     };
@@ -226,7 +226,7 @@ ensures
     (CProposer {
     constants: s.constants,
     current_state: s.current_state,
-    request_queue: s.request_queue.subrange(batchSize, (s.request_queue.len() as i64)),
+    request_queue: s.request_queue.subrange(batchSize, (s.request_queue.len() as u64)),
     max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
     next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
     received_1b_packets: s.received_1b_packets,
@@ -279,7 +279,7 @@ ensures
 
 }
 
-pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &i64, log_truncation_point: &i64) -> (result: (CProposer, Vec<CPacket>))
+pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
 ensures
@@ -319,7 +319,7 @@ if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
     }
 }
 
-pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &i64) -> (result: CProposer)
+pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -> (result: CProposer)
 requires
     s.valid(),
     p.valid(),
@@ -341,7 +341,7 @@ ensures
 
 }
 
-pub exec fn CProposerCheckForViewTimeout(s: &CProposer, clock: &i64) -> (result: CProposer)
+pub exec fn CProposerCheckForViewTimeout(s: &CProposer, clock: &u64) -> (result: CProposer)
 requires
     s.valid(),
 ensures
@@ -365,7 +365,7 @@ ensures
 
 }
 
-pub exec fn CProposerCheckForQuorumOfViewSuspicions(s: &CProposer, clock: &i64) -> (result: CProposer)
+pub exec fn CProposerCheckForQuorumOfViewSuspicions(s: &CProposer, clock: &u64) -> (result: CProposer)
 requires
     s.valid(),
 ensures

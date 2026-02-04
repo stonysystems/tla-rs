@@ -31,7 +31,7 @@ pub type CRslIo = LIoOp<crate::common::native::io_s::EndPoint, CMessage>;
 #[derive(Clone)]
 pub struct CScheduler {
     pub replica: CReplica,
-    pub nextActionIndex: i64,
+    pub nextActionIndex: u64,
 }
 
 impl CScheduler {

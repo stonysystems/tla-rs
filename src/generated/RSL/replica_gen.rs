@@ -283,7 +283,7 @@ ensures
 
 }
 
-pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket, clock: &i64) -> (result: (CReplica, Vec<CPacket>))
+pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket, clock: &u64) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
     received_packet.valid(),
@@ -515,13 +515,13 @@ pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacke
 
 }
 
-pub exec fn CReplicaNumActions() -> (result: i64)ensures
+pub exec fn CReplicaNumActions() -> (result: u64)ensures
     result@ == LReplicaNumActions(),
 {
 10
 }
 
-pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &i64, ios: &Vec<CRslIo>) -> (result: CReplica)
+pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &u64, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
 ensures

@@ -138,7 +138,7 @@ CElectionState {
     }
 }
 
-pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clock: &i64) -> (result: CElectionState)
+pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clock: &u64) -> (result: CElectionState)
 requires
     es.valid(),
     p.valid(),
@@ -190,7 +190,7 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
     }
 }
 
-pub exec fn CElectionStateCheckForViewTimeout(es: &CElectionState, clock: &i64) -> (result: CElectionState)
+pub exec fn CElectionStateCheckForViewTimeout(es: &CElectionState, clock: &u64) -> (result: CElectionState)
 requires
     es.valid(),
 ensures
@@ -230,7 +230,7 @@ if (clock < es.epoch_end_time) {
     }
 }
 
-pub exec fn CElectionStateCheckForQuorumOfViewSuspicions(es: &CElectionState, clock: &i64) -> (result: CElectionState)
+pub exec fn CElectionStateCheckForQuorumOfViewSuspicions(es: &CElectionState, clock: &u64) -> (result: CElectionState)
 requires
     es.valid(),
 ensures
