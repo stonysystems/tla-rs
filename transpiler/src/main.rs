@@ -2,7 +2,7 @@
 //!
 //! Usage:
 //! ```bash
-//! # Single file mode
+//! # Single file mode (Verus spec to exec)
 //! verus-transpile \
 //!     --input src/protocol/RSL/acceptor.rs \
 //!     --annotations src/protocol/RSL/acceptor.automan \
@@ -11,6 +11,9 @@
 //!
 //! # Batch mode
 //! verus-transpile --project . --output-dir src/generated/
+//!
+//! # TLA+ to Verus translation (T7.1)
+//! verus-transpile translate-tla --input spec.tla --output spec.rs
 //!
 //! # List supported templates
 //! verus-transpile --list-templates
@@ -94,6 +97,33 @@ enum Commands {
         /// Configuration file (TOML) with type remappings
         #[arg(short, long)]
         config: Option<PathBuf>,
+    },
+
+    /// Translate TLA+ specification to Verus code (T7.1)
+    TranslateTla {
+        /// Input TLA+ file (.tla)
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Output Verus file (.rs)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Type annotations file (.tla-types)
+        #[arg(short, long)]
+        types: Option<PathBuf>,
+
+        /// Generate mode annotations file (.automan) alongside output
+        #[arg(long)]
+        gen_modes: bool,
+
+        /// Module configuration: spec prefix (default: "L")
+        #[arg(long, default_value = "L")]
+        spec_prefix: String,
+
+        /// Module configuration: state struct name (default: "State")
+        #[arg(long, default_value = "State")]
+        state_name: String,
     },
 }
 
@@ -285,6 +315,132 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
             Ok(())
         }
+
+        Commands::TranslateTla {
+            input,
+            output,
+            types,
+            gen_modes,
+            spec_prefix,
+            state_name,
+        } => {
+            use verus_transpiler::tla::{
+                generate_mode_annotations, parse_module, ModuleConfig, ModuleTranslator,
+                TypeAnnotations, TypeInference,
+            };
+
+            if cli.verbose {
+                eprintln!("Translating TLA+ file: {}", input.display());
+            }
+
+            // Read TLA+ source
+            let source = std::fs::read_to_string(input)
+                .map_err(|e| miette::miette!("Failed to read TLA+ file: {}", e))?;
+
+            // Parse TLA+ module
+            let module = parse_module(&source)
+                .map_err(|e| miette::miette!("Failed to parse TLA+ file: {}", e))?;
+
+            if cli.verbose {
+                eprintln!("  Module: {}", module.name);
+                eprintln!("  Variables: {:?}", module.variables);
+                eprintln!(
+                    "  Constants: {:?}",
+                    module
+                        .constants
+                        .iter()
+                        .map(|c| &c.name)
+                        .collect::<Vec<_>>()
+                );
+                eprintln!(
+                    "  Operators: {:?}",
+                    module
+                        .operators
+                        .iter()
+                        .map(|o| &o.name)
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            // Configure module translation
+            let config = ModuleConfig {
+                spec_prefix: spec_prefix.clone(),
+                state_name: state_name.clone(),
+                ..ModuleConfig::default()
+            };
+
+            // Build type environment
+            let type_env = if let Some(types_path) = types {
+                if cli.verbose {
+                    eprintln!("  Loading type annotations from: {}", types_path.display());
+                }
+                let types_content = std::fs::read_to_string(types_path)
+                    .map_err(|e| miette::miette!("Failed to read type annotations file: {}", e))?;
+                let annotations = TypeAnnotations::parse(&types_content)
+                    .map_err(|e| miette::miette!("Failed to parse type annotations: {}", e))?;
+
+                // Start with inferred types, then override with annotations
+                let mut inference = TypeInference::new();
+                let mut env = inference.infer_types(&module);
+
+                // Apply type annotations to the environment
+                for (var_name, tla_type) in &annotations.variables {
+                    env.variables.insert(var_name.clone(), tla_type.clone());
+                }
+                for (const_name, tla_type) in &annotations.constants {
+                    env.constants.insert(const_name.clone(), tla_type.clone());
+                }
+                for (op_name, tla_type) in &annotations.operators {
+                    env.operators.insert(op_name.clone(), tla_type.clone());
+                }
+
+                env
+            } else {
+                // Use automatic type inference only
+                let mut inference = TypeInference::new();
+                inference.infer_types(&module)
+            };
+
+            // Translate module with type information
+            let translator = ModuleTranslator::with_config(config).with_types(type_env);
+            let verus_code = translator.translate(&module);
+
+            // Output Verus code
+            if let Some(output_path) = output {
+                std::fs::write(output_path, &verus_code)
+                    .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+
+                if cli.verbose {
+                    eprintln!("  Written Verus code to: {}", output_path.display());
+                }
+
+                // Generate mode annotations if requested
+                if *gen_modes {
+                    let mode_path = output_path.with_extension("automan");
+                    let mode_annotations = generate_mode_annotations(&module);
+                    std::fs::write(&mode_path, &mode_annotations)
+                        .map_err(|e| miette::miette!("Failed to write mode annotations: {}", e))?;
+
+                    if cli.verbose {
+                        eprintln!("  Written mode annotations to: {}", mode_path.display());
+                    }
+                }
+
+                println!("Translated {} -> {}", input.display(), output_path.display());
+            } else if cli.stdout {
+                println!("{}", verus_code);
+
+                // Print mode annotations to stderr if requested
+                if *gen_modes {
+                    let mode_annotations = generate_mode_annotations(&module);
+                    eprintln!("\n--- Mode Annotations ---\n{}", mode_annotations);
+                }
+            } else {
+                println!("{}", verus_code);
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -331,5 +487,179 @@ mod tests {
         ]);
         assert_eq!(cli.input, Some(PathBuf::from("test.rs")));
         assert_eq!(cli.annotations, Some(PathBuf::from("test.automan")));
+    }
+
+    #[test]
+    fn test_translate_tla_cli_parsing() {
+        // Test parsing of translate-tla subcommand
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "translate-tla",
+            "--input",
+            "spec.tla",
+            "--output",
+            "spec.rs",
+        ]);
+
+        match cli.command {
+            Some(Commands::TranslateTla {
+                input,
+                output,
+                types,
+                gen_modes,
+                spec_prefix,
+                state_name,
+            }) => {
+                assert_eq!(input, PathBuf::from("spec.tla"));
+                assert_eq!(output, Some(PathBuf::from("spec.rs")));
+                assert!(types.is_none());
+                assert!(!gen_modes);
+                assert_eq!(spec_prefix, "L");
+                assert_eq!(state_name, "State");
+            }
+            _ => panic!("Expected TranslateTla command"),
+        }
+    }
+
+    #[test]
+    fn test_translate_tla_cli_with_options() {
+        // Test parsing with all options
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "translate-tla",
+            "--input",
+            "spec.tla",
+            "--output",
+            "spec.rs",
+            "--types",
+            "spec.tla-types",
+            "--gen-modes",
+            "--spec-prefix",
+            "Spec",
+            "--state-name",
+            "MyState",
+        ]);
+
+        match cli.command {
+            Some(Commands::TranslateTla {
+                input,
+                output,
+                types,
+                gen_modes,
+                spec_prefix,
+                state_name,
+            }) => {
+                assert_eq!(input, PathBuf::from("spec.tla"));
+                assert_eq!(output, Some(PathBuf::from("spec.rs")));
+                assert_eq!(types, Some(PathBuf::from("spec.tla-types")));
+                assert!(gen_modes);
+                assert_eq!(spec_prefix, "Spec");
+                assert_eq!(state_name, "MyState");
+            }
+            _ => panic!("Expected TranslateTla command"),
+        }
+    }
+
+    #[test]
+    fn test_translate_tla_integration() {
+        // Integration test: parse and translate a simple TLA+ spec
+        use verus_transpiler::tla::{
+            generate_mode_annotations, parse_module, ModuleConfig, ModuleTranslator, TypeInference,
+        };
+
+        let tla_source = r#"
+---- MODULE SimpleSpec ----
+VARIABLE x
+
+Init == x = 0
+
+Next == x' = x + 1
+
+====
+"#;
+
+        // Parse module
+        let module = parse_module(tla_source).expect("Failed to parse TLA+ module");
+        assert_eq!(module.name, "SimpleSpec");
+        assert_eq!(module.variables, vec!["x"]);
+        assert_eq!(module.operators.len(), 2);
+
+        // Translate with type inference
+        let config = ModuleConfig {
+            spec_prefix: "L".to_string(),
+            state_name: "State".to_string(),
+            ..ModuleConfig::default()
+        };
+        let mut inference = TypeInference::new();
+        let type_env = inference.infer_types(&module);
+        let translator = ModuleTranslator::with_config(config).with_types(type_env);
+        let verus_code = translator.translate(&module);
+
+        // Verify output contains expected elements
+        assert!(
+            verus_code.contains("pub struct LState"),
+            "Should contain LState struct"
+        );
+        assert!(
+            verus_code.contains("pub open spec fn LInit"),
+            "Should contain LInit function"
+        );
+        assert!(
+            verus_code.contains("pub open spec fn LNext"),
+            "Should contain LNext function"
+        );
+
+        // Test mode annotation generation
+        let mode_annotations = generate_mode_annotations(&module);
+        assert!(
+            mode_annotations.contains("module SimpleSpec"),
+            "Should contain module name"
+        );
+        assert!(
+            mode_annotations.contains("LInit"),
+            "Should contain Init operator"
+        );
+        assert!(
+            mode_annotations.contains("LNext"),
+            "Should contain Next operator"
+        );
+    }
+
+    #[test]
+    fn test_translate_tla_with_constants() {
+        use verus_transpiler::tla::{parse_module, ModuleConfig, ModuleTranslator, TypeInference};
+
+        let tla_source = r#"
+---- MODULE WithConstants ----
+CONSTANT N
+
+VARIABLE count
+
+Init == count = 0
+
+Next == count' = count + N
+
+====
+"#;
+
+        let module = parse_module(tla_source).expect("Failed to parse TLA+ module");
+        assert_eq!(module.name, "WithConstants");
+        assert_eq!(module.variables, vec!["count"]);
+        assert_eq!(module.constants.len(), 1);
+        assert_eq!(module.constants[0].name, "N");
+
+        // Translate
+        let config = ModuleConfig::default();
+        let mut inference = TypeInference::new();
+        let type_env = inference.infer_types(&module);
+        let translator = ModuleTranslator::with_config(config).with_types(type_env);
+        let verus_code = translator.translate(&module);
+
+        // Should contain constants struct
+        assert!(
+            verus_code.contains("LConstants"),
+            "Should contain LConstants struct"
+        );
+        assert!(verus_code.contains("pub N:"), "Should contain N constant");
     }
 }

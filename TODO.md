@@ -2542,10 +2542,17 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
 ### 11.4 Integration with Existing Transpiler
 
 #### Phase T7: Pipeline Integration
-- [ ] **T7.1: Add TLA+ input format support to CLI**
+- [x] **T7.1: Add TLA+ input format support to CLI**
   ```bash
-  cargo run -- --input spec.tla --output spec.rs
+  cargo run -- translate-tla --input spec.tla --output spec.rs
   ```
+  Implemented with the `translate-tla` subcommand supporting:
+  - `--input`: Input TLA+ file (.tla)
+  - `--output`: Output Verus file (.rs)
+  - `--types`: Optional type annotations file (.tla-types)
+  - `--gen-modes`: Generate mode annotations file (.automan)
+  - `--spec-prefix`: Configure spec prefix (default: "L")
+  - `--state-name`: Configure state struct name (default: "State")
 
 - [ ] **T7.2: Chain TLA+ → Verus spec → Verus exec**
   ```bash
