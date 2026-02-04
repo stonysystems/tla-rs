@@ -3,7 +3,7 @@
 //! This module transforms validated spec predicates into executable Rust/Verus
 //! functions with proper proof linkage.
 
-use crate::ast::{Binding, BinOp, Expr, FunctionKind, Literal, ParameterMode, Path, Pattern, Type};
+use crate::ast::{BinOp, Binding, Expr, FunctionKind, Literal, ParameterMode, Path, Pattern, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
@@ -316,10 +316,7 @@ pub enum ExecExpr {
     /// Arrow access for enum variant fields (Verus syntax)
     /// Generates: `expr->field`
     /// Used when accessing fields of a known enum variant (e.g., msg->bal_1a when msg is CMessage1a)
-    ArrowAccess {
-        base: Box<ExecExpr>,
-        field: String,
-    },
+    ArrowAccess { base: Box<ExecExpr>, field: String },
 }
 
 /// Context for expression transformation
@@ -1819,10 +1816,8 @@ impl Translator {
                     }
                 }
                 // Normal case: translate each part and join
-                let translated: Vec<String> = parts
-                    .iter()
-                    .map(|s| self.translate_name(s))
-                    .collect();
+                let translated: Vec<String> =
+                    parts.iter().map(|s| self.translate_name(s)).collect();
                 translated.join("::")
             } else {
                 // Simple name, just translate it
@@ -2030,8 +2025,10 @@ impl Translator {
                 if let Some(name) = path.last() {
                     // Common collection types that don't have valid()
                     let name_str: &str = name;
-                    matches!(name_str, "Vec" | "Seq" | "Set" | "HashSet" | "HashMap" | "Map")
-                        || self.config.is_primitive_type(name)
+                    matches!(
+                        name_str,
+                        "Vec" | "Seq" | "Set" | "HashSet" | "HashMap" | "Map"
+                    ) || self.config.is_primitive_type(name)
                 } else {
                     false
                 }
@@ -2127,7 +2124,7 @@ impl Translator {
             }
             Expr::Arrow(base, field) => {
                 // Arrow access: expr->field is valid Verus syntax for enum variant field access
-                format!("{}->{}",self.expr_to_simple_string(base), field)
+                format!("{}->{}", self.expr_to_simple_string(base), field)
             }
             Expr::MethodCall {
                 receiver,
@@ -2145,7 +2142,8 @@ impl Translator {
                     if let Some(method_config) = self.config.method_calls.get(func_name) {
                         // Transform to method call
                         if method_config.receiver_arg_index < args.len() {
-                            let receiver = self.expr_to_simple_string(&args[method_config.receiver_arg_index]);
+                            let receiver =
+                                self.expr_to_simple_string(&args[method_config.receiver_arg_index]);
                             let other_args: Vec<_> = args
                                 .iter()
                                 .enumerate()
@@ -2155,7 +2153,12 @@ impl Translator {
                             if other_args.is_empty() {
                                 return format!("{}.{}()", receiver, method_config.method_name);
                             } else {
-                                return format!("{}.{}({})", receiver, method_config.method_name, other_args.join(", "));
+                                return format!(
+                                    "{}.{}({})",
+                                    receiver,
+                                    method_config.method_name,
+                                    other_args.join(", ")
+                                );
                             }
                         }
                     }
@@ -2257,7 +2260,11 @@ impl Translator {
                     self.expr_to_simple_string(rhs)
                 )
             }
-            Expr::Forall { vars, triggers: _, body } => {
+            Expr::Forall {
+                vars,
+                triggers: _,
+                body,
+            } => {
                 let vars_str = self.bindings_to_string(vars);
                 format!("forall |{}| {}", vars_str, self.expr_to_simple_string(body))
             }
@@ -2310,9 +2317,16 @@ impl Translator {
             }
             Type::Seq(inner) => format!("Seq<{}>", self.type_to_simple_string(inner)),
             Type::Set(inner) => format!("Set<{}>", self.type_to_simple_string(inner)),
-            Type::Map(k, v) => format!("Map<{}, {}>", self.type_to_simple_string(k), self.type_to_simple_string(v)),
+            Type::Map(k, v) => format!(
+                "Map<{}, {}>",
+                self.type_to_simple_string(k),
+                self.type_to_simple_string(v)
+            ),
             Type::Tuple(types) => {
-                let parts: Vec<_> = types.iter().map(|t| self.type_to_simple_string(t)).collect();
+                let parts: Vec<_> = types
+                    .iter()
+                    .map(|t| self.type_to_simple_string(t))
+                    .collect();
                 format!("({})", parts.join(", "))
             }
             Type::Bool => "bool".to_string(),
@@ -2820,7 +2834,9 @@ impl Translator {
                 // In that case, we should only pass input arguments and the call returns the outputs
                 if let Some(helper_info) = self.detect_helper_call(expr, ctx) {
                     // Check if this should also be transformed to a method call
-                    if let Some(method_config) = self.config.method_calls.get(&helper_info.func_name) {
+                    if let Some(method_config) =
+                        self.config.method_calls.get(&helper_info.func_name)
+                    {
                         // The receiver_arg_index refers to position in original args
                         // We need to figure out which position in input_args this corresponds to
 
@@ -2847,18 +2863,16 @@ impl Translator {
                             // Count input args before the receiver in the original args
                             let inputs_before_receiver = args[..receiver_orig_pos]
                                 .iter()
-                                .filter(|a| {
-                                    match a {
-                                        Expr::Field(base, _) | Expr::Arrow(base, _) => {
-                                            if let Expr::Ident(name) = base.as_ref() {
-                                                !ctx.is_output(name)
-                                            } else {
-                                                true
-                                            }
+                                .filter(|a| match a {
+                                    Expr::Field(base, _) | Expr::Arrow(base, _) => {
+                                        if let Expr::Ident(name) = base.as_ref() {
+                                            !ctx.is_output(name)
+                                        } else {
+                                            true
                                         }
-                                        Expr::Ident(name) => !ctx.is_output(name),
-                                        _ => true,
                                     }
+                                    Expr::Ident(name) => !ctx.is_output(name),
+                                    _ => true,
                                 })
                                 .count();
 
@@ -2871,7 +2885,8 @@ impl Translator {
                                     other => other.clone(),
                                 };
 
-                                let other_args: Vec<_> = helper_info.input_args
+                                let other_args: Vec<_> = helper_info
+                                    .input_args
                                     .iter()
                                     .enumerate()
                                     .filter(|(i, _)| *i != receiver_input_pos)
@@ -2900,7 +2915,8 @@ impl Translator {
                     if let Some(method_config) = self.config.method_calls.get(func_name) {
                         if method_config.receiver_arg_index < args.len() {
                             // Transform the receiver
-                            let receiver = self.transform_expr(&args[method_config.receiver_arg_index], ctx)?;
+                            let receiver =
+                                self.transform_expr(&args[method_config.receiver_arg_index], ctx)?;
 
                             // Transform remaining arguments (excluding the receiver)
                             let other_args: TranspileResult<Vec<_>> = args
@@ -2911,7 +2927,9 @@ impl Translator {
                                     let transformed = self.transform_expr(a, ctx)?;
                                     // Add reference for field accesses, identifiers, etc.
                                     let needs_ref = match a {
-                                        Expr::Field(..) | Expr::MethodCall { .. } | Expr::Arrow(..) => true,
+                                        Expr::Field(..)
+                                        | Expr::MethodCall { .. }
+                                        | Expr::Arrow(..) => true,
                                         Expr::Ident(name) => !ctx.is_output(name),
                                         _ => false,
                                     };
@@ -3612,7 +3630,8 @@ impl Translator {
                     other => other.clone(),
                 };
 
-                let other_args: Vec<_> = info.input_args
+                let other_args: Vec<_> = info
+                    .input_args
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| *i != method_config.receiver_arg_index)
@@ -4128,9 +4147,11 @@ impl Translator {
                     let subst_base = subst_var.trim_end_matches('_');
                     if subst_base == output_base {
                         // Check if this field is already in translated_fields
-                        let already_present = translated_fields.iter().any(|(f, _)| f == field_name);
+                        let already_present =
+                            translated_fields.iter().any(|(f, _)| f == field_name);
                         if !already_present {
-                            translated_fields.push((field_name.clone(), ExecExpr::Var(var_name.clone())));
+                            translated_fields
+                                .push((field_name.clone(), ExecExpr::Var(var_name.clone())));
                         }
                     }
                 }
@@ -6187,11 +6208,17 @@ mod tests {
 
         // Multi-segment (enum variant)
         let path_variant = Path::new(vec!["RslMessage".to_string(), "RslMessage1b".to_string()]);
-        assert_eq!(translator.translate_path(&path_variant), "CMessage::CMessage1b");
+        assert_eq!(
+            translator.translate_path(&path_variant),
+            "CMessage::CMessage1b"
+        );
 
         // Single segment containing :: (parser quirk - stores "Type::Variant" as one string)
         let path_combined = Path::single("RslMessage::RslMessage1b".to_string());
-        assert_eq!(translator.translate_path(&path_combined), "CMessage::CMessage1b");
+        assert_eq!(
+            translator.translate_path(&path_combined),
+            "CMessage::CMessage1b"
+        );
     }
 
     #[test]
