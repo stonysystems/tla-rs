@@ -12,6 +12,53 @@ use crate::protocol::RSL::types::*;
 verus! {
 
 #[derive(Clone)]
+pub struct CClockReading {
+    pub t: i64,
+}
+
+impl CClockReading {
+    pub open spec fn well_formed(&self) -> bool {
+        true
+    }
+}
+
+impl View for CClockReading {
+    type V = ClockReading;
+
+    open spec fn view(&self) -> ClockReading {
+        ClockReading {
+            t: self.t as int,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CReply {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub reply: CAppMessage,
+}
+
+impl CReply {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.client.well_formed()
+        &&& self.reply.well_formed()
+    }
+}
+
+impl View for CReply {
+    type V = Reply;
+
+    open spec fn view(&self) -> Reply {
+        Reply {
+            client: self.client@,
+            seqno: self.seqno as int,
+            reply: self.reply@,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct CRequest {
     pub client: EndPoint,
     pub seqno: i64,
@@ -33,6 +80,29 @@ impl View for CRequest {
             client: self.client@,
             seqno: self.seqno as int,
             request: self.request@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CBallot {
+    pub seqno: i64,
+    pub proposer_id: i64,
+}
+
+impl CBallot {
+    pub open spec fn well_formed(&self) -> bool {
+        true
+    }
+}
+
+impl View for CBallot {
+    type V = Ballot;
+
+    open spec fn view(&self) -> Ballot {
+        Ballot {
+            seqno: self.seqno as int,
+            proposer_id: self.proposer_id as int,
         }
     }
 }
@@ -81,76 +151,6 @@ impl View for CLearnerTuple {
         LearnerTuple {
             received_2b_message_senders: self.received_2b_message_senders@,
             candidate_learned_value: self.candidate_learned_value@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CClockReading {
-    pub t: i64,
-}
-
-impl CClockReading {
-    pub open spec fn well_formed(&self) -> bool {
-        true
-    }
-}
-
-impl View for CClockReading {
-    type V = ClockReading;
-
-    open spec fn view(&self) -> ClockReading {
-        ClockReading {
-            t: self.t as int,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CReply {
-    pub client: EndPoint,
-    pub seqno: i64,
-    pub reply: CAppMessage,
-}
-
-impl CReply {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.client.well_formed()
-        &&& self.reply.well_formed()
-    }
-}
-
-impl View for CReply {
-    type V = Reply;
-
-    open spec fn view(&self) -> Reply {
-        Reply {
-            client: self.client@,
-            seqno: self.seqno as int,
-            reply: self.reply@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CBallot {
-    pub seqno: i64,
-    pub proposer_id: i64,
-}
-
-impl CBallot {
-    pub open spec fn well_formed(&self) -> bool {
-        true
-    }
-}
-
-impl View for CBallot {
-    type V = Ballot;
-
-    open spec fn view(&self) -> Ballot {
-        Ballot {
-            seqno: self.seqno as int,
-            proposer_id: self.proposer_id as int,
         }
     }
 }

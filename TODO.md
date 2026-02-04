@@ -1312,6 +1312,7 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
     3. ~~**Type remapping not propagated to TranslatorConfig**~~: Fixed in `main.rs` - added `type_remapping: file_config.remapping.clone()` to TranslatorConfig initialization
     4. ~~**Enum variant mapping in struct construction**~~: Fixed in `translator/mod.rs` - added `translate_path()` function to handle multi-segment paths and paths with `::` in single segments; also fixed `Expr::Is` handling in both `expr_to_requires_string()` and `expr_to_simple_string()` to translate variant names
     5. ~~**Index expression AST debug output**~~: Fixed in `translator/mod.rs` - added `Expr::Index` handling in `expr_to_simple_string()`
+    6. ~~**Match pattern missing enum type prefix**~~: Fixed in `translator/mod.rs` - changed `format_pattern()` to use `translate_path(name)` instead of `translate_name(name.last())` for `Pattern::Struct` and `Pattern::Variant` so match patterns like `CMessage1a { ... }` correctly become `CMessage::CMessage1a { ... }`
   - **Remaining transpiler bugs (require transpiler code changes):**
     1. **Missing type imports**: Generated code references C* functions not imported (e.g., `CConfiguration`, `CUpperBound`, `CGetReplicaIndex`, `CBroadcastToEveryone`, etc.)
     2. **Missing inline type generation**: `generate_inline_types = true` doesn't generate struct types like `CAcceptor`

@@ -3844,20 +3844,24 @@ impl Translator {
                     .iter()
                     .map(|(fname, fpat)| format!("{}: {}", fname, self.format_pattern(fpat)))
                     .collect();
+                // Use translate_path to handle both struct names and enum variant paths
+                // e.g., RslMessage::RslMessage1a -> CMessage::CMessage1a
                 format!(
                     "{} {{ {} }}",
-                    self.translate_name(name.last().unwrap_or("Unknown")),
+                    self.translate_path(name),
                     field_strs.join(", ")
                 )
             }
             crate::ast::Pattern::Variant { name, fields } => {
-                let variant_name = self.translate_name(name.last().unwrap_or("Unknown"));
+                // Use translate_path to handle full enum variant paths
+                // e.g., RslMessage::RslMessageInvalid -> CMessage::CMessageInvalid
+                let variant_path = self.translate_path(name);
                 if fields.is_empty() {
-                    variant_name
+                    variant_path
                 } else {
                     let field_strs: Vec<_> =
                         fields.iter().map(|p| self.format_pattern(p)).collect();
-                    format!("{}({})", variant_name, field_strs.join(", "))
+                    format!("{}({})", variant_path, field_strs.join(", "))
                 }
             }
             crate::ast::Pattern::Literal(lit) => self.format_literal(lit),

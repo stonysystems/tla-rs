@@ -537,17 +537,17 @@ ensures
     let sent_packets = CExtractSentPacketsFromIos(&ios);
         ios.drop_first().iter().all(|io| (io is CSend));
     match ios.index(0).get_r().msg {
-        CMessageInvalid {  } => CReplicaNextProcessInvalid(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessageRequest { seqno_req: seqno_req, val: val } => CReplicaNextProcessRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessage1a { bal_1a: bal_1a } => CReplicaNextProcess1a(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessage1b { bal_1b: bal_1b, log_truncation_point: log_truncation_point, votes: votes } => CReplicaNextProcess1b(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessageStartingPhase2 { bal_2: bal_2, logTruncationPoint_2: logTruncationPoint_2 } => CReplicaNextProcessStartingPhase2(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessage2a { bal_2a: bal_2a, opn_2a: opn_2a, val_2a: val_2a } => CReplicaNextProcess2a(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessage2b { bal_2b: bal_2b, opn_2b: opn_2b, val_2b: val_2b } => CReplicaNextProcess2b(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessageReply { seqno_reply: seqno_reply, reply: reply } => CReplicaNextProcessReply(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessageAppStateRequest { bal_state_req: bal_state_req, opn_state_req: opn_state_req } => CReplicaNextProcessAppStateRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessageAppStateSupply { bal_state_supply: bal_state_supply, opn_state_supply: opn_state_supply, app_state: app_state, reply_cache: reply_cache } => CReplicaNextProcessAppStateSupply(&s, s_, &ios.index(0).get_r(), &sent_packets),
-        CMessageHeartbeat { bal_heartbeat: bal_heartbeat, suspicious: suspicious, opn_ckpt: opn_ckpt } => false,
+        CMessage::CMessageInvalid {  } => CReplicaNextProcessInvalid(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessageRequest { seqno_req: seqno_req, val: val } => CReplicaNextProcessRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessage1a { bal_1a: bal_1a } => CReplicaNextProcess1a(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessage1b { bal_1b: bal_1b, log_truncation_point: log_truncation_point, votes: votes } => CReplicaNextProcess1b(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessageStartingPhase2 { bal_2: bal_2, logTruncationPoint_2: logTruncationPoint_2 } => CReplicaNextProcessStartingPhase2(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessage2a { bal_2a: bal_2a, opn_2a: opn_2a, val_2a: val_2a } => CReplicaNextProcess2a(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessage2b { bal_2b: bal_2b, opn_2b: opn_2b, val_2b: val_2b } => CReplicaNextProcess2b(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessageReply { seqno_reply: seqno_reply, reply: reply } => CReplicaNextProcessReply(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessageAppStateRequest { bal_state_req: bal_state_req, opn_state_req: opn_state_req } => CReplicaNextProcessAppStateRequest(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessageAppStateSupply { bal_state_supply: bal_state_supply, opn_state_supply: opn_state_supply, app_state: app_state, reply_cache: reply_cache } => CReplicaNextProcessAppStateSupply(&s, s_, &ios.index(0).get_r(), &sent_packets),
+        CMessage::CMessageHeartbeat { bal_heartbeat: bal_heartbeat, suspicious: suspicious, opn_ckpt: opn_ckpt } => false,
     }
 
 
