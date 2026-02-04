@@ -1281,8 +1281,14 @@ The generated code is structurally correct and matches the expected Verus exec f
 The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) specs to verified implementation:
 
 #### 1. CI and Build Issues
-- [x] **Fix CI test failures** - Tests failing on GitHub CI (fixed: updated Verus version)
+- [x] **Fix CI test failures** - Tests failing on GitHub CI (fixed: updated Verus version to 0.2026.02.03.6d23bed)
 - [ ] **Verify generated code with Verus** - Generated modules guarded by `#[cfg(test)]`, need verification
+  - Blockers identified [2026-02-04]:
+    1. EndPoint import fails - defined via macro inside `verus!` block, macro expansion fails on non-test builds
+    2. CAppMessage wrong import - transpiler generates `CAppMessage` but actual type is `AppMessage`
+    3. types_gen.rs syntax - `well_formed()` uses `&&&` syntax outside `verus!` block
+  - Fixed: Removed non-existent `hashmaps` import from transpiler configs
+  - Fixed: Updated regenerate_rsl.sh to include acceptor and election modules
 
 #### 2. Recursive Helper Functions (H4 - Deferred)
 - [ ] **Generate loop-based implementations for recursive functions**
@@ -1316,6 +1322,71 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
   - Blocked: requires Verus verification environment
 - [ ] Generated code is functionally equivalent to manual implementation
   - Requires Verus verification to confirm
+
+---
+
+### Future: Add More Protocol Examples
+
+Extend the project with additional distributed systems protocols, from simple to complex. These protocols should have existing TLA+ specifications that can be translated to Verus specs.
+
+#### Simple Protocols (Good Starting Points)
+- [ ] **Two-Phase Commit (2PC)**
+  - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/transaction_commit
+  - Components: Coordinator, Participants
+  - Patterns: Simple state machine, broadcast, voting
+
+- [ ] **Single-Decree Paxos**
+  - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/Paxos
+  - Simpler than Multi-Paxos (RSL), good for validation
+  - Components: Proposer, Acceptor, Learner (single value)
+
+- [ ] **Leader Election (Bully Algorithm)**
+  - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/bully_election
+  - Components: Nodes with IDs, election messages
+  - Patterns: Timeouts, message passing
+
+#### Medium Complexity Protocols
+- [ ] **Raft Consensus**
+  - TLA+ spec: https://github.com/ongardie/raft.tla
+  - Components: Leader, Follower, Candidate
+  - Patterns: Log replication, leader election, term management
+  - Well-documented, widely understood
+
+- [ ] **Chain Replication**
+  - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/ChainReplication
+  - Components: Head, Tail, Intermediate nodes
+  - Patterns: Sequential updates, failure handling
+
+- [ ] **Primary-Backup Replication**
+  - TLA+ spec: Various implementations available
+  - Simpler than Paxos, good for understanding replication
+
+#### Complex Protocols (Advanced)
+- [ ] **PBFT (Practical Byzantine Fault Tolerance)**
+  - TLA+ spec: https://github.com/tlaplus/Examples (community specs)
+  - Components: Primary, Replicas, Clients
+  - Patterns: View changes, Byzantine quorums, 3-phase protocol
+
+- [ ] **Vertical Paxos**
+  - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/VerticalPaxos
+  - Reconfigurable consensus
+  - More complex than basic Paxos
+
+- [ ] **EPaxos (Egalitarian Paxos)**
+  - TLA+ spec: https://github.com/efficient/epaxos
+  - Leaderless protocol
+  - Complex dependency tracking
+
+#### Implementation Strategy
+1. Start with simple protocols (2PC, Single-Decree Paxos)
+2. Validate transpiler works end-to-end on simpler specs
+3. Identify missing patterns/features
+4. Gradually add more complex protocols
+5. Each protocol should have:
+   - `src/protocol/<name>/` - TLA-style Verus specs
+   - `src/protocol/<name>/*.automan` - Mode annotations
+   - `src/generated/<name>/` - Transpiler output
+   - Documentation comparing with original TLA+ spec
 
 ---
 

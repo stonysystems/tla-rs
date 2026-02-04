@@ -5,7 +5,7 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
-use crate::common::collections::hashmaps::*;
+use crate::common::collections::sets::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
@@ -15,39 +15,6 @@ use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
-
-#[derive(Clone)]
-pub struct CAcceptor {
-    pub constants: CReplicaConstants,
-    pub max_bal: CBallot,
-    pub votes: CVotes,
-    pub last_checkpointed_operation: Vec<u64>,
-    pub log_truncation_point: u64,
-}
-
-impl CAcceptor {
-    pub open spec fn valid(&self) -> bool {
-            self.constants.valid()
-        &&& self.max_bal.valid()
-        &&& self.votes.valid()
-        &&& self.last_checkpointed_operation.valid()
-        &&& self.log_truncation_point.valid()
-    }
-}
-
-impl View for CAcceptor {
-    type V = LAcceptor;
-
-    open spec fn view(&self) -> LAcceptor {
-        LAcceptor {
-            constants: self.constants@,
-            max_bal: self.max_bal@,
-            votes: self.votes@,
-            last_checkpointed_operation: self.last_checkpointed_operation@,
-            log_truncation_point: self.log_truncation_point@,
-        }
-    }
-}
 
 pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &COperationNumber) -> (result: CVotes)
 requires

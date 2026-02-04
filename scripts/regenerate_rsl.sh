@@ -28,7 +28,7 @@ $TRANSPILER generate-types \
     --output "$PROJECT_ROOT/src/generated/RSL/types_gen.rs"
 
 # Regenerate all RSL module functions
-for module in learner executor proposer replica broadcast; do
+for module in acceptor learner executor proposer replica broadcast election; do
     echo ""
     echo "Regenerating $module functions..."
     $TRANSPILER \

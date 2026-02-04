@@ -5,94 +5,16 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use crate::common::collections::sets::*;
-use crate::common::collections::hashsets::*;
-use crate::common::collections::hashmaps::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::ElectionImpl::CElectionState;
-use crate::implementation::common::upper_bound_i::*;
-use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::types::*;
-use crate::protocol::RSL::configuration::*;
 
 verus! {
-
-#[derive(Clone)]
-pub struct CProposer {
-    pub constants: CReplicaConstants,
-    pub current_state: i64,
-    pub request_queue: Vec<CRequest>,
-    pub max_ballot_i_sent_1a: CBallot,
-    pub next_operation_number_to_propose: i64,
-    pub received_1b_packets: HashSet<CRslPacket>,
-    pub highest_seqno_requested_by_client_this_view: HashMap<CAbstractEndPoint, i64>,
-    pub incomplete_batch_timer: CIncompleteBatchTimer,
-    pub election_state: CElectionState,
-}
-
-impl CProposer {
-    pub open spec fn valid(&self) -> bool {
-            self.constants.valid()
-        &&& self.request_queue.valid()
-        &&& self.max_ballot_i_sent_1a.valid()
-        &&& self.received_1b_packets.valid()
-        &&& self.highest_seqno_requested_by_client_this_view.valid()
-        &&& self.incomplete_batch_timer.valid()
-        &&& self.election_state.valid()
-    }
-}
-
-impl View for CProposer {
-    type V = LProposer;
-
-    open spec fn view(&self) -> LProposer {
-        LProposer {
-            constants: self.constants@,
-            current_state: self.current_state as int,
-            request_queue: self.request_queue@,
-            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a@,
-            next_operation_number_to_propose: self.next_operation_number_to_propose as int,
-            received_1b_packets: self.received_1b_packets@,
-            highest_seqno_requested_by_client_this_view: self.highest_seqno_requested_by_client_this_view@,
-            incomplete_batch_timer: self.incomplete_batch_timer@,
-            election_state: self.election_state@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum CIncompleteBatchTimer {
-    IncompleteBatchTimerOn {
-        when: i64,
-    },
-    IncompleteBatchTimerOff {
-    },
-}
-
-impl CIncompleteBatchTimer {
-    pub open spec fn valid(&self) -> bool {
-        match self {
-            CIncompleteBatchTimer::IncompleteBatchTimerOn { when } => true,
-            CIncompleteBatchTimer::IncompleteBatchTimerOff {  } => true,
-        }
-    }
-}
-
-impl View for CIncompleteBatchTimer {
-    type V = IncompleteBatchTimer;
-
-    open spec fn view(&self) -> IncompleteBatchTimer {
-        match self {
-            CIncompleteBatchTimer::IncompleteBatchTimerOn { when } => IncompleteBatchTimer::IncompleteBatchTimerOn { when: *when as int },
-            CIncompleteBatchTimer::IncompleteBatchTimerOff {  } => IncompleteBatchTimer::IncompleteBatchTimerOff {  },
-        }
-    }
-}
 
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
@@ -307,34 +229,21 @@ ensures
     LProposerNominateOldValueAndSend2a(s@, result.0@, log_truncation_point@, result.1@),
 {
     let opn = s.next_operation_number_to_propose;
-        let mut found: bool = false;
-    let p_iter = s.received_1b_packets.iter();
-    for p in iter:p_iter
-    invariant
-        found ==> exists|i: int| 0 <= i < p_iter@.0 && CValIsHighestNumberedProposal(&p_iter@.1[i].msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && CProposer { constants: s.constants, current_state: s.current_state, request_queue: s.request_queue, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose + 1, received_1b_packets: s.received_1b_packets, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, election_state: s.election_state } && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_iter@.1[i].msg.get_votes().index(opn).max_val }, sent_packets),
-    {
-        if (CValIsHighestNumberedProposal(&p.msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && (CProposer {
-            constants: s.constants,
-            current_state: s.current_state,
-            request_queue: s.request_queue,
-            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-            next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
-            received_1b_packets: s.received_1b_packets,
-            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-            incomplete_batch_timer: s.incomplete_batch_timer,
-            election_state: s.election_state,
-        } && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a {
+    s.received_1b_packets.iter().any(|p| (CValIsHighestNumberedProposal(&p.msg.get_votes().index(opn).max_val, &s.received_1b_packets, &opn) && (CProposer {
+    constants: s.constants,
+    current_state: s.current_state,
+    request_queue: s.request_queue,
+    max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+    next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
+    received_1b_packets: s.received_1b_packets,
+    highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
+    incomplete_batch_timer: s.incomplete_batch_timer,
+    election_state: s.election_state,
+} && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CRslMessage::RslMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: p.msg.get_votes().index(opn).max_val,
-}, sent_packets))) {
-                        found = true;
-            break;
-
-        }
-    }
-    found
-
+}, sent_packets))))
 
 }
 

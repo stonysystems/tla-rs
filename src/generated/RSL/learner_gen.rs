@@ -5,46 +5,16 @@ use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use crate::common::collections::sets::*;
-use crate::common::collections::hashsets::*;
-use crate::common::collections::hashmaps::*;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::types::*;
 
 verus! {
-
-#[derive(Clone)]
-pub struct CLearner {
-    pub constants: CReplicaConstants,
-    pub max_ballot_seen: CBallot,
-    pub unexecuted_learner_state: CLearnerState,
-}
-
-impl CLearner {
-    pub open spec fn valid(&self) -> bool {
-            self.constants.valid()
-        &&& self.max_ballot_seen.valid()
-        &&& self.unexecuted_learner_state.valid()
-    }
-}
-
-impl View for CLearner {
-    type V = LLearner;
-
-    open spec fn view(&self) -> LLearner {
-        LLearner {
-            constants: self.constants@,
-            max_ballot_seen: self.max_ballot_seen@,
-            unexecuted_learner_state: self.unexecuted_learner_state@,
-        }
-    }
-}
 
 pub exec fn CLearnerInit(c: &CReplicaConstants) -> (result: CLearner)
 requires
