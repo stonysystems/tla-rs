@@ -531,3 +531,301 @@ fn test_raft_type_inference() {
         "Should infer type for Server"
     );
 }
+
+// =============================================================================
+// Paxos Example Tests (Complex)
+// =============================================================================
+
+#[test]
+fn test_paxos_parsing() {
+    let source = read_example("Paxos");
+    let module = parse_module(&source).expect("Failed to parse Paxos.tla");
+
+    assert_eq!(module.name, "Paxos");
+    assert_eq!(module.variables.len(), 4);
+    assert!(module.variables.contains(&"maxBal".to_string()));
+    assert!(module.variables.contains(&"maxVBal".to_string()));
+    assert!(module.variables.contains(&"maxVal".to_string()));
+    assert!(module.variables.contains(&"msgs".to_string()));
+
+    // Check constants
+    let const_names: Vec<&str> = module.constants.iter().map(|c| c.name.as_str()).collect();
+    assert!(const_names.contains(&"Value"));
+    assert!(const_names.contains(&"Acceptor"));
+    assert!(const_names.contains(&"Quorum"));
+
+    // Check operators
+    let operator_names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(operator_names.contains(&"Phase1a"));
+    assert!(operator_names.contains(&"Phase1b"));
+    assert!(operator_names.contains(&"Phase2a"));
+    assert!(operator_names.contains(&"Phase2b"));
+    assert!(operator_names.contains(&"Init"));
+    assert!(operator_names.contains(&"Send1a"));
+    assert!(operator_names.contains(&"Send1b"));
+    assert!(operator_names.contains(&"Send2a"));
+    assert!(operator_names.contains(&"Send2b"));
+    assert!(operator_names.contains(&"Next"));
+    assert!(operator_names.contains(&"Chosen"));
+    assert!(operator_names.contains(&"TypeOK"));
+}
+
+#[test]
+fn test_paxos_translation() {
+    let source = read_example("Paxos");
+    let (verus_code, mode_annotations) = translate_example(&source);
+
+    // Verify state struct has all variables
+    assert!(
+        verus_code.contains("pub struct LState"),
+        "Should contain state struct"
+    );
+    assert!(
+        verus_code.contains("pub maxBal:"),
+        "Should contain maxBal field"
+    );
+    assert!(
+        verus_code.contains("pub maxVBal:"),
+        "Should contain maxVBal field"
+    );
+    assert!(
+        verus_code.contains("pub maxVal:"),
+        "Should contain maxVal field"
+    );
+    assert!(
+        verus_code.contains("pub msgs:"),
+        "Should contain msgs field"
+    );
+
+    // Verify constants struct
+    assert!(
+        verus_code.contains("LConstants"),
+        "Should contain constants struct"
+    );
+    assert!(
+        verus_code.contains("pub Value:"),
+        "Should contain Value constant"
+    );
+    assert!(
+        verus_code.contains("pub Acceptor:"),
+        "Should contain Acceptor constant"
+    );
+    assert!(
+        verus_code.contains("pub Quorum:"),
+        "Should contain Quorum constant"
+    );
+
+    // Verify key operators are translated
+    assert!(
+        verus_code.contains("pub open spec fn LInit"),
+        "Should contain Init spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LSend1a"),
+        "Should contain Send1a spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LSend2b"),
+        "Should contain Send2b spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LChosen"),
+        "Should contain Chosen spec fn"
+    );
+
+    // Verify mode annotations
+    assert!(
+        mode_annotations.contains("module Paxos"),
+        "Should contain module name"
+    );
+}
+
+#[test]
+fn test_paxos_type_inference() {
+    let source = read_example("Paxos");
+    let module = parse_module(&source).expect("Failed to parse Paxos.tla");
+
+    let mut inference = TypeInference::new();
+    let type_env = inference.infer_types(&module);
+
+    // Variables should be inferred
+    assert!(
+        type_env.variables.contains_key("maxBal"),
+        "Should infer type for maxBal"
+    );
+    assert!(
+        type_env.variables.contains_key("msgs"),
+        "Should infer type for msgs"
+    );
+
+    // Constants should be inferred
+    assert!(
+        type_env.constants.contains_key("Value"),
+        "Should infer type for Value"
+    );
+    assert!(
+        type_env.constants.contains_key("Acceptor"),
+        "Should infer type for Acceptor"
+    );
+}
+
+// =============================================================================
+// PBFT Example Tests (Complex)
+// =============================================================================
+
+#[test]
+fn test_pbft_parsing() {
+    let source = read_example("PBFT");
+    let module = parse_module(&source).expect("Failed to parse PBFT.tla");
+
+    assert_eq!(module.name, "PBFT");
+    assert_eq!(module.variables.len(), 5);
+    assert!(module.variables.contains(&"view".to_string()));
+    assert!(module.variables.contains(&"phase".to_string()));
+    assert!(module.variables.contains(&"prepareCount".to_string()));
+    assert!(module.variables.contains(&"commitCount".to_string()));
+    assert!(module.variables.contains(&"msgs".to_string()));
+
+    // Check constants
+    let const_names: Vec<&str> = module.constants.iter().map(|c| c.name.as_str()).collect();
+    assert!(const_names.contains(&"Replica"));
+    assert!(const_names.contains(&"Primary"));
+    assert!(const_names.contains(&"F"));
+
+    // Check operators
+    let operator_names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(operator_names.contains(&"PrePrepare"));
+    assert!(operator_names.contains(&"Prepare"));
+    assert!(operator_names.contains(&"Commit"));
+    assert!(operator_names.contains(&"Reply"));
+    assert!(operator_names.contains(&"QuorumSize"));
+    assert!(operator_names.contains(&"Init"));
+    assert!(operator_names.contains(&"SendPrePrepare"));
+    assert!(operator_names.contains(&"SendPrepare"));
+    assert!(operator_names.contains(&"SendCommit"));
+    assert!(operator_names.contains(&"Prepared"));
+    assert!(operator_names.contains(&"Committed"));
+    assert!(operator_names.contains(&"EnterCommit"));
+    assert!(operator_names.contains(&"ExecuteAndReply"));
+    assert!(operator_names.contains(&"ViewChange"));
+    assert!(operator_names.contains(&"Next"));
+}
+
+#[test]
+fn test_pbft_translation() {
+    let source = read_example("PBFT");
+    let (verus_code, mode_annotations) = translate_example(&source);
+
+    // Verify state struct has all variables
+    assert!(
+        verus_code.contains("pub struct LState"),
+        "Should contain state struct"
+    );
+    assert!(
+        verus_code.contains("pub view:"),
+        "Should contain view field"
+    );
+    assert!(
+        verus_code.contains("pub phase:"),
+        "Should contain phase field"
+    );
+    assert!(
+        verus_code.contains("pub prepareCount:"),
+        "Should contain prepareCount field"
+    );
+    assert!(
+        verus_code.contains("pub commitCount:"),
+        "Should contain commitCount field"
+    );
+    assert!(
+        verus_code.contains("pub msgs:"),
+        "Should contain msgs field"
+    );
+
+    // Verify constants struct
+    assert!(
+        verus_code.contains("LConstants"),
+        "Should contain constants struct"
+    );
+    assert!(
+        verus_code.contains("pub Replica:"),
+        "Should contain Replica constant"
+    );
+    assert!(
+        verus_code.contains("pub F:"),
+        "Should contain F constant"
+    );
+
+    // Verify key operators are translated
+    assert!(
+        verus_code.contains("pub open spec fn LInit"),
+        "Should contain Init spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LQuorumSize"),
+        "Should contain QuorumSize spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LSendPrepare"),
+        "Should contain SendPrepare spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LPrepared"),
+        "Should contain Prepared spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LCommitted"),
+        "Should contain Committed spec fn"
+    );
+    assert!(
+        verus_code.contains("pub open spec fn LViewChange"),
+        "Should contain ViewChange spec fn"
+    );
+
+    // Verify mode annotations
+    assert!(
+        mode_annotations.contains("module PBFT"),
+        "Should contain module name"
+    );
+}
+
+#[test]
+fn test_pbft_type_inference() {
+    let source = read_example("PBFT");
+    let module = parse_module(&source).expect("Failed to parse PBFT.tla");
+
+    let mut inference = TypeInference::new();
+    let type_env = inference.infer_types(&module);
+
+    // Variables should be inferred
+    assert!(
+        type_env.variables.contains_key("view"),
+        "Should infer type for view"
+    );
+    assert!(
+        type_env.variables.contains_key("phase"),
+        "Should infer type for phase"
+    );
+    assert!(
+        type_env.variables.contains_key("prepareCount"),
+        "Should infer type for prepareCount"
+    );
+    assert!(
+        type_env.variables.contains_key("commitCount"),
+        "Should infer type for commitCount"
+    );
+    assert!(
+        type_env.variables.contains_key("msgs"),
+        "Should infer type for msgs"
+    );
+
+    // Constants should be inferred
+    assert!(
+        type_env.constants.contains_key("F"),
+        "Should infer type for F"
+    );
+    assert!(
+        type_env.constants.contains_key("Replica"),
+        "Should infer type for Replica"
+    );
+}

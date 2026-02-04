@@ -2603,9 +2603,12 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   Implemented in `transpiler/tests/tla_examples/` with 6 additional tests
   (parsing, translation, type inference for each). Total now 14 TLA+ example tests.
 
-- [ ] **T8.3: Complex examples**
-  - `Paxos.tla` (Multi-Paxos)
-  - `PBFT.tla` (Byzantine fault tolerance)
+- [x] **T8.3: Complex examples** ✅
+  - `Paxos.tla` (Single-decree Paxos consensus)
+  - `PBFT.tla` (Practical Byzantine Fault Tolerance)
+
+  Implemented in `transpiler/tests/tla_examples/` with 6 additional tests
+  (parsing, translation, type inference for each). Total now 20 TLA+ example tests.
 
 - [ ] **T8.4: Round-trip testing**
   - TLA+ → Verus spec → compare semantics
