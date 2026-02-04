@@ -1467,10 +1467,15 @@ These are the remaining issues preventing fully automated TLA+ → runnable Rust
   - Extended `is_pure_recursive_call()` to find seq param in any argument position
   - Includes 4 tests: detection, transform, filter distinction, loop generation
 
-- [ ] **R1.4: Implement fold/accumulate pattern recognition**
+- [x] **R1.4: Implement fold/accumulate pattern recognition**
   - Pattern: `if len == 0 { init } else { combine(head, recurse(tail)) }`
   - Target: `let mut acc = init; for item in s { acc = combine(item, acc); }`
   - Add `RecursivePattern::Fold` detection
+  - **Completed**: Added `detect_fold_pattern()` supporting two variants:
+    - Type 1 (accumulator-passing): `recurse(combine(acc, head), tail)` (RemoveExecutedRequestBatch)
+    - Type 2 (build-result): `recurse(tail).method(head)` (LClientsInReplies)
+  - Added `translate_fold_pattern()` and `build_fold_loop_body()` for loop generation
+  - Includes 4 tests: build pattern, accumulator pattern, map distinction, loop generation
 
 - [ ] **R1.5: Generate loop invariants for recursive-to-iterative**
   - Filter invariant: `result@ == s@.take(i).filter(pred)`

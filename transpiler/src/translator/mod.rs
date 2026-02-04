@@ -505,7 +505,10 @@ impl Translator {
             return PatternAnalysis::Recognized(pattern);
         }
 
-        // TODO: Add fold pattern detection (R1.4)
+        // Try to detect fold pattern
+        if let Some(pattern) = Self::detect_fold_pattern(func_name, body, &func.spec_fn.params) {
+            return PatternAnalysis::Recognized(pattern);
+        }
 
         PatternAnalysis::UnrecognizedRecursive(format!(
             "Recursive function '{}' does not match any known pattern (filter, map, fold)",
@@ -647,6 +650,169 @@ impl Translator {
         }
 
         None
+    }
+
+    /// Detect if the function body matches the fold/accumulate pattern.
+    ///
+    /// Fold pattern structures:
+    ///
+    /// Type 1 - Accumulator-passing (RemoveExecutedRequestBatch):
+    /// ```ignore
+    /// if seq.len() == 0 { acc }
+    /// else { recurse(combine(acc, seq[0]), seq.drop_first()) }
+    /// ```
+    ///
+    /// Type 2 - Build-result (LClientsInReplies):
+    /// ```ignore
+    /// if seq.len() == 0 { init }
+    /// else { recurse(seq.drop_first()).method(seq[0]) }
+    /// ```
+    fn detect_fold_pattern(
+        func_name: &str,
+        body: &Expr,
+        params: &[crate::ast::Parameter],
+    ) -> Option<RecursivePattern> {
+        let (base_cond, base_body, recursive_case) = Self::match_if_else(body)?;
+
+        // Base case: check for `seq.len() == 0`
+        let seq_param = Self::match_len_zero_check(base_cond)?;
+
+        // Check for nested if (would be filter pattern)
+        if Self::match_if_else(recursive_case).is_some() {
+            return None;
+        }
+
+        // Try Type 2: recurse(tail).method(head) pattern
+        if let Some((init, combine)) =
+            Self::match_fold_build_pattern(recursive_case, func_name, &seq_param, base_body)
+        {
+            let extra_args = Self::get_extra_args(params, &seq_param);
+            return Some(RecursivePattern::Fold {
+                seq_param: seq_param.clone(),
+                init,
+                combine,
+                extra_args,
+            });
+        }
+
+        // Try Type 1: recurse(combine(acc, head), tail) pattern
+        if let Some((init, combine)) =
+            Self::match_fold_accumulator_pattern(recursive_case, func_name, &seq_param, base_body, params)
+        {
+            let extra_args = Self::get_extra_args(params, &seq_param);
+            return Some(RecursivePattern::Fold {
+                seq_param: seq_param.clone(),
+                init,
+                combine,
+                extra_args,
+            });
+        }
+
+        None
+    }
+
+    /// Match fold pattern Type 2: recurse(tail).method(args...)
+    /// Returns (init_expr, combine_expr) where combine is the method call
+    fn match_fold_build_pattern(
+        expr: &Expr,
+        func_name: &str,
+        seq_param: &str,
+        base_body: &Expr,
+    ) -> Option<(Expr, Expr)> {
+        // Look for pattern: recurse(seq.drop_first()).method(seq[0], ...)
+        match expr {
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                // Check if receiver is the recursive call
+                if let Expr::Call { func, args: call_args } = receiver.as_ref() {
+                    if func.segments.last() == Some(&func_name.to_string()) {
+                        // Verify one of the args is seq.drop_first()
+                        if call_args.iter().any(|a| Self::is_drop_first(a, seq_param)) {
+                            // This is a fold-build pattern
+                            // init is the base case body (e.g., Map::empty())
+                            // combine is the method call (e.g., .insert(key, value))
+                            let combine = Expr::MethodCall {
+                                receiver: Box::new(Expr::Ident("__acc".to_string())),
+                                method: method.clone(),
+                                args: args.clone(),
+                            };
+                            return Some((base_body.clone(), combine));
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Match fold pattern Type 1: recurse(combine(acc, head), tail)
+    /// Returns (init_expr, combine_expr)
+    fn match_fold_accumulator_pattern(
+        expr: &Expr,
+        func_name: &str,
+        seq_param: &str,
+        base_body: &Expr,
+        params: &[crate::ast::Parameter],
+    ) -> Option<(Expr, Expr)> {
+        // Look for pattern: recurse(combine_call, seq.drop_first())
+        match expr {
+            Expr::Call { func, args } => {
+                if func.segments.last() != Some(&func_name.to_string()) {
+                    return None;
+                }
+
+                // Find which arg is the tail (seq.drop_first())
+                let tail_idx = args.iter().position(|a| Self::is_drop_first(a, seq_param))?;
+
+                // The other args contain the combine expression
+                // For RemoveExecutedRequestBatch: recurse(combine(acc, head), tail)
+                // acc is the first param that's not the seq_param
+                let acc_param = params.iter()
+                    .find(|p| p.name != seq_param)?;
+
+                // Get the combine expression (the arg that's not the tail)
+                if args.len() >= 2 && tail_idx < args.len() {
+                    let combine_idx = if tail_idx == 0 { 1 } else { 0 };
+                    if combine_idx < args.len() {
+                        let combine = args[combine_idx].clone();
+                        // init is the accumulator parameter from base case
+                        let init = Expr::Ident(acc_param.name.clone());
+                        // Verify base_body references the accumulator
+                        if Self::expr_contains_ident(base_body, &acc_param.name) {
+                            return Some((init, combine));
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if an expression contains an identifier
+    fn expr_contains_ident(expr: &Expr, name: &str) -> bool {
+        match expr {
+            Expr::Ident(n) => n == name,
+            Expr::Field(base, _) | Expr::Arrow(base, _) => Self::expr_contains_ident(base, name),
+            Expr::MethodCall { receiver, args, .. } => {
+                Self::expr_contains_ident(receiver, name)
+                    || args.iter().any(|a| Self::expr_contains_ident(a, name))
+            }
+            Expr::Call { args, .. } => args.iter().any(|a| Self::expr_contains_ident(a, name)),
+            Expr::Binary(l, _, r) | Expr::Eq(l, r) | Expr::Ne(l, r) => {
+                Self::expr_contains_ident(l, name) || Self::expr_contains_ident(r, name)
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                Self::expr_contains_ident(cond, name)
+                    || Self::expr_contains_ident(then_branch, name)
+                    || else_branch.as_ref().map_or(false, |e| Self::expr_contains_ident(e, name))
+            }
+            _ => false,
+        }
     }
 
     /// Match an if-else expression, returning (condition, then_branch, else_branch)
@@ -1948,13 +2114,12 @@ impl Translator {
                 transform,
                 extra_args,
             } => self.translate_map_pattern(func, &seq_param, &transform, &extra_args),
-            RecursivePattern::Fold { .. } => Err(TranspileError::CodeGen {
-                message: format!(
-                    "Fold pattern translation not yet implemented for '{}'",
-                    func.spec_fn.name
-                ),
-                span: None,
-            }),
+            RecursivePattern::Fold {
+                seq_param,
+                init,
+                combine,
+                extra_args,
+            } => self.translate_fold_pattern(func, &seq_param, &init, &combine, &extra_args),
         }
     }
 
@@ -2143,6 +2308,153 @@ impl Translator {
         ];
 
         Ok(ExecExpr::Block(stmts))
+    }
+
+    /// Translate a fold pattern to loop-based exec code.
+    ///
+    /// Generates:
+    /// ```ignore
+    /// pub fn CFoldFunc(seq: &Vec<T>, extra_args...) -> U
+    ///     requires seq_valid(seq), ...
+    ///     ensures result@ == FoldFunc(seq@, extra_args@...)
+    /// {
+    ///     let mut acc = init;
+    ///     for i in 0..seq.len()
+    ///         invariant
+    ///             acc@ == fold(seq@.take(i as int), init, combine)
+    ///     {
+    ///         acc = combine(acc, &seq[i]);
+    ///     }
+    ///     acc
+    /// }
+    /// ```
+    fn translate_fold_pattern(
+        &self,
+        func: &AnnotatedFunction,
+        seq_param: &str,
+        init: &Expr,
+        combine: &Expr,
+        _extra_args: &[String],
+    ) -> TranspileResult<ExecFunction> {
+        let exec_name = self.translate_definition_name(&func.spec_fn.name);
+
+        // Build parameters
+        let params = self.translate_helper_params(func);
+
+        // Build return type
+        let return_type = self.build_helper_return_type(func)?;
+
+        // Build requires clauses
+        let requires = self.build_helper_requires(func);
+
+        // Build ensures clause
+        let ensures = self.build_helper_ensures(func);
+
+        // Build the loop body
+        let body = self.build_fold_loop_body(seq_param, init, combine, func)?;
+
+        Ok(ExecFunction {
+            name: exec_name,
+            params,
+            return_type,
+            requires,
+            ensures,
+            decreases: Vec::new(),
+            body,
+        })
+    }
+
+    /// Build the loop body for a fold pattern.
+    fn build_fold_loop_body(
+        &self,
+        seq_param: &str,
+        init: &Expr,
+        combine: &Expr,
+        func: &AnnotatedFunction,
+    ) -> TranspileResult<ExecExpr> {
+        let ctx = TransformContext {
+            config: &self.config,
+            output_params: Vec::new(),
+            input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+        };
+
+        // Transform init expression
+        let init_expr = self.transform_expr(init, &ctx)?;
+
+        // Transform combine expression, substituting seq[0] with seq[i]
+        let combine_transformed = self.transform_expr(combine, &ctx)?;
+        let combine_expr = self.substitute_head_with_index(combine_transformed, seq_param);
+
+        // For fold, combine might reference __acc placeholder - substitute it
+        let combine_with_acc = self.substitute_acc_placeholder(combine_expr);
+
+        // Build invariant
+        let invariant = format!(
+            "acc@ == fold({}@.take(i as int), init, combine)",
+            seq_param
+        );
+
+        // Build the loop body: acc = combine(acc, seq[i])
+        let loop_body = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("acc".to_string())),
+            op: "=".to_string(),
+            rhs: Box::new(combine_with_acc),
+        };
+
+        let stmts = vec![
+            // let mut acc = init;
+            ExecExpr::Let {
+                pattern: "mut acc".to_string(),
+                ty: None,
+                value: Box::new(init_expr),
+            },
+            // for i in 0..seq.len() { acc = combine(acc, seq[i]); }
+            ExecExpr::ForInIter {
+                var: "i".to_string(),
+                iter_name: "iter".to_string(),
+                iter_source: Box::new(ExecExpr::Range {
+                    start: Box::new(ExecExpr::Literal("0".to_string())),
+                    end: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var(seq_param.to_string())),
+                        method: "len".to_string(),
+                        args: vec![],
+                    }),
+                }),
+                invariants: vec![invariant],
+                body: Box::new(loop_body),
+            },
+            // acc
+            ExecExpr::Var("acc".to_string()),
+        ];
+
+        Ok(ExecExpr::Block(stmts))
+    }
+
+    /// Substitute __acc placeholder with actual acc variable
+    fn substitute_acc_placeholder(&self, expr: ExecExpr) -> ExecExpr {
+        match expr {
+            ExecExpr::Var(name) if name == "__acc" => ExecExpr::Var("acc".to_string()),
+            ExecExpr::MethodCall { receiver, method, args } => ExecExpr::MethodCall {
+                receiver: Box::new(self.substitute_acc_placeholder(*receiver)),
+                method,
+                args: args.into_iter().map(|a| self.substitute_acc_placeholder(a)).collect(),
+            },
+            ExecExpr::Call { func, args } => ExecExpr::Call {
+                func,
+                args: args.into_iter().map(|a| self.substitute_acc_placeholder(a)).collect(),
+            },
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(self.substitute_acc_placeholder(*lhs)),
+                op,
+                rhs: Box::new(self.substitute_acc_placeholder(*rhs)),
+            },
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts.into_iter().map(|s| self.substitute_acc_placeholder(s)).collect()
+            ),
+            other => other,
+        }
     }
 
     /// Build the loop body for a filter pattern.
@@ -10355,6 +10667,308 @@ mod tests {
         assert!(
             contains_for_loop(&exec_fn.body),
             "Generated map code should contain a for loop"
+        );
+    }
+
+    // ========================================================================
+    // Fold Pattern Recognition Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_fold_build_pattern() {
+        // Pattern: LClientsInReplies
+        // if replies.len() == 0 { Map::empty() }
+        // else { recurse(replies.drop_first()).insert(replies[0].client, replies[0]) }
+
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("replies")),
+            then_branch: Box::new(Expr::MapEmpty),
+            else_branch: Some(Box::new(Expr::MethodCall {
+                receiver: Box::new(func_call(
+                    "LClientsInReplies",
+                    vec![drop_first("replies")],
+                )),
+                method: "insert".to_string(),
+                args: vec![
+                    Expr::Field(Box::new(seq_head("replies")), "client".to_string()),
+                    seq_head("replies"),
+                ],
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "LClientsInReplies".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "replies".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Reply".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Map(
+                Box::new(Type::Named(Path::single("AbstractEndPoint".to_string()))),
+                Box::new(Type::Named(Path::single("Reply".to_string()))),
+            ),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("replies"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("ReplyCache".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Fold {
+                seq_param,
+                extra_args,
+                ..
+            }) => {
+                assert_eq!(seq_param, "replies");
+                assert!(extra_args.is_empty());
+            }
+            PatternAnalysis::Recognized(other) => {
+                panic!("Expected Fold pattern, got {:?}", other);
+            }
+            PatternAnalysis::UnrecognizedRecursive(reason) => {
+                panic!("Pattern not recognized: {}", reason);
+            }
+            PatternAnalysis::NotRecursive => {
+                panic!("Function should be detected as recursive");
+            }
+        }
+    }
+
+    #[test]
+    fn test_detect_fold_accumulator_pattern() {
+        // Pattern: RemoveExecutedRequestBatch
+        // if batch.len() == 0 { reqs }
+        // else { recurse(combine(reqs, batch[0]), batch.drop_first()) }
+
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("batch")),
+            then_branch: Box::new(ident("reqs")),
+            else_branch: Some(Box::new(func_call(
+                "RemoveExecutedRequestBatch",
+                vec![
+                    func_call(
+                        "RemoveAllSatisfiedRequestsInSequence",
+                        vec![ident("reqs"), seq_head("batch")],
+                    ),
+                    drop_first("batch"),
+                ],
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "RemoveExecutedRequestBatch".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "reqs".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "batch".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![method_call(ident("batch"), "len", vec![])],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Seq<Request>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Fold {
+                seq_param,
+                extra_args,
+                ..
+            }) => {
+                assert_eq!(seq_param, "batch");
+                assert_eq!(extra_args, vec!["reqs".to_string()]);
+            }
+            PatternAnalysis::Recognized(other) => {
+                panic!("Expected Fold pattern, got {:?}", other);
+            }
+            PatternAnalysis::UnrecognizedRecursive(reason) => {
+                panic!("Pattern not recognized: {}", reason);
+            }
+            PatternAnalysis::NotRecursive => {
+                panic!("Function should be detected as recursive");
+            }
+        }
+    }
+
+    #[test]
+    fn test_map_not_detected_as_fold() {
+        // Map pattern should NOT be detected as fold
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("items")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(seq_head("items"))),
+                BinOp::Add,
+                Box::new(func_call("IdentityMap", vec![drop_first("items")])),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "IdentityMap".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "items".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let analysis = Translator::detect_recursive_pattern(&annotated);
+
+        // Should be detected as Map, not Fold
+        match analysis {
+            PatternAnalysis::Recognized(RecursivePattern::Map { .. }) => {
+                // Correct
+            }
+            PatternAnalysis::Recognized(RecursivePattern::Fold { .. }) => {
+                panic!("Map pattern should NOT be detected as Fold");
+            }
+            _ => {
+                panic!("Should be recognized as Map pattern");
+            }
+        }
+    }
+
+    #[test]
+    fn test_translate_fold_pattern_generates_loop() {
+        let translator = Translator::default();
+
+        // Create a simple fold function (build pattern)
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("items")),
+            then_branch: Box::new(Expr::MapEmpty),
+            else_branch: Some(Box::new(Expr::MethodCall {
+                receiver: Box::new(func_call("BuildMap", vec![drop_first("items")])),
+                method: "insert".to_string(),
+                args: vec![
+                    Expr::Field(Box::new(seq_head("items")), "key".to_string()),
+                    seq_head("items"),
+                ],
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "BuildMap".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "items".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Entry".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Map(
+                Box::new(Type::Named(Path::single("Key".to_string()))),
+                Box::new(Type::Named(Path::single("Entry".to_string()))),
+            ),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("HashMap<Key, Entry>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "Translation should succeed: {:?}", result);
+
+        let exec_fn = result.unwrap();
+        assert_eq!(exec_fn.name, "CBuildMap");
+
+        // Check that the body contains a ForInIter (loop)
+        fn contains_for_loop(expr: &ExecExpr) -> bool {
+            match expr {
+                ExecExpr::ForInIter { .. } => true,
+                ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
+                ExecExpr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
+                    contains_for_loop(cond)
+                        || contains_for_loop(then_branch)
+                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                }
+                ExecExpr::Let { value, .. } => contains_for_loop(value),
+                _ => false,
+            }
+        }
+
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Generated fold code should contain a for loop"
         );
     }
 }
