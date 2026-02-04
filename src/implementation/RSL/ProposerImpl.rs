@@ -61,8 +61,6 @@ impl CIncompleteBatchTimer{
 
 }
 
-// #[derive(Clone)]
-
 pub struct CProposer {
     pub constants: CReplicaConstants,
     pub current_state: u64,
@@ -77,6 +75,25 @@ pub struct CProposer {
     /* for optimization */
     pub max_opn_with_proposal:COperationNumber,
     pub max_log_truncation_point:COperationNumber,
+}
+
+impl Clone for CProposer {
+    #[verifier(external_body)]
+    fn clone(&self) -> Self {
+        CProposer {
+            constants: self.constants.clone_up_to_view(),
+            current_state: self.current_state,
+            request_queue: self.request_queue.clone(),
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a.clone_up_to_view(),
+            next_operation_number_to_propose: self.next_operation_number_to_propose,
+            received_1b_packets: self.received_1b_packets.clone(),
+            highest_seqno_requested_by_client_this_view: self.highest_seqno_requested_by_client_this_view.clone(),
+            incomplete_batch_timer: self.incomplete_batch_timer.clone(),
+            election_state: self.election_state.clone(),
+            max_opn_with_proposal: self.max_opn_with_proposal,
+            max_log_truncation_point: self.max_log_truncation_point,
+        }
+    }
 }
 
 impl CProposer{

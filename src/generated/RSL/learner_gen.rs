@@ -48,7 +48,7 @@ ensures
 {
     let m = packet.msg;
         let opn = m->opn_2b;
-    if (!s.constants.all.config.replica_ids.contains(packet.src) || CBalLt(&m->bal_2b, &s.max_ballot_seen)) {
+    if (!s.constants.all.config.replica_ids.contains(&packet.src) || CBalLt(&m->bal_2b, &s.max_ballot_seen)) {
         s.clone()
     } else {
         if CBalLt(&s.max_ballot_seen, &m->bal_2b) {
@@ -63,7 +63,7 @@ ensures
             }
 
         } else {
-            if !s.unexecuted_learner_state.contains_key(opn) {
+            if !s.unexecuted_learner_state.contains_key(&opn) {
                                 let tup_ = CLearnerTuple {
                     received_2b_message_senders: HashSet::from(vec![packet.src]),
                     candidate_learned_value: m->val_2b,
@@ -75,10 +75,10 @@ ensures
                 }
 
             } else {
-                if s.unexecuted_learner_state[opn].received_2b_message_senders.contains(packet.src) {
+                if s.unexecuted_learner_state[&opn].received_2b_message_senders.contains(&packet.src) {
                     s.clone()
                 } else {
-                                        let tup = s.unexecuted_learner_state[opn];
+                                        let tup = s.unexecuted_learner_state[&opn];
                                         let tup_ = CLearnerTuple {
                         received_2b_message_senders: (tup.received_2b_message_senders + HashSet::from(vec![packet.src])),
                         candidate_learned_value: tup.candidate_learned_value,

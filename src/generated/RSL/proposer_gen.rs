@@ -80,7 +80,7 @@ ensures
         request: packet.msg->val,
     };
         let s_election_state = crate::generated::RSL::election_gen::CElectionStateReflectReceivedRequest(&s.election_state, &val);
-    if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view[val.client]))) {
+    if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(&val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view[&val.client]))) {
         CProposer {
             constants: s.constants,
             current_state: s.current_state,
@@ -121,7 +121,7 @@ ensures
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
 if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage1a {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage1a {
     bal_1a: s.election_state.current_view,
 });
         (CProposer {
@@ -148,10 +148,10 @@ requires
     s.valid(),
     p.valid(),
     p.msg is CMessage1b,
-    s.constants.all.config.replica_ids.contains(p.src),
+    s.constants.all.config.replica_ids.contains(&p.src),
     (p.msg->bal_1b == s.max_ballot_i_sent_1a),
     (s.current_state == 1),
-    forall |other_packet: CPacket| (s.received_1b_packets.contains(other_packet) ==> (other_packet.src != p.src)),
+    forall |other_packet: CPacket| (s.received_1b_packets.contains(&other_packet) ==> (other_packet.src != p.src)),
 ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
@@ -179,7 +179,7 @@ ensures
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
 {
 if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
 });
@@ -218,7 +218,7 @@ ensures
     };
         let v = s.request_queue.subrange(0, batchSize);
         let opn = s.next_operation_number_to_propose;
-        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: v,
@@ -233,7 +233,7 @@ ensures
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: if (s.request_queue.len() > batchSize) {
         CIncompleteBatchTimer::CIncompleteBatchTimerOn {
-            when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
+            when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
         }
     } else {
         CIncompleteBatchTimer::CIncompleteBatchTimerOff {
@@ -271,7 +271,7 @@ ensures
     election_state: s.election_state,
     max_opn_with_proposal: s.max_opn_with_proposal,
     max_log_truncation_point: s.max_log_truncation_point,
-} && crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
+} && crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: p.msg->votes[opn].max_val,
@@ -292,7 +292,7 @@ if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
         if !LAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
             CProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
-            if (CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (clock >= s.incomplete_batch_timer->when))))) {
+            if (CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (*clock >= s.incomplete_batch_timer->when))))) {
                 CProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
                 if ((s.request_queue.len() > 0) && s.incomplete_batch_timer is CIncompleteBatchTimerOff) {
@@ -305,7 +305,7 @@ if !LProposerCanNominateUsingOperationNumber(&s, &log_truncation_point, &s.next_
     received_1b_packets: s.received_1b_packets,
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOn {
-        when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
+        when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
     },
     election_state: s.election_state,
     max_opn_with_proposal: s.max_opn_with_proposal,
@@ -392,7 +392,8 @@ ensures
     result.valid(),
     LProposerResetViewTimerDueToExecution(s@, result@, val@),
 {
-    let s_election_state = s.election_state.CElectionStateReflectExecutedRequestBatch(&val);
+    let mut s_election_state = s.election_state.clone();
+    s_election_state.CElectionStateReflectExecutedRequestBatch(val);
     CProposer {
         constants: s.constants,
         current_state: s.current_state,

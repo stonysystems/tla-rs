@@ -22,8 +22,8 @@ ensures
     LBroadcastToEveryone(c@, myidx@, m@, result@),
 {
 (0..c.replica_ids.len()).map(|idx| CPacket {
-    dst: c.replica_ids[idx],
-    src: c.replica_ids[myidx],
+    dst: c.replica_ids[idx].clone(),
+    src: c.replica_ids[*myidx as usize].clone(),
     msg: m.clone(),
 }).collect()
 }

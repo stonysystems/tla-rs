@@ -34,7 +34,6 @@ impl PartialEq for CRequestHeader {
     }
 }
 
-// #[derive(Clone)]
 pub struct CElectionState {
     pub constants: CReplicaConstants,
     pub current_view: CBallot,
@@ -49,6 +48,13 @@ pub struct CElectionState {
     // pub prev_req_set : Ghost<Set<CRequestHeader>>,
     pub cur_req_set: HashSet<CRequestHeader>,
     pub prev_req_set: HashSet<CRequestHeader>,
+}
+
+impl Clone for CElectionState {
+    #[verifier(external_body)]
+    fn clone(&self) -> Self {
+        self.clone_up_to_view()
+    }
 }
 
 

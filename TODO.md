@@ -1698,10 +1698,10 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Manual `acceptorimpl.rs` has identical assumes (with comments like "verus can't infer this")
   - `assume(false)` in dispatch function is correct: unreachable branch (precondition excludes it)
 
-- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 278 errors remaining)
+- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 192 errors remaining)
   - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes compilation errors
-  - With guard: 454 verified, 0 errors ✅
-  - Without guard: 278 errors (318→283 after V3.6.1+V3.6.2, 283→278 after V3.6.3)
+  - With guard: 455 verified, 0 errors ✅
+  - Without guard: 192 errors (318→283 after V3.6.1+V3.6.2, 283→278 after V3.6.3, 278→192 after V3.6.4)
   - **Root causes**: Generated function bodies have type/API mismatches with implementation types
   - Broken down into subtasks below (too large for single commit, ~1000+ LOC changes)
 
@@ -1741,11 +1741,11 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 
   **Subtasks** (ordered by dependency/priority):
 
-  - [ ] **V3.6.1: Fix missing imports** (~20 LOC, easy)
+  - [x] **V3.6.1: Fix missing imports** ✅ COMPLETE (~20 LOC)
     - Add `use vstd::std_specs::hash::KeysAdditionalSpecFns;` to acceptor_gen, learner_gen
     - Fixes 18 E0599 errors
 
-  - [ ] **V3.6.2: Fix missing struct fields** (~40 LOC, easy)
+  - [x] **V3.6.2: Fix missing struct fields** ✅ COMPLETE (~40 LOC)
     - Add `max_opn_with_proposal: 0` and `max_log_truncation_point: 0` to CProposer constructors (11 sites)
     - Add `cur_req_set: HashSet::new()` and `prev_req_set: HashSet::new()` to CElectionState constructors (7 sites)
     - Fixes 18 E0063 errors
@@ -1759,12 +1759,14 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - Changed `as i64` → `as u64` in proposer_gen (2 sites)
     - Error count: 283 → 278 (5 errors fixed)
 
-  - [ ] **V3.6.4: Fix ref/owned mismatches** (~100 LOC, medium)
-    - `CReplica` vs `&CReplica`, `CProposer` vs `&CProposer`, etc.
-    - Generated code passes owned values where refs expected (or vice versa)
-    - Add `&` or `clone()` as needed
-    - Fix `&EndPoint` vs `EndPoint` throughout
-    - Fixes ~50 E0308 errors
+  - [x] **V3.6.4: Fix ref/owned mismatches** ✅ COMPLETE (~100 LOC, 85 errors fixed)
+    - Added `&` for contains/contains_key/HashMap indexing args across all gen files
+    - Added `&` before inline struct literals passed to functions expecting refs
+    - Dereferenced `*` for &u64 comparisons (`*opn <= x`, `*clock < y`, `*nextActionIndex == 1`)
+    - Fixed CUpperBoundedAddition calls from &u64 to owned u64
+    - Added Clone impls: `#[derive(Clone)]` on CReplica, manual `#[verifier(external_body)]` Clone on CProposer+CElectionState (Verus doesn't support HashSet::clone)
+    - Fixed CElectionStateReflectExecutedRequestBatch &mut self method call pattern
+    - Error count: 278 → 192 (86 errors fixed)
 
   - [ ] **V3.6.5: Fix collection operation mismatches** (~80 LOC, medium-hard)
     - `Vec + Vec` → `concat_vecs()` or similar
@@ -1829,9 +1831,9 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.3 done (278 errors remain) |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.4 done (192 errors remain) |
 
-**Current State**: With `#[cfg(test)]` guard: **454 verified, 0 errors** ✅ (including hand-written dispatch functions)
+**Current State**: With `#[cfg(test)]` guard: **455 verified, 0 errors** ✅ (including hand-written dispatch functions + Clone impls)
 
 **V3.3 COMPLETE** (updated 2026-02-04): All duplicate type definitions between generated and
 implementation modules have been eliminated. Generated files now import types from implementation.
@@ -1844,7 +1846,7 @@ Key issues: (1) ensures clauses use shallow `@` where deep conversion needed, (2
 fields for optimization fields added to impl types, (3) i64/u64 type mismatches, (4) ref/owned
 mismatches, (5) collection operations that don't exist on std types.
 
-**Next step**: V3.6.4 - Fix ref/owned mismatches (~100 LOC)
+**Next step**: V3.6.5 - Fix collection operation mismatches (~80 LOC)
 
 **Type deduplication COMPLETE**: All generated component files now import types from implementation:
 - `types_gen.rs` re-exports basic types from `types_i.rs`

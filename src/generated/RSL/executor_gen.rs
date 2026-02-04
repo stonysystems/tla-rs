@@ -49,7 +49,7 @@ requires
     s.valid(),
     bal.valid(),
     v.valid(),
-    (opn == s.ops_complete),
+    (*opn == s.ops_complete),
     s.next_op_to_execute is COutstandingOpUnknown,
 ensures
     result.valid(),
@@ -121,7 +121,7 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is CMessageAppStateSupply,
-    s.constants.all.config.replica_ids.contains(inp.src),
+    s.constants.all.config.replica_ids.contains(&inp.src),
     (inp.msg->opn_state_supply > s.ops_complete),
 ensures
     result.valid(),
@@ -150,7 +150,7 @@ ensures
     LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@),
 {
     let m = inp.msg;
-    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLeq(&s.max_bal_reflected, &m->bal_state_req) && ((s.ops_complete >= m->opn_state_req) && s.constants.CReplicaConstantsValid()))) {
+    if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLeq(&s.max_bal_reflected, &m->bal_state_req) && ((s.ops_complete >= m->opn_state_req) && s.constants.CReplicaConstantsValid()))) {
         (s.clone(), vec![CPacket {
     dst: inp.src,
     src: s.constants.all.config.replica_ids[s.constants.my_index],
@@ -176,8 +176,8 @@ ensures
     result.0.valid(),
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@),
 {
-if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg->logTruncationPoint_2 > s.ops_complete)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
+if (s.constants.all.config.replica_ids.contains(&inp.src) && (inp.msg->logTruncationPoint_2 > s.ops_complete)) {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageAppStateRequest {
     bal_state_req: inp.msg->bal_2,
     opn_state_req: inp.msg->logTruncationPoint_2,
 });
@@ -193,14 +193,14 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is CMessageRequest,
-    s.reply_cache.contains_key(inp.src),
-    s.reply_cache.index(inp.src) is CReply,
-    (inp.msg->seqno_req <= s.reply_cache.index(inp.src).seqno),
+    s.reply_cache.contains_key(&inp.src),
+    s.reply_cache.index(&inp.src) is CReply,
+    (inp.msg->seqno_req <= s.reply_cache.index(&inp.src).seqno),
 ensures
     LExecutorProcessRequest(s@, inp@, result@),
 {
-if ((inp.msg->seqno_req == s.reply_cache[inp.src].seqno) && s.constants.CReplicaConstantsValid()) {
-                let r = s.reply_cache[inp.src];
+if ((inp.msg->seqno_req == s.reply_cache[&inp.src].seqno) && s.constants.CReplicaConstantsValid()) {
+                let r = s.reply_cache[&inp.src];
         vec![CPacket {
     dst: r.client,
     src: s.constants.all.config.replica_ids[s.constants.my_index],

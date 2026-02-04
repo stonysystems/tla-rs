@@ -142,7 +142,7 @@ ensures
 {
     let m = inp.msg;
         let bal = inp.msg->bal_1a;
-    if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
+    if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
         (CAcceptor {
     constants: s.constants,
     max_bal: bal,
@@ -184,13 +184,13 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2b {
     bal_2b: m->bal_2a,
     opn_2b: m->opn_2a,
     val_2b: m->val_2a,
 });
     (CAcceptor { max_bal: m->bal_2a, log_truncation_point: newLogTruncationPoint, constants: s.constants, last_checkpointed_operation: s.last_checkpointed_operation, votes: if (s.log_truncation_point <= m->opn_2a) {
-    CAddVoteAndRemoveOldOnes(&s.votes, &m->opn_2a, CVote {
+    CAddVoteAndRemoveOldOnes(&s.votes, &m->opn_2a, &CVote {
     max_value_bal: m->bal_2a,
     max_val: m->val_2a,
 }, &newLogTruncationPoint)
@@ -211,7 +211,7 @@ ensures
     result.valid(),
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
-if s.constants.all.config.replica_ids.contains(inp.src) {
+if s.constants.all.config.replica_ids.contains(&inp.src) {
                 let sender_index = s.constants.all.config.CGetReplicaIndex(&inp.src);
         if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg->opn_ckpt > s.last_checkpointed_operation[sender_index])) {
             CAcceptor { last_checkpointed_operation: s.last_checkpointed_operation.update(sender_index, inp.msg->opn_ckpt), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
@@ -231,7 +231,7 @@ ensures
     result.valid(),
     LAcceptorTruncateLog(s@, result@, opn@),
 {
-if (opn <= s.log_truncation_point) {
+if (*opn <= s.log_truncation_point) {
         s.clone()
     } else {
                 let s_votes = CRemoveVotesBeforeLogTruncationPoint(&s.votes, &opn);

@@ -67,7 +67,7 @@ ensures
 if (lengthBound is CUpperBoundFinite && ((0 <= lengthBound->n) && (lengthBound->n < s.len()))) {
         s.subrange(0, lengthBound->n)
     } else {
-        s
+        s.clone()
     }
 }
 
@@ -105,7 +105,7 @@ ensures
         result.len() <= i,
         result@ == s@.take(i as int).filter(|x: Request| !RequestSatisfiedBy(s[0], r)),
     {
-        if !CRequestSatisfiedBy(s[i], &r) {
+        if !CRequestSatisfiedBy(&s[i], r) {
                         result.push(s[i].clone())
 
         }
@@ -147,7 +147,7 @@ ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, clock@),
 {
-if !es.constants.all.config.replica_ids.contains(p.src) {
+if !es.constants.all.config.replica_ids.contains(&p.src) {
         es.clone()
     } else {
                 let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
@@ -165,7 +165,7 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
             }
         } else {
             if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
-                                let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
+                                let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
                 CElectionState {
                     constants: es.constants,
                     current_view: p.msg->bal_heartbeat,
@@ -174,7 +174,7 @@ if !es.constants.all.config.replica_ids.contains(p.src) {
                     } else {
                         HashSet::new()
                     },
-                    epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+                    epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
                     epoch_length: new_epoch_length,
                     requests_received_this_epoch: vec![],
                     requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
@@ -197,7 +197,7 @@ ensures
     result.valid(),
     ElectionStateCheckForViewTimeout(es@, result@, clock@),
 {
-if (clock < es.epoch_end_time) {
+if (*clock < es.epoch_end_time) {
         es.clone()
     } else {
         if (es.requests_received_prev_epochs.len() == 0) {
@@ -206,7 +206,7 @@ if (clock < es.epoch_end_time) {
                 constants: es.constants,
                 current_view: es.current_view,
                 current_view_suspectors: es.current_view_suspectors,
-                epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+                epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
                 epoch_length: new_epoch_length,
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: es.requests_received_this_epoch,
@@ -219,7 +219,7 @@ if (clock < es.epoch_end_time) {
                 constants: es.constants,
                 current_view: es.current_view,
                 current_view_suspectors: (es.current_view_suspectors + HashSet::from(vec![es.constants.my_index])),
-                epoch_end_time: CUpperBoundedAddition(&clock, &es.epoch_length, &es.constants.all.params.max_integer_val),
+                epoch_end_time: CUpperBoundedAddition(*clock, es.epoch_length, es.constants.all.params.max_integer_val),
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
@@ -240,12 +240,12 @@ ensures
 if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
-                let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
+                let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
         CElectionState {
             constants: es.constants,
             current_view: CComputeSuccessorView(&es.current_view, &es.constants.all),
             current_view_suspectors: HashSet::new(),
-            epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+            epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
             epoch_length: new_epoch_length,
             requests_received_this_epoch: vec![],
             requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),

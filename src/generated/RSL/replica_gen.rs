@@ -82,7 +82,7 @@ ensures
     result.0.valid(),
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@),
 {
-if (s.executor.reply_cache.contains_key(received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[received_packet.src].seqno)) {
+if (s.executor.reply_cache.contains_key(&received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[&received_packet.src].seqno)) {
                 let sent_packets = crate::generated::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
         (s.clone(), sent_packets)
 
@@ -130,7 +130,7 @@ ensures
     result.0.valid(),
     LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@),
 {
-if (s.proposer.constants.all.config.replica_ids.contains(received_packet.src) && ((received_packet.msg->bal_1b == s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && s.proposer.received_1b_packets.iter().all(|other_packet| (other_packet.src != received_packet.src))))) {
+if (s.proposer.constants.all.config.replica_ids.contains(&received_packet.src) && ((received_packet.msg->bal_1b == s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && s.proposer.received_1b_packets.iter().all(|other_packet| (other_packet.src != received_packet.src))))) {
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcess1b(&s.proposer, &received_packet);
         let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &received_packet.msg->log_truncation_point);
         (CReplica {
@@ -178,7 +178,7 @@ ensures
     LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@),
 {
     let m = received_packet.msg;
-    if (s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m->bal_2a) && LeqUpperBound(&m->opn_2a, &s.acceptor.constants.all.params.max_integer_val))) {
+    if (s.acceptor.constants.all.config.replica_ids.contains(&received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m->bal_2a) && LeqUpperBound(&m->opn_2a, &s.acceptor.constants.all.params.max_integer_val))) {
                 let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
         (CReplica {
     constants: s.constants,
@@ -245,7 +245,7 @@ ensures
     result.0.valid(),
     LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@),
 {
-if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg->opn_state_supply > s.executor.ops_complete)) {
+if (s.executor.constants.all.config.replica_ids.contains(&received_packet.src) && (received_packet.msg->opn_state_supply > s.executor.ops_complete)) {
                 let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetOperationsBefore(&s.learner, &received_packet.msg->opn_state_supply);
         let s_executor = crate::generated::RSL::executor_gen::CExecutorProcessAppStateSupply(&s.executor, &received_packet);
         (CReplica {
@@ -369,7 +369,7 @@ ensures
     result.0.valid(),
     LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@),
 {
-s.acceptor.last_checkpointed_operation.iter().any(|opn| (CIsLogTruncationPointValid(&opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if (opn > s.acceptor.log_truncation_point) {
+s.acceptor.last_checkpointed_operation.iter().any(|opn| (CIsLogTruncationPointValid(opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if (*opn > s.acceptor.log_truncation_point) {
         let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &opn);
     (CReplica {
     constants: s.constants,
@@ -393,8 +393,8 @@ ensures
     LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@),
 {
     let opn = s.executor.ops_complete;
-    if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
-                let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[opn].candidate_learned_value);
+    if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state[&opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
+                let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[&opn].candidate_learned_value);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -447,12 +447,12 @@ ensures
 if (clock.t < s.nextHeartbeatTime) {
         (s.clone(), vec![])
     } else {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageHeartbeat {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageHeartbeat {
     bal_heartbeat: s.proposer.election_state.current_view,
-    suspicious: s.proposer.election_state.current_view_suspectors.contains(s.constants.my_index),
+    suspicious: s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,
 });
-        (CReplica { constants: s.constants, nextHeartbeatTime: CUpperBoundedAddition(&clock.t, &s.constants.all.params.heartbeat_period, &s.constants.all.params.max_integer_val), proposer: s.proposer, acceptor: s.acceptor, learner: s.learner, executor: s.executor, ..s.clone() }, sent_packets)
+        (CReplica { constants: s.constants, nextHeartbeatTime: CUpperBoundedAddition(clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val), proposer: s.proposer, acceptor: s.acceptor, learner: s.learner, executor: s.executor, ..s.clone() }, sent_packets)
 
     }
 }
@@ -529,42 +529,42 @@ ensures
     LReplicaNoReceiveNext(s@, nextActionIndex@, result@, ios@),
 {
     let sent_packets = ExtractSentPacketsFromIos(&ios);
-    if (nextActionIndex == 1) {
+    if (*nextActionIndex == 1) {
                 let s_ = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s, &sent_packets);
         s_
 
     } else {
-        if (nextActionIndex == 2) {
+        if (*nextActionIndex == 2) {
                         let s_ = CReplicaNextSpontaneousMaybeEnterPhase2(&s, &sent_packets);
             s_
 
         } else {
-            if (nextActionIndex == 3) {
+            if (*nextActionIndex == 3) {
                                 let s_ = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, SpontaneousClock(&ios), &sent_packets);
                 s_
 
             } else {
-                if (nextActionIndex == 4) {
+                if (*nextActionIndex == 4) {
                                         let s_ = CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&s, &sent_packets);
                     s_
 
                 } else {
-                    if (nextActionIndex == 5) {
+                    if (*nextActionIndex == 5) {
                                                 let s_ = CReplicaNextSpontaneousMaybeMakeDecision(&s, &sent_packets);
                         s_
 
                     } else {
-                        if (nextActionIndex == 6) {
+                        if (*nextActionIndex == 6) {
                                                         let s_ = CReplicaNextSpontaneousMaybeExecute(&s, &sent_packets);
                             s_
 
                         } else {
-                            if (nextActionIndex == 7) {
+                            if (*nextActionIndex == 7) {
                                                                 let s_ = CReplicaNextReadClockCheckForViewTimeout(&s, SpontaneousClock(&ios), &sent_packets);
                                 s_
 
                             } else {
-                                if (nextActionIndex == 8) {
+                                if (*nextActionIndex == 8) {
                                                                         let s_ = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, SpontaneousClock(&ios), &sent_packets);
                                     s_
 

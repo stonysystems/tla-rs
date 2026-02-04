@@ -25,7 +25,7 @@ use vstd::{map::*, map_lib::*, prelude::*, seq::*};
 
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-// #[derive(Clone)]
+#[derive(Clone)]
 pub struct CReplica {
     pub constants: CReplicaConstants,
     pub nextHeartbeatTime: u64,
