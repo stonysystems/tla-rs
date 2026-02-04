@@ -2554,16 +2554,33 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
   - `--spec-prefix`: Configure spec prefix (default: "L")
   - `--state-name`: Configure state struct name (default: "State")
 
-- [ ] **T7.2: Chain TLA+ → Verus spec → Verus exec**
+- [x] **T7.2: Chain TLA+ → Verus spec → Verus exec**
   ```bash
   # Full pipeline: TLA+ → spec → exec
-  cargo run -- --tla-input spec.tla --exec-output impl.rs
+  cargo run -- pipeline --tla-input spec.tla --exec-output impl.rs
   ```
+  Implemented with the `pipeline` subcommand that chains:
+  1. TLA+ parsing and type inference
+  2. TLA+ → Verus spec translation
+  3. Mode annotation generation
+  4. Verus spec → exec transpilation
 
-- [ ] **T7.3: Add type annotation input**
+  Options:
+  - `--tla-input`: Input TLA+ file (.tla)
+  - `--exec-output`: Output Verus exec file (.rs)
+  - `--types`: Optional type annotations file (.tla-types)
+  - `--keep-intermediate`: Keep intermediate spec.rs and .automan files
+  - `--spec-output`: Custom path for intermediate spec file
+  - `--spec-prefix` / `--exec-prefix`: Configure naming prefixes
+  - `--state-name`: Configure state struct name
+  - `--config`: TOML configuration file for transpiler settings
+
+- [x] **T7.3: Add type annotation input**
   ```bash
-  cargo run -- --input spec.tla --types spec.tla-types --output spec.rs
+  cargo run -- translate-tla --input spec.tla --types spec.tla-types --output spec.rs
   ```
+  Already implemented in T7.1 with the `--types` flag for the `translate-tla` subcommand,
+  and also available in T7.2's `pipeline` subcommand.
 
 ### 11.5 Testing Plan
 
