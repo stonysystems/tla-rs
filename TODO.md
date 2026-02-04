@@ -1633,10 +1633,11 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - `src/generated/mod.rs` had no guard (was already unconditional)
   - Note: Verus verification requires `scons --verus-path=/path/to/verus`
 
-- [ ] **V3.7: Add CI verification job**
-  - Update `.github/workflows/ci.yml`
-  - Add job that runs Verus on full codebase including generated
-  - Fail CI if verification errors
+- [x] **V3.7: Add CI verification job** [completed 2026-02-04]
+  - CI job `verify` already exists in `.github/workflows/ci.yml` (lines 86-125)
+  - Downloads Verus ${VERUS_VERSION} and runs `scons --verus-path` on full codebase
+  - Generated modules included via `mod generated;` in `src/lib.rs` (unconditional since V3.6)
+  - CI fails automatically if Verus verification returns errors
 
 **Estimated Effort**: 1-2 days (mostly debugging, minimal code changes)
 
