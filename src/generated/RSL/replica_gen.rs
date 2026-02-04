@@ -32,6 +32,8 @@ use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::common::upper_bound::*;
 use crate::generated::RSL::types_gen::CClockReading;
+use crate::generated::RSL::types_gen::CRslIo;
+use crate::generated::RSL::types_gen::CScheduler;
 
 verus! {
 

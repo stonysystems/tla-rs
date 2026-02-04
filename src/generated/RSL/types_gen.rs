@@ -4,9 +4,14 @@
 use vstd::prelude::*;
 use std::collections::HashSet;
 use crate::common::collections::hashsets::HashSetWellFormed;
+use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::implementation::RSL::appinterface::CAppMessage;
+use crate::implementation::RSL::cmessage::CPacket;
 use crate::implementation::RSL::types_i::CRequestBatch;
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::protocol::RSL::environment::RslIo;
+use crate::protocol::RSL::replica::LScheduler;
 use crate::protocol::RSL::types::*;
 
 verus! {
@@ -151,6 +156,105 @@ impl View for CClockReading {
     open spec fn view(&self) -> ClockReading {
         ClockReading {
             t: self.t as int,
+        }
+    }
+}
+
+/// Concrete IO operation type for RSL protocol
+/// Maps to spec type: RslIo = LIoOp<AbstractEndPoint, RslMessage>
+#[derive(Clone)]
+pub enum CRslIo {
+    CSend { s: CPacket },
+    CReceive { r: CPacket },
+    CTimeoutReceive,
+    CReadClock { t: i64 },
+}
+
+impl CRslIo {
+    pub open spec fn well_formed(&self) -> bool {
+        match self {
+            CRslIo::CSend { s } => s.valid(),
+            CRslIo::CReceive { r } => r.valid(),
+            CRslIo::CTimeoutReceive => true,
+            CRslIo::CReadClock { t } => true,
+        }
+    }
+
+    pub open spec fn valid(&self) -> bool {
+        self.well_formed()
+    }
+
+    /// Get the received packet (for CReceive variant)
+    pub fn get_r(&self) -> (result: &CPacket)
+        requires self is CReceive
+        ensures result.valid()
+    {
+        match self {
+            CRslIo::CReceive { r } => r,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Get the send packet (for CSend variant)
+    pub fn get_s(&self) -> (result: &CPacket)
+        requires self is CSend
+        ensures result.valid()
+    {
+        match self {
+            CRslIo::CSend { s } => s,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Get the clock time (for CReadClock variant)
+    pub fn get_t(&self) -> (result: i64)
+        requires self is CReadClock
+    {
+        match self {
+            CRslIo::CReadClock { t } => *t,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl View for CRslIo {
+    type V = RslIo;
+
+    open spec fn view(&self) -> RslIo {
+        match self {
+            CRslIo::CSend { s } => LIoOp::Send { s: s@ },
+            CRslIo::CReceive { r } => LIoOp::Receive { r: r@ },
+            CRslIo::CTimeoutReceive => LIoOp::TimeoutReceive,
+            CRslIo::CReadClock { t } => LIoOp::ReadClock { t: *t as int },
+        }
+    }
+}
+
+/// Concrete scheduler type for RSL protocol
+/// Maps to spec type: LScheduler
+#[derive(Clone)]
+pub struct CScheduler {
+    pub replica: CReplica,
+    pub nextActionIndex: i64,
+}
+
+impl CScheduler {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.replica.valid()
+    }
+
+    pub open spec fn valid(&self) -> bool {
+        self.well_formed()
+    }
+}
+
+impl View for CScheduler {
+    type V = LScheduler;
+
+    open spec fn view(&self) -> LScheduler {
+        LScheduler {
+            replica: self.replica@,
+            nextActionIndex: self.nextActionIndex as int,
         }
     }
 }
