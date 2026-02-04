@@ -1534,10 +1534,12 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Identified 8 component state types with exec methods: CAcceptor, CProposer, etc.
   - Documented dependency graph showing what depends on marshalling
 
-- [ ] **I2.2: Create shared types module**
-  - Create `src/common/rsl_types/` directory
-  - Move pure data types (CBallot, CRequest, etc.)
-  - Keep marshalling in separate module
+- [x] **I2.2: Create shared types module** (DONE - No new module needed)
+  - Analysis: `src/generated/RSL/types_gen.rs` already serves as the shared types module
+  - It generates: CBallot, CRequest, CReply, CVote, CLearnerTuple, CClockReading, CRslIo, CScheduler
+  - Decision: Enhance existing `types_gen.rs` (I2.3) instead of creating redundant `src/common/rsl_types/`
+  - The generated types already have View impls mapping to spec types
+  - Type aliases (CRequestBatch, etc.) can be added to types_gen.rs in I2.3
 
 - [ ] **I2.3: Generate pure types from specs**
   - Use existing `generate-types` command
