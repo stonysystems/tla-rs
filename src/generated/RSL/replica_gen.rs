@@ -43,10 +43,10 @@ ensures
     result.valid(),
     LReplicaInit(result@, c@),
 {
-    let r_proposer = CProposerInit(&c);
-    let r_acceptor = CAcceptorInit(&c);
-    let r_learner = CLearnerInit(&c);
-    let r_executor = CExecutorInit(&c);
+    let r_proposer = crate::generated::RSL::proposer_gen::CProposerInit(&c);
+    let r_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorInit(&c);
+    let r_learner = crate::generated::RSL::learner_gen::CLearnerInit(&c);
+    let r_executor = crate::generated::RSL::executor_gen::CExecutorInit(&c);
     CReplica {
         constants: c.clone(),
         nextHeartbeatTime: 0,
@@ -78,11 +78,11 @@ ensures
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@),
 {
 if (s.executor.reply_cache.contains_key(received_packet.src) && (received_packet.msg.get_seqno_req() <= s.executor.reply_cache.index(received_packet.src).seqno)) {
-                let sent_packets = CExecutorProcessRequest(&s.executor, &received_packet);
+                let sent_packets = crate::generated::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
         (s.clone(), sent_packets)
 
     } else {
-                let s_proposer = CProposerProcessRequest(&s.proposer, &received_packet);
+                let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessRequest(&s.proposer, &received_packet);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -105,7 +105,7 @@ ensures
     result.1.valid(),
     LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@),
 {
-    let (s_acceptor, sent_packets) = CAcceptorProcess1a(&s.acceptor, &received_packet);
+    let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&s.acceptor, &received_packet);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -128,8 +128,8 @@ ensures
     LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@),
 {
 if (s.proposer.constants.all.config.replica_ids.contains(received_packet.src) && ((received_packet.msg.get_bal_1b() == s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && s.proposer.received_1b_packets.iter().all(|other_packet| (other_packet.src != received_packet.src))))) {
-                let s_proposer = CProposerProcess1b(&s.proposer, &received_packet);
-        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &received_packet.msg.get_log_truncation_point());
+                let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcess1b(&s.proposer, &received_packet);
+        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &received_packet.msg.get_log_truncation_point());
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -154,7 +154,7 @@ ensures
     result.1.valid(),
     LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@),
 {
-    let (s_executor, sent_packets) = CExecutorProcessStartingPhase2(&s.executor, &received_packet);
+    let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessStartingPhase2(&s.executor, &received_packet);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -178,7 +178,7 @@ ensures
 {
     let m = received_packet.msg;
     if (s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m.get_bal_2a()) && CLeqUpperBound(&m.get_opn_2a(), &s.acceptor.constants.all.params.max_integer_val))) {
-                let (s_acceptor, sent_packets) = CAcceptorProcess2a(&s.acceptor, &received_packet);
+                let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -207,7 +207,7 @@ ensures
     let opn = received_packet.msg.get_opn_2b();
         let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && (s.executor.next_op_to_execute is COutstandingOpUnknown)));
     if op_learnable {
-                let s_learner = CLearnerProcess2b(&s.learner, &received_packet);
+                let s_learner = crate::generated::RSL::learner_gen::CLearnerProcess2b(&s.learner, &received_packet);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -248,8 +248,8 @@ ensures
     LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@),
 {
 if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg.get_opn_state_supply() > s.executor.ops_complete)) {
-                let s_learner = CLearnerForgetOperationsBefore(&s.learner, &received_packet.msg.get_opn_state_supply());
-        let s_executor = CExecutorProcessAppStateSupply(&s.executor, &received_packet);
+                let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetOperationsBefore(&s.learner, &received_packet.msg.get_opn_state_supply());
+        let s_executor = crate::generated::RSL::executor_gen::CExecutorProcessAppStateSupply(&s.executor, &received_packet);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -274,7 +274,7 @@ ensures
     result.1.valid(),
     LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@),
 {
-    let (s_executor, sent_packets) = CExecutorProcessAppStateRequest(&s.executor, &received_packet);
+    let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -296,8 +296,8 @@ ensures
     result.1.valid(),
     LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, clock@, result.1@),
 {
-    let s_proposer = CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
-    let s_acceptor = CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
+    let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
+    let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -317,7 +317,7 @@ ensures
     result.1.valid(),
     LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
-    let (s_proposer, sent_packets) = CProposerMaybeEnterNewViewAndSend1a(&s.proposer);
+    let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterNewViewAndSend1a(&s.proposer);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -337,7 +337,7 @@ ensures
     result.1.valid(),
     LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@),
 {
-    let (s_proposer, sent_packets) = CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point);
+    let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -358,7 +358,7 @@ ensures
     result.1.valid(),
     LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@),
 {
-    let (s_proposer, sent_packets) = CProposerMaybeNominateValueAndSend2a(&s.proposer, &clock.t, &s.acceptor.log_truncation_point);
+    let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeNominateValueAndSend2a(&s.proposer, &clock.t, &s.acceptor.log_truncation_point);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -379,7 +379,7 @@ ensures
     LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@),
 {
 s.acceptor.last_checkpointed_operation.iter().any(|opn| (CIsLogTruncationPointValid(&opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if (opn > s.acceptor.log_truncation_point) {
-        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &opn);
+        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &opn);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -404,7 +404,7 @@ ensures
 {
     let opn = s.executor.ops_complete;
     if ((s.executor.next_op_to_execute is COutstandingOpUnknown) && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state.index(opn).received_2b_message_senders.len() >= CMinQuorumSize(&s.learner.constants.all.config)))) {
-                let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.index(opn).candidate_learned_value);
+                let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.index(opn).candidate_learned_value);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -430,9 +430,9 @@ ensures
 {
 if ((s.executor.next_op_to_execute is COutstandingOpKnown) && (CLtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && CReplicaConstantsValid(&s.executor.constants))) {
                 let v = s.executor.next_op_to_execute.get_v();
-                let s_proposer = CProposerResetViewTimerDueToExecution(&s.proposer, &v);
-        let s_learner = CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
-        let (s_executor, sent_packets) = CExecutorExecute(&s.executor);
+                let s_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &v);
+        let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
+        let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorExecute(&s.executor);
         (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -460,7 +460,7 @@ ensures
 if (clock.t < s.nextHeartbeatTime) {
         (s.clone(), vec![])
     } else {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageHeartbeat {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageHeartbeat {
     bal_heartbeat: s.proposer.election_state.current_view,
     suspicious: s.proposer.election_state.current_view_suspectors.contains(s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,
@@ -479,7 +479,7 @@ ensures
     result.1.valid(),
     LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@),
 {
-    let s_proposer = CProposerCheckForViewTimeout(&s.proposer, &clock.t);
+    let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForViewTimeout(&s.proposer, &clock.t);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -500,7 +500,7 @@ ensures
     result.1.valid(),
     LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@),
 {
-    let s_proposer = CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
+    let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
     (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,

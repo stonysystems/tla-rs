@@ -43,7 +43,7 @@ ensures
     result.valid(),
     LProposerInit(result@, c@),
 {
-    let s_election_state = CElectionStateInit(&c);
+    let s_election_state = crate::generated::RSL::election_gen::CElectionStateInit(&c);
     (CProposer {
     constants: c.clone(),
     current_state: 0,
@@ -73,7 +73,7 @@ ensures
         seqno: packet.msg.get_seqno_req(),
         request: packet.msg.get_val(),
     };
-        let s_election_state = CElectionStateReflectReceivedRequest(&s.election_state, &val);
+        let s_election_state = crate::generated::RSL::election_gen::CElectionStateReflectReceivedRequest(&s.election_state, &val);
     if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view.index(val.client)))) {
         CProposer {
             constants: s.constants,
@@ -112,7 +112,7 @@ ensures
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
 {
 if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage1a {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage1a {
     bal_1a: s.election_state.current_view,
 });
         (CProposer {
@@ -168,7 +168,7 @@ ensures
     LProposerMaybeEnterPhase2(s@, result.0@, log_truncation_point@, result.1@),
 {
 if ((s.received_1b_packets.len() >= CMinQuorumSize(&s.constants.all.config)) && (CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
 });
@@ -207,7 +207,7 @@ ensures
     };
         let v = s.request_queue.subrange(0, batchSize);
         let opn = s.next_operation_number_to_propose;
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: v,
@@ -258,7 +258,7 @@ ensures
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: s.incomplete_batch_timer,
     election_state: s.election_state,
-} && CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
+} && crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
     bal_2a: s.max_ballot_i_sent_1a,
     opn_2a: opn,
     val_2a: p.msg.get_votes().index(opn).max_val,
@@ -314,7 +314,7 @@ ensures
     result.valid(),
     LProposerProcessHeartbeat(s@, result@, p@, clock@),
 {
-    let s_election_state = CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
+    let s_election_state = crate::generated::RSL::election_gen::CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
     CProposer { constants: s.constants, current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
         0
     } else {
@@ -334,7 +334,7 @@ ensures
     result.valid(),
     LProposerCheckForViewTimeout(s@, result@, clock@),
 {
-    let s_election_state = CElectionStateCheckForViewTimeout(&s.election_state, &clock);
+    let s_election_state = crate::generated::RSL::election_gen::CElectionStateCheckForViewTimeout(&s.election_state, &clock);
     CProposer {
         constants: s.constants,
         current_state: s.current_state,
@@ -356,7 +356,7 @@ ensures
     result.valid(),
     LProposerCheckForQuorumOfViewSuspicions(s@, result@, clock@),
 {
-    let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
+    let s_election_state = crate::generated::RSL::election_gen::CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
     CProposer { constants: s.constants, current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
         0
     } else {

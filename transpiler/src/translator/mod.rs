@@ -29,6 +29,10 @@ pub struct TranslatorConfig {
     pub exec_prefix: String,
     /// Type remapping (spec type -> exec type)
     pub type_remapping: HashMap<String, String>,
+    /// Function path mapping for cross-module calls
+    /// Maps spec function names to their qualified exec paths
+    /// e.g., "BroadcastToEveryone" -> "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
+    pub function_paths: HashMap<String, String>,
     /// Whether to generate abstraction functions
     pub generate_abstraction_fns: bool,
     /// Whether to generate validity predicates
@@ -47,6 +51,7 @@ impl Default for TranslatorConfig {
             spec_prefix: "L".to_string(),
             exec_prefix: "C".to_string(),
             type_remapping: HashMap::new(),
+            function_paths: HashMap::new(),
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
@@ -1425,8 +1430,8 @@ impl Translator {
 
     /// Translate a predicate (existing logic)
     fn translate_predicate(&self, func: &AnnotatedFunction) -> TranspileResult<ExecFunction> {
-        // Generate exec function name
-        let exec_name = self.translate_name(&func.spec_fn.name);
+        // Generate exec function name (use simple name for definitions, not qualified paths)
+        let exec_name = self.translate_definition_name(&func.spec_fn.name);
 
         // Translate parameters
         let (params, output_names) = self.translate_params(func)?;
@@ -1480,8 +1485,8 @@ impl Translator {
 
     /// Translate a helper function (all params are inputs, return value is computed)
     fn translate_helper(&self, func: &AnnotatedFunction) -> TranspileResult<ExecFunction> {
-        // Generate exec function name
-        let exec_name = self.translate_name(&func.spec_fn.name);
+        // Generate exec function name (use simple name for definitions, not qualified paths)
+        let exec_name = self.translate_definition_name(&func.spec_fn.name);
 
         // Translate parameters (all inputs for helpers)
         let params = self.translate_helper_params(func);
@@ -1672,7 +1677,9 @@ impl Translator {
     }
 
     /// Translate spec name to exec name (L* -> C*)
-    fn translate_name(&self, spec_name: &str) -> String {
+    /// Translate spec name to exec name for function DEFINITIONS (L* -> C*)
+    /// This never uses qualified paths - just simple name translation.
+    fn translate_definition_name(&self, spec_name: &str) -> String {
         // Check if type is in explicit remapping
         if let Some(remapped) = self.config.type_remapping.get(spec_name) {
             return remapped.clone();
@@ -1690,6 +1697,26 @@ impl Translator {
 
         // Otherwise, prepend exec prefix to the full name
         format!("{}{}", self.config.exec_prefix, spec_name)
+    }
+
+    /// Translate spec name to exec name for function CALLS (L* -> C* or qualified path)
+    /// This checks function_paths for cross-module calls first, then falls back to simple translation.
+    fn translate_name(&self, spec_name: &str) -> String {
+        // First check function_paths for qualified paths (cross-module calls)
+        // This handles functions like "BroadcastToEveryone" -> "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
+        if let Some(qualified_path) = self.config.function_paths.get(spec_name) {
+            return qualified_path.clone();
+        }
+        // Also check with L prefix stripped (for LBroadcastToEveryone -> BroadcastToEveryone lookup)
+        if spec_name.starts_with(&self.config.spec_prefix) {
+            let base_name = &spec_name[self.config.spec_prefix.len()..];
+            if let Some(qualified_path) = self.config.function_paths.get(base_name) {
+                return qualified_path.clone();
+            }
+        }
+
+        // Fall back to simple name translation
+        self.translate_definition_name(spec_name)
     }
 
     /// Translate a full path (potentially an enum variant like RslMessage::RslMessage1b)

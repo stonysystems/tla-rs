@@ -135,7 +135,7 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
     bal_2b: m.get_bal_2a(),
     opn_2b: m.get_opn_2a(),
     val_2b: m.get_val_2a(),

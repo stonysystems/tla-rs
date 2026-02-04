@@ -35,6 +35,12 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub remapping: HashMap<String, String>,
 
+    /// Function path mapping for cross-module calls
+    /// Maps spec function names to their qualified exec paths
+    /// e.g., "BroadcastToEveryone" -> "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
+    #[serde(default)]
+    pub function_paths: HashMap<String, String>,
+
     /// Output generation configuration
     #[serde(default)]
     pub output: OutputConfig,

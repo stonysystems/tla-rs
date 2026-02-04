@@ -176,7 +176,7 @@ ensures
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@),
 {
 if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.get_logTruncationPoint_2() > s.ops_complete)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
     bal_state_req: inp.msg.get_bal_2(),
     opn_state_req: inp.msg.get_logTruncationPoint_2(),
 });

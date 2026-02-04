@@ -35,6 +35,48 @@ exec_prefix = "C"
 "AppMessage" = "CAppMessage"
 "RequestBatch" = "CRequestBatch"
 
+# Cross-module function paths for generated code
+# Maps spec function base names to their qualified exec paths
+[function_paths]
+# broadcast_gen.rs
+"BroadcastToEveryone" = "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
+# election_gen.rs
+"ElectionStateInit" = "crate::generated::RSL::election_gen::CElectionStateInit"
+"ElectionStateProcessHeartbeat" = "crate::generated::RSL::election_gen::CElectionStateProcessHeartbeat"
+"ElectionStateCheckForViewTimeout" = "crate::generated::RSL::election_gen::CElectionStateCheckForViewTimeout"
+"ElectionStateCheckForQuorumOfViewSuspicions" = "crate::generated::RSL::election_gen::CElectionStateCheckForQuorumOfViewSuspicions"
+"ElectionStateReflectReceivedRequest" = "crate::generated::RSL::election_gen::CElectionStateReflectReceivedRequest"
+# proposer_gen.rs
+"ProposerInit" = "crate::generated::RSL::proposer_gen::CProposerInit"
+"ProposerProcessRequest" = "crate::generated::RSL::proposer_gen::CProposerProcessRequest"
+"ProposerMaybeEnterNewViewAndSend1a" = "crate::generated::RSL::proposer_gen::CProposerMaybeEnterNewViewAndSend1a"
+"ProposerProcess1b" = "crate::generated::RSL::proposer_gen::CProposerProcess1b"
+"ProposerMaybeEnterPhase2" = "crate::generated::RSL::proposer_gen::CProposerMaybeEnterPhase2"
+"ProposerMaybeNominateValueAndSend2a" = "crate::generated::RSL::proposer_gen::CProposerMaybeNominateValueAndSend2a"
+"ProposerProcessHeartbeat" = "crate::generated::RSL::proposer_gen::CProposerProcessHeartbeat"
+"ProposerCheckForViewTimeout" = "crate::generated::RSL::proposer_gen::CProposerCheckForViewTimeout"
+"ProposerCheckForQuorumOfViewSuspicions" = "crate::generated::RSL::proposer_gen::CProposerCheckForQuorumOfViewSuspicions"
+"ProposerResetViewTimerDueToExecution" = "crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution"
+# acceptor_gen.rs
+"AcceptorInit" = "crate::generated::RSL::acceptor_gen::CAcceptorInit"
+"AcceptorProcess1a" = "crate::generated::RSL::acceptor_gen::CAcceptorProcess1a"
+"AcceptorProcess2a" = "crate::generated::RSL::acceptor_gen::CAcceptorProcess2a"
+"AcceptorProcessHeartbeat" = "crate::generated::RSL::acceptor_gen::CAcceptorProcessHeartbeat"
+"AcceptorTruncateLog" = "crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog"
+# learner_gen.rs
+"LearnerInit" = "crate::generated::RSL::learner_gen::CLearnerInit"
+"LearnerProcess2b" = "crate::generated::RSL::learner_gen::CLearnerProcess2b"
+"LearnerForgetDecision" = "crate::generated::RSL::learner_gen::CLearnerForgetDecision"
+"LearnerForgetOperationsBefore" = "crate::generated::RSL::learner_gen::CLearnerForgetOperationsBefore"
+# executor_gen.rs
+"ExecutorInit" = "crate::generated::RSL::executor_gen::CExecutorInit"
+"ExecutorGetDecision" = "crate::generated::RSL::executor_gen::CExecutorGetDecision"
+"ExecutorExecute" = "crate::generated::RSL::executor_gen::CExecutorExecute"
+"ExecutorProcessAppStateSupply" = "crate::generated::RSL::executor_gen::CExecutorProcessAppStateSupply"
+"ExecutorProcessAppStateRequest" = "crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest"
+"ExecutorProcessStartingPhase2" = "crate::generated::RSL::executor_gen::CExecutorProcessStartingPhase2"
+"ExecutorProcessRequest" = "crate::generated::RSL::executor_gen::CExecutorProcessRequest"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true

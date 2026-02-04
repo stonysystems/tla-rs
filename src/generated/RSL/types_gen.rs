@@ -36,25 +36,27 @@ impl View for CVote {
 }
 
 #[derive(Clone)]
-pub struct CLearnerTuple {
-    pub received_2b_message_senders: HashSet<EndPoint>,
-    pub candidate_learned_value: CRequestBatch,
+pub struct CRequest {
+    pub client: EndPoint,
+    pub seqno: i64,
+    pub request: CAppMessage,
 }
 
-impl CLearnerTuple {
+impl CRequest {
     pub open spec fn well_formed(&self) -> bool {
-        &&& self.received_2b_message_senders.well_formed()
-        &&& self.candidate_learned_value.well_formed()
+        &&& self.client.well_formed()
+        &&& self.request.well_formed()
     }
 }
 
-impl View for CLearnerTuple {
-    type V = LearnerTuple;
+impl View for CRequest {
+    type V = Request;
 
-    open spec fn view(&self) -> LearnerTuple {
-        LearnerTuple {
-            received_2b_message_senders: self.received_2b_message_senders@,
-            candidate_learned_value: self.candidate_learned_value@,
+    open spec fn view(&self) -> Request {
+        Request {
+            client: self.client@,
+            seqno: self.seqno as int,
+            request: self.request@,
         }
     }
 }
@@ -83,53 +85,6 @@ impl View for CBallot {
 }
 
 #[derive(Clone)]
-pub struct CClockReading {
-    pub t: i64,
-}
-
-impl CClockReading {
-    pub open spec fn well_formed(&self) -> bool {
-        true
-    }
-}
-
-impl View for CClockReading {
-    type V = ClockReading;
-
-    open spec fn view(&self) -> ClockReading {
-        ClockReading {
-            t: self.t as int,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CRequest {
-    pub client: EndPoint,
-    pub seqno: i64,
-    pub request: CAppMessage,
-}
-
-impl CRequest {
-    pub open spec fn well_formed(&self) -> bool {
-        &&& self.client.well_formed()
-        &&& self.request.well_formed()
-    }
-}
-
-impl View for CRequest {
-    type V = Request;
-
-    open spec fn view(&self) -> Request {
-        Request {
-            client: self.client@,
-            seqno: self.seqno as int,
-            request: self.request@,
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct CReply {
     pub client: EndPoint,
     pub seqno: i64,
@@ -151,6 +106,51 @@ impl View for CReply {
             client: self.client@,
             seqno: self.seqno as int,
             reply: self.reply@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CLearnerTuple {
+    pub received_2b_message_senders: HashSet<EndPoint>,
+    pub candidate_learned_value: CRequestBatch,
+}
+
+impl CLearnerTuple {
+    pub open spec fn well_formed(&self) -> bool {
+        &&& self.received_2b_message_senders.well_formed()
+        &&& self.candidate_learned_value.well_formed()
+    }
+}
+
+impl View for CLearnerTuple {
+    type V = LearnerTuple;
+
+    open spec fn view(&self) -> LearnerTuple {
+        LearnerTuple {
+            received_2b_message_senders: self.received_2b_message_senders@,
+            candidate_learned_value: self.candidate_learned_value@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CClockReading {
+    pub t: i64,
+}
+
+impl CClockReading {
+    pub open spec fn well_formed(&self) -> bool {
+        true
+    }
+}
+
+impl View for CClockReading {
+    type V = ClockReading;
+
+    open spec fn view(&self) -> ClockReading {
+        ClockReading {
+            t: self.t as int,
         }
     }
 }
