@@ -1276,6 +1276,159 @@ impl TypeUnifier {
     }
 }
 
+// =============================================================================
+// Type Inference API
+// =============================================================================
+
+/// Complete type inference engine for TLA+ modules.
+///
+/// This combines constraint collection and unification into a single
+/// easy-to-use API that takes a TLA+ module and produces a complete
+/// type environment.
+pub struct TypeInference {
+    /// The constraint collector
+    pub collector: ConstraintCollector,
+    /// The type unifier
+    pub unifier: TypeUnifier,
+}
+
+impl Default for TypeInference {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TypeInference {
+    /// Create a new type inference engine
+    pub fn new() -> Self {
+        Self {
+            collector: ConstraintCollector::new(),
+            unifier: TypeUnifier::new(),
+        }
+    }
+
+    /// Perform complete type inference on a TLA+ module.
+    ///
+    /// This:
+    /// 1. Collects type constraints from the module
+    /// 2. Unifies constraints to resolve type variables
+    /// 3. Builds a TypeEnv with properly categorized identifiers
+    ///
+    /// # Example
+    /// ```ignore
+    /// let module = parse_module(source)?;
+    /// let mut inference = TypeInference::new();
+    /// let type_env = inference.infer_types(&module);
+    /// ```
+    pub fn infer_types(&mut self, module: &TlaModule) -> TypeEnv {
+        // Step 1: Collect constraints from the module
+        self.collector.collect_from_module(module);
+
+        // Step 2: Process constraints through unification
+        self.unifier.process_constraints(&self.collector.constraints);
+
+        // Step 3: Build type environment with proper categorization
+        self.build_module_type_env(module)
+    }
+
+    /// Build a TypeEnv with proper categorization based on module definition.
+    ///
+    /// Unlike `TypeUnifier::build_type_env`, this method properly categorizes
+    /// identifiers as constants, variables, or operators based on how they
+    /// were declared in the module.
+    fn build_module_type_env(&self, module: &TlaModule) -> TypeEnv {
+        let mut env = TypeEnv::new();
+
+        // Track names declared in the module for proper categorization
+        let constants: std::collections::HashSet<&str> =
+            module.constants.iter().map(|c| c.name.as_str()).collect();
+        let variables: std::collections::HashSet<&str> =
+            module.variables.iter().map(|v| v.as_str()).collect();
+        let operators: std::collections::HashSet<&str> =
+            module.operators.iter().map(|o| o.name.as_str()).collect();
+
+        // Process all constraints
+        for constraint in &self.collector.constraints {
+            match constraint {
+                TypeConstraint::HasType { name, ty } => {
+                    let resolved = self.unifier.substitution.apply(ty);
+                    // Categorize based on module declarations
+                    if constants.contains(name.as_str()) {
+                        env.set_constant(name, resolved);
+                    } else if variables.contains(name.as_str()) {
+                        env.set_variable(name, resolved);
+                    } else {
+                        // Local variables (from quantifiers, let bindings, etc.)
+                        // go into variables for now
+                        env.set_variable(name, resolved);
+                    }
+                }
+                TypeConstraint::OperatorType {
+                    name,
+                    param_types,
+                    return_type,
+                } => {
+                    if operators.contains(name.as_str()) {
+                        let resolved_params: Vec<_> = param_types
+                            .iter()
+                            .map(|t| self.unifier.substitution.apply(t))
+                            .collect();
+                        let resolved_return = self.unifier.substitution.apply(return_type);
+
+                        let op_type = if resolved_params.is_empty() {
+                            resolved_return
+                        } else {
+                            TlaType::function(TlaType::Tuple(resolved_params), resolved_return)
+                        };
+                        env.set_operator(name, op_type);
+                    }
+                }
+                TypeConstraint::RecordField {
+                    record_name,
+                    field_name,
+                    field_type,
+                } => {
+                    let resolved_field_type = self.unifier.substitution.apply(field_type);
+                    let rec = env
+                        .records
+                        .entry(record_name.clone())
+                        .or_insert_with(|| RecordType::named(record_name));
+                    rec.fields.insert(field_name.clone(), resolved_field_type);
+                }
+                _ => {}
+            }
+        }
+
+        env
+    }
+
+    /// Get any type inference errors
+    pub fn errors(&self) -> &[String] {
+        &self.unifier.errors
+    }
+
+    /// Check if type inference succeeded without errors
+    pub fn is_successful(&self) -> bool {
+        self.unifier.errors.is_empty()
+    }
+
+    /// Get the inferred type for an identifier from constraints
+    pub fn get_inferred_type(&self, name: &str) -> Option<TlaType> {
+        for constraint in &self.collector.constraints {
+            if let TypeConstraint::HasType {
+                name: var_name,
+                ty,
+            } = constraint
+            {
+                if var_name == name {
+                    return Some(self.unifier.substitution.apply(ty));
+                }
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1798,5 +1951,215 @@ mod tests {
             env.operators.contains_key("Init"),
             "Expected Init operator in environment"
         );
+    }
+
+    // TypeInference API tests
+    #[test]
+    fn test_type_inference_simple_variable() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Init == x \in Nat
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        // x should be in variables, not constants
+        assert!(env.variables.contains_key("x"));
+        assert!(!env.constants.contains_key("x"));
+        assert!(inference.is_successful());
+    }
+
+    #[test]
+    fn test_type_inference_constants() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE items
+            Init == N \in Nat /\ items = {}
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        // N should be in constants
+        assert!(
+            env.constants.contains_key("N"),
+            "Expected N in constants, got {:?}",
+            env.constants
+        );
+        // items should be in variables
+        assert!(
+            env.variables.contains_key("items"),
+            "Expected items in variables"
+        );
+    }
+
+    #[test]
+    fn test_type_inference_operators() {
+        let source = r"
+            ---- MODULE Test ----
+            Add(a, b) == a + b
+            Double(x) == x * 2
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        // Both operators should be in the operators map
+        assert!(
+            env.operators.contains_key("Add"),
+            "Expected Add operator, got {:?}",
+            env.operators
+        );
+        assert!(
+            env.operators.contains_key("Double"),
+            "Expected Double operator"
+        );
+    }
+
+    #[test]
+    fn test_type_inference_get_inferred_type() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE count
+            Init == count \in Nat
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        inference.infer_types(&module);
+
+        // Should be able to get the inferred type for count
+        let count_type = inference.get_inferred_type("count");
+        assert!(
+            count_type.is_some(),
+            "Expected to find type for count, got None"
+        );
+    }
+
+    #[test]
+    fn test_type_inference_record_types() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE state
+            Init == state = [x |-> 0, y |-> TRUE]
+            GetX == state.x
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        // Should have collected record field information
+        assert!(
+            env.records.contains_key("state"),
+            "Expected record type for state, got records: {:?}",
+            env.records
+        );
+        if let Some(rec) = env.records.get("state") {
+            assert!(
+                rec.fields.contains_key("x"),
+                "Expected field x in state record"
+            );
+        }
+    }
+
+    #[test]
+    fn test_type_inference_complex_module() {
+        let source = r"
+            ---- MODULE Counter ----
+            CONSTANT MaxValue
+            VARIABLE count, enabled
+
+            TypeOK == count \in Nat /\ enabled \in BOOLEAN /\ MaxValue \in Nat
+
+            Init == count = 0 /\ enabled = TRUE
+
+            Increment == enabled /\ count' = count + 1 /\ UNCHANGED enabled
+
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        // Verify proper categorization
+        assert!(
+            env.constants.contains_key("MaxValue"),
+            "MaxValue should be a constant"
+        );
+        assert!(
+            env.variables.contains_key("count"),
+            "count should be a variable"
+        );
+        assert!(
+            env.variables.contains_key("enabled"),
+            "enabled should be a variable"
+        );
+        assert!(
+            env.operators.contains_key("TypeOK"),
+            "TypeOK should be an operator"
+        );
+        assert!(
+            env.operators.contains_key("Init"),
+            "Init should be an operator"
+        );
+        assert!(
+            env.operators.contains_key("Increment"),
+            "Increment should be an operator"
+        );
+
+        // Check that inference was successful
+        assert!(
+            inference.is_successful(),
+            "Type inference should succeed, errors: {:?}",
+            inference.errors()
+        );
+    }
+
+    #[test]
+    fn test_type_inference_function_construct() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT S
+            MakeMap == [i \in S |-> i * 2]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        assert!(env.operators.contains_key("MakeMap"));
+        assert!(inference.is_successful());
+    }
+
+    #[test]
+    fn test_type_inference_set_operations() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE S, T
+            Init == S \in SUBSET Nat /\ T = S \cup {1, 2, 3}
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+
+        assert!(env.variables.contains_key("S"));
+        assert!(env.variables.contains_key("T"));
+        assert!(inference.is_successful());
     }
 }

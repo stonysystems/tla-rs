@@ -2448,10 +2448,13 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
     - Nat/Int subtyping and IntRange/Set(Int) unification
     - Added build_type_env() to construct TypeEnv from resolved constraints
     - ~330 LOC with 20 new tests for unification
-  - [ ] **T4.1.4: Build type environment from module**
-    - Collect types for constants, variables, and operators
-    - Output: mapping from identifier names to inferred types
-    - ~100 LOC
+  - [x] **T4.1.4: Build type environment from module** ✅ COMPLETED
+    - Implemented TypeInference struct as high-level API for type inference
+    - Combines constraint collection and unification in one workflow
+    - Properly categorizes identifiers as constants, variables, or operators
+    - Provides get_inferred_type() for querying individual identifier types
+    - Error tracking via is_successful() and errors()
+    - ~140 LOC with 8 new tests for TypeInference API
 
 - [ ] **T4.2: Generate type annotations file**
   - Create `.tla-types` annotation file for manual type refinement
