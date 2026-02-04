@@ -1139,9 +1139,9 @@ impl ModeAnnotationGenerator {
 
         // Header
         output.push_str(&format!("// Mode annotations for {}.rs\n", module_name));
-        output.push_str(&format!(
+        output.push_str(
             "// Format: FunctionName(mode1, mode2, ...) where + = input, - = output\n\n"
-        ));
+        );
 
         // Module block
         output.push_str(&format!("module {} {{\n", module_name));

@@ -1813,7 +1813,7 @@ impl TypeAnnotations {
                         line_num + 1
                     ));
                 }
-                let name = line[..line.len() - 1].trim().to_string();
+                let name = line.strip_suffix('{').unwrap().trim().to_string();
                 current_record_name = Some(name);
                 continue;
             }

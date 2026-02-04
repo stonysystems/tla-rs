@@ -464,6 +464,7 @@ pub enum RecursivePattern {
 
 /// Result of analyzing a recursive function for pattern detection.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum PatternAnalysis {
     /// Successfully detected a known pattern
     Recognized(RecursivePattern),
@@ -566,7 +567,7 @@ impl Translator {
                 Self::match_concat_with_recurse(pred_false_body, func_name, &seq_param)
             {
                 // Verify element is s[0]
-                if Self::is_head_access(&element, &seq_param) {
+                if Self::is_head_access(element, &seq_param) {
                     let extra_args = Self::get_extra_args(params, &seq_param);
                     return Some(RecursivePattern::Filter {
                         seq_param: seq_param.clone(),
@@ -585,7 +586,7 @@ impl Translator {
                 Self::match_concat_with_recurse(pred_true_body, func_name, &seq_param)
             {
                 // Check if element is s[0] (no transform) or something else (with transform)
-                let transform = if Self::is_head_access(&element, &seq_param) {
+                let transform = if Self::is_head_access(element, &seq_param) {
                     None
                 } else {
                     Some(Box::new(element.clone()))
@@ -648,7 +649,7 @@ impl Translator {
 
             // The element might be a direct s[0] reference or a transformation
             // For map pattern, we consider any expression that uses s[0] as a transform
-            let transform = if Self::is_head_access(&element, &seq_param) {
+            let transform = if Self::is_head_access(element, &seq_param) {
                 // Direct s[0] access - identity transform (but still a valid map)
                 element.clone()
             } else {
@@ -824,7 +825,7 @@ impl Translator {
             Expr::If { cond, then_branch, else_branch } => {
                 Self::expr_contains_ident(cond, name)
                     || Self::expr_contains_ident(then_branch, name)
-                    || else_branch.as_ref().map_or(false, |e| Self::expr_contains_ident(e, name))
+                    || else_branch.as_ref().is_some_and(|e| Self::expr_contains_ident(e, name))
             }
             _ => false,
         }
@@ -3127,7 +3128,7 @@ impl Translator {
             Expr::If { cond, then_branch, else_branch } => {
                 self.expr_has_drop_first_recursive(cond, func_name, seq_param)
                     || self.expr_has_drop_first_recursive(then_branch, func_name, seq_param)
-                    || else_branch.as_ref().map_or(false, |e| self.expr_has_drop_first_recursive(e, func_name, seq_param))
+                    || else_branch.as_ref().is_some_and(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param))
             }
             Expr::Binary(l, _, r) => {
                 self.expr_has_drop_first_recursive(l, func_name, seq_param)
@@ -3171,7 +3172,7 @@ impl Translator {
             Expr::If { cond, then_branch, else_branch } => {
                 self.expr_has_decreasing_param(cond, func_name, param_name)
                     || self.expr_has_decreasing_param(then_branch, func_name, param_name)
-                    || else_branch.as_ref().map_or(false, |e| self.expr_has_decreasing_param(e, func_name, param_name))
+                    || else_branch.as_ref().is_some_and(|e| self.expr_has_decreasing_param(e, func_name, param_name))
             }
             Expr::Binary(l, _, r) => {
                 self.expr_has_decreasing_param(l, func_name, param_name)
