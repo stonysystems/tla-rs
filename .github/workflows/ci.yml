@@ -122,4 +122,4 @@ jobs:
 
       - name: Verify with Verus
         run: |
-          scons --verus-path=$HOME/verus
+          scons --verus-path=$HOME/verus/verus
