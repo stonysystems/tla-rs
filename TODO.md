@@ -1554,10 +1554,13 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Removed import of `CRequestBatch` from `types_i.rs`
   - All View trait implementations already correct in types_gen.rs
 
-- [ ] **I2.4: Update generated code imports**
-  - Change `use crate::implementation::RSL::types_i::*`
+- [x] **I2.4: Update generated code imports** ✅ COMPLETED
+  - Changed `use crate::implementation::RSL::types_i::*`
   - To `use crate::generated::RSL::types_gen::*`
-  - Or `use crate::common::rsl_types::*`
+  - Updated 7 generated files: acceptor_gen.rs, broadcast_gen.rs, election_gen.rs, executor_gen.rs, learner_gen.rs, proposer_gen.rs, replica_gen.rs
+  - Fixed types_gen.rs to use u64 for CBallot/CRequest/CReply fields (matching types_i.rs)
+  - Added CBalLt, CBalLeq, CBalEq helper functions to types_gen.rs
+  - Added Clone, Copy, PartialEq, Eq, Hash derives and additional methods to CBallot
 
 - [ ] **I2.5: Handle marshalling separately**
   - Keep marshalling traits in `src/implementation/`

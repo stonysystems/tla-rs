@@ -93,7 +93,7 @@ impl View for CVote {
 #[derive(Clone)]
 pub struct CRequest {
     pub client: EndPoint,
-    pub seqno: i64,
+    pub seqno: u64,
     pub request: CAppMessage,
 }
 
@@ -116,15 +116,39 @@ impl View for CRequest {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CBallot {
-    pub seqno: i64,
-    pub proposer_id: i64,
+    pub seqno: u64,
+    pub proposer_id: u64,
 }
 
 impl CBallot {
     pub open spec fn well_formed(&self) -> bool {
-        true
+        self.proposer_id < 0xFFFF_FFFF_FFFF_FFFF
+    }
+
+    pub open spec fn abstractable(self) -> bool {
+        self.proposer_id < 0xFFFF_FFFF_FFFF_FFFF
+    }
+
+    pub open spec fn valid(self) -> bool {
+        self.abstractable()
+    }
+
+    pub fn is_equal(&self, other: &CBallot) -> (result: bool)
+        ensures
+            result == (self@ == other@)
+    {
+        self.seqno == other.seqno && self.proposer_id == other.proposer_id
+    }
+
+    pub fn clone_up_to_view(&self) -> (res: CBallot)
+        ensures res@ == self@
+    {
+        CBallot {
+            seqno: self.seqno,
+            proposer_id: self.proposer_id,
+        }
     }
 }
 
@@ -139,10 +163,43 @@ impl View for CBallot {
     }
 }
 
+/// Compare two ballots (less than)
+pub fn CBalLt(ba: &CBallot, bb: &CBallot) -> (r: bool)
+    requires
+        ba.valid(),
+        bb.valid(),
+    ensures r == BalLt(ba@, bb@)
+{
+    ba.seqno < bb.seqno
+    || (ba.seqno == bb.seqno && ba.proposer_id < bb.proposer_id)
+}
+
+/// Compare two ballots (less than or equal)
+pub fn CBalLeq(ba: &CBallot, bb: &CBallot) -> (r: bool)
+    requires
+        ba.valid(),
+        bb.valid(),
+    ensures r == BalLeq(ba@, bb@)
+{
+    ba.seqno < bb.seqno
+    || (ba.seqno == bb.seqno && ba.proposer_id <= bb.proposer_id)
+}
+
+/// Compare two ballots (equal)
+pub fn CBalEq(ba: &CBallot, bb: &CBallot) -> (r: bool)
+    requires
+        ba.valid(),
+        bb.valid(),
+    ensures r == (ba@ == bb@)
+{
+    ba.seqno == bb.seqno
+    && ba.proposer_id == bb.proposer_id
+}
+
 #[derive(Clone)]
 pub struct CReply {
     pub client: EndPoint,
-    pub seqno: i64,
+    pub seqno: u64,
     pub reply: CAppMessage,
 }
 

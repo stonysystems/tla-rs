@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use crate::common::collections::sets::*;
 use crate::common::collections::hashsets::*;
 use crate::common::native::io_s::EndPoint;
-use crate::implementation::RSL::types_i::*;
+use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cbroadcast::*;
@@ -34,9 +34,6 @@ use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::common::upper_bound::*;
-use crate::generated::RSL::types_gen::CClockReading;
-use crate::generated::RSL::types_gen::CRslIo;
-use crate::generated::RSL::types_gen::CScheduler;
 
 verus! {
 
