@@ -1662,10 +1662,15 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Added tests: `test_map_filter_conjunction_generates_loop`, `test_map_update_with_insert_generates_loop`
   - Verus: 454 verified, 0 errors (with `#[cfg(test)]` guard)
 
-- [ ] **V3.5: Fix loop invariant errors**
-  - Generated loops may have incorrect/incomplete invariants
-  - Compare with manual implementation invariants
-  - Strengthen or simplify as needed
+- [x] **V3.5: Verify loop invariant correctness** ✅ NO ISSUES FOUND
+  - Generated loops use same `assume` statements as manual implementation
+  - HashMap iteration assumes are known Verus limitations (NOT generated code bugs):
+    - `assume(keys@.1.len() == map@.len())` - iterator length = map size
+    - `assume(map@.contains_key(*key))` - iterated key is in map
+    - `assume(keys@.0 == keys@.1.len())` - iterator fully consumed
+    - `assume(seen_keys.len() == keys@.0)` - all keys seen
+  - Manual `acceptorimpl.rs` has identical assumes (with comments like "verus can't infer this")
+  - `assume(false)` in dispatch function is correct: unreachable branch (precondition excludes it)
 
 - [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ BLOCKED on V3.3
   - Cannot remove `#[cfg(test)]` guard until type duplication is resolved
