@@ -499,17 +499,19 @@ pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacke
     result@ == ExtractSentPacketsFromIos(ios@),
 {
     let mut result: Vec<CPacket> = Vec::new();
-    let iter = (0..ios.len());
-    for i in iter:iter
+    let mut i: usize = 0;
+    while i < ios.len()
     invariant
         i <= ios.len(),
         result.len() <= i,
-        result@ == ios@.take(i as int).filter(|x: RslPacket| ios[0] is Send),
+        result@ == ios@.take(i as int).filter(|x: RslPacket| x is Send),
     {
-        if ios[0] is CSend {
-                        result.push(ios[0]->s.clone())
+        if ios[i] is Send {
+                        let pkt = ios[i]->s;
+                        result.push(CPacket { dst: pkt.dst, src: pkt.src, msg: pkt.msg })
 
         }
+        i = i + 1;
     }
     result
 

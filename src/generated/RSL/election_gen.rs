@@ -97,18 +97,19 @@ requires
 ensures
     result@ == RemoveAllSatisfiedRequestsInSequence(s@, r@),
 {
-    let mut result: Vec<Request> = Vec::new();
-    let iter = (0..s.len());
-    for i in iter:iter
+    let mut result: Vec<CRequest> = Vec::new();
+    let mut i: usize = 0;
+    while i < s.len()
     invariant
         i <= s.len(),
         result.len() <= i,
-        result@ == s@.take(i as int).filter(|x: Request| !RequestSatisfiedBy(s[0], r)),
+        result@ == s@.take(i as int).filter(|x: Request| !RequestSatisfiedBy(x, r@)),
     {
         if !CRequestSatisfiedBy(&s[i], r) {
                         result.push(s[i].clone())
 
         }
+        i = i + 1;
     }
     result
 
@@ -294,14 +295,15 @@ if es.requests_received_prev_epochs.iter().chain(es.requests_received_this_epoch
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)ensures
     result@ == RemoveExecutedRequestBatch(reqs@, batch@),
 {
-    let mut acc = reqs;
-    let iter = (0..batch.len());
-    for i in iter:iter
+    let mut acc = reqs.clone();
+    let mut i: usize = 0;
+    while i < batch.len()
     invariant
         i <= batch.len(),
         acc@ == RemoveExecutedRequestBatch(batch@.take(i as int), reqs@),
     {
-        acc = CRemoveAllSatisfiedRequestsInSequence(&reqs, batch[i])
+        acc = CRemoveAllSatisfiedRequestsInSequence(&acc, &batch[i]);
+        i = i + 1;
     }
     acc
 

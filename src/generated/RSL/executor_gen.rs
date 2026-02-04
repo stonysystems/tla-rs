@@ -73,14 +73,15 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ens
     creplycache_is_valid(&result),
     result@ == LClientsInReplies(replies@),
 {
-    let mut acc = HashMap::new();
-    let iter = (0..replies.len());
-    for i in iter:iter
+    let mut acc: HashMap<EndPoint, CReply> = HashMap::new();
+    let mut i: usize = 0;
+    while i < replies.len()
     invariant
         i <= replies.len(),
         acc@ == LClientsInReplies(replies@.take(i as int)),
     {
-        acc = acc.insert(replies[i].client, replies[i])
+        acc.insert(replies[i].client.clone(), replies[i].clone());
+        i = i + 1;
     }
     acc
 

@@ -1698,10 +1698,10 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
   - Manual `acceptorimpl.rs` has identical assumes (with comments like "verus can't infer this")
   - `assume(false)` in dispatch function is correct: unreachable branch (precondition excludes it)
 
-- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 152 errors remaining)
+- [ ] **V3.6: Remove #[cfg(test)] guards** ⚠️ IN PROGRESS (V3.3 complete, 136 errors remaining)
   - V3.3 type dedup complete, but removing `#[cfg(test)]` exposes compilation errors
   - With guard: 455 verified, 0 errors ✅
-  - Without guard: 152 errors (318→283 after V3.6.1+V3.6.2, 283→278 after V3.6.3, 278→192 after V3.6.4, 192→152 after V3.6.5)
+  - Without guard: 136 errors (318→283→278→192→152→136 after V3.6.1-V3.6.6)
   - **Root causes**: Generated function bodies have type/API mismatches with implementation types
   - Broken down into subtasks below (too large for single commit, ~1000+ LOC changes)
 
@@ -1783,11 +1783,12 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
     - Also fixed: forall variable `*opn` deref → type annotation, HashMap insert match arms
     - Error count: 192 → 152 (40 errors fixed)
 
-  - [ ] **V3.6.6: Fix for-loop iterators** (~30 LOC, medium)
-    - `RangeGhostIterator<usize>` errors in executor_gen, election_gen, replica_gen
-    - Generated loops use `(0..len).map()` which needs Verus iterator traits
-    - May need to rewrite as explicit `while` loops
-    - Fixes ~8 E0277 errors
+  - [x] **V3.6.6: Fix for-loop iterators** ✅ COMPLETE (~30 LOC, 16 errors fixed)
+    - Rewrote `for i in iter:iter` with `(0..len)` range → `while i < len` loops
+    - 4 locations: election_gen (2), executor_gen (1), replica_gen (1)
+    - Also fixed: `ios[0]` → `ios[i]`, `CSend` → `Send`, LPacket→CPacket construction
+    - Also fixed: `Vec<Request>` → `Vec<CRequest>`, `acc = reqs` → `acc = reqs.clone()`
+    - Error count: 152 → 136 (16 errors fixed)
 
   - [ ] **V3.6.7: Fix function signatures and arg counts** (~60 LOC, medium-hard)
     - Functions called with wrong arg count (e.g., `UpdateNewCache` needs 3 args, called with 2)
@@ -1836,7 +1837,7 @@ use crate::implementation::RSL::cconfiguration::*; // CConfiguration
 |-------|-------|--------|------------------|
 | Recursive helpers | R1.1-R1.7 | ✅ Complete | None |
 | Infrastructure types | I2.1-I2.7 | ✅ Complete | None |
-| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.5 done (152 errors remain) |
+| Verus verification | V3.1-V3.8 | ⚠️ In Progress | V3.3 COMPLETE; V3.6.1-V3.6.6 done (136 errors remain) |
 
 **Current State**: With `#[cfg(test)]` guard: **455 verified, 0 errors** ✅ (including hand-written dispatch functions + Clone impls)
 
@@ -1851,7 +1852,7 @@ Key issues: (1) ensures clauses use shallow `@` where deep conversion needed, (2
 fields for optimization fields added to impl types, (3) i64/u64 type mismatches, (4) ref/owned
 mismatches, (5) collection operations that don't exist on std types.
 
-**Next step**: V3.6.6 - Fix for-loop iterators (~30 LOC)
+**Next step**: V3.6.7 - Fix function signatures and arg counts (~60 LOC)
 
 **Type deduplication COMPLETE**: All generated component files now import types from implementation:
 - `types_gen.rs` re-exports basic types from `types_i.rs`
