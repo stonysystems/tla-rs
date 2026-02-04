@@ -2440,10 +2440,14 @@ This phase adds support for transpiling TLA+ specifications directly to Verus/TL
     - Handle record field access to infer record types
     - Handle quantifier bounds, function construction, set comprehensions
     - 6 new tests for constraint collection
-  - [ ] **T4.1.3: Implement type unification/resolution**
-    - Resolve collected constraints to concrete types
-    - Handle conflicts by choosing most specific type or reporting ambiguity
-    - ~150 LOC
+  - [x] **T4.1.3: Implement type unification/resolution** ✅ COMPLETED
+    - Implemented TypeSubstitution for mapping type variables to resolved types
+    - Implemented TypeUnifier with Hindley-Milner style unification
+    - Handles type variable resolution, occurs check, and conflict detection
+    - Supports unification of complex types (sets, maps, tuples, records, functions)
+    - Nat/Int subtyping and IntRange/Set(Int) unification
+    - Added build_type_env() to construct TypeEnv from resolved constraints
+    - ~330 LOC with 20 new tests for unification
   - [ ] **T4.1.4: Build type environment from module**
     - Collect types for constants, variables, and operators
     - Output: mapping from identifier names to inferred types
