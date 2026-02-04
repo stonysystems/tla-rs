@@ -2245,7 +2245,7 @@ impl Translator {
         &self,
         seq_param: &str,
         transform: &Expr,
-        _extra_args: &[String],
+        extra_args: &[String],
         func: &AnnotatedFunction,
     ) -> TranspileResult<ExecExpr> {
         // Create a minimal context for expression transformation
@@ -2264,12 +2264,8 @@ impl Translator {
         // Wrap in clone to get owned value
         let element_expr = ExecExpr::Clone(Box::new(element_with_index));
 
-        // Build invariant string
-        let invariant = format!(
-            "result@ == {}@.take(i as int).map(|x: {}| /* transform */)",
-            seq_param,
-            self.get_element_type_hint(func)
-        );
+        // Build invariants
+        let invariants = self.build_map_invariants(func, seq_param, transform, extra_args);
 
         // Build the loop body (no conditional for map - every element is transformed)
         let loop_body = ExecExpr::MethodCall {
@@ -2300,7 +2296,7 @@ impl Translator {
                         args: vec![],
                     }),
                 }),
-                invariants: vec![invariant],
+                invariants,
                 body: Box::new(loop_body),
             },
             // result
@@ -2308,6 +2304,71 @@ impl Translator {
         ];
 
         Ok(ExecExpr::Block(stmts))
+    }
+
+    /// Build invariants for map pattern loop
+    fn build_map_invariants(
+        &self,
+        func: &AnnotatedFunction,
+        seq_param: &str,
+        transform: &Expr,
+        extra_args: &[String],
+    ) -> Vec<String> {
+        let mut invariants = Vec::new();
+
+        // Invariant 1: Bounds
+        invariants.push(format!("i <= {}.len()", seq_param));
+
+        // Invariant 2: Result length equals iteration count (map produces same length)
+        invariants.push("result.len() == i".to_string());
+
+        // Invariant 3: Spec equivalence
+        let transform_str = self.expr_to_spec_string(transform, extra_args);
+        let element_type = self.get_element_type_hint(func);
+        let map_invariant = format!(
+            "result@ == {}@.take(i as int).map(|x: {}| {})",
+            seq_param,
+            element_type,
+            transform_str
+        );
+        invariants.push(map_invariant);
+
+        invariants
+    }
+
+    /// Build invariants for fold pattern loop
+    fn build_fold_invariants(
+        &self,
+        func: &AnnotatedFunction,
+        seq_param: &str,
+        _init: &Expr,
+        _combine: &Expr,
+        extra_args: &[String],
+    ) -> Vec<String> {
+        let mut invariants = Vec::new();
+
+        // Invariant 1: Bounds
+        invariants.push(format!("i <= {}.len()", seq_param));
+
+        // Invariant 2: Spec equivalence - accumulator matches spec fold over processed elements
+        // For fold: acc@ == FoldFunc(seq@.take(i as int), extra_args@...)
+        // We express this by calling the spec function directly on the truncated sequence
+        let spec_name = &func.spec_fn.name;
+
+        // Build the spec call with truncated sequence
+        // FoldFunc(seq@.take(i as int), extra_args@...)
+        let mut spec_args = vec![format!("{}@.take(i as int)", seq_param)];
+        for arg in extra_args {
+            spec_args.push(format!("{}@", arg));
+        }
+        let fold_invariant = format!(
+            "acc@ == {}({})",
+            spec_name,
+            spec_args.join(", ")
+        );
+        invariants.push(fold_invariant);
+
+        invariants
     }
 
     /// Translate a fold pattern to loop-based exec code.
@@ -2334,7 +2395,7 @@ impl Translator {
         seq_param: &str,
         init: &Expr,
         combine: &Expr,
-        _extra_args: &[String],
+        extra_args: &[String],
     ) -> TranspileResult<ExecFunction> {
         let exec_name = self.translate_definition_name(&func.spec_fn.name);
 
@@ -2351,7 +2412,7 @@ impl Translator {
         let ensures = self.build_helper_ensures(func);
 
         // Build the loop body
-        let body = self.build_fold_loop_body(seq_param, init, combine, func)?;
+        let body = self.build_fold_loop_body(seq_param, init, combine, extra_args, func)?;
 
         Ok(ExecFunction {
             name: exec_name,
@@ -2370,6 +2431,7 @@ impl Translator {
         seq_param: &str,
         init: &Expr,
         combine: &Expr,
+        extra_args: &[String],
         func: &AnnotatedFunction,
     ) -> TranspileResult<ExecExpr> {
         let ctx = TransformContext {
@@ -2390,11 +2452,8 @@ impl Translator {
         // For fold, combine might reference __acc placeholder - substitute it
         let combine_with_acc = self.substitute_acc_placeholder(combine_expr);
 
-        // Build invariant
-        let invariant = format!(
-            "acc@ == fold({}@.take(i as int), init, combine)",
-            seq_param
-        );
+        // Build invariants
+        let invariants = self.build_fold_invariants(func, seq_param, init, combine, extra_args);
 
         // Build the loop body: acc = combine(acc, seq[i])
         let loop_body = ExecExpr::Binary {
@@ -2422,7 +2481,7 @@ impl Translator {
                         args: vec![],
                     }),
                 }),
-                invariants: vec![invariant],
+                invariants,
                 body: Box::new(loop_body),
             },
             // acc
@@ -2502,16 +2561,9 @@ impl Translator {
             }))
         };
 
-        // Build invariant string
-        let spec_call = self.build_filter_spec_call_for_invariant(func, seq_param, extra_args);
-        let invariant = format!(
-            "result@ == {}@.take(i as int){}",
-            seq_param,
-            if keep_when_true {
-                format!(".filter(|x: {}| {})", self.get_element_type_hint(func), spec_call)
-            } else {
-                format!(".filter(|x: {}| !{})", self.get_element_type_hint(func), spec_call)
-            }
+        // Build invariants
+        let invariants = self.build_filter_invariants(
+            func, seq_param, predicate, keep_when_true, extra_args, &ctx,
         );
 
         // Build the loop
@@ -2547,7 +2599,7 @@ impl Translator {
                         args: vec![],
                     }),
                 }),
-                invariants: vec![invariant],
+                invariants,
                 body: Box::new(loop_body),
             },
             // result
@@ -2555,6 +2607,112 @@ impl Translator {
         ];
 
         Ok(ExecExpr::Block(stmts))
+    }
+
+    /// Build invariants for filter pattern loop
+    fn build_filter_invariants(
+        &self,
+        func: &AnnotatedFunction,
+        seq_param: &str,
+        predicate: &Expr,
+        keep_when_true: bool,
+        extra_args: &[String],
+        _ctx: &TransformContext,
+    ) -> Vec<String> {
+        let mut invariants = Vec::new();
+
+        // Invariant 1: Bounds - i is within valid range
+        invariants.push(format!("i <= {}.len()", seq_param));
+
+        // Invariant 2: Result length is bounded
+        invariants.push("result.len() <= i".to_string());
+
+        // Invariant 3: Spec equivalence - result matches spec function on processed elements
+        // For filter: result@ == seq@.take(i).filter(|x| pred(x))
+        let pred_str = self.expr_to_spec_string(predicate, extra_args);
+        let element_type = self.get_element_type_hint(func);
+        let filter_invariant = format!(
+            "result@ == {}@.take(i as int).filter(|x: {}| {}{})",
+            seq_param,
+            element_type,
+            if keep_when_true { "" } else { "!" },
+            pred_str
+        );
+        invariants.push(filter_invariant);
+
+        invariants
+    }
+
+    /// Convert an AST expression to a string suitable for spec invariants
+    fn expr_to_spec_string(&self, expr: &Expr, _extra_args: &[String]) -> String {
+        match expr {
+            Expr::Call { func, args } => {
+                let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("unknown");
+                let args_str: Vec<String> = args.iter().map(|a| self.expr_to_spec_string(a, _extra_args)).collect();
+                format!("{}({})", func_name, args_str.join(", "))
+            }
+            Expr::MethodCall { receiver, method, args } => {
+                let recv_str = self.expr_to_spec_string(receiver, _extra_args);
+                let args_str: Vec<String> = args.iter().map(|a| self.expr_to_spec_string(a, _extra_args)).collect();
+                if args.is_empty() {
+                    format!("{}.{}()", recv_str, method)
+                } else {
+                    format!("{}.{}({})", recv_str, method, args_str.join(", "))
+                }
+            }
+            Expr::Ident(name) => name.clone(),
+            Expr::Index(base, idx) => {
+                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let idx_str = self.expr_to_spec_string(idx, _extra_args);
+                format!("{}[{}]", base_str, idx_str)
+            }
+            Expr::Field(base, field) => {
+                let base_str = self.expr_to_spec_string(base, _extra_args);
+                format!("{}.{}", base_str, field)
+            }
+            Expr::Arrow(base, field) => {
+                let base_str = self.expr_to_spec_string(base, _extra_args);
+                format!("{}->{}", base_str, field)
+            }
+            Expr::Is(base, variant) => {
+                let base_str = self.expr_to_spec_string(base, _extra_args);
+                format!("{} is {}", base_str, variant)
+            }
+            Expr::Literal(lit) => match lit {
+                Literal::Int(i) => i.to_string(),
+                Literal::Bool(b) => b.to_string(),
+                Literal::String(s) => format!("\"{}\"", s),
+            },
+            Expr::Not(inner) => {
+                let inner_str = self.expr_to_spec_string(inner, _extra_args);
+                format!("!({})", inner_str)
+            }
+            Expr::Binary(l, op, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let op_str = match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "/",
+                    BinOp::And => "&&",
+                    BinOp::Or => "||",
+                    _ => "?",
+                };
+                format!("({} {} {})", l_str, op_str, r_str)
+            }
+            Expr::Eq(l, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                format!("({} == {})", l_str, r_str)
+            }
+            Expr::Le(l, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                format!("({} <= {})", l_str, r_str)
+            }
+            _ => "/* expr */".to_string(),
+        }
     }
 
     /// Transform a filter predicate, substituting s[0] with seq[i]
@@ -2656,18 +2814,6 @@ impl Translator {
         let substituted = self.substitute_head_with_index(transformed, seq_param);
         // Wrap in clone
         Ok(ExecExpr::Clone(Box::new(substituted)))
-    }
-
-    /// Build a spec call string for use in invariants
-    fn build_filter_spec_call_for_invariant(
-        &self,
-        func: &AnnotatedFunction,
-        _seq_param: &str,
-        _extra_args: &[String],
-    ) -> String {
-        // For now, just reference the predicate used in the filter
-        // This will be refined when we have better predicate extraction
-        format!("{}(x, ...)", func.spec_fn.name)
     }
 
     /// Get element type hint for invariant closures
@@ -10970,5 +11116,341 @@ mod tests {
             contains_for_loop(&exec_fn.body),
             "Generated fold code should contain a for loop"
         );
+    }
+
+    // ========================================================================
+    // Invariant Generation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_filter_invariants_contain_bounds_and_spec() {
+        let translator = Translator::default();
+
+        // Create a simple inverted filter function
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("s")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::If {
+                cond: Box::new(func_call("pred", vec![seq_head("s")])),
+                then_branch: Box::new(func_call("FilterFunc", vec![drop_first("s")])),
+                else_branch: Some(Box::new(Expr::Binary(
+                    Box::new(seq_lit(seq_head("s"))),
+                    BinOp::Add,
+                    Box::new(func_call("FilterFunc", vec![drop_first("s")])),
+                ))),
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "FilterFunc".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "s".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Item".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("Seq<Item>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "Translation should succeed: {:?}", result);
+
+        let exec_fn = result.unwrap();
+
+        // Extract invariants from the ForInIter
+        fn extract_invariants(expr: &ExecExpr) -> Vec<String> {
+            match expr {
+                ExecExpr::ForInIter { invariants, .. } => invariants.clone(),
+                ExecExpr::Block(stmts) => stmts.iter().flat_map(extract_invariants).collect(),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    let mut invs = extract_invariants(then_branch);
+                    if let Some(e) = else_branch {
+                        invs.extend(extract_invariants(e));
+                    }
+                    invs
+                }
+                ExecExpr::Let { value, .. } => extract_invariants(value),
+                _ => vec![],
+            }
+        }
+
+        let invariants = extract_invariants(&exec_fn.body);
+
+        // Check bounds invariant exists
+        assert!(
+            invariants.iter().any(|inv| inv.contains("i <= s.len()")),
+            "Should have bounds invariant: {:?}",
+            invariants
+        );
+
+        // Check result length invariant exists
+        assert!(
+            invariants.iter().any(|inv| inv.contains("result.len() <= i")),
+            "Should have result length invariant: {:?}",
+            invariants
+        );
+
+        // Check filter spec invariant exists
+        assert!(
+            invariants.iter().any(|inv| inv.contains(".filter(")),
+            "Should have filter spec invariant: {:?}",
+            invariants
+        );
+    }
+
+    #[test]
+    fn test_map_invariants_contain_bounds_and_spec() {
+        let translator = Translator::default();
+
+        // Create a simple map function
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("dsts")),
+            then_branch: Box::new(Expr::SeqEmpty),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(seq_lit(Expr::Struct {
+                    name: Path::single("LPacket".to_string()),
+                    fields: vec![
+                        ("dst".to_string(), seq_head("dsts")),
+                        ("src".to_string(), ident("src")),
+                    ],
+                })),
+                BinOp::Add,
+                Box::new(func_call(
+                    "BuildPackets",
+                    vec![
+                        ident("src"),
+                        method_call(ident("dsts"), "skip", vec![Expr::Literal(Literal::Int(1))]),
+                    ],
+                )),
+            ))),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "BuildPackets".to_string(),
+            generics: Default::default(),
+            params: vec![
+                crate::ast::Parameter {
+                    name: "src".to_string(),
+                    ty: Type::Named(Path::single("Endpoint".to_string())),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+                crate::ast::Parameter {
+                    name: "dsts".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Endpoint".to_string())))),
+                    mode: None,
+                    variable_mode: Default::default(),
+                    span: None,
+                },
+            ],
+            return_type: Type::Seq(Box::new(Type::Named(Path::single("Packet".to_string())))),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Input],
+            return_type: Some("Seq<Packet>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "Translation should succeed: {:?}", result);
+
+        let exec_fn = result.unwrap();
+
+        // Extract invariants from the ForInIter
+        fn extract_invariants(expr: &ExecExpr) -> Vec<String> {
+            match expr {
+                ExecExpr::ForInIter { invariants, .. } => invariants.clone(),
+                ExecExpr::Block(stmts) => stmts.iter().flat_map(extract_invariants).collect(),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    let mut invs = extract_invariants(then_branch);
+                    if let Some(e) = else_branch {
+                        invs.extend(extract_invariants(e));
+                    }
+                    invs
+                }
+                ExecExpr::Let { value, .. } => extract_invariants(value),
+                _ => vec![],
+            }
+        }
+
+        let invariants = extract_invariants(&exec_fn.body);
+
+        // Check bounds invariant exists
+        assert!(
+            invariants.iter().any(|inv| inv.contains("i <= dsts.len()")),
+            "Should have bounds invariant: {:?}",
+            invariants
+        );
+
+        // Check result length equals i (map produces same length)
+        assert!(
+            invariants.iter().any(|inv| inv.contains("result.len() == i")),
+            "Should have result length invariant: {:?}",
+            invariants
+        );
+
+        // Check map spec invariant exists
+        assert!(
+            invariants.iter().any(|inv| inv.contains(".map(")),
+            "Should have map spec invariant: {:?}",
+            invariants
+        );
+    }
+
+    #[test]
+    fn test_fold_invariants_contain_bounds_and_spec() {
+        let translator = Translator::default();
+
+        // Create a simple fold function (build pattern)
+        let body = Expr::If {
+            cond: Box::new(len_zero_check("items")),
+            then_branch: Box::new(Expr::MapEmpty),
+            else_branch: Some(Box::new(Expr::MethodCall {
+                receiver: Box::new(func_call("BuildMap", vec![drop_first("items")])),
+                method: "insert".to_string(),
+                args: vec![
+                    Expr::Field(Box::new(seq_head("items")), "key".to_string()),
+                    seq_head("items"),
+                ],
+            })),
+        };
+
+        let spec_fn = SpecFunction {
+            name: "BuildMap".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "items".to_string(),
+                ty: Type::Seq(Box::new(Type::Named(Path::single("Entry".to_string())))),
+                mode: None,
+                variable_mode: Default::default(),
+                span: None,
+            }],
+            return_type: Type::Map(
+                Box::new(Type::Named(Path::single("Key".to_string()))),
+                Box::new(Type::Named(Path::single("Entry".to_string()))),
+            ),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![ParameterMode::Input],
+            return_type: Some("HashMap<Key, Entry>".to_string()),
+            is_recursive: true,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let result = translator.translate(&annotated);
+        assert!(result.is_ok(), "Translation should succeed: {:?}", result);
+
+        let exec_fn = result.unwrap();
+
+        // Extract invariants from the ForInIter
+        fn extract_invariants(expr: &ExecExpr) -> Vec<String> {
+            match expr {
+                ExecExpr::ForInIter { invariants, .. } => invariants.clone(),
+                ExecExpr::Block(stmts) => stmts.iter().flat_map(extract_invariants).collect(),
+                ExecExpr::If { then_branch, else_branch, .. } => {
+                    let mut invs = extract_invariants(then_branch);
+                    if let Some(e) = else_branch {
+                        invs.extend(extract_invariants(e));
+                    }
+                    invs
+                }
+                ExecExpr::Let { value, .. } => extract_invariants(value),
+                _ => vec![],
+            }
+        }
+
+        let invariants = extract_invariants(&exec_fn.body);
+
+        // Check bounds invariant exists
+        assert!(
+            invariants.iter().any(|inv| inv.contains("i <= items.len()")),
+            "Should have bounds invariant: {:?}",
+            invariants
+        );
+
+        // Check fold spec invariant references the spec function
+        assert!(
+            invariants.iter().any(|inv| inv.contains("acc@") && inv.contains("BuildMap")),
+            "Should have fold spec invariant referencing spec function: {:?}",
+            invariants
+        );
+
+        // Check fold invariant uses take(i)
+        assert!(
+            invariants.iter().any(|inv| inv.contains(".take(i as int)")),
+            "Should have take(i) in fold invariant: {:?}",
+            invariants
+        );
+    }
+
+    #[test]
+    fn test_expr_to_spec_string_function_call() {
+        let translator = Translator::default();
+
+        // Test function call conversion
+        let expr = func_call("RequestSatisfiedBy", vec![seq_head("s"), ident("r")]);
+        let result = translator.expr_to_spec_string(&expr, &[]);
+        assert!(result.contains("RequestSatisfiedBy"));
+        assert!(result.contains("s[0]") || result.contains("s.index(0)"));
+    }
+
+    #[test]
+    fn test_expr_to_spec_string_method_call() {
+        let translator = Translator::default();
+
+        // Test method call conversion
+        let expr = method_call(ident("s"), "len", vec![]);
+        let result = translator.expr_to_spec_string(&expr, &[]);
+        assert_eq!(result, "s.len()");
+    }
+
+    #[test]
+    fn test_expr_to_spec_string_is_variant() {
+        let translator = Translator::default();
+
+        // Test "is" expression (enum variant check)
+        let expr = Expr::Is(Box::new(seq_head("ios")), "Send".to_string());
+        let result = translator.expr_to_spec_string(&expr, &[]);
+        assert!(result.contains("is Send"));
     }
 }

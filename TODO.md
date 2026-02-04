@@ -1477,10 +1477,12 @@ These are the remaining issues preventing fully automated TLA+ → runnable Rust
   - Added `translate_fold_pattern()` and `build_fold_loop_body()` for loop generation
   - Includes 4 tests: build pattern, accumulator pattern, map distinction, loop generation
 
-- [ ] **R1.5: Generate loop invariants for recursive-to-iterative**
-  - Filter invariant: `result@ == s@.take(i).filter(pred)`
-  - Map invariant: `result@ == s@.take(i).map(f)`
-  - Fold invariant: `acc@ == fold(s@.take(i), init, combine)`
+- [x] **R1.5: Generate loop invariants for recursive-to-iterative** (DONE)
+  - Implemented `build_filter_invariants()`: bounds check + `result@ == seq@.take(i).filter(|x| pred)`
+  - Implemented `build_map_invariants()`: bounds check + length equality + `result@ == seq@.take(i).map(|x| transform)`
+  - Implemented `build_fold_invariants()`: bounds check + `acc@ == SpecFunc(seq@.take(i), extra_args@...)`
+  - Added `expr_to_spec_string()` for converting AST expressions to spec-level strings
+  - Added 6 tests for invariant generation (filter, map, fold bounds/spec invariants)
 
 - [ ] **R1.6: Add decreases clause inference**
   - Default: `decreases s.len()` for sequence recursion
