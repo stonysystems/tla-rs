@@ -255,20 +255,29 @@ impl Printer {
                 method,
                 args,
             } => {
-                self.print_expr(receiver);
-                self.write(".");
-                self.write(method);
-                self.write("(");
-                let args_str: Vec<_> = args
-                    .iter()
-                    .map(|a| {
-                        let mut p = Printer::new(self.config.clone());
-                        p.print_expr(a);
-                        p.output
-                    })
-                    .collect();
-                self.write(&args_str.join(", "));
-                self.write(")");
+                // Special case: .index(idx) in exec code should use bracket indexing
+                // In Verus spec, .index() is valid, but in Rust exec code we use []
+                if method == "index" && args.len() == 1 {
+                    self.print_expr(receiver);
+                    self.write("[");
+                    self.print_expr(&args[0]);
+                    self.write("]");
+                } else {
+                    self.print_expr(receiver);
+                    self.write(".");
+                    self.write(method);
+                    self.write("(");
+                    let args_str: Vec<_> = args
+                        .iter()
+                        .map(|a| {
+                            let mut p = Printer::new(self.config.clone());
+                            p.print_expr(a);
+                            p.output
+                        })
+                        .collect();
+                    self.write(&args_str.join(", "));
+                    self.write(")");
+                }
             }
 
             ExecExpr::Call { func, args } => {

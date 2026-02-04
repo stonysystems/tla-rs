@@ -1782,13 +1782,26 @@ impl Translator {
     ///
     /// Handles both multi-segment Paths and single-segment paths that contain "::"
     /// (the parser sometimes stores "Type::Variant" as a single segment)
+    ///
+    /// Special case: If a segment's remapped value already contains "::" (e.g.,
+    /// "RslMessage1b" -> "CMessage::CMessage1b"), use just that remapping as the result.
+    /// This prevents double-prefixing like "CMessage::CMessage::CMessage1b".
     fn translate_path(&self, path: &Path) -> String {
         if path.segments.len() == 1 {
             let segment = &path.segments[0];
             // Check if this single segment contains "::" (parser quirk)
             if segment.contains("::") {
-                // Split and translate each part
+                // Split and translate each part, but check if any translation already has ::
                 let parts: Vec<&str> = segment.split("::").collect();
+                // Translate the last part first - if it already contains ::, use it directly
+                if let Some(last) = parts.last() {
+                    let translated_last = self.translate_name(last);
+                    if translated_last.contains("::") {
+                        // The last segment's remapping already includes the enum type
+                        return translated_last;
+                    }
+                }
+                // Normal case: translate each part and join
                 let translated: Vec<String> = parts
                     .iter()
                     .map(|s| self.translate_name(s))
@@ -1800,7 +1813,17 @@ impl Translator {
             }
         } else {
             // Multi-segment path (enum variant like Type::Variant)
-            // Translate each segment individually
+            // Check if the last segment's translation already contains "::"
+            // This happens when the remapping includes the full path (e.g., "RslMessage1b" -> "CMessage::CMessage1b")
+            if let Some(last_segment) = path.segments.last() {
+                let translated_last = self.translate_name(last_segment);
+                if translated_last.contains("::") {
+                    // The last segment's remapping already includes the enum type
+                    // Use it directly instead of joining all segments
+                    return translated_last;
+                }
+            }
+            // Normal case: translate each segment individually
             let translated_segments: Vec<String> = path
                 .segments
                 .iter()

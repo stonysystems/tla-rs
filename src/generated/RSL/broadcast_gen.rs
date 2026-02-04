@@ -49,8 +49,8 @@ ensures
     LBroadcastToEveryone(c@, myidx@, m@, result@),
 {
 (0..c.replica_ids.len()).map(|idx| CPacket {
-    dst: c.replica_ids.index(idx),
-    src: c.replica_ids.index(myidx),
+    dst: c.replica_ids[idx],
+    src: c.replica_ids[myidx],
     msg: m.clone(),
 }).collect()
 }

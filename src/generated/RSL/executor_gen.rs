@@ -55,7 +55,7 @@ CExecutor {
             seqno: 0,
             proposer_id: 0,
         },
-        next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpUnknown {
+        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: HashMap::new(),
     }
@@ -77,7 +77,7 @@ CExecutor {
         app: s.app,
         ops_complete: s.ops_complete,
         max_bal_reflected: s.max_bal_reflected,
-        next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpKnown {
+        next_op_to_execute: COutstandingOperation::COutstandingOpKnown {
             v: v.clone(),
             bal: bal.clone(),
         },
@@ -98,7 +98,7 @@ ensures
 {
     let batch = s.next_op_to_execute.get_v();
         let temp = CHandleRequestBatch(&s.app, &batch);
-        let new_state = temp.0.index((temp.0.len() - 1));
+        let new_state = temp.0[(temp.0.len() - 1)];
         let replies = temp.1;
         let clients = CExecutor::CClientsInReplies(&replies);
         let s_reply_cache = CExecutor::CUpdateNewCache(&s.reply_cache, &replies);
@@ -107,8 +107,8 @@ ensures
     s.next_op_to_execute.get_bal()
 } else {
     s.max_bal_reflected
-}, next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpUnknown {
-}, reply_cache: s_reply_cache, ..s.clone() }, CExecutor::CGetPacketsFromReplies(s.constants.all.config.replica_ids.index(s.constants.my_index), &batch, &replies)), sent_packets)
+}, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
+}, reply_cache: s_reply_cache, ..s.clone() }, CExecutor::CGetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index], &batch, &replies)), sent_packets)
 
 
 
@@ -134,7 +134,7 @@ ensures
         app: m.get_app_state(),
         ops_complete: m.get_opn_state_supply(),
         max_bal_reflected: m.get_bal_state_supply(),
-        next_op_to_execute: COutstandingOperation::COutstandingOperation::COutstandingOpUnknown {
+        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: m.get_reply_cache(),
     }
@@ -155,8 +155,8 @@ ensures
     if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLeq(&s.max_bal_reflected, &m.get_bal_state_req()) && ((s.ops_complete >= m.get_opn_state_req()) && s.constants.CReplicaConstantsValid()))) {
         (s.clone(), vec![CPacket {
     dst: inp.src,
-    src: s.constants.all.config.replica_ids.index(s.constants.my_index),
-    msg: CMessage::CMessage::CMessageAppStateSupply {
+    src: s.constants.all.config.replica_ids[s.constants.my_index],
+    msg: CMessage::CMessageAppStateSupply {
         bal_state_supply: s.max_bal_reflected,
         opn_state_supply: s.ops_complete,
         app_state: s.app,
@@ -180,7 +180,7 @@ ensures
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@),
 {
 if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.get_logTruncationPoint_2() > s.ops_complete)) {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage::CMessageAppStateRequest {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
     bal_state_req: inp.msg.get_bal_2(),
     opn_state_req: inp.msg.get_logTruncationPoint_2(),
 });
@@ -203,12 +203,12 @@ ensures
     result.valid(),
     LExecutorProcessRequest(s@, inp@, result@),
 {
-if ((inp.msg.get_seqno_req() == s.reply_cache.index(inp.src).seqno) && s.constants.CReplicaConstantsValid()) {
-                let r = s.reply_cache.index(inp.src);
+if ((inp.msg.get_seqno_req() == s.reply_cache[inp.src].seqno) && s.constants.CReplicaConstantsValid()) {
+                let r = s.reply_cache[inp.src];
         vec![CPacket {
     dst: r.client,
-    src: s.constants.all.config.replica_ids.index(s.constants.my_index),
-    msg: CMessage::CMessage::CMessageReply {
+    src: s.constants.all.config.replica_ids[s.constants.my_index],
+    msg: CMessage::CMessageReply {
         seqno_reply: r.seqno,
         reply: r.reply,
     },

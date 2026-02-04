@@ -95,10 +95,10 @@ ensures
                 }
 
             } else {
-                if s.unexecuted_learner_state.index(opn).received_2b_message_senders.contains(packet.src) {
+                if s.unexecuted_learner_state[opn].received_2b_message_senders.contains(packet.src) {
                     s.clone()
                 } else {
-                                        let tup = s.unexecuted_learner_state.index(opn);
+                                        let tup = s.unexecuted_learner_state[opn];
                                         let tup_ = CLearnerTuple {
                         received_2b_message_senders: (tup.received_2b_message_senders + HashSet::from(vec![packet.src])),
                         candidate_learned_value: tup.candidate_learned_value,

@@ -1374,12 +1374,28 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
       - Added `primitive_types` config option to transpile.toml
       - Types like `COperationNumber` (u64 alias), `CVotes` (HashMap alias) now skip `valid()` generation
       - Implemented `should_skip_valid()` method in translator to check both AST primitives and config list
+    - ~~Double enum path: ❌ REMAINING - `CMessage::CMessage::CMessage1b` generated instead of `CMessage::CMessage1b`~~: ✅ FIXED [2026-02-04]
+      - Fixed `translate_path()` in translator to handle remappings that already contain `::`
+      - When variant remapping like `"RslMessage1b" = "CMessage::CMessage1b"` is used, don't prepend enum type again
+    - ~~Array indexing: ❌ REMAINING - Generated `.index()` method calls instead of bracket notation~~: ✅ FIXED [2026-02-04]
+      - Updated printer to output `arr[idx]` instead of `arr.index(idx)` for exec code
+      - Note: `usize` casting still needed manually for u64 indices (Vec requires usize)
 - [ ] **Fix any verification failures in generated code**
   - Status: Major syntax issues fixed, `valid()` predicate issue fixed, type compatibility issues remain
+  - **Progress [2026-02-04]**: Error count reduced from 441 to 393 (48 errors fixed)
+  - **Error breakdown (393 remaining):**
+    - Type mismatches (152): spec types vs exec types (Map<int, Vote> vs HashMap<u64, CVote>)
+    - Missing `valid()` method (41): Vec<CPacket>, Vec<CRslIo> don't have valid()
+    - Missing enum accessor methods (47): get_bal_1a(), get_opn_2a(), etc. on CMessage
+    - Missing struct fields (21): CProposer, CElectionState, CAcceptor missing optimization fields
+    - Other (132): argument count mismatches, type casting, HashSet conversions
   - Remaining blockers:
     1. Type abstraction layer needed for HashMap operations
     2. Iterator patterns need manual implementation or special handling
-    ~~3. `valid()` predicate generation needs type awareness~~: ✅ FIXED
+    3. Missing struct fields (optimization fields not in spec): min_vote_opn, max_log_truncation_point, cur_req_set, etc.
+    4. Missing valid() on collections - need Vec<T>.valid() impl or skip generation
+    5. Missing enum accessor methods - need to generate or map get_*() methods for CMessage variants
+    ~~6. `valid()` predicate generation needs type awareness~~: ✅ FIXED
 
 #### 5. Success Criteria (Not Yet Achieved)
 - [ ] All spec functions (predicates AND helpers) have generated exec implementations

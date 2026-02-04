@@ -52,7 +52,7 @@ requires
 ensures
     LAddVoteAndRemoveOldOnes(votes@, result@, new_opn@, new_vote@, log_truncation_point@),
 {
-    let mut __result = votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).map(|(opn, __v)| (opn.clone(), votes.index(opn))).collect();
+    let mut __result = votes.iter().filter(|(opn, _)| (opn >= log_truncation_point)).map(|(opn, __v)| (opn.clone(), votes[opn])).collect();
     __result.insert(new_opn.clone(), new_vote.clone());
     __result
 
@@ -97,9 +97,9 @@ ensures
     last_checkpointed_operation: s.last_checkpointed_operation,
     log_truncation_point: s.log_truncation_point,
 }, vec![CPacket {
-    src: s.constants.all.config.replica_ids.index(s.constants.my_index),
+    src: s.constants.all.config.replica_ids[s.constants.my_index],
     dst: inp.src,
-    msg: CMessage::CMessage::CMessage1b {
+    msg: CMessage::CMessage1b {
         bal_1b: bal,
         log_truncation_point: s.log_truncation_point,
         votes: s.votes,
@@ -131,7 +131,7 @@ ensures
     } else {
         s.log_truncation_point
     };
-        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage::CMessage2b {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2b {
     bal_2b: m.get_bal_2a(),
     opn_2b: m.get_opn_2a(),
     val_2b: m.get_val_2a(),
@@ -160,7 +160,7 @@ ensures
 {
 if s.constants.all.config.replica_ids.contains(inp.src) {
                 let sender_index = s.constants.all.config.CGetReplicaIndex(&inp.src);
-        if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg.get_opn_ckpt() > s.last_checkpointed_operation.index(sender_index))) {
+        if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg.get_opn_ckpt() > s.last_checkpointed_operation[sender_index])) {
             CAcceptor { last_checkpointed_operation: s.last_checkpointed_operation.update(sender_index, inp.msg.get_opn_ckpt()), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
         } else {
             s.clone()
