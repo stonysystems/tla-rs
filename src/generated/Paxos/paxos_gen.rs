@@ -8,8 +8,19 @@ use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 
 verus! {
+
+/// Helper proof: mapping over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by { }
+}
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -24,8 +35,9 @@ ensures
         max_val: HashSet::new(),
         msg_count: 0u64,
     };
-    assume(result.valid());
-    assume(LInit(result@, c@));
+    proof {
+        lemma_empty_set_map();
+    }
     result
 }
 
@@ -44,8 +56,6 @@ ensures
         max_val: clone_hashset(&s.max_val),
         msg_count: s.msg_count + 1,
     };
-    assume(result.valid());
-    assume(LSend1a(s@, result@, c@, *b as int));
     result
 }
 
@@ -66,8 +76,9 @@ ensures
         max_val: clone_hashset(&s.max_val),
         msg_count: s.msg_count + 1,
     };
-    assume(result.valid());
-    assume(LSend1b(s@, result@, c@, *b as int));
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 
@@ -86,8 +97,6 @@ ensures
         max_val: clone_hashset(&s.max_val),
         msg_count: s.msg_count + 1,
     };
-    assume(result.valid());
-    assume(LSend2a(s@, result@, c@, *b as int, *v as int));
     result
 }
 
@@ -110,8 +119,9 @@ ensures
         max_val: max_val,
         msg_count: s.msg_count + 1,
     };
-    assume(result.valid());
-    assume(LSend2b(s@, result@, c@, *b as int, *v as int));
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 

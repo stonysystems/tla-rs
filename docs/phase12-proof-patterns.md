@@ -167,6 +167,17 @@ proof {
 | CNodeFail | 2 (valid + spec) | Pattern 1 + Pattern 3 (precondition) + Pattern 6 (remove-map x2) |
 | **Total** | **10** | |
 
+## Summary: Paxos Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CInit | 2 (valid + spec) | Pattern 1 + Pattern 4 (empty set map) |
+| CSend1a | 2 (valid + spec) | Pattern 1 + Pattern 2 (clone ensures) |
+| CSend1b | 2 (valid + spec) | Pattern 1 + Pattern 5 (insert-map) |
+| CSend2a | 2 (valid + spec) | Pattern 1 + Pattern 2 (clone ensures) |
+| CSend2b | 2 (valid + spec) | Pattern 1 + Pattern 5 (insert-map x2) |
+| **Total** | **10** | |
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
@@ -179,3 +190,4 @@ proof {
 | Before (V3.12) | 579 | 0 | ~244 | — |
 | After TwoPhase (12.1.1) | 580 | 0 | ~236 | +1 verified, -8 assumes |
 | After LeaderElection (12.1.2) | 582 | 0 | ~226 | +2 verified, -10 assumes |
+| After Paxos (12.1.3) | 583 | 0 | ~216 | +1 verified, -10 assumes |
