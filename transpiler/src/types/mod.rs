@@ -26,6 +26,12 @@ pub struct TypeRegistry {
     pub functions: HashMap<String, FunctionSig>,
     /// Type aliases indexed by full path
     pub aliases: HashMap<String, TypeAlias>,
+    /// Insertion order for structs (for deterministic output)
+    pub struct_order: Vec<String>,
+    /// Insertion order for enums (for deterministic output)
+    pub enum_order: Vec<String>,
+    /// Insertion order for aliases (for deterministic output)
+    pub alias_order: Vec<String>,
 }
 
 /// A struct definition
@@ -128,12 +134,20 @@ impl TypeRegistry {
 
     /// Register a struct definition
     pub fn register_struct(&mut self, def: StructDef) {
-        self.structs.insert(def.name.clone(), def);
+        let name = def.name.clone();
+        if !self.structs.contains_key(&name) {
+            self.struct_order.push(name.clone());
+        }
+        self.structs.insert(name, def);
     }
 
     /// Register an enum definition
     pub fn register_enum(&mut self, def: EnumDef) {
-        self.enums.insert(def.name.clone(), def);
+        let name = def.name.clone();
+        if !self.enums.contains_key(&name) {
+            self.enum_order.push(name.clone());
+        }
+        self.enums.insert(name, def);
     }
 
     /// Register a function signature
@@ -162,7 +176,11 @@ impl TypeRegistry {
 
     /// Register a type alias
     pub fn register_alias(&mut self, alias: TypeAlias) {
-        self.aliases.insert(alias.name.clone(), alias);
+        let name = alias.name.clone();
+        if !self.aliases.contains_key(&name) {
+            self.alias_order.push(name.clone());
+        }
+        self.aliases.insert(name, alias);
     }
 
     /// Look up a struct definition by name

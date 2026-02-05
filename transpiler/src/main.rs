@@ -89,9 +89,10 @@ enum Commands {
 
     /// Generate type definitions from spec types
     GenerateTypes {
-        /// Input spec file
-        #[arg(short, long)]
-        input: PathBuf,
+        /// Input spec file(s) - can be specified multiple times for multi-file generation.
+        /// Files are processed in the order provided (use dependency order).
+        #[arg(short, long, action = clap::ArgAction::Append)]
+        input: Vec<PathBuf>,
 
         /// Output file
         #[arg(short, long)]
@@ -270,8 +271,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             use verus_transpiler::types::TypeDef;
             use verus_transpiler::{TypeParser, TypeRegistry};
 
+            if input.is_empty() {
+                return Err(miette::miette!("At least one --input file is required"));
+            }
+
             if cli.verbose {
-                eprintln!("Generating types from: {}", input.display());
+                for f in input {
+                    eprintln!("Input file: {}", f.display());
+                }
             }
 
             // Load config for remappings, naming, and imports if provided
@@ -301,39 +308,51 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 )
             };
 
-            let content = std::fs::read_to_string(input)
-                .map_err(|e| miette::miette!("Failed to read input file: {}", e))?;
-
-            let mut parser = TypeParser::new(&content);
             let mut registry = TypeRegistry::new();
 
-            // Parse all type definitions from the source
-            let type_defs = parser
-                .parse_types()
-                .map_err(|e| miette::miette!("Failed to parse types: {}", e))?;
+            // Parse all input files in order (user provides dependency order)
+            for input_file in input {
+                if cli.verbose {
+                    eprintln!("Parsing: {}", input_file.display());
+                }
+                let content = std::fs::read_to_string(input_file).map_err(|e| {
+                    miette::miette!("Failed to read {}: {}", input_file.display(), e)
+                })?;
 
-            for type_def in type_defs {
-                match type_def {
-                    TypeDef::Struct(struct_def) => {
-                        if cli.verbose {
-                            eprintln!("  Found struct: {}", struct_def.name);
+                let mut parser = TypeParser::new(&content);
+                let type_defs = parser.parse_types().map_err(|e| {
+                    miette::miette!("Failed to parse {}: {}", input_file.display(), e)
+                })?;
+
+                for type_def in type_defs {
+                    match type_def {
+                        TypeDef::Struct(struct_def) => {
+                            if cli.verbose {
+                                eprintln!("  Found struct: {}", struct_def.name);
+                            }
+                            registry.register_struct(struct_def);
                         }
-                        registry.structs.insert(struct_def.name.clone(), struct_def);
-                    }
-                    TypeDef::Enum(enum_def) => {
-                        if cli.verbose {
-                            eprintln!("  Found enum: {}", enum_def.name);
+                        TypeDef::Enum(enum_def) => {
+                            if cli.verbose {
+                                eprintln!("  Found enum: {}", enum_def.name);
+                            }
+                            registry.register_enum(enum_def);
                         }
-                        registry.enums.insert(enum_def.name.clone(), enum_def);
-                    }
-                    TypeDef::Alias(_) => {
-                        // Type aliases are not directly generated
+                        TypeDef::Alias(alias) => {
+                            if cli.verbose {
+                                eprintln!("  Found type alias: {}", alias.name);
+                            }
+                            registry.register_alias(alias);
+                        }
                     }
                 }
             }
 
-            if registry.structs.is_empty() && registry.enums.is_empty() {
-                return Err(miette::miette!("No spec types found in input file"));
+            if registry.structs.is_empty()
+                && registry.enums.is_empty()
+                && registry.aliases.is_empty()
+            {
+                return Err(miette::miette!("No spec types found in input file(s)"));
             }
 
             // Generate exec types using the registry function
@@ -357,9 +376,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 std::fs::write(output_path, &all_code)
                     .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
                 println!(
-                    "Generated {} structs, {} enums -> {}",
+                    "Generated {} structs, {} enums, {} aliases -> {}",
                     registry.structs.len(),
                     registry.enums.len(),
+                    registry.aliases.len(),
                     output_path.display()
                 );
             } else {

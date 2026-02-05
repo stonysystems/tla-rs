@@ -3246,17 +3246,20 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 
 ### Phase 11.1: Extend Transpiler for Multi-File Type Generation (~200 LOC)
 
-- [ ] **11.1.1**: Change `generate-types` CLI `--input` from single `PathBuf` to `Vec<PathBuf>`
+- [x] **11.1.1**: Change `generate-types` CLI `--input` from single `PathBuf` to `Vec<PathBuf>` ✅
   - File: `transpiler/src/main.rs`
   - Use `#[arg(short, long, action = clap::ArgAction::Append)]`
   - Iterate over all input files, merge parsed types into one `TypeRegistry`
-- [ ] **11.1.2**: Add type alias emission in `generate_all_types_with_options()`
+- [x] **11.1.2**: Add type alias emission in `generate_all_types_with_options()` ✅
   - File: `transpiler/src/codegen/mod.rs`
-  - Currently `TypeDef::Alias` is skipped; generate `pub type CXxx = TranslatedType;`
-- [ ] **11.1.3**: Add dependency ordering to type generation
-  - Process input files in order provided (user provides in dependency order)
-  - Or: parse field types to determine dependency graph and topologically sort
-- [ ] **11.1.4**: Add tests for multi-file type generation
+  - TypeAlias now emitted as `pub type CXxx = TranslatedType;`
+  - Added `get_exec_alias_name()` and `translate_alias_type()` to TypeGenerator
+- [x] **11.1.3**: Add dependency ordering to type generation ✅
+  - Added `struct_order`, `enum_order`, `alias_order` Vec<String> to TypeRegistry
+  - `register_struct/enum/alias()` track insertion order; generation iterates in order
+- [x] **11.1.4**: Add tests for multi-file type generation ✅
+  - 5 new tests: alias generation, alias with remapping, alias map, insertion order, dedup
+  - Fixed integration tests to use `register_*()` methods instead of direct HashMap insert
 
 ### Phase 11.2: Add Enum Variant Name Remapping (~100 LOC)
 

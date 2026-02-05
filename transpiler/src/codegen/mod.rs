@@ -419,6 +419,20 @@ impl TypeGenerator {
         self.config.get_exec_type(name)
     }
 
+    /// Get the exec name for a type alias (e.g., "RequestBatch" -> "CRequestBatch")
+    pub fn get_exec_alias_name(&self, spec_name: &str) -> String {
+        // Check remapping first (alias name itself might be remapped)
+        if let Some(exec_name) = self.remapping.get(spec_name) {
+            return exec_name.clone();
+        }
+        self.config.get_exec_type(spec_name)
+    }
+
+    /// Translate a type alias's target type to exec equivalent
+    pub fn translate_alias_type(&self, ty: &Type) -> String {
+        self.translate_type(ty)
+    }
+
     /// Translate a spec type to its exec equivalent
     fn translate_type(&self, ty: &Type) -> String {
         match ty {
@@ -701,23 +715,39 @@ pub fn generate_all_types_with_options(
 
     all_code.push_str("verus! {\n\n");
 
-    // Generate structs
-    for struct_def in registry.structs.values() {
-        if struct_def.is_spec {
-            let generated = generator.generate_struct(struct_def);
-            all_code.push_str(&generated.code);
-            all_code.push('\n');
-            all_warnings.extend(generated.warnings);
+    // Generate type aliases (in insertion order)
+    for alias_name in &registry.alias_order {
+        if let Some(alias) = registry.aliases.get(alias_name) {
+            let exec_name = generator.get_exec_alias_name(&alias.name);
+            let exec_type = generator.translate_alias_type(&alias.ty);
+            all_code.push_str(&format!("pub type {} = {};\n", exec_name, exec_type));
+        }
+    }
+    if !registry.aliases.is_empty() {
+        all_code.push('\n');
+    }
+
+    // Generate structs (in insertion order)
+    for struct_name in &registry.struct_order {
+        if let Some(struct_def) = registry.structs.get(struct_name) {
+            if struct_def.is_spec {
+                let generated = generator.generate_struct(struct_def);
+                all_code.push_str(&generated.code);
+                all_code.push('\n');
+                all_warnings.extend(generated.warnings);
+            }
         }
     }
 
-    // Generate enums
-    for enum_def in registry.enums.values() {
-        if enum_def.is_spec {
-            let generated = generator.generate_enum(enum_def);
-            all_code.push_str(&generated.code);
-            all_code.push('\n');
-            all_warnings.extend(generated.warnings);
+    // Generate enums (in insertion order)
+    for enum_name in &registry.enum_order {
+        if let Some(enum_def) = registry.enums.get(enum_name) {
+            if enum_def.is_spec {
+                let generated = generator.generate_enum(enum_def);
+                all_code.push_str(&generated.code);
+                all_code.push('\n');
+                all_warnings.extend(generated.warnings);
+            }
         }
     }
 
@@ -1114,5 +1144,187 @@ mod tests {
             "Default should use 'well_formed': {}",
             result.code
         );
+    }
+
+    #[test]
+    fn test_generate_type_alias() {
+        use crate::types::TypeAlias;
+
+        let mut registry = TypeRegistry::new();
+        registry.register_alias(TypeAlias {
+            name: "RequestBatch".to_string(),
+            generics: Generics::default(),
+            ty: Type::Seq(Box::new(Type::Named(Path::single("Request".to_string())))),
+        });
+
+        let config = make_config();
+        let generated = generate_all_types_with_options(
+            &registry,
+            &config,
+            &HashMap::new(),
+            &[],
+            "well_formed",
+        );
+
+        assert!(
+            generated
+                .code
+                .contains("pub type CRequestBatch = Vec<CRequest>;"),
+            "Should generate alias: {}",
+            generated.code
+        );
+    }
+
+    #[test]
+    fn test_generate_type_alias_with_remapping() {
+        use crate::types::TypeAlias;
+
+        let mut registry = TypeRegistry::new();
+        registry.register_alias(TypeAlias {
+            name: "OperationNumber".to_string(),
+            generics: Generics::default(),
+            ty: Type::Int,
+        });
+
+        let config = NamingConfig {
+            int_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
+        let generated = generate_all_types_with_options(
+            &registry,
+            &config,
+            &HashMap::new(),
+            &[],
+            "well_formed",
+        );
+
+        assert!(
+            generated.code.contains("pub type COperationNumber = u64;"),
+            "Should generate alias with int->u64: {}",
+            generated.code
+        );
+    }
+
+    #[test]
+    fn test_generate_type_alias_map() {
+        use crate::types::TypeAlias;
+
+        let mut registry = TypeRegistry::new();
+        registry.register_alias(TypeAlias {
+            name: "Votes".to_string(),
+            generics: Generics::default(),
+            ty: Type::Map(
+                Box::new(Type::Named(Path::single("OperationNumber".to_string()))),
+                Box::new(Type::Named(Path::single("Vote".to_string()))),
+            ),
+        });
+
+        let config = make_config();
+        let generated = generate_all_types_with_options(
+            &registry,
+            &config,
+            &HashMap::new(),
+            &[],
+            "well_formed",
+        );
+
+        assert!(
+            generated
+                .code
+                .contains("pub type CVotes = HashMap<COperationNumber, CVote>;"),
+            "Should generate map alias: {}",
+            generated.code
+        );
+    }
+
+    #[test]
+    fn test_multi_file_registry_insertion_order() {
+        use crate::types::TypeAlias;
+
+        let mut registry = TypeRegistry::new();
+
+        // Simulate file 1: type alias
+        registry.register_alias(TypeAlias {
+            name: "OperationNumber".to_string(),
+            generics: Generics::default(),
+            ty: Type::Int,
+        });
+
+        // Simulate file 2: struct using that alias
+        registry.register_struct(StructDef {
+            name: "LAcceptor".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "max_bal".to_string(),
+                ty: Type::Named(Path::single("Ballot".to_string())),
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        // Verify insertion order is preserved
+        assert_eq!(registry.alias_order, vec!["OperationNumber"]);
+        assert_eq!(registry.struct_order, vec!["LAcceptor"]);
+
+        // Verify generated code has aliases before structs
+        let config = NamingConfig {
+            int_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
+        let generated = generate_all_types_with_options(
+            &registry,
+            &config,
+            &HashMap::new(),
+            &[],
+            "well_formed",
+        );
+
+        let alias_pos = generated.code.find("pub type COperationNumber").unwrap();
+        let struct_pos = generated.code.find("pub struct CAcceptor").unwrap();
+        assert!(
+            alias_pos < struct_pos,
+            "Aliases should appear before structs in output"
+        );
+    }
+
+    #[test]
+    fn test_multi_file_registry_dedup() {
+        // If same type registered twice, should keep last but not duplicate in order
+        let mut registry = TypeRegistry::new();
+
+        registry.register_struct(StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "x".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        // Re-register same name with different fields
+        registry.register_struct(StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "x".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "y".to_string(),
+                    ty: Type::Bool,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        });
+
+        // Order should not have duplicates
+        assert_eq!(registry.struct_order.len(), 1);
+        // Should keep the latest definition (with 2 fields)
+        assert_eq!(registry.structs["LState"].fields.len(), 2);
     }
 }

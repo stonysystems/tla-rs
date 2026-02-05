@@ -227,7 +227,7 @@ fn test_type_registry_operations() {
         is_spec: true,
     };
 
-    registry.structs.insert("LAcceptor".to_string(), struct_def);
+    registry.register_struct(struct_def);
 
     assert!(registry.structs.contains_key("LAcceptor"));
     assert_eq!(registry.structs.get("LAcceptor").unwrap().fields.len(), 2);
@@ -371,7 +371,7 @@ fn test_parse_verus_block_and_generate_types() {
     let mut registry = TypeRegistry::new();
     for type_def in types {
         if let TypeDef::Struct(s) = type_def {
-            registry.structs.insert(s.name.clone(), s);
+            registry.register_struct(s);
         }
     }
 
@@ -458,7 +458,7 @@ fn test_generate_enum_from_parsed_type() {
     let mut registry = TypeRegistry::new();
     for type_def in types {
         if let TypeDef::Enum(e) = type_def {
-            registry.enums.insert(e.name.clone(), e);
+            registry.register_enum(e);
         }
     }
 
@@ -506,10 +506,10 @@ fn test_generate_all_types_from_registry() {
     for type_def in types {
         match type_def {
             TypeDef::Struct(s) => {
-                registry.structs.insert(s.name.clone(), s);
+                registry.register_struct(s);
             }
             TypeDef::Enum(e) => {
-                registry.enums.insert(e.name.clone(), e);
+                registry.register_enum(e);
             }
             _ => {}
         }
