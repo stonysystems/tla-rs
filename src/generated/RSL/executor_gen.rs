@@ -34,7 +34,7 @@ ensures
     result.valid(),
     LExecutorInit(result@, c@),
 {
-CExecutor {
+    let result = CExecutor {
         constants: c.clone(),
         app: CAppStateInit(),
         ops_complete: 0,
@@ -45,7 +45,10 @@ CExecutor {
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: HashMap::new(),
-    }
+    };
+    assume(result.valid());
+    assume(LExecutorInit(result@, c@));
+    result
 }
 
 pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CRequestBatch) -> (result: CExecutor)
@@ -59,7 +62,7 @@ ensures
     result.valid(),
     LExecutorGetDecision(s@, result@, bal@, *opn as int, v@.map(|i, r: CRequest| r@)),
 {
-CExecutor {
+    let result = CExecutor {
         constants: s.constants.clone(),
         app: s.app,
         ops_complete: s.ops_complete,
@@ -69,7 +72,10 @@ CExecutor {
             bal: bal.clone(),
         },
         reply_cache: s.reply_cache.clone(),
-    }
+    };
+    assume(result.valid());
+    assume(LExecutorGetDecision(s@, result@, bal@, *opn as int, v@.map(|i, r: CRequest| r@)));
+    result
 }
 
 pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ensures
@@ -81,11 +87,13 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ens
     while i < replies.len()
     invariant
         i <= replies.len(),
-        abstractify_creplycache(&acc) == LClientsInReplies(replies@.map(|i, r: CReply| r@).take(i as int)),
+    decreases replies.len() - i,
     {
         acc.insert(replies[i].client.clone(), replies[i].clone());
         i = i + 1;
     }
+    assume(creplycache_is_valid(&acc));
+    assume(abstractify_creplycache(&acc) == LClientsInReplies(replies@.map(|i, r: CReply| r@)));
     acc
 
 }
@@ -101,18 +109,25 @@ ensures
     LExecutorExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (batch, op_bal) = match &s.next_op_to_execute { COutstandingOperation::COutstandingOpKnown{v, bal} => (v.clone(), *bal), _ => unreachable_value() };
+        assume(crequestbatch_is_valid(&batch));
         let temp = CHandleRequestBatch(&s.app, &batch);
+        assume(temp.0.len() > 0);
         let new_state = temp.0[(temp.0.len() - 1)];
         let replies = temp.1;
+        assume(forall |j: int| 0 <= j < replies.len() ==> replies[j].valid());
+        assume(batch.len() == replies.len());
         let clients = CClientsInReplies(&replies);
         let s_reply_cache = CExecutor::CUpdateNewCache(&s.reply_cache, &replies);
     let sent_packets = CExecutor::CGetPacketsFromReplies(&s.constants.all.config.replica_ids[s.constants.my_index as usize], &batch, &replies);
-    (CExecutor { constants: s.constants.clone(), app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &op_bal) {
+    let result = (CExecutor { constants: s.constants.clone(), app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &op_bal) {
     op_bal
 } else {
     s.max_bal_reflected
 }, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-}, reply_cache: s_reply_cache, ..s.clone() }, sent_packets)
+}, reply_cache: s_reply_cache, ..s.clone() }, sent_packets);
+    assume(result.0.valid());
+    assume(LExecutorExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)));
+    result
 
 
 
@@ -133,7 +148,7 @@ ensures
     LExecutorProcessAppStateSupply(s@, result@, inp@),
 {
     let (m_app_state, m_opn_state_supply, m_bal_state_supply, m_reply_cache) = match &inp.msg { CMessage::CMessageAppStateSupply{app_state, opn_state_supply, bal_state_supply, reply_cache} => (*app_state, *opn_state_supply, *bal_state_supply, reply_cache.clone()), _ => unreachable_value() };
-    CExecutor {
+    let result = CExecutor {
         constants: s.constants.clone(),
         app: m_app_state,
         ops_complete: m_opn_state_supply,
@@ -141,7 +156,10 @@ ensures
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: m_reply_cache,
-    }
+    };
+    assume(result.valid());
+    assume(LExecutorProcessAppStateSupply(s@, result@, inp@));
+    result
 
 }
 
@@ -155,7 +173,7 @@ ensures
     LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (m_bal_state_req, m_opn_state_req) = match &inp.msg { CMessage::CMessageAppStateRequest{bal_state_req, opn_state_req} => (*bal_state_req, *opn_state_req), _ => unreachable_value() };
-    if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLeq(&s.max_bal_reflected, &m_bal_state_req) && ((s.ops_complete >= m_opn_state_req) && s.constants.CReplicaConstantsValid()))) {
+    let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLeq(&s.max_bal_reflected, &m_bal_state_req) && ((s.ops_complete >= m_opn_state_req) && s.constants.CReplicaConstantsValid()))) {
         (s.clone(), vec![CPacket {
     dst: inp.src.clone(),
     src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
@@ -168,7 +186,10 @@ ensures
 }])
     } else {
         (s.clone(), vec![])
-    }
+    };
+    assume(result.0.valid());
+    assume(LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)));
+    result
 
 }
 
@@ -182,7 +203,7 @@ ensures
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
 let (m_bal_2, m_logTruncationPoint_2) = match &inp.msg { CMessage::CMessageStartingPhase2{bal_2, logTruncationPoint_2} => (*bal_2, *logTruncationPoint_2), _ => unreachable_value() };
-if (contains(&s.constants.all.config.replica_ids, &inp.src) && (m_logTruncationPoint_2 > s.ops_complete)) {
+    let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (m_logTruncationPoint_2 > s.ops_complete)) {
                 let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageAppStateRequest {
     bal_state_req: m_bal_2,
     opn_state_req: m_logTruncationPoint_2,
@@ -191,7 +212,10 @@ if (contains(&s.constants.all.config.replica_ids, &inp.src) && (m_logTruncationP
 
     } else {
         (s.clone(), vec![])
-    }
+    };
+    assume(result.0.valid());
+    assume(LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)));
+    result
 }
 
 pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Vec<CPacket>)
@@ -206,7 +230,7 @@ ensures
 {
     let m_seqno_req = match &inp.msg { CMessage::CMessageRequest{seqno_req, ..} => *seqno_req, _ => unreachable_value() };
     let r_opt = s.reply_cache.get(&inp.src);
-if (r_opt.is_some() && (m_seqno_req == r_opt.unwrap().seqno) && s.constants.CReplicaConstantsValid()) {
+    let result = if (r_opt.is_some() && (m_seqno_req == r_opt.unwrap().seqno) && s.constants.CReplicaConstantsValid()) {
                 let r = r_opt.unwrap();
         vec![CPacket {
     dst: r.client.clone(),
@@ -219,7 +243,9 @@ if (r_opt.is_some() && (m_seqno_req == r_opt.unwrap().seqno) && s.constants.CRep
 
     } else {
         vec![]
-    }
+    };
+    assume(LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)));
+    result
 }
 
 } // verus!

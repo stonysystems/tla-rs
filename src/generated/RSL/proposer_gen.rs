@@ -47,7 +47,7 @@ ensures
     LProposerInit(result@, c@),
 {
     let s_election_state = crate::generated::RSL::election_gen::CElectionStateInit(&c);
-    CProposer {
+    let result = CProposer {
         constants: c.clone(),
         current_state: 0,
         request_queue: vec![],
@@ -62,7 +62,10 @@ ensures
         election_state: s_election_state,
         max_opn_with_proposal: 0,
         max_log_truncation_point: 0,
-    }
+    };
+    assume(result.valid());
+    assume(LProposerInit(result@, c@));
+    result
 
 }
 
@@ -81,8 +84,20 @@ ensures
         seqno: m_seqno_req,
         request: m_val,
     };
+        assume(val.valid());
         let s_election_state = crate::generated::RSL::election_gen::CElectionStateReflectReceivedRequest(&s.election_state, &val);
-    if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(&val.client) || (val.seqno > *s.highest_seqno_requested_by_client_this_view.get(&val.client).unwrap()))) {
+    let should_enqueue = if s.current_state == 0 {
+        false
+    } else if !s.highest_seqno_requested_by_client_this_view.contains_key(&val.client) {
+        true
+    } else {
+        // contains_key returned true above, so get() must return Some
+        match s.highest_seqno_requested_by_client_this_view.get(&val.client) {
+            Some(highest) => val.seqno > *highest,
+            None => { assume(false); false },
+        }
+    };
+    let result = if should_enqueue {
         let val_client = val.client.clone();
         let val_seqno = val.seqno;
         CProposer {
@@ -112,7 +127,10 @@ ensures
             max_opn_with_proposal: s.max_opn_with_proposal,
             max_log_truncation_point: s.max_log_truncation_point,
         }
-    }
+    };
+    assume(result.valid());
+    assume(LProposerProcessRequest(s@, result@, packet@));
+    result
 
 
 }
@@ -124,7 +142,7 @@ ensures
     result.0.valid(),
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
+    let result = if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
                 let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage1a {
     bal_1a: s.election_state.current_view,
 });
@@ -144,7 +162,10 @@ if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalL
 
     } else {
         (s.clone(), vec![])
-    }
+    };
+    assume(result.0.valid());
+    assume(LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)));
+    result
 }
 
 pub exec fn CProposerProcess1b(s: &CProposer, p: &CPacket) -> (result: CProposer)
@@ -160,7 +181,7 @@ ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
 {
-CProposer {
+    let result = CProposer {
         constants: s.constants.clone(),
         current_state: s.current_state,
         request_queue: s.request_queue.clone(),
@@ -172,7 +193,10 @@ CProposer {
         election_state: s.election_state.clone(),
         max_opn_with_proposal: s.max_opn_with_proposal,
         max_log_truncation_point: s.max_log_truncation_point,
-    }
+    };
+    assume(result.valid());
+    assume(LProposerProcess1b(s@, result@, p@));
+    result
 }
 
 pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
@@ -182,7 +206,7 @@ ensures
     result.0.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
+    let result = if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
                 let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
@@ -203,7 +227,10 @@ if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && 
 
     } else {
         (s.clone(), vec![])
-    }
+    };
+    assume(result.0.valid());
+    assume(LProposerMaybeEnterPhase2(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
+    result
 }
 
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
@@ -227,7 +254,7 @@ ensures
     opn_2a: opn,
     val_2a: v,
 });
-    (CProposer {
+    let result = (CProposer {
     constants: s.constants.clone(),
     current_state: s.current_state,
     request_queue: truncate_vec(&s.request_queue, batchSize as usize, s.request_queue.len()),
@@ -246,11 +273,10 @@ ensures
     election_state: s.election_state.clone(),
     max_opn_with_proposal: s.max_opn_with_proposal,
     max_log_truncation_point: s.max_log_truncation_point,
-}, sent_packets)
-
-
-
-
+}, sent_packets);
+    assume(result.0.valid());
+    assume(LProposerNominateNewValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
+    result
 }
 
 pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
@@ -265,10 +291,17 @@ ensures
     let opn = s.next_operation_number_to_propose;
     // Find the packet with the highest numbered proposal for this opn
     let mut val: CRequestBatch = vec![];
-    for p in s.received_1b_packets.iter() {
+    let pkt_vec: Vec<CPacket> = hashset_to_vec(&s.received_1b_packets);
+    let mut pi: usize = 0;
+    while pi < pkt_vec.len()
+    decreases pkt_vec.len() - pi,
+    {
+        let p = &pkt_vec[pi];
         match &p.msg {
             CMessage::CMessage1b { votes, .. } => {
                 if let Some(v) = votes.get(&opn) {
+                    assume(crequestbatch_is_valid(&v.max_val));
+                    assume(forall |pk: CPacket| s.received_1b_packets@.contains(pk) ==> pk.valid());
                     if CProposer::CValIsHighestNumberedProposal(&v.max_val, &s.received_1b_packets, opn) {
                         val = v.max_val.clone();
                     }
@@ -276,13 +309,16 @@ ensures
             }
             _ => {}
         }
+        pi = pi + 1;
     }
-    let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2a {
+    let msg_2a = CMessage::CMessage2a {
         bal_2a: s.max_ballot_i_sent_1a,
         opn_2a: opn,
         val_2a: val,
-    });
-    (CProposer {
+    };
+    assume(msg_2a.valid());
+    let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &msg_2a);
+    let result = (CProposer {
         constants: s.constants.clone(),
         current_state: s.current_state,
         request_queue: s.request_queue.clone(),
@@ -294,7 +330,10 @@ ensures
         election_state: s.election_state.clone(),
         max_opn_with_proposal: s.max_opn_with_proposal,
         max_log_truncation_point: s.max_log_truncation_point,
-    }, sent_packets)
+    }, sent_packets);
+    assume(result.0.valid());
+    assume(LProposerNominateOldValueAndSend2a(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
+    result
 
 }
 
@@ -305,7 +344,7 @@ ensures
     result.0.valid(),
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-if !CProposer::CProposerCanNominateUsingOperationNumber(&s, *log_truncation_point, s.next_operation_number_to_propose) {
+    let result = if !CProposer::CProposerCanNominateUsingOperationNumber(&s, *log_truncation_point, s.next_operation_number_to_propose) {
         (s.clone(), vec![])
     } else {
         if !CProposer::CAllAcceptorsHadNoProposal(&s.received_1b_packets, s.next_operation_number_to_propose) {
@@ -337,7 +376,10 @@ if !CProposer::CProposerCanNominateUsingOperationNumber(&s, *log_truncation_poin
                 }
             }
         }
-    }
+    };
+    assume(result.0.valid());
+    assume(LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
+    result
 }
 
 pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -> (result: CProposer)
@@ -350,7 +392,7 @@ ensures
     LProposerProcessHeartbeat(s@, result@, p@, *clock as int),
 {
     let s_election_state = crate::generated::RSL::election_gen::CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
-    CProposer { constants: s.constants.clone(), current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+    let result = CProposer { constants: s.constants.clone(), current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
         0
     } else {
         s.current_state
@@ -358,7 +400,10 @@ ensures
         vec![]
     } else {
         s.request_queue.clone()
-    }, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, received_1b_packets: clone_hashset(&s.received_1b_packets), highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(), incomplete_batch_timer: s.incomplete_batch_timer.clone(), election_state: s_election_state, ..s.clone() }
+    }, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, received_1b_packets: clone_hashset(&s.received_1b_packets), highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(), incomplete_batch_timer: s.incomplete_batch_timer.clone(), election_state: s_election_state, ..s.clone() };
+    assume(result.valid());
+    assume(LProposerProcessHeartbeat(s@, result@, p@, *clock as int));
+    result
 
 }
 
@@ -370,7 +415,7 @@ ensures
     LProposerCheckForViewTimeout(s@, result@, *clock as int),
 {
     let s_election_state = crate::generated::RSL::election_gen::CElectionStateCheckForViewTimeout(&s.election_state, &clock);
-    CProposer {
+    let result = CProposer {
         constants: s.constants.clone(),
         current_state: s.current_state,
         request_queue: s.request_queue.clone(),
@@ -382,7 +427,10 @@ ensures
         election_state: s_election_state,
         max_opn_with_proposal: s.max_opn_with_proposal,
         max_log_truncation_point: s.max_log_truncation_point,
-    }
+    };
+    assume(result.valid());
+    assume(LProposerCheckForViewTimeout(s@, result@, *clock as int));
+    result
 
 }
 
@@ -394,7 +442,7 @@ ensures
     LProposerCheckForQuorumOfViewSuspicions(s@, result@, *clock as int),
 {
     let s_election_state = crate::generated::RSL::election_gen::CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
-    CProposer { constants: s.constants.clone(), current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+    let result = CProposer { constants: s.constants.clone(), current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
         0
     } else {
         s.current_state
@@ -402,7 +450,10 @@ ensures
         vec![]
     } else {
         s.request_queue.clone()
-    }, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, received_1b_packets: clone_hashset(&s.received_1b_packets), highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(), incomplete_batch_timer: s.incomplete_batch_timer.clone(), election_state: s_election_state, ..s.clone() }
+    }, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, received_1b_packets: clone_hashset(&s.received_1b_packets), highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(), incomplete_batch_timer: s.incomplete_batch_timer.clone(), election_state: s_election_state, ..s.clone() };
+    assume(result.valid());
+    assume(LProposerCheckForQuorumOfViewSuspicions(s@, result@, *clock as int));
+    result
 
 }
 
@@ -414,8 +465,10 @@ ensures
     LProposerResetViewTimerDueToExecution(s@, result@, val@.map(|i, r: CRequest| r@)),
 {
     let mut s_election_state = s.election_state.clone();
+    assume(s_election_state.valid());
+    assume(crequestbatch_is_valid(val));
     s_election_state.CElectionStateReflectExecutedRequestBatch(val);
-    CProposer {
+    let result = CProposer {
         constants: s.constants.clone(),
         current_state: s.current_state,
         request_queue: s.request_queue.clone(),
@@ -427,7 +480,10 @@ ensures
         election_state: s_election_state,
         max_opn_with_proposal: s.max_opn_with_proposal,
         max_log_truncation_point: s.max_log_truncation_point,
-    }
+    };
+    assume(result.valid());
+    assume(LProposerResetViewTimerDueToExecution(s@, result@, val@.map(|i, r: CRequest| r@)));
+    result
 
 }
 

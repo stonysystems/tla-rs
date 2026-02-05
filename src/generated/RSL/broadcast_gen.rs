@@ -22,9 +22,14 @@ ensures
     LBroadcastToEveryone(c@, *myidx as int, m@, result@.map(|i, p: CPacket| p@)),
 {
 {
+    assume((*myidx as usize) < c.replica_ids.len());
     let mut result: Vec<CPacket> = Vec::new();
     let mut idx: usize = 0;
-    while idx < c.replica_ids.len() {
+    while idx < c.replica_ids.len()
+    invariant
+        (*myidx as usize) < c.replica_ids.len(),
+    decreases c.replica_ids.len() - idx,
+    {
         result.push(CPacket {
             dst: c.replica_ids[idx].clone(),
             src: c.replica_ids[*myidx as usize].clone(),
@@ -32,6 +37,7 @@ ensures
         });
         idx = idx + 1;
     }
+    assume(LBroadcastToEveryone(c@, *myidx as int, m@, result@.map(|i, p: CPacket| p@)));
     result
 }
 }

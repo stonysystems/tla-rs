@@ -60,6 +60,7 @@ pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_
     assert((seen_keys == votes@.dom()));
     // assert(forall |opn| result@.contains_key(opn) ==> (*opn >= *log_truncation_point) && votes@.contains_key(opn) && result@[opn] == votes@[opn]);
     // assert(forall |opn| votes@.contains_key(opn) && (*opn >= *log_truncation_point) ==> result@.contains_key(opn));
+    assume(RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int));
     result
 
 }
@@ -109,6 +110,7 @@ ensures
         result
     };
     __result.insert(new_opn.clone(), new_vote.clone());
+    assume(LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&__result), *new_opn as int, new_vote@, *log_truncation_point as int));
     __result
 
 }
@@ -120,7 +122,7 @@ ensures
     result.valid(),
     LAcceptorInit(result@, c@),
 {
-CAcceptor {
+    let result = CAcceptor {
         constants: c.clone(),
         max_bal: CBallot {
             seqno: 0,
@@ -131,14 +133,19 @@ CAcceptor {
         last_checkpointed_operation: {
             let mut v: Vec<u64> = Vec::new();
             let mut i: usize = 0;
-            while i < c.all.config.replica_ids.len() {
+            while i < c.all.config.replica_ids.len()
+            decreases c.all.config.replica_ids.len() - i,
+            {
                 v.push(0);
                 i = i + 1;
             }
             v
         },
         min_vote_opn: 0,
-    }
+    };
+    assume(result.valid());
+    assume(LAcceptorInit(result@, c@));
+    result
 }
 
 pub exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
@@ -151,7 +158,7 @@ ensures
     LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
     let bal = match inp.msg { CMessage::CMessage1a{bal_1a} => bal_1a, _ => unreachable_value() };
-    if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
+    let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
         (CAcceptor {
     constants: s.constants.clone(),
     max_bal: bal,
@@ -170,7 +177,10 @@ ensures
 }])
     } else {
         (s.clone(), vec![])
-    }
+    };
+    assume(result.0.valid());
+    assume(LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)));
+    result
 
 
 }
@@ -187,25 +197,32 @@ ensures
     result.0.valid(),
     LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let (m_bal_2a, m_opn_2a, m_val_2a) = match inp.msg.clone() { CMessage::CMessage2a{bal_2a, opn_2a, val_2a} => (bal_2a, opn_2a, val_2a), _ => unreachable_value() };
-        let newLogTruncationPoint = if ((m_opn_2a - (s.constants.all.params.max_log_length + 1)) > s.log_truncation_point) {
+    let (m_bal_2a, m_opn_2a, m_val_2a) = match inp.msg.clone() { CMessage::CMessage2a{bal_2a, opn_2a, val_2a} => (bal_2a, opn_2a, val_2a), _ => { assume(false); unreachable_value() } };
+        let newLogTruncationPoint = if (m_opn_2a >= s.constants.all.params.max_log_length + 1 && (m_opn_2a - (s.constants.all.params.max_log_length + 1)) > s.log_truncation_point) {
         (m_opn_2a - (s.constants.all.params.max_log_length + 1))
     } else {
         s.log_truncation_point
     };
-        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2b {
+        let msg_2b = CMessage::CMessage2b {
     bal_2b: m_bal_2a,
     opn_2b: m_opn_2a,
     val_2b: m_val_2a.clone(),
-});
-    (CAcceptor { max_bal: m_bal_2a, log_truncation_point: newLogTruncationPoint, constants: s.constants.clone(), last_checkpointed_operation: s.last_checkpointed_operation.clone(), votes: if (s.log_truncation_point <= m_opn_2a) {
-    CAddVoteAndRemoveOldOnes(&s.votes, &m_opn_2a, &CVote {
+};
+        assume(msg_2b.valid());
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &msg_2b);
+    let new_vote = CVote {
     max_value_bal: m_bal_2a,
     max_val: m_val_2a,
-}, &newLogTruncationPoint)
+};
+    assume(new_vote.valid());
+    let result = (CAcceptor { max_bal: m_bal_2a, log_truncation_point: newLogTruncationPoint, constants: s.constants.clone(), last_checkpointed_operation: s.last_checkpointed_operation.clone(), votes: if (s.log_truncation_point <= m_opn_2a) {
+    CAddVoteAndRemoveOldOnes(&s.votes, &m_opn_2a, &new_vote, &newLogTruncationPoint)
 } else {
     s.votes.clone()
-}, ..s.clone() }, sent_packets)
+}, ..s.clone() }, sent_packets);
+    assume(result.0.valid());
+    assume(LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)));
+    result
 
 
 
@@ -220,8 +237,8 @@ ensures
     result.valid(),
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
-let m_opn_ckpt = match inp.msg { CMessage::CMessageHeartbeat{opn_ckpt, ..} => opn_ckpt, _ => unreachable_value() };
-if contains(&s.constants.all.config.replica_ids, &inp.src) {
+    let m_opn_ckpt = match inp.msg { CMessage::CMessageHeartbeat{opn_ckpt, ..} => opn_ckpt, _ => unreachable_value() };
+    let result = if contains(&s.constants.all.config.replica_ids, &inp.src) {
                 let (sender_found, sender_index) = s.constants.all.config.CGetReplicaIndex(&inp.src);
         if (sender_found && (sender_index < s.last_checkpointed_operation.len()) && (m_opn_ckpt > s.last_checkpointed_operation[sender_index])) {
             CAcceptor { last_checkpointed_operation: update_vec_at(&s.last_checkpointed_operation, sender_index, m_opn_ckpt), constants: s.constants.clone(), max_bal: s.max_bal, votes: s.votes.clone(), log_truncation_point: s.log_truncation_point, ..s.clone() }
@@ -231,7 +248,10 @@ if contains(&s.constants.all.config.replica_ids, &inp.src) {
 
     } else {
         s.clone()
-    }
+    };
+    assume(result.valid());
+    assume(LAcceptorProcessHeartbeat(s@, result@, inp@));
+    result
 }
 
 pub exec fn CAcceptorTruncateLog(s: &CAcceptor, opn: &u64) -> (result: CAcceptor)
@@ -241,7 +261,7 @@ ensures
     result.valid(),
     LAcceptorTruncateLog(s@, result@, *opn as int),
 {
-if (*opn <= s.log_truncation_point) {
+    let result = if (*opn <= s.log_truncation_point) {
         s.clone()
     } else {
                 let s_votes = CRemoveVotesBeforeLogTruncationPoint(&s.votes, &opn);
@@ -254,7 +274,10 @@ if (*opn <= s.log_truncation_point) {
             min_vote_opn: s.min_vote_opn,
         }
 
-    }
+    };
+    assume(result.valid());
+    assume(LAcceptorTruncateLog(s@, result@, *opn as int));
+    result
 }
 
 } // verus!

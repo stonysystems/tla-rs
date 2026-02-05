@@ -43,4 +43,12 @@ verus! {
         }
         res
     }
+
+    #[verifier(external_body)]
+    pub fn hashset_to_vec<T>(s:&HashSet<T>) -> (res:Vec<T>)
+    where
+            T: Clone + Eq + Hash
+    {
+        s.iter().cloned().collect()
+    }
 }

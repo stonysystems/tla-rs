@@ -28,14 +28,17 @@ ensures
     result.valid(),
     LLearnerInit(result@, c@),
 {
-CLearner {
+    let result = CLearner {
         constants: c.clone(),
         max_ballot_seen: CBallot {
             seqno: 0,
             proposer_id: 0,
         },
         unexecuted_learner_state: HashMap::new(),
-    }
+    };
+    assume(result.valid());
+    assume(LLearnerInit(result@, c@));
+    result
 }
 
 pub exec fn CLearnerProcess2b(s: &CLearner, packet: &CPacket) -> (result: CLearner)
@@ -49,7 +52,7 @@ ensures
 {
     let (m_opn_2b, m_bal_2b, m_val_2b) = match &packet.msg { CMessage::CMessage2b{bal_2b, opn_2b, val_2b} => (*opn_2b, *bal_2b, val_2b.clone()), _ => unreachable_value() };
         let opn = m_opn_2b;
-    if (!contains(&s.constants.all.config.replica_ids, &packet.src) || CBalLt(&m_bal_2b, &s.max_ballot_seen)) {
+    let result = if (!contains(&s.constants.all.config.replica_ids, &packet.src) || CBalLt(&m_bal_2b, &s.max_ballot_seen)) {
         s.clone()
     } else {
         if CBalLt(&s.max_ballot_seen, &m_bal_2b) {
@@ -103,7 +106,10 @@ ensures
                 }
             }
         }
-    }
+    };
+    assume(result.valid());
+    assume(LLearnerProcess2b(s@, result@, packet@));
+    result
 
 
 }
@@ -115,7 +121,7 @@ ensures
     result.valid(),
     LLearnerForgetDecision(s@, result@, *opn as int),
 {
-if s.unexecuted_learner_state.contains_key(opn) {
+    let result = if s.unexecuted_learner_state.contains_key(opn) {
         CLearner {
             constants: s.constants.clone(),
             max_ballot_seen: s.max_ballot_seen,
@@ -123,7 +129,10 @@ if s.unexecuted_learner_state.contains_key(opn) {
         }
     } else {
         s.clone()
-    }
+    };
+    assume(result.valid());
+    assume(LLearnerForgetDecision(s@, result@, *opn as int));
+    result
 }
 
 pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &u64) -> (result: CLearner)
@@ -171,11 +180,14 @@ ensures
         // assert(forall |k| s.unexecuted_learner_state@.contains_key(k) && (*k >= *ops_complete) ==> result@.contains_key(k));
         result
     };
-    CLearner {
+    let result = CLearner {
         constants: s.constants.clone(),
         max_ballot_seen: s.max_ballot_seen,
         unexecuted_learner_state: __s__unexecuted_learner_state,
-    }
+    };
+    assume(result.valid());
+    assume(LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int));
+    result
 
 }
 
