@@ -3213,36 +3213,36 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 
 **Already in types_gen.rs** ✅: CBallot, CRequest, CReply, CVote, CLearnerTuple, CClockReading
 
-**Missing type aliases:**
-- [ ] `COperationNumber = u64`
-- [ ] `CRequestBatch = Vec<CRequest>`
-- [ ] `CReplyCache = HashMap<EndPoint, CReply>`
-- [ ] `CVotes = HashMap<COperationNumber, CVote>`
-- [ ] `CLearnerState = HashMap<COperationNumber, CLearnerTuple>`
+**Type aliases** (all re-exported from types_i.rs via types_gen.rs ✅):
+- [x] `COperationNumber = u64`
+- [x] `CRequestBatch = Vec<CRequest>`
+- [x] `CReplyCache = HashMap<EndPoint, CReply>`
+- [x] `CVotes = HashMap<COperationNumber, CVote>`
+- [x] `CLearnerState = HashMap<COperationNumber, CLearnerTuple>`
 
-**Missing leaf types:**
-- [ ] `CParameters` (from `parameters.rs` spec `LParameters`)
-- [ ] `CMessage` enum (from `message.rs` spec `RslMessage`, 11 variants)
-- [ ] `CPacket` struct (from `environment.rs` spec `RslPacket`)
+**Leaf types** (all re-exported via types_gen.rs ✅):
+- [x] `CParameters` (from cparameters.rs)
+- [x] `CMessage` enum (from cmessage.rs)
+- [x] `CPacket` struct (from cmessage.rs)
 
-**Missing mid-level types:**
-- [ ] `CConfiguration` (from `configuration.rs` spec `LConfiguration`)
-- [ ] `CConstants` (from `constants.rs` spec `LConstants`)
-- [ ] `CReplicaConstants` (from `constants.rs` spec `LReplicaConstants`)
-- [ ] `COutstandingOperation` enum (from `executor.rs` spec `OutstandingOperation`)
-- [ ] `CIncompleteBatchTimer` enum (from `proposer.rs` spec `IncompleteBatchTimer`)
+**Mid-level types** (all re-exported via types_gen.rs ✅):
+- [x] `CConfiguration` (from cconfiguration.rs)
+- [x] `CConstants` (from cconstants.rs)
+- [x] `CReplicaConstants` (from cconstants.rs)
+- [x] `COutstandingOperation` enum (from ExecutorImpl.rs)
+- [x] `CIncompleteBatchTimer` enum (from ProposerImpl.rs)
 
-**Missing component state types:**
-- [ ] `CAcceptor` (from `acceptor.rs` spec `LAcceptor`)
-- [ ] `CLearner` (from `learner.rs` spec `LLearner`)
-- [ ] `CElectionState` (from `election.rs` spec `ElectionState`)
-- [ ] `CExecutor` (from `executor.rs` spec `LExecutor`)
-- [ ] `CProposer` (from `proposer.rs` spec `LProposer`)
-- [ ] `CReplica` (from `replica.rs` spec `LReplica`)
+**Component state types** (all re-exported via types_gen.rs ✅):
+- [x] `CAcceptor` (from acceptorimpl.rs)
+- [x] `CLearner` (from learnerimpl.rs)
+- [x] `CElectionState` (from ElectionImpl.rs)
+- [x] `CExecutor` (from ExecutorImpl.rs)
+- [x] `CProposer` (from ProposerImpl.rs)
+- [x] `CReplica` (from ReplicaImpl.rs)
 
-**Missing helper functions:**
-- [ ] `CBalLt`, `CBalLeq`, `CBalEq` (ballot comparisons)
-- [ ] `abstractify_cvotes`, `abstractify_creplycache`, `abstractify_clearnerstate`, `abstractify_crequestbatch`
+**Helper functions** (all re-exported from types_i.rs via types_gen.rs ✅):
+- [x] `CBalLt`, `CBalLeq`, `CBalEq` (ballot comparisons)
+- [x] `abstractify_cvotes`, `abstractify_creplycache`, `abstractify_clearnerstate`, `abstractify_crequestbatch`
 
 ### Phase 11.1: Extend Transpiler for Multi-File Type Generation (~200 LOC)
 
