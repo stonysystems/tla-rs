@@ -19,13 +19,21 @@ requires
     c.valid(),
     m.valid(),
 ensures
-    LBroadcastToEveryone(c@, myidx@, m@, result@),
+    LBroadcastToEveryone(c@, *myidx as int, m@, result@.map(|i, p: CPacket| p@)),
 {
-(0..c.replica_ids.len()).map(|idx| CPacket {
-    dst: c.replica_ids[idx].clone(),
-    src: c.replica_ids[*myidx as usize].clone(),
-    msg: m.clone(),
-}).collect()
+{
+    let mut result: Vec<CPacket> = Vec::new();
+    let mut idx: usize = 0;
+    while idx < c.replica_ids.len() {
+        result.push(CPacket {
+            dst: c.replica_ids[idx].clone(),
+            src: c.replica_ids[*myidx as usize].clone(),
+            msg: m.clone(),
+        });
+        idx = idx + 1;
+    }
+    result
+}
 }
 
 } // verus!

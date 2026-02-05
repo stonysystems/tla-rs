@@ -8,7 +8,6 @@ use vstd::prelude::*;
 use crate::implementation::common::marshalling::Marshalable;
 
 mod common;
-#[cfg(test)]
 mod generated;
 mod implementation;
 mod protocol;

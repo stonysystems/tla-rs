@@ -7,6 +7,7 @@ use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::types_i::abstractify_cvotes;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
@@ -22,7 +23,7 @@ use vstd::std_specs::hash::KeysAdditionalSpecFns;
 verus! {
 
 pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)ensures
-    RemoveVotesBeforeLogTruncationPoint(votes@, result@, log_truncation_point@),
+    RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int),
 {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     let votes_keys = votes.keys();
@@ -67,7 +68,7 @@ pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &u64, new_vote: &C
 requires
     new_vote.valid(),
 ensures
-    LAddVoteAndRemoveOldOnes(votes@, result@, new_opn@, new_vote@, log_truncation_point@),
+    LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&result), *new_opn as int, new_vote@, *log_truncation_point as int),
 {
     let mut __result = {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
@@ -127,7 +128,15 @@ CAcceptor {
         },
         votes: HashMap::new(),
         log_truncation_point: 0,
-        last_checkpointed_operation: (0..c.all.config.replica_ids.len()).map(|_| 0).collect(),
+        last_checkpointed_operation: {
+            let mut v: Vec<u64> = Vec::new();
+            let mut i: usize = 0;
+            while i < c.all.config.replica_ids.len() {
+                v.push(0);
+                i = i + 1;
+            }
+            v
+        },
         min_vote_opn: 0,
     }
 }
@@ -139,25 +148,24 @@ requires
     inp.msg is CMessage1a,
 ensures
     result.0.valid(),
-    LAcceptorProcess1a(s@, result.0@, inp@, result.1@),
+    LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let m = inp.msg;
-        let bal = inp.msg->bal_1a;
-    if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
+    let bal = match inp.msg { CMessage::CMessage1a{bal_1a} => bal_1a, _ => unreachable_value() };
+    if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
         (CAcceptor {
-    constants: s.constants,
+    constants: s.constants.clone(),
     max_bal: bal,
-    votes: s.votes,
-    last_checkpointed_operation: s.last_checkpointed_operation,
+    votes: s.votes.clone(),
+    last_checkpointed_operation: s.last_checkpointed_operation.clone(),
     log_truncation_point: s.log_truncation_point,
     min_vote_opn: s.min_vote_opn,
 }, vec![CPacket {
     src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
-    dst: inp.src,
+    dst: inp.src.clone(),
     msg: CMessage::CMessage1b {
         bal_1b: bal,
         log_truncation_point: s.log_truncation_point,
-        votes: s.votes,
+        votes: s.votes.clone(),
     },
 }])
     } else {
@@ -172,31 +180,31 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is CMessage2a,
-    s.constants.all.config.replica_ids.contains(inp.src),
-    CBalLeq(s.max_bal, inp.msg->bal_2a),
-    LeqUpperBound(inp.msg->opn_2a, s.constants.all.params.max_integer_val),
+    s.constants.all.config.replica_ids@.contains(inp.src),
+    BalLeq(s.max_bal@, inp.msg->bal_2a@),
+    LeqUpperBound(inp.msg->opn_2a as int, UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}),
 ensures
     result.0.valid(),
-    LAcceptorProcess2a(s@, result.0@, inp@, result.1@),
+    LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let m = inp.msg;
-        let newLogTruncationPoint = if ((inp.msg->opn_2a - (s.constants.all.params.max_log_length + 1)) > s.log_truncation_point) {
-        (inp.msg->opn_2a - (s.constants.all.params.max_log_length + 1))
+    let (m_bal_2a, m_opn_2a, m_val_2a) = match inp.msg.clone() { CMessage::CMessage2a{bal_2a, opn_2a, val_2a} => (bal_2a, opn_2a, val_2a), _ => unreachable_value() };
+        let newLogTruncationPoint = if ((m_opn_2a - (s.constants.all.params.max_log_length + 1)) > s.log_truncation_point) {
+        (m_opn_2a - (s.constants.all.params.max_log_length + 1))
     } else {
         s.log_truncation_point
     };
         let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage2b {
-    bal_2b: m->bal_2a,
-    opn_2b: m->opn_2a,
-    val_2b: m->val_2a,
+    bal_2b: m_bal_2a,
+    opn_2b: m_opn_2a,
+    val_2b: m_val_2a.clone(),
 });
-    (CAcceptor { max_bal: m->bal_2a, log_truncation_point: newLogTruncationPoint, constants: s.constants, last_checkpointed_operation: s.last_checkpointed_operation, votes: if (s.log_truncation_point <= m->opn_2a) {
-    CAddVoteAndRemoveOldOnes(&s.votes, &m->opn_2a, &CVote {
-    max_value_bal: m->bal_2a,
-    max_val: m->val_2a,
+    (CAcceptor { max_bal: m_bal_2a, log_truncation_point: newLogTruncationPoint, constants: s.constants.clone(), last_checkpointed_operation: s.last_checkpointed_operation.clone(), votes: if (s.log_truncation_point <= m_opn_2a) {
+    CAddVoteAndRemoveOldOnes(&s.votes, &m_opn_2a, &CVote {
+    max_value_bal: m_bal_2a,
+    max_val: m_val_2a,
 }, &newLogTruncationPoint)
 } else {
-    s.votes
+    s.votes.clone()
 }, ..s.clone() }, sent_packets)
 
 
@@ -212,10 +220,11 @@ ensures
     result.valid(),
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
-if s.constants.all.config.replica_ids.contains(&inp.src) {
+let m_opn_ckpt = match inp.msg { CMessage::CMessageHeartbeat{opn_ckpt, ..} => opn_ckpt, _ => unreachable_value() };
+if contains(&s.constants.all.config.replica_ids, &inp.src) {
                 let (sender_found, sender_index) = s.constants.all.config.CGetReplicaIndex(&inp.src);
-        if (sender_found && (sender_index < s.last_checkpointed_operation.len()) && (inp.msg->opn_ckpt > s.last_checkpointed_operation[sender_index])) {
-            CAcceptor { last_checkpointed_operation: update_vec_at(&s.last_checkpointed_operation, sender_index, inp.msg->opn_ckpt), constants: s.constants, max_bal: s.max_bal, votes: s.votes, log_truncation_point: s.log_truncation_point, ..s.clone() }
+        if (sender_found && (sender_index < s.last_checkpointed_operation.len()) && (m_opn_ckpt > s.last_checkpointed_operation[sender_index])) {
+            CAcceptor { last_checkpointed_operation: update_vec_at(&s.last_checkpointed_operation, sender_index, m_opn_ckpt), constants: s.constants.clone(), max_bal: s.max_bal, votes: s.votes.clone(), log_truncation_point: s.log_truncation_point, ..s.clone() }
         } else {
             s.clone()
         }
@@ -230,17 +239,17 @@ requires
     s.valid(),
 ensures
     result.valid(),
-    LAcceptorTruncateLog(s@, result@, opn@),
+    LAcceptorTruncateLog(s@, result@, *opn as int),
 {
 if (*opn <= s.log_truncation_point) {
         s.clone()
     } else {
                 let s_votes = CRemoveVotesBeforeLogTruncationPoint(&s.votes, &opn);
         CAcceptor {
-            constants: s.constants,
+            constants: s.constants.clone(),
             max_bal: s.max_bal,
             votes: s_votes,
-            last_checkpointed_operation: s.last_checkpointed_operation,
+            last_checkpointed_operation: s.last_checkpointed_operation.clone(),
             log_truncation_point: opn.clone(),
             min_vote_opn: s.min_vote_opn,
         }

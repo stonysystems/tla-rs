@@ -3,16 +3,19 @@
 
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
+use crate::protocol::RSL::constants::LReplicaConstantsValid;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
-use crate::protocol::common::upper_bound::LtUpperBound;
+use crate::implementation::RSL::types_i::abstractify_creplycache;
+use crate::protocol::common::upper_bound::{LtUpperBound, UpperBound};
 use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
@@ -54,10 +57,10 @@ requires
     s.next_op_to_execute is COutstandingOpUnknown,
 ensures
     result.valid(),
-    LExecutorGetDecision(s@, result@, bal@, opn@, v@),
+    LExecutorGetDecision(s@, result@, bal@, *opn as int, v@.map(|i, r: CRequest| r@)),
 {
 CExecutor {
-        constants: s.constants,
+        constants: s.constants.clone(),
         app: s.app,
         ops_complete: s.ops_complete,
         max_bal_reflected: s.max_bal_reflected,
@@ -65,20 +68,20 @@ CExecutor {
             v: v.clone(),
             bal: bal.clone(),
         },
-        reply_cache: s.reply_cache,
+        reply_cache: s.reply_cache.clone(),
     }
 }
 
 pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ensures
     creplycache_is_valid(&result),
-    result@ == LClientsInReplies(replies@),
+    abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
 {
     let mut acc: HashMap<EndPoint, CReply> = HashMap::new();
     let mut i: usize = 0;
     while i < replies.len()
     invariant
         i <= replies.len(),
-        acc@ == LClientsInReplies(replies@.take(i as int)),
+        abstractify_creplycache(&acc) == LClientsInReplies(replies@.map(|i, r: CReply| r@).take(i as int)),
     {
         acc.insert(replies[i].client.clone(), replies[i].clone());
         i = i + 1;
@@ -91,21 +94,21 @@ pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CPacket>
 requires
     s.valid(),
     s.next_op_to_execute is COutstandingOpKnown,
-    LtUpperBound(s.ops_complete, s.constants.all.params.max_integer_val),
-    s.constants.CReplicaConstantsValid(),
+    LtUpperBound(s.ops_complete as int, UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}),
+    LReplicaConstantsValid(s.constants@),
 ensures
     result.0.valid(),
-    LExecutorExecute(s@, result.0@, result.1@),
+    LExecutorExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let batch = s.next_op_to_execute->v;
+    let (batch, op_bal) = match &s.next_op_to_execute { COutstandingOperation::COutstandingOpKnown{v, bal} => (v.clone(), *bal), _ => unreachable_value() };
         let temp = CHandleRequestBatch(&s.app, &batch);
         let new_state = temp.0[(temp.0.len() - 1)];
         let replies = temp.1;
         let clients = CClientsInReplies(&replies);
         let s_reply_cache = CExecutor::CUpdateNewCache(&s.reply_cache, &replies);
     let sent_packets = CExecutor::CGetPacketsFromReplies(&s.constants.all.config.replica_ids[s.constants.my_index as usize], &batch, &replies);
-    (CExecutor { constants: s.constants, app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &s.next_op_to_execute->bal) {
-    s.next_op_to_execute->bal
+    (CExecutor { constants: s.constants.clone(), app: new_state, ops_complete: (s.ops_complete + 1), max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &op_bal) {
+    op_bal
 } else {
     s.max_bal_reflected
 }, next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
@@ -123,21 +126,21 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is CMessageAppStateSupply,
-    s.constants.all.config.replica_ids.contains(&inp.src),
+    s.constants.all.config.replica_ids@.contains(inp.src),
     (inp.msg->opn_state_supply > s.ops_complete),
 ensures
     result.valid(),
     LExecutorProcessAppStateSupply(s@, result@, inp@),
 {
-    let m = inp.msg;
+    let (m_app_state, m_opn_state_supply, m_bal_state_supply, m_reply_cache) = match &inp.msg { CMessage::CMessageAppStateSupply{app_state, opn_state_supply, bal_state_supply, reply_cache} => (*app_state, *opn_state_supply, *bal_state_supply, reply_cache.clone()), _ => unreachable_value() };
     CExecutor {
-        constants: s.constants,
-        app: m->app_state,
-        ops_complete: m->opn_state_supply,
-        max_bal_reflected: m->bal_state_supply,
+        constants: s.constants.clone(),
+        app: m_app_state,
+        ops_complete: m_opn_state_supply,
+        max_bal_reflected: m_bal_state_supply,
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
-        reply_cache: m->reply_cache,
+        reply_cache: m_reply_cache,
     }
 
 }
@@ -149,18 +152,18 @@ requires
     inp.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
-    LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@),
+    LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let m = inp.msg;
-    if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLeq(&s.max_bal_reflected, &m->bal_state_req) && ((s.ops_complete >= m->opn_state_req) && s.constants.CReplicaConstantsValid()))) {
+    let (m_bal_state_req, m_opn_state_req) = match &inp.msg { CMessage::CMessageAppStateRequest{bal_state_req, opn_state_req} => (*bal_state_req, *opn_state_req), _ => unreachable_value() };
+    if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLeq(&s.max_bal_reflected, &m_bal_state_req) && ((s.ops_complete >= m_opn_state_req) && s.constants.CReplicaConstantsValid()))) {
         (s.clone(), vec![CPacket {
-    dst: inp.src,
+    dst: inp.src.clone(),
     src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
     msg: CMessage::CMessageAppStateSupply {
         bal_state_supply: s.max_bal_reflected,
         opn_state_supply: s.ops_complete,
         app_state: s.app,
-        reply_cache: s.reply_cache,
+        reply_cache: s.reply_cache.clone(),
     },
 }])
     } else {
@@ -176,12 +179,13 @@ requires
     inp.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
-    LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@),
+    LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-if (s.constants.all.config.replica_ids.contains(&inp.src) && (inp.msg->logTruncationPoint_2 > s.ops_complete)) {
+let (m_bal_2, m_logTruncationPoint_2) = match &inp.msg { CMessage::CMessageStartingPhase2{bal_2, logTruncationPoint_2} => (*bal_2, *logTruncationPoint_2), _ => unreachable_value() };
+if (contains(&s.constants.all.config.replica_ids, &inp.src) && (m_logTruncationPoint_2 > s.ops_complete)) {
                 let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageAppStateRequest {
-    bal_state_req: inp.msg->bal_2,
-    opn_state_req: inp.msg->logTruncationPoint_2,
+    bal_state_req: m_bal_2,
+    opn_state_req: m_logTruncationPoint_2,
 });
         (s.clone(), sent_packets)
 
@@ -195,20 +199,21 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is CMessageRequest,
-    s.reply_cache.contains_key(&inp.src),
-    s.reply_cache[&inp.src] is CReply,
-    (inp.msg->seqno_req <= s.reply_cache[&inp.src].seqno),
+    s.reply_cache@.dom().contains(inp.src),
+    (inp.msg->seqno_req <= s.reply_cache@[inp.src].seqno),
 ensures
-    LExecutorProcessRequest(s@, inp@, result@),
+    LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)),
 {
-if ((inp.msg->seqno_req == s.reply_cache[&inp.src].seqno) && s.constants.CReplicaConstantsValid()) {
-                let r = s.reply_cache[&inp.src];
+    let m_seqno_req = match &inp.msg { CMessage::CMessageRequest{seqno_req, ..} => *seqno_req, _ => unreachable_value() };
+    let r_opt = s.reply_cache.get(&inp.src);
+if (r_opt.is_some() && (m_seqno_req == r_opt.unwrap().seqno) && s.constants.CReplicaConstantsValid()) {
+                let r = r_opt.unwrap();
         vec![CPacket {
-    dst: r.client,
+    dst: r.client.clone(),
     src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
     msg: CMessage::CMessageReply {
         seqno_reply: r.seqno,
-        reply: r.reply,
+        reply: r.reply.clone(),
     },
 }]
 

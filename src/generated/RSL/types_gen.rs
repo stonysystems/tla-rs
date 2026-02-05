@@ -7,12 +7,15 @@
 // Re-export all implementation types used by generated code
 pub use crate::implementation::RSL::types_i::*;
 
-use crate::common::framework::environment_s::LIoOp;
-use crate::implementation::RSL::cmessage::CMessage;
+use crate::common::framework::environment_s::{LIoOp, LPacket};
+use crate::common::native::io_s::EndPoint;
+use crate::implementation::RSL::cmessage::{CMessage, CPacket};
 use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::protocol::RSL::environment::{RslIo, RslPacket};
 use crate::protocol::RSL::replica::LScheduler;
 use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
+use vstd::seq::*;
 
 verus! {
 
@@ -76,6 +79,43 @@ impl View for CClockReading {
             t: self.t as int,
         }
     }
+}
+
+// =============================================================================
+// Abstractify functions for CRslIo → RslIo conversion
+// =============================================================================
+
+/// Convert a concrete LPacket<EndPoint, CMessage> to spec RslPacket
+pub open spec fn abstractify_clpacket(p: LPacket<EndPoint, CMessage>) -> RslPacket {
+    LPacket {
+        dst: p.dst@,
+        src: p.src@,
+        msg: p.msg.view(),
+    }
+}
+
+/// Convert a concrete CRslIo to spec RslIo
+pub open spec fn abstractify_crslio(io: CRslIo) -> RslIo {
+    match io {
+        LIoOp::Send{s} => LIoOp::Send{s: abstractify_clpacket(s)},
+        LIoOp::Receive{r} => LIoOp::Receive{r: abstractify_clpacket(r)},
+        LIoOp::TimeoutReceive => LIoOp::TimeoutReceive,
+        LIoOp::ReadClock{t} => LIoOp::ReadClock{t: t},
+    }
+}
+
+/// Convert a sequence of CRslIo to Seq<RslIo>
+pub open spec fn abstractify_crslio_seq(ios: Seq<CRslIo>) -> Seq<RslIo> {
+    ios.map(|i, io: CRslIo| abstractify_crslio(io))
+}
+
+/// Helper for match arms that are provably unreachable.
+/// The requires clause is `false`, so Verus verifies this can never be called.
+#[verifier(external_body)]
+pub fn unreachable_value<T>() -> (result: T)
+    requires false,
+{
+    panic!("unreachable")
 }
 
 } // verus!

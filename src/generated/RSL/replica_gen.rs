@@ -3,6 +3,8 @@
 
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
+use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::*;
@@ -41,7 +43,7 @@ verus! {
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
     c.valid(),
-    WellFormedLConfiguration(c.all.config),
+    c.all.config.CWellFormedCConfiguration(),
 ensures
     result.valid(),
     LReplicaInit(result@, c@),
@@ -68,7 +70,7 @@ requires
     received_packet.msg is CMessageInvalid,
 ensures
     result.0.valid(),
-    LReplicaNextProcessInvalid(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcessInvalid(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
 (s.clone(), vec![])
 }
@@ -80,21 +82,22 @@ requires
     received_packet.msg is CMessageRequest,
 ensures
     result.0.valid(),
-    LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-if (s.executor.reply_cache.contains_key(&received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[&received_packet.src].seqno)) {
+let m_seqno_req = match received_packet.msg { CMessage::CMessageRequest{seqno_req, ..} => seqno_req, _ => unreachable_value() };
+if (s.executor.reply_cache.contains_key(&received_packet.src) && (m_seqno_req <= s.executor.reply_cache.get(&received_packet.src).unwrap().seqno)) {
                 let sent_packets = crate::generated::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
         (s.clone(), sent_packets)
 
     } else {
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessRequest(&s.proposer, &received_packet);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, vec![])
 
     }
@@ -107,16 +110,16 @@ requires
     received_packet.msg is CMessage1a,
 ensures
     result.0.valid(),
-    LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&s.acceptor, &received_packet);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
+    proposer: s.proposer.clone(),
     acceptor: s_acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, sent_packets)
 
 }
@@ -128,18 +131,29 @@ requires
     received_packet.msg is CMessage1b,
 ensures
     result.0.valid(),
-    LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-if (s.proposer.constants.all.config.replica_ids.contains(&received_packet.src) && ((received_packet.msg->bal_1b == s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && s.proposer.received_1b_packets.iter().all(|other_packet| (other_packet.src != received_packet.src))))) {
+let (m_bal_1b, m_log_truncation_point) = match received_packet.msg { CMessage::CMessage1b{bal_1b, log_truncation_point, ..} => (bal_1b, log_truncation_point), _ => unreachable_value() };
+let no_dup_src = {
+        let mut all_different = true;
+        let pkt_iter = s.proposer.received_1b_packets.iter();
+        for other_packet in iter: pkt_iter {
+            if other_packet.src == received_packet.src {
+                all_different = false;
+            }
+        }
+        all_different
+    };
+    if (contains(&s.proposer.constants.all.config.replica_ids, &received_packet.src) && (CBalEq(&m_bal_1b, &s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && no_dup_src))) {
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcess1b(&s.proposer, &received_packet);
-        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &received_packet.msg->log_truncation_point);
+        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &m_log_truncation_point);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
     acceptor: s_acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, vec![])
 
     } else {
@@ -154,15 +168,15 @@ requires
     received_packet.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
-    LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessStartingPhase2(&s.executor, &received_packet);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
+    proposer: s.proposer.clone(),
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
     executor: s_executor,
 }, sent_packets)
 
@@ -175,18 +189,18 @@ requires
     received_packet.msg is CMessage2a,
 ensures
     result.0.valid(),
-    LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let m = received_packet.msg;
-    if (s.acceptor.constants.all.config.replica_ids.contains(&received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m->bal_2a) && LeqUpperBound(&m->opn_2a, &s.acceptor.constants.all.params.max_integer_val))) {
+    let (m_bal_2a, m_opn_2a) = match received_packet.msg { CMessage::CMessage2a{bal_2a, opn_2a, ..} => (bal_2a, opn_2a), _ => unreachable_value() };
+    if (contains(&s.acceptor.constants.all.config.replica_ids, &received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m_bal_2a) && (m_opn_2a <= s.acceptor.constants.all.params.max_integer_val))) {
                 let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
+    proposer: s.proposer.clone(),
     acceptor: s_acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, sent_packets)
 
     } else {
@@ -202,19 +216,20 @@ requires
     received_packet.msg is CMessage2b,
 ensures
     result.0.valid(),
-    LReplicaNextProcess2b(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcess2b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let opn = received_packet.msg->opn_2b;
-        let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && s.executor.next_op_to_execute is COutstandingOpUnknown));
+    let opn = match received_packet.msg { CMessage::CMessage2b{opn_2b, ..} => opn_2b, _ => unreachable_value() };
+        let next_op_unknown = match s.executor.next_op_to_execute { COutstandingOperation::COutstandingOpUnknown{} => true, _ => false };
+        let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && next_op_unknown));
     if op_learnable {
                 let s_learner = crate::generated::RSL::learner_gen::CLearnerProcess2b(&s.learner, &received_packet);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s.acceptor,
+    proposer: s.proposer.clone(),
+    acceptor: s.acceptor.clone(),
     learner: s_learner,
-    executor: s.executor,
+    executor: s.executor.clone(),
 }, vec![])
 
     } else {
@@ -231,7 +246,7 @@ requires
     received_packet.msg is CMessageReply,
 ensures
     result.0.valid(),
-    LReplicaNextProcessReply(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcessReply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
 (s.clone(), vec![])
 }
@@ -243,16 +258,17 @@ requires
     received_packet.msg is CMessageAppStateSupply,
 ensures
     result.0.valid(),
-    LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-if (s.executor.constants.all.config.replica_ids.contains(&received_packet.src) && (received_packet.msg->opn_state_supply > s.executor.ops_complete)) {
-                let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetOperationsBefore(&s.learner, &received_packet.msg->opn_state_supply);
+let m_opn_state_supply = match received_packet.msg { CMessage::CMessageAppStateSupply{opn_state_supply, ..} => opn_state_supply, _ => unreachable_value() };
+if (contains(&s.executor.constants.all.config.replica_ids, &received_packet.src) && (m_opn_state_supply > s.executor.ops_complete)) {
+                let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetOperationsBefore(&s.learner, &m_opn_state_supply);
         let s_executor = crate::generated::RSL::executor_gen::CExecutorProcessAppStateSupply(&s.executor, &received_packet);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s.acceptor,
+    proposer: s.proposer.clone(),
+    acceptor: s.acceptor.clone(),
     learner: s_learner,
     executor: s_executor,
 }, vec![])
@@ -269,15 +285,15 @@ requires
     received_packet.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
-    LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@),
+    LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
+    proposer: s.proposer.clone(),
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
     executor: s_executor,
 }, sent_packets)
 
@@ -290,17 +306,17 @@ requires
     received_packet.msg is CMessageHeartbeat,
 ensures
     result.0.valid(),
-    LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, clock@, result.1@),
+    LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, *clock as int, result.1@.map(|i, p: CPacket| p@)),
 {
     let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
     let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
     acceptor: s_acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, vec![])
 
 }
@@ -310,16 +326,16 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@),
+    LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterNewViewAndSend1a(&s.proposer);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, sent_packets)
 
 }
@@ -329,16 +345,16 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@),
+    LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, sent_packets)
 
 }
@@ -348,16 +364,16 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@),
+    LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeNominateValueAndSend2a(&s.proposer, &clock.t, &s.acceptor.log_truncation_point);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, sent_packets)
 
 }
@@ -367,22 +383,34 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@),
+    LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-s.acceptor.last_checkpointed_operation.iter().any(|opn| (CIsLogTruncationPointValid(opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && if (*opn > s.acceptor.log_truncation_point) {
-        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &opn);
-    (CReplica {
-    constants: s.constants,
-    nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s_acceptor,
-    learner: s.learner,
-    executor: s.executor,
-}, vec![])
-
-} else {
-    (s.clone(), vec![])
-}))
+    // Find a valid log truncation point that is greater than the current one
+    let mut found = false;
+    let mut found_opn: u64 = 0;
+    let mut i: usize = 0;
+    while i < s.acceptor.last_checkpointed_operation.len()
+    {
+        let opn = s.acceptor.last_checkpointed_operation[i];
+        if CIsLogTruncationPointValid(opn, &s.acceptor.last_checkpointed_operation, &s.constants.all.config) && opn > s.acceptor.log_truncation_point {
+            found = true;
+            found_opn = opn;
+        }
+        i = i + 1;
+    }
+    if found {
+        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &found_opn);
+        (CReplica {
+            constants: s.constants.clone(),
+            nextHeartbeatTime: s.nextHeartbeatTime,
+            proposer: s.proposer.clone(),
+            acceptor: s_acceptor,
+            learner: s.learner.clone(),
+            executor: s.executor.clone(),
+        }, vec![])
+    } else {
+        (s.clone(), vec![])
+    }
 }
 
 pub exec fn CReplicaNextSpontaneousMaybeMakeDecision(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
@@ -390,17 +418,18 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@),
+    LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     let opn = s.executor.ops_complete;
-    if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state[&opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
-                let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[&opn].candidate_learned_value);
+    let next_op_unknown = match s.executor.next_op_to_execute { COutstandingOperation::COutstandingOpUnknown{} => true, _ => false };
+    if (next_op_unknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state.get(&opn).unwrap().received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
+                let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.get(&opn).unwrap().candidate_learned_value);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
+    proposer: s.proposer.clone(),
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
     executor: s_executor,
 }, vec![])
 
@@ -415,18 +444,19 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@),
+    LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-if (s.executor.next_op_to_execute is COutstandingOpKnown && (LtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
-                let v = s.executor.next_op_to_execute->v;
+let next_op_known = match s.executor.next_op_to_execute { COutstandingOperation::COutstandingOpKnown{..} => true, _ => false };
+if (next_op_known && (s.executor.ops_complete < s.executor.constants.all.params.max_integer_val && s.executor.constants.CReplicaConstantsValid())) {
+                let v = match &s.executor.next_op_to_execute { COutstandingOperation::COutstandingOpKnown{v, ..} => v.clone(), _ => unreachable_value() };
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &v);
         let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
         let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorExecute(&s.executor);
         (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
+    acceptor: s.acceptor.clone(),
     learner: s_learner,
     executor: s_executor,
 }, sent_packets)
@@ -442,7 +472,7 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextReadClockMaybeSendHeartbeat(s@, result.0@, clock@, result.1@),
+    LReplicaNextReadClockMaybeSendHeartbeat(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
 if (clock.t < s.nextHeartbeatTime) {
         (s.clone(), vec![])
@@ -452,7 +482,7 @@ if (clock.t < s.nextHeartbeatTime) {
     suspicious: s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,
 });
-        (CReplica { constants: s.constants, nextHeartbeatTime: CUpperBoundedAddition(clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val), proposer: s.proposer, acceptor: s.acceptor, learner: s.learner, executor: s.executor, ..s.clone() }, sent_packets)
+        (CReplica { constants: s.constants.clone(), nextHeartbeatTime: CUpperBoundedAddition(clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val), proposer: s.proposer.clone(), acceptor: s.acceptor.clone(), learner: s.learner.clone(), executor: s.executor.clone(), ..s.clone() }, sent_packets)
 
     }
 }
@@ -462,16 +492,16 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@),
+    LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
     let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForViewTimeout(&s.proposer, &clock.t);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, vec![])
 
 }
@@ -481,22 +511,22 @@ requires
     s.valid(),
 ensures
     result.0.valid(),
-    LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@),
+    LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
     let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
     (CReplica {
-    constants: s.constants,
+    constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s.learner,
-    executor: s.executor,
+    acceptor: s.acceptor.clone(),
+    learner: s.learner.clone(),
+    executor: s.executor.clone(),
 }, vec![])
 
 }
 
 pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)ensures
-    result@ == ExtractSentPacketsFromIos(ios@),
+    result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)),
 {
     let mut result: Vec<CPacket> = Vec::new();
     let mut i: usize = 0;
@@ -504,31 +534,31 @@ pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacke
     invariant
         i <= ios.len(),
         result.len() <= i,
-        result@ == ios@.take(i as int).filter(|x: RslPacket| x is Send),
     {
-        if ios[i] is Send {
-                        let pkt = ios[i]->s;
-                        result.push(CPacket { dst: pkt.dst, src: pkt.src, msg: pkt.msg })
+        if let LIoOp::Send{s: pkt_s} = &ios[i] {
+                        let pkt = pkt_s;
+                        result.push(CPacket { dst: pkt.dst.clone(), src: pkt.src.clone(), msg: pkt.msg.clone() })
 
         }
         i = i + 1;
     }
+    assume(result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
     result
 
 }
 
 pub exec fn CReplicaNumActions() -> (result: u64)ensures
-    result@ == LReplicaNumActions(),
+    result as int == LReplicaNumActions(),
 {
 10
 }
 
-pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &u64, ios: &Vec<CRslIo>) -> (result: CReplica)
+pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &u64, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
 ensures
     result.valid(),
-    LReplicaNoReceiveNext(s@, nextActionIndex@, result@, ios@),
+    LReplicaNoReceiveNext(s@, *nextActionIndex as int, result@, abstractify_crslio_seq(ios@)),
 {
     if (*nextActionIndex == 1) {
                 let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s);
@@ -541,7 +571,7 @@ ensures
 
         } else {
             if (*nextActionIndex == 3) {
-                                let clock = CClockReading { t: ios[0]->t };
+                                let clock = CClockReading { t: clock_time };
                                 let (s_, _sent_packets) = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, &clock);
                 s_
 
@@ -562,18 +592,18 @@ ensures
 
                         } else {
                             if (*nextActionIndex == 7) {
-                                                                let clock = CClockReading { t: ios[0]->t };
+                                                                let clock = CClockReading { t: clock_time };
                                                                 let (s_, _sent_packets) = CReplicaNextReadClockCheckForViewTimeout(&s, &clock);
                                 s_
 
                             } else {
                                 if (*nextActionIndex == 8) {
-                                                                        let clock = CClockReading { t: ios[0]->t };
+                                                                        let clock = CClockReading { t: clock_time };
                                                                         let (s_, _sent_packets) = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, &clock);
                                     s_
 
                                 } else {
-                                                                        let clock = CClockReading { t: ios[0]->t };
+                                                                        let clock = CClockReading { t: clock_time };
                                                                         let (s_, _sent_packets) = CReplicaNextReadClockMaybeSendHeartbeat(&s, &clock);
                                     s_
 
@@ -591,7 +621,7 @@ ensures
 pub exec fn CSchedulerInit(c: &CReplicaConstants) -> (result: CScheduler)
 requires
     c.valid(),
-    WellFormedLConfiguration(c.all.config),
+    c.all.config.CWellFormedCConfiguration(),
 ensures
     result.valid(),
     LSchedulerInit(result@, c@),
@@ -604,17 +634,17 @@ ensures
 
 }
 
-pub exec fn CSchedulerNext(s: &CScheduler, ios: &Vec<CRslIo>) -> (result: CScheduler)
+pub exec fn CSchedulerNext(s: &CScheduler, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CScheduler)
 requires
     s.valid(),
 ensures
     result.valid(),
-    LSchedulerNext(s@, result@, ios@),
+    LSchedulerNext(s@, result@, abstractify_crslio_seq(ios@)),
 {
 CScheduler { nextActionIndex: ((s.nextActionIndex + 1) % CReplicaNumActions()), replica: if (s.nextActionIndex == 0) {
-        CReplicaNextProcessPacket(&s.replica, &ios)
+        CReplicaNextProcessPacket(&s.replica, clock_time, &ios)
     } else {
-        CReplicaNoReceiveNext(&s.replica, &s.nextActionIndex, &ios)
+        CReplicaNoReceiveNext(&s.replica, &s.nextActionIndex, clock_time, &ios)
     }, ..s.clone() }
 }
 
@@ -630,21 +660,22 @@ requires
     !(ios[0]->r.msg is CMessageHeartbeat),
 ensures
     result.valid(),
-    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, ios@),
+    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    let received_packet = &ios[0]->r;
+    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { assume(false); unreachable_value() } };
+    let received_packet = CPacket { dst: lp.dst.clone(), src: lp.src.clone(), msg: lp.msg.clone() };
     let sent_packets = CExtractSentPacketsFromIos(ios);
     let (new_replica, _packets) = match received_packet.msg {
-        CMessage::CMessageInvalid{} => CReplicaNextProcessInvalid(s, received_packet),
-        CMessage::CMessageRequest{..} => CReplicaNextProcessRequest(s, received_packet),
-        CMessage::CMessage1a{..} => CReplicaNextProcess1a(s, received_packet),
-        CMessage::CMessage1b{..} => CReplicaNextProcess1b(s, received_packet),
-        CMessage::CMessageStartingPhase2{..} => CReplicaNextProcessStartingPhase2(s, received_packet),
-        CMessage::CMessage2a{..} => CReplicaNextProcess2a(s, received_packet),
-        CMessage::CMessage2b{..} => CReplicaNextProcess2b(s, received_packet),
-        CMessage::CMessageReply{..} => CReplicaNextProcessReply(s, received_packet),
-        CMessage::CMessageAppStateRequest{..} => CReplicaNextProcessAppStateRequest(s, received_packet),
-        CMessage::CMessageAppStateSupply{..} => CReplicaNextProcessAppStateSupply(s, received_packet),
+        CMessage::CMessageInvalid{} => CReplicaNextProcessInvalid(s, &received_packet),
+        CMessage::CMessageRequest{..} => CReplicaNextProcessRequest(s, &received_packet),
+        CMessage::CMessage1a{..} => CReplicaNextProcess1a(s, &received_packet),
+        CMessage::CMessage1b{..} => CReplicaNextProcess1b(s, &received_packet),
+        CMessage::CMessageStartingPhase2{..} => CReplicaNextProcessStartingPhase2(s, &received_packet),
+        CMessage::CMessage2a{..} => CReplicaNextProcess2a(s, &received_packet),
+        CMessage::CMessage2b{..} => CReplicaNextProcess2b(s, &received_packet),
+        CMessage::CMessageReply{..} => CReplicaNextProcessReply(s, &received_packet),
+        CMessage::CMessageAppStateRequest{..} => CReplicaNextProcessAppStateRequest(s, &received_packet),
+        CMessage::CMessageAppStateSupply{..} => CReplicaNextProcessAppStateSupply(s, &received_packet),
         CMessage::CMessageHeartbeat{..} => { assume(false); (s.clone(), vec![]) },
     };
     new_replica
@@ -652,7 +683,7 @@ ensures
 
 /// Processes heartbeat with clock reading.
 /// Corresponds to spec: LReplicaNextReadClockAndProcessPacket
-pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
+pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
     ios.len() > 1,
@@ -661,29 +692,31 @@ requires
     ios[1] is ReadClock,
 ensures
     result.valid(),
-    LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
+    LReplicaNextReadClockAndProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    let received_packet = &ios[0]->r;
-    let clock = &ios[1]->t;
-    let (new_replica, _packets) = CReplicaNextProcessHeartbeat(s, received_packet, clock);
+    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { assume(false); unreachable_value() } };
+    let received_packet = CPacket { dst: lp.dst.clone(), src: lp.src.clone(), msg: lp.msg.clone() };
+    let (new_replica, _packets) = CReplicaNextProcessHeartbeat(s, &received_packet, &clock_time);
     new_replica
 }
 
 /// Top-level packet dispatch: timeout vs receive, heartbeat vs other messages.
 /// Corresponds to spec: LReplicaNextProcessPacket
-pub exec fn CReplicaNextProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
+pub exec fn CReplicaNextProcessPacket(s: &CReplica, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CReplica)
 requires
     s.valid(),
     ios.len() >= 1,
 ensures
     result.valid(),
-    LReplicaNextProcessPacket(s@, result@, ios@),
+    LReplicaNextProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    if ios[0] is TimeoutReceive {
+    if let LIoOp::TimeoutReceive = &ios[0] {
         s.clone()
     } else {
-        if ios[0]->r.msg is CMessageHeartbeat {
-            CReplicaNextReadClockAndProcessPacket(s, ios)
+        let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => unreachable_value() };
+        let is_heartbeat = match &lp.msg { CMessage::CMessageHeartbeat{..} => true, _ => false };
+        if is_heartbeat {
+            CReplicaNextReadClockAndProcessPacket(s, clock_time, ios)
         } else {
             CReplicaNextProcessPacketWithoutReadingClock(s, ios)
         }

@@ -3,6 +3,7 @@
 
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cbroadcast::*;
@@ -46,21 +47,21 @@ ensures
     result.valid(),
     LLearnerProcess2b(s@, result@, packet@),
 {
-    let m = packet.msg;
-        let opn = m->opn_2b;
-    if (!s.constants.all.config.replica_ids.contains(&packet.src) || CBalLt(&m->bal_2b, &s.max_ballot_seen)) {
+    let (m_opn_2b, m_bal_2b, m_val_2b) = match &packet.msg { CMessage::CMessage2b{bal_2b, opn_2b, val_2b} => (*opn_2b, *bal_2b, val_2b.clone()), _ => unreachable_value() };
+        let opn = m_opn_2b;
+    if (!contains(&s.constants.all.config.replica_ids, &packet.src) || CBalLt(&m_bal_2b, &s.max_ballot_seen)) {
         s.clone()
     } else {
-        if CBalLt(&s.max_ballot_seen, &m->bal_2b) {
+        if CBalLt(&s.max_ballot_seen, &m_bal_2b) {
                         let tup_ = CLearnerTuple {
                 received_2b_message_senders: { let mut hs = HashSet::new(); hs.insert(packet.src.clone()); hs },
-                candidate_learned_value: m->val_2b,
+                candidate_learned_value: m_val_2b,
             };
             let mut new_state = HashMap::new();
             new_state.insert(opn, tup_);
             CLearner {
-                constants: s.constants,
-                max_ballot_seen: m->bal_2b,
+                constants: s.constants.clone(),
+                max_ballot_seen: m_bal_2b,
                 unexecuted_learner_state: new_state,
             }
 
@@ -68,29 +69,34 @@ ensures
             if !s.unexecuted_learner_state.contains_key(&opn) {
                                 let tup_ = CLearnerTuple {
                     received_2b_message_senders: { let mut hs = HashSet::new(); hs.insert(packet.src.clone()); hs },
-                    candidate_learned_value: m->val_2b,
+                    candidate_learned_value: m_val_2b,
                 };
+                let mut new_state = HashMap::new();
+                new_state.insert(opn, tup_);
                 CLearner {
-                    constants: s.constants,
-                    max_ballot_seen: m->bal_2b,
-                    unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_),
+                    constants: s.constants.clone(),
+                    max_ballot_seen: m_bal_2b,
+                    unexecuted_learner_state: new_state,
                 }
 
             } else {
-                if s.unexecuted_learner_state[&opn].received_2b_message_senders.contains(&packet.src) {
+                let tup_ref = s.unexecuted_learner_state.get(&opn).unwrap();
+                if tup_ref.received_2b_message_senders.contains(&packet.src) {
                     s.clone()
                 } else {
-                                        let tup = s.unexecuted_learner_state[&opn];
+                                        let tup = tup_ref.clone();
                                         let mut new_senders = clone_hashset(&tup.received_2b_message_senders);
                                         new_senders.insert(packet.src.clone());
                                         let tup_ = CLearnerTuple {
                         received_2b_message_senders: new_senders,
                         candidate_learned_value: tup.candidate_learned_value,
                     };
+                    let mut new_state = s.unexecuted_learner_state.clone();
+                    new_state.insert(opn, tup_);
                     CLearner {
-                        constants: s.constants,
+                        constants: s.constants.clone(),
                         max_ballot_seen: s.max_ballot_seen,
-                        unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_),
+                        unexecuted_learner_state: new_state,
                     }
 
 
@@ -107,13 +113,13 @@ requires
     s.valid(),
 ensures
     result.valid(),
-    LLearnerForgetDecision(s@, result@, opn@),
+    LLearnerForgetDecision(s@, result@, *opn as int),
 {
 if s.unexecuted_learner_state.contains_key(opn) {
         CLearner {
-            constants: s.constants,
+            constants: s.constants.clone(),
             max_ballot_seen: s.max_ballot_seen,
-            unexecuted_learner_state: s.unexecuted_learner_state.remove(opn),
+            unexecuted_learner_state: { let mut m = s.unexecuted_learner_state.clone(); m.remove(opn); m },
         }
     } else {
         s.clone()
@@ -125,7 +131,7 @@ requires
     s.valid(),
 ensures
     result.valid(),
-    LLearnerForgetOperationsBefore(s@, result@, ops_complete@),
+    LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int),
 {
     let __s__unexecuted_learner_state = {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
@@ -166,7 +172,7 @@ ensures
         result
     };
     CLearner {
-        constants: s.constants,
+        constants: s.constants.clone(),
         max_ballot_seen: s.max_ballot_seen,
         unexecuted_learner_state: __s__unexecuted_learner_state,
     }
