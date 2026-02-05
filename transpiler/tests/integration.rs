@@ -527,3 +527,179 @@ fn test_generate_all_types_from_registry() {
     assert!(code.code.contains("impl View for CState"));
     assert!(code.code.contains("impl View for CStatus"));
 }
+
+// ============================================================================
+// Raft Consensus Protocol Tests
+// ============================================================================
+
+#[test]
+fn test_raft_type_generation() {
+    use verus_transpiler::types::{TypeDef, TypeParser, TypeRegistry};
+
+    let source = std::fs::read_to_string("../src/protocol/Raft/types.rs")
+        .expect("Failed to read Raft types.rs");
+
+    let mut parser = TypeParser::new(&source);
+    let types = parser.parse_types().unwrap();
+
+    // Should parse: LServerRole (enum), LLogEntry, LState, LConstants (structs)
+    assert!(
+        types.len() >= 4,
+        "Expected at least 4 types but got {}: {:?}",
+        types.len(),
+        types.iter().map(|t| match t {
+            TypeDef::Struct(s) => format!("struct {}", s.name),
+            TypeDef::Enum(e) => format!("enum {}", e.name),
+            TypeDef::Alias(a) => format!("alias {}", a.name),
+        }).collect::<Vec<_>>()
+    );
+
+    // Register types
+    let mut registry = TypeRegistry::new();
+    for type_def in &types {
+        match type_def {
+            TypeDef::Struct(s) => { registry.register_struct(s.clone()); }
+            TypeDef::Enum(e) => { registry.register_enum(e.clone()); }
+            _ => {}
+        }
+    }
+
+    assert!(registry.structs.contains_key("LState"), "Should have LState");
+    assert!(registry.structs.contains_key("LConstants"), "Should have LConstants");
+    assert!(registry.structs.contains_key("LLogEntry"), "Should have LLogEntry");
+    assert!(registry.enums.contains_key("LServerRole"), "Should have LServerRole");
+
+    // Check LState has expected fields
+    let state = &registry.structs["LState"];
+    let field_names: Vec<&str> = state.fields.iter().map(|f| f.name.as_str()).collect();
+    assert!(field_names.contains(&"current_term"), "LState should have current_term");
+    assert!(field_names.contains(&"role"), "LState should have role");
+    assert!(field_names.contains(&"log"), "LState should have log");
+    assert!(field_names.contains(&"commit_index"), "LState should have commit_index");
+    assert!(field_names.contains(&"votes_granted"), "LState should have votes_granted");
+    assert!(field_names.contains(&"match_index"), "LState should have match_index");
+
+    // Check LServerRole has expected variants
+    let role_enum = &registry.enums["LServerRole"];
+    let variant_names: Vec<&str> = role_enum.variants.iter().map(|v| v.name.as_str()).collect();
+    assert!(variant_names.contains(&"Follower"), "Should have Follower variant");
+    assert!(variant_names.contains(&"Candidate"), "Should have Candidate variant");
+    assert!(variant_names.contains(&"Leader"), "Should have Leader variant");
+}
+
+#[test]
+fn test_raft_function_transpilation() {
+    let spec_source = std::fs::read_to_string("../src/protocol/Raft/raft.rs")
+        .expect("Failed to read Raft raft.rs");
+    let annotation_source = std::fs::read_to_string("../src/protocol/Raft/raft.automan")
+        .expect("Failed to read Raft raft.automan");
+
+    let config = TranspilerConfig {
+        translator: TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            exec_prefix: "C".to_string(),
+            ..Default::default()
+        },
+        skip_functions: vec!["LNext".to_string()],
+        ..Default::default()
+    };
+
+    let transpiler = Transpiler::new(config);
+    let result = transpiler.transpile_source(&spec_source, &annotation_source);
+    assert!(result.is_ok(), "Transpilation should succeed: {:?}", result.err());
+
+    let output = result.unwrap();
+
+    // Check that all expected exec functions are generated
+    assert!(output.contains("pub exec fn CInit"), "Should generate CInit");
+    assert!(output.contains("pub exec fn CTimeout"), "Should generate CTimeout");
+    assert!(output.contains("pub exec fn CGrantVote"), "Should generate CGrantVote");
+    assert!(output.contains("pub exec fn CReceiveVoteGranted"), "Should generate CReceiveVoteGranted");
+    assert!(output.contains("pub exec fn CBecomeLeader"), "Should generate CBecomeLeader");
+    assert!(output.contains("pub exec fn CClientRequest"), "Should generate CClientRequest");
+    assert!(output.contains("pub exec fn CHandleAppendResponse"), "Should generate CHandleAppendResponse");
+    assert!(output.contains("pub exec fn CAdvanceCommitIndex"), "Should generate CAdvanceCommitIndex");
+    assert!(output.contains("pub exec fn CStepDown"), "Should generate CStepDown");
+
+    // Verify LNext is NOT generated (it's in skip_functions)
+    assert!(!output.contains("pub exec fn CNext"), "Should NOT generate CNext");
+
+    // Check that ensures clauses reference spec functions
+    assert!(output.contains("LInit("), "Should reference LInit in ensures");
+    assert!(output.contains("LTimeout("), "Should reference LTimeout in ensures");
+    assert!(output.contains("LBecomeLeader("), "Should reference LBecomeLeader in ensures");
+
+    // Check struct construction patterns
+    assert!(output.contains("CState"), "Should construct CState in function bodies");
+}
+
+#[test]
+fn test_raft_annotation_parsing() {
+    let annotation_source = std::fs::read_to_string("../src/protocol/Raft/raft.automan")
+        .expect("Failed to read Raft raft.automan");
+
+    let parser = AnnotationParser::new(annotation_source);
+    let modules = parser.parse().unwrap();
+
+    // Should have 1 module (Raft::raft)
+    assert_eq!(modules.len(), 1, "Should have 1 module");
+    let module = &modules[0];
+    assert_eq!(module.module_path, "Raft::raft");
+
+    let funcs = &module.functions;
+
+    // Should have 8 function annotations
+    assert!(
+        funcs.len() >= 8,
+        "Expected at least 8 function annotations but got {}",
+        funcs.len()
+    );
+
+    // Check specific function annotations
+    let init = funcs.get("LInit").expect("Should have LInit");
+    assert_eq!(init.param_modes.len(), 2, "LInit should have 2 params");
+    assert_eq!(init.param_modes[0], ParameterMode::Output, "LInit s should be output");
+    assert_eq!(init.param_modes[1], ParameterMode::Input, "LInit c should be input");
+
+    let timeout = funcs.get("LTimeout").expect("Should have LTimeout");
+    assert_eq!(timeout.param_modes.len(), 3, "LTimeout should have 3 params");
+
+    let grant = funcs.get("LGrantVote").expect("Should have LGrantVote");
+    assert_eq!(grant.param_modes.len(), 7, "LGrantVote should have 7 params");
+
+    let become_leader = funcs.get("LBecomeLeader").expect("Should have LBecomeLeader");
+    assert_eq!(become_leader.param_modes.len(), 3, "LBecomeLeader should have 3 params");
+}
+
+#[test]
+fn test_raft_config_loading() {
+    let config_str = std::fs::read_to_string("../src/protocol/Raft/raft_transpile.toml")
+        .expect("Failed to read Raft config");
+
+    let config: toml::Value = config_str.parse().expect("Failed to parse TOML");
+
+    // Check skip_functions
+    let skip = config["skip_functions"].as_array().unwrap();
+    assert!(
+        skip.iter().any(|v| v.as_str() == Some("LNext")),
+        "Should skip LNext"
+    );
+
+    // Check naming
+    let naming = &config["naming"];
+    assert_eq!(naming["spec_prefix"].as_str(), Some("L"));
+    assert_eq!(naming["exec_prefix"].as_str(), Some("C"));
+    assert_eq!(naming["int_type"].as_str(), Some("u64"));
+
+    // Check remapping
+    let remapping = &config["remapping"];
+    assert_eq!(remapping["LState"].as_str(), Some("CState"));
+    assert_eq!(remapping["LConstants"].as_str(), Some("CConstants"));
+    assert_eq!(remapping["LServerRole"].as_str(), Some("CServerRole"));
+    assert_eq!(remapping["LLogEntry"].as_str(), Some("CLogEntry"));
+
+    // Check output settings
+    let output = &config["output"];
+    assert_eq!(output["validity_predicate_name"].as_str(), Some("valid"));
+    assert_eq!(output["generate_loops_for_verification"].as_bool(), Some(true));
+}
