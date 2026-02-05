@@ -7,6 +7,7 @@ use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
+use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::broadcast::*;

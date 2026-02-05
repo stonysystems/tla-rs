@@ -1,20 +1,7 @@
-use super::{
-    acceptorimpl::CAcceptor,
-    cconfiguration::CConfiguration,
-    cconstants::{CConstants, CReplicaConstants},
-    cparameters::CParameters,
-    ElectionImpl::CElectionState,
-    ExecutorImpl::CExecutor,
-    ExecutorImpl::COutstandingOperation,
-    ProposerImpl::CProposer,
-    ReplicaImpl::CReplica,
-};
 use crate::common::native::io_s::NetEvent;
 use vstd::prelude::*;
-// use crate::implementation::common::generic_marshalling::G;
 use crate::implementation::RSL::cmessage::CPacket;
-use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ProposerImpl::CIncompleteBatchTimer;
+use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::{cmessage::*, learnerimpl::*, ProposerImpl::*, ReplicaImpl::*};
 use crate::protocol::RSL::environment::RslIo;
 use crate::protocol::RSL::replica::LReplica;

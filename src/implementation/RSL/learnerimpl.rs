@@ -16,44 +16,8 @@ use vstd::std_specs::hash::*;
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
 
-    #[derive(Clone)]
-    pub struct CLearner {
-        pub constants: CReplicaConstants,
-        pub max_ballot_seen: CBallot,
-        pub unexecuted_learner_state: CLearnerState,
-    }
-
     impl CLearner
     {
-        pub open spec fn abstractable(self) -> bool
-        {
-            {
-                &&& self.constants.abstractable()
-                &&& self.max_ballot_seen.abstractable()
-                &&& clearnerstate_is_abstractable(self.unexecuted_learner_state)
-            }
-        }
-
-        pub open spec fn valid(self) -> bool
-        {
-            {
-                &&& self.abstractable()
-                &&& self.constants.valid()
-                &&& self.max_ballot_seen.valid()
-                &&& clearnerstate_is_valid(self.unexecuted_learner_state)
-            }
-        }
-
-        pub open spec fn view(self) -> LLearner
-        recommends self.abstractable()
-        {
-            LLearner {
-                constants: self.constants.view(),
-                max_ballot_seen: self.max_ballot_seen.view(),
-                unexecuted_learner_state: abstractify_clearnerstate(self.unexecuted_learner_state),
-            }
-        }
-
         // #[verifier(external_body)]
         pub fn CLearnerInit(c:CReplicaConstants) -> (clearner_init_result:Self)
         requires c.valid()
@@ -710,15 +674,4 @@ verus! {
         }
     }
 
-    impl View for CLearner {
-        type V = LLearner;
-
-        open spec fn view(&self) -> LLearner {
-            LLearner {
-                constants: self.constants.view(),
-                max_ballot_seen: self.max_ballot_seen.view(),
-                unexecuted_learner_state: abstractify_clearnerstate(self.unexecuted_learner_state),
-            }
-        }
-    }
 }

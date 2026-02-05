@@ -1580,50 +1580,35 @@ Two new config sections needed before types can be generated:
   - Required for CConfiguration: `clientIds` is skipped from struct but View must provide `Set::empty()`
 - [x] **Verification**: 17 structs generated, 19 View impls, 7 re-exports. 422 tests pass.
 
-### Phase 11.6: Regenerate types_gen.rs with Actual Type Definitions ❌ TODO
+### Phase 11.6: Regenerate types_gen.rs with Actual Type Definitions ✅ Done
 
-- [ ] **11.6.1**: Run multi-file type generation:
-  ```bash
-  cd transpiler && cargo run -- generate-types \
-      -i ../src/protocol/RSL/types.rs \
-      -i ../src/protocol/RSL/parameters.rs \
-      -i ../src/protocol/RSL/configuration.rs \
-      -i ../src/protocol/RSL/constants.rs \
-      -i ../src/protocol/RSL/acceptor.rs \
-      -i ../src/protocol/RSL/learner.rs \
-      -i ../src/protocol/RSL/election.rs \
-      -i ../src/protocol/RSL/executor.rs \
-      -i ../src/protocol/RSL/proposer.rs \
-      -i ../src/protocol/RSL/replica.rs \
-      -c ../src/protocol/RSL/types_transpile.toml \
-      -o ../src/generated/RSL/types_gen.rs
-  ```
-- [ ] **11.6.2**: Verify output has actual definitions:
-  - `grep "pub struct C" types_gen.rs | wc -l` ≥ 15
-  - `grep "impl View for C" types_gen.rs | wc -l` ≥ 15
-  - `grep "pub use crate::implementation" types_gen.rs | wc -l` ≤ 7
-- [ ] **11.6.3**: Manually append helper functions to types_gen.rs:
-  - Abstractify functions: `abstractify_cvotes`, `abstractify_creplycache`, `abstractify_clearnerstate`, `abstractify_crequestbatch`, `AbstractifyCOperationNumberToOperationNumber`
-  - Validity helpers: `COperationNumberIsAbstractable`, `COperationNumberIsValid`, `crequestbatch_is_*`, `creplycache_is_*`, `cvotes_is_*`, `clearnerstate_is_*`
-  - Ballot comparisons: `CBalLt`, `CBalLeq`, `CBalEq`
-  - I/O abstractify: `abstractify_clpacket`, `abstractify_crslio`, `abstractify_crslio_seq`
-  - `unreachable_value<T>()` helper
-  - Inherent methods: CBallot `.abstractable()`, `.is_equal()`, etc.
+Generated types_gen.rs with actual struct/enum definitions from transpiler, then manually
+appended helper functions (abstractify_*, validity predicates, ballot comparisons, I/O
+abstractify, unreachable_value, clone helpers, StaticParams, CGetReplicaIndex, etc.).
+CBallot/CRequest/CReply/CVote remain in types_i.rs (need `define_struct_and_derive_marshalable!`
+macro for Marshalable trait); types_gen.rs re-exports them.
 
-### Phase 11.7: Remove Duplicate Type Defs from Implementation Files ❌ TODO
+- [x] **11.6.1**: Ran multi-file type generation → 17 structs, 2 enums, 5 aliases
+- [x] **11.6.2**: Verified: 15 struct defs, 15 View impls, 7 re-exports
+- [x] **11.6.3**: Manually appended all helper functions
 
-Remove struct/enum definitions and `impl View` blocks from manual implementation files. Keep method impls and add `use crate::generated::RSL::types_gen::*;`.
+### Phase 11.7: Remove Duplicate Type Defs from Implementation Files ✅ Done
 
-- [ ] **11.7.1**: `types_i.rs` — remove structs (CBallot, CRequest, CReply, CVote, CLearnerTuple) + View impls + type aliases. Keep helper functions.
-- [ ] **11.7.2**: `cparameters.rs` — remove CParameters struct + View + valid()
-- [ ] **11.7.3**: `cconfiguration.rs` — remove CConfiguration struct + View + valid(). Keep CMinQuorumSize, CGetReplicaIndex, etc.
-- [ ] **11.7.4**: `cconstants.rs` — remove CConstants, CReplicaConstants structs + View + valid()
-- [ ] **11.7.5**: `acceptorimpl.rs` — remove CAcceptor struct + View + valid()
-- [ ] **11.7.6**: `learnerimpl.rs` — remove CLearner struct + View + valid()
-- [ ] **11.7.7**: `ElectionImpl.rs` — remove CElectionState struct + View + valid(). Keep CRequestHeader.
-- [ ] **11.7.8**: `ExecutorImpl.rs` — remove CExecutor, COutstandingOperation + View + valid()
-- [ ] **11.7.9**: `ProposerImpl.rs` — remove CProposer, CIncompleteBatchTimer + View + valid()
-- [ ] **11.7.10**: `ReplicaImpl.rs` — remove CReplica struct
+Removed struct/enum definitions and `impl View` blocks from implementation files.
+Each file now either re-exports from types_gen.rs or only contains exec functions.
+
+- [x] **11.7.1**: `types_i.rs` — kept CBallot/CRequest/CReply/CVote (marshalable macros) + `pub use types_gen::*`
+- [x] **11.7.2**: `cparameters.rs` — reduced to `pub use types_gen::*`
+- [x] **11.7.3**: `cconfiguration.rs` — reduced to `pub use types_gen::*`
+- [x] **11.7.4**: `cconstants.rs` — reduced to `pub use types_gen::*`
+- [x] **11.7.5**: `acceptorimpl.rs` — removed CAcceptor struct/View/specs
+- [x] **11.7.6**: `learnerimpl.rs` — removed CLearner struct/View/specs
+- [x] **11.7.7**: `ElectionImpl.rs` — removed CElectionState struct/specs, kept Clone impl + CRequestHeader
+- [x] **11.7.8**: `ExecutorImpl.rs` — removed CExecutor/COutstandingOperation struct/View/specs
+- [x] **11.7.9**: `ProposerImpl.rs` — removed CIncompleteBatchTimer/CProposer struct/specs, kept Clone impl
+- [x] **11.7.10**: `ReplicaImpl.rs` — removed CReplica struct/specs
+- [x] Fixed import paths in 5 files (replicaimpl_class, replicaimpl_no_receive_clock/no_clock, replicaimpl_process_packet_no_clock, replicaimpl_read_clock)
+- [x] Verus verification: 560 verified, 0 errors
 
 ### Phase 11.8: Generate New Files for Configuration/Constants/Parameters ❌ TODO
 

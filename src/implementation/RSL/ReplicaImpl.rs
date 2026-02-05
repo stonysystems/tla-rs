@@ -25,66 +25,7 @@ use vstd::{map::*, map_lib::*, prelude::*, seq::*};
 
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-#[derive(Clone)]
-pub struct CReplica {
-    pub constants: CReplicaConstants,
-    pub nextHeartbeatTime: u64,
-    pub proposer: CProposer,
-    pub acceptor: CAcceptor,
-    pub learner: CLearner,
-    pub executor: CExecutor,
-}
-
 impl CReplica{
-
-    pub open spec fn valid(self) -> bool {
-        self.abstractable()
-        &&
-        self.constants.valid()
-        &&
-        self.proposer.valid()
-        &&
-        self.acceptor.valid()
-        &&
-        self.learner.valid()
-        &&
-        self.executor.valid()
-        &&
-        self.constants@ == self.acceptor.constants@
-        &&
-        self.constants@ == self.proposer.constants@
-        &&
-        self.constants@ == self.learner.constants@
-        &&
-        self.constants@ == self.executor.constants@
-    }
-
-    pub open spec fn abstractable(self) -> bool{
-        self.constants.abstractable()
-        &&
-        self.proposer.abstractable()
-        &&
-        self.acceptor.abstractable()
-        &&
-        self.learner.abstractable()
-        &&
-        self.executor.abstractable()
-    }
-
-
-    pub open spec fn view(self) -> LReplica
-    recommends
-        self.abstractable()
-    {
-        LReplica{
-            constants:self.constants@,
-            nextHeartbeatTime:self.nextHeartbeatTime as int,
-            proposer:self.proposer@,
-            acceptor:self.acceptor@,
-            learner:self.learner@,
-            executor:self.executor@
-        }
-    }
 
     // #[verifier(external_body)]
     pub fn CReplicaInit(c: CReplicaConstants) -> (result: Self)
