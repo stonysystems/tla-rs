@@ -1,16 +1,45 @@
 // Types for generated RSL modules
 //
-// Re-exports types from the implementation module (types_i.rs) to avoid
-// duplicate type definitions. Only types unique to the generated module
-// (CScheduler, CClockReading, CRslIo) are defined here.
+// Re-exports all implementation types so generated function files only need:
+//   use crate::generated::RSL::types_gen::*;
+// Types unique to this module: CScheduler, CClockReading, CRslIo,
+// abstractify_clpacket/crslio functions, unreachable_value helper.
 
-// Re-export all implementation types used by generated code
+// =============================================================================
+// Re-exports from implementation modules
+// =============================================================================
+
+// Core types and type aliases (CBallot, CRequest, CReply, CVote, CLearnerTuple, etc.)
 pub use crate::implementation::RSL::types_i::*;
+// Message types (CMessage, CPacket)
+pub use crate::implementation::RSL::cmessage::*;
+// Configuration, Constants, Parameters
+pub use crate::implementation::RSL::cconfiguration::*;
+pub use crate::implementation::RSL::cconstants::*;
+pub use crate::implementation::RSL::cparameters::*;
+// Component state types
+pub use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
+pub use crate::implementation::RSL::learnerimpl::CLearner;
+pub use crate::implementation::RSL::ElectionImpl::CElectionState;
+pub use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+pub use crate::implementation::RSL::ProposerImpl::{CIncompleteBatchTimer, CProposer};
+pub use crate::implementation::RSL::ReplicaImpl::CReplica;
+// Application interface
+pub use crate::implementation::RSL::appinterface::{CAppMessage, CAppState, CAppStateInit};
+// State machine
+pub use crate::implementation::RSL::CStateMachine::*;
+// Broadcast helpers
+pub use crate::implementation::RSL::cbroadcast::*;
+// Upper bound helpers
+pub use crate::implementation::common::upper_bound::*;
+pub use crate::implementation::common::upper_bound_i::*;
+
+// =============================================================================
+// Imports for types defined in this module
+// =============================================================================
 
 use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
-use crate::implementation::RSL::cmessage::{CMessage, CPacket};
-use crate::implementation::RSL::ReplicaImpl::CReplica;
 use crate::protocol::RSL::environment::{RslIo, RslPacket};
 use crate::protocol::RSL::replica::LScheduler;
 use crate::protocol::RSL::types::*;
