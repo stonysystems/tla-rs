@@ -36,6 +36,8 @@ verus! {
     pub fn clone_hashset<T>(s:&HashSet<T>) -> (res:HashSet<T>)
     where
             T: Clone + Eq + Hash
+    ensures
+        res@ == s@,
     {
         let mut res = HashSet::new();
         for elem in s {

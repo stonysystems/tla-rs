@@ -8,8 +8,20 @@ use crate::protocol::TwoPhase::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 
 verus! {
+
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
+}
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -23,8 +35,9 @@ ensures
         tm_prepared: HashSet::new(),
         tm_state: CTMState::Init,
     };
-    assume(result.valid());
-    assume(LInit(result@, c@));
+    proof {
+        lemma_empty_set_map();
+    }
     result
 }
 
@@ -32,6 +45,7 @@ pub exec fn CTMRcvPrepared(s: &CState, c: &CConstants, r: &u64) -> (result: CSta
 requires
     s.valid(),
     c.valid(),
+    s.tm_state is Init,
 ensures
     result.valid(),
     LTMRcvPrepared(s@, result@, c@, *r as int),
@@ -43,8 +57,17 @@ ensures
         rm_state: clone_hashset(&s.rm_state),
         tm_state: CTMState::Init,
     };
-    assume(result.valid());
-    assume(LTMRcvPrepared(s@, result@, c@, *r as int));
+    proof {
+        // Prove: result@.tm_prepared == s@.tm_prepared.insert(*r as int)
+        // clone_hashset ensures: clone@ == s.tm_prepared@
+        // insert ensures: tm_prepared@ == old(tm_prepared)@.insert(*r) == s.tm_prepared@.insert(*r)
+        // View maps: result@.tm_prepared == tm_prepared@.map(|x: u64| x as int)
+        //   == s.tm_prepared@.insert(*r).map(|x: u64| x as int)
+        // By lemma_set_map_insert_commute:
+        //   == s.tm_prepared@.map(|x: u64| x as int).insert((*r) as int)
+        //   == s@.tm_prepared.insert(*r as int)
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 
@@ -52,6 +75,8 @@ pub exec fn CTMCommit(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
+    s.tm_state is Init,
+    s@.tm_prepared == c@.rm,
 ensures
     result.valid(),
     LTMCommit(s@, result@, c@),
@@ -61,8 +86,6 @@ ensures
         tm_prepared: clone_hashset(&s.tm_prepared),
         tm_state: CTMState::Committed,
     };
-    assume(result.valid());
-    assume(LTMCommit(s@, result@, c@));
     result
 }
 
@@ -70,6 +93,7 @@ pub exec fn CTMAbort(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
+    s.tm_state is Init,
 ensures
     result.valid(),
     LTMAbort(s@, result@, c@),
@@ -79,8 +103,6 @@ ensures
         tm_prepared: clone_hashset(&s.tm_prepared),
         tm_state: CTMState::Aborted,
     };
-    assume(result.valid());
-    assume(LTMAbort(s@, result@, c@));
     result
 }
 
