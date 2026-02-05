@@ -1684,14 +1684,14 @@ The generated exec code passes Verus verification but relies on **~244 `assume()
 | `RSL/acceptor_gen.rs` | 23 | Acceptor vote management |
 | `RSL/election_gen.rs` | 22 | Election state machine |
 | `RSL/executor_gen.rs` | 19 | Executor reply cache logic |
-| `RSL/learner_gen.rs` | 12 | Learner quorum tracking |
+| `RSL/learner_gen.rs` | ~~12~~ 0 ✅ | Learner quorum tracking |
 | `RSL/broadcast_gen.rs` | ~~2~~ 0 ✅ | Broadcast helper |
 | `Raft/raft_gen.rs` | ~~20~~ 0 ✅ | Raft consensus |
 | `ChainReplication/chain_gen.rs` | ~~14~~ 0 ✅ | Chain replication |
 | `Paxos/paxos_gen.rs` | ~~10~~ 0 ✅ | Single-decree Paxos |
 | `LeaderElection/election_gen.rs` | ~~10~~ 0 ✅ | Bully leader election |
 | `TwoPhase/twophase_gen.rs` | ~~8~~ 0 ✅ | Two-phase commit |
-| **Total** | **~180** (was 244) | |
+| **Total** | **~168** (was 244) | |
 
 ### Assume Categories
 
@@ -1870,9 +1870,12 @@ RSL is the most complex protocol. Apply proof generation systematically by compo
 - [x] Field-level invariants (dst@, src@, msg@) + post-loop mapped view proof
 - [x] Run Verus — 592 verified, 0 errors, 0 assumes remaining in broadcast
 
-**12.5.2: learner_gen.rs (12 assumes)**
-- [ ] Prove CLearnerInit, CLearnerProcess2b, CLearnerForgetDecision, CLearnerForgetOperationsBefore
-- [ ] Handle HashMap filter loop for forgetting operations
+**12.5.2: learner_gen.rs (12 assumes)** ✅ COMPLETE — 595 verified, 0 errors
+- [x] Prove CLearnerInit (empty map lemma)
+- [x] Prove CLearnerForgetDecision (remove lemma)
+- [x] Prove CLearnerProcess2b (5-branch spec predicate, field-level assertions, Set::map proofs)
+- [x] Prove CLearnerForgetOperationsBefore (filter_clearnerstate external_body helper)
+- Key patterns: `filter_clearnerstate` for HashMap filtering, `axiom_endpoint_view` for negated Set::map contains, `lemma_set_map_insert_commute` for singleton set mapping
 
 **12.5.3: executor_gen.rs (19 assumes)**
 - [ ] Prove CExecutorInit, CExecutorExecute, CExecutorProcessAppStateSupply, etc.

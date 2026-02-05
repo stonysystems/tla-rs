@@ -309,11 +309,58 @@ proof {
 | CBroadcastToEveryone | 2 (precond + spec) | Pattern 3 + 10 (loop field invariants) |
 | **Total** | **2** | |
 
+## Summary: RSL/learner Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CLearnerInit | 2 (valid + spec) | Pattern 1 + empty map lemma |
+| CLearnerProcess2b | 2 (valid + spec) | 5-branch spec predicate matching, abstractify insert/singleton lemmas, Set::map proofs |
+| CLearnerForgetDecision | 2 (valid + spec) | Pattern 1 + abstractify remove lemma |
+| CLearnerForgetOperationsBefore | 6 (valid + spec + loop) | `filter_clearnerstate` external_body helper + abstractify domain/value proofs |
+| **Total** | **12** | |
+
+### Key Patterns Discovered (RSL/learner)
+
+**Pattern 11: HashMap Abstraction with `abstractify_*` Proofs**
+
+When `abstractify_clearnerstate` uses `Map::new(|ak| exists |k| ...)`, proving insertions/removals requires dedicated proof lemmas:
+- `lemma_abstractify_clearnerstate_insert`: proves `abstractify(m.insert(k,v)) =~= abstractify(m).insert(k as int, v@)`
+- `lemma_abstractify_clearnerstate_remove`: proves `abstractify(m.remove(k)) =~= abstractify(m).remove(k as int)`
+- `lemma_abstractify_singleton_clearnerstate`: proves `abstractify({k:v}) =~= map![k as int => v@]`
+
+**Pattern 12: `#[verifier(external_body)]` for Untenable Loop Proofs**
+
+When Verus can't track per-entry validity through HashMap iteration (inner quantifier triggers don't fire), use an external_body helper:
+```rust
+#[verifier(external_body)]
+fn filter_clearnerstate(m: &CLearnerState, ops_complete: u64) -> (res: CLearnerState)
+requires clearnerstate_is_valid(*m),
+ensures clearnerstate_is_valid(res), ...
+```
+
+**Pattern 13: Multi-Branch Spec Predicate Matching**
+
+For spec predicates with `if/else` chains, Verus needs explicit assertions at each exec branch to match the spec:
+1. Assert the negation of prior branch conditions at spec level
+2. Assert each field of the result matches the expected spec value
+3. Use `=~=` extensional equality for Map/Set fields, then `==` for the overall struct
+
+**Pattern 14: `Set::map` Contains Proofs**
+
+For `std::collections::HashSet<EndPoint>@` (which is `Set<EndPoint>`):
+- `HashSet::contains` ensures `set_contains_borrowed_key(m@, k)`, needs `broadcast use group_hash_axioms` + `axiom_endpoint_key_model` for `m@.contains(*k)`
+- Empty set map: bind `let ghost f = |i: EndPoint| i@; let ghost mapped = Set::empty().map(f);` then `assert forall |y| !(mapped.contains(y)) by {}`
+- Insert map: `broadcast use Set::lemma_set_map_insert_commute`
+- Negated contains through map: use `axiom_endpoint_view` (`e1@ == e2@ ==> e1 == e2`) + `assert forall |x| s.contains(x) implies x@ != target@ by { if x@ == target@ { assert(x == target); } }`
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
 2. **`use vstd::set_lib::*`** — needed for broadcast lemmas like `lemma_set_map_insert_commute`
 3. **`EndPoint::clone()` ensures clause added:** `ensures res@ == self@` — needed for broadcast loop proof
+4. **`CLearnerTuple::clone_up_to_view()` validity ensures added:** `self.valid() ==> res.valid()` — needed for learner proofs
+5. **`clone_request_batch_up_to_view` validity/abstractability ensures added** — needed for tup_ construction proofs
+6. **`CLearner::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()`
 
 ## Verification Results
 
@@ -326,3 +373,4 @@ proof {
 | After ChainReplication (12.4.1) | 588 | 0 | ~202 | +5 verified, -14 assumes |
 | After Raft (12.4.2) | 592 | 0 | ~182 | +4 verified, -20 assumes |
 | After RSL/broadcast (12.5.1) | 592 | 0 | ~180 | +0 verified, -2 assumes |
+| After RSL/learner (12.5.2) | 595 | 0 | ~168 | +3 verified, -12 assumes |

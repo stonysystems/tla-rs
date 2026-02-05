@@ -148,7 +148,10 @@ pub fn CBalEq(ba:&CBallot, bb:&CBallot) -> (r:bool)
 pub fn clone_request_batch_up_to_view(batch: &CRequestBatch) -> (res: CRequestBatch)
     ensures
         res@ == batch@,
-        forall |i: int| 0 <= i < batch.len() ==> res[i]@ == batch[i]@
+        res@.len() == batch@.len(),
+        forall |i: int| 0 <= i < batch.len() ==> res[i]@ == batch[i]@,
+        crequestbatch_is_valid(&res) == crequestbatch_is_valid(batch),
+        crequestbatch_is_abstractable(&res) == crequestbatch_is_abstractable(batch),
 {
     let mut cloned:Vec<CRequest> = Vec::new();
     let mut i = 0;
@@ -327,6 +330,7 @@ impl CLearnerTuple{
         ensures
             res@ == self@,
             (self.abstractable() ==> res.abstractable()),
+            (self.valid() ==> res.valid()),
     {
         let mut new_senders = HashSet::new();
         for client in self.received_2b_message_senders.iter() {
@@ -994,6 +998,15 @@ impl CLearner {
         &&& self.constants.valid()
         &&& self.max_ballot_seen.valid()
         &&& clearnerstate_is_valid(self.unexecuted_learner_state)
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (res: CLearner)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    {
+        self.clone()
     }
 }
 
