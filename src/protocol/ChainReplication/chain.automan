@@ -1,0 +1,45 @@
+// Mode annotations for Chain Replication protocol
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module ChainReplication::chain {
+    // Initialize node state from constants
+    // s (output): initialized state
+    // c (input): protocol constants
+    LInit(-, +);
+
+    // Head receives a client write request
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // value (input): value to write
+    LHeadReceiveWrite(+, -, +, +);
+
+    // Node receives an update from predecessor
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // value (input): value received from predecessor
+    LReceiveUpdate(+, -, +, +);
+
+    // Tail commits a value
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // value (input): value to commit
+    LTailCommit(+, -, +, +);
+
+    // Node receives an ack from successor
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // value (input): value being acknowledged
+    LReceiveAck(+, -, +, +);
+
+    // Client reads current committed value (no state change)
+    // s (input): current state
+    // s_ (output): new state (same as s)
+    // c (input): constants
+    LClientRead(+, -, +);
+
+    // LNext is not transpiled (contains existential quantifiers)
+}

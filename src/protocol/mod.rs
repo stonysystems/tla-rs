@@ -1,4 +1,5 @@
 // pub mod lock;
+pub mod ChainReplication;
 pub mod LeaderElection;
 pub mod Paxos;
 pub mod Raft;

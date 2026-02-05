@@ -703,3 +703,159 @@ fn test_raft_config_loading() {
     assert_eq!(output["validity_predicate_name"].as_str(), Some("valid"));
     assert_eq!(output["generate_loops_for_verification"].as_bool(), Some(true));
 }
+
+// ============================================================================
+// Chain Replication Protocol Tests
+// ============================================================================
+
+#[test]
+fn test_chain_replication_type_generation() {
+    use verus_transpiler::types::{TypeDef, TypeParser, TypeRegistry};
+
+    let source = std::fs::read_to_string("../src/protocol/ChainReplication/types.rs")
+        .expect("Failed to read ChainReplication types.rs");
+
+    let mut parser = TypeParser::new(&source);
+    let types = parser.parse_types().unwrap();
+
+    // Should parse: LNodeRole (enum), LState, LConstants (structs)
+    assert!(
+        types.len() >= 3,
+        "Expected at least 3 types but got {}: {:?}",
+        types.len(),
+        types.iter().map(|t| match t {
+            TypeDef::Struct(s) => format!("struct {}", s.name),
+            TypeDef::Enum(e) => format!("enum {}", e.name),
+            TypeDef::Alias(a) => format!("alias {}", a.name),
+        }).collect::<Vec<_>>()
+    );
+
+    let mut registry = TypeRegistry::new();
+    for type_def in &types {
+        match type_def {
+            TypeDef::Struct(s) => { registry.register_struct(s.clone()); }
+            TypeDef::Enum(e) => { registry.register_enum(e.clone()); }
+            _ => {}
+        }
+    }
+
+    assert!(registry.structs.contains_key("LState"), "Should have LState");
+    assert!(registry.structs.contains_key("LConstants"), "Should have LConstants");
+    assert!(registry.enums.contains_key("LNodeRole"), "Should have LNodeRole");
+
+    // Check LState has expected fields
+    let state = &registry.structs["LState"];
+    let field_names: Vec<&str> = state.fields.iter().map(|f| f.name.as_str()).collect();
+    assert!(field_names.contains(&"role"), "LState should have role");
+    assert!(field_names.contains(&"history"), "LState should have history");
+    assert!(field_names.contains(&"pending_sent"), "LState should have pending_sent");
+    assert!(field_names.contains(&"committed_count"), "LState should have committed_count");
+    assert!(field_names.contains(&"obj_value"), "LState should have obj_value");
+
+    // Check LNodeRole has expected variants
+    let role_enum = &registry.enums["LNodeRole"];
+    let variant_names: Vec<&str> = role_enum.variants.iter().map(|v| v.name.as_str()).collect();
+    assert!(variant_names.contains(&"Head"), "Should have Head variant");
+    assert!(variant_names.contains(&"Middle"), "Should have Middle variant");
+    assert!(variant_names.contains(&"Tail"), "Should have Tail variant");
+}
+
+#[test]
+fn test_chain_replication_function_transpilation() {
+    let spec_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.rs")
+        .expect("Failed to read ChainReplication chain.rs");
+    let annotation_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
+        .expect("Failed to read ChainReplication chain.automan");
+
+    let config = TranspilerConfig {
+        translator: TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            exec_prefix: "C".to_string(),
+            ..Default::default()
+        },
+        skip_functions: vec!["LNext".to_string()],
+        ..Default::default()
+    };
+
+    let transpiler = Transpiler::new(config);
+    let result = transpiler.transpile_source(&spec_source, &annotation_source);
+    assert!(result.is_ok(), "Transpilation should succeed: {:?}", result.err());
+
+    let output = result.unwrap();
+
+    // Check all expected exec functions are generated
+    assert!(output.contains("pub exec fn CInit"), "Should generate CInit");
+    assert!(output.contains("pub exec fn CHeadReceiveWrite"), "Should generate CHeadReceiveWrite");
+    assert!(output.contains("pub exec fn CReceiveUpdate"), "Should generate CReceiveUpdate");
+    assert!(output.contains("pub exec fn CTailCommit"), "Should generate CTailCommit");
+    assert!(output.contains("pub exec fn CReceiveAck"), "Should generate CReceiveAck");
+    assert!(output.contains("pub exec fn CClientRead"), "Should generate CClientRead");
+
+    // Verify LNext is NOT generated
+    assert!(!output.contains("pub exec fn CNext"), "Should NOT generate CNext");
+
+    // Check ensures clauses reference spec functions
+    assert!(output.contains("LInit("), "Should reference LInit in ensures");
+    assert!(output.contains("LHeadReceiveWrite("), "Should reference LHeadReceiveWrite in ensures");
+    assert!(output.contains("LTailCommit("), "Should reference LTailCommit in ensures");
+}
+
+#[test]
+fn test_chain_replication_annotation_parsing() {
+    let annotation_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
+        .expect("Failed to read ChainReplication chain.automan");
+
+    let parser = AnnotationParser::new(annotation_source);
+    let modules = parser.parse().unwrap();
+
+    assert_eq!(modules.len(), 1, "Should have 1 module");
+    let module = &modules[0];
+    assert_eq!(module.module_path, "ChainReplication::chain");
+
+    let funcs = &module.functions;
+
+    // Should have 6 function annotations
+    assert!(
+        funcs.len() >= 6,
+        "Expected at least 6 function annotations but got {}",
+        funcs.len()
+    );
+
+    // Check specific annotations
+    let init = funcs.get("LInit").expect("Should have LInit");
+    assert_eq!(init.param_modes.len(), 2, "LInit should have 2 params");
+    assert_eq!(init.param_modes[0], ParameterMode::Output);
+    assert_eq!(init.param_modes[1], ParameterMode::Input);
+
+    let head_write = funcs.get("LHeadReceiveWrite").expect("Should have LHeadReceiveWrite");
+    assert_eq!(head_write.param_modes.len(), 4, "LHeadReceiveWrite should have 4 params");
+
+    let tail_commit = funcs.get("LTailCommit").expect("Should have LTailCommit");
+    assert_eq!(tail_commit.param_modes.len(), 4, "LTailCommit should have 4 params");
+
+    let client_read = funcs.get("LClientRead").expect("Should have LClientRead");
+    assert_eq!(client_read.param_modes.len(), 3, "LClientRead should have 3 params");
+}
+
+#[test]
+fn test_chain_replication_config_loading() {
+    let config_str = std::fs::read_to_string("../src/protocol/ChainReplication/chain_transpile.toml")
+        .expect("Failed to read ChainReplication config");
+
+    let config: toml::Value = config_str.parse().expect("Failed to parse TOML");
+
+    // Check skip_functions
+    let skip = config["skip_functions"].as_array().unwrap();
+    assert!(skip.iter().any(|v| v.as_str() == Some("LNext")), "Should skip LNext");
+
+    // Check naming
+    let naming = &config["naming"];
+    assert_eq!(naming["spec_prefix"].as_str(), Some("L"));
+    assert_eq!(naming["exec_prefix"].as_str(), Some("C"));
+
+    // Check remapping
+    let remapping = &config["remapping"];
+    assert_eq!(remapping["LState"].as_str(), Some("CState"));
+    assert_eq!(remapping["LConstants"].as_str(), Some("CConstants"));
+    assert_eq!(remapping["LNodeRole"].as_str(), Some("CNodeRole"));
+}
