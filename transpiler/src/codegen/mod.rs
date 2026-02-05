@@ -151,21 +151,22 @@ impl TypeGenerator {
         GeneratedCode { code, warnings }
     }
 
-    /// Generate a single enum variant
+    /// Generate a single enum variant (using exec variant name from remapping)
     fn generate_variant(&self, variant: &VariantDef) -> String {
+        let exec_variant_name = self.get_exec_variant_name(&variant.name);
         match &variant.fields {
-            VariantFields::Unit => format!("{}{},\n", self.indent, variant.name),
+            VariantFields::Unit => format!("{}{},\n", self.indent, exec_variant_name),
             VariantFields::Tuple(types) => {
                 let type_strs: Vec<_> = types.iter().map(|t| self.translate_type(t)).collect();
                 format!(
                     "{}{}({}),\n",
                     self.indent,
-                    variant.name,
+                    exec_variant_name,
                     type_strs.join(", ")
                 )
             }
             VariantFields::Struct(fields) => {
-                let mut s = format!("{}{} {{\n", self.indent, variant.name);
+                let mut s = format!("{}{} {{\n", self.indent, exec_variant_name);
                 for field in fields {
                     let exec_type = self.translate_type(&field.ty);
                     s.push_str(&format!(
@@ -237,10 +238,14 @@ impl TypeGenerator {
     fn generate_well_formed_variant_arm(&self, enum_name: &str, variant: &VariantDef) -> String {
         let arm_indent = format!("{}{}{}", self.indent, self.indent, self.indent);
         let pred_name = &self.validity_predicate_name;
+        let exec_variant_name = self.get_exec_variant_name(&variant.name);
 
         match &variant.fields {
             VariantFields::Unit => {
-                format!("{}{}::{} => true,\n", arm_indent, enum_name, variant.name)
+                format!(
+                    "{}{}::{} => true,\n",
+                    arm_indent, enum_name, exec_variant_name
+                )
             }
             VariantFields::Tuple(types) => {
                 let patterns: Vec<_> = (0..types.len()).map(|i| format!("v{}", i)).collect();
@@ -256,14 +261,14 @@ impl TypeGenerator {
                 if checks.is_empty() {
                     format!(
                         "{}{}::{}({}) => true,\n",
-                        arm_indent, enum_name, variant.name, pattern
+                        arm_indent, enum_name, exec_variant_name, pattern
                     )
                 } else {
                     format!(
                         "{}{}::{}({}) => {},\n",
                         arm_indent,
                         enum_name,
-                        variant.name,
+                        exec_variant_name,
                         pattern,
                         checks.join(" && ")
                     )
@@ -283,14 +288,14 @@ impl TypeGenerator {
                 if checks.is_empty() {
                     format!(
                         "{}{}::{} {{ {} }} => true,\n",
-                        arm_indent, enum_name, variant.name, pattern
+                        arm_indent, enum_name, exec_variant_name, pattern
                     )
                 } else {
                     format!(
                         "{}{}::{} {{ {} }} => {},\n",
                         arm_indent,
                         enum_name,
-                        variant.name,
+                        exec_variant_name,
                         pattern,
                         checks.join(" && ")
                     )
@@ -348,7 +353,8 @@ impl TypeGenerator {
         code
     }
 
-    /// Generate a match arm for View implementation
+    /// Generate a match arm for View implementation.
+    /// The exec side uses the remapped variant name, the spec side uses the original.
     fn generate_view_variant_arm(
         &self,
         spec_name: &str,
@@ -356,12 +362,14 @@ impl TypeGenerator {
         variant: &VariantDef,
     ) -> String {
         let arm_indent = format!("{}{}{}", self.indent, self.indent, self.indent);
+        let exec_variant_name = self.get_exec_variant_name(&variant.name);
+        let spec_variant_name = &variant.name;
 
         match &variant.fields {
             VariantFields::Unit => {
                 format!(
                     "{}{}::{} => {}::{},\n",
-                    arm_indent, exec_name, variant.name, spec_name, variant.name
+                    arm_indent, exec_name, exec_variant_name, spec_name, spec_variant_name
                 )
             }
             VariantFields::Tuple(types) => {
@@ -378,10 +386,10 @@ impl TypeGenerator {
                     "{}{}::{}({}) => {}::{}({}),\n",
                     arm_indent,
                     exec_name,
-                    variant.name,
+                    exec_variant_name,
                     pattern,
                     spec_name,
-                    variant.name,
+                    spec_variant_name,
                     views.join(", ")
                 )
             }
@@ -399,10 +407,10 @@ impl TypeGenerator {
                     "{}{}::{} {{ {} }} => {}::{} {{ {} }},\n",
                     arm_indent,
                     exec_name,
-                    variant.name,
+                    exec_variant_name,
                     pattern,
                     spec_name,
-                    variant.name,
+                    spec_variant_name,
                     field_views.join(", ")
                 )
             }
@@ -417,6 +425,16 @@ impl TypeGenerator {
         }
         // Fall back to naming convention
         self.config.get_exec_type(name)
+    }
+
+    /// Get the exec variant name, checking remapping table first.
+    /// Unlike type names, variant names are NOT automatically prefixed with C.
+    /// They only change if explicitly listed in the remapping table.
+    fn get_exec_variant_name(&self, spec_variant_name: &str) -> String {
+        if let Some(exec_name) = self.remapping.get(spec_variant_name) {
+            return exec_name.clone();
+        }
+        spec_variant_name.to_string()
     }
 
     /// Get the exec name for a type alias (e.g., "RequestBatch" -> "CRequestBatch")
@@ -1326,5 +1344,105 @@ mod tests {
         assert_eq!(registry.struct_order.len(), 1);
         // Should keep the latest definition (with 2 fields)
         assert_eq!(registry.structs["LState"].fields.len(), 2);
+    }
+
+    #[test]
+    fn test_enum_variant_remapping() {
+        let mut remapping = HashMap::new();
+        remapping.insert("RslMessage1a".to_string(), "CMessage1a".to_string());
+        remapping.insert("RslMessage1b".to_string(), "CMessage1b".to_string());
+
+        let generator =
+            TypeGenerator::with_options(NamingConfig::default(), remapping, "valid".to_string());
+
+        let spec = EnumDef {
+            name: "RslMessage".to_string(),
+            generics: Generics::default(),
+            variants: vec![
+                VariantDef {
+                    name: "RslMessage1a".to_string(),
+                    fields: VariantFields::Struct(vec![FieldDef {
+                        name: "bal_1a".to_string(),
+                        ty: Type::Named(Path::single("Ballot".to_string())),
+                        is_public: true,
+                    }]),
+                },
+                VariantDef {
+                    name: "RslMessage1b".to_string(),
+                    fields: VariantFields::Unit,
+                },
+                VariantDef {
+                    name: "Heartbeat".to_string(),
+                    fields: VariantFields::Unit,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_enum(&spec);
+
+        // Exec enum should use remapped variant names
+        assert!(
+            result.code.contains("CMessage1a {"),
+            "Should remap RslMessage1a -> CMessage1a: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("CMessage1b,"),
+            "Should remap RslMessage1b -> CMessage1b: {}",
+            result.code
+        );
+        // Unmapped variant should stay unchanged
+        assert!(
+            result.code.contains("Heartbeat,"),
+            "Unmapped variant should stay: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_enum_variant_remapping_view_trait() {
+        let mut remapping = HashMap::new();
+        remapping.insert("RslMessage1a".to_string(), "CMessage1a".to_string());
+
+        let generator =
+            TypeGenerator::with_options(NamingConfig::default(), remapping, "valid".to_string());
+
+        let spec = EnumDef {
+            name: "LMessage".to_string(),
+            generics: Generics::default(),
+            variants: vec![
+                VariantDef {
+                    name: "RslMessage1a".to_string(),
+                    fields: VariantFields::Struct(vec![FieldDef {
+                        name: "bal".to_string(),
+                        ty: Type::Int,
+                        is_public: true,
+                    }]),
+                },
+                VariantDef {
+                    name: "Active".to_string(),
+                    fields: VariantFields::Unit,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_enum(&spec);
+
+        // View trait: exec side should use remapped name, spec side should use original
+        assert!(
+            result
+                .code
+                .contains("CMessage::CMessage1a { bal } => LMessage::RslMessage1a"),
+            "View should map exec CMessage1a -> spec RslMessage1a: {}",
+            result.code
+        );
+        // Unmapped variant should use same name on both sides
+        assert!(
+            result.code.contains("CMessage::Active => LMessage::Active"),
+            "Unmapped variant same on both sides: {}",
+            result.code
+        );
     }
 }

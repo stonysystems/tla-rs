@@ -3263,13 +3263,15 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 
 ### Phase 11.2: Add Enum Variant Name Remapping (~100 LOC)
 
-- [ ] **11.2.1**: Support variant name remapping in `generate_enum()`
+- [x] **11.2.1**: Support variant name remapping in `generate_enum()` ✅
   - File: `transpiler/src/codegen/mod.rs`
-  - Check remapping table for variant names (e.g., `RslMessage1a` → `CMessage1a`)
-  - Currently only enum name is remapped, not variant names
-- [ ] **11.2.2**: Apply variant remapping in View trait generation
-  - Match arms need both spec and exec variant names
-- [ ] **11.2.3**: Add tests for enum variant remapping
+  - Added `get_exec_variant_name()` - checks remapping table, falls back to original name
+  - Updated `generate_variant()`, `generate_well_formed_variant_arm()` to use exec variant names
+- [x] **11.2.2**: Apply variant remapping in View trait generation ✅
+  - Updated `generate_view_variant_arm()` to use exec name on left, spec name on right
+  - e.g., `CMessage::CMessage1a { bal } => LMessage::RslMessage1a { bal: bal as int }`
+- [x] **11.2.3**: Add tests for enum variant remapping ✅
+  - 2 new tests: variant remapping in enum definition, variant remapping in View trait
 
 ### Phase 11.3: Add Config Extensions for Complex Types (~150 LOC)
 
