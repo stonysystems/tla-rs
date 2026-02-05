@@ -17,15 +17,12 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 - TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
 - Verus spec → exec function transpilation: ✅ Complete (including recursive helpers)
 - Full codebase: 543 verified, 0 errors
-- Phase 11.1-11.5, 11.7-11.8: ✅ Complete — types_gen.rs re-exports all implementation types, gen files use centralized imports
+- Phase 11 (all sub-phases): ✅ Complete — types_gen.rs re-exports all implementation types, gen files use centralized imports, all spec functions have exec equivalents
 
-**Remaining:**
-- Phase 11.6: Transpilation for new spec files (configuration.rs, constants.rs, parameters.rs)
-- Phase 11.9: Update scripts and documentation
-
-**Next:** [Phase 11.6: Add Transpilation for New Spec Files](#phase-11-generate-all-types-eliminate-manual-implementation-imports) - Create `.automan` and `_transpile.toml` for currently untranspiled specs.
-
-See also [Phase 10: Remaining Transpiler Issues](#phase-10-remaining-transpiler-issues-blocking-full-automation) for details.
+**Next steps (future work):**
+- Phase 10: Remaining transpiler issues for full automation (see below)
+- Replace manual implementation with generated code (blocked on transpiler improvements)
+- Additional protocol targets: 2PC, Paxos, Raft, etc.
 
 ## Reference
 
