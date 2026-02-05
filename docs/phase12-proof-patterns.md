@@ -101,6 +101,51 @@ proof {
 }
 ```
 
+## Pattern 6: Set Remove-Map Commutativity
+
+**Category:** Collection operation proofs
+
+When the spec says `s_.field == s.field.remove(x)` and the exec does `clone + remove`, we need remove-map commutativity. Unlike insert-map, Verus does NOT have a built-in broadcast proof for this, so we provide a custom lemma.
+
+**Key:** The proof requires injectivity of the mapping function (`|x: u64| x as int` is injective).
+
+**Proof:**
+```rust
+proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)
+ensures
+    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),
+{
+    let f = |x: u64| x as int;
+    let lhs = s.remove(elt).map(f);
+    let rhs = s.map(f).remove(f(elt));
+    // Forward: lhs ⊆ rhs
+    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {
+        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;
+        assert(s.contains(x));
+        assert(x != elt);
+        assert(f(x) != f(elt));  // injectivity
+        assert(s.map(f).contains(y));
+    }
+    // Backward: rhs ⊆ lhs
+    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {
+        let x = choose|x: u64| s.contains(x) && f(x) == y;
+        assert(y != f(elt));
+        assert(f(x) != f(elt));
+        assert(x != elt);  // injectivity
+        assert(s.remove(elt).contains(x));
+    }
+}
+```
+
+**Usage:**
+```rust
+proof {
+    lemma_set_map_remove_commute(s.electing@, *node);
+}
+```
+
+**Note:** This lemma is per-file (not broadcast) since it's specific to the `u64 → int` mapping. If needed across many files, it could be moved to a shared proof library.
+
 ## Summary: TwoPhase Results
 
 | Function | Assumes Removed | Proof Technique |
@@ -111,6 +156,17 @@ proof {
 | CTMAbort | 2 (valid + spec) | Pattern 1 + Pattern 2 (clone ensures) + Pattern 3 (precondition) |
 | **Total** | **8** | |
 
+## Summary: LeaderElection Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CInit | 2 (valid + spec) | Pattern 1 + Pattern 4 (empty set map) + Pattern 2 (clone for alive) |
+| CStartElection | 2 (valid + spec) | Pattern 1 + Pattern 3 (precondition) + Pattern 5 (insert-map) |
+| CRespondHigher | 2 (valid + spec) | Pattern 1 + Pattern 2 (clone ensures) + Pattern 3 (preconditions) |
+| CBecomeLeader | 2 (valid + spec) | Pattern 1 + Pattern 3 (preconditions) + Pattern 6 (remove-map) |
+| CNodeFail | 2 (valid + spec) | Pattern 1 + Pattern 3 (precondition) + Pattern 6 (remove-map x2) |
+| **Total** | **10** | |
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
@@ -118,6 +174,8 @@ proof {
 
 ## Verification Results
 
-- Before: 579 verified, 0 errors, ~244 assumes
-- After: 580 verified, 0 errors, ~236 assumes
-- Net: +1 verified (the new proof lemma), -8 assumes
+| Phase | Verified | Errors | Assumes | Net Change |
+|-------|----------|--------|---------|------------|
+| Before (V3.12) | 579 | 0 | ~244 | — |
+| After TwoPhase (12.1.1) | 580 | 0 | ~236 | +1 verified, -8 assumes |
+| After LeaderElection (12.1.2) | 582 | 0 | ~226 | +2 verified, -10 assumes |
