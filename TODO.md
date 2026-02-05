@@ -3291,21 +3291,30 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 
 ### Phase 11.4: Create Comprehensive types_transpile.toml
 
-- [ ] **11.4.1**: Expand `src/protocol/RSL/types_transpile.toml` with all remappings
+- [x] **11.4.0**: Add `skip_types` and `re_exports` config sections to transpiler ✅
+  - Added to `TranspilerConfig`, `TypeGenConfig`, and `generate_all_types_full()`
+  - `skip_types`: list of spec type names to skip during generation
+  - `re_exports`: list of paths to generate `pub use` statements
+  - TOML placement: root-level arrays (before any `[section]` headers)
+- [x] **11.4.1**: Expand `src/protocol/RSL/types_transpile.toml` with all remappings ✅
   - All 11 RslMessage variant mappings
   - OutstandingOperation variant mappings
   - IncompleteBatchTimer variant mappings
   - External type mappings: AbstractEndPoint→EndPoint, AppMessage→CAppMessage, etc.
   - UpperBound→u64 mapping for CParameters
-- [ ] **11.4.2**: Add view_overrides for complex fields
+- [x] **11.4.2**: Add view_overrides for complex fields ✅
   - CAcceptor.votes, CAcceptor.last_checkpointed_operation
   - CParameters.max_integer_val (UpperBound → u64 special handling)
   - Collection fields needing abstractify_* functions
-- [ ] **11.4.3**: Add extra_fields for optimization fields
+  - All 20+ complex field view overrides documented
+- [x] **11.4.3**: Add extra_fields for optimization fields ✅
   - CAcceptor: min_vote_opn
   - CProposer: max_opn_with_proposal, max_log_truncation_point
   - CElectionState: cur_req_set, prev_req_set
-- [ ] **11.4.4**: Add clone_strategy entries
+- [x] **11.4.4**: Add clone_strategy entries ✅
+  - CLearnerTuple, CElectionState, CProposer: external_body
+- [x] **11.4.5**: Add `skip_types` for all 25 manually-implemented types ✅
+- [x] **11.4.6**: Add `re_exports` for 16 implementation module paths ✅
 
 ### Phase 11.5: Regenerate types_gen.rs with All Types
 

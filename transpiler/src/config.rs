@@ -98,6 +98,18 @@ pub struct TranspilerConfig {
     /// Key: exec type name (e.g., "CElectionState")
     #[serde(default)]
     pub clone_strategy: HashMap<String, String>,
+
+    /// Types to skip during generation (already manually implemented).
+    /// These spec type names will be parsed but NOT generated as exec types.
+    /// e.g., ["Ballot", "Request", "Reply", "Vote", "LearnerTuple"]
+    #[serde(default)]
+    pub skip_types: Vec<String>,
+
+    /// Re-export statements to include at the top of the generated file.
+    /// Each entry is a full `use` path (without the `use` keyword or semicolon).
+    /// e.g., ["crate::implementation::RSL::types_i::*"]
+    #[serde(default)]
+    pub re_exports: Vec<String>,
 }
 
 impl TranspilerConfig {
@@ -550,5 +562,33 @@ mod tests {
             config.clone_strategy.get("CElectionState"),
             Some(&"external_body".to_string())
         );
+    }
+
+    #[test]
+    fn test_skip_types_config() {
+        let toml = r#"
+            skip_types = ["Ballot", "Request", "Reply"]
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.skip_types.len(), 3);
+        assert!(config.skip_types.contains(&"Ballot".to_string()));
+        assert!(config.skip_types.contains(&"Request".to_string()));
+    }
+
+    #[test]
+    fn test_re_exports_config() {
+        let toml = r#"
+            re_exports = [
+                "crate::implementation::RSL::types_i::*",
+                "crate::implementation::RSL::cmessage::CPacket",
+            ]
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.re_exports.len(), 2);
+        assert!(config
+            .re_exports
+            .contains(&"crate::implementation::RSL::types_i::*".to_string()));
     }
 }

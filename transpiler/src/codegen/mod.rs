@@ -803,6 +803,8 @@ pub fn generate_all_types_with_options(
         view_overrides: &HashMap::new(),
         extra_fields: &HashMap::new(),
         clone_strategy: &HashMap::new(),
+        skip_types: &[],
+        re_exports: &[],
     })
 }
 
@@ -816,6 +818,8 @@ pub struct TypeGenConfig<'a> {
     pub view_overrides: &'a HashMap<String, String>,
     pub extra_fields: &'a HashMap<String, String>,
     pub clone_strategy: &'a HashMap<String, String>,
+    pub skip_types: &'a [String],
+    pub re_exports: &'a [String],
 }
 
 /// Generate all types from a type registry with all configuration options
@@ -850,10 +854,21 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
         all_code.push('\n');
     }
 
+    // Re-export statements (outside verus! block)
+    for re_export in cfg.re_exports {
+        all_code.push_str(&format!("pub use {};\n", re_export));
+    }
+    if !cfg.re_exports.is_empty() {
+        all_code.push('\n');
+    }
+
     all_code.push_str("verus! {\n\n");
 
-    // Generate type aliases (in insertion order)
+    // Generate type aliases (in insertion order, skip those in skip_types)
     for alias_name in &cfg.registry.alias_order {
+        if cfg.skip_types.contains(alias_name) {
+            continue;
+        }
         if let Some(alias) = cfg.registry.aliases.get(alias_name) {
             let exec_name = generator.get_exec_alias_name(&alias.name);
             let exec_type = generator.translate_alias_type(&alias.ty);
@@ -864,8 +879,11 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
         all_code.push('\n');
     }
 
-    // Generate structs (in insertion order)
+    // Generate structs (in insertion order, skip those in skip_types)
     for struct_name in &cfg.registry.struct_order {
+        if cfg.skip_types.contains(struct_name) {
+            continue;
+        }
         if let Some(struct_def) = cfg.registry.structs.get(struct_name) {
             if struct_def.is_spec {
                 let generated = generator.generate_struct(struct_def);
@@ -876,8 +894,11 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
         }
     }
 
-    // Generate enums (in insertion order)
+    // Generate enums (in insertion order, skip those in skip_types)
     for enum_name in &cfg.registry.enum_order {
+        if cfg.skip_types.contains(enum_name) {
+            continue;
+        }
         if let Some(enum_def) = cfg.registry.enums.get(enum_name) {
             if enum_def.is_spec {
                 let generated = generator.generate_enum(enum_def);
@@ -1700,6 +1721,104 @@ mod tests {
         assert!(
             result.code.contains("#[derive(Clone)]"),
             "Default should use derive Clone: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_types() {
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "Ballot".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "seqno".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+        registry.register_struct(StructDef {
+            name: "LAcceptor".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "max_bal".to_string(),
+                ty: Type::Named(Path {
+                    segments: vec!["Ballot".to_string()],
+                }),
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let skip_types = vec!["Ballot".to_string()];
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &skip_types,
+            re_exports: &[],
+        };
+
+        let result = generate_all_types_full(&cfg);
+
+        // Ballot should be skipped
+        assert!(
+            !result.code.contains("pub struct CBallot"),
+            "Ballot should be skipped: {}",
+            result.code
+        );
+        // LAcceptor should still be generated
+        assert!(
+            result.code.contains("pub struct CAcceptor"),
+            "LAcceptor should be generated: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_re_exports() {
+        let registry = TypeRegistry::new();
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let re_exports = vec![
+            "crate::implementation::RSL::types_i::*".to_string(),
+            "crate::implementation::RSL::cmessage::CPacket".to_string(),
+        ];
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &re_exports,
+        };
+
+        let result = generate_all_types_full(&cfg);
+
+        assert!(
+            result
+                .code
+                .contains("pub use crate::implementation::RSL::types_i::*;"),
+            "Should contain re-export: {}",
+            result.code
+        );
+        assert!(
+            result
+                .code
+                .contains("pub use crate::implementation::RSL::cmessage::CPacket;"),
+            "Should contain re-export: {}",
             result.code
         );
     }

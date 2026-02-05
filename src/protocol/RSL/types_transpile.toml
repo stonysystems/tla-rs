@@ -1,5 +1,73 @@
 # Configuration for generating RSL types
 # This is separate from the main transpile.toml for function generation
+#
+# Strategy: All RSL types are already manually implemented in src/implementation/RSL/.
+# The transpiler skips all types and generates re-exports so that types_gen.rs
+# serves as a single import point for all generated function files.
+
+# Types to skip during generation (already manually implemented)
+# These are parsed for dependency tracking but NOT generated as exec types.
+skip_types = [
+    # Core types (in types_i.rs, re-exported via wildcard)
+    "Ballot",
+    "Request",
+    "Reply",
+    "Vote",
+    "LearnerTuple",
+    "ClockReading",
+    # Type aliases (in types_i.rs, re-exported via wildcard)
+    "OperationNumber",
+    "RequestBatch",
+    "ReplyCache",
+    "Votes",
+    "LearnerState",
+    # Parameters/Configuration/Constants (in cparameters.rs, cconfiguration.rs, cconstants.rs)
+    "LParameters",
+    "LConfiguration",
+    "LConstants",
+    "LReplicaConstants",
+    # Message enum (in cmessage.rs via define_enum_and_derive_marshalable! macro)
+    "RslMessage",
+    # Component state types (in their respective impl files)
+    "LAcceptor",
+    "LLearner",
+    "ElectionState",
+    "OutstandingOperation",
+    "LExecutor",
+    "IncompleteBatchTimer",
+    "LProposer",
+    "LReplica",
+    "LScheduler",
+]
+
+# Re-export statements for types_gen.rs
+# These make ALL implementation types available via `use types_gen::*`
+re_exports = [
+    # Core types and type aliases (CBallot, CRequest, CReply, CVote, CLearnerTuple, etc.)
+    "crate::implementation::RSL::types_i::*",
+    # Message types (CMessage, CPacket)
+    "crate::implementation::RSL::cmessage::*",
+    # Configuration, Constants, Parameters
+    "crate::implementation::RSL::cconfiguration::*",
+    "crate::implementation::RSL::cconstants::*",
+    "crate::implementation::RSL::cparameters::*",
+    # Component state types
+    "crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid}",
+    "crate::implementation::RSL::learnerimpl::CLearner",
+    "crate::implementation::RSL::ElectionImpl::CElectionState",
+    "crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation}",
+    "crate::implementation::RSL::ProposerImpl::{CIncompleteBatchTimer, CProposer}",
+    "crate::implementation::RSL::ReplicaImpl::CReplica",
+    # Application interface
+    "crate::implementation::RSL::appinterface::{CAppState, CAppStateInit, CAppMessage}",
+    # State machine
+    "crate::implementation::RSL::CStateMachine::*",
+    # Broadcast helpers
+    "crate::implementation::RSL::cbroadcast::*",
+    # Upper bound helpers
+    "crate::implementation::common::upper_bound::*",
+    "crate::implementation::common::upper_bound_i::*",
+]
 
 [naming]
 spec_prefix = "L"
@@ -12,7 +80,46 @@ nat_type = "u64"
 # External types that don't follow L->C convention
 "AbstractEndPoint" = "EndPoint"
 "AppMessage" = "CAppMessage"
+"AppState" = "CAppState"
 "RequestBatch" = "CRequestBatch"
+"ReplyCache" = "CReplyCache"
+"OperationNumber" = "COperationNumber"
+"Votes" = "CVotes"
+"LearnerState" = "CLearnerState"
+# Enums without L-prefix
+"Ballot" = "CBallot"
+"Request" = "CRequest"
+"Reply" = "CReply"
+"Vote" = "CVote"
+"ClockReading" = "CClockReading"
+"RslMessage" = "CMessage"
+"OutstandingOperation" = "COutstandingOperation"
+"IncompleteBatchTimer" = "CIncompleteBatchTimer"
+"ElectionState" = "CElectionState"
+"UpperBound" = "u64"
+# Packet types
+"RslPacket" = "CPacket"
+
+# RslMessage variant remappings (spec variant -> exec variant)
+"RslMessageInvalid" = "CMessageInvalid"
+"RslMessageRequest" = "CMessageRequest"
+"RslMessage1a" = "CMessage1a"
+"RslMessage1b" = "CMessage1b"
+"RslMessage2a" = "CMessage2a"
+"RslMessage2b" = "CMessage2b"
+"RslMessageHeartbeat" = "CMessageHeartbeat"
+"RslMessageReply" = "CMessageReply"
+"RslMessageAppStateRequest" = "CMessageAppStateRequest"
+"RslMessageAppStateSupply" = "CMessageAppStateSupply"
+"RslMessageStartingPhase2" = "CMessageStartingPhase2"
+
+# OutstandingOperation variant remappings
+"OutstandingOpKnown" = "COutstandingOpKnown"
+"OutstandingOpUnknown" = "COutstandingOpUnknown"
+
+# IncompleteBatchTimer variant remappings
+"IncompleteBatchTimerOn" = "CIncompleteBatchTimerOn"
+"IncompleteBatchTimerOff" = "CIncompleteBatchTimerOff"
 
 [output]
 generate_abstraction_fns = true
@@ -21,18 +128,81 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 # Custom imports for RSL types
-# Note: CAppMessage has marshalling support for network serialization.
-# CRequestBatch is now defined as a type alias in types_gen.rs itself.
 custom_imports = [
     "use vstd::prelude::*;",
+    "use vstd::seq::*;",
     "use std::collections::{HashMap, HashSet};",
     "use crate::common::collections::hashsets::HashSetWellFormed;",
-    "use crate::common::framework::environment_s::LIoOp;",
+    "use crate::common::framework::environment_s::{LIoOp, LPacket};",
     "use crate::common::native::io_s::EndPoint;",
-    "use crate::implementation::RSL::appinterface::CAppMessage;",
-    "use crate::implementation::RSL::cmessage::CPacket;",
-    "use crate::implementation::RSL::ReplicaImpl::CReplica;",
-    "use crate::protocol::RSL::environment::RslIo;",
+    "use crate::protocol::RSL::environment::{RslIo, RslPacket};",
     "use crate::protocol::RSL::replica::LScheduler;",
     "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::RSL::parameters::*;",
+    "use crate::protocol::RSL::configuration::*;",
+    "use crate::protocol::RSL::constants::*;",
+    "use crate::protocol::RSL::message::*;",
+    "use crate::protocol::RSL::acceptor::*;",
+    "use crate::protocol::RSL::learner::*;",
+    "use crate::protocol::RSL::election::*;",
+    "use crate::protocol::RSL::executor::*;",
+    "use crate::protocol::RSL::proposer::*;",
+    "use crate::protocol::RSL::replica::*;",
+    "use crate::protocol::common::upper_bound::*;",
 ]
+
+# View overrides: per-field custom View expressions for complex type conversion.
+# Key format: "SpecTypeName.field_name" -> custom view expression
+# Used when a field needs deep conversion instead of simple `@` or `as int`.
+[view_overrides]
+# CAcceptor fields
+"LAcceptor.votes" = "abstractify_cvotes(&self.votes)"
+"LAcceptor.last_checkpointed_operation" = "self.last_checkpointed_operation@.map(|i, c: COperationNumber| AbstractifyCOperationNumberToOperationNumber(c))"
+"LAcceptor.log_truncation_point" = "AbstractifyCOperationNumberToOperationNumber(self.log_truncation_point)"
+# CLearner fields
+"LLearner.unexecuted_learner_state" = "abstractify_clearnerstate(self.unexecuted_learner_state)"
+# CExecutor fields
+"LExecutor.ops_complete" = "self.ops_complete as int"
+"LExecutor.reply_cache" = "abstractify_creplycache(&self.reply_cache)"
+# CVote fields
+"Vote.max_val" = "abstractify_crequestbatch(&self.max_val)"
+# CLearnerTuple fields
+"LearnerTuple.received_2b_message_senders" = "self.received_2b_message_senders@.map(|i:EndPoint| i@)"
+"LearnerTuple.candidate_learned_value" = "abstractify_crequestbatch(&self.candidate_learned_value)"
+# CParameters fields
+"LParameters.max_integer_val" = "UpperBound::UpperBoundFinite{n: self.max_integer_val as int}"
+# CConfiguration fields
+"LConfiguration.clientIds" = "Set::<AbstractEndPoint>::empty()"
+"LConfiguration.replica_ids" = "self.replica_ids@.map(|i, e:EndPoint| e@)"
+# CReplicaConstants fields
+"LReplicaConstants.my_index" = "self.my_index as int"
+# CProposer fields (complex collection conversions)
+"LProposer.request_queue" = "self.request_queue@.map(|i, r:CRequest| r.view())"
+"LProposer.received_1b_packets" = "self.received_1b_packets@.map(|p:CPacket| p.view())"
+"LProposer.highest_seqno_requested_by_client_this_view" = "Map::new(|ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak, |ak: AbstractEndPoint| { let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak; self.highest_seqno_requested_by_client_this_view@[k] as int })"
+# CElectionState fields
+"ElectionState.current_view_suspectors" = "self.current_view_suspectors@.map(|u:u64| u as int)"
+"ElectionState.requests_received_this_epoch" = "self.requests_received_this_epoch@.map(|i, r:CRequest| r.view())"
+"ElectionState.requests_received_prev_epochs" = "self.requests_received_prev_epochs@.map(|i, r:CRequest| r.view())"
+
+# Extra fields to add to generated exec types that don't exist in the spec.
+# These are optimization/bookkeeping fields with default values.
+# Key format: "ExecTypeName.field_name" -> "type = default_value"
+[extra_fields]
+# CAcceptor: track minimum vote operation number for efficient lookups
+"CAcceptor.min_vote_opn" = "COperationNumber = 0"
+# CProposer: track max operation numbers for efficient bounds
+"CProposer.max_opn_with_proposal" = "COperationNumber = 0"
+"CProposer.max_log_truncation_point" = "COperationNumber = 0"
+# CElectionState: track request sets for deduplication
+"CElectionState.cur_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
+"CElectionState.prev_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
+
+# Clone strategy per exec type.
+# "derive" (default): uses #[derive(Clone)]
+# "external_body": generates #[verifier(external_body)] impl Clone
+# Types containing HashSet need external_body since Verus can't derive Clone for HashSet.
+[clone_strategy]
+"CLearnerTuple" = "external_body"
+"CElectionState" = "external_body"
+"CProposer" = "external_body"
