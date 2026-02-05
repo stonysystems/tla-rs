@@ -1,72 +1,35 @@
 # Configuration for generating RSL types
 # This is separate from the main transpile.toml for function generation
 #
-# Strategy: All RSL types are already manually implemented in src/implementation/RSL/.
-# The transpiler skips all types and generates re-exports so that types_gen.rs
-# serves as a single import point for all generated function files.
+# Strategy: Generate exec types from spec definitions. Only RslMessage is skipped
+# (defined via define_enum_and_derive_marshalable! macro in cmessage.rs).
+# Types not in the spec (CMessage, CPacket, CAppState, CAppMessage, CBroadcast,
+# OutboundPackets, CUpperBound, CRequestHeader, CStateMachine functions) are
+# re-exported from their manual implementation modules.
 
-# Types to skip during generation (already manually implemented)
-# These are parsed for dependency tracking but NOT generated as exec types.
+# Types to skip during generation (macro-defined, cannot be auto-generated)
+# Only RslMessage: defined via define_enum_and_derive_marshalable! macro
 skip_types = [
-    # Core types (in types_i.rs, re-exported via wildcard)
-    "Ballot",
-    "Request",
-    "Reply",
-    "Vote",
-    "LearnerTuple",
-    "ClockReading",
-    # Type aliases (in types_i.rs, re-exported via wildcard)
-    "OperationNumber",
-    "RequestBatch",
-    "ReplyCache",
-    "Votes",
-    "LearnerState",
-    # Parameters/Configuration/Constants (in cparameters.rs, cconfiguration.rs, cconstants.rs)
-    "LParameters",
-    "LConfiguration",
-    "LConstants",
-    "LReplicaConstants",
-    # Message enum (in cmessage.rs via define_enum_and_derive_marshalable! macro)
     "RslMessage",
-    # Component state types (in their respective impl files)
-    "LAcceptor",
-    "LLearner",
-    "ElectionState",
-    "OutstandingOperation",
-    "LExecutor",
-    "IncompleteBatchTimer",
-    "LProposer",
-    "LReplica",
-    "LScheduler",
 ]
 
-# Re-export statements for types_gen.rs
-# These make ALL implementation types available via `use types_gen::*`
+# Re-export statements for types that cannot be auto-generated.
+# These are types defined via macros, with custom Hash/axiom/FFI logic,
+# or concrete-only types with no spec equivalent.
 re_exports = [
-    # Core types and type aliases (CBallot, CRequest, CReply, CVote, CLearnerTuple, etc.)
-    "crate::implementation::RSL::types_i::*",
-    # Message types (CMessage, CPacket)
+    # Message types (CMessage via macro, CPacket with custom axioms)
     "crate::implementation::RSL::cmessage::*",
-    # Configuration, Constants, Parameters
-    "crate::implementation::RSL::cconfiguration::*",
-    "crate::implementation::RSL::cconstants::*",
-    "crate::implementation::RSL::cparameters::*",
-    # Component state types
-    "crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid}",
-    "crate::implementation::RSL::learnerimpl::CLearner",
-    "crate::implementation::RSL::ElectionImpl::CElectionState",
-    "crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation}",
-    "crate::implementation::RSL::ProposerImpl::{CIncompleteBatchTimer, CProposer}",
-    "crate::implementation::RSL::ReplicaImpl::CReplica",
-    # Application interface
+    # Application interface (CAppState, CAppMessage via macro, CAppStateInit)
     "crate::implementation::RSL::appinterface::{CAppState, CAppStateInit, CAppMessage}",
-    # State machine
+    # State machine (application-specific logic with complex proofs)
     "crate::implementation::RSL::CStateMachine::*",
-    # Broadcast helpers
+    # Broadcast helpers (CBroadcast, OutboundPackets with verified loops)
     "crate::implementation::RSL::cbroadcast::*",
-    # Upper bound helpers
+    # Upper bound helpers (CUpperBound has spec int field, CUpperBoundedAddition)
     "crate::implementation::common::upper_bound::*",
     "crate::implementation::common::upper_bound_i::*",
+    # CRequestHeader: concrete-only type with custom PartialEq, no spec equivalent
+    "crate::implementation::RSL::ElectionImpl::CRequestHeader",
 ]
 
 [naming]
@@ -206,3 +169,28 @@ custom_imports = [
 "CLearnerTuple" = "external_body"
 "CElectionState" = "external_body"
 "CProposer" = "external_body"
+
+# Custom derives per exec type.
+# Additional derive macros beyond what clone_strategy provides.
+# Key: exec type name, Value: list of derive names
+[custom_derives]
+# CBallot needs Eq/Copy/PartialEq/Hash for use as HashMap keys and value comparisons
+"CBallot" = ["Eq", "Copy", "PartialEq", "Hash"]
+# CRequest needs PartialEq/Eq/Hash for deduplication and HashMap usage
+"CRequest" = ["PartialEq", "Eq", "Hash"]
+# CReply needs Eq/PartialEq/Hash for reply cache operations
+"CReply" = ["Eq", "PartialEq", "Hash"]
+# CVote needs Eq/PartialEq/Hash for vote comparison operations
+"CVote" = ["Eq", "PartialEq", "Hash"]
+# CParameters is small and should be copyable
+"CParameters" = ["Copy"]
+# CClockReading is a simple u64 wrapper
+"CClockReading" = ["Copy"]
+
+# Fields to skip during generation for specific exec types.
+# These fields exist in the spec type but should NOT be generated in the exec type.
+# Key: exec type name, Value: list of field names to skip
+[skip_fields]
+# LConfiguration.clientIds is a Set<AbstractEndPoint> in spec but CConfiguration drops it.
+# The view_override provides Set::<AbstractEndPoint>::empty() for the View impl.
+"CConfiguration" = ["clientIds"]

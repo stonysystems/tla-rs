@@ -1568,37 +1568,17 @@ Two new config sections needed before types can be generated:
 
 - [x] **11.4.3**: Run transpiler tests: `cd transpiler && cargo test --lib` — 414 passed
 
-### Phase 11.5: Rewrite types_transpile.toml ❌ TODO
+### Phase 11.5: Rewrite types_transpile.toml ✅ Done
 
-- [ ] **11.5.1**: Reduce `skip_types` from ALL 25 types to ONLY `["RslMessage"]`
+- [x] **11.5.1**: Reduce `skip_types` from ALL 25 types to ONLY `["RslMessage"]`
   - RslMessage defined via `define_enum_and_derive_marshalable!` macro — can't be generated
-- [ ] **11.5.2**: Reduce `re_exports` from 16 paths to 7 truly un-generatable:
-  ```toml
-  re_exports = [
-      "crate::implementation::RSL::cmessage::*",
-      "crate::implementation::RSL::appinterface::{CAppState, CAppStateInit, CAppMessage}",
-      "crate::implementation::RSL::CStateMachine::*",
-      "crate::implementation::RSL::cbroadcast::*",
-      "crate::implementation::common::upper_bound::*",
-      "crate::implementation::common::upper_bound_i::*",
-      "crate::implementation::RSL::ElectionImpl::CRequestHeader",
-  ]
-  ```
-- [ ] **11.5.3**: Add `[custom_derives]` section:
-  ```toml
-  [custom_derives]
-  "CBallot" = "Eq, Copy, PartialEq, Hash"
-  "CRequest" = "PartialEq, Eq, Hash"
-  "CReply" = "Eq, PartialEq, Hash"
-  "CVote" = "Eq, PartialEq, Hash"
-  "CParameters" = "Copy"
-  ```
-- [ ] **11.5.4**: Add `[skip_fields]` section:
-  ```toml
-  [skip_fields]
-  "LConfiguration.clientIds" = true
-  ```
-- [ ] **11.5.5**: Keep existing `[view_overrides]`, `[extra_fields]`, `[clone_strategy]` (already correct)
+- [x] **11.5.2**: Reduce `re_exports` from 16 paths to 7 truly un-generatable
+- [x] **11.5.3**: Add `[custom_derives]` section (CBallot, CRequest, CReply, CVote, CParameters, CClockReading)
+- [x] **11.5.4**: Add `[skip_fields]` section (`"CConfiguration" = ["clientIds"]`)
+- [x] **11.5.5**: Keep existing `[view_overrides]`, `[extra_fields]`, `[clone_strategy]` (already correct)
+- [x] **Bug fix**: `generate_view_impl()` now keeps skipped fields that have a `view_override`
+  - Required for CConfiguration: `clientIds` is skipped from struct but View must provide `Set::empty()`
+- [x] **Verification**: 17 structs generated, 19 View impls, 7 re-exports. 422 tests pass.
 
 ### Phase 11.6: Regenerate types_gen.rs with Actual Type Definitions ❌ TODO
 
@@ -1692,7 +1672,7 @@ Transpile spec functions from currently untranspiled spec files:
 | 11.2 | Enum variant remapping | ~100 | ✅ Done |
 | 11.3 | Config extensions (view_overrides, extra_fields, clone_strategy) | ~150 | ✅ Done |
 | 11.4 | Add custom_derives + skip_fields to transpiler | ~90 | ✅ Done |
-| 11.5 | Rewrite types_transpile.toml (generate, not skip) | ~50 | ❌ TODO |
+| 11.5 | Rewrite types_transpile.toml (generate, not skip) | ~50 | ✅ Done |
 | 11.6 | Regenerate types_gen.rs with actual definitions | ~100 | ❌ TODO |
 | 11.7 | Remove duplicate type defs from impl files | ~200 | ❌ TODO |
 | 11.8 | New gen files (configuration, constants, parameters) | ~200 | ❌ TODO |

@@ -466,14 +466,19 @@ impl TypeGenerator {
         code.push_str(&format!("{}{}{} {{\n", self.indent, self.indent, spec_name));
 
         for field in fields {
-            // Skip fields configured to be omitted
+            // Check view_overrides first (key: "SpecType.field_name")
+            let override_key = format!("{}.{}", spec_name, field.name);
+            let has_view_override = self.view_overrides.contains_key(&override_key);
+
+            // Skip fields configured to be omitted, UNLESS they have a view_override.
+            // A view_override on a skipped field means the spec type still has the field
+            // and the View impl must provide a value (e.g., Set::empty() for a dropped field).
             if let Some(skips) = skip {
-                if skips.contains(&field.name) {
+                if skips.contains(&field.name) && !has_view_override {
                     continue;
                 }
             }
-            // Check view_overrides first (key: "SpecType.field_name")
-            let override_key = format!("{}.{}", spec_name, field.name);
+
             let view_expr = if let Some(custom_expr) = self.view_overrides.get(&override_key) {
                 custom_expr.clone()
             } else {
@@ -2160,6 +2165,61 @@ mod tests {
         assert!(
             !result.code.contains("hidden: self.hidden"),
             "Should NOT include hidden in View: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_fields_with_view_override() {
+        // A skipped field WITH a view_override should still appear in View impl
+        // (the spec type still has the field, so View must provide a value)
+        let mut generator = TypeGenerator::new(make_config());
+        let mut skip = HashMap::new();
+        skip.insert("CState".to_string(), vec!["ghost_ids".to_string()]);
+        generator.set_skip_fields(skip);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "LState.ghost_ids".to_string(),
+            "Set::<int>::empty()".to_string(),
+        );
+        generator.set_view_overrides(overrides);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "ghost_ids".to_string(),
+                    ty: Type::Set(Box::new(Type::Int)),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Struct should NOT have ghost_ids field
+        assert!(
+            !result.code.contains("ghost_ids: HashSet"),
+            "Should skip ghost_ids from struct definition: {}",
+            result.code
+        );
+        // well_formed should NOT check ghost_ids
+        assert!(
+            !result.code.contains("self.ghost_ids"),
+            "Should skip ghost_ids from well_formed: {}",
+            result.code
+        );
+        // View SHOULD include ghost_ids with the override expression
+        assert!(
+            result.code.contains("ghost_ids: Set::<int>::empty()"),
+            "Should include ghost_ids in View with override: {}",
             result.code
         );
     }
