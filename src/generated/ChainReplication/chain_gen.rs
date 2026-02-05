@@ -8,17 +8,81 @@ use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 
 verus! {
+
+/// Helper proof: mapping over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by { }
+}
+
+/// Helper proof: mapping over an empty vec yields an empty seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+    // Extensional equality: both sides have length s.len() + 1 and agree on all elements.
+}
+
+/// Helper proof: removing an element commutes with mapping for injective functions.
+proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)
+ensures
+    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),
+{
+    let f = |x: u64| x as int;
+    let lhs = s.remove(elt).map(f);
+    let rhs = s.map(f).remove(f(elt));
+    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {
+        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;
+        assert(s.contains(x));
+        assert(x != elt);
+        assert(f(x) != f(elt));
+        assert(s.map(f).contains(y));
+    }
+    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {
+        let x = choose|x: u64| s.contains(x) && f(x) == y;
+        assert(y != f(elt));
+        assert(f(x) != f(elt));
+        assert(x != elt);
+        assert(s.remove(elt).contains(x));
+    }
+}
+
+/// Helper: clone CNodeRole preserving view (workaround for missing derive Clone spec).
+fn clone_role(r: &CNodeRole) -> (res: CNodeRole)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    match r {
+        CNodeRole::Head => CNodeRole::Head,
+        CNodeRole::Middle => CNodeRole::Middle,
+        CNodeRole::Tail => CNodeRole::Tail,
+    }
+}
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
     c.valid(),
+    c.chain_len >= 2,
+    c.node_id < c.chain_len,
 ensures
     result.valid(),
     LInit(result@, c@),
 {
-    assume(c.chain_len >= 1);
     let role = if c.node_id == 0 {
         CNodeRole::Head
     } else if c.node_id == c.chain_len - 1 {
@@ -33,8 +97,10 @@ ensures
         committed_count: 0u64,
         obj_value: 0u64,
     };
-    assume(result.valid());
-    assume(LInit(result@, c@));
+    proof {
+        lemma_empty_set_map();
+        lemma_empty_seq_map();
+    }
     result
 }
 
@@ -42,6 +108,8 @@ pub exec fn CHeadReceiveWrite(s: &CState, c: &CConstants, value: &u64) -> (resul
 requires
     s.valid(),
     c.valid(),
+    s.role is Head,
+    !s@.pending_sent.contains(*value as int),
 ensures
     result.valid(),
     LHeadReceiveWrite(s@, result@, c@, *value as int),
@@ -51,14 +119,16 @@ ensures
     let mut new_pending = clone_hashset(&s.pending_sent);
     new_pending.insert(*value);
     let result = CState {
-        role: s.role.clone(),
+        role: clone_role(&s.role),
         history: new_history,
         pending_sent: new_pending,
         committed_count: s.committed_count,
         obj_value: s.obj_value,
     };
-    assume(result.valid());
-    assume(LHeadReceiveWrite(s@, result@, c@, *value as int));
+    proof {
+        lemma_seq_push_map_commute(s.history@, *value);
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 
@@ -66,6 +136,8 @@ pub exec fn CReceiveUpdate(s: &CState, c: &CConstants, value: &u64) -> (result: 
 requires
     s.valid(),
     c.valid(),
+    s.role is Middle || s.role is Tail,
+    !s@.history.contains(*value as int),
 ensures
     result.valid(),
     LReceiveUpdate(s@, result@, c@, *value as int),
@@ -81,14 +153,16 @@ ensures
         _ => clone_hashset(&s.pending_sent),
     };
     let result = CState {
-        role: s.role.clone(),
+        role: clone_role(&s.role),
         history: new_history,
         pending_sent: new_pending,
         committed_count: s.committed_count,
         obj_value: s.obj_value,
     };
-    assume(result.valid());
-    assume(LReceiveUpdate(s@, result@, c@, *value as int));
+    proof {
+        lemma_seq_push_map_commute(s.history@, *value);
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 
@@ -96,20 +170,20 @@ pub exec fn CTailCommit(s: &CState, c: &CConstants, value: &u64) -> (result: CSt
 requires
     s.valid(),
     c.valid(),
+    s.role is Tail,
+    s@.history.contains(*value as int),
+    s.committed_count < u64::MAX,
 ensures
     result.valid(),
     LTailCommit(s@, result@, c@, *value as int),
 {
-    assume(s.committed_count < u64::MAX);
     let result = CState {
-        role: s.role.clone(),
+        role: clone_role(&s.role),
         history: s.history.clone(),
         pending_sent: clone_hashset(&s.pending_sent),
         committed_count: s.committed_count + 1,
         obj_value: *value,
     };
-    assume(result.valid());
-    assume(LTailCommit(s@, result@, c@, *value as int));
     result
 }
 
@@ -117,6 +191,8 @@ pub exec fn CReceiveAck(s: &CState, c: &CConstants, value: &u64) -> (result: CSt
 requires
     s.valid(),
     c.valid(),
+    s.role is Head || s.role is Middle,
+    s@.pending_sent.contains(*value as int),
 ensures
     result.valid(),
     LReceiveAck(s@, result@, c@, *value as int),
@@ -124,14 +200,15 @@ ensures
     let mut new_pending = clone_hashset(&s.pending_sent);
     new_pending.remove(value);
     let result = CState {
-        role: s.role.clone(),
+        role: clone_role(&s.role),
         history: s.history.clone(),
         pending_sent: new_pending,
         committed_count: s.committed_count,
         obj_value: s.obj_value,
     };
-    assume(result.valid());
-    assume(LReceiveAck(s@, result@, c@, *value as int));
+    proof {
+        lemma_set_map_remove_commute(s.pending_sent@, *value);
+    }
     result
 }
 
@@ -139,13 +216,12 @@ pub exec fn CClientRead(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
+    s.role is Tail,
 ensures
     result.valid(),
     LClientRead(s@, result@, c@),
 {
     let result = s.clone();
-    assume(result.valid());
-    assume(LClientRead(s@, result@, c@));
     result
 }
 

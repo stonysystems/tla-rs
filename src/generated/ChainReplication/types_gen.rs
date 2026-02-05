@@ -19,7 +19,11 @@ pub struct CState {
 
 impl Clone for CState {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    {
         CState {
             role: self.role.clone(),
             history: self.history.clone(),

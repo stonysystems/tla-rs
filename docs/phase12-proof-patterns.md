@@ -178,6 +178,62 @@ proof {
 | CSend2b | 2 (valid + spec) | Pattern 1 + Pattern 5 (insert-map x2) |
 | **Total** | **10** | |
 
+## Pattern 7: Seq Push-Map Commutativity
+
+**Category:** Collection operation proofs (Vec/Seq)
+
+When the spec says `s_.history == s.history.push(value)` and the exec does `Vec::push`, we need push-map commutativity for `Seq::map` (2-argument closure).
+
+**Proof:**
+```rust
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+    // Verus handles this automatically via extensional equality
+}
+```
+
+**Note:** Verus has `Seq::lemma_push_map_commute` for `map_values` (1-arg), but the View uses `map` (2-arg). For index-ignoring functions, both produce the same result and Verus proves this with `=~=`.
+
+## Pattern 8: Clone with View Preservation
+
+**Category:** State identity proofs
+
+When the spec says `s_ == s` (identity transition), and the exec uses `s.clone()`, we need clone to preserve the view. For types with `#[verifier(external_body)]` Clone:
+
+```rust
+impl Clone for CState {
+    #[verifier(external_body)]
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { ... }
+}
+```
+
+For simple enums with `#[derive(Clone)]`, Verus doesn't generate a spec. Use a manual helper:
+```rust
+fn clone_role(r: &CNodeRole) -> (res: CNodeRole)
+ensures res@ == r@, res.valid() == r.valid(),
+{
+    match r { CNodeRole::Head => CNodeRole::Head, ... }
+}
+```
+
+## Summary: ChainReplication Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CInit | 3 (precond + valid + spec) | Pattern 1 + 4 + empty seq map + role conditions |
+| CHeadReceiveWrite | 2 (valid + spec) | Pattern 3 + 7 (push-map) + 5 (insert-map) + 8 (clone role) |
+| CReceiveUpdate | 2 (valid + spec) | Pattern 3 + 7 + 5 + 8 + conditional pending |
+| CTailCommit | 3 (overflow + valid + spec) | Pattern 3 (role + history + overflow) + 8 |
+| CReceiveAck | 2 (valid + spec) | Pattern 3 + 6 (remove-map) + 8 |
+| CClientRead | 2 (valid + spec) | Pattern 3 + 8 (CState clone ensures) |
+| **Total** | **14** | |
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
@@ -191,3 +247,4 @@ proof {
 | After TwoPhase (12.1.1) | 580 | 0 | ~236 | +1 verified, -8 assumes |
 | After LeaderElection (12.1.2) | 582 | 0 | ~226 | +2 verified, -10 assumes |
 | After Paxos (12.1.3) | 583 | 0 | ~216 | +1 verified, -10 assumes |
+| After ChainReplication (12.4.1) | 588 | 0 | ~202 | +5 verified, -14 assumes |
