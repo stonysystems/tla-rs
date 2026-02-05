@@ -234,6 +234,44 @@ ensures res@ == r@, res.valid() == r.valid(),
 | CClientRead | 2 (valid + spec) | Pattern 3 + 8 (CState clone ensures) |
 | **Total** | **14** | |
 
+## Pattern 9: Log Clone with Mapped View Preservation
+
+**Category:** Collection operation proofs (Vec<CLogEntry>)
+
+When the spec says `s_.log == s.log` and the exec clones the log, Verus can prove `result.log@ == s.log@` (from Vec::clone ensures), but cannot automatically derive that the mapped views are also equal: `result.log@.map(|i, e| e@) =~= s.log@.map(|i, e| e@)`.
+
+**Solution:** Use a `#[verifier(external_body)]` helper that wraps clone and directly ensures the mapped view equality:
+
+```rust
+#[verifier(external_body)]
+fn clone_log(v: &Vec<CLogEntry>) -> (res: Vec<CLogEntry>)
+ensures
+    res@ == v@,
+    res@.map(|i: int, e: CLogEntry| e@) =~= v@.map(|i: int, e: CLogEntry| e@),
+{
+    v.clone()
+}
+```
+
+**Why `external_body`:** Even with a proof lemma `lemma_seq_map_eq(s1 == s2 ==> s1.map(f) =~= s2.map(f))`, Verus cannot verify the precondition `result.log@ == s.log@` after the clone result is moved into a struct. The `external_body` helper captures the equality before the move.
+
+**Note:** This pattern applies whenever the View maps collection elements through a non-identity function (like `CLogEntry → LLogEntry` via `e@`). Collections with identity mapping (like `HashMap<u64, u64>@` = `Map<u64, u64>`) don't need this.
+
+## Summary: Raft Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CInit | 2 (valid + spec) | Pattern 1 + 4 (empty set map) + empty log map |
+| CTimeout | 3 (overflow + valid + spec) | Pattern 3 + 4 + 5 (insert-map) + 9 (clone_log) |
+| CGrantVote | 3 (log_ok + valid + spec) | Pattern 3 (preconditions) + 9 (clone_log) |
+| CReceiveVoteGranted | 2 (valid + spec) | Pattern 3 + 5 (insert-map) + 8 (clone_server_role) + 9 |
+| CBecomeLeader | 2 (valid + spec) | Pattern 3 (preconditions) + 9 (clone_log) |
+| CClientRequest | 2 (valid + spec) | Pattern 3 + log push-map + 8 + 9 |
+| CHandleAppendResponse | 2 (valid + spec) | Pattern 3 + 8 (clone_server_role) + 9 (clone_log) |
+| CAdvanceCommitIndex | 2 (valid + spec) | Pattern 3 (preconditions) + 8 + 9 |
+| CStepDown | 2 (valid + spec) | Pattern 3 + 4 (empty set map) + 9 (clone_log) |
+| **Total** | **20** | |
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
@@ -248,3 +286,4 @@ ensures res@ == r@, res.valid() == r.valid(),
 | After LeaderElection (12.1.2) | 582 | 0 | ~226 | +2 verified, -10 assumes |
 | After Paxos (12.1.3) | 583 | 0 | ~216 | +1 verified, -10 assumes |
 | After ChainReplication (12.4.1) | 588 | 0 | ~202 | +5 verified, -14 assumes |
+| After Raft (12.4.2) | 592 | 0 | ~182 | +4 verified, -20 assumes |

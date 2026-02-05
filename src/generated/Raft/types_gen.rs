@@ -46,7 +46,11 @@ pub struct CState {
 
 impl Clone for CState {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    {
         CState {
             current_term: self.current_term,
             role: self.role.clone(),

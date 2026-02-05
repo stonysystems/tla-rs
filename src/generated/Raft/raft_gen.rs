@@ -9,8 +9,57 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 
 verus! {
+
+/// Helper proof: mapping over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by { }
+}
+
+/// Helper proof: mapping over an empty Vec<CLogEntry> yields an empty seq.
+proof fn lemma_empty_log_map()
+ensures
+    Seq::<CLogEntry>::empty().map(|i: int, e: CLogEntry| e@) =~= Seq::<LLogEntry>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for CLogEntry view.
+proof fn lemma_log_push_map_commute(s: Seq<CLogEntry>, x: CLogEntry)
+ensures
+    s.push(x).map(|i: int, e: CLogEntry| e@) =~= s.map(|i: int, e: CLogEntry| e@).push(x@),
+{
+}
+
+/// Helper: clone a Vec<CLogEntry> preserving both raw and mapped view.
+/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.
+#[verifier(external_body)]
+fn clone_log(v: &Vec<CLogEntry>) -> (res: Vec<CLogEntry>)
+ensures
+    res@ == v@,
+    res@.map(|i: int, e: CLogEntry| e@) =~= v@.map(|i: int, e: CLogEntry| e@),
+{
+    v.clone()
+}
+
+/// Helper: clone CServerRole preserving view (workaround for missing derive Clone spec).
+fn clone_server_role(r: &CServerRole) -> (res: CServerRole)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    match r {
+        CServerRole::Follower => CServerRole::Follower,
+        CServerRole::Candidate => CServerRole::Candidate,
+        CServerRole::Leader => CServerRole::Leader,
+    }
+}
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -29,8 +78,10 @@ ensures
         votes_granted: HashSet::new(),
         match_index: HashMap::new(),
     };
-    assume(result.valid());
-    assume(LInit(result@, c@));
+    proof {
+        lemma_empty_set_map();
+        lemma_empty_log_map();
+    }
     result
 }
 
@@ -38,11 +89,12 @@ pub exec fn CTimeout(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
+    s.role is Follower || s.role is Candidate,
+    s.current_term < u64::MAX,
 ensures
     result.valid(),
     LTimeout(s@, result@, c@),
 {
-    assume(s.current_term < u64::MAX);
     let mut votes = HashSet::new();
     votes.insert(c.my_id);
     let result = CState {
@@ -50,13 +102,15 @@ ensures
         role: CServerRole::Candidate,
         has_voted: true,
         voted_for: c.my_id,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: votes,
         match_index: s.match_index.clone(),
     };
-    assume(result.valid());
-    assume(LTimeout(s@, result@, c@));
+    proof {
+        lemma_empty_set_map();
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 
@@ -64,31 +118,28 @@ pub exec fn CGrantVote(s: &CState, c: &CConstants, candidate_term: &u64, candida
 requires
     s.valid(),
     c.valid(),
+    *candidate_term >= s.current_term,
+    !s.has_voted || s.voted_for == *candidate_id,
+    ({
+        let last_log_term: int = if s.log@.len() == 0 { 0int } else { s.log@[s.log@.len() - 1].term as int };
+        *candidate_last_log_term as int > last_log_term
+            || (*candidate_last_log_term as int == last_log_term
+                && *candidate_last_log_index as int >= s.log@.len())
+    }),
 ensures
     result.valid(),
     LGrantVote(s@, result@, c@, *candidate_term as int, *candidate_last_log_term as int, *candidate_last_log_index as int, *candidate_id as int),
 {
-    let last_log_term: u64 = if s.log.len() == 0 {
-        0u64
-    } else {
-        s.log[s.log.len() - 1].term
-    };
-    let log_ok = *candidate_last_log_term > last_log_term
-        || (*candidate_last_log_term == last_log_term
-            && *candidate_last_log_index >= s.log.len() as u64);
-    assume(log_ok);
     let result = CState {
         current_term: *candidate_term,
         role: CServerRole::Follower,
         has_voted: true,
         voted_for: *candidate_id,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
     };
-    assume(result.valid());
-    assume(LGrantVote(s@, result@, c@, *candidate_term as int, *candidate_last_log_term as int, *candidate_last_log_index as int, *candidate_id as int));
     result
 }
 
@@ -96,6 +147,8 @@ pub exec fn CReceiveVoteGranted(s: &CState, c: &CConstants, voter: &u64) -> (res
 requires
     s.valid(),
     c.valid(),
+    s.role is Candidate,
+    c@.servers.contains(*voter as int),
 ensures
     result.valid(),
     LReceiveVoteGranted(s@, result@, c@, *voter as int),
@@ -104,16 +157,17 @@ ensures
     votes.insert(*voter);
     let result = CState {
         current_term: s.current_term,
-        role: s.role.clone(),
+        role: clone_server_role(&s.role),
         has_voted: s.has_voted,
         voted_for: s.voted_for,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: votes,
         match_index: s.match_index.clone(),
     };
-    assume(result.valid());
-    assume(LReceiveVoteGranted(s@, result@, c@, *voter as int));
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
 }
 
@@ -121,6 +175,8 @@ pub exec fn CBecomeLeader(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
+    s.role is Candidate,
+    s@.votes_granted.len() >= c@.quorum_size,
 ensures
     result.valid(),
     LBecomeLeader(s@, result@, c@),
@@ -130,13 +186,11 @@ ensures
         role: CServerRole::Leader,
         has_voted: s.has_voted,
         voted_for: s.voted_for,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: HashMap::new(),
     };
-    assume(result.valid());
-    assume(LBecomeLeader(s@, result@, c@));
     result
 }
 
@@ -144,6 +198,7 @@ pub exec fn CClientRequest(s: &CState, c: &CConstants, value: &u64) -> (result: 
 requires
     s.valid(),
     c.valid(),
+    s.role is Leader,
 ensures
     result.valid(),
     LClientRequest(s@, result@, c@, *value as int),
@@ -152,11 +207,11 @@ ensures
         term: s.current_term,
         value: *value,
     };
-    let mut new_log = s.log.clone();
+    let mut new_log = clone_log(&s.log);
     new_log.push(entry);
     let result = CState {
         current_term: s.current_term,
-        role: s.role.clone(),
+        role: clone_server_role(&s.role),
         has_voted: s.has_voted,
         voted_for: s.voted_for,
         log: new_log,
@@ -164,8 +219,9 @@ ensures
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
     };
-    assume(result.valid());
-    assume(LClientRequest(s@, result@, c@, *value as int));
+    proof {
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
+    }
     result
 }
 
@@ -173,6 +229,10 @@ pub exec fn CHandleAppendResponse(s: &CState, c: &CConstants, follower: &u64, ne
 requires
     s.valid(),
     c.valid(),
+    s.role is Leader,
+    c@.servers.contains(*follower as int),
+    *new_match_index as int >= 0int,
+    *new_match_index as int <= s@.log.len(),
 ensures
     result.valid(),
     LHandleAppendResponse(s@, result@, c@, *follower as int, *new_match_index as int),
@@ -181,16 +241,14 @@ ensures
     { new_match.insert(*follower, *new_match_index); }
     let result = CState {
         current_term: s.current_term,
-        role: s.role.clone(),
+        role: clone_server_role(&s.role),
         has_voted: s.has_voted,
         voted_for: s.voted_for,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: new_match,
     };
-    assume(result.valid());
-    assume(LHandleAppendResponse(s@, result@, c@, *follower as int, *new_match_index as int));
     result
 }
 
@@ -198,22 +256,24 @@ pub exec fn CAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u
 requires
     s.valid(),
     c.valid(),
+    s.role is Leader,
+    *new_commit_index as int > s@.commit_index,
+    *new_commit_index as int <= s@.log.len(),
+    s@.log[*new_commit_index as int - 1].term == s@.current_term,
 ensures
     result.valid(),
     LAdvanceCommitIndex(s@, result@, c@, *new_commit_index as int),
 {
     let result = CState {
         current_term: s.current_term,
-        role: s.role.clone(),
+        role: clone_server_role(&s.role),
         has_voted: s.has_voted,
         voted_for: s.voted_for,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: *new_commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
     };
-    assume(result.valid());
-    assume(LAdvanceCommitIndex(s@, result@, c@, *new_commit_index as int));
     result
 }
 
@@ -221,6 +281,7 @@ pub exec fn CStepDown(s: &CState, c: &CConstants, new_term: &u64) -> (result: CS
 requires
     s.valid(),
     c.valid(),
+    *new_term as int > s@.current_term,
 ensures
     result.valid(),
     LStepDown(s@, result@, c@, *new_term as int),
@@ -230,13 +291,14 @@ ensures
         role: CServerRole::Follower,
         has_voted: false,
         voted_for: 0u64,
-        log: s.log.clone(),
+        log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: HashSet::new(),
         match_index: s.match_index.clone(),
     };
-    assume(result.valid());
-    assume(LStepDown(s@, result@, c@, *new_term as int));
+    proof {
+        lemma_empty_set_map();
+    }
     result
 }
 
