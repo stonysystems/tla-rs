@@ -11,17 +11,21 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Current Status (2026-02-04)
 
-**V3.7 COMPLETE**: All verification errors fixed. Generated code passes Verus with 543 verified, 0 errors.
+⚠️ **54 Verus compilation errors** in generated code. Generated code references types and functions not present in `types_gen.rs`.
 
-**V3.6 COMPLETE**: `#[cfg(test)]` guard removed from generated module. Generated code compiles with 0 compilation errors.
+**What works:**
+- TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
+- Verus spec → exec function transpilation: ✅ Complete (including recursive helpers)
+- Manual implementation: 543 verified, 0 errors
 
-**V3.3 COMPLETE**: All duplicate type definitions eliminated. Generated files now import types from implementation modules. All implementation types have `impl View` trait.
+**What doesn't work:**
+- Generated code has 54 compilation errors (missing types/functions in `types_gen.rs`)
+- Generated code still imports component state types from manual implementation
+- Missing transpilation for: configuration.rs, constants.rs, message.rs, parameters.rs
 
-**Next**: Replace `assume` statements with actual proofs. Current approach uses `assume(...)` for postconditions, preconditions, loop invariants, and arithmetic bounds — this is trusted but unverified. Each assume is a proof obligation that should eventually be discharged.
+**Next:** [Phase 11: Generate All Types](#phase-11-generate-all-types-eliminate-manual-implementation-imports) - Make transpiler generate ALL types so generated code is self-contained.
 
-**Completed**: Transpiler fixes for int/nat types, iterator patterns, HashMap filter conjunctions, hand-written dispatch functions, type deduplication across all generated files, V3.6.1-V3.6.8 compilation error fixes, V3.7 verification error fixes (assumes for postconditions, preconditions, loop invariants, arithmetic bounds).
-
-See [Phase 10: Remaining Transpiler Issues](#phase-10-remaining-transpiler-issues-blocking-full-automation) for details.
+See also [Phase 10: Remaining Transpiler Issues](#phase-10-remaining-transpiler-issues-blocking-full-automation) for details.
 
 ## Reference
 
@@ -42,6 +46,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 9. [Phase 8: Integration & Tooling](#9-phase-8-integration--tooling)
 10. [Milestones](#10-milestones)
 11. [Phase 9: TLA+ to TLA-rs Transpilation](#11-phase-9-tla-to-tla-rs-transpilation)
+12. [Phase 11: Generate All Types (Eliminate Manual Imports)](#phase-11-generate-all-types-eliminate-manual-implementation-imports)
 
 ---
 
@@ -3174,3 +3179,220 @@ Instead of building a TLA+ parser from scratch, consider:
   - Evaluate quality and completeness
 
 **Recommendation**: Start with tree-sitter-tlaplus for parsing, focus effort on Verus translation.
+
+---
+
+## Phase 11: Generate All Types (Eliminate Manual Implementation Imports)
+
+**Goal**: Make the transpiler generate ALL concrete types (structs, enums, type aliases) so generated code in `src/generated/RSL/` does NOT import any types from manual implementation in `src/implementation/RSL/`. Also add transpilation for spec files not currently covered: `configuration.rs`, `constants.rs`, `message.rs`, `parameters.rs`.
+
+### Problem Statement
+
+Generated files (acceptor_gen.rs, election_gen.rs, etc.) still import component state types from manual implementation:
+```rust
+use crate::implementation::RSL::acceptorimpl::CAcceptor;
+use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ProposerImpl::{CIncompleteBatchTimer, CProposer};
+use crate::implementation::RSL::ReplicaImpl::CReplica;
+use crate::implementation::RSL::learnerimpl::CLearner;
+use crate::implementation::RSL::cconfiguration::*;
+use crate::implementation::RSL::cconstants::*;
+use crate::implementation::RSL::cmessage::*;
+```
+
+### Approach: One Expanded `types_gen.rs`
+
+Generate a single comprehensive `types_gen.rs` containing ALL types in dependency order. This is simplest because all generated files already do `use crate::generated::RSL::types_gen::*;`.
+
+### Types to Generate (Dependency Order)
+
+**Already in types_gen.rs** ✅: CBallot, CRequest, CReply, CVote, CLearnerTuple, CClockReading
+
+**Missing type aliases:**
+- [ ] `COperationNumber = u64`
+- [ ] `CRequestBatch = Vec<CRequest>`
+- [ ] `CReplyCache = HashMap<EndPoint, CReply>`
+- [ ] `CVotes = HashMap<COperationNumber, CVote>`
+- [ ] `CLearnerState = HashMap<COperationNumber, CLearnerTuple>`
+
+**Missing leaf types:**
+- [ ] `CParameters` (from `parameters.rs` spec `LParameters`)
+- [ ] `CMessage` enum (from `message.rs` spec `RslMessage`, 11 variants)
+- [ ] `CPacket` struct (from `environment.rs` spec `RslPacket`)
+
+**Missing mid-level types:**
+- [ ] `CConfiguration` (from `configuration.rs` spec `LConfiguration`)
+- [ ] `CConstants` (from `constants.rs` spec `LConstants`)
+- [ ] `CReplicaConstants` (from `constants.rs` spec `LReplicaConstants`)
+- [ ] `COutstandingOperation` enum (from `executor.rs` spec `OutstandingOperation`)
+- [ ] `CIncompleteBatchTimer` enum (from `proposer.rs` spec `IncompleteBatchTimer`)
+
+**Missing component state types:**
+- [ ] `CAcceptor` (from `acceptor.rs` spec `LAcceptor`)
+- [ ] `CLearner` (from `learner.rs` spec `LLearner`)
+- [ ] `CElectionState` (from `election.rs` spec `ElectionState`)
+- [ ] `CExecutor` (from `executor.rs` spec `LExecutor`)
+- [ ] `CProposer` (from `proposer.rs` spec `LProposer`)
+- [ ] `CReplica` (from `replica.rs` spec `LReplica`)
+
+**Missing helper functions:**
+- [ ] `CBalLt`, `CBalLeq`, `CBalEq` (ballot comparisons)
+- [ ] `abstractify_cvotes`, `abstractify_creplycache`, `abstractify_clearnerstate`, `abstractify_crequestbatch`
+
+### Phase 11.1: Extend Transpiler for Multi-File Type Generation (~200 LOC)
+
+- [ ] **11.1.1**: Change `generate-types` CLI `--input` from single `PathBuf` to `Vec<PathBuf>`
+  - File: `transpiler/src/main.rs`
+  - Use `#[arg(short, long, action = clap::ArgAction::Append)]`
+  - Iterate over all input files, merge parsed types into one `TypeRegistry`
+- [ ] **11.1.2**: Add type alias emission in `generate_all_types_with_options()`
+  - File: `transpiler/src/codegen/mod.rs`
+  - Currently `TypeDef::Alias` is skipped; generate `pub type CXxx = TranslatedType;`
+- [ ] **11.1.3**: Add dependency ordering to type generation
+  - Process input files in order provided (user provides in dependency order)
+  - Or: parse field types to determine dependency graph and topologically sort
+- [ ] **11.1.4**: Add tests for multi-file type generation
+
+### Phase 11.2: Add Enum Variant Name Remapping (~100 LOC)
+
+- [ ] **11.2.1**: Support variant name remapping in `generate_enum()`
+  - File: `transpiler/src/codegen/mod.rs`
+  - Check remapping table for variant names (e.g., `RslMessage1a` → `CMessage1a`)
+  - Currently only enum name is remapped, not variant names
+- [ ] **11.2.2**: Apply variant remapping in View trait generation
+  - Match arms need both spec and exec variant names
+- [ ] **11.2.3**: Add tests for enum variant remapping
+
+### Phase 11.3: Add Config Extensions for Complex Types (~150 LOC)
+
+- [ ] **11.3.1**: Add `view_overrides` config section
+  - File: `transpiler/src/config.rs`
+  - Per-field custom View expressions (e.g., `"CAcceptor.votes" = "abstractify_cvotes(&self.votes)"`)
+  - Needed because collection fields need deep conversion, not just `@`
+- [ ] **11.3.2**: Add `extra_fields` config section
+  - Optimization fields not in spec (e.g., `CAcceptor.min_vote_opn`, `CProposer.max_opn_with_proposal`)
+  - These get default values in View impl (not mapped to spec)
+- [ ] **11.3.3**: Add `clone_strategy` config section
+  - "derive" (default) vs "external_body" (for types containing HashSet)
+  - Needed for: CElectionState, CProposer, CLearnerTuple
+- [ ] **11.3.4**: Apply config extensions in `generate_struct()` and `generate_enum()`
+  - File: `transpiler/src/codegen/mod.rs`
+
+### Phase 11.4: Create Comprehensive types_transpile.toml
+
+- [ ] **11.4.1**: Expand `src/protocol/RSL/types_transpile.toml` with all remappings
+  - All 11 RslMessage variant mappings
+  - OutstandingOperation variant mappings
+  - IncompleteBatchTimer variant mappings
+  - External type mappings: AbstractEndPoint→EndPoint, AppMessage→CAppMessage, etc.
+  - UpperBound→u64 mapping for CParameters
+- [ ] **11.4.2**: Add view_overrides for complex fields
+  - CAcceptor.votes, CAcceptor.last_checkpointed_operation
+  - CParameters.max_integer_val (UpperBound → u64 special handling)
+  - Collection fields needing abstractify_* functions
+- [ ] **11.4.3**: Add extra_fields for optimization fields
+  - CAcceptor: min_vote_opn
+  - CProposer: max_opn_with_proposal, max_log_truncation_point
+  - CElectionState: cur_req_set, prev_req_set
+- [ ] **11.4.4**: Add clone_strategy entries
+
+### Phase 11.5: Regenerate types_gen.rs with All Types
+
+- [ ] **11.5.1**: Run multi-file type generation command:
+  ```bash
+  cd transpiler && cargo run -- generate-types \
+      --input ../src/protocol/RSL/types.rs \
+      --input ../src/protocol/RSL/parameters.rs \
+      --input ../src/protocol/RSL/configuration.rs \
+      --input ../src/protocol/RSL/constants.rs \
+      --input ../src/protocol/RSL/message.rs \
+      --input ../src/protocol/RSL/acceptor.rs \
+      --input ../src/protocol/RSL/learner.rs \
+      --input ../src/protocol/RSL/election.rs \
+      --input ../src/protocol/RSL/executor.rs \
+      --input ../src/protocol/RSL/proposer.rs \
+      --input ../src/protocol/RSL/replica.rs \
+      --config ../src/protocol/RSL/types_transpile.toml \
+      --output ../src/generated/RSL/types_gen.rs
+  ```
+- [ ] **11.5.2**: Add CBalLt, CBalLeq, CBalEq helper functions
+- [ ] **11.5.3**: Add abstractify_* helper functions for collection types
+- [ ] **11.5.4**: Verify types_gen.rs compiles standalone
+
+### Phase 11.6: Add Transpilation for New Spec Files
+
+Create `.automan` and `_transpile.toml` for currently untranspiled specs:
+
+- [ ] **11.6.1**: `configuration.rs` → `configuration_gen.rs`
+  - Create `configuration.automan` (mode annotations for helper functions)
+  - Create `configuration_transpile.toml`
+  - Transpile: LMinQuorumSize, WellFormedLConfiguration, GetReplicaIndex, etc.
+- [ ] **11.6.2**: `constants.rs` → `constants_gen.rs`
+  - Create `constants.automan`
+  - Create `constants_transpile.toml`
+  - Transpile: LReplicaConstantsValid
+- [ ] **11.6.3**: `parameters.rs` → `parameters_gen.rs`
+  - Create `parameters.automan`
+  - Create `parameters_transpile.toml`
+  - Transpile: WFLParameters
+- [ ] **11.6.4**: `message.rs` — no functions to transpile (types only), skip
+- [ ] **11.6.5**: Update `src/generated/RSL/mod.rs` to include new modules
+
+### Phase 11.7: Update All Generated Function File Imports
+
+- [ ] **11.7.1**: Update all `*_transpile.toml` configs
+  - Remove: `use crate::implementation::RSL::acceptorimpl::CAcceptor;`
+  - Remove: `use crate::implementation::RSL::ElectionImpl::CElectionState;`
+  - Remove: `use crate::implementation::RSL::ExecutorImpl::*;`
+  - Remove: `use crate::implementation::RSL::ProposerImpl::*;`
+  - Remove: `use crate::implementation::RSL::ReplicaImpl::CReplica;`
+  - Remove: `use crate::implementation::RSL::learnerimpl::CLearner;`
+  - Remove: `use crate::implementation::RSL::cconfiguration::*;`
+  - Remove: `use crate::implementation::RSL::cconstants::*;`
+  - Remove: `use crate::implementation::RSL::cmessage::*;`
+  - Keep: `use crate::generated::RSL::types_gen::*;`
+- [ ] **11.7.2**: Regenerate all `*_gen.rs` files with updated configs
+- [ ] **11.7.3**: Verify no `implementation::RSL` imports remain in generated code
+  ```bash
+  grep -r "implementation::RSL" src/generated/RSL/*.rs
+  ```
+
+### Phase 11.8: Run Verus Verification
+
+- [ ] **11.8.1**: Run Verus on full codebase
+  ```bash
+  /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs
+  ```
+- [ ] **11.8.2**: Fix compilation errors (missing derives, View mismatches, etc.)
+- [ ] **11.8.3**: Fix verification errors (loop invariants, proof obligations)
+- [ ] **11.8.4**: Confirm 0 errors
+
+### Phase 11.9: Update Scripts and Documentation
+
+- [ ] **11.9.1**: Update `scripts/regenerate_rsl.sh` with multi-file type generation
+- [ ] **11.9.2**: Update TODO.md to reflect completion
+- [ ] **11.9.3**: Update README.md if needed
+
+### Success Criteria
+
+1. [ ] `types_gen.rs` contains ALL types listed above (structs, enums, aliases)
+2. [ ] `grep -r "implementation::RSL" src/generated/RSL/*.rs` returns ZERO matches
+3. [ ] `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs` returns 0 errors
+4. [ ] `configuration_gen.rs`, `constants_gen.rs`, `parameters_gen.rs` exist and compile
+5. [ ] `cd transpiler && cargo test` — all tests pass
+
+### Estimated Effort
+
+| Phase | Description | LOC |
+|-------|-------------|-----|
+| 11.1 | Multi-file type gen + alias support | ~200 |
+| 11.2 | Enum variant remapping | ~100 |
+| 11.3 | Config extensions (view_overrides, extra_fields, clone_strategy) | ~150 |
+| 11.4 | Comprehensive types_transpile.toml | ~100 |
+| 11.5 | Regenerate types_gen.rs | ~50 |
+| 11.6 | New gen files (configuration, constants, parameters) | ~200 |
+| 11.7 | Update function file imports | ~50 |
+| 11.8 | Verus verification fixes | ~200 |
+| 11.9 | Script + docs | ~50 |
+| **Total** | | **~1100** |
