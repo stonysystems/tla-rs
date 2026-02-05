@@ -1918,10 +1918,16 @@ Extend the project with additional distributed systems protocols, from simple to
   - 5 exec functions generated + 3 types (CState, CConstants, CMsgType) with View + valid()
   - Verus verification: 554 verified, 0 errors (up from 548)
 
-- [ ] **Leader Election (Bully Algorithm)**
+- [x] **Leader Election (Bully Algorithm)** ✅
   - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/bully_election
-  - Components: Nodes with IDs, election messages
-  - Patterns: Timeouts, message passing
+  - Components: Nodes with IDs, election state machine, failure detection
+  - Patterns: Boolean flags for optional state, set-based node tracking, conditional updates
+  - Spec files: `src/protocol/LeaderElection/` (types.rs, election.rs, election.automan, election_transpile.toml)
+  - Generated files: `src/generated/LeaderElection/` (types_gen.rs, election_gen.rs)
+  - 7 spec functions: LInit, LStartElection, LRespondHigher, LBecomeLeader, LNodeFail, LNext (skipped)
+  - 5 exec functions generated + 3 types (CState, CConstants, CNodeState) with View + valid()
+  - Design: Uses boolean flags (has_leader, has_highest) instead of sentinel values for u64 compatibility
+  - Verus verification: 560 verified, 0 errors (up from 554)
 
 #### Medium Complexity Protocols
 - [ ] **Raft Consensus**

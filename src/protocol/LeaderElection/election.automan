@@ -1,0 +1,39 @@
+// Mode annotations for Bully Leader Election protocol
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module LeaderElection::election {
+    // Initialize protocol state from constants
+    // s (output): initialized state
+    // c (input): protocol constants
+    LInit(-, +);
+
+    // A node starts an election
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): node starting the election
+    LStartElection(+, -, +, +);
+
+    // A higher-ID node responds to an election
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): responding node
+    LRespondHigher(+, -, +, +);
+
+    // A node wins the election and becomes leader
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): node becoming leader
+    LBecomeLeader(+, -, +, +);
+
+    // A node fails (crashes)
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): failing node
+    LNodeFail(+, -, +, +);
+
+    // LNext is not transpiled (contains existential quantifiers)
+}
