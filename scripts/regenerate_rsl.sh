@@ -1,6 +1,14 @@
 #!/bin/bash
 # Regenerate RSL implementation from specs
 # This script regenerates all RSL generated code from the spec files.
+#
+# NOTE: types_gen.rs is manually maintained (contains re-exports + hand-written
+# CScheduler, CClockReading, abstractify functions). It is NOT regenerated here.
+#
+# NOTE: Generated function files (*_gen.rs) have extensive hand-modifications
+# from V3.6-V3.7 (clone fixes, iterator rewrites, assume() additions).
+# Regenerating them will lose those fixes. Only regenerate individual files
+# when you intend to re-apply those fixes afterward.
 
 set -e
 
@@ -19,15 +27,12 @@ cargo build --release
 
 TRANSPILER="$TRANSPILER_DIR/target/release/verus-transpile"
 
-# Regenerate types
+# types_gen.rs is manually maintained — skip regeneration
 echo ""
-echo "Regenerating RSL types..."
-$TRANSPILER generate-types \
-    --input "$PROJECT_ROOT/src/protocol/RSL/types.rs" \
-    --config "$PROJECT_ROOT/src/protocol/RSL/types_transpile.toml" \
-    --output "$PROJECT_ROOT/src/generated/RSL/types_gen.rs"
+echo "Skipping types_gen.rs (manually maintained with re-exports + hand-written types)"
 
 # Regenerate all RSL module functions
+# WARNING: This will overwrite hand-modifications from V3.6-V3.7!
 for module in acceptor learner executor proposer replica broadcast election; do
     echo ""
     echo "Regenerating $module functions..."
