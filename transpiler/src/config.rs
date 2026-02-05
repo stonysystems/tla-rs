@@ -110,6 +110,20 @@ pub struct TranspilerConfig {
     /// e.g., ["crate::implementation::RSL::types_i::*"]
     #[serde(default)]
     pub re_exports: Vec<String>,
+
+    /// Custom derives per exec type.
+    /// These are ADDITIONAL derives beyond what clone_strategy provides.
+    /// Key: exec type name (e.g., "CBallot")
+    /// Value: list of derive names (e.g., ["Copy", "Eq", "PartialEq", "Hash"])
+    #[serde(default)]
+    pub custom_derives: HashMap<String, Vec<String>>,
+
+    /// Fields to skip during generation for specific exec types.
+    /// These fields exist in the spec type but should NOT be generated in the exec type.
+    /// Key: exec type name (e.g., "CConfiguration")
+    /// Value: list of field names to skip (e.g., ["clientIds"])
+    #[serde(default)]
+    pub skip_fields: HashMap<String, Vec<String>>,
 }
 
 impl TranspilerConfig {

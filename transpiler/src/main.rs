@@ -328,6 +328,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .as_ref()
                 .map(|c| c.re_exports.clone())
                 .unwrap_or_default();
+            let custom_derives = file_config
+                .as_ref()
+                .map(|c| c.custom_derives.clone())
+                .unwrap_or_default();
+            let skip_fields = file_config
+                .as_ref()
+                .map(|c| c.skip_fields.clone())
+                .unwrap_or_default();
 
             let mut registry = TypeRegistry::new();
 
@@ -389,6 +397,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     clone_strategy: &clone_strategy,
                     skip_types: &skip_types,
                     re_exports: &re_exports,
+                    custom_derives: &custom_derives,
+                    skip_fields: &skip_fields,
                 },
             );
 

@@ -1546,27 +1546,27 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 - [x] **11.3.3**: `clone_strategy` config ✅
 - [x] **11.3.4**: Apply in `generate_struct()`/`generate_enum()` ✅
 
-### Phase 11.4: Add Two Missing Transpiler Features ❌ TODO
+### Phase 11.4: Add Two Missing Transpiler Features ✅ Done
 
 Two new config sections needed before types can be generated:
 
-- [ ] **11.4.1**: Add `custom_derives` to transpiler (~50 LOC)
-  - File: `transpiler/src/config.rs` — add `custom_derives: HashMap<String, String>`
+- [x] **11.4.1**: Add `custom_derives` to transpiler (~50 LOC)
+  - File: `transpiler/src/config.rs` — add `custom_derives: HashMap<String, Vec<String>>`
   - File: `transpiler/src/codegen/mod.rs` — merge custom derives into `#[derive(...)]` in `generate_struct()`/`generate_enum()`
   - When `clone_strategy == "derive"`: output `#[derive(Clone, <custom>)]`
   - When `clone_strategy == "external_body"`: output `#[derive(<custom>)]` (no Clone)
   - File: `transpiler/src/main.rs` — pass through to `TypeGenConfig`
   - **Why**: CBallot needs `Eq, Copy, PartialEq, Hash` for HashMap keys; CParameters needs `Copy`
 
-- [ ] **11.4.2**: Add `skip_fields` to transpiler (~40 LOC)
-  - File: `transpiler/src/config.rs` — add `skip_fields: HashMap<String, bool>`
+- [x] **11.4.2**: Add `skip_fields` to transpiler (~40 LOC)
+  - File: `transpiler/src/config.rs` — add `skip_fields: HashMap<String, Vec<String>>`
   - File: `transpiler/src/codegen/mod.rs`:
-    - In `generate_struct()` field loop: skip fields matching `skip_fields["SpecName.field"]`
+    - In `generate_struct()` field loop: skip fields matching `skip_fields["ExecType"]`
     - In `generate_well_formed_struct()`: also skip those fields
-    - In `generate_view_impl()`: KEEP the field (use view_override to provide value like `Set::empty()`)
+    - In `generate_view_impl()`: also skip those fields
   - **Why**: LConfiguration.clientIds exists in spec but exec CConfiguration drops it
 
-- [ ] **11.4.3**: Run transpiler tests: `cd transpiler && cargo test --lib`
+- [x] **11.4.3**: Run transpiler tests: `cd transpiler && cargo test --lib` — 414 passed
 
 ### Phase 11.5: Rewrite types_transpile.toml ❌ TODO
 
@@ -1691,7 +1691,7 @@ Transpile spec functions from currently untranspiled spec files:
 | 11.1 | Multi-file type gen + alias support | ~200 | ✅ Done |
 | 11.2 | Enum variant remapping | ~100 | ✅ Done |
 | 11.3 | Config extensions (view_overrides, extra_fields, clone_strategy) | ~150 | ✅ Done |
-| 11.4 | Add custom_derives + skip_fields to transpiler | ~90 | ❌ TODO |
+| 11.4 | Add custom_derives + skip_fields to transpiler | ~90 | ✅ Done |
 | 11.5 | Rewrite types_transpile.toml (generate, not skip) | ~50 | ❌ TODO |
 | 11.6 | Regenerate types_gen.rs with actual definitions | ~100 | ❌ TODO |
 | 11.7 | Remove duplicate type defs from impl files | ~200 | ❌ TODO |

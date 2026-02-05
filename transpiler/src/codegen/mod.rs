@@ -44,6 +44,10 @@ pub struct TypeGenerator {
     extra_fields: HashMap<String, String>,
     /// Clone strategy per exec type ("derive" or "external_body")
     clone_strategy: HashMap<String, String>,
+    /// Custom derives per exec type (additional derives beyond Clone)
+    custom_derives: HashMap<String, Vec<String>>,
+    /// Fields to skip per exec type during generation
+    skip_fields: HashMap<String, Vec<String>>,
 }
 
 impl TypeGenerator {
@@ -58,6 +62,8 @@ impl TypeGenerator {
             view_overrides: HashMap::new(),
             extra_fields: HashMap::new(),
             clone_strategy: HashMap::new(),
+            custom_derives: HashMap::new(),
+            skip_fields: HashMap::new(),
         }
     }
 
@@ -72,6 +78,8 @@ impl TypeGenerator {
             view_overrides: HashMap::new(),
             extra_fields: HashMap::new(),
             clone_strategy: HashMap::new(),
+            custom_derives: HashMap::new(),
+            skip_fields: HashMap::new(),
         }
     }
 
@@ -90,6 +98,8 @@ impl TypeGenerator {
             view_overrides: HashMap::new(),
             extra_fields: HashMap::new(),
             clone_strategy: HashMap::new(),
+            custom_derives: HashMap::new(),
+            skip_fields: HashMap::new(),
         }
     }
 
@@ -109,6 +119,8 @@ impl TypeGenerator {
             view_overrides: HashMap::new(),
             extra_fields: HashMap::new(),
             clone_strategy: HashMap::new(),
+            custom_derives: HashMap::new(),
+            skip_fields: HashMap::new(),
         }
     }
 
@@ -127,6 +139,16 @@ impl TypeGenerator {
         self.clone_strategy = strategy;
     }
 
+    /// Set custom derives per exec type
+    pub fn set_custom_derives(&mut self, derives: HashMap<String, Vec<String>>) {
+        self.custom_derives = derives;
+    }
+
+    /// Set fields to skip per exec type
+    pub fn set_skip_fields(&mut self, fields: HashMap<String, Vec<String>>) {
+        self.skip_fields = fields;
+    }
+
     /// Generate an exec struct from a spec struct
     pub fn generate_struct(&self, spec: &StructDef) -> GeneratedCode {
         let mut code = String::new();
@@ -139,13 +161,34 @@ impl TypeGenerator {
             .map(|s| s.as_str())
             .unwrap_or("derive");
 
-        // Generate derive attributes
+        // Collect derive attributes: Clone (if strategy is "derive") + custom derives
+        let mut derives = Vec::new();
         if clone_strat == "derive" {
-            code.push_str("#[derive(Clone)]\n");
+            derives.push("Clone".to_string());
         }
+        if let Some(custom) = self.custom_derives.get(&exec_name) {
+            for d in custom {
+                if !derives.contains(d) {
+                    derives.push(d.clone());
+                }
+            }
+        }
+        if !derives.is_empty() {
+            code.push_str(&format!("#[derive({})]\n", derives.join(", ")));
+        }
+
+        // Get skip fields for this type
+        let skip_fields = self.skip_fields.get(&exec_name);
+
         // Generate struct definition
         code.push_str(&format!("pub struct {} {{\n", exec_name));
         for field in &spec.fields {
+            // Skip fields configured to be omitted
+            if let Some(skips) = skip_fields {
+                if skips.contains(&field.name) {
+                    continue;
+                }
+            }
             let exec_type = self.translate_type(&field.ty);
             let vis = if field.is_public { "pub " } else { "" };
             code.push_str(&format!(
@@ -201,9 +244,20 @@ impl TypeGenerator {
             .map(|s| s.as_str())
             .unwrap_or("derive");
 
-        // Generate derive attributes
+        // Collect derive attributes: Clone (if strategy is "derive") + custom derives
+        let mut derives = Vec::new();
         if clone_strat == "derive" {
-            code.push_str("#[derive(Clone)]\n");
+            derives.push("Clone".to_string());
+        }
+        if let Some(custom) = self.custom_derives.get(&exec_name) {
+            for d in custom {
+                if !derives.contains(d) {
+                    derives.push(d.clone());
+                }
+            }
+        }
+        if !derives.is_empty() {
+            code.push_str(&format!("#[derive({})]\n", derives.join(", ")));
         }
         // Generate enum definition
         code.push_str(&format!("pub enum {} {{\n", exec_name));
@@ -273,10 +327,20 @@ impl TypeGenerator {
             self.indent, pred_name
         ));
 
-        // Collect fields that need validity checks
+        // Get skip fields for this type
+        let skip = self.skip_fields.get(exec_name);
+
+        // Collect fields that need validity checks (excluding skipped fields)
         let fields_needing_check: Vec<_> = fields
             .iter()
-            .filter(|f| self.needs_well_formed(&f.ty))
+            .filter(|f| {
+                if let Some(skips) = skip {
+                    if skips.contains(&f.name) {
+                        return false;
+                    }
+                }
+                self.needs_well_formed(&f.ty)
+            })
             .collect();
 
         if fields_needing_check.is_empty() {
@@ -390,6 +454,9 @@ impl TypeGenerator {
 
     /// Generate View trait implementation for a struct
     fn generate_view_impl(&self, spec_name: &str, exec_name: &str, fields: &[FieldDef]) -> String {
+        // Get skip fields for this type
+        let skip = self.skip_fields.get(exec_name);
+
         let mut code = format!("impl View for {} {{\n", exec_name);
         code.push_str(&format!("{}type V = {};\n\n", self.indent, spec_name));
         code.push_str(&format!(
@@ -399,6 +466,12 @@ impl TypeGenerator {
         code.push_str(&format!("{}{}{} {{\n", self.indent, self.indent, spec_name));
 
         for field in fields {
+            // Skip fields configured to be omitted
+            if let Some(skips) = skip {
+                if skips.contains(&field.name) {
+                    continue;
+                }
+            }
             // Check view_overrides first (key: "SpecType.field_name")
             let override_key = format!("{}.{}", spec_name, field.name);
             let view_expr = if let Some(custom_expr) = self.view_overrides.get(&override_key) {
@@ -805,6 +878,8 @@ pub fn generate_all_types_with_options(
         clone_strategy: &HashMap::new(),
         skip_types: &[],
         re_exports: &[],
+        custom_derives: &HashMap::new(),
+        skip_fields: &HashMap::new(),
     })
 }
 
@@ -820,6 +895,8 @@ pub struct TypeGenConfig<'a> {
     pub clone_strategy: &'a HashMap<String, String>,
     pub skip_types: &'a [String],
     pub re_exports: &'a [String],
+    pub custom_derives: &'a HashMap<String, Vec<String>>,
+    pub skip_fields: &'a HashMap<String, Vec<String>>,
 }
 
 /// Generate all types from a type registry with all configuration options
@@ -832,6 +909,8 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     generator.set_view_overrides(cfg.view_overrides.clone());
     generator.set_extra_fields(cfg.extra_fields.clone());
     generator.set_clone_strategy(cfg.clone_strategy.clone());
+    generator.set_custom_derives(cfg.custom_derives.clone());
+    generator.set_skip_fields(cfg.skip_fields.clone());
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
 
@@ -1765,6 +1844,8 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &skip_types,
             re_exports: &[],
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -1803,6 +1884,8 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &re_exports,
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -1819,6 +1902,414 @@ mod tests {
                 .code
                 .contains("pub use crate::implementation::RSL::cmessage::CPacket;"),
             "Should contain re-export: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_custom_derives_struct() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut derives = HashMap::new();
+        derives.insert(
+            "CBallot".to_string(),
+            vec!["Copy".to_string(), "PartialEq".to_string()],
+        );
+        generator.set_custom_derives(derives);
+
+        let spec = StructDef {
+            name: "Ballot".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "seqno".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should have Clone, Copy, PartialEq in derive
+        assert!(
+            result.code.contains("#[derive(Clone, Copy, PartialEq)]"),
+            "Should have merged derives: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_custom_derives_enum() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut derives = HashMap::new();
+        derives.insert(
+            "CMessage".to_string(),
+            vec!["PartialEq".to_string(), "Eq".to_string()],
+        );
+        generator.set_custom_derives(derives);
+
+        let spec = EnumDef {
+            name: "LMessage".to_string(),
+            generics: Generics::default(),
+            variants: vec![
+                VariantDef {
+                    name: "Ping".to_string(),
+                    fields: VariantFields::Unit,
+                },
+                VariantDef {
+                    name: "Pong".to_string(),
+                    fields: VariantFields::Unit,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_enum(&spec);
+
+        assert!(
+            result.code.contains("#[derive(Clone, PartialEq, Eq)]"),
+            "Should have merged derives for enum: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_custom_derives_with_external_body_clone() {
+        // When clone_strategy is external_body, Clone should NOT be in derive
+        // but custom derives should still be added
+        let mut generator = TypeGenerator::new(make_config());
+        let mut strategy = HashMap::new();
+        strategy.insert("CState".to_string(), "external_body".to_string());
+        generator.set_clone_strategy(strategy);
+        let mut derives = HashMap::new();
+        derives.insert("CState".to_string(), vec!["Copy".to_string()]);
+        generator.set_custom_derives(derives);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "value".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should have Copy in derive (not Clone since it's external_body)
+        assert!(
+            result.code.contains("#[derive(Copy)]"),
+            "Should have Copy derive without Clone: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("#[verifier(external_body)]"),
+            "Should still have external_body Clone: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_custom_derives_no_duplicate() {
+        // If Clone is already added by strategy and also in custom_derives, no duplicate
+        let mut generator = TypeGenerator::new(make_config());
+        let mut derives = HashMap::new();
+        derives.insert(
+            "CState".to_string(),
+            vec!["Clone".to_string(), "Copy".to_string()],
+        );
+        generator.set_custom_derives(derives);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "value".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should have Clone, Copy (no duplicate Clone)
+        assert!(
+            result.code.contains("#[derive(Clone, Copy)]"),
+            "Should not duplicate Clone: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_fields_struct_definition() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut skip = HashMap::new();
+        skip.insert("CState".to_string(), vec!["ghost_field".to_string()]);
+        generator.set_skip_fields(skip);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "ghost_field".to_string(),
+                    ty: Type::Named(Path::single("SomeType".to_string())),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Struct should have value but not ghost_field
+        assert!(
+            result.code.contains("value: i64"),
+            "Should include non-skipped field: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("ghost_field"),
+            "Should skip ghost_field in struct, well_formed, and View: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_fields_well_formed() {
+        // A skipped field with a complex type should not appear in well_formed
+        let mut generator = TypeGenerator::new(make_config());
+        let mut skip = HashMap::new();
+        skip.insert("CState".to_string(), vec!["complex".to_string()]);
+        generator.set_skip_fields(skip);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "simple".to_string(),
+                    ty: Type::Named(Path::single("Item".to_string())),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "complex".to_string(),
+                    ty: Type::Named(Path::single("BigType".to_string())),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // well_formed should only check simple, not complex
+        assert!(
+            result.code.contains("self.simple.well_formed()"),
+            "Should check simple field: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("self.complex.well_formed()"),
+            "Should NOT check skipped complex field: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_fields_view_impl() {
+        // A skipped field should not appear in View impl
+        let mut generator = TypeGenerator::new(make_config());
+        let mut skip = HashMap::new();
+        skip.insert("CState".to_string(), vec!["hidden".to_string()]);
+        generator.set_skip_fields(skip);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "visible".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "hidden".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // View should have visible but not hidden
+        assert!(
+            result.code.contains("visible: self.visible as int"),
+            "Should include visible in View: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("hidden: self.hidden"),
+            "Should NOT include hidden in View: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_custom_derives_config_parsing() {
+        let toml = r#"
+            [custom_derives]
+            "CBallot" = ["Copy", "PartialEq", "Eq", "Hash"]
+            "CState" = ["Copy"]
+        "#;
+
+        let config =
+            crate::config::TranspilerConfig::from_toml(toml).expect("Failed to parse TOML");
+        assert_eq!(config.custom_derives.len(), 2);
+        assert_eq!(
+            config.custom_derives.get("CBallot"),
+            Some(&vec![
+                "Copy".to_string(),
+                "PartialEq".to_string(),
+                "Eq".to_string(),
+                "Hash".to_string()
+            ])
+        );
+        assert_eq!(
+            config.custom_derives.get("CState"),
+            Some(&vec!["Copy".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_skip_fields_config_parsing() {
+        let toml = r#"
+            [skip_fields]
+            "CConfiguration" = ["clientIds"]
+            "CProposer" = ["ghost_state", "extra"]
+        "#;
+
+        let config =
+            crate::config::TranspilerConfig::from_toml(toml).expect("Failed to parse TOML");
+        assert_eq!(config.skip_fields.len(), 2);
+        assert_eq!(
+            config.skip_fields.get("CConfiguration"),
+            Some(&vec!["clientIds".to_string()])
+        );
+        assert_eq!(
+            config.skip_fields.get("CProposer"),
+            Some(&vec!["ghost_state".to_string(), "extra".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_custom_derives_via_type_gen_config() {
+        // Test that custom_derives flows through the full generation pipeline
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "Ballot".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "seqno".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let mut custom_derives = HashMap::new();
+        custom_derives.insert(
+            "CBallot".to_string(),
+            vec!["Copy".to_string(), "PartialEq".to_string()],
+        );
+
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            custom_derives: &custom_derives,
+            skip_fields: &HashMap::new(),
+        };
+
+        let result = generate_all_types_full(&cfg);
+
+        assert!(
+            result.code.contains("#[derive(Clone, Copy, PartialEq)]"),
+            "Should have custom derives via TypeGenConfig: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_fields_via_type_gen_config() {
+        // Test that skip_fields flows through the full generation pipeline
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "count".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "ghost_data".to_string(),
+                    ty: Type::Named(Path::single("SomeType".to_string())),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let mut skip_fields = HashMap::new();
+        skip_fields.insert("CState".to_string(), vec!["ghost_data".to_string()]);
+
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            custom_derives: &HashMap::new(),
+            skip_fields: &skip_fields,
+        };
+
+        let result = generate_all_types_full(&cfg);
+
+        assert!(
+            result.code.contains("count: i64"),
+            "Should include non-skipped field: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("ghost_data"),
+            "Should skip ghost_data everywhere: {}",
             result.code
         );
     }
