@@ -1,0 +1,38 @@
+# Configuration for transpiling Single-Decree Paxos spec to exec implementation
+
+# Skip functions that contain existential quantifiers or are spec-only predicates
+skip_functions = [
+    "LNext",
+    "LChosen",
+]
+
+# Primitive types that don't need valid() predicates
+primitive_types = []
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "u64"
+nat_type = "u64"
+
+[remapping]
+"LState" = "CState"
+"LConstants" = "CConstants"
+"LMsgType" = "CMsgType"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+generate_inline_types = false
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashSet;",
+    "use crate::protocol::Paxos::types::*;",
+    "use crate::protocol::Paxos::paxos::*;",
+    "use crate::generated::Paxos::types_gen::*;",
+]

@@ -1,0 +1,43 @@
+// Mode annotations for Single-Decree Paxos protocol
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Paxos::paxos {
+    // Initialize protocol state from constants
+    // s (output): initialized state
+    // c (input): protocol constants
+    LInit(-, +);
+
+    // Phase 1a: Proposer sends prepare with ballot b
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // b (input): ballot number
+    LSend1a(+, -, +, +);
+
+    // Phase 1b: Acceptor responds to prepare with ballot b
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // b (input): ballot number
+    LSend1b(+, -, +, +);
+
+    // Phase 2a: Proposer sends accept with ballot b and value v
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // b (input): ballot number
+    // v (input): proposed value
+    LSend2a(+, -, +, +, +);
+
+    // Phase 2b: Acceptor accepts ballot b with value v
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // b (input): ballot number
+    // v (input): accepted value
+    LSend2b(+, -, +, +, +);
+
+    // LChosen and LNext are not transpiled
+    // LChosen: safety predicate, not an action
+    // LNext: contains existential quantifiers
+}

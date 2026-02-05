@@ -1902,10 +1902,15 @@ Extend the project with additional distributed systems protocols, from simple to
   - 4 exec functions generated + 3 types (CState, CConstants, CTMState) with View + valid()
   - Verus verification: 548 verified, 0 errors (up from 543)
 
-- [ ] **Single-Decree Paxos**
+- [x] **Single-Decree Paxos** ✅
   - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/Paxos
   - Simpler than Multi-Paxos (RSL), good for validation
-  - Components: Proposer, Acceptor, Learner (single value)
+  - Components: Proposer, Acceptor (ballot-based voting with set state)
+  - Spec files: `src/protocol/Paxos/` (types.rs, paxos.rs, paxos.automan, paxos_transpile.toml)
+  - Generated files: `src/generated/Paxos/` (types_gen.rs, paxos_gen.rs)
+  - 7 spec functions: LInit, LSend1a, LSend1b, LSend2a, LSend2b, LChosen, LNext (last 2 skipped)
+  - 5 exec functions generated + 3 types (CState, CConstants, CMsgType) with View + valid()
+  - Verus verification: 554 verified, 0 errors (up from 548)
 
 - [ ] **Leader Election (Bully Algorithm)**
   - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/bully_election
