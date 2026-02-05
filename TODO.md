@@ -1892,10 +1892,15 @@ mismatches, (5) collection operations that don't exist on std types.
 Extend the project with additional distributed systems protocols, from simple to complex. These protocols should have existing TLA+ specifications that can be translated to Verus specs.
 
 #### Simple Protocols (Good Starting Points)
-- [ ] **Two-Phase Commit (2PC)**
+- [x] **Two-Phase Commit (2PC)** ✅
   - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/transaction_commit
-  - Components: Coordinator, Participants
-  - Patterns: Simple state machine, broadcast, voting
+  - Components: Coordinator (TM), Resource Managers (RM)
+  - Patterns: Simple state machine, set operations, enum variants
+  - Spec files: `src/protocol/TwoPhase/` (types.rs, twophase.rs, twophase.automan, twophase_transpile.toml)
+  - Generated files: `src/generated/TwoPhase/` (types_gen.rs, twophase_gen.rs)
+  - 4 spec functions: LInit, LTMRcvPrepared, LTMCommit, LTMAbort (LNext skipped — contains existential)
+  - 4 exec functions generated + 3 types (CState, CConstants, CTMState) with View + valid()
+  - Verus verification: 548 verified, 0 errors (up from 543)
 
 - [ ] **Single-Decree Paxos**
   - TLA+ spec: https://github.com/tlaplus/Examples/tree/master/specifications/Paxos

@@ -1,0 +1,37 @@
+# Configuration for transpiling Two-Phase Commit spec to exec implementation
+
+# Skip functions that contain existential quantifiers or complex patterns
+skip_functions = [
+    "LNext",
+]
+
+# Primitive types that don't need valid() predicates
+primitive_types = []
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "u64"
+nat_type = "u64"
+
+[remapping]
+"LState" = "CState"
+"LConstants" = "CConstants"
+"LTMState" = "CTMState"
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+generate_inline_types = false
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashSet;",
+    "use crate::protocol::TwoPhase::types::*;",
+    "use crate::protocol::TwoPhase::twophase::*;",
+    "use crate::generated::TwoPhase::types_gen::*;",
+]

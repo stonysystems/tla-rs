@@ -1,0 +1,31 @@
+// Mode annotations for Two-Phase Commit protocol
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module TwoPhase::twophase {
+    // Initialize protocol state from constants
+    // s (output): initialized state
+    // c (input): protocol constants
+    LInit(-, +);
+
+    // TM receives Prepared from resource manager r
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // r (input): resource manager identifier
+    LTMRcvPrepared(+, -, +, +);
+
+    // TM commits (all RMs have prepared)
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    LTMCommit(+, -, +);
+
+    // TM aborts
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    LTMAbort(+, -, +);
+
+    // Next-state relation (skip: contains existential quantifier)
+    // LNext is not transpiled - dispatch handled at a higher level
+}
