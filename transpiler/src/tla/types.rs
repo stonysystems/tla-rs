@@ -985,9 +985,7 @@ impl TypeSubstitution {
             TlaType::Function { domain, range } => {
                 TlaType::function(self.apply(domain), self.apply(range))
             }
-            TlaType::Tuple(elems) => {
-                TlaType::Tuple(elems.iter().map(|e| self.apply(e)).collect())
-            }
+            TlaType::Tuple(elems) => TlaType::Tuple(elems.iter().map(|e| self.apply(e)).collect()),
             TlaType::Record(rec) => {
                 let mut new_rec = RecordType::new();
                 new_rec.name = rec.name.clone();
@@ -1128,16 +1126,7 @@ impl TypeUnifier {
             (TlaType::Seq(e1), TlaType::Seq(e2)) => self.unify(e1, e2),
 
             // Map types unify if both key and value types unify
-            (
-                TlaType::Map {
-                    key: k1,
-                    value: v1,
-                },
-                TlaType::Map {
-                    key: k2,
-                    value: v2,
-                },
-            ) => {
+            (TlaType::Map { key: k1, value: v1 }, TlaType::Map { key: k2, value: v2 }) => {
                 let key_result = self.unify(k1, k2);
                 if matches!(key_result, UnifyResult::Conflict { .. }) {
                     return key_result;
@@ -1325,7 +1314,8 @@ impl TypeInference {
         self.collector.collect_from_module(module);
 
         // Step 2: Process constraints through unification
-        self.unifier.process_constraints(&self.collector.constraints);
+        self.unifier
+            .process_constraints(&self.collector.constraints);
 
         // Step 3: Build type environment with proper categorization
         self.build_module_type_env(module)
@@ -1415,11 +1405,7 @@ impl TypeInference {
     /// Get the inferred type for an identifier from constraints
     pub fn get_inferred_type(&self, name: &str) -> Option<TlaType> {
         for constraint in &self.collector.constraints {
-            if let TypeConstraint::HasType {
-                name: var_name,
-                ty,
-            } = constraint
-            {
+            if let TypeConstraint::HasType { name: var_name, ty } = constraint {
                 if var_name == name {
                     return Some(self.unifier.substitution.apply(ty));
                 }
@@ -3004,7 +2990,7 @@ mod tests {
         let resolved = inference.resolve_with_fallback(&env);
 
         // Check that types are resolved (either concrete or Any, not TypeVar)
-        for (_name, ty) in &resolved.variables {
+        for ty in resolved.variables.values() {
             assert!(
                 !ty.has_unresolved_type_var(),
                 "Resolved type should not have type variables"

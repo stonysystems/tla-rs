@@ -386,9 +386,6 @@ fn test_regression_supported_patterns_summary() {
     // 8. Arithmetic operations (+, -, *, <, <=, >, >=) ✓
     // 9. Helper predicates from operators without primes ✓
     // 10. Record construction and field access ✓
-
-    // This test always passes - it's documentation
-    assert!(true);
 }
 
 /// Document patterns that require manual intervention
@@ -405,9 +402,6 @@ fn test_regression_manual_intervention_patterns_summary() {
     // 8. Method calls on structs - TLA+ uses functions, not methods
     // 9. Associated functions - TLA+ doesn't have this concept
     // 10. Deep nesting of config structs - RSL has constants.all.config pattern
-
-    // This test always passes - it's documentation
-    assert!(true);
 }
 
 // =============================================================================

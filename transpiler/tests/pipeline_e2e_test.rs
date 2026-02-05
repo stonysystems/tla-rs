@@ -86,7 +86,10 @@ fn test_e2e_simplecounter_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 /// Test that DieHard puzzle can go through the full pipeline
@@ -120,7 +123,10 @@ fn test_e2e_diehard_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 /// Test that TwoPhase commit can go through the full pipeline
@@ -152,7 +158,10 @@ fn test_e2e_twophase_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 /// Test that EWD840 termination detection can go through the full pipeline
@@ -188,7 +197,10 @@ fn test_e2e_ewd840_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 /// Test that Raft leader election can go through the full pipeline
@@ -232,7 +244,10 @@ fn test_e2e_raft_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 /// Test that Paxos consensus can go through the full pipeline
@@ -278,7 +293,10 @@ fn test_e2e_paxos_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 /// Test that PBFT can go through the full pipeline
@@ -334,7 +352,10 @@ fn test_e2e_pbft_pipeline() {
     // Step 2: Parse mode annotations
     let parser = AnnotationParser::new(mode_annotations);
     let parsed_modules = parser.parse().expect("Failed to parse mode annotations");
-    assert!(!parsed_modules.is_empty(), "Should parse at least one module");
+    assert!(
+        !parsed_modules.is_empty(),
+        "Should parse at least one module"
+    );
 }
 
 // =============================================================================

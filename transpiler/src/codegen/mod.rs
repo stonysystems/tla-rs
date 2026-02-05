@@ -506,18 +506,23 @@ impl TypeGenerator {
 
                 // Check if this type is remapped to a primitive or stdlib type
                 if let Some(remapped) = self.remapping.get(name) {
-                    if self.primitive_types.contains(remapped) || is_primitive_or_stdlib_type(remapped) {
+                    if self.primitive_types.contains(remapped)
+                        || is_primitive_or_stdlib_type(remapped)
+                    {
                         return false;
                     }
                 }
 
                 // For generic types, also check the args
-                args.iter().any(|arg| self.needs_well_formed_with_remapping(arg))
+                args.iter()
+                    .any(|arg| self.needs_well_formed_with_remapping(arg))
             }
             // Vec, HashMap, HashSet don't have valid() predicates by default
             // They contain elements that might need valid() but we can't call valid() on the container
             Type::Seq(_) | Type::Set(_) | Type::Map(_, _) => false,
-            Type::Tuple(types) => types.iter().any(|t| self.needs_well_formed_with_remapping(t)),
+            Type::Tuple(types) => types
+                .iter()
+                .any(|t| self.needs_well_formed_with_remapping(t)),
             Type::Reference { ty, .. } => self.needs_well_formed_with_remapping(ty),
         }
     }
@@ -582,9 +587,24 @@ fn is_primitive_or_stdlib_type(type_name: &str) -> bool {
     // Primitive types
     if matches!(
         type_name,
-        "bool" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-            | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-            | "int" | "nat" | "()" | "String" | "&str"
+        "bool"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "int"
+            | "nat"
+            | "()"
+            | "String"
+            | "&str"
     ) {
         return true;
     }
@@ -669,7 +689,7 @@ pub fn generate_all_types_with_options(
         all_code.push_str("use vstd::prelude::*;\n\n");
     } else {
         let mut sorted_imports = custom_imports.to_vec();
-        sorted_imports.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             all_code.push_str(import);
             if !import.ends_with('\n') {
@@ -862,9 +882,11 @@ mod tests {
         );
 
         // Test with custom int_type/nat_type
-        let mut custom_config = NamingConfig::default();
-        custom_config.int_type = "u64".to_string();
-        custom_config.nat_type = "u64".to_string();
+        let custom_config = NamingConfig {
+            int_type: "u64".to_string(),
+            nat_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
         let custom_gen = TypeGenerator::new(custom_config);
         assert_eq!(custom_gen.translate_type(&Type::Int), "u64");
         assert_eq!(custom_gen.translate_type(&Type::Nat), "u64");
@@ -1040,22 +1062,17 @@ mod tests {
     #[test]
     fn test_custom_validity_predicate_name() {
         // Test that with_options allows customizing the validity predicate name
-        let generator = TypeGenerator::with_options(
-            make_config(),
-            HashMap::new(),
-            "valid".to_string(),
-        );
+        let generator =
+            TypeGenerator::with_options(make_config(), HashMap::new(), "valid".to_string());
 
         let spec = StructDef {
             name: "Ballot".to_string(),
             generics: Generics::default(),
-            fields: vec![
-                FieldDef {
-                    name: "seqno".to_string(),
-                    ty: Type::Int,
-                    is_public: true,
-                },
-            ],
+            fields: vec![FieldDef {
+                name: "seqno".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
             is_spec: true,
         };
 
@@ -1082,13 +1099,11 @@ mod tests {
         let spec = StructDef {
             name: "Ballot".to_string(),
             generics: Generics::default(),
-            fields: vec![
-                FieldDef {
-                    name: "seqno".to_string(),
-                    ty: Type::Int,
-                    is_public: true,
-                },
-            ],
+            fields: vec![FieldDef {
+                name: "seqno".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
             is_spec: true,
         };
 

@@ -121,7 +121,7 @@ impl Transpiler {
 
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
-        sorted_imports.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
             output.push('\n');
@@ -145,7 +145,12 @@ impl Transpiler {
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
                 self.config.translator.validity_predicate_name.clone(),
-                self.config.translator.primitive_types.iter().cloned().collect(),
+                self.config
+                    .translator
+                    .primitive_types
+                    .iter()
+                    .cloned()
+                    .collect(),
             );
 
             // Generate structs
@@ -240,7 +245,7 @@ impl Transpiler {
 
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
-        sorted_imports.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
             output.push('\n');
@@ -265,7 +270,12 @@ impl Transpiler {
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
                 self.config.translator.validity_predicate_name.clone(),
-                self.config.translator.primitive_types.iter().cloned().collect(),
+                self.config
+                    .translator
+                    .primitive_types
+                    .iter()
+                    .cloned()
+                    .collect(),
             );
 
             // Generate structs

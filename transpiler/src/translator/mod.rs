@@ -719,9 +719,13 @@ impl Translator {
         }
 
         // Try Type 1: recurse(combine(acc, head), tail) pattern
-        if let Some((init, combine)) =
-            Self::match_fold_accumulator_pattern(recursive_case, func_name, &seq_param, base_body, params)
-        {
+        if let Some((init, combine)) = Self::match_fold_accumulator_pattern(
+            recursive_case,
+            func_name,
+            &seq_param,
+            base_body,
+            params,
+        ) {
             let extra_args = Self::get_extra_args(params, &seq_param);
             return Some(RecursivePattern::Fold {
                 seq_param: seq_param.clone(),
@@ -750,7 +754,11 @@ impl Translator {
                 args,
             } => {
                 // Check if receiver is the recursive call
-                if let Expr::Call { func, args: call_args } = receiver.as_ref() {
+                if let Expr::Call {
+                    func,
+                    args: call_args,
+                } = receiver.as_ref()
+                {
                     if func.segments.last() == Some(&func_name.to_string()) {
                         // Verify one of the args is seq.drop_first()
                         if call_args.iter().any(|a| Self::is_drop_first(a, seq_param)) {
@@ -789,13 +797,14 @@ impl Translator {
                 }
 
                 // Find which arg is the tail (seq.drop_first())
-                let tail_idx = args.iter().position(|a| Self::is_drop_first(a, seq_param))?;
+                let tail_idx = args
+                    .iter()
+                    .position(|a| Self::is_drop_first(a, seq_param))?;
 
                 // The other args contain the combine expression
                 // For RemoveExecutedRequestBatch: recurse(combine(acc, head), tail)
                 // acc is the first param that's not the seq_param
-                let acc_param = params.iter()
-                    .find(|p| p.name != seq_param)?;
+                let acc_param = params.iter().find(|p| p.name != seq_param)?;
 
                 // Get the combine expression (the arg that's not the tail)
                 if args.len() >= 2 && tail_idx < args.len() {
@@ -829,10 +838,16 @@ impl Translator {
             Expr::Binary(l, _, r) | Expr::Eq(l, r) | Expr::Ne(l, r) => {
                 Self::expr_contains_ident(l, name) || Self::expr_contains_ident(r, name)
             }
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 Self::expr_contains_ident(cond, name)
                     || Self::expr_contains_ident(then_branch, name)
-                    || else_branch.as_ref().is_some_and(|e| Self::expr_contains_ident(e, name))
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::expr_contains_ident(e, name))
             }
             _ => false,
         }
@@ -1012,7 +1027,10 @@ impl Translator {
     }
 
     /// Get parameter names that are not in the iterated sequences list
-    fn get_extra_args_excluding(params: &[crate::ast::Parameter], iterated_seqs: &[String]) -> Vec<String> {
+    fn get_extra_args_excluding(
+        params: &[crate::ast::Parameter],
+        iterated_seqs: &[String],
+    ) -> Vec<String> {
         params
             .iter()
             .filter(|p| !iterated_seqs.contains(&p.name))
@@ -1028,7 +1046,12 @@ impl Translator {
         if let Expr::Call { args, .. } = recursive_call {
             for arg in args {
                 // Check if arg is something.drop_first() or something.skip(1)
-                if let Expr::MethodCall { receiver, method, args: method_args } = arg {
+                if let Expr::MethodCall {
+                    receiver,
+                    method,
+                    args: method_args,
+                } = arg
+                {
                     let is_drop_first = method == "drop_first" && method_args.is_empty();
                     let is_skip_1 = method == "skip"
                         && method_args.len() == 1
@@ -2174,7 +2197,13 @@ impl Translator {
                 iterated_seqs,
                 transform,
                 extra_args,
-            } => self.translate_map_pattern(func, &seq_param, &iterated_seqs, &transform, &extra_args),
+            } => self.translate_map_pattern(
+                func,
+                &seq_param,
+                &iterated_seqs,
+                &transform,
+                &extra_args,
+            ),
             RecursivePattern::Fold {
                 seq_param,
                 init,
@@ -2289,7 +2318,8 @@ impl Translator {
         let ensures = self.build_helper_ensures(func);
 
         // Build the loop body
-        let body = self.build_map_loop_body(seq_param, iterated_seqs, transform, extra_args, func)?;
+        let body =
+            self.build_map_loop_body(seq_param, iterated_seqs, transform, extra_args, func)?;
 
         Ok(ExecFunction {
             name: exec_name,
@@ -2324,7 +2354,8 @@ impl Translator {
         // Transform the element expression, substituting s[0] with seq[i]
         // For zip patterns, substitute [0] with [i] for ALL iterated sequences
         let transformed_element = self.transform_expr(transform, &ctx)?;
-        let element_with_index = self.substitute_heads_with_index(transformed_element, iterated_seqs);
+        let element_with_index =
+            self.substitute_heads_with_index(transformed_element, iterated_seqs);
 
         // Wrap in clone to get owned value
         let element_expr = ExecExpr::Clone(Box::new(element_with_index));
@@ -2411,11 +2442,7 @@ impl Translator {
             })
             .collect();
 
-        let map_invariant = format!(
-            "result@ == {}({})",
-            spec_name,
-            spec_args.join(", ")
-        );
+        let map_invariant = format!("result@ == {}({})", spec_name, spec_args.join(", "));
         invariants.push(map_invariant);
 
         invariants
@@ -2446,11 +2473,7 @@ impl Translator {
         for arg in extra_args {
             spec_args.push(format!("{}@", arg));
         }
-        let fold_invariant = format!(
-            "acc@ == {}({})",
-            spec_name,
-            spec_args.join(", ")
-        );
+        let fold_invariant = format!("acc@ == {}({})", spec_name, spec_args.join(", "));
         invariants.push(fold_invariant);
 
         invariants
@@ -2581,14 +2604,24 @@ impl Translator {
     fn substitute_acc_placeholder(&self, expr: ExecExpr) -> ExecExpr {
         match expr {
             ExecExpr::Var(name) if name == "__acc" => ExecExpr::Var("acc".to_string()),
-            ExecExpr::MethodCall { receiver, method, args } => ExecExpr::MethodCall {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => ExecExpr::MethodCall {
                 receiver: Box::new(self.substitute_acc_placeholder(*receiver)),
                 method,
-                args: args.into_iter().map(|a| self.substitute_acc_placeholder(a)).collect(),
+                args: args
+                    .into_iter()
+                    .map(|a| self.substitute_acc_placeholder(a))
+                    .collect(),
             },
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func,
-                args: args.into_iter().map(|a| self.substitute_acc_placeholder(a)).collect(),
+                args: args
+                    .into_iter()
+                    .map(|a| self.substitute_acc_placeholder(a))
+                    .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
                 lhs: Box::new(self.substitute_acc_placeholder(*lhs)),
@@ -2596,7 +2629,10 @@ impl Translator {
                 rhs: Box::new(self.substitute_acc_placeholder(*rhs)),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
-                stmts.into_iter().map(|s| self.substitute_acc_placeholder(s)).collect()
+                stmts
+                    .into_iter()
+                    .map(|s| self.substitute_acc_placeholder(s))
+                    .collect(),
             ),
             other => other,
         }
@@ -2650,7 +2686,12 @@ impl Translator {
 
         // Build invariants
         let invariants = self.build_filter_invariants(
-            func, seq_param, predicate, keep_when_true, extra_args, &ctx,
+            func,
+            seq_param,
+            predicate,
+            keep_when_true,
+            extra_args,
+            &ctx,
         );
 
         // Build the loop
@@ -2734,13 +2775,27 @@ impl Translator {
     fn expr_to_spec_string(&self, expr: &Expr, _extra_args: &[String]) -> String {
         match expr {
             Expr::Call { func, args } => {
-                let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("unknown");
-                let args_str: Vec<String> = args.iter().map(|a| self.expr_to_spec_string(a, _extra_args)).collect();
+                let func_name = func
+                    .segments
+                    .last()
+                    .map(|s| s.as_str())
+                    .unwrap_or("unknown");
+                let args_str: Vec<String> = args
+                    .iter()
+                    .map(|a| self.expr_to_spec_string(a, _extra_args))
+                    .collect();
                 format!("{}({})", func_name, args_str.join(", "))
             }
-            Expr::MethodCall { receiver, method, args } => {
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 let recv_str = self.expr_to_spec_string(receiver, _extra_args);
-                let args_str: Vec<String> = args.iter().map(|a| self.expr_to_spec_string(a, _extra_args)).collect();
+                let args_str: Vec<String> = args
+                    .iter()
+                    .map(|a| self.expr_to_spec_string(a, _extra_args))
+                    .collect();
                 if args.is_empty() {
                     format!("{}.{}()", recv_str, method)
                 } else {
@@ -2842,9 +2897,7 @@ impl Translator {
                                 if lit == "0" || lit == "0usize" {
                                     // Replace with seq.index(i)
                                     return ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::Var(
-                                            seq_param.to_string(),
-                                        )),
+                                        receiver: Box::new(ExecExpr::Var(seq_param.to_string())),
                                         method: "index".to_string(),
                                         args: vec![ExecExpr::Var("i".to_string())],
                                     };
@@ -2901,9 +2954,9 @@ impl Translator {
                 field,
             ),
             // Clone - recurse into inner expression
-            ExecExpr::Clone(inner) => ExecExpr::Clone(
-                Box::new(self.substitute_head_with_index(*inner, seq_param)),
-            ),
+            ExecExpr::Clone(inner) => {
+                ExecExpr::Clone(Box::new(self.substitute_head_with_index(*inner, seq_param)))
+            }
             // Struct - recurse into field values
             ExecExpr::Struct { name, fields } => ExecExpr::Struct {
                 name,
@@ -2957,7 +3010,11 @@ impl Translator {
             Type::Seq(inner) => format!("Seq<{}>", self.type_to_string(inner)),
             Type::Set(inner) => format!("Set<{}>", self.type_to_string(inner)),
             Type::Map(k, v) => {
-                format!("Map<{}, {}>", self.type_to_string(k), self.type_to_string(v))
+                format!(
+                    "Map<{}, {}>",
+                    self.type_to_string(k),
+                    self.type_to_string(v)
+                )
             }
             Type::Generic(path, args) => {
                 let args_str: Vec<_> = args.iter().map(|a| self.type_to_string(a)).collect();
@@ -3123,7 +3180,10 @@ impl Translator {
         let func_name = &func.spec_fn.name;
 
         // Collect all sequence parameters
-        let seq_params: Vec<_> = func.spec_fn.params.iter()
+        let seq_params: Vec<_> = func
+            .spec_fn
+            .params
+            .iter()
             .filter(|p| matches!(&p.ty, crate::ast::Type::Seq(_)))
             .map(|p| p.name.clone())
             .collect();
@@ -3150,12 +3210,19 @@ impl Translator {
                     }
                 }
                 // Recurse into arguments
-                args.iter().any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+                args.iter()
+                    .any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
             }
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.expr_has_drop_first_recursive(cond, func_name, seq_param)
                     || self.expr_has_drop_first_recursive(then_branch, func_name, seq_param)
-                    || else_branch.as_ref().is_some_and(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param))
+                    || else_branch.as_ref().is_some_and(|e| {
+                        self.expr_has_drop_first_recursive(e, func_name, seq_param)
+                    })
             }
             Expr::Binary(l, _, r) => {
                 self.expr_has_drop_first_recursive(l, func_name, seq_param)
@@ -3163,15 +3230,17 @@ impl Translator {
             }
             Expr::MethodCall { receiver, args, .. } => {
                 self.expr_has_drop_first_recursive(receiver, func_name, seq_param)
-                    || args.iter().any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+                    || args
+                        .iter()
+                        .any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
             }
             Expr::Let { value, body, .. } => {
                 self.expr_has_drop_first_recursive(value, func_name, seq_param)
                     || self.expr_has_drop_first_recursive(body, func_name, seq_param)
             }
-            Expr::Conjunction(exprs) | Expr::Disjunction(exprs) => {
-                exprs.iter().any(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param))
-            }
+            Expr::Conjunction(exprs) | Expr::Disjunction(exprs) => exprs
+                .iter()
+                .any(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param)),
             _ => false,
         }
     }
@@ -3194,12 +3263,19 @@ impl Translator {
                     }
                 }
                 // Recurse into arguments
-                args.iter().any(|a| self.expr_has_decreasing_param(a, func_name, param_name))
+                args.iter()
+                    .any(|a| self.expr_has_decreasing_param(a, func_name, param_name))
             }
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.expr_has_decreasing_param(cond, func_name, param_name)
                     || self.expr_has_decreasing_param(then_branch, func_name, param_name)
-                    || else_branch.as_ref().is_some_and(|e| self.expr_has_decreasing_param(e, func_name, param_name))
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| self.expr_has_decreasing_param(e, func_name, param_name))
             }
             Expr::Binary(l, _, r) => {
                 self.expr_has_decreasing_param(l, func_name, param_name)
@@ -3207,7 +3283,9 @@ impl Translator {
             }
             Expr::MethodCall { receiver, args, .. } => {
                 self.expr_has_decreasing_param(receiver, func_name, param_name)
-                    || args.iter().any(|a| self.expr_has_decreasing_param(a, func_name, param_name))
+                    || args
+                        .iter()
+                        .any(|a| self.expr_has_decreasing_param(a, func_name, param_name))
             }
             _ => false,
         }
@@ -4168,7 +4246,8 @@ impl Translator {
 
                     if self.config.generate_loops_for_verification {
                         // Generate loop-based filter then insert
-                        let filter_loop = self.generate_map_filter_loop(&source_map, &key_var, filter_expr);
+                        let filter_loop =
+                            self.generate_map_filter_loop(&source_map, &key_var, filter_expr);
                         return Ok(ExecExpr::Block(vec![
                             ExecExpr::Let {
                                 pattern: "mut __result".to_string(),
@@ -4196,7 +4275,9 @@ impl Translator {
                                     receiver: Box::new(ExecExpr::MethodCall {
                                         receiver: Box::new(ExecExpr::MethodCall {
                                             receiver: Box::new(ExecExpr::MethodCall {
-                                                receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                                receiver: Box::new(ExecExpr::Var(
+                                                    source_map.clone(),
+                                                )),
                                                 method: "iter".to_string(),
                                                 args: vec![],
                                             }),
@@ -7884,10 +7965,9 @@ fn spec_type_to_exec_type(ty: &Type) -> ExecType {
         Type::Nat => ExecType::Named("nat".to_string()),
         Type::Unit => ExecType::Named("()".to_string()),
         Type::Seq(inner) => ExecType::Vec(Box::new(spec_type_to_exec_type(inner))),
-        Type::Set(inner) => ExecType::Generic(
-            "HashSet".to_string(),
-            vec![spec_type_to_exec_type(inner)],
-        ),
+        Type::Set(inner) => {
+            ExecType::Generic("HashSet".to_string(), vec![spec_type_to_exec_type(inner)])
+        }
         Type::Map(k, v) => ExecType::HashMap(
             Box::new(spec_type_to_exec_type(k)),
             Box::new(spec_type_to_exec_type(v)),
@@ -7896,9 +7976,7 @@ fn spec_type_to_exec_type(ty: &Type) -> ExecType {
             path.segments.join("::"),
             args.iter().map(spec_type_to_exec_type).collect(),
         ),
-        Type::Tuple(types) => {
-            ExecType::Tuple(types.iter().map(spec_type_to_exec_type).collect())
-        }
+        Type::Tuple(types) => ExecType::Tuple(types.iter().map(spec_type_to_exec_type).collect()),
         Type::Reference { ty, mutable } => {
             ExecType::Reference(Box::new(spec_type_to_exec_type(ty)), *mutable)
         }
@@ -9504,13 +9582,22 @@ mod tests {
         match result.unwrap() {
             ExecExpr::Block(stmts) => {
                 // Should contain broadcast use, let keys, assertions, ghost var, let result, for loop, etc.
-                assert!(stmts.len() >= 5, "Loop block should have multiple statements, got {}", stmts.len());
+                assert!(
+                    stmts.len() >= 5,
+                    "Loop block should have multiple statements, got {}",
+                    stmts.len()
+                );
                 // Check for the for loop
-                let has_for_loop = stmts.iter().any(|s| matches!(s, ExecExpr::ForInIter { .. }));
+                let has_for_loop = stmts
+                    .iter()
+                    .any(|s| matches!(s, ExecExpr::ForInIter { .. }));
                 assert!(has_for_loop, "Should contain a for-in-iter loop");
                 // Should NOT contain .filter()
                 let printed = format!("{:?}", stmts);
-                assert!(!printed.contains("\"filter\""), "Should NOT contain .filter() call");
+                assert!(
+                    !printed.contains("\"filter\""),
+                    "Should NOT contain .filter() call"
+                );
             }
             other => panic!("Expected Block (loop-based code), got {:?}", other),
         }
@@ -9628,18 +9715,25 @@ mod tests {
         // Should generate a Block with loop + insert
         match result.unwrap() {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 3, "Block should have 3 statements (let loop, insert, return)");
+                assert_eq!(
+                    stmts.len(),
+                    3,
+                    "Block should have 3 statements (let loop, insert, return)"
+                );
                 // First should be let binding containing a loop block
                 match &stmts[0] {
-                    ExecExpr::Let { value, .. } => {
-                        match value.as_ref() {
-                            ExecExpr::Block(inner_stmts) => {
-                                let has_for_loop = inner_stmts.iter().any(|s| matches!(s, ExecExpr::ForInIter { .. }));
-                                assert!(has_for_loop, "Inner block should contain a for-in-iter loop");
-                            }
-                            other => panic!("Expected Block for loop code, got {:?}", other),
+                    ExecExpr::Let { value, .. } => match value.as_ref() {
+                        ExecExpr::Block(inner_stmts) => {
+                            let has_for_loop = inner_stmts
+                                .iter()
+                                .any(|s| matches!(s, ExecExpr::ForInIter { .. }));
+                            assert!(
+                                has_for_loop,
+                                "Inner block should contain a for-in-iter loop"
+                            );
                         }
-                    }
+                        other => panic!("Expected Block for loop code, got {:?}", other),
+                    },
                     other => panic!("Expected Let binding, got {:?}", other),
                 }
                 // Second should be insert
@@ -10892,7 +10986,10 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(seq_param, "s");
-                assert!(!keep_when_true, "Should be inverted filter (keep when false)");
+                assert!(
+                    !keep_when_true,
+                    "Should be inverted filter (keep when false)"
+                );
                 assert!(transform.is_none(), "No transform for simple filter");
                 assert_eq!(extra_args, vec!["r".to_string()]);
             }
@@ -10979,10 +11076,7 @@ mod tests {
             }) => {
                 assert_eq!(seq_param, "ios");
                 assert!(keep_when_true, "Should be standard filter (keep when true)");
-                assert!(
-                    transform.is_some(),
-                    "Should have transform (ios[0]->s)"
-                );
+                assert!(transform.is_some(), "Should have transform (ios[0]->s)");
                 assert!(extra_args.is_empty(), "No extra args for this function");
             }
             PatternAnalysis::Recognized(other) => {
@@ -11159,7 +11253,7 @@ mod tests {
                 } => {
                     contains_for_loop(cond)
                         || contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
@@ -11470,7 +11564,7 @@ mod tests {
                 } => {
                     contains_for_loop(cond)
                         || contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
@@ -11497,10 +11591,7 @@ mod tests {
             cond: Box::new(len_zero_check("replies")),
             then_branch: Box::new(Expr::MapEmpty),
             else_branch: Some(Box::new(Expr::MethodCall {
-                receiver: Box::new(func_call(
-                    "LClientsInReplies",
-                    vec![drop_first("replies")],
-                )),
+                receiver: Box::new(func_call("LClientsInReplies", vec![drop_first("replies")])),
                 method: "insert".to_string(),
                 args: vec![
                     Expr::Field(Box::new(seq_head("replies")), "client".to_string()),
@@ -11772,7 +11863,7 @@ mod tests {
                 } => {
                     contains_for_loop(cond)
                         || contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
@@ -11847,7 +11938,11 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { invariants, .. } => invariants.clone(),
                 ExecExpr::Block(stmts) => stmts.iter().flat_map(extract_invariants).collect(),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     let mut invs = extract_invariants(then_branch);
                     if let Some(e) = else_branch {
                         invs.extend(extract_invariants(e));
@@ -11870,7 +11965,9 @@ mod tests {
 
         // Check result length invariant exists
         assert!(
-            invariants.iter().any(|inv| inv.contains("result.len() <= i")),
+            invariants
+                .iter()
+                .any(|inv| inv.contains("result.len() <= i")),
             "Should have result length invariant: {:?}",
             invariants
         );
@@ -11958,7 +12055,11 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { invariants, .. } => invariants.clone(),
                 ExecExpr::Block(stmts) => stmts.iter().flat_map(extract_invariants).collect(),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     let mut invs = extract_invariants(then_branch);
                     if let Some(e) = else_branch {
                         invs.extend(extract_invariants(e));
@@ -11981,7 +12082,9 @@ mod tests {
 
         // Check result length equals i (map produces same length)
         assert!(
-            invariants.iter().any(|inv| inv.contains("result.len() == i")),
+            invariants
+                .iter()
+                .any(|inv| inv.contains("result.len() == i")),
             "Should have result length invariant: {:?}",
             invariants
         );
@@ -11989,7 +12092,10 @@ mod tests {
         // Check map spec invariant exists - references spec function with truncated sequence
         // The invariant should be: result@ == BuildPackets(src@, dsts@.take(i as int))
         assert!(
-            invariants.iter().any(|inv| inv.contains("result@ == BuildPackets(") && inv.contains(".take(i as int)")),
+            invariants
+                .iter()
+                .any(|inv| inv.contains("result@ == BuildPackets(")
+                    && inv.contains(".take(i as int)")),
             "Should have map spec invariant: {:?}",
             invariants
         );
@@ -12055,7 +12161,11 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { invariants, .. } => invariants.clone(),
                 ExecExpr::Block(stmts) => stmts.iter().flat_map(extract_invariants).collect(),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     let mut invs = extract_invariants(then_branch);
                     if let Some(e) = else_branch {
                         invs.extend(extract_invariants(e));
@@ -12071,14 +12181,18 @@ mod tests {
 
         // Check bounds invariant exists
         assert!(
-            invariants.iter().any(|inv| inv.contains("i <= items.len()")),
+            invariants
+                .iter()
+                .any(|inv| inv.contains("i <= items.len()")),
             "Should have bounds invariant: {:?}",
             invariants
         );
 
         // Check fold spec invariant references the spec function
         assert!(
-            invariants.iter().any(|inv| inv.contains("acc@") && inv.contains("BuildMap")),
+            invariants
+                .iter()
+                .any(|inv| inv.contains("acc@") && inv.contains("BuildMap")),
             "Should have fold spec invariant referencing spec function: {:?}",
             invariants
         );
@@ -12163,7 +12277,7 @@ mod tests {
             param_modes: vec![ParameterMode::Input],
             return_type: Some("Seq<Item>".to_string()),
             is_recursive: true,
-            is_functionalizable: false,  // Force non-pattern translation
+            is_functionalizable: false, // Force non-pattern translation
             non_functionalizable_reason: Some("Testing decreases".to_string()),
         };
 
@@ -12183,8 +12297,8 @@ mod tests {
             else_branch: Some(Box::new(func_call(
                 "ProcessItems",
                 vec![
-                    ident("config"),  // First param, not recursed
-                    drop_first("items"),  // Second param, recursed with drop_first
+                    ident("config"),     // First param, not recursed
+                    drop_first("items"), // Second param, recursed with drop_first
                 ],
             ))),
         };
@@ -12212,7 +12326,7 @@ mod tests {
             requires: vec![],
             ensures: vec![],
             recommends: vec![],
-            decreases: vec![],  // No explicit decreases
+            decreases: vec![], // No explicit decreases
             body,
             span: None,
         };
@@ -12293,7 +12407,11 @@ mod tests {
         let annotated = crate::moder::AnnotatedFunction {
             spec_fn,
             kind: FunctionKind::Helper,
-            param_modes: vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Input],
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
             return_type: Some("Seq<Packet>".to_string()),
             is_recursive: true,
             is_functionalizable: false,
@@ -12315,7 +12433,7 @@ mod tests {
         let translator = Translator::default();
 
         // Create a non-recursive function with seq param but no explicit decreases pattern
-        let body = Expr::Ident("s".to_string());  // Trivial body
+        let body = Expr::Ident("s".to_string()); // Trivial body
 
         let spec_fn = SpecFunction {
             name: "SimpleFunc".to_string(),
@@ -12341,7 +12459,7 @@ mod tests {
             kind: FunctionKind::Helper,
             param_modes: vec![ParameterMode::Input],
             return_type: Some("Seq<Item>".to_string()),
-            is_recursive: true,  // Mark as recursive to trigger decreases generation
+            is_recursive: true, // Mark as recursive to trigger decreases generation
             is_functionalizable: false,
             non_functionalizable_reason: Some("Testing decreases".to_string()),
         };
@@ -12386,7 +12504,7 @@ mod tests {
             kind: FunctionKind::Helper,
             param_modes: vec![ParameterMode::Input],
             return_type: Some("Seq<Item>".to_string()),
-            is_recursive: false,  // Not recursive
+            is_recursive: false, // Not recursive
             is_functionalizable: true,
             non_functionalizable_reason: None,
         };
@@ -12418,7 +12536,10 @@ mod tests {
             cond: Box::new(len_zero_check("s")),
             then_branch: Box::new(Expr::SeqEmpty),
             else_branch: Some(Box::new(Expr::If {
-                cond: Box::new(func_call("RequestSatisfiedBy", vec![seq_head("s"), ident("r")])),
+                cond: Box::new(func_call(
+                    "RequestSatisfiedBy",
+                    vec![seq_head("s"), ident("r")],
+                )),
                 then_branch: Box::new(func_call(
                     "RemoveAllSatisfiedRequestsInSequence",
                     vec![drop_first("s"), ident("r")],
@@ -12473,7 +12594,11 @@ mod tests {
         };
 
         let result = translator.translate(&annotated);
-        assert!(result.is_ok(), "RemoveAllSatisfiedRequestsInSequence should translate: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "RemoveAllSatisfiedRequestsInSequence should translate: {:?}",
+            result
+        );
 
         let exec_fn = result.unwrap();
         assert_eq!(exec_fn.name, "CRemoveAllSatisfiedRequestsInSequence");
@@ -12483,15 +12608,22 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { .. } => true,
                 ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
             }
         }
-        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for filter pattern");
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Should generate loop for filter pattern"
+        );
     }
 
     /// Test RSL pattern: ExtractSentPacketsFromIos (Filter)
@@ -12510,9 +12642,15 @@ mod tests {
             else_branch: Some(Box::new(Expr::If {
                 cond: Box::new(Expr::Is(Box::new(seq_head("ios")), "Send".to_string())),
                 then_branch: Box::new(Expr::Binary(
-                    Box::new(seq_lit(Expr::Arrow(Box::new(seq_head("ios")), "s".to_string()))),
+                    Box::new(seq_lit(Expr::Arrow(
+                        Box::new(seq_head("ios")),
+                        "s".to_string(),
+                    ))),
                     BinOp::Add,
-                    Box::new(func_call("ExtractSentPacketsFromIos", vec![drop_first("ios")])),
+                    Box::new(func_call(
+                        "ExtractSentPacketsFromIos",
+                        vec![drop_first("ios")],
+                    )),
                 )),
                 else_branch: Some(Box::new(func_call(
                     "ExtractSentPacketsFromIos",
@@ -12551,7 +12689,11 @@ mod tests {
         };
 
         let result = translator.translate(&annotated);
-        assert!(result.is_ok(), "ExtractSentPacketsFromIos should translate: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "ExtractSentPacketsFromIos should translate: {:?}",
+            result
+        );
 
         let exec_fn = result.unwrap();
         assert_eq!(exec_fn.name, "CExtractSentPacketsFromIos");
@@ -12603,7 +12745,9 @@ mod tests {
                 },
                 crate::ast::Parameter {
                     name: "dsts".to_string(),
-                    ty: Type::Seq(Box::new(Type::Named(Path::single("AbstractEndPoint".to_string())))),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single(
+                        "AbstractEndPoint".to_string(),
+                    )))),
                     mode: None,
                     variable_mode: Default::default(),
                     span: None,
@@ -12628,7 +12772,11 @@ mod tests {
         let annotated = crate::moder::AnnotatedFunction {
             spec_fn,
             kind: FunctionKind::Helper,
-            param_modes: vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Input],
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
             return_type: Some("Vec<CRslPacket>".to_string()),
             is_recursive: true,
             is_functionalizable: true,
@@ -12636,7 +12784,11 @@ mod tests {
         };
 
         let result = translator.translate(&annotated);
-        assert!(result.is_ok(), "BuildLBroadcast should translate: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "BuildLBroadcast should translate: {:?}",
+            result
+        );
 
         let exec_fn = result.unwrap();
         assert_eq!(exec_fn.name, "CBuildLBroadcast");
@@ -12646,15 +12798,22 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { .. } => true,
                 ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
             }
         }
-        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for map pattern");
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Should generate loop for map pattern"
+        );
     }
 
     /// Test RSL pattern: GetPacketsFromReplies (Map with two sequences)
@@ -12676,12 +12835,18 @@ mod tests {
                 Box::new(seq_lit(Expr::Struct {
                     name: Path::single("LPacket".to_string()),
                     fields: vec![
-                        ("dst".to_string(), Expr::Field(Box::new(seq_head("requests")), "client".to_string())),
+                        (
+                            "dst".to_string(),
+                            Expr::Field(Box::new(seq_head("requests")), "client".to_string()),
+                        ),
                         ("src".to_string(), ident("me")),
-                        ("msg".to_string(), Expr::Struct {
-                            name: Path::single("RslMessage::Reply".to_string()),
-                            fields: vec![("r".to_string(), seq_head("replies"))],
-                        }),
+                        (
+                            "msg".to_string(),
+                            Expr::Struct {
+                                name: Path::single("RslMessage::Reply".to_string()),
+                                fields: vec![("r".to_string(), seq_head("replies"))],
+                            },
+                        ),
                     ],
                 })),
                 BinOp::Add,
@@ -12730,7 +12895,11 @@ mod tests {
         let annotated = crate::moder::AnnotatedFunction {
             spec_fn,
             kind: FunctionKind::Helper,
-            param_modes: vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Input],
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
             return_type: Some("Vec<CRslPacket>".to_string()),
             is_recursive: true,
             is_functionalizable: true,
@@ -12740,7 +12909,11 @@ mod tests {
         let result = translator.translate(&annotated);
         // This is a more complex dual-sequence pattern - may need manual implementation
         // The test validates the translator handles it gracefully
-        assert!(result.is_ok(), "GetPacketsFromReplies should translate (may need manual refinement): {:?}", result);
+        assert!(
+            result.is_ok(),
+            "GetPacketsFromReplies should translate (may need manual refinement): {:?}",
+            result
+        );
     }
 
     /// Test RSL pattern: RemoveExecutedRequestBatch (Fold)
@@ -12758,7 +12931,10 @@ mod tests {
             else_branch: Some(Box::new(func_call(
                 "RemoveExecutedRequestBatch",
                 vec![
-                    func_call("RemoveAllSatisfiedRequestsInSequence", vec![ident("reqs"), seq_head("batch")]),
+                    func_call(
+                        "RemoveAllSatisfiedRequestsInSequence",
+                        vec![ident("reqs"), seq_head("batch")],
+                    ),
                     drop_first("batch"),
                 ],
             ))),
@@ -12803,7 +12979,11 @@ mod tests {
         };
 
         let result = translator.translate(&annotated);
-        assert!(result.is_ok(), "RemoveExecutedRequestBatch should translate: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "RemoveExecutedRequestBatch should translate: {:?}",
+            result
+        );
 
         let exec_fn = result.unwrap();
         assert_eq!(exec_fn.name, "CRemoveExecutedRequestBatch");
@@ -12813,15 +12993,22 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { .. } => true,
                 ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
             }
         }
-        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for fold pattern");
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Should generate loop for fold pattern"
+        );
     }
 
     /// Test RSL pattern: LClientsInReplies (Fold to Map)
@@ -12879,7 +13066,11 @@ mod tests {
         };
 
         let result = translator.translate(&annotated);
-        assert!(result.is_ok(), "LClientsInReplies should translate: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "LClientsInReplies should translate: {:?}",
+            result
+        );
 
         let exec_fn = result.unwrap();
         // Note: LClientsInReplies -> CClientsInReplies (L prefix stripped, C prefix added)
@@ -12890,14 +13081,21 @@ mod tests {
             match expr {
                 ExecExpr::ForInIter { .. } => true,
                 ExecExpr::Block(stmts) => stmts.iter().any(contains_for_loop),
-                ExecExpr::If { then_branch, else_branch, .. } => {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     contains_for_loop(then_branch)
-                        || else_branch.as_ref().map_or(false, |e| contains_for_loop(e))
+                        || else_branch.as_ref().is_some_and(|e| contains_for_loop(e))
                 }
                 ExecExpr::Let { value, .. } => contains_for_loop(value),
                 _ => false,
             }
         }
-        assert!(contains_for_loop(&exec_fn.body), "Should generate loop for fold-to-map pattern");
+        assert!(
+            contains_for_loop(&exec_fn.body),
+            "Should generate loop for fold-to-map pattern"
+        );
     }
 }

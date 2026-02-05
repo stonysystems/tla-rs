@@ -751,10 +751,7 @@ fn test_pbft_translation() {
         verus_code.contains("pub Replica:"),
         "Should contain Replica constant"
     );
-    assert!(
-        verus_code.contains("pub F:"),
-        "Should contain F constant"
-    );
+    assert!(verus_code.contains("pub F:"), "Should contain F constant");
 
     // Verify key operators are translated
     assert!(

@@ -275,22 +275,31 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Load config for remappings, naming, and imports if provided
-            let (naming_config, remapping, custom_imports, validity_predicate_name): (NamingConfig, HashMap<String, String>, Vec<String>, String) =
-                if let Some(config_path) = config {
-                    if cli.verbose {
-                        eprintln!("Loading config from: {}", config_path.display());
-                    }
-                    let file_config = FileConfig::from_file(config_path)
-                        .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
-                    (
-                        file_config.naming.clone(),
-                        file_config.remapping.clone(),
-                        file_config.output.custom_imports.clone(),
-                        file_config.output.validity_predicate_name.clone(),
-                    )
-                } else {
-                    (NamingConfig::default(), HashMap::new(), Vec::new(), "well_formed".to_string())
-                };
+            let (naming_config, remapping, custom_imports, validity_predicate_name): (
+                NamingConfig,
+                HashMap<String, String>,
+                Vec<String>,
+                String,
+            ) = if let Some(config_path) = config {
+                if cli.verbose {
+                    eprintln!("Loading config from: {}", config_path.display());
+                }
+                let file_config = FileConfig::from_file(config_path)
+                    .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+                (
+                    file_config.naming.clone(),
+                    file_config.remapping.clone(),
+                    file_config.output.custom_imports.clone(),
+                    file_config.output.validity_predicate_name.clone(),
+                )
+            } else {
+                (
+                    NamingConfig::default(),
+                    HashMap::new(),
+                    Vec::new(),
+                    "well_formed".to_string(),
+                )
+            };
 
             let content = std::fs::read_to_string(input)
                 .map_err(|e| miette::miette!("Failed to read input file: {}", e))?;
@@ -390,19 +399,11 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 eprintln!("  Variables: {:?}", module.variables);
                 eprintln!(
                     "  Constants: {:?}",
-                    module
-                        .constants
-                        .iter()
-                        .map(|c| &c.name)
-                        .collect::<Vec<_>>()
+                    module.constants.iter().map(|c| &c.name).collect::<Vec<_>>()
                 );
                 eprintln!(
                     "  Operators: {:?}",
-                    module
-                        .operators
-                        .iter()
-                        .map(|o| &o.name)
-                        .collect::<Vec<_>>()
+                    module.operators.iter().map(|o| &o.name).collect::<Vec<_>>()
                 );
             }
 
@@ -470,7 +471,11 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     }
                 }
 
-                println!("Translated {} -> {}", input.display(), output_path.display());
+                println!(
+                    "Translated {} -> {}",
+                    input.display(),
+                    output_path.display()
+                );
             } else if cli.stdout {
                 println!("{}", verus_code);
 

@@ -116,7 +116,9 @@ impl<'a> ExprTranslator<'a> {
             TlaExpr::Eventually(inner) => self.translate_eventually(inner),
             TlaExpr::LeadsTo { left, right } => self.translate_leads_to(left, right),
             TlaExpr::WeakFairness { vars, action } => self.translate_weak_fairness(vars, action),
-            TlaExpr::StrongFairness { vars, action } => self.translate_strong_fairness(vars, action),
+            TlaExpr::StrongFairness { vars, action } => {
+                self.translate_strong_fairness(vars, action)
+            }
         }
     }
 
@@ -285,12 +287,7 @@ impl<'a> ExprTranslator<'a> {
     // Function/map operations (T5.2)
     // =========================================================================
 
-    fn translate_fn_construct(
-        &self,
-        var: &str,
-        domain: &TlaExpr,
-        body: &TlaExpr,
-    ) -> String {
+    fn translate_fn_construct(&self, var: &str, domain: &TlaExpr, body: &TlaExpr) -> String {
         // [x \in S |-> f(x)] → Map::new(|x| f(x))
         let domain_str = self.translate(domain);
         let body_str = self.translate(body);
@@ -822,7 +819,10 @@ impl ModuleTranslator {
         // Constants as associated constants or generic parameters
         if !module.constants.is_empty() {
             output.push_str("/// Constants for the module\n");
-            output.push_str(&format!("pub struct {}Constants {{\n", self.config.spec_prefix));
+            output.push_str(&format!(
+                "pub struct {}Constants {{\n",
+                self.config.spec_prefix
+            ));
             for constant in &module.constants {
                 let const_type = self.get_constant_type(&constant.name);
                 output.push_str(&format!("    pub {}: {},\n", constant.name, const_type));
@@ -931,9 +931,7 @@ impl ModuleTranslator {
             }
             TlaExpr::FnExcept { func, updates } => {
                 self.operator_uses_primes(func)
-                    || updates
-                        .iter()
-                        .any(|u| self.operator_uses_primes(&u.value))
+                    || updates.iter().any(|u| self.operator_uses_primes(&u.value))
             }
             TlaExpr::Record(fields) => fields.iter().any(|(_, e)| self.operator_uses_primes(e)),
             TlaExpr::RecordAccess { record, .. } => self.operator_uses_primes(record),
@@ -1095,12 +1093,7 @@ impl OperatorModes {
     pub fn to_automan_line(&self) -> String {
         let modes_str: Vec<_> = self.modes.iter().map(|m| m.to_string()).collect();
         if let Some(desc) = &self.description {
-            format!(
-                "    {}({});  // {}",
-                self.name,
-                modes_str.join(", "),
-                desc
-            )
+            format!("    {}({});  // {}", self.name, modes_str.join(", "), desc)
         } else {
             format!("    {}({});", self.name, modes_str.join(", "))
         }
@@ -1139,9 +1132,8 @@ impl ModeAnnotationGenerator {
 
         // Header
         output.push_str(&format!("// Mode annotations for {}.rs\n", module_name));
-        output.push_str(
-            "// Format: FunctionName(mode1, mode2, ...) where + = input, - = output\n\n"
-        );
+        output
+            .push_str("// Format: FunctionName(mode1, mode2, ...) where + = input, - = output\n\n");
 
         // Module block
         output.push_str(&format!("module {} {{\n", module_name));
@@ -1224,9 +1216,7 @@ impl ModeAnnotationGenerator {
             }
             TlaExpr::FnExcept { func, updates } => {
                 self.operator_uses_primes(func)
-                    || updates
-                        .iter()
-                        .any(|u| self.operator_uses_primes(&u.value))
+                    || updates.iter().any(|u| self.operator_uses_primes(&u.value))
             }
             TlaExpr::Record(fields) => fields.iter().any(|(_, e)| self.operator_uses_primes(e)),
             TlaExpr::RecordAccess { record, .. } => self.operator_uses_primes(record),
@@ -1279,7 +1269,7 @@ pub fn generate_mode_annotations(module: &TlaModule) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tla::ast::{TlaExpr, TlaBinOp, TlaQuantBound};
+    use crate::tla::ast::{TlaBinOp, TlaExpr, TlaQuantBound};
     use crate::tla::parser::parse_module;
 
     #[test]
@@ -1577,7 +1567,10 @@ mod tests {
         let config = TranslatorConfig::default().with_rename("old_name", "new_name");
         let translator = ExprTranslator::new(&config);
 
-        assert_eq!(translator.translate(&TlaExpr::ident("old_name")), "new_name");
+        assert_eq!(
+            translator.translate(&TlaExpr::ident("old_name")),
+            "new_name"
+        );
         assert_eq!(translator.translate(&TlaExpr::ident("other")), "other");
     }
 
@@ -1785,11 +1778,8 @@ mod tests {
         let modes = OperatorModes::new("LInit", vec![ParameterMode::Output]);
         assert!(modes.to_automan_line().contains("LInit(-)"));
 
-        let modes = OperatorModes::new(
-            "LNext",
-            vec![ParameterMode::Input, ParameterMode::Output],
-        )
-        .with_description("s is input, s_ is output");
+        let modes = OperatorModes::new("LNext", vec![ParameterMode::Input, ParameterMode::Output])
+            .with_description("s is input, s_ is output");
         let line = modes.to_automan_line();
         assert!(line.contains("LNext(+, -)"));
         assert!(line.contains("s is input, s_ is output"));
