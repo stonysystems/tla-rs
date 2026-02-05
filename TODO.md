@@ -1462,9 +1462,11 @@ The following tasks remain to achieve the goal of fully transpiling Paxos (RSL) 
 
 ### Problem Statement
 
-**Current state**: `types_gen.rs` has 16 `pub use crate::implementation::RSL::*` re-export lines and ZERO generated type definitions. All types (CAcceptor, CElectionState, CMessage, CConfiguration, etc.) are still defined in manually-written files under `src/implementation/RSL/`. This defeats the purpose of having a transpiler.
+**Current state** ✅: `types_gen.rs` contains 15 struct/enum definitions with View impls,
+validity predicates, and all helper functions. CBallot/CRequest/CReply/CVote remain in
+types_i.rs (need Marshalable macro). Implementation files are deduped and import from types_gen.
 
-**Desired state**: `types_gen.rs` contains transpiler-generated struct/enum definitions for ALL ~19 concrete types, with:
+**Original desired state** (achieved): `types_gen.rs` contains transpiler-generated struct/enum definitions for ALL ~19 concrete types, with:
 - Struct definitions with correct exec field types (`u64`, `Vec<T>`, `HashMap<K,V>`, etc.)
 - `impl View for CType` mapping each field to the corresponding spec type
 - `pub open spec fn valid(&self) -> bool` validity predicates
@@ -1486,45 +1488,45 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 
 ### Types to Generate (Dependency Order)
 
-**Type aliases** — need actual generation:
-- [ ] `COperationNumber = u64`
-- [ ] `CRequestBatch = Vec<CRequest>`
-- [ ] `CReplyCache = HashMap<EndPoint, CReply>`
-- [ ] `CVotes = HashMap<COperationNumber, CVote>`
-- [ ] `CLearnerState = HashMap<COperationNumber, CLearnerTuple>`
+**Type aliases** — ✅ all generated in types_gen.rs:
+- [x] `COperationNumber = u64`
+- [x] `CRequestBatch = Vec<CRequest>`
+- [x] `CReplyCache = HashMap<EndPoint, CReply>`
+- [x] `CVotes = HashMap<COperationNumber, CVote>`
+- [x] `CLearnerState = HashMap<COperationNumber, CLearnerTuple>`
 
-**Basic structs** — need actual generation with View + valid():
-- [ ] `CBallot` (from `types.rs` spec `Ballot`) — needs `#[derive(Eq, Copy, PartialEq, Hash)]`
-- [ ] `CRequest` (from `types.rs`) — needs `#[derive(PartialEq, Eq, Hash)]`
-- [ ] `CReply` (from `types.rs`) — needs `#[derive(Eq, PartialEq, Hash)]`
-- [ ] `CVote` (from `types.rs`) — needs `#[derive(Eq, PartialEq, Hash)]`
-- [ ] `CLearnerTuple` (from `types.rs`) — needs `external_body` Clone (HashSet field)
+**Basic structs** — ✅ CBallot/CRequest/CReply/CVote in types_i.rs (marshalable), CLearnerTuple in types_gen.rs:
+- [x] `CBallot` — in types_i.rs via define_struct_and_derive_marshalable!
+- [x] `CRequest` — in types_i.rs via define_struct_and_derive_marshalable!
+- [x] `CReply` — in types_i.rs via define_struct_and_derive_marshalable!
+- [x] `CVote` — in types_i.rs via define_struct_and_derive_marshalable!
+- [x] `CLearnerTuple` — in types_gen.rs with external_body Clone
 
-**Leaf/mid-level types** — need actual generation:
-- [ ] `CParameters` (from `parameters.rs`) — needs `#[derive(Copy)]`, view_override for `max_integer_val`
-- [ ] `CConfiguration` (from `configuration.rs`) — needs `skip_fields` for `clientIds`
-- [ ] `CConstants`, `CReplicaConstants` (from `constants.rs`)
+**Leaf/mid-level types** — ✅ all in types_gen.rs:
+- [x] `CParameters` — `#[derive(Copy)]`, view_override for `max_integer_val`
+- [x] `CConfiguration` — skip_fields for `clientIds`
+- [x] `CConstants`, `CReplicaConstants`
 
-**Enum types** — need actual generation with variant remapping:
-- [ ] `COutstandingOperation` enum (from `executor.rs`)
-- [ ] `CIncompleteBatchTimer` enum (from `proposer.rs`)
+**Enum types** — ✅ all in types_gen.rs:
+- [x] `COutstandingOperation` enum
+- [x] `CIncompleteBatchTimer` enum
 
-**Component state types** — need actual generation with complex view overrides:
-- [ ] `CAcceptor` — view_override for `votes`, extra_field `min_vote_opn`
-- [ ] `CLearner` — view_override for `unexecuted_learner_state`
-- [ ] `CElectionState` — `external_body` Clone, extra_fields `cur_req_set`, `prev_req_set`
-- [ ] `CExecutor` — view_override for `reply_cache`
-- [ ] `CProposer` — `external_body` Clone, complex view_overrides, extra_fields
-- [ ] `CReplica` (from `replica.rs`)
-- [ ] `CScheduler`, `CClockReading` (already generated — keep as-is)
+**Component state types** — ✅ all in types_gen.rs:
+- [x] `CAcceptor` — view_override for `votes`, extra_field `min_vote_opn`
+- [x] `CLearner` — view_override for `unexecuted_learner_state`
+- [x] `CElectionState` — extra_fields `cur_req_set`, `prev_req_set` (Clone in ElectionImpl.rs)
+- [x] `CExecutor` — view_override for `reply_cache`
+- [x] `CProposer` — complex view_overrides, extra_fields (Clone in ProposerImpl.rs)
+- [x] `CReplica`
+- [x] `CScheduler`, `CClockReading`
 
-**Helper functions** — need to be in types_gen.rs (not re-exported):
-- [ ] `CBalLt`, `CBalLeq`, `CBalEq` exec ballot comparisons
-- [ ] `abstractify_cvotes`, `abstractify_creplycache`, `abstractify_clearnerstate`, `abstractify_crequestbatch`
-- [ ] `AbstractifyCOperationNumberToOperationNumber`, `COperationNumberIs*`
-- [ ] `crequestbatch_is_valid()`, `creplycache_is_valid()`, etc.
-- [ ] `abstractify_clpacket`, `abstractify_crslio`, `abstractify_crslio_seq`
-- [ ] `unreachable_value<T>()` helper
+**Helper functions** — ✅ all in types_gen.rs:
+- [x] `CBalLt`, `CBalLeq`, `CBalEq` exec ballot comparisons
+- [x] `abstractify_cvotes`, `abstractify_creplycache`, `abstractify_clearnerstate`, `abstractify_crequestbatch`
+- [x] `AbstractifyCOperationNumberToOperationNumber`, `COperationNumberIs*`
+- [x] `crequestbatch_is_valid()`, `creplycache_is_valid()`, etc.
+- [x] `abstractify_clpacket`, `abstractify_crslio`, `abstractify_crslio_seq`
+- [x] `unreachable_value<T>()` helper
 
 ### Phase 11.1: Extend Transpiler for Multi-File Type Generation (~200 LOC) ✅ DONE
 
