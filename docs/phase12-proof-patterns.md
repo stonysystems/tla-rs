@@ -272,10 +272,48 @@ ensures
 | CStepDown | 2 (valid + spec) | Pattern 3 + 4 (empty set map) + 9 (clone_log) |
 | **Total** | **20** | |
 
+## Pattern 10: Loop Invariant with Field-Level View Equality
+
+**Category:** Loop proofs for sequence construction
+
+When constructing a sequence of structs (like `Vec<CPacket>`) in a loop, and the postcondition requires reasoning about the mapped view of the sequence, use field-level invariants instead of mapped-view invariants.
+
+**Problem:** Triggers cannot contain lambdas, so `#[trigger] result@.map(|i, p| p@)[j]` fails. Also, Verus may not track that `result@[j]@.field == expected` through a push operation.
+
+**Solution:** Use individual field invariants:
+```rust
+forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).dst@ == c.replica_ids@[j]@,
+forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).src@ == c.replica_ids@[myidx]@,
+forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).msg@ == m@,
+```
+
+Then add a post-loop proof block that connects field views to the mapped sequence:
+```rust
+proof {
+    let mapped = result@.map(|i: int, p: CPacket| p@);
+    assert forall |j: int| 0 <= j < mapped.len() implies
+        (#[trigger] mapped[j]) =~= (LPacket{dst: c@.replica_ids[j], ...})
+    by { }
+}
+```
+
+**Key notes:**
+- Use `clone_up_to_view()` instead of `clone()` for structs whose Clone impl lacks view ensures
+- Bind the `map(f)` result to a `let` in a proof block to avoid lambda-in-trigger errors
+- `#![auto]` trigger mode works for simple field access invariants
+
+## Summary: RSL/broadcast Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CBroadcastToEveryone | 2 (precond + spec) | Pattern 3 + 10 (loop field invariants) |
+| **Total** | **2** | |
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
 2. **`use vstd::set_lib::*`** — needed for broadcast lemmas like `lemma_set_map_insert_commute`
+3. **`EndPoint::clone()` ensures clause added:** `ensures res@ == self@` — needed for broadcast loop proof
 
 ## Verification Results
 
@@ -287,3 +325,4 @@ ensures
 | After Paxos (12.1.3) | 583 | 0 | ~216 | +1 verified, -10 assumes |
 | After ChainReplication (12.4.1) | 588 | 0 | ~202 | +5 verified, -14 assumes |
 | After Raft (12.4.2) | 592 | 0 | ~182 | +4 verified, -20 assumes |
+| After RSL/broadcast (12.5.1) | 592 | 0 | ~180 | +0 verified, -2 assumes |

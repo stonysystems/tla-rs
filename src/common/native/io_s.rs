@@ -34,7 +34,10 @@ verus! {
 
     impl Clone for EndPoint{
 
-        fn clone(&self) -> Self {
+        fn clone(&self) -> (res: Self)
+        ensures
+            res@ == self@,
+        {
             EndPoint{
                 id: self.id.clone(),
             }
