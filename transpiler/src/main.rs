@@ -266,8 +266,6 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             output,
             config,
         } => {
-            use std::collections::HashMap;
-            use verus_transpiler::config::NamingConfig;
             use verus_transpiler::types::TypeDef;
             use verus_transpiler::{TypeParser, TypeRegistry};
 
@@ -281,32 +279,47 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
             }
 
-            // Load config for remappings, naming, and imports if provided
-            let (naming_config, remapping, custom_imports, validity_predicate_name): (
-                NamingConfig,
-                HashMap<String, String>,
-                Vec<String>,
-                String,
-            ) = if let Some(config_path) = config {
+            // Load config for remappings, naming, imports, and type extensions if provided
+            let file_config = if let Some(config_path) = config {
                 if cli.verbose {
                     eprintln!("Loading config from: {}", config_path.display());
                 }
-                let file_config = FileConfig::from_file(config_path)
-                    .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
-                (
-                    file_config.naming.clone(),
-                    file_config.remapping.clone(),
-                    file_config.output.custom_imports.clone(),
-                    file_config.output.validity_predicate_name.clone(),
+                Some(
+                    FileConfig::from_file(config_path)
+                        .map_err(|e| miette::miette!("Failed to load config: {}", e))?,
                 )
             } else {
-                (
-                    NamingConfig::default(),
-                    HashMap::new(),
-                    Vec::new(),
-                    "well_formed".to_string(),
-                )
+                None
             };
+
+            let naming_config = file_config
+                .as_ref()
+                .map(|c| c.naming.clone())
+                .unwrap_or_default();
+            let remapping = file_config
+                .as_ref()
+                .map(|c| c.remapping.clone())
+                .unwrap_or_default();
+            let custom_imports = file_config
+                .as_ref()
+                .map(|c| c.output.custom_imports.clone())
+                .unwrap_or_default();
+            let validity_predicate_name = file_config
+                .as_ref()
+                .map(|c| c.output.validity_predicate_name.clone())
+                .unwrap_or_else(|| "well_formed".to_string());
+            let view_overrides = file_config
+                .as_ref()
+                .map(|c| c.view_overrides.clone())
+                .unwrap_or_default();
+            let extra_fields = file_config
+                .as_ref()
+                .map(|c| c.extra_fields.clone())
+                .unwrap_or_default();
+            let clone_strategy = file_config
+                .as_ref()
+                .map(|c| c.clone_strategy.clone())
+                .unwrap_or_default();
 
             let mut registry = TypeRegistry::new();
 
@@ -356,12 +369,17 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Generate exec types using the registry function
-            let generated = verus_transpiler::codegen::generate_all_types_with_options(
-                &registry,
-                &naming_config,
-                &remapping,
-                &custom_imports,
-                &validity_predicate_name,
+            let generated = verus_transpiler::codegen::generate_all_types_full(
+                &verus_transpiler::codegen::TypeGenConfig {
+                    registry: &registry,
+                    naming: &naming_config,
+                    remapping: &remapping,
+                    custom_imports: &custom_imports,
+                    validity_predicate_name: &validity_predicate_name,
+                    view_overrides: &view_overrides,
+                    extra_fields: &extra_fields,
+                    clone_strategy: &clone_strategy,
+                },
             );
 
             // Print any warnings

@@ -38,6 +38,12 @@ pub struct TypeGenerator {
     validity_predicate_name: String,
     /// Types to treat as primitive (no valid() predicate needed)
     primitive_types: Vec<String>,
+    /// Per-field custom View expressions (key: "SpecType.field_name")
+    view_overrides: HashMap<String, String>,
+    /// Extra fields for exec types (key: "ExecType.field_name", value: "type = default")
+    extra_fields: HashMap<String, String>,
+    /// Clone strategy per exec type ("derive" or "external_body")
+    clone_strategy: HashMap<String, String>,
 }
 
 impl TypeGenerator {
@@ -49,6 +55,9 @@ impl TypeGenerator {
             indent: "    ".to_string(),
             validity_predicate_name: "well_formed".to_string(),
             primitive_types: Vec::new(),
+            view_overrides: HashMap::new(),
+            extra_fields: HashMap::new(),
+            clone_strategy: HashMap::new(),
         }
     }
 
@@ -60,6 +69,9 @@ impl TypeGenerator {
             indent: "    ".to_string(),
             validity_predicate_name: "well_formed".to_string(),
             primitive_types: Vec::new(),
+            view_overrides: HashMap::new(),
+            extra_fields: HashMap::new(),
+            clone_strategy: HashMap::new(),
         }
     }
 
@@ -75,6 +87,9 @@ impl TypeGenerator {
             indent: "    ".to_string(),
             validity_predicate_name,
             primitive_types: Vec::new(),
+            view_overrides: HashMap::new(),
+            extra_fields: HashMap::new(),
+            clone_strategy: HashMap::new(),
         }
     }
 
@@ -91,7 +106,25 @@ impl TypeGenerator {
             indent: "    ".to_string(),
             validity_predicate_name,
             primitive_types,
+            view_overrides: HashMap::new(),
+            extra_fields: HashMap::new(),
+            clone_strategy: HashMap::new(),
         }
+    }
+
+    /// Set view overrides for custom per-field View expressions
+    pub fn set_view_overrides(&mut self, overrides: HashMap<String, String>) {
+        self.view_overrides = overrides;
+    }
+
+    /// Set extra fields for exec types not present in spec
+    pub fn set_extra_fields(&mut self, fields: HashMap<String, String>) {
+        self.extra_fields = fields;
+    }
+
+    /// Set clone strategy per exec type
+    pub fn set_clone_strategy(&mut self, strategy: HashMap<String, String>) {
+        self.clone_strategy = strategy;
     }
 
     /// Generate an exec struct from a spec struct
@@ -100,9 +133,16 @@ impl TypeGenerator {
         let warnings = Vec::new();
 
         let exec_name = self.get_exec_type(&spec.name);
+        let clone_strat = self
+            .clone_strategy
+            .get(&exec_name)
+            .map(|s| s.as_str())
+            .unwrap_or("derive");
 
         // Generate derive attributes
-        code.push_str("#[derive(Clone)]\n");
+        if clone_strat == "derive" {
+            code.push_str("#[derive(Clone)]\n");
+        }
         // Generate struct definition
         code.push_str(&format!("pub struct {} {{\n", exec_name));
         for field in &spec.fields {
@@ -113,7 +153,31 @@ impl TypeGenerator {
                 self.indent, vis, field.name, exec_type
             ));
         }
+        // Add extra fields not in spec
+        for (key, value) in &self.extra_fields {
+            if let Some(field_name) = key.strip_prefix(&format!("{}.", exec_name)) {
+                // Parse "type = default" format — we only need the type for the struct definition
+                let field_type = value.split('=').next().unwrap_or(value).trim();
+                code.push_str(&format!(
+                    "{}pub {}: {},\n",
+                    self.indent, field_name, field_type
+                ));
+            }
+        }
         code.push_str("}\n\n");
+
+        // Generate external_body Clone impl if needed
+        if clone_strat == "external_body" {
+            code.push_str(&format!(
+                "#[verifier(external_body)]\nimpl Clone for {} {{\n",
+                exec_name
+            ));
+            code.push_str(&format!(
+                "{}fn clone(&self) -> Self {{ unimplemented!() }}\n",
+                self.indent
+            ));
+            code.push_str("}\n\n");
+        }
 
         // Generate well_formed predicate
         code.push_str(&self.generate_well_formed_struct(&exec_name, &spec.fields));
@@ -131,15 +195,35 @@ impl TypeGenerator {
         let warnings = Vec::new();
 
         let exec_name = self.get_exec_type(&spec.name);
+        let clone_strat = self
+            .clone_strategy
+            .get(&exec_name)
+            .map(|s| s.as_str())
+            .unwrap_or("derive");
 
         // Generate derive attributes
-        code.push_str("#[derive(Clone)]\n");
+        if clone_strat == "derive" {
+            code.push_str("#[derive(Clone)]\n");
+        }
         // Generate enum definition
         code.push_str(&format!("pub enum {} {{\n", exec_name));
         for variant in &spec.variants {
             code.push_str(&self.generate_variant(variant));
         }
         code.push_str("}\n\n");
+
+        // Generate external_body Clone impl if needed
+        if clone_strat == "external_body" {
+            code.push_str(&format!(
+                "#[verifier(external_body)]\nimpl Clone for {} {{\n",
+                exec_name
+            ));
+            code.push_str(&format!(
+                "{}fn clone(&self) -> Self {{ unimplemented!() }}\n",
+                self.indent
+            ));
+            code.push_str("}\n\n");
+        }
 
         // Generate well_formed predicate
         code.push_str(&self.generate_well_formed_enum(&exec_name, &spec.variants));
@@ -315,7 +399,13 @@ impl TypeGenerator {
         code.push_str(&format!("{}{}{} {{\n", self.indent, self.indent, spec_name));
 
         for field in fields {
-            let view_expr = self.generate_view_field_expr(&field.name, &field.ty);
+            // Check view_overrides first (key: "SpecType.field_name")
+            let override_key = format!("{}.{}", spec_name, field.name);
+            let view_expr = if let Some(custom_expr) = self.view_overrides.get(&override_key) {
+                custom_expr.clone()
+            } else {
+                self.generate_view_field_expr(&field.name, &field.ty)
+            };
             code.push_str(&format!(
                 "{}{}{}{}: {},\n",
                 self.indent, self.indent, self.indent, field.name, view_expr
@@ -704,11 +794,40 @@ pub fn generate_all_types_with_options(
     custom_imports: &[String],
     validity_predicate_name: &str,
 ) -> GeneratedCode {
-    let generator = TypeGenerator::with_options(
-        config.clone(),
-        remapping.clone(),
-        validity_predicate_name.to_string(),
+    generate_all_types_full(&TypeGenConfig {
+        registry,
+        naming: config,
+        remapping,
+        custom_imports,
+        validity_predicate_name,
+        view_overrides: &HashMap::new(),
+        extra_fields: &HashMap::new(),
+        clone_strategy: &HashMap::new(),
+    })
+}
+
+/// Full configuration for type generation
+pub struct TypeGenConfig<'a> {
+    pub registry: &'a TypeRegistry,
+    pub naming: &'a NamingConfig,
+    pub remapping: &'a HashMap<String, String>,
+    pub custom_imports: &'a [String],
+    pub validity_predicate_name: &'a str,
+    pub view_overrides: &'a HashMap<String, String>,
+    pub extra_fields: &'a HashMap<String, String>,
+    pub clone_strategy: &'a HashMap<String, String>,
+}
+
+/// Generate all types from a type registry with all configuration options
+pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
+    let mut generator = TypeGenerator::with_options(
+        cfg.naming.clone(),
+        cfg.remapping.clone(),
+        cfg.validity_predicate_name.to_string(),
     );
+    generator.set_view_overrides(cfg.view_overrides.clone());
+    generator.set_extra_fields(cfg.extra_fields.clone());
+    generator.set_clone_strategy(cfg.clone_strategy.clone());
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
 
@@ -717,10 +836,10 @@ pub fn generate_all_types_with_options(
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
 
     // Custom imports (sorted case-insensitively for rustfmt compatibility)
-    if custom_imports.is_empty() {
+    if cfg.custom_imports.is_empty() {
         all_code.push_str("use vstd::prelude::*;\n\n");
     } else {
-        let mut sorted_imports = custom_imports.to_vec();
+        let mut sorted_imports = cfg.custom_imports.to_vec();
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             all_code.push_str(import);
@@ -734,20 +853,20 @@ pub fn generate_all_types_with_options(
     all_code.push_str("verus! {\n\n");
 
     // Generate type aliases (in insertion order)
-    for alias_name in &registry.alias_order {
-        if let Some(alias) = registry.aliases.get(alias_name) {
+    for alias_name in &cfg.registry.alias_order {
+        if let Some(alias) = cfg.registry.aliases.get(alias_name) {
             let exec_name = generator.get_exec_alias_name(&alias.name);
             let exec_type = generator.translate_alias_type(&alias.ty);
             all_code.push_str(&format!("pub type {} = {};\n", exec_name, exec_type));
         }
     }
-    if !registry.aliases.is_empty() {
+    if !cfg.registry.aliases.is_empty() {
         all_code.push('\n');
     }
 
     // Generate structs (in insertion order)
-    for struct_name in &registry.struct_order {
-        if let Some(struct_def) = registry.structs.get(struct_name) {
+    for struct_name in &cfg.registry.struct_order {
+        if let Some(struct_def) = cfg.registry.structs.get(struct_name) {
             if struct_def.is_spec {
                 let generated = generator.generate_struct(struct_def);
                 all_code.push_str(&generated.code);
@@ -758,8 +877,8 @@ pub fn generate_all_types_with_options(
     }
 
     // Generate enums (in insertion order)
-    for enum_name in &registry.enum_order {
-        if let Some(enum_def) = registry.enums.get(enum_name) {
+    for enum_name in &cfg.registry.enum_order {
+        if let Some(enum_def) = cfg.registry.enums.get(enum_name) {
             if enum_def.is_spec {
                 let generated = generator.generate_enum(enum_def);
                 all_code.push_str(&generated.code);
@@ -1442,6 +1561,145 @@ mod tests {
         assert!(
             result.code.contains("CMessage::Active => LMessage::Active"),
             "Unmapped variant same on both sides: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_view_overrides() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "LAcceptor.votes".to_string(),
+            "abstractify_cvotes(&self.votes)".to_string(),
+        );
+        generator.set_view_overrides(overrides);
+
+        let spec = StructDef {
+            name: "LAcceptor".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "max_bal".to_string(),
+                    ty: Type::Named(Path::single("Ballot".to_string())),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "votes".to_string(),
+                    ty: Type::Named(Path::single("Votes".to_string())),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            result
+                .code
+                .contains("votes: abstractify_cvotes(&self.votes)"),
+            "Should use view override for votes: {}",
+            result.code
+        );
+        // max_bal should use default view (no override)
+        assert!(
+            result.code.contains("max_bal: self.max_bal@"),
+            "Should use default view for max_bal: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_extra_fields() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut extra = HashMap::new();
+        extra.insert("CAcceptor.min_vote_opn".to_string(), "u64 = 0".to_string());
+        generator.set_extra_fields(extra);
+
+        let spec = StructDef {
+            name: "LAcceptor".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "max_bal".to_string(),
+                ty: Type::Named(Path::single("Ballot".to_string())),
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            result.code.contains("pub min_vote_opn: u64,"),
+            "Should include extra field: {}",
+            result.code
+        );
+        // Verify struct contains both spec field and extra field
+        assert!(
+            result.code.contains("pub max_bal: CBallot,"),
+            "Should also include spec fields: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_clone_strategy_external_body() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut strategy = HashMap::new();
+        strategy.insert("CState".to_string(), "external_body".to_string());
+        generator.set_clone_strategy(strategy);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "value".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            !result.code.contains("#[derive(Clone)]"),
+            "Should NOT have derive Clone: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("#[verifier(external_body)]"),
+            "Should have external_body Clone: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("impl Clone for CState"),
+            "Should have manual Clone impl: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_clone_strategy_default_is_derive() {
+        let generator = TypeGenerator::new(make_config());
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "value".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            result.code.contains("#[derive(Clone)]"),
+            "Default should use derive Clone: {}",
             result.code
         );
     }

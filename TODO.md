@@ -3275,18 +3275,19 @@ Generate a single comprehensive `types_gen.rs` containing ALL types in dependenc
 
 ### Phase 11.3: Add Config Extensions for Complex Types (~150 LOC)
 
-- [ ] **11.3.1**: Add `view_overrides` config section
+- [x] **11.3.1**: Add `view_overrides` config section ✅
   - File: `transpiler/src/config.rs`
   - Per-field custom View expressions (e.g., `"CAcceptor.votes" = "abstractify_cvotes(&self.votes)"`)
   - Needed because collection fields need deep conversion, not just `@`
-- [ ] **11.3.2**: Add `extra_fields` config section
+- [x] **11.3.2**: Add `extra_fields` config section ✅
   - Optimization fields not in spec (e.g., `CAcceptor.min_vote_opn`, `CProposer.max_opn_with_proposal`)
   - These get default values in View impl (not mapped to spec)
-- [ ] **11.3.3**: Add `clone_strategy` config section
+- [x] **11.3.3**: Add `clone_strategy` config section ✅
   - "derive" (default) vs "external_body" (for types containing HashSet)
   - Needed for: CElectionState, CProposer, CLearnerTuple
-- [ ] **11.3.4**: Apply config extensions in `generate_struct()` and `generate_enum()`
+- [x] **11.3.4**: Apply config extensions in `generate_struct()` and `generate_enum()` ✅
   - File: `transpiler/src/codegen/mod.rs`
+  - Introduced `TypeGenConfig` struct to bundle parameters; `generate_all_types_full()` accepts it
 
 ### Phase 11.4: Create Comprehensive types_transpile.toml
 

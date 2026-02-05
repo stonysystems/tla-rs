@@ -77,6 +77,27 @@ pub struct TranspilerConfig {
     /// Module-specific configuration
     #[serde(default)]
     pub modules: HashMap<String, ModuleConfig>,
+
+    /// Per-field custom View expressions for type generation.
+    /// Key format: "TypeName.field_name" (spec type name, e.g., "LAcceptor.votes")
+    /// Value: custom view expression (e.g., "abstractify_cvotes(&self.votes)")
+    /// Used when a field needs deep conversion instead of simple `@` or `as int`.
+    #[serde(default)]
+    pub view_overrides: HashMap<String, String>,
+
+    /// Extra fields to add to generated exec types that don't exist in the spec.
+    /// These are optimization/bookkeeping fields with default values.
+    /// Key format: "TypeName.field_name" (exec type name, e.g., "CAcceptor.min_vote_opn")
+    /// Value: "type = default_value" (e.g., "u64 = 0")
+    #[serde(default)]
+    pub extra_fields: HashMap<String, String>,
+
+    /// Clone strategy per exec type.
+    /// Determines how #[derive(Clone)] or manual Clone impl is generated.
+    /// Values: "derive" (default), "external_body" (for types containing HashSet)
+    /// Key: exec type name (e.g., "CElectionState")
+    #[serde(default)]
+    pub clone_strategy: HashMap<String, String>,
 }
 
 impl TranspilerConfig {
@@ -481,5 +502,53 @@ mod tests {
         let valid = config.method_calls.get("LReplicaConstantsValid").unwrap();
         assert_eq!(valid.method_name, "CReplicaConstantsValid");
         assert_eq!(valid.receiver_arg_index, 0);
+    }
+
+    #[test]
+    fn test_view_overrides_config() {
+        let toml = r#"
+            [view_overrides]
+            "LAcceptor.votes" = "abstractify_cvotes(&self.votes)"
+            "LExecutor.reply_cache" = "abstractify_creplycache(&self.reply_cache)"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.view_overrides.len(), 2);
+        assert_eq!(
+            config.view_overrides.get("LAcceptor.votes"),
+            Some(&"abstractify_cvotes(&self.votes)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extra_fields_config() {
+        let toml = r#"
+            [extra_fields]
+            "CAcceptor.min_vote_opn" = "u64 = 0"
+            "CProposer.max_opn_with_proposal" = "u64 = 0"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.extra_fields.len(), 2);
+        assert_eq!(
+            config.extra_fields.get("CAcceptor.min_vote_opn"),
+            Some(&"u64 = 0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_clone_strategy_config() {
+        let toml = r#"
+            [clone_strategy]
+            "CElectionState" = "external_body"
+            "CProposer" = "external_body"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.clone_strategy.len(), 2);
+        assert_eq!(
+            config.clone_strategy.get("CElectionState"),
+            Some(&"external_body".to_string())
+        );
     }
 }
