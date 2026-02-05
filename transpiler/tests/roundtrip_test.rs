@@ -376,8 +376,14 @@ fn test_roundtrip_simplecounter_actions() {
 
     // TLA+ actions with primed variables
     let actions = get_action_operators(&module);
-    assert!(actions.contains(&"Increment"), "Should detect Increment as action");
-    assert!(actions.contains(&"Decrement"), "Should detect Decrement as action");
+    assert!(
+        actions.contains(&"Increment"),
+        "Should detect Increment as action"
+    );
+    assert!(
+        actions.contains(&"Decrement"),
+        "Should detect Decrement as action"
+    );
     assert!(actions.contains(&"Reset"), "Should detect Reset as action");
 
     // Each action should become a Verus spec fn with s and s_ parameters
@@ -742,7 +748,9 @@ fn test_roundtrip_mode_annotations_simplecounter() {
 
     // Parse mode annotations back
     let parser = AnnotationParser::new(mode_annotations.clone());
-    let parsed = parser.parse().expect("Should parse generated mode annotations");
+    let parsed = parser
+        .parse()
+        .expect("Should parse generated mode annotations");
     assert!(!parsed.is_empty(), "Should have at least one module");
 
     // Module name should match
@@ -877,7 +885,10 @@ fn test_roundtrip_type_invariant_operators() {
     // TypeOK is a non-action predicate (type invariant)
     let type_ok = find_operator(&module, "TypeOK");
     assert!(type_ok.is_some(), "TLA+ should have TypeOK");
-    assert!(!contains_prime(&type_ok.unwrap().body), "TypeOK is not an action");
+    assert!(
+        !contains_prime(&type_ok.unwrap().body),
+        "TypeOK is not an action"
+    );
 
     assert!(
         verus_code.contains("pub open spec fn LTypeOK"),
@@ -993,7 +1004,10 @@ fn extract_function_signature(code: &str, fn_name: &str) -> String {
     let pattern = format!("spec fn {}", fn_name);
     if let Some(start) = code.find(&pattern) {
         let line_start = code[..start].rfind('\n').map(|p| p + 1).unwrap_or(0);
-        let line_end = code[start..].find('\n').map(|p| start + p).unwrap_or(code.len());
+        let line_end = code[start..]
+            .find('\n')
+            .map(|p| start + p)
+            .unwrap_or(code.len());
         let mut sig = code[line_start..line_end].to_string();
         // If signature continues on next line (multiline), capture more
         if !sig.contains("-> bool") && !sig.contains("->") {
