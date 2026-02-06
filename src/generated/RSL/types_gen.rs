@@ -959,6 +959,15 @@ impl CAcceptor{
             log_truncation_point: AbstractifyCOperationNumberToOperationNumber(self.log_truncation_point),
         }
     }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
 }
 
 impl View for CAcceptor {

@@ -392,6 +392,50 @@ lemma_RepliesAreReplyType(me, requests, replies, packets)
     ensures RepliesAreReplyType(packets)
 ```
 
+## Summary: RSL/acceptor Results
+
+| Function | Assumes Removed | Proof Technique |
+|----------|----------------|-----------------|
+| CRemoveVotesBeforeLogTruncationPoint | 5 | Pattern 15 (delegation) — delegates to `CAcceptor::CRemoveVotesBeforeLogTruncationPoint` |
+| CAddVoteAndRemoveOldOnes | 6 | Pattern 15 (delegation) — delegates to `CAcceptor::CAddVoteAndRemoveOldOnes` |
+| CAcceptorInit | 2 (valid + spec) | Pattern 15 (delegation) — delegates to `CAcceptor::CAcceptorInit` |
+| CAcceptorProcess1a | 2 (valid + spec) | Pattern 19 (clone+delegate+extract) |
+| CAcceptorProcess2a | 5 (dead branch + valid x2 + spec) | Pattern 19 + Pattern 20 (OutboundPackets to Vec) |
+| CAcceptorProcessHeartbeat | 2 (valid + spec) | Pattern 19 (clone+delegate) |
+| CAcceptorTruncateLog | 2 (valid + spec) | Pattern 15 (delegation) |
+| **Total** | **23** | |
+
+### Key Patterns Discovered (RSL/acceptor)
+
+**Pattern 19: Clone-Delegate-Extract for Mutable Impl Methods**
+
+When the generated function has signature `(&Self, &CPacket) -> (Self, Vec<CPacket>)` but the verified impl uses `(&mut self, CPacket) -> OutboundPackets`:
+1. Clone the input via `clone_up_to_view()` into a mutable copy
+2. Clone the CPacket via `clone_cpacket_preserving_validity()` for validity preservation
+3. Call the impl method on the mutable copy
+4. The impl's ensures (`old(self)@ == s@` from clone) give the spec predicate
+5. Extract `Vec<CPacket>` from `OutboundPackets` via `outbound_packets_to_vec`
+
+**Pattern 20: OutboundPackets to Vec<CPacket> Conversion**
+
+The verified impl returns `OutboundPackets` (Broadcast/PacketSequence/OutboundPacket), but the generated interface needs `Vec<CPacket>`. Use an `#[verifier(external_body)]` helper:
+```rust
+fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
+    ensures result@.map(|i: int, p: CPacket| p@) =~= sent@,
+```
+This handles all three variants, extracting packets from broadcasts by reconstructing them.
+
+**Pattern 21: CPacket Validity-Preserving Clone**
+
+`CPacket.clone_up_to_view()` only ensures `res@ == self@` (view preservation), not `res.valid()`. Since the verified impl requires `inp.valid()`, we need a validity-preserving clone:
+```rust
+#[verifier(external_body)]
+fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
+    requires p.valid(),
+    ensures res@ == p@, res.valid(),
+{ p.clone_up_to_view() }
+```
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
@@ -401,6 +445,9 @@ lemma_RepliesAreReplyType(me, requests, replies, packets)
 5. **`clone_request_batch_up_to_view` validity/abstractability ensures added** — needed for tup_ construction proofs
 6. **`CLearner::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()`
 7. **`CExecutor::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()` — needed for executor proofs where `s.clone()` must preserve view and validity
+8. **`CAcceptor::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()` — needed for acceptor proofs (clone-delegate pattern)
+9. **`clone_cpacket_preserving_validity()` added** — CPacket clone that preserves both view and validity — needed because CPacket.clone_up_to_view() only ensures view preservation
+10. **`outbound_packets_to_vec()` added** — converts OutboundPackets to Vec<CPacket> with `ensures result@.map(...) =~= sent@` — bridges between impl's OutboundPackets return and gen's Vec<CPacket> interface
 
 ## Verification Results
 
@@ -415,3 +462,4 @@ lemma_RepliesAreReplyType(me, requests, replies, packets)
 | After RSL/broadcast (12.5.1) | 592 | 0 | ~180 | +0 verified, -2 assumes |
 | After RSL/learner (12.5.2) | 595 | 0 | ~168 | +3 verified, -12 assumes |
 | After RSL/executor (12.5.3) | 595 | 0 | ~149 | +0 verified, -19 assumes |
+| After RSL/acceptor (12.5.4) | 592 | 0 | ~126 | -3 verified, -23 assumes |

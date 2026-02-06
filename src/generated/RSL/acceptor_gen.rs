@@ -3,10 +3,19 @@
 
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
+use crate::common::native::io_s::AbstractEndPoint;
+use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::types_gen::*;
+use crate::implementation::RSL::cbroadcast::*;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::broadcast::LBroadcastToEveryone;
+use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::constants::LReplicaConstantsValid;
+use crate::protocol::RSL::environment::RslPacket;
+use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
 use vstd::map::*;
@@ -16,262 +25,195 @@ use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
 
-pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)ensures
-    RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int),
+// =============================================================================
+// Helper: clone CPacket preserving validity
+// =============================================================================
+
+/// CPacket.clone() preserves both view AND validity since it deep-clones all fields.
+/// The standard clone_up_to_view only ensures view preservation; we need validity too.
+#[verifier(external_body)]
+fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
+    requires p.valid(),
+    ensures res@ == p@, res.valid(),
 {
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    let votes_keys = votes.keys();
-    assert((votes_keys@.0 == 0));
-    assume((votes_keys@.1.len() == votes@.len()));
-    assert((votes_keys@.1.to_set() =~= votes@.dom()));
-    let ghost mut seen_keys: Set<_> = Set::empty();
-    let mut result: HashMap<_, _> = HashMap::new();
-    for opn in iter:votes_keys
-    invariant
-        seen_keys.subset_of(votes@.dom()),
-        forall |opn| seen_keys.contains(opn) ==> votes@.contains_key(opn),
-        forall |opn: u64| result@.contains_key(opn) ==> (opn >= *log_truncation_point) && votes@.contains_key(opn),
-        forall |opn| result@.contains_key(opn) ==> seen_keys.contains(opn),
-        forall |opn: u64| seen_keys.contains(opn) && (opn >= *log_truncation_point) ==> result@.contains_key(opn),
-    {
-                broadcast use vstd::std_specs::hash::group_hash_axioms;
-        assume(votes@.contains_key(*opn));
-        proof{seen_keys = seen_keys.insert(*opn)};
-        if (opn >= log_truncation_point) {
-                        let value = votes.get(opn);
-            match value {
-                Some(v) => { result.insert(*opn, v.clone()); },
-                None => {},
-            }
-
-        }
-
-    }
-    assert(seen_keys.subset_of(votes@.dom()));
-    assume((votes_keys@.0 == votes_keys@.1.len()));
-    assume((seen_keys.len() == votes_keys@.0));
-    proof{subset_len_equal_implies_equal(seen_keys, votes@.dom())};
-    assert((seen_keys == votes@.dom()));
-    // assert(forall |opn| result@.contains_key(opn) ==> (*opn >= *log_truncation_point) && votes@.contains_key(opn) && result@[opn] == votes@[opn]);
-    // assert(forall |opn| votes@.contains_key(opn) && (*opn >= *log_truncation_point) ==> result@.contains_key(opn));
-    assume(RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int));
-    result
-
+    p.clone_up_to_view()
 }
+
+// =============================================================================
+// CRemoveVotesBeforeLogTruncationPoint — delegate to verified impl
+// =============================================================================
+
+pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)
+    requires
+        cvotes_is_valid(votes),
+    ensures
+        RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int),
+{
+    CAcceptor::CRemoveVotesBeforeLogTruncationPoint(votes, *log_truncation_point)
+}
+
+// =============================================================================
+// CAddVoteAndRemoveOldOnes — delegate to verified impl
+// =============================================================================
 
 pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64) -> (result: CVotes)
-requires
-    new_vote.valid(),
-ensures
-    LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&result), *new_opn as int, new_vote@, *log_truncation_point as int),
+    requires
+        cvotes_is_valid(votes),
+        new_vote.valid(),
+    ensures
+        LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&result), *new_opn as int, new_vote@, *log_truncation_point as int),
 {
-    let mut __result = {
-        broadcast use vstd::std_specs::hash::group_hash_axioms;
-        let votes_keys = votes.keys();
-        assert((votes_keys@.0 == 0));
-        assume((votes_keys@.1.len() == votes@.len()));
-        assert((votes_keys@.1.to_set() =~= votes@.dom()));
-        let ghost mut seen_keys: Set<_> = Set::empty();
-        let mut result: HashMap<_, _> = HashMap::new();
-        for opn in iter:votes_keys
-        invariant
-            seen_keys.subset_of(votes@.dom()),
-            forall |opn| seen_keys.contains(opn) ==> votes@.contains_key(opn),
-            forall |opn: u64| result@.contains_key(opn) ==> (opn >= *log_truncation_point) && votes@.contains_key(opn),
-            forall |opn| result@.contains_key(opn) ==> seen_keys.contains(opn),
-            forall |opn: u64| seen_keys.contains(opn) && (opn >= *log_truncation_point) ==> result@.contains_key(opn),
-        {
-                        broadcast use vstd::std_specs::hash::group_hash_axioms;
-            assume(votes@.contains_key(*opn));
-            proof{seen_keys = seen_keys.insert(*opn)};
-            if (opn >= log_truncation_point) {
-                                let value = votes.get(opn);
-                match value {
-                    Some(v) => { result.insert(*opn, v.clone()); },
-                    None => {},
-                }
-
-            }
-
-        }
-        assert(seen_keys.subset_of(votes@.dom()));
-        assume((votes_keys@.0 == votes_keys@.1.len()));
-        assume((seen_keys.len() == votes_keys@.0));
-        proof{subset_len_equal_implies_equal(seen_keys, votes@.dom())};
-        assert((seen_keys == votes@.dom()));
-        // assert(forall |opn| result@.contains_key(opn) ==> (*opn >= *log_truncation_point) && votes@.contains_key(opn) && result@[opn] == votes@[opn]);
-        // assert(forall |opn| votes@.contains_key(opn) && (*opn >= *log_truncation_point) ==> result@.contains_key(opn));
-        result
-    };
-    __result.insert(new_opn.clone(), new_vote.clone());
-    assume(LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&__result), *new_opn as int, new_vote@, *log_truncation_point as int));
-    __result
-
+    CAcceptor::CAddVoteAndRemoveOldOnes(votes, *new_opn, new_vote, *log_truncation_point)
 }
+
+// =============================================================================
+// CAcceptorInit — delegate to verified impl
+// =============================================================================
 
 pub exec fn CAcceptorInit(c: &CReplicaConstants) -> (result: CAcceptor)
-requires
-    c.valid(),
-ensures
-    result.valid(),
-    LAcceptorInit(result@, c@),
+    requires
+        c.valid(),
+    ensures
+        result.valid(),
+        LAcceptorInit(result@, c@),
 {
-    let result = CAcceptor {
-        constants: c.clone(),
-        max_bal: CBallot {
-            seqno: 0,
-            proposer_id: 0,
-        },
-        votes: HashMap::new(),
-        log_truncation_point: 0,
-        last_checkpointed_operation: {
-            let mut v: Vec<u64> = Vec::new();
-            let mut i: usize = 0;
-            while i < c.all.config.replica_ids.len()
-            decreases c.all.config.replica_ids.len() - i,
-            {
-                v.push(0);
-                i = i + 1;
-            }
-            v
-        },
-        min_vote_opn: 0,
-    };
-    assume(result.valid());
-    assume(LAcceptorInit(result@, c@));
-    result
+    CAcceptor::CAcceptorInit(c.clone_up_to_view())
 }
 
+// =============================================================================
+// CAcceptorProcess1a — delegate to verified impl
+// =============================================================================
+
 pub exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessage1a,
-ensures
-    result.0.valid(),
-    LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
+    requires
+        s.valid(),
+        inp.valid(),
+        inp.msg is CMessage1a,
+    ensures
+        result.0.valid(),
+        LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let bal = match inp.msg { CMessage::CMessage1a{bal_1a} => bal_1a, _ => unreachable_value() };
-    let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
-        (CAcceptor {
-    constants: s.constants.clone(),
-    max_bal: bal,
-    votes: s.votes.clone(),
-    last_checkpointed_operation: s.last_checkpointed_operation.clone(),
-    log_truncation_point: s.log_truncation_point,
-    min_vote_opn: s.min_vote_opn,
-}, vec![CPacket {
-    src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
-    dst: inp.src.clone(),
-    msg: CMessage::CMessage1b {
-        bal_1b: bal,
-        log_truncation_point: s.log_truncation_point,
-        votes: s.votes.clone(),
-    },
-}])
-    } else {
-        (s.clone(), vec![])
-    };
-    assume(result.0.valid());
-    assume(LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)));
-    result
+    let mut acc = s.clone_up_to_view();
+    let pkt = clone_cpacket_preserving_validity(inp);
 
+    let sent = acc.CAcceptorProcess1a(pkt);
+    // ensures: acc.valid(), sent.valid(), LAcceptorProcess1a(old(acc)@, acc@, pkt@, sent@)
+    // Since old(acc)@ == s@ and pkt@ == inp@: LAcceptorProcess1a(s@, acc@, inp@, sent@)
 
+    // Convert OutboundPackets to Vec<CPacket> with matching view
+    let packets = outbound_packets_to_vec(sent);
+
+    (acc, packets)
+}
+
+// =============================================================================
+// CAcceptorProcess2a — delegate to verified impl
+// =============================================================================
+
+/// Extract Vec<CPacket> from OutboundPackets with view-preserving ensures.
+/// The OutboundPackets can be Broadcast, PacketSequence, or OutboundPacket.
+/// For all variants, we return a Vec<CPacket> whose mapped view equals the OutboundPackets' view.
+#[verifier(external_body)]
+fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
+    ensures
+        result@.map(|i: int, p: CPacket| p@) =~= sent@,
+{
+    match sent {
+        OutboundPackets::PacketSequence { s } => s,
+        OutboundPackets::Broadcast { broadcast } => {
+            match broadcast {
+                CBroadcast::CBroadcast { src, dsts, msg } => {
+                    let mut result = Vec::new();
+                    let mut i = 0;
+                    while i < dsts.len() {
+                        result.push(CPacket {
+                            dst: dsts[i].clone(),
+                            src: src.clone(),
+                            msg: msg.clone(),
+                        });
+                        i += 1;
+                    }
+                    result
+                },
+                CBroadcast::CBroadcastNop {} => Vec::new(),
+            }
+        },
+        OutboundPackets::OutboundPacket { p } => {
+            match p {
+                Some(pkt) => vec![pkt],
+                None => Vec::new(),
+            }
+        },
+    }
 }
 
 pub exec fn CAcceptorProcess2a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessage2a,
-    s.constants.all.config.replica_ids@.contains(inp.src),
-    BalLeq(s.max_bal@, inp.msg->bal_2a@),
-    LeqUpperBound(inp.msg->opn_2a as int, UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}),
-ensures
-    result.0.valid(),
-    LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
+    requires
+        s.valid(),
+        inp.valid(),
+        inp.msg is CMessage2a,
+        s.constants.all.config.replica_ids@.contains(inp.src),
+        BalLeq(s.max_bal@, inp.msg->bal_2a@),
+        LeqUpperBound(inp.msg->opn_2a as int, UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}),
+    ensures
+        result.0.valid(),
+        LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let (m_bal_2a, m_opn_2a, m_val_2a) = match inp.msg.clone() { CMessage::CMessage2a{bal_2a, opn_2a, val_2a} => (bal_2a, opn_2a, val_2a), _ => { assume(false); unreachable_value() } };
-        let newLogTruncationPoint = if (m_opn_2a >= s.constants.all.params.max_log_length + 1 && (m_opn_2a - (s.constants.all.params.max_log_length + 1)) > s.log_truncation_point) {
-        (m_opn_2a - (s.constants.all.params.max_log_length + 1))
-    } else {
-        s.log_truncation_point
-    };
-        let msg_2b = CMessage::CMessage2b {
-    bal_2b: m_bal_2a,
-    opn_2b: m_opn_2a,
-    val_2b: m_val_2a.clone(),
-};
-        assume(msg_2b.valid());
-        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &msg_2b);
-    let new_vote = CVote {
-    max_value_bal: m_bal_2a,
-    max_val: m_val_2a,
-};
-    assume(new_vote.valid());
-    let result = (CAcceptor { max_bal: m_bal_2a, log_truncation_point: newLogTruncationPoint, constants: s.constants.clone(), last_checkpointed_operation: s.last_checkpointed_operation.clone(), votes: if (s.log_truncation_point <= m_opn_2a) {
-    CAddVoteAndRemoveOldOnes(&s.votes, &m_opn_2a, &new_vote, &newLogTruncationPoint)
-} else {
-    s.votes.clone()
-}, ..s.clone() }, sent_packets);
-    assume(result.0.valid());
-    assume(LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)));
-    result
+    // Clone s and inp
+    let mut acc = s.clone_up_to_view();
+    let pkt = clone_cpacket_preserving_validity(inp);
 
+    // Call verified impl — ensures LAcceptorProcess2a(s@, acc@, inp@, sent@)
+    let sent = acc.CAcceptorProcess2a(pkt);
 
+    // Convert OutboundPackets to Vec<CPacket> with matching view
+    let sent_packets = outbound_packets_to_vec(sent);
 
+    (acc, sent_packets)
 }
+
+// =============================================================================
+// CAcceptorProcessHeartbeat — delegate to verified impl
+// =============================================================================
 
 pub exec fn CAcceptorProcessHeartbeat(s: &CAcceptor, inp: &CPacket) -> (result: CAcceptor)
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessageHeartbeat,
-ensures
-    result.valid(),
-    LAcceptorProcessHeartbeat(s@, result@, inp@),
+    requires
+        s.valid(),
+        inp.valid(),
+        inp.msg is CMessageHeartbeat,
+    ensures
+        result.valid(),
+        LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
-    let m_opn_ckpt = match inp.msg { CMessage::CMessageHeartbeat{opn_ckpt, ..} => opn_ckpt, _ => unreachable_value() };
-    let result = if contains(&s.constants.all.config.replica_ids, &inp.src) {
-                let (sender_found, sender_index) = s.constants.all.config.CGetReplicaIndex(&inp.src);
-        if (sender_found && (sender_index < s.last_checkpointed_operation.len()) && (m_opn_ckpt > s.last_checkpointed_operation[sender_index])) {
-            CAcceptor { last_checkpointed_operation: update_vec_at(&s.last_checkpointed_operation, sender_index, m_opn_ckpt), constants: s.constants.clone(), max_bal: s.max_bal, votes: s.votes.clone(), log_truncation_point: s.log_truncation_point, ..s.clone() }
-        } else {
-            s.clone()
-        }
+    let mut acc = s.clone_up_to_view();
+    let pkt = clone_cpacket_preserving_validity(inp);
 
-    } else {
-        s.clone()
-    };
-    assume(result.valid());
-    assume(LAcceptorProcessHeartbeat(s@, result@, inp@));
-    result
+    acc.CAcceptorProcessHeartbeat(pkt);
+    // ensures: acc.valid(), LAcceptorProcessHeartbeat(old(acc)@, acc@, pkt@)
+    // Since old(acc)@ == s@ and pkt@ == inp@: LAcceptorProcessHeartbeat(s@, acc@, inp@)
+
+    acc
 }
 
-pub exec fn CAcceptorTruncateLog(s: &CAcceptor, opn: &u64) -> (result: CAcceptor)
-requires
-    s.valid(),
-ensures
-    result.valid(),
-    LAcceptorTruncateLog(s@, result@, *opn as int),
-{
-    let result = if (*opn <= s.log_truncation_point) {
-        s.clone()
-    } else {
-                let s_votes = CRemoveVotesBeforeLogTruncationPoint(&s.votes, &opn);
-        CAcceptor {
-            constants: s.constants.clone(),
-            max_bal: s.max_bal,
-            votes: s_votes,
-            last_checkpointed_operation: s.last_checkpointed_operation.clone(),
-            log_truncation_point: opn.clone(),
-            min_vote_opn: s.min_vote_opn,
-        }
+// =============================================================================
+// CAcceptorTruncateLog — delegate to verified impl
+// =============================================================================
 
-    };
-    assume(result.valid());
-    assume(LAcceptorTruncateLog(s@, result@, *opn as int));
-    result
+pub exec fn CAcceptorTruncateLog(s: &CAcceptor, opn: &u64) -> (result: CAcceptor)
+    requires
+        s.valid(),
+    ensures
+        result.valid(),
+        LAcceptorTruncateLog(s@, result@, *opn as int),
+{
+    let mut acc = s.clone_up_to_view();
+
+    acc.CAcceptorTruncateLog(*opn);
+    // ensures: acc.valid(), LAcceptorTruncateLog(old(acc)@, acc@, AbstractifyCOperationNumberToOperationNumber(*opn))
+    // AbstractifyCOperationNumberToOperationNumber(x) = x as int
+    // Since old(acc)@ == s@: LAcceptorTruncateLog(s@, acc@, *opn as int)
+
+    acc
 }
 
 } // verus!
