@@ -1997,25 +1997,27 @@ This is the main feature to port — a Verus spec → TLA+ converter.
 - [x] Port unit tests from verus2tla module (26 tests — already embedded in source files)
 - [x] Run `cargo test --lib` — 446 tests pass, 0 failures
 
-#### Phase 13.2: Port Roundtrip Module (~1,167 LOC)
+#### Phase 13.2: Port Roundtrip Module (~1,167 LOC) ✅ DONE
 
-**13.2.1: Copy roundtrip source files**
-- [ ] Create `transpiler/src/roundtrip/` directory on main
-- [ ] Port `mod.rs`, `canonical.rs`, `compare.rs` from `tla+2tlars`
-- [ ] Adapt to main's current AST structure
+**13.2.1: Copy roundtrip source files** ✅ DONE
+- [x] Create `transpiler/src/roundtrip/` directory on main
+- [x] Port `mod.rs`, `canonical.rs`, `compare.rs` from `tla+2tlars` (1,167 LOC)
+- [x] Adapt to main's current AST structure (all compatible, no changes needed)
 
-**13.2.2: Port roundtrip tests**
-- [ ] Port `transpiler/tests/roundtrip.rs` (25 tests)
-- [ ] Run `cargo test` — all roundtrip tests pass
+**13.2.2: Port roundtrip tests** ✅ DONE
+- [x] Port `transpiler/tests/roundtrip.rs` (25 tests, 419 LOC)
+- [x] Also ported `src/tla+/RSL/` TLA+ spec files (16 files, needed by roundtrip tests)
+- [x] Run `cargo test` — 457 lib tests + 25 roundtrip tests pass, 0 failures
 
-**13.2.3: Register module in lib.rs**
-- [ ] Add `pub mod roundtrip;` to `transpiler/src/lib.rs`
+**13.2.3: Register module in lib.rs** ✅ DONE
+- [x] Add `pub mod roundtrip;` to `transpiler/src/lib.rs`
 
 #### Phase 13.3: Generate TLA+ Specs for All Protocols
 
-**13.3.1: Generate RSL TLA+ specs**
-- [ ] Create `src/tla+/RSL/` directory
-- [ ] Run `verus2tla --batch` on `src/protocol/RSL/` to generate all TLA+ files
+**13.3.1: Generate RSL TLA+ specs** (partially done — specs ported from branch in 13.2)
+- [x] Create `src/tla+/RSL/` directory (done as part of 13.2.2)
+- [x] RSL TLA+ spec files ported from `tla+2tlars` branch (16 files)
+- [ ] Regenerate TLA+ specs using `verus2tla --batch` on `src/protocol/RSL/`
 - [ ] Validate with SANY parser (if available)
 
 **13.3.2: Generate TLA+ specs for additional protocols**
