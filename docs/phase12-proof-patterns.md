@@ -471,3 +471,4 @@ fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 | After RSL/election (12.5.5) | 588 | 0 | ~104 | -4 verified, -22 assumes |
 | After RSL/proposer (12.5.6) | 587 | 0 | ~74 | -1 verified, -30 assumes |
 | After RSL/replica (12.5.7) | 583 | 0 | ~21 | -4 verified, -53 assumes |
+| After scheduler/dispatch (12.5.8) | 583 | 0 | ~12 | +0 verified, -9 assumes |

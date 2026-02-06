@@ -553,15 +553,12 @@ ensures
     LSchedulerInit(result@, c@),
 {
     let s_replica = CReplicaInit(&c);
-    let result = CScheduler {
+    // s_replica.valid() from CReplicaInit ensures, nextActionIndex 0 < 10
+    // LSchedulerInit = LReplicaInit(s.replica, c) && s.nextActionIndex == 0
+    CScheduler {
         nextActionIndex: 0,
         replica: s_replica,
-    };
-    // s_replica.valid() from CReplicaInit ensures, and nextActionIndex 0 < 10
-    // LSchedulerInit = LReplicaInit(s.replica, c) && s.nextActionIndex == 0
-    assume(result.valid());
-    assume(LSchedulerInit(result@, c@));
-    result
+    }
 }
 
 // =============================================================================
@@ -571,23 +568,20 @@ ensures
 pub exec fn CSchedulerNext(s: &CScheduler, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CScheduler)
 requires
     s.valid(),
+    ios.len() >= 1,
 ensures
     result.valid(),
     LSchedulerNext(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    assume(ios.len() >= 1);
     let new_replica = if (s.nextActionIndex == 0) {
         CReplicaNextProcessPacket(&s.replica, clock_time, &ios)
     } else {
         CReplicaNoReceiveNext(&s.replica, &s.nextActionIndex, clock_time, &ios)
     };
-    let result = CScheduler {
+    CScheduler {
         nextActionIndex: ((s.nextActionIndex + 1) % CReplicaNumActions()),
         replica: new_replica,
-    };
-    assume(result.valid());
-    assume(LSchedulerNext(s@, result@, abstractify_crslio_seq(ios@)));
-    result
+    }
 }
 
 // =============================================================================
@@ -605,7 +599,7 @@ ensures
     result.valid(),
     LReplicaNextProcessPacketWithoutReadingClock(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { assume(false); unreachable_value() } };
+    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { unreachable_value() } };
     let received_packet = CPacket { dst: lp.dst.clone(), src: lp.src.clone(), msg: lp.msg.clone() };
     assume(received_packet.valid());
     let (new_replica, _packets) = match received_packet.msg {
@@ -637,7 +631,7 @@ ensures
     result.valid(),
     LReplicaNextReadClockAndProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { assume(false); unreachable_value() } };
+    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { unreachable_value() } };
     let received_packet = CPacket { dst: lp.dst.clone(), src: lp.src.clone(), msg: lp.msg.clone() };
     assume(received_packet.valid());
     assume(received_packet.msg is CMessageHeartbeat);
@@ -662,8 +656,6 @@ ensures
         let is_heartbeat = match &lp.msg { CMessage::CMessageHeartbeat{..} => true, _ => false };
         if is_heartbeat {
             assume(ios.len() > 1);
-            assume(ios[0] is Receive);
-            assume(ios[0]->r.msg is CMessageHeartbeat);
             assume(ios[1] is ReadClock);
             CReplicaNextReadClockAndProcessPacket(s, clock_time, ios)
         } else {
