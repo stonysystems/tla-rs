@@ -71,7 +71,7 @@ pub exec fn CTMRcvPrepared(s: &CState, c: &CConstants, r: &u64) -> (result: CSta
 requires
     s.valid(),
     c.valid(),
-    s@.tm_state is Init,
+    s.tm_state is Init,
 ensures
     result.valid(),
     LTMRcvPrepared(s@, result@, c@, *r as int),
@@ -96,7 +96,7 @@ pub exec fn CTMCommit(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s@.tm_state is Init,
+    s.tm_state is Init,
     s@.tm_prepared == c@.rm,
 ensures
     result.valid(),
@@ -113,7 +113,7 @@ pub exec fn CTMAbort(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s@.tm_state is Init,
+    s.tm_state is Init,
 ensures
     result.valid(),
     LTMAbort(s@, result@, c@),

@@ -288,6 +288,9 @@ impl ProofNeeds {
                 self.scan_expr(inner);
             }
             ExecExpr::VecLit(exprs) => {
+                if exprs.is_empty() {
+                    self.has_empty_vec = true;
+                }
                 for e in exprs {
                     self.scan_expr(e);
                 }
@@ -1570,39 +1573,89 @@ impl Translator {
                 // For insert()/push(): dereference reference params (takes owned T)
                 // For remove(): keep reference params as-is (takes &Q)
                 let needs_deref = method == "insert" || method == "push";
-                let deref_args: Vec<ExecExpr> = args
-                    .into_iter()
-                    .map(|a| {
-                        if !needs_deref {
-                            return a; // remove() takes &Q, keep refs
-                        }
-                        match &a {
-                            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
-                                op: "*".to_string(),
-                                expr: Box::new(a),
-                            },
-                            ExecExpr::Clone(inner) => {
-                                match inner.as_ref() {
-                                    ExecExpr::Var(_) => {
-                                        // For cloned input vars, dereference instead of clone
-                                        ExecExpr::Unary {
-                                            op: "*".to_string(),
-                                            expr: inner.clone(),
-                                        }
-                                    }
-                                    _ => a,
-                                }
-                            }
-                            _ => a,
-                        }
-                    })
-                    .collect();
+                let deref_args: Vec<ExecExpr> = self.deref_mutation_args(args, ctx, needs_deref);
 
                 pre_stmts.push(ExecExpr::MethodCall {
                     receiver: Box::new(ExecExpr::Var(tmp_name.clone())),
                     method: method,
                     args: deref_args,
                 });
+
+                new_fields.push((fname, ExecExpr::Var(tmp_name)));
+            } else if let Some((cond, recv, method, args)) =
+                Self::extract_conditional_mutation_info(&fexpr)
+            {
+                // Conditional mutation: if cond { receiver.insert(val) } else { receiver }
+                // Generate: let mut __fname = clone(receiver); if cond { __fname.insert(*val); }
+                let tmp_name = format!("__{}", fname);
+
+                let is_vec_mutation = method == "push";
+                let clone_call = if is_vec_mutation {
+                    ExecExpr::Clone(Box::new(recv))
+                } else {
+                    ExecExpr::Call {
+                        func: "clone_hashset".to_string(),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(recv),
+                        }],
+                    }
+                };
+
+                pre_stmts.push(ExecExpr::Let {
+                    pattern: format!("mut {}", tmp_name),
+                    ty: None,
+                    value: Box::new(clone_call),
+                });
+
+                let needs_deref = method == "insert" || method == "push";
+                let deref_args = self.deref_mutation_args(args, ctx, needs_deref);
+
+                // Wrap mutation in conditional
+                let mutation_stmt = ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(tmp_name.clone())),
+                    method: method,
+                    args: deref_args,
+                };
+                // Verus doesn't support `is` in exec mode, so use match for IsVariant checks
+                if let ExecExpr::IsVariant { expr: scrutinee, variant } = &cond {
+                    // match &scrutinee { Variant => { mutation; }, _ => {} }
+                    let variant_name = if let Some(pos) = variant.rfind("::") {
+                        variant[pos + 2..].to_string()
+                    } else {
+                        variant.clone()
+                    };
+                    // Look up variant_remapping to get fully qualified variant path
+                    let qualified_variant =
+                        if let Some(remapped) = self.config.variant_remapping.get(&variant_name) {
+                            remapped.clone()
+                        } else {
+                            variant.clone()
+                        };
+                    pre_stmts.push(ExecExpr::Match {
+                        scrutinee: Box::new(ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(*scrutinee.clone()),
+                        }),
+                        arms: vec![
+                            (
+                                qualified_variant,
+                                ExecExpr::Block(vec![mutation_stmt, ExecExpr::Block(vec![])]),
+                            ),
+                            ("_".to_string(), ExecExpr::Block(vec![])),
+                        ],
+                    });
+                } else {
+                    // Non-IsVariant condition: use if/else with Block for semicolon
+                    pre_stmts.push(ExecExpr::If {
+                        cond: Box::new(cond),
+                        then_branch: Box::new(ExecExpr::Block(vec![
+                            mutation_stmt,
+                            ExecExpr::Block(vec![]),
+                        ])),
+                        else_branch: None,
+                    });
+                }
 
                 new_fields.push((fname, ExecExpr::Var(tmp_name)));
             } else if has_mutations {
@@ -1618,13 +1671,27 @@ impl Translator {
         (pre_stmts, new_fields)
     }
 
-    /// Check if an ExecExpr is a collection mutation (insert, remove, or push method call)
+    /// Check if an ExecExpr is a collection mutation (insert, remove, or push method call),
+    /// or a conditional expression where at least one branch contains a mutation.
     fn is_set_mutation(expr: &ExecExpr) -> bool {
-        matches!(
-            expr,
+        match expr {
             ExecExpr::MethodCall { method, .. }
-            if method == "insert" || method == "remove" || method == "push"
-        )
+                if method == "insert" || method == "remove" || method == "push" =>
+            {
+                true
+            }
+            ExecExpr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::is_set_mutation(then_branch)
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::is_set_mutation(e))
+            }
+            _ => false,
+        }
     }
 
     /// Extract mutation info from an ExecExpr: (receiver, method, args)
@@ -1639,6 +1706,64 @@ impl Translator {
             }
             _ => None,
         }
+    }
+
+    /// Extract conditional mutation info: if cond { recv.method(args) } else { recv }
+    /// Returns (cond, receiver, method, args)
+    fn extract_conditional_mutation_info(
+        expr: &ExecExpr,
+    ) -> Option<(ExecExpr, ExecExpr, String, Vec<ExecExpr>)> {
+        if let ExecExpr::If {
+            cond,
+            then_branch,
+            else_branch: Some(else_branch),
+        } = expr
+        {
+            // Check if then-branch has a mutation
+            if let Some((recv, method, args)) = Self::extract_mutation_info(then_branch) {
+                return Some((*cond.clone(), recv, method, args));
+            }
+            // Check if else-branch has a mutation (then-branch is identity)
+            if let Some((recv, method, args)) = Self::extract_mutation_info(else_branch) {
+                // Negate the condition: the mutation is in the else branch
+                let negated_cond = ExecExpr::Unary {
+                    op: "!".to_string(),
+                    expr: cond.clone(),
+                };
+                return Some((negated_cond, recv, method, args));
+            }
+        }
+        None
+    }
+
+    /// Dereference mutation arguments for insert/push (owned params) but not remove (ref params)
+    fn deref_mutation_args(
+        &self,
+        args: Vec<ExecExpr>,
+        ctx: &TransformContext,
+        needs_deref: bool,
+    ) -> Vec<ExecExpr> {
+        args.into_iter()
+            .map(|a| {
+                if !needs_deref {
+                    return a;
+                }
+                match &a {
+                    ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
+                        op: "*".to_string(),
+                        expr: Box::new(a),
+                    },
+                    ExecExpr::Clone(inner) => match inner.as_ref() {
+                        ExecExpr::Var(_) => ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: inner.clone(),
+                        },
+                        _ => a,
+                    },
+                    _ => a,
+                }
+            })
+            .collect()
     }
 
     /// For field accesses on input parameters (e.g., `s.rm_state`), wrap with
@@ -4798,23 +4923,10 @@ impl Translator {
     ) -> String {
         match expr {
             Expr::Is(base_expr, variant) => {
-                // `is` variant checks: always use `@` view on the base struct
-                // e.g., s@.tm_state is Init (spec-level `is` check)
-                let base = match base_expr.as_ref() {
-                    Expr::Field(struct_expr, field) => {
-                        if let Expr::Ident(name) = struct_expr.as_ref() {
-                            if view_params.contains(name) {
-                                // Always use s@.field for `is` checks
-                                format!("{}@.{}", name, field)
-                            } else {
-                                format!("{}.{}", name, field)
-                            }
-                        } else {
-                            self.expr_to_view_simple_string(base_expr, view_params, scalar_params)
-                        }
-                    }
-                    _ => self.expr_to_view_simple_string(base_expr, view_params, scalar_params),
-                };
+                // `is` variant checks: use direct field access (no `@`)
+                // Verus `is` works on exec enum types in spec context
+                // e.g., s.role is Head, s.tm_state is Init
+                let base = self.expr_to_view_simple_string(base_expr, view_params, scalar_params);
                 format!("{} is {}", base, variant)
             }
             Expr::Eq(lhs, rhs) => {
@@ -6044,8 +6156,15 @@ impl Translator {
             // This is preferred over matches!() because it works with -> syntax
             Expr::Is(inner, variant) => {
                 let inner_expr = self.transform_expr(inner, ctx)?;
-                // Translate the variant name (e.g., RslMessage1a -> CMessage1a)
-                let translated_variant = self.translate_name(variant);
+                // Translate the variant name, checking variant_remapping first
+                // For `is` checks, we need just the variant name (not qualified path)
+                // e.g., "Middle" → variant_remapping["Middle"] = "CNodeRole::Middle" → "Middle"
+                let translated_variant =
+                    if let Some(qualified) = self.config.variant_remapping.get(variant.as_str()) {
+                        self.extract_variant_name(qualified).to_string()
+                    } else {
+                        self.translate_name(variant)
+                    };
                 Ok(ExecExpr::IsVariant {
                     expr: Box::new(inner_expr),
                     variant: translated_variant,

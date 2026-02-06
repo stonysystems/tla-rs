@@ -357,10 +357,19 @@ impl Printer {
                     self.indent();
                     self.write(pattern);
                     self.write(" => ");
-                    // Handle empty blocks specially - print {} instead of nothing
                     match body {
                         ExecExpr::Block(stmts) if stmts.is_empty() => {
                             self.write("{}");
+                        }
+                        ExecExpr::Block(_) => {
+                            // Non-empty block: wrap in { } for multi-statement arms
+                            self.write("{");
+                            self.newline();
+                            self.current_indent += 1;
+                            self.print_expr(body);
+                            self.current_indent -= 1;
+                            self.indent();
+                            self.write("}");
                         }
                         _ => {
                             self.print_expr(body);
