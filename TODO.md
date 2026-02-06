@@ -2203,7 +2203,7 @@ This is the main feature to port — a Verus spec → TLA+ converter.
 **13.2.2: Port roundtrip tests** ✅ DONE
 - [x] Port `transpiler/tests/roundtrip.rs` (25 tests, 419 LOC)
 - [x] Also ported `src/tla+/RSL/` TLA+ spec files (16 files, needed by roundtrip tests)
-- [x] Run `cargo test` — 457 lib tests + 25 roundtrip tests pass, 0 failures
+- [x] Run `cargo test` — 642 lib tests + 185 integration tests pass, 0 failures
 
 **13.2.3: Register module in lib.rs** ✅ DONE
 - [x] Add `pub mod roundtrip;` to `transpiler/src/lib.rs`
@@ -2233,9 +2233,9 @@ This is the main feature to port — a Verus spec → TLA+ converter.
 #### Phase 13.5: Verify and Clean Up ✅ DONE
 
 **13.5.1: Full test suite** ✅ DONE
-- [x] `cd transpiler && cargo test --lib` — 457 tests pass
-- [x] `cd transpiler && cargo test` — all integration tests pass (35 roundtrip, etc.)
-- [ ] Verus verification: 580+ verified, 0 errors (deferred — requires Verus build)
+- [x] `cd transpiler && cargo test --lib` — 642 tests pass (updated from 457)
+- [x] `cd transpiler && cargo test` — all integration tests pass (185 integration + 642 lib = 827 total)
+- [x] Verus verification: 627 verified, 0 errors ✅ (confirmed 2026-02-06)
 
 **13.5.2: Confirm branch features ported** ✅ DONE
 - [x] Confirm all tla+2tlars features are on main:
@@ -2251,8 +2251,8 @@ This is the main feature to port — a Verus spec → TLA+ converter.
 1. [x] `verus2tla` CLI subcommand works on main (single-file and batch mode)
 2. [x] Roundtrip consistency tests pass (35 tests — 25 original + 10 additional protocols)
 3. [x] `src/tla+/RSL/*.tla` generated and valid (15 files)
-4. [x] All transpiler tests pass (`cargo test` — 457 lib + integration tests)
-5. [ ] Verus verification still passes (580+ verified, 0 errors) — deferred
+4. [x] All transpiler tests pass (`cargo test` — 642 lib + 185 integration tests)
+5. [x] Verus verification still passes (627 verified, 0 errors) ✅ (confirmed 2026-02-06)
 6. [x] `tla+2tlars` branch features confirmed on main (ready for deletion)
 
 ### Estimated Effort
