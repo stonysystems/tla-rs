@@ -1957,7 +1957,47 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 
 #### Phase 12.4: Regenerate Raft and ChainReplication
 
+**12.4.0: Transpiler fixes for ChainReplication patterns**
+
+ChainReplication introduces patterns not seen in TwoPhase/Paxos/LeaderElection:
+- Seq (Vec) fields alongside Set (HashSet) fields
+- Seq push operations (functional in spec, in-place in exec)
+- Implication (`==>`) in output position for conditional enum role assignment
+- Non-Copy enum field access from borrowed struct
+
+**12.4.0a: Distinguish Vec vs HashSet collection fields**
+- [ ] Add `vec_fields` config to TOML (or extend `collection_fields` with type info)
+- [ ] Update `clone_input_field_access()` to use `.clone()` for Vec fields, `clone_hashset()` for HashSet fields
+- [ ] Update all protocol TOML configs with correct field types
+- Affects: ChainReplication `history` (Vec) gets `.clone()` instead of `clone_hashset()`
+
+**12.4.0b: Handle Seq push in output field assignments**
+- [ ] Detect `s_.field == s.field.push(value)` pattern in output assignments
+- [ ] Generate: `let mut __field = s.field.clone(); __field.push(*value);` + use `__field` in struct
+- [ ] Similar to existing HashSet insert/remove mutation extraction
+- Affects: ChainReplication `CHeadReceiveWrite`, `CReceiveUpdate`
+
+**12.4.0c: Generate Seq proof helper lemmas**
+- [ ] Add `lemma_empty_seq_map()` generation (when empty Seq is detected)
+- [ ] Add `lemma_seq_push_map_commute(s, x)` generation (when Seq push is detected)
+- [ ] Detect via ProofNeeds: track `has_empty_seq` and `has_seq_push` flags
+- Affects: ChainReplication proof blocks
+
+**12.4.0d: Handle implication (`==>`) in output for conditional enum assignment (LInit)**
+- [ ] Detect `cond ==> s.field is Variant` pattern in output conjuncts
+- [ ] Generate if/else chain mapping conditions to enum variant constructors
+- [ ] Handle multiple implications for the same field (e.g., 3 role conditions)
+- Affects: ChainReplication `CInit`
+
+**12.4.0e: Fix `is` variant check `@` usage in requires clauses**
+- [ ] `is` variant checks in requires should use exec field access (`s.role is Head`, no `@`)
+- [ ] Both `s.role is Head` and `s@.role is Head` work in Verus (spec context coercion)
+- [ ] But exec-accessible fields should prefer no `@` for consistency with reference
+- [ ] Update `expr_to_view_always_at_string` to not add `@` when checking non-collection fields
+- Affects: ChainReplication, potentially LeaderElection and TwoPhase requires
+
 **12.4.1: Regenerate ChainReplication with proofs**
+- [ ] Requires 12.4.0a-e to be completed first
 - [ ] Run transpiler, compare against reference
 - [ ] Run Verus — target: 0 assumes
 
