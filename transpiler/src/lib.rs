@@ -607,7 +607,7 @@ impl Transpiler {
     /// Generate clone helper functions for non-Copy enum fields.
     ///
     /// For each entry in `clone_field_types`, generates a function like:
-    /// ```
+    /// ```text
     /// fn clone_role(r: &CNodeRole) -> (res: CNodeRole)
     /// ensures
     ///     res@ == r@,

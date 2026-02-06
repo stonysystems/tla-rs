@@ -2691,7 +2691,7 @@ mismatches, (5) collection operations that don't exist on std types.
 - ✅ ALL generated component files now import types from implementation (no more duplicate struct defs)
 
 **Success Criteria** (all must pass):
-- [ ] `cargo run -- --tla-input TwoPhase.tla --exec-output two_phase.rs` produces runnable code
+- [x] `cargo run -- pipeline --tla-input TwoPhase.tla --exec-output two_phase.rs` produces code ✅ (parser fixed to handle bullet-list conjunctions/disjunctions)
 - [x] `verus --crate-type=lib src/lib.rs` returns 0 errors ✅ (with `#[cfg(test)]` on generated module: 454 verified)
 - [x] Generated code compiles WITHOUT `#[cfg(test)]` guard ✅ (V3.6.8 — 0 compile errors, 40 verification errors)
 - [x] All 6 recursive helpers generate correct loop-based implementations ✅

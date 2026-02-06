@@ -730,7 +730,7 @@ pub enum ExecExpr {
     // === Verus Loop Constructs for Verified Code ===
     /// Verus while loop with invariants and decreases
     /// Generates:
-    /// ```
+    /// ```text
     /// while cond
     /// invariant inv1, inv2, ...
     /// decreases decreases_expr,

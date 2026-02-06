@@ -826,3 +826,85 @@ fn test_pbft_type_inference() {
         "Should infer type for Replica"
     );
 }
+
+// =============================================================================
+// Bullet-list (vertical) conjunction/disjunction parsing tests
+// Tests that verus2tla-generated TLA+ specs (which use vertical /\ and \/ style)
+// can be parsed back by the TLA+ parser.
+// =============================================================================
+
+/// Read a generated TLA+ spec from src/tla+/
+fn read_generated_spec(protocol: &str, name: &str) -> String {
+    let path = format!("../src/tla+/{}/{}.tla", protocol, name);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e))
+}
+
+#[test]
+fn test_generated_twophase_parsing() {
+    let source = read_generated_spec("TwoPhase", "Twophase");
+    let module = parse_module(&source).expect("Failed to parse generated TwoPhase");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"TMRcvPrepared"), "Should contain TMRcvPrepared");
+    assert!(names.contains(&"TMCommit"), "Should contain TMCommit");
+    assert!(names.contains(&"TMAbort"), "Should contain TMAbort");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_twophase_translation() {
+    let source = read_generated_spec("TwoPhase", "Twophase");
+    let (verus_code, _) = translate_example(&source);
+    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
+    assert!(verus_code.contains("spec fn LTMCommit"), "Should translate TMCommit");
+}
+
+#[test]
+fn test_generated_paxos_parsing() {
+    let source = read_generated_spec("Paxos", "Paxos");
+    let module = parse_module(&source).expect("Failed to parse generated Paxos");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_leader_election_parsing() {
+    let source = read_generated_spec("LeaderElection", "Election");
+    let module = parse_module(&source).expect("Failed to parse generated LeaderElection");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_chain_replication_parsing() {
+    let source = read_generated_spec("ChainReplication", "Chain");
+    let module = parse_module(&source).expect("Failed to parse generated ChainReplication");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_primarybackup_parsing() {
+    let source = read_generated_spec("PrimaryBackup", "Primarybackup");
+    let module = parse_module(&source).expect("Failed to parse generated PrimaryBackup");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"PrimaryWrite"), "Should contain PrimaryWrite");
+    assert!(names.contains(&"BackupAck"), "Should contain BackupAck");
+    assert!(names.contains(&"PrimaryCommit"), "Should contain PrimaryCommit");
+    assert!(names.contains(&"Failover"), "Should contain Failover");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_primarybackup_translation() {
+    let source = read_generated_spec("PrimaryBackup", "Primarybackup");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
+    assert!(verus_code.contains("spec fn LPrimaryWrite"), "Should translate PrimaryWrite");
+    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+}
