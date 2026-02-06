@@ -1,0 +1,12 @@
+module EPaxos::epaxos {
+    LInit(-, +);
+    LPropose(+, -, +, +);
+    LReceivePreAccept(+, -, +, +);
+    LFastCommit(+, -, +);
+    LStartAccept(+, -, +);
+    LReceiveAccept(+, -, +);
+    LSlowCommit(+, -, +);
+    LExecute(+, -, +);
+    LRecover(+, -, +, +);
+    LNewInstance(+, -, +);
+}

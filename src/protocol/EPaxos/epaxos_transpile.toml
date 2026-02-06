@@ -1,0 +1,55 @@
+# Configuration for transpiling EPaxos spec to exec implementation
+
+# Skip functions that contain disjunctions or existential quantifiers
+skip_functions = [
+    "LNext",
+]
+
+# Fields that are HashSet types (Set) requiring clone_hashset()
+collection_fields = []
+
+# Fields that are Vec types (Seq) requiring .clone()
+vec_fields = []
+
+# Fields that are non-Copy types requiring .clone()
+clone_fields = ["phase"]
+
+# Maps clone_fields to their exec enum types for generating clone helpers
+[clone_field_types]
+"phase" = "CInstancePhase"
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "u64"
+nat_type = "u64"
+
+[remapping]
+"LState" = "CState"
+"LConstants" = "CConstants"
+"LInstancePhase" = "CInstancePhase"
+
+[variant_remapping]
+"Empty" = "CInstancePhase::Empty"
+"PreAccepted" = "CInstancePhase::PreAccepted"
+"Accepted" = "CInstancePhase::Accepted"
+"Committed" = "CInstancePhase::Committed"
+"Executed" = "CInstancePhase::Executed"
+
+[method_calls]
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+generate_proofs = true
+generate_inline_types = false
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use crate::protocol::EPaxos::types::*;",
+    "use crate::protocol::EPaxos::epaxos::*;",
+    "use crate::generated::EPaxos::types_gen::*;",
+]

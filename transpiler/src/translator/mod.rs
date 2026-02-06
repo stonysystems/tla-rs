@@ -1617,11 +1617,12 @@ impl Translator {
         }
     }
 
-    /// Check if a named input parameter is a scalar type (Int/Nat/Bool → u64/bool).
-    /// Scalar params are passed by &u64/&bool and need dereferencing, not cloning.
+    /// Check if a named input parameter is a scalar reference type (Int/Nat → &u64).
+    /// Scalar ref params need dereferencing, not cloning. Bool is excluded because
+    /// it is passed by value (Copy type), not by reference.
     fn is_scalar_input_param(&self, name: &str, ctx: &TransformContext) -> bool {
         if let Some(ty) = ctx.input_types.get(name) {
-            matches!(ty, Type::Int | Type::Nat | Type::Bool)
+            matches!(ty, Type::Int | Type::Nat)
         } else {
             false
         }
@@ -5347,10 +5348,17 @@ impl Translator {
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
             match mode {
                 ParameterMode::Input => {
+                    let translated = self.translate_type(&param.ty);
+                    // bool is Copy — pass by value, not by reference
+                    let (ty, is_reference) = if matches!(param.ty, Type::Bool) {
+                        (translated, false)
+                    } else {
+                        (ExecType::Reference(Box::new(translated), false), true)
+                    };
                     params.push(ExecParameter {
                         name: param.name.clone(),
-                        ty: ExecType::Reference(Box::new(self.translate_type(&param.ty)), false),
-                        is_reference: true,
+                        ty,
+                        is_reference,
                     });
                 }
                 ParameterMode::Output => {
@@ -5709,6 +5717,16 @@ impl Translator {
                             ));
                         }
                     }
+                }
+                None
+            }
+            // Recurse into if-then-else branches to find additions in conditional exprs
+            Expr::If { then_branch, else_branch, .. } => {
+                if let Some(guard) = self.detect_overflow_guard(then_branch, ctx) {
+                    return Some(guard);
+                }
+                if let Some(else_expr) = else_branch {
+                    return self.detect_overflow_guard(else_expr, ctx);
                 }
                 None
             }
@@ -17971,6 +17989,86 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_overflow_guards_conditional_expr() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Body: &&& s_.field == (if cond { s.val + 1 } else { s.val })
+        // Should detect s.val + 1 inside the if-then branch
+        let body = Expr::Conjunction(vec![Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "field".to_string(),
+            )),
+            Box::new(Expr::If {
+                cond: Box::new(Expr::Ident("cond".to_string())),
+                then_branch: Box::new(Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "val".to_string(),
+                    )),
+                    crate::ast::BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+                else_branch: Some(Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "val".to_string(),
+                ))),
+            }),
+        )]);
+
+        let func = make_annotated_func(
+            "LConditionalInc",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("cond".to_string(), Type::Bool),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Input],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let guards = translator.extract_overflow_guards(&func, &ctx);
+        assert_eq!(guards.len(), 1);
+        assert_eq!(guards[0], "s.val < u64::MAX");
+    }
+
+    #[test]
+    fn test_bool_param_passed_by_value() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Create annotated function with a bool parameter
+        let body = Expr::Conjunction(vec![Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "flag".to_string(),
+            )),
+            Box::new(Expr::Ident("b".to_string())),
+        )]);
+        let func = make_annotated_func(
+            "LSetFlag",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("b".to_string(), Type::Bool),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Input],
+            body,
+        );
+
+        let (params, _) = translator.translate_params(&func).unwrap();
+        // Bool param should be passed by value (not reference)
+        let b_param = params.iter().find(|p| p.name == "b").unwrap();
+        assert!(!b_param.is_reference, "Bool param should not be a reference");
+        // s param should still be a reference
+        let s_param = params.iter().find(|p| p.name == "s").unwrap();
+        assert!(s_param.is_reference, "Struct param should be a reference");
+    }
+
+    #[test]
     fn test_build_requires_includes_explicit_requires() {
         let mut config = TranslatorConfig::default();
         config.int_type = "u64".to_string();
@@ -18376,7 +18474,7 @@ mod tests {
 
         assert!(translator.is_scalar_input_param("node", &ctx));
         assert!(translator.is_scalar_input_param("count", &ctx));
-        assert!(translator.is_scalar_input_param("flag", &ctx));
+        assert!(!translator.is_scalar_input_param("flag", &ctx)); // Bool is passed by value (Copy)
         assert!(!translator.is_scalar_input_param("s", &ctx)); // Named type
         assert!(!translator.is_scalar_input_param("unknown", &ctx)); // Not in map
     }

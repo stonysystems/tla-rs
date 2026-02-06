@@ -961,3 +961,34 @@ fn test_generated_vpaxos_translation() {
     assert!(verus_code.contains("spec fn LDeactivate"), "Should translate Deactivate");
     assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
 }
+
+#[test]
+fn test_generated_epaxos_parsing() {
+    let source = read_generated_spec("EPaxos", "Epaxos");
+    let module = parse_module(&source).expect("Failed to parse generated EPaxos");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"Propose"), "Should contain Propose");
+    assert!(names.contains(&"ReceivePreAccept"), "Should contain ReceivePreAccept");
+    assert!(names.contains(&"FastCommit"), "Should contain FastCommit");
+    assert!(names.contains(&"StartAccept"), "Should contain StartAccept");
+    assert!(names.contains(&"ReceiveAccept"), "Should contain ReceiveAccept");
+    assert!(names.contains(&"SlowCommit"), "Should contain SlowCommit");
+    assert!(names.contains(&"Execute"), "Should contain Execute");
+    assert!(names.contains(&"Recover"), "Should contain Recover");
+    assert!(names.contains(&"NewInstance"), "Should contain NewInstance");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_epaxos_translation() {
+    let source = read_generated_spec("EPaxos", "Epaxos");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
+    assert!(verus_code.contains("spec fn LPropose"), "Should translate Propose");
+    assert!(verus_code.contains("spec fn LFastCommit"), "Should translate FastCommit");
+    assert!(verus_code.contains("spec fn LSlowCommit"), "Should translate SlowCommit");
+    assert!(verus_code.contains("spec fn LRecover"), "Should translate Recover");
+    assert!(verus_code.contains("spec fn LNewInstance"), "Should translate NewInstance");
+    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+}

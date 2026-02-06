@@ -2788,10 +2788,13 @@ Extend the project with additional distributed systems protocols, from simple to
   - Verus verification: 613 verified, 0 errors, 0 assumes (up from 605)
   - Also fixed transpiler bug: `is_hashset_field()`/`is_collection_field()` no longer default to true for all fields when no field config is set
 
-- [ ] **EPaxos (Egalitarian Paxos)**
-  - TLA+ spec: https://github.com/efficient/epaxos
-  - Leaderless protocol
-  - Complex dependency tracking
+- [x] **EPaxos (Egalitarian Paxos)** ✅ DONE
+  - Simplified EPaxos modeling leaderless consensus from single replica's perspective
+  - 9 transitions: Propose, ReceivePreAccept, FastCommit, StartAccept, ReceiveAccept, SlowCommit, Execute, Recover, NewInstance
+  - Models both fast path (1 RTT, no conflicts) and slow path (2 RTT, Paxos-like accept)
+  - Dependency tracking via conflict counts and sequence numbers
+  - Verus verification: 627 verified, 0 errors, 0 assumes (up from 613)
+  - Fixed transpiler bugs: (1) bool params now passed by value (Copy), not &bool; (2) overflow detection now recurses into conditional if-then-else expressions
 
 #### Implementation Strategy
 1. Start with simple protocols (2PC, Single-Decree Paxos)

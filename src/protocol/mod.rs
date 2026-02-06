@@ -1,5 +1,6 @@
 // pub mod lock;
 pub mod ChainReplication;
+pub mod EPaxos;
 pub mod LeaderElection;
 pub mod PBFT;
 pub mod Paxos;

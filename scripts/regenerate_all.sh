@@ -2,7 +2,7 @@
 # Regenerate ALL protocol implementations from specs
 #
 # This script regenerates both types and functions for all protocols:
-#   - TwoPhase, Paxos, LeaderElection, Raft, ChainReplication, PrimaryBackup, PBFT, VerticalPaxos (simple protocols)
+#   - TwoPhase, Paxos, LeaderElection, Raft, ChainReplication, PrimaryBackup, PBFT, VerticalPaxos, EPaxos (simple protocols)
 #   - RSL (multi-module protocol with per-module configs)
 #
 # Usage:
@@ -117,6 +117,9 @@ case "$TARGET" in
     VerticalPaxos)
         regenerate_simple VerticalPaxos vpaxos
         ;;
+    EPaxos)
+        regenerate_simple EPaxos epaxos
+        ;;
     RSL)
         regenerate_rsl
         ;;
@@ -129,11 +132,12 @@ case "$TARGET" in
         regenerate_simple PrimaryBackup primarybackup
         regenerate_simple PBFT pbft
         regenerate_simple VerticalPaxos vpaxos
+        regenerate_simple EPaxos epaxos
         regenerate_rsl
         ;;
     *)
         echo "Unknown protocol: $TARGET"
-        echo "Usage: $0 [TwoPhase|Paxos|LeaderElection|Raft|ChainReplication|PrimaryBackup|PBFT|VerticalPaxos|RSL|all]"
+        echo "Usage: $0 [TwoPhase|Paxos|LeaderElection|Raft|ChainReplication|PrimaryBackup|PBFT|VerticalPaxos|EPaxos|RSL|all]"
         exit 1
         ;;
 esac

@@ -2,6 +2,7 @@
 // DO NOT EDIT MANUALLY
 
 pub mod ChainReplication;
+pub mod EPaxos;
 pub mod LeaderElection;
 pub mod PBFT;
 pub mod Paxos;
