@@ -682,11 +682,6 @@ impl Transpiler {
     /// are configured at all (backward-compatible mode where all fields are treated as collections).
     fn needs_set_helpers(&self) -> bool {
         !self.config.translator.collection_fields.is_empty()
-            || (self.config.translator.collection_fields.is_empty()
-                && self.config.translator.vec_fields.is_empty()
-                && self.config.translator.clone_fields.is_empty()
-                && self.config.translator.struct_vec_fields.is_empty()
-                && self.config.translator.map_fields.is_empty())
     }
 
     /// Check if this transpiler config uses HashMap fields with deep abstraction (map_fields).
@@ -1559,9 +1554,11 @@ mod tests {
 
     #[test]
     fn test_generate_proofs_auto_imports() {
+        // With collection_fields configured, set_lib and clone_hashset should be auto-imported
         let config = TranspilerConfig {
             translator: TranslatorConfig {
                 generate_proofs: true,
+                collection_fields: vec!["some_set".to_string()].into_iter().collect(),
                 ..Default::default()
             },
             custom_imports: vec!["use vstd::prelude::*;".to_string()],
@@ -1584,15 +1581,15 @@ mod tests {
             .transpile_source(spec_source, annotation_source)
             .unwrap();
 
-        // Should auto-add proof-related imports
+        // Should auto-add proof-related imports when collection_fields present
         assert!(
             result.contains("use vstd::set_lib::*;"),
-            "Should auto-import vstd::set_lib when generate_proofs=true: {}",
+            "Should auto-import vstd::set_lib when collection_fields present: {}",
             result
         );
         assert!(
             result.contains("use crate::common::collections::hashsets::clone_hashset;"),
-            "Should auto-import clone_hashset when generate_proofs=true: {}",
+            "Should auto-import clone_hashset when collection_fields present: {}",
             result
         );
     }
@@ -1841,11 +1838,11 @@ mod tests {
     }
 
     #[test]
-    fn test_needs_set_helpers_backward_compat() {
-        // When no field categories configured, backward compat → true
+    fn test_needs_set_helpers_no_config() {
+        // When no field categories configured, no set helpers needed
         let config = TranspilerConfig::default();
         let transpiler = Transpiler::new(config);
-        assert!(transpiler.needs_set_helpers());
+        assert!(!transpiler.needs_set_helpers());
     }
 
     #[test]
@@ -1907,12 +1904,13 @@ mod tests {
     // =========================================================================
 
     /// Test that set-based proof generation produces correct proof blocks.
-    /// Uses generate_proofs=true to trigger proof block emission for empty set.
+    /// Requires collection_fields configured to trigger set helper generation.
     #[test]
     fn test_regression_set_proof_pipeline() {
         let config = TranspilerConfig {
             translator: TranslatorConfig {
                 generate_proofs: true,
+                collection_fields: vec!["s".to_string()].into_iter().collect(),
                 ..TranslatorConfig::default()
             },
             ..Default::default()
@@ -1929,7 +1927,7 @@ mod tests {
         let annotation_source = "module test { LInitState(-); }";
         let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
 
-        // Should contain proof-related imports/helper for empty set
+        // Should contain proof-related imports/helper for empty set when collection_fields present
         assert!(result.contains("lemma_empty_set_map") || result.contains("HashSet::new"),
             "Should contain proof for empty set creation:\n{}", result);
     }

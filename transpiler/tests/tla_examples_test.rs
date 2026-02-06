@@ -935,3 +935,29 @@ fn test_generated_pbft_translation() {
     assert!(verus_code.contains("spec fn LViewChange"), "Should translate ViewChange");
     assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
 }
+
+#[test]
+fn test_generated_vpaxos_parsing() {
+    let source = read_generated_spec("VerticalPaxos", "Vpaxos");
+    let module = parse_module(&source).expect("Failed to parse generated VerticalPaxos");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"Prepare"), "Should contain Prepare");
+    assert!(names.contains(&"Accept"), "Should contain Accept");
+    assert!(names.contains(&"Reconfigure"), "Should contain Reconfigure");
+    assert!(names.contains(&"Sync"), "Should contain Sync");
+    assert!(names.contains(&"Deactivate"), "Should contain Deactivate");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_vpaxos_translation() {
+    let source = read_generated_spec("VerticalPaxos", "Vpaxos");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
+    assert!(verus_code.contains("spec fn LPrepare"), "Should translate Prepare");
+    assert!(verus_code.contains("spec fn LReconfigure"), "Should translate Reconfigure");
+    assert!(verus_code.contains("spec fn LSync"), "Should translate Sync");
+    assert!(verus_code.contains("spec fn LDeactivate"), "Should translate Deactivate");
+    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+}

@@ -2083,13 +2083,10 @@ impl Translator {
     }
 
     /// Check if a field is a HashSet (Set/Map) type requiring `clone_hashset()`.
-    /// When no field categories are configured, assumes ALL fields are hashset (backwards-compatible).
+    /// Only returns true if the field is explicitly listed in `collection_fields`.
+    /// Non-listed fields are assumed to be Copy types (u64, bool) and use direct access.
     fn is_hashset_field(&self, field_name: &str) -> bool {
-        if self.has_no_field_config() {
-            true
-        } else {
-            self.config.collection_fields.contains(field_name)
-        }
+        self.config.collection_fields.contains(field_name)
     }
 
     /// Check if a field is a Vec/HashMap type requiring `.clone()`.
@@ -2132,18 +2129,17 @@ impl Translator {
     /// `struct_vec_fields` (Vec<Struct>), and `map_fields` (HashMap with deep abstraction).
     /// Does NOT include `clone_fields` (they don't need `@` in view context).
     /// Used to determine if a field needs `@` in view context.
+    /// Non-listed fields are assumed to be Copy types (u64, bool) and use direct access.
     fn is_collection_field(&self, field_name: &str) -> bool {
-        if self.has_no_field_config() {
-            true
-        } else {
-            self.config.collection_fields.contains(field_name)
-                || self.config.vec_fields.contains(field_name)
-                || self.config.struct_vec_fields.contains_key(field_name)
-                || self.config.map_fields.contains_key(field_name)
-        }
+        self.config.collection_fields.contains(field_name)
+            || self.config.vec_fields.contains(field_name)
+            || self.config.struct_vec_fields.contains_key(field_name)
+            || self.config.map_fields.contains_key(field_name)
     }
 
-    /// Returns true if no field categories are configured (backwards-compatible mode).
+    /// Returns true if no field categories are configured.
+    /// Used in tests to verify field config detection.
+    #[allow(dead_code)]
     fn has_no_field_config(&self) -> bool {
         self.config.collection_fields.is_empty()
             && self.config.vec_fields.is_empty()
@@ -16597,11 +16593,11 @@ mod tests {
             other => panic!("Expected Var(__tm_prepared), got {:?}", other),
         }
 
-        // rm_state field should be wrapped with clone_hashset (since has_mutations is true)
+        // rm_state field: not in collection_fields, so returned unchanged (Copy field)
         assert_eq!(new_fields[1].0, "rm_state");
         match &new_fields[1].1 {
-            ExecExpr::Call { func, .. } => assert_eq!(func, "clone_hashset"),
-            other => panic!("Expected clone_hashset Call, got {:?}", other),
+            ExecExpr::Field(_, _) => {} // unchanged (primitive/Copy field)
+            other => panic!("Expected Field (unchanged), got {:?}", other),
         }
     }
 
@@ -16699,18 +16695,15 @@ mod tests {
             requires: vec![],
         };
 
-        // Field access on input: s.rm_state -> clone_hashset(&s.rm_state)
+        // Field access on input with empty config: s.rm_state -> s.rm_state (Copy)
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("s".to_string())),
             "rm_state".to_string(),
         );
         let result = translator.clone_input_field_access(expr, &ctx);
         match result {
-            ExecExpr::Call { func, args } => {
-                assert_eq!(func, "clone_hashset");
-                assert_eq!(args.len(), 1);
-            }
-            other => panic!("Expected clone_hashset Call, got {:?}", other),
+            ExecExpr::Field(_, _) => {} // unchanged (primitive/Copy field)
+            other => panic!("Expected Field (unchanged), got {:?}", other),
         }
 
         // Non-input field access: x.field -> unchanged
@@ -16854,10 +16847,10 @@ mod tests {
 
     #[test]
     fn test_is_collection_field() {
-        // With empty collection_fields (backwards compatible)
+        // With empty collection_fields: fields are NOT collections
         let translator = Translator::default();
-        assert!(translator.is_collection_field("anything"));
-        assert!(translator.is_collection_field("has_leader"));
+        assert!(!translator.is_collection_field("anything"));
+        assert!(!translator.is_collection_field("has_leader"));
 
         // With configured collection_fields
         let config = TranslatorConfig {
@@ -17767,9 +17760,9 @@ mod tests {
         let preconditions = translator.extract_body_preconditions(&func, &ctx);
 
         // Only s.state is Init should be extracted (input-only)
-        // Since `s` is Type::Named (struct), field access gets `@` view operator
+        // No collection fields configured, so field access uses direct access
         assert_eq!(preconditions.len(), 1);
-        assert_eq!(preconditions[0], "s@.state is Init");
+        assert_eq!(preconditions[0], "s.state is Init");
     }
 
     #[test]
@@ -17816,9 +17809,9 @@ mod tests {
         let ctx = translator.make_requires_context(&func);
         let preconditions = translator.extract_body_preconditions(&func, &ctx);
 
-        // Since `s` is Type::Named (struct), field access gets `@` view operator
+        // No collection fields configured, so field access uses direct access
         assert_eq!(preconditions.len(), 1);
-        assert_eq!(preconditions[0], "(s@.count > 0)");
+        assert_eq!(preconditions[0], "(s.count > 0)");
     }
 
     #[test]
@@ -18102,11 +18095,11 @@ mod tests {
 
         // Should include:
         // 1. s.valid(), c.valid() (validity)
-        // 2. s@.state is Init (body precondition — struct params get @ view)
+        // 2. s.state is Init (body precondition — no collection fields, so no @)
         // 3. s.count < u64::MAX (overflow guard — exec-level, no @)
         assert!(requires.contains(&"s.valid()".to_string()));
         assert!(requires.contains(&"c.valid()".to_string()));
-        assert!(requires.iter().any(|r| r == "s@.state is Init"));
+        assert!(requires.iter().any(|r| r == "s.state is Init"));
         assert!(requires.iter().any(|r| r == "s.count < u64::MAX"));
         // Should NOT include s_.state is Done (output, not precondition)
         assert!(!requires.iter().any(|r| r.contains("s_.state")));
@@ -18282,9 +18275,9 @@ mod tests {
 
         let scalar_params = HashSet::new();
         let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
-        // s is in view_params so gets @, c is not so stays as-is
-        // (default empty collection_fields → all fields treated as collections)
-        assert_eq!(result, "s@.tm_prepared == c.rm");
+        // s is in view_params but tm_prepared is not a configured collection field,
+        // so no @ is added (primitive fields use direct access)
+        assert_eq!(result, "s.tm_prepared == c.rm");
     }
 
     #[test]
@@ -18307,7 +18300,8 @@ mod tests {
 
         let scalar_params = HashSet::new();
         let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
-        assert_eq!(result, "s@.tm_prepared == c@.rm");
+        // No collection fields configured, so no @ on either param
+        assert_eq!(result, "s.tm_prepared == c.rm");
     }
 
     #[test]
@@ -18327,10 +18321,8 @@ mod tests {
 
         let scalar_params = HashSet::new();
         let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
-        // `is` checks work on exec types, so @ is added to field access
-        // s@.tm_state is Init is valid Verus (checks LTMState::Init on spec view)
-        // (default empty collection_fields → all fields treated as collections)
-        assert_eq!(result, "s@.tm_state is Init");
+        // tm_state is not a configured collection field, so no @ added
+        assert_eq!(result, "s.tm_state is Init");
     }
 
     #[test]

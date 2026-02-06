@@ -1,0 +1,45 @@
+# Configuration for transpiling Vertical Paxos spec to exec implementation
+
+# Skip functions that contain existential quantifiers
+skip_functions = [
+    "LNext",
+]
+
+# Fields that are HashSet types (Set) requiring clone_hashset()
+collection_fields = []
+
+# Fields that are Vec types (Seq) requiring .clone()
+vec_fields = []
+
+# Fields that are non-Copy types requiring .clone()
+clone_fields = []
+
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "u64"
+nat_type = "u64"
+
+[remapping]
+"LState" = "CState"
+"LConstants" = "CConstants"
+
+[variant_remapping]
+
+[method_calls]
+
+[output]
+generate_abstraction_fns = true
+generate_validity_predicates = true
+validity_predicate_name = "valid"
+generate_clone = true
+include_debug_comments = false
+generate_loops_for_verification = true
+generate_proofs = true
+generate_inline_types = false
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use crate::protocol::VerticalPaxos::types::*;",
+    "use crate::protocol::VerticalPaxos::vpaxos::*;",
+    "use crate::generated::VerticalPaxos::types_gen::*;",
+]

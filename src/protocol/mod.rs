@@ -7,5 +7,6 @@ pub mod PrimaryBackup;
 pub mod Raft;
 pub mod RSL;
 pub mod TwoPhase;
+pub mod VerticalPaxos;
 pub mod common;
 // pub mod lock;
