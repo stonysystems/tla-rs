@@ -393,8 +393,11 @@ impl Transpiler {
     ///
     /// Currently emits:
     /// - `lemma_empty_set_map()`: proves `Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()`
+    /// - `lemma_set_map_remove_commute(s, elt)`: proves `s.remove(elt).map(f) =~= s.map(f).remove(f(elt))`
     fn generate_proof_helper_lemmas() -> String {
         let mut output = String::new();
+
+        // lemma_empty_set_map
         output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
         output.push_str("proof fn lemma_empty_set_map()\n");
         output.push_str("ensures\n");
@@ -405,6 +408,32 @@ impl Transpiler {
         output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
         output.push_str("    }\n");
         output.push_str("}\n\n");
+
+        // lemma_set_map_remove_commute
+        output.push_str("/// Helper proof: removing an element commutes with mapping for injective functions.\n");
+        output.push_str("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)\n");
+        output.push_str("ensures\n");
+        output.push_str("    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),\n");
+        output.push_str("{\n");
+        output.push_str("    let f = |x: u64| x as int;\n");
+        output.push_str("    let lhs = s.remove(elt).map(f);\n");
+        output.push_str("    let rhs = s.map(f).remove(f(elt));\n");
+        output.push_str("    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {\n");
+        output.push_str("        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;\n");
+        output.push_str("        assert(s.contains(x));\n");
+        output.push_str("        assert(x != elt);\n");
+        output.push_str("        assert(f(x) != f(elt));\n");
+        output.push_str("        assert(s.map(f).contains(y));\n");
+        output.push_str("    }\n");
+        output.push_str("    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {\n");
+        output.push_str("        let x = choose|x: u64| s.contains(x) && f(x) == y;\n");
+        output.push_str("        assert(y != f(elt));\n");
+        output.push_str("        assert(f(x) != f(elt));\n");
+        output.push_str("        assert(x != elt);\n");
+        output.push_str("        assert(s.remove(elt).contains(x));\n");
+        output.push_str("    }\n");
+        output.push_str("}\n\n");
+
         output
     }
 
@@ -1034,10 +1063,17 @@ mod tests {
     fn test_generate_proof_helper_lemmas_content() {
         let output = Transpiler::generate_proof_helper_lemmas();
 
-        // Verify structure of the emitted lemma
+        // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
-        assert!(output.contains("ensures"));
         assert!(output.contains("Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()"));
-        assert!(output.contains("assert forall|y: int|"));
+
+        // Verify lemma_set_map_remove_commute
+        assert!(output.contains("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)"));
+        assert!(output.contains("s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int)"));
+        assert!(output.contains("let lhs = s.remove(elt).map(f);"));
+        assert!(output.contains("let rhs = s.map(f).remove(f(elt));"));
+        // Both directions of the proof
+        assert!(output.contains("lhs.contains(y)) implies rhs.contains(y)"));
+        assert!(output.contains("rhs.contains(y)) implies lhs.contains(y)"));
     }
 }

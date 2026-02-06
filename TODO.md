@@ -1885,10 +1885,15 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] Generate single-line `proof { ... }` for simple blocks, multi-line for complex — printer handles both
 - Already resolved in 12.3.0a and printer/mod.rs ProofBlock formatting
 
-**12.3.0f: Generate `lemma_set_map_remove_commute` proof helper**
-- [ ] Emit proof helper when `generate_proofs=true` and `HashSet::remove()` is used
-- [ ] This was deferred in 12.2.7 as "needs per-call arguments" — now needed for LeaderElection
-- Affects: LeaderElection, ChainReplication
+**12.3.0f: Generate `lemma_set_map_remove_commute` proof helper** ✅
+- [x] Added `RemoveSite` struct to track remove call sites with source set and element info
+- [x] Extended `ProofNeeds` with `remove_sites: Vec<RemoveSite>` field
+- [x] Added `scan_block_for_remove_sites()` to detect `clone_hashset(&s.field)` + `__field.remove(elem)` patterns
+- [x] Added `extract_field_source()` and `expr_to_proof_arg()` helpers for extracting source/element strings
+- [x] `build_proof_block()` now emits per-call `lemma_set_map_remove_commute(source@, element)` invocations
+- [x] `generate_proof_helper_lemmas()` emits the full lemma definition (bidirectional extensional equality proof)
+- [x] 11 new tests: remove site detection (single, multiple, no-site), proof block building (remove only, combined), field source extraction, proof arg formatting
+- Affects: LeaderElection (3 call sites), ChainReplication (1 call site)
 
 **12.3.0g: Add enum variant qualification via `variant_remapping` config** ✅
 - [x] Added `variant_remapping` field to `TranspilerConfig` (config.rs) and `TranslatorConfig` (translator/mod.rs)
