@@ -386,6 +386,12 @@ pub struct OutputConfig {
     /// Example: "CElectionState"
     #[serde(default)]
     pub wrapper_impl_type: Option<String>,
+
+    /// Clone method to use in generated loops.
+    /// When set (e.g., "clone_up_to_view"), uses `x.clone_up_to_view()` instead of `x.clone()`.
+    /// Needed for types where `.clone()` doesn't have `ensures res@ == self@` spec.
+    #[serde(default)]
+    pub clone_method: Option<String>,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -411,6 +417,7 @@ impl Default for OutputConfig {
             generate_proofs: false,
             generate_wrapper_methods: false,
             wrapper_impl_type: None,
+            clone_method: None,
         }
     }
 }

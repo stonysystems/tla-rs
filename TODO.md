@@ -1690,7 +1690,7 @@ The generated exec code passes Verus verification but relies on **~244 `assume()
 | `RSL/election_gen.rs` | 22 | Election state machine |
 | `RSL/executor_gen.rs` | 19 | Executor reply cache logic |
 | `RSL/learner_gen.rs` | 12 | Learner quorum tracking |
-| `RSL/broadcast_gen.rs` | 2 | Broadcast helper |
+| `RSL/broadcast_gen.rs` | 0 ✅ | Broadcast helper |
 | `Raft/raft_gen.rs` | 20 | Raft consensus |
 | `ChainReplication/chain_gen.rs` | 14 | Chain replication |
 | `Paxos/paxos_gen.rs` | 10 | Single-decree Paxos |
@@ -2009,8 +2009,15 @@ ChainReplication introduces patterns not seen in TwoPhase/Paxos/LeaderElection:
 
 RSL is the most complex. Regenerate component by component using the improved transpiler.
 
-**12.5.1: Regenerate broadcast_gen.rs (2 assumes)**
-- [ ] Run transpiler, compare against reference, run Verus
+**12.5.1: Regenerate broadcast_gen.rs (2 assumes)** ✅ COMPLETE
+- [x] Run transpiler, compare against reference, run Verus
+  - Added WhileLoop ExecExpr variant for seq comprehension patterns
+  - Added `clone_method` config option (uses `clone_up_to_view` for RSL)
+  - Generated proof block with per-field assert forall for mapped Seq postcondition
+  - Made `lemma_empty_set_map` and set_lib imports conditional on `needs_set_helpers()`
+  - Regenerated broadcast_gen.rs: 0 assumes, fully verified (584 verified, 0 errors)
+  - Cleaned up unused `lemma_set_map_remove_commute` from Paxos and TwoPhase
+  - Added 11 new transpiler tests (578 → 589)
 
 **12.5.2: Regenerate learner_gen.rs (12 assumes)**
 - [ ] Run transpiler, compare against reference, run Verus

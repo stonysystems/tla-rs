@@ -930,6 +930,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
                 (k.clone(), (exec_type, spec_type))
             }).collect(),
             extra_requires: file_config.extra_requires.clone(),
+            clone_method: file_config.output.clone_method.clone(),
             ..TranslatorConfig::default()
         },
         custom_imports: file_config.output.custom_imports,

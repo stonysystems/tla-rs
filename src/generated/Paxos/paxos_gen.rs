@@ -23,30 +23,6 @@ ensures
     }
 }
 
-/// Helper proof: removing an element commutes with mapping for injective functions.
-proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)
-ensures
-    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),
-{
-    let f = |x: u64| x as int;
-    let lhs = s.remove(elt).map(f);
-    let rhs = s.map(f).remove(f(elt));
-    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {
-        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;
-        assert(s.contains(x));
-        assert(x != elt);
-        assert(f(x) != f(elt));
-        assert(s.map(f).contains(y));
-    }
-    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {
-        let x = choose|x: u64| s.contains(x) && f(x) == y;
-        assert(y != f(elt));
-        assert(f(x) != f(elt));
-        assert(x != elt);
-        assert(s.remove(elt).contains(x));
-    }
-}
-
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires

@@ -124,7 +124,8 @@ impl Transpiler {
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
         // Auto-add proof-related imports when generate_proofs is enabled
-        if self.config.translator.generate_proofs {
+        // Only add set_lib and clone_hashset when HashSet fields are present
+        if self.config.translator.generate_proofs && self.needs_set_helpers() {
             let proof_imports = [
                 "use vstd::set_lib::*;",
                 "use crate::common::collections::hashsets::clone_hashset;",
@@ -190,9 +191,11 @@ impl Transpiler {
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
             let has_vec_fields = !self.config.translator.vec_fields.is_empty();
+            let has_set_fields = self.needs_set_helpers();
             let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body));
             let helpers = Self::generate_proof_helper_lemmas(
                 has_vec_fields,
+                has_set_fields,
                 has_set_remove,
                 &self.config.translator.struct_vec_fields,
             );
@@ -285,7 +288,8 @@ impl Transpiler {
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
         // Auto-add proof-related imports when generate_proofs is enabled
-        if self.config.translator.generate_proofs {
+        // Only add set_lib and clone_hashset when HashSet fields are present
+        if self.config.translator.generate_proofs && self.needs_set_helpers() {
             let proof_imports = [
                 "use vstd::set_lib::*;",
                 "use crate::common::collections::hashsets::clone_hashset;",
@@ -352,9 +356,11 @@ impl Transpiler {
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
             let has_vec_fields = !self.config.translator.vec_fields.is_empty();
+            let has_set_fields = self.needs_set_helpers();
             let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body));
             let helpers = Self::generate_proof_helper_lemmas(
                 has_vec_fields,
+                has_set_fields,
                 has_set_remove,
                 &self.config.translator.struct_vec_fields,
             );
@@ -429,25 +435,28 @@ impl Transpiler {
     /// - `clone_<field>()`: external_body clone wrapper for struct-typed Vec fields
     fn generate_proof_helper_lemmas(
         has_vec_fields: bool,
+        has_set_fields: bool,
         has_set_remove: bool,
         struct_vec_fields: &std::collections::HashMap<String, (String, String)>,
     ) -> String {
         let mut output = String::new();
 
-        // lemma_empty_set_map
-        output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
-        output.push_str("proof fn lemma_empty_set_map()\n");
-        output.push_str("ensures\n");
-        output.push_str("    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n");
-        output.push_str("{\n");
-        output.push_str("    let f = |x: u64| x as int;\n");
-        output.push_str("    let s = Set::<u64>::empty().map(f);\n");
-        output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
-        output.push_str("    }\n");
-        output.push_str("}\n\n");
+        // lemma_empty_set_map — only when HashSet fields are present
+        if has_set_fields {
+            output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
+            output.push_str("proof fn lemma_empty_set_map()\n");
+            output.push_str("ensures\n");
+            output.push_str("    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n");
+            output.push_str("{\n");
+            output.push_str("    let f = |x: u64| x as int;\n");
+            output.push_str("    let s = Set::<u64>::empty().map(f);\n");
+            output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
+            output.push_str("    }\n");
+            output.push_str("}\n\n");
+        }
 
-        // lemma_set_map_remove_commute — only when spec uses .remove()
-        if has_set_remove {
+        // lemma_set_map_remove_commute — only when spec uses .remove() and has set fields
+        if has_set_fields && has_set_remove {
             output.push_str("/// Helper proof: removing an element commutes with mapping for injective functions.\n");
             output.push_str("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)\n");
             output.push_str("ensures\n");
@@ -629,6 +638,17 @@ impl Transpiler {
         }
 
         output
+    }
+
+    /// Check if this transpiler config uses HashSet fields (collection_fields).
+    /// Returns true when collection_fields is non-empty, OR when no field categories
+    /// are configured at all (backward-compatible mode where all fields are treated as collections).
+    fn needs_set_helpers(&self) -> bool {
+        !self.config.translator.collection_fields.is_empty()
+            || (self.config.translator.collection_fields.is_empty()
+                && self.config.translator.vec_fields.is_empty()
+                && self.config.translator.clone_fields.is_empty()
+                && self.config.translator.struct_vec_fields.is_empty())
     }
 
     /// Check if a spec expression tree contains a `.remove()` method call.
@@ -1292,7 +1312,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(false, true, &empty);
+        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty);
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -1312,16 +1332,21 @@ mod tests {
         assert!(!output.contains("lemma_seq_push_map_commute"));
 
         // When has_set_remove=false, remove_commute should NOT be present
-        let output_no_remove = Transpiler::generate_proof_helper_lemmas(false, false, &empty);
+        let output_no_remove = Transpiler::generate_proof_helper_lemmas(false, true, false, &empty);
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
+
+        // When has_set_fields=false, set lemmas should NOT be present
+        let output_no_sets = Transpiler::generate_proof_helper_lemmas(false, false, false, &empty);
+        assert!(!output_no_sets.contains("lemma_empty_set_map"));
+        assert!(!output_no_sets.contains("lemma_set_map_remove_commute"));
     }
 
     #[test]
     fn test_generate_proof_helper_lemmas_with_vec_fields() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, &empty);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty);
 
-        // Set lemmas should always be present
+        // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
         assert!(output.contains("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)"));
 
@@ -1334,9 +1359,9 @@ mod tests {
     fn test_generate_proof_helper_lemmas_with_struct_vec_fields() {
         let mut svf = std::collections::HashMap::new();
         svf.insert("log".to_string(), ("CLogEntry".to_string(), "LLogEntry".to_string()));
-        let output = Transpiler::generate_proof_helper_lemmas(true, false, &svf);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf);
 
-        // Set lemmas should always be present
+        // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
 
         // Struct-typed lemmas should be present
@@ -1395,5 +1420,42 @@ mod tests {
         let output = Transpiler::generate_clone_helpers(&clone_field_types, &variant_remapping);
         // No matching variants for CUnknownRole, so no helper generated
         assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_needs_set_helpers_with_collection_fields() {
+        // When collection_fields is configured, needs_set_helpers should return true
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                collection_fields: vec!["alive".to_string()].into_iter().collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+        assert!(transpiler.needs_set_helpers());
+    }
+
+    #[test]
+    fn test_needs_set_helpers_backward_compat() {
+        // When no field categories configured, backward compat → true
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+        assert!(transpiler.needs_set_helpers());
+    }
+
+    #[test]
+    fn test_needs_set_helpers_false_when_only_other_fields() {
+        // When only vec_fields/clone_fields configured (no collection_fields), should return false
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                vec_fields: vec!["history".to_string()].into_iter().collect(),
+                clone_fields: vec!["role".to_string()].into_iter().collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+        assert!(!transpiler.needs_set_helpers());
     }
 }

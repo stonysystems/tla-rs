@@ -90,6 +90,9 @@ pub struct TranslatorConfig {
     /// These are manually specified preconditions that the transpiler can't derive.
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
     pub extra_requires: HashMap<String, Vec<String>>,
+    /// Clone method to use in generated loops (e.g., "clone_up_to_view").
+    /// When set, uses `x.clone_up_to_view()` instead of `x.clone()`.
+    pub clone_method: Option<String>,
 }
 
 impl Default for TranslatorConfig {
@@ -116,6 +119,7 @@ impl Default for TranslatorConfig {
             clone_field_types: HashMap::new(),
             struct_vec_fields: HashMap::new(),
             extra_requires: HashMap::new(),
+            clone_method: None,
         }
     }
 }
@@ -325,6 +329,11 @@ impl ProofNeeds {
             }
             ExecExpr::ArrowAccess { base, .. } => {
                 self.scan_expr(base);
+            }
+            ExecExpr::WhileLoop { .. } => {
+                // Don't recurse into while loops — they handle their own proofs
+                // via invariants. Recursing would cause false positives for
+                // Vec::new() and .push() patterns that are part of the loop body.
             }
             // Leaf expressions — no recursion needed
             ExecExpr::Var(_) | ExecExpr::Literal(_) | ExecExpr::BroadcastUse(_)
@@ -663,6 +672,25 @@ pub enum ExecExpr {
     },
 
     // === Verus Loop Constructs for Verified Code ===
+    /// Verus while loop with invariants and decreases
+    /// Generates:
+    /// ```
+    /// while cond
+    /// invariant inv1, inv2, ...
+    /// decreases decreases_expr,
+    /// { body }
+    /// ```
+    WhileLoop {
+        /// Loop condition expression
+        cond: Box<ExecExpr>,
+        /// Loop invariants (Verus spec expressions as strings)
+        invariants: Vec<String>,
+        /// Decreases clause (spec expression as string)
+        decreases: Option<String>,
+        /// Loop body
+        body: Box<ExecExpr>,
+    },
+
     /// Verus for-in-iter loop with invariants
     /// Generates: `for var in iter:iter_name { body } invariant inv1, inv2, ...`
     ForInIter {
@@ -746,6 +774,8 @@ pub struct TransformContext<'a> {
     pub field_substitutions: HashMap<(String, String), String>,
     /// Counter for generating unique temporary variable names
     pub temp_var_counter: std::cell::RefCell<usize>,
+    /// Function requires clauses (for propagation into loop invariants)
+    pub requires: Vec<String>,
 }
 
 /// Information about a helper predicate call with output arguments
@@ -2683,6 +2713,316 @@ impl Translator {
     ///     result
     /// }
     /// ```
+    /// Generate a while loop for building a Vec from a seq comprehension pattern.
+    ///
+    /// When `generate_loops_for_verification` is true, this generates:
+    /// ```ignore
+    /// {
+    ///     let mut result: Vec<T> = Vec::new();
+    ///     let mut idx: usize = 0;
+    ///     while idx < length
+    ///     invariant
+    ///         <preconditions>,
+    ///         result@.len() == idx as int,
+    ///         idx <= length,
+    ///         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).field@ == source@,
+    ///     decreases length - idx,
+    ///     {
+    ///         let __elem = element_expr;
+    ///         result.push(__elem);
+    ///         idx = idx + 1;
+    ///     }
+    ///     result
+    /// }
+    /// ```
+    fn generate_seq_comprehension_while_loop(
+        &self,
+        length: &ExecExpr,
+        _length_expr: &Expr,
+        index_var: &str,
+        element: &ExecExpr,
+        element_expr: &Expr,
+        ctx: &TransformContext,
+    ) -> ExecExpr {
+        // Print the exec length expression to a string for use in invariants
+        let mut printer = crate::printer::Printer::default();
+        let length_str = printer.print_expr_to_string(length);
+
+        // Build invariants
+        let mut invariants: Vec<String> = Vec::new();
+
+        // 1. Propagate function requires as loop invariants (preconditions hold throughout)
+        for req in &ctx.requires {
+            invariants.push(req.clone());
+        }
+
+        // 2. Standard loop progress invariants
+        invariants.push(format!("result@.len() == {} as int", index_var));
+        invariants.push(format!("{} <= {}", index_var, length_str));
+
+        // 3. Per-field invariants from the struct element expression
+        if let Expr::Struct { fields, .. } = element_expr {
+            for (field_name, field_value) in fields {
+                let source_str = self.field_expr_to_invariant_string(
+                    field_value,
+                    index_var,
+                    ctx,
+                );
+                invariants.push(format!(
+                    "forall |j: int| 0 <= j < {} as int ==> (#[trigger] result@[j]).{}@ == {}",
+                    index_var, field_name, source_str
+                ));
+            }
+        }
+
+        // Post-process element to fix Vec indexing:
+        // - Integer param indices need *param as usize
+        // - Vec element results need .clone() (non-Copy from shared ref)
+        // - If clone_method configured, use that instead of .clone()
+        let element = Self::fix_seq_comprehension_element(element.clone(), index_var, ctx, &self.config.clone_method);
+
+        // Build loop body: let pkt = element; result.push(pkt); idx = idx + 1;
+        let loop_body = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "pkt".to_string(),
+                ty: None,
+                value: Box::new(element),
+            },
+            ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("result".to_string())),
+                method: "push".to_string(),
+                args: vec![ExecExpr::Var("pkt".to_string())],
+            },
+            // idx = idx + 1 (reassignment — include semicolon in literal)
+            ExecExpr::Literal(format!("{} = {} + 1;", index_var, index_var)),
+        ]);
+
+        let decreases_str = format!("{} - {}", length_str, index_var);
+
+        // Build proof block for the postcondition
+        let proof_block = if self.config.generate_proofs {
+            self.generate_seq_comprehension_proof_block(element_expr, &length_str, index_var, ctx)
+        } else {
+            None
+        };
+
+        // Determine element type for Vec::new() type annotation
+        let vec_new_func = if let Expr::Struct { name, .. } = element_expr {
+            if let Some(spec_name) = name.segments.last() {
+                let exec_name = self.translate_name(spec_name);
+                format!("Vec::<{}>::new", exec_name)
+            } else {
+                "Vec::new".to_string()
+            }
+        } else {
+            "Vec::new".to_string()
+        };
+
+        // Build the full block
+        let mut stmts = vec![
+            // let mut result = Vec::<ExecType>::new();
+            ExecExpr::Let {
+                pattern: "mut result".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Call {
+                    func: vec_new_func,
+                    args: vec![],
+                }),
+            },
+            // let mut idx: usize = 0;
+            ExecExpr::Let {
+                pattern: format!("mut {}: usize", index_var),
+                ty: None,
+                value: Box::new(ExecExpr::Literal("0".to_string())),
+            },
+            // while loop
+            ExecExpr::WhileLoop {
+                cond: Box::new(ExecExpr::Binary {
+                    lhs: Box::new(ExecExpr::Var(index_var.to_string())),
+                    op: "<".to_string(),
+                    rhs: Box::new(length.clone()),
+                }),
+                invariants,
+                decreases: Some(decreases_str),
+                body: Box::new(loop_body),
+            },
+        ];
+        // Add proof block if generated
+        if let Some(pb) = proof_block {
+            stmts.push(pb);
+        }
+        // result (return value)
+        stmts.push(ExecExpr::Var("result".to_string()));
+        ExecExpr::Block(stmts)
+    }
+
+    /// Generate a proof block for seq comprehension postcondition.
+    ///
+    /// Generates a proof that `result@.map(|i, p: ExecType| p@)` satisfies
+    /// the spec predicate by asserting each element matches the spec struct.
+    fn generate_seq_comprehension_proof_block(
+        &self,
+        element_expr: &Expr,
+        length_str: &str,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> Option<ExecExpr> {
+        // Get the exec struct type name from the element expression
+        let exec_type_name = if let Expr::Struct { name, .. } = element_expr {
+            let spec_name = name.segments.last()?.as_str();
+            self.translate_name(spec_name)
+        } else {
+            return None;
+        };
+
+        let mut proof_stmts: Vec<ExecExpr> = Vec::new();
+
+        // let mapped = result@.map(|i: int, p: ExecType| p@);
+        proof_stmts.push(ExecExpr::Let {
+            pattern: "mapped".to_string(),
+            ty: None,
+            value: Box::new(ExecExpr::Literal(format!(
+                "result@.map(|i: int, p: {}| p@)",
+                exec_type_name
+            ))),
+        });
+
+        // assert(mapped.len() == length);
+        proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(format!(
+            "mapped.len() == {}",
+            length_str
+        )))));
+
+        // assert forall |j: int| 0 <= j < mapped.len() implies
+        //     (#[trigger] mapped[j]) =~= SpecStruct{field: source_expr, ...}
+        // by { per-field assertions from loop invariants }
+        if let Expr::Struct { name, fields } = element_expr {
+            let spec_name = name.segments.last().map(|s| s.as_str()).unwrap_or("unknown");
+
+            // Build spec struct fields for the forall body
+            let spec_fields: Vec<String> = fields
+                .iter()
+                .map(|(field_name, field_value)| {
+                    let source_str =
+                        self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                    format!("{}: {}", field_name, source_str)
+                })
+                .collect();
+            let spec_struct = format!("{}{{{}}}",
+                spec_name,
+                spec_fields.join(", ")
+            );
+
+            // Build per-field assertions for the by-block (indented inside by { })
+            let field_asserts: Vec<String> = fields
+                .iter()
+                .map(|(field_name, field_value)| {
+                    let source_str =
+                        self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                    format!(
+                        "assert(result@[j].{}@ == {});",
+                        field_name, source_str
+                    )
+                })
+                .collect();
+
+            // Build the assert forall as multiple proof statements for proper indentation
+            // Instead of one big Literal, split into: assert forall...by { }, then per-field asserts
+            // Use Literal with embedded newlines — the printer will indent the first line
+            // but continuation lines start at column 0, so we include explicit indent
+            let indent = "    "; // 4 spaces for each indent level
+            let by_body = field_asserts.iter()
+                .map(|a| format!("{}    {}", indent, a)) // indent inside proof + by block
+                .collect::<Vec<_>>()
+                .join("\n");
+            let assert_forall = format!(
+                "assert forall |j: int| 0 <= j < mapped.len() implies\n\
+                 {}    (#[trigger] mapped[j]) =~=\n\
+                 {}    ({})\n\
+                 {}by {{\n{}\n{}}}",
+                indent, indent, spec_struct, indent, by_body, indent
+            );
+            proof_stmts.push(ExecExpr::Literal(assert_forall));
+        }
+
+        Some(ExecExpr::ProofBlock { stmts: proof_stmts })
+    }
+
+    /// Convert a spec field value expression to an invariant-compatible string.
+    ///
+    /// Handles the conversion from spec to exec-view invariant forms:
+    /// - `param.field[idx_var]` → `param.field@[j]@` (view vec→seq, index with j, view element)
+    /// - `idx_var` → `j` (replace loop variable with forall quantifier var)
+    /// - Scalar params (int/nat): `*param as int`
+    /// - Standalone non-scalar params: `param@`
+    fn field_expr_to_invariant_string(
+        &self,
+        expr: &Expr,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> String {
+        match expr {
+            Expr::Index(base, idx) => {
+                // base@[idx]@ — view the vec/seq, index, view the element
+                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                let idx_str = self.field_expr_to_invariant_string(idx, index_var, ctx);
+                format!("{}@[{}]@", base_str, idx_str)
+            }
+            Expr::Ident(name) if name == index_var => {
+                "j".to_string()
+            }
+            Expr::Ident(name) => {
+                if let Some(ty) = ctx.input_types.get(name) {
+                    match ty {
+                        crate::ast::Type::Int | crate::ast::Type::Nat => {
+                            format!("*{} as int", name)
+                        }
+                        crate::ast::Type::Bool => name.clone(),
+                        _ => format!("{}@", name),
+                    }
+                } else {
+                    name.clone()
+                }
+            }
+            Expr::Field(base, field) => {
+                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                format!("{}.{}", base_str, field)
+            }
+            _ => self.expr_to_spec_string(expr, &[]),
+        }
+    }
+
+    /// Convert a spec expression to a raw string WITHOUT adding `@` view to idents.
+    /// Used for base expressions in field access chains (e.g., `c` in `c.replica_ids@[j]@`).
+    fn field_expr_to_raw_string(
+        &self,
+        expr: &Expr,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> String {
+        match expr {
+            Expr::Ident(name) if name == index_var => "j".to_string(),
+            Expr::Ident(name) => {
+                // For scalar params used as index: *name as int
+                if let Some(ty) = ctx.input_types.get(name) {
+                    match ty {
+                        crate::ast::Type::Int | crate::ast::Type::Nat => {
+                            format!("*{} as int", name)
+                        }
+                        _ => name.clone(),
+                    }
+                } else {
+                    name.clone()
+                }
+            }
+            Expr::Field(base, field) => {
+                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                format!("{}.{}", base_str, field)
+            }
+            _ => self.expr_to_spec_string(expr, &[]),
+        }
+    }
+
     fn generate_map_filter_loop(
         &self,
         source_map: &str,
@@ -3309,6 +3649,7 @@ impl Translator {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Transform the element expression, substituting s[0] with seq[i]
@@ -3510,6 +3851,7 @@ impl Translator {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Transform init expression
@@ -3618,6 +3960,7 @@ impl Translator {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Transform the predicate expression, substituting s[0] with seq[i]
@@ -4049,6 +4392,7 @@ impl Translator {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: requires.clone(),
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
@@ -4092,6 +4436,7 @@ impl Translator {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
@@ -4167,6 +4512,11 @@ impl Translator {
             return body;
         }
 
+        // Skip if body contains a WhileLoop — those manage their own proof blocks
+        if Self::body_contains_while_loop(&body) {
+            return body;
+        }
+
         let needs = ProofNeeds::analyze(&body);
         let proof_block = match needs.build_proof_block(&self.config.struct_vec_fields) {
             Some(pb) => pb,
@@ -4217,6 +4567,144 @@ impl Translator {
         block.push(proof_block);
         block.push(ExecExpr::Var("result".to_string()));
         ExecExpr::Block(block)
+    }
+
+    /// Fix a seq comprehension element expression for use inside a while loop:
+    /// - Vec index expressions with integer params: `v[param]` → `v[*param as usize]`
+    /// - Struct field values from Vec indexing: add `.clone()` for non-Copy types
+    /// - Input param references (message, etc.): add `.clone()`
+    /// - If `clone_method` is set, uses that method instead of `.clone()`
+    fn fix_seq_comprehension_element(
+        expr: ExecExpr,
+        index_var: &str,
+        ctx: &TransformContext,
+        clone_method: &Option<String>,
+    ) -> ExecExpr {
+        match expr {
+            ExecExpr::Struct { name, fields } => {
+                let fixed_fields: Vec<_> = fields
+                    .into_iter()
+                    .map(|(fname, fval)| {
+                        let fixed = Self::fix_seq_element_field(fval, index_var, ctx, clone_method);
+                        (fname, fixed)
+                    })
+                    .collect();
+                ExecExpr::Struct { name, fields: fixed_fields }
+            }
+            other => other,
+        }
+    }
+
+    /// Fix a single field value expression in a seq comprehension element.
+    fn fix_seq_element_field(
+        expr: ExecExpr,
+        index_var: &str,
+        ctx: &TransformContext,
+        clone_method: &Option<String>,
+    ) -> ExecExpr {
+        match &expr {
+            // v.index(idx) → v[idx].clone() — Vec element from shared ref needs clone
+            ExecExpr::MethodCall { receiver: _, method, args }
+                if method == "index" && args.len() == 1 =>
+            {
+                // Fix the index argument: int params need *param as usize
+                let fixed_idx = Self::fix_index_arg(&args[0], index_var, ctx);
+                let fixed_method_call = ExecExpr::MethodCall {
+                    receiver: match &expr {
+                        ExecExpr::MethodCall { receiver, .. } => receiver.clone(),
+                        _ => unreachable!(),
+                    },
+                    method: "index".to_string(),
+                    args: vec![fixed_idx],
+                };
+                // Add .clone() or custom clone method for non-Copy result from Vec indexing
+                Self::make_clone_expr(fixed_method_call, clone_method)
+            }
+            // Input param (like message m): add .clone() since it's a shared reference
+            ExecExpr::Clone(inner) => {
+                // Already has clone — replace with custom clone method if configured
+                if let Some(method) = clone_method {
+                    ExecExpr::MethodCall {
+                        receiver: inner.clone(),
+                        method: method.clone(),
+                        args: vec![],
+                    }
+                } else {
+                    ExecExpr::Clone(inner.clone())
+                }
+            }
+            ExecExpr::Var(name) if ctx.input_params.contains(name) && name != index_var => {
+                // Input parameter reference needs cloning
+                if let Some(ty) = ctx.input_types.get(name) {
+                    match ty {
+                        crate::ast::Type::Int | crate::ast::Type::Nat | crate::ast::Type::Bool => {
+                            expr // Scalar types are Copy
+                        }
+                        _ => Self::make_clone_expr(expr, clone_method),
+                    }
+                } else {
+                    expr
+                }
+            }
+            _ => expr,
+        }
+    }
+
+    /// Create a clone expression, using custom clone method if configured.
+    fn make_clone_expr(expr: ExecExpr, clone_method: &Option<String>) -> ExecExpr {
+        if let Some(method) = clone_method {
+            ExecExpr::MethodCall {
+                receiver: Box::new(expr),
+                method: method.clone(),
+                args: vec![],
+            }
+        } else {
+            ExecExpr::Clone(Box::new(expr))
+        }
+    }
+
+    /// Fix an index argument: integer params need *param as usize
+    fn fix_index_arg(
+        expr: &ExecExpr,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> ExecExpr {
+        match expr {
+            ExecExpr::Var(name) if name == index_var => {
+                // Loop variable (already usize), keep as-is
+                expr.clone()
+            }
+            ExecExpr::Var(name) => {
+                // Check if it's an integer param that needs dereference + cast
+                if let Some(ty) = ctx.input_types.get(name) {
+                    match ty {
+                        crate::ast::Type::Int | crate::ast::Type::Nat => {
+                            // *param as usize
+                            ExecExpr::Cast(
+                                Box::new(ExecExpr::Unary {
+                                    op: "*".to_string(),
+                                    expr: Box::new(ExecExpr::Var(name.clone())),
+                                }),
+                                "usize".to_string(),
+                            )
+                        }
+                        _ => expr.clone(),
+                    }
+                } else {
+                    expr.clone()
+                }
+            }
+            _ => expr.clone(),
+        }
+    }
+
+    /// Check if a body expression contains a WhileLoop (which manages its own proofs).
+    fn body_contains_while_loop(expr: &ExecExpr) -> bool {
+        match expr {
+            ExecExpr::WhileLoop { .. } => true,
+            ExecExpr::Block(stmts) => stmts.iter().any(Self::body_contains_while_loop),
+            _ => false,
+        }
     }
 
     /// Collect all variable names referenced (as Var) in an ExecExpr tree.
@@ -4978,6 +5466,7 @@ impl Translator {
                 .collect(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         }
     }
 
@@ -5709,20 +6198,51 @@ impl Translator {
             .map(|(param, mode)| match mode {
                 ParameterMode::Input => self.format_spec_arg(param),
                 ParameterMode::Output => {
-                    let output_idx = output_names
-                        .iter()
-                        .position(|n| n == &param.name)
-                        .unwrap_or(0);
-                    if output_names.len() == 1 {
+                    let base = if output_names.len() == 1 {
                         "result@".to_string()
                     } else {
+                        let output_idx = output_names
+                            .iter()
+                            .position(|n| n == &param.name)
+                            .unwrap_or(0);
                         format!("result.{}@", output_idx)
+                    };
+                    // For Seq<StructType> outputs, add .map(|i, p: ExecType| p@)
+                    // to convert Vec<ExecType>@ (= Seq<ExecType>) to Seq<SpecType>
+                    if let Some(exec_elem_type) = self.output_needs_view_map(&param.ty) {
+                        format!("{}.map(|i, p: {}| p@)", base, exec_elem_type)
+                    } else {
+                        base
                     }
                 }
             })
             .collect();
 
         format!("{}({})", func.spec_fn.name, args.join(", "))
+    }
+
+    /// Check if a spec output type is Seq<T> where T is a non-primitive type
+    /// that needs view mapping. Returns the exec type name if so.
+    fn output_needs_view_map(&self, ty: &crate::ast::Type) -> Option<String> {
+        if let crate::ast::Type::Seq(inner) = ty {
+            match inner.as_ref() {
+                crate::ast::Type::Named(path) => {
+                    let spec_name = path.segments.last()?;
+                    let exec_name = self.translate_name(spec_name);
+                    // Only add map if the exec name differs from spec name
+                    // (meaning it has a View trait mapping)
+                    if exec_name != *spec_name {
+                        Some(exec_name)
+                    } else {
+                        None
+                    }
+                }
+                // Primitive element types (int, bool) don't need view mapping
+                _ => None,
+            }
+        } else {
+            None
+        }
     }
 
     /// Transform a spec expression to an exec expression (public interface)
@@ -5809,32 +6329,41 @@ impl Translator {
                 // First, check if this is an output sequence comprehension pattern:
                 // - output.len() == input_length_expr (length constraint)
                 // - forall |i| 0 <= i < output.len() ==> output[i] == element_expr
-                // When both are present, generate: (0..input_length_expr).map(|i| element_expr).collect()
                 if let Some((output_name, length_expr, index_var, element_expr)) =
                     self.try_extract_output_seq_comprehension(exprs, ctx)
                 {
-                    // Generate: (0..length_expr).map(|i| element_expr).collect()
                     let length = self.transform_expr(&length_expr, ctx)?;
                     let element = self.transform_expr(&element_expr, ctx)?;
+                    let _ = output_name;
 
-                    // Filter out the output name from the result since we're computing it here
-                    let _ = output_name; // Used for verification but we're generating the whole value
-
-                    return Ok(ExecExpr::MethodCall {
-                        receiver: Box::new(ExecExpr::MethodCall {
-                            receiver: Box::new(ExecExpr::Range {
-                                start: Box::new(ExecExpr::Literal("0".to_string())),
-                                end: Box::new(length),
+                    if self.config.generate_loops_for_verification {
+                        // Generate while loop with invariants for Verus verification
+                        return Ok(self.generate_seq_comprehension_while_loop(
+                            &length,
+                            &length_expr,
+                            &index_var,
+                            &element,
+                            &element_expr,
+                            ctx,
+                        ));
+                    } else {
+                        // Generate: (0..length_expr).map(|i| element_expr).collect()
+                        return Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Range {
+                                    start: Box::new(ExecExpr::Literal("0".to_string())),
+                                    end: Box::new(length),
+                                }),
+                                method: "map".to_string(),
+                                args: vec![ExecExpr::Closure {
+                                    params: vec![index_var],
+                                    body: Box::new(element),
+                                }],
                             }),
-                            method: "map".to_string(),
-                            args: vec![ExecExpr::Closure {
-                                params: vec![index_var],
-                                body: Box::new(element),
-                            }],
-                        }),
-                        method: "collect".to_string(),
-                        args: vec![],
-                    });
+                            method: "collect".to_string(),
+                            args: vec![],
+                        });
+                    }
                 }
 
                 // Next, check if this is a map update with insert pattern
@@ -6010,6 +6539,7 @@ impl Translator {
                         input_types: ctx.input_types.clone(),
                         field_substitutions: ctx.field_substitutions.clone(),
                         temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
+                        requires: ctx.requires.clone(),
                     }
                 };
 
@@ -7284,6 +7814,7 @@ impl Translator {
             input_types: ctx.input_types.clone(),
             field_substitutions: new_subs,
             temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
+            requires: ctx.requires.clone(),
         }
     }
 
@@ -10156,6 +10687,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         }
     }
 
@@ -10594,6 +11126,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Build: s_ == s &&& sent_packets == Seq::empty()
@@ -10643,6 +11176,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Build: LProposerProcessRequest(s.proposer, s_.proposer, received_packet)
@@ -10733,6 +11267,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions,
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Test: s_.proposer should be substituted to s_proposer
@@ -10771,6 +11306,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Build the conjunction
@@ -10899,6 +11435,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Build the conjunction
@@ -11025,6 +11562,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Build the three foralls
@@ -11310,6 +11848,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Build the pattern:
@@ -11407,6 +11946,7 @@ mod tests {
             input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         let binding = crate::ast::Binding {
@@ -11558,6 +12098,7 @@ mod tests {
             input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         let binding = crate::ast::Binding {
@@ -11691,6 +12232,7 @@ mod tests {
             input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         let binding = crate::ast::Binding {
@@ -15662,6 +16204,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Field: tm_prepared: s.tm_prepared.insert(r)
@@ -15738,6 +16281,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // No mutations — just field copies
@@ -15779,6 +16323,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         let fields = vec![(
@@ -15816,6 +16361,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Field access on input: s.rm_state -> clone_hashset(&s.rm_state)
@@ -15870,6 +16416,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Collection field: s.alive -> clone_hashset(&s.alive)
@@ -15930,6 +16477,7 @@ mod tests {
             input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // HashSet field: s.pending_sent -> clone_hashset(&s.pending_sent)
@@ -17496,6 +18044,7 @@ mod tests {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         assert!(translator.is_scalar_input_param("node", &ctx));
@@ -17524,6 +18073,7 @@ mod tests {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Scalar param: wrap with deref
@@ -17558,6 +18108,7 @@ mod tests {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Scalar input param: should deref, not clone
@@ -17587,6 +18138,7 @@ mod tests {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Struct input param: should clone
@@ -17618,6 +18170,7 @@ mod tests {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Field access on input param + collection field: should clone_hashset
@@ -17652,6 +18205,7 @@ mod tests {
             input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         };
 
         // Field access on input param + primitive field: direct access
@@ -18089,5 +18643,233 @@ mod tests {
         assert!(!proof_vars.contains("__history"));
         // No scope conflict
         assert!(!proof_vars.iter().any(|v| pre_stmt_vars.contains(v)));
+    }
+
+    // === Seq Comprehension WhileLoop Tests ===
+
+    #[test]
+    fn test_output_needs_view_map_seq_struct() {
+        // Seq<Named("RslPacket")> with remapping to CPacket → should return Some("CPacket")
+        let mut config = TranslatorConfig::default();
+        config.type_remapping.insert("RslPacket".to_string(), "CPacket".to_string());
+        let translator = Translator::new(config);
+
+        let ty = crate::ast::Type::Seq(Box::new(crate::ast::Type::Named(
+            crate::ast::Path::single("RslPacket".to_string()),
+        )));
+        let result = translator.output_needs_view_map(&ty);
+        assert_eq!(result, Some("CPacket".to_string()));
+    }
+
+    #[test]
+    fn test_output_needs_view_map_seq_primitive() {
+        // Seq<Int> → should return None (no View mapping needed for primitives)
+        let translator = Translator::default();
+        let ty = crate::ast::Type::Seq(Box::new(crate::ast::Type::Int));
+        let result = translator.output_needs_view_map(&ty);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_output_needs_view_map_non_seq() {
+        // Named("RslPacket") (not a Seq) → should return None
+        let mut config = TranslatorConfig::default();
+        config.type_remapping.insert("RslPacket".to_string(), "CPacket".to_string());
+        let translator = Translator::new(config);
+
+        let ty = crate::ast::Type::Named(crate::ast::Path::single("RslPacket".to_string()));
+        assert_eq!(translator.output_needs_view_map(&ty), None);
+    }
+
+    #[test]
+    fn test_seq_comprehension_generates_while_loop() {
+        // When generate_loops_for_verification is true and the pattern is
+        // output.len() == input.len() && forall |idx| ... output[idx] == Struct{...}
+        // it should generate a WhileLoop, not map/collect
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            type_remapping: {
+                let mut m = HashMap::new();
+                m.insert("RslPacket".to_string(), "CPacket".to_string());
+                m
+            },
+            ..Default::default()
+        };
+        let translator = Translator::new(config.clone());
+
+        let mut output_types = HashMap::new();
+        output_types.insert(
+            "sent_packets".to_string(),
+            crate::ast::Type::Seq(Box::new(crate::ast::Type::Named(
+                crate::ast::Path::single("RslPacket".to_string()),
+            ))),
+        );
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["sent_packets".to_string()],
+            input_params: vec!["c".to_string(), "myidx".to_string(), "m".to_string()],
+            output_types,
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec!["c.valid()".to_string()],
+        };
+
+        // Build: sent_packets.len() == c.replica_ids.len()
+        let length_eq = Expr::Eq(
+            Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Ident("sent_packets".to_string())),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+            Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Field(
+                    Box::new(Expr::Ident("c".to_string())),
+                    "replica_ids".to_string(),
+                )),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+        );
+
+        // Build: forall |idx| 0 <= idx < sent_packets.len() ==> sent_packets[idx] =~= Struct{dst: ..., src: ..., msg: m}
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("idx".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+        let struct_expr = Expr::Struct {
+            name: crate::ast::Path::single("RslPacket".to_string()),
+            fields: vec![
+                ("dst".to_string(), Expr::Index(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("c".to_string())),
+                        "replica_ids".to_string(),
+                    )),
+                    Box::new(Expr::Ident("idx".to_string())),
+                )),
+                ("msg".to_string(), Expr::Ident("m".to_string())),
+            ],
+        };
+        let forall_expr = Expr::Forall {
+            vars: vec![binding],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Le(
+                        Box::new(Expr::Literal(Literal::Int(0))),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )),
+                    BinOp::And,
+                    Box::new(Expr::Lt(
+                        Box::new(Expr::Ident("idx".to_string())),
+                        Box::new(Expr::MethodCall {
+                            receiver: Box::new(Expr::Ident("sent_packets".to_string())),
+                            method: "len".to_string(),
+                            args: vec![],
+                        }),
+                    )),
+                )),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Ident("sent_packets".to_string())),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )),
+                    Box::new(struct_expr),
+                )),
+            )),
+        };
+
+        let conjunction = Expr::Conjunction(vec![length_eq, forall_expr]);
+        let result = translator.transform_expr(&conjunction, &ctx).unwrap();
+
+        // Should be a Block containing WhileLoop
+        let printed = format!("{:?}", result);
+        assert!(
+            printed.contains("WhileLoop"),
+            "Should generate WhileLoop, got: {}", printed
+        );
+        // Should contain Vec::<CPacket>::new
+        assert!(
+            printed.contains("Vec::<CPacket>::new"),
+            "Should have typed Vec::new, got: {}", printed
+        );
+    }
+
+    #[test]
+    fn test_make_clone_expr_default() {
+        // Without clone_method, should produce ExecExpr::Clone
+        let expr = ExecExpr::Var("x".to_string());
+        let result = Translator::make_clone_expr(expr, &None);
+        assert!(matches!(result, ExecExpr::Clone(_)));
+    }
+
+    #[test]
+    fn test_make_clone_expr_custom_method() {
+        // With clone_method, should produce MethodCall
+        let expr = ExecExpr::Var("x".to_string());
+        let method = Some("clone_up_to_view".to_string());
+        let result = Translator::make_clone_expr(expr, &method);
+        match result {
+            ExecExpr::MethodCall { method, args, .. } => {
+                assert_eq!(method, "clone_up_to_view");
+                assert!(args.is_empty());
+            }
+            other => panic!("Expected MethodCall, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_fix_seq_element_field_with_clone_method() {
+        // Vec index should use custom clone method when configured
+        let config = TranslatorConfig::default();
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["result".to_string()],
+            input_params: vec!["c".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // c.replica_ids.index(idx) with clone_method = "clone_up_to_view"
+        let expr = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("c".to_string())),
+                "replica_ids".to_string(),
+            )),
+            method: "index".to_string(),
+            args: vec![ExecExpr::Var("idx".to_string())],
+        };
+        let clone_method = Some("clone_up_to_view".to_string());
+        let result = Translator::fix_seq_element_field(expr, "idx", &ctx, &clone_method);
+        let printed = format!("{:?}", result);
+        assert!(
+            printed.contains("clone_up_to_view"),
+            "Should use clone_up_to_view, got: {}", printed
+        );
+    }
+
+    #[test]
+    fn test_proof_needs_skips_while_loop_body() {
+        // ProofNeeds should NOT detect Vec::new() inside WhileLoop body
+        let body = ExecExpr::Block(vec![
+            ExecExpr::WhileLoop {
+                cond: Box::new(ExecExpr::Literal("true".to_string())),
+                invariants: vec![],
+                decreases: None,
+                body: Box::new(ExecExpr::Block(vec![
+                    ExecExpr::Call {
+                        func: "Vec::new".to_string(),
+                        args: vec![],
+                    },
+                ])),
+            },
+        ]);
+        let needs = ProofNeeds::analyze(&body);
+        assert!(!needs.has_empty_vec, "Should NOT detect Vec::new inside WhileLoop");
     }
 }

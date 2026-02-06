@@ -171,6 +171,7 @@ impl Printer {
                             | ExecExpr::Comment(_)
                             | ExecExpr::ProofBlock { .. }
                             | ExecExpr::ForInIter { .. }
+                            | ExecExpr::WhileLoop { .. }
                             | ExecExpr::Block(_)
                             | ExecExpr::Break
                     );
@@ -517,6 +518,53 @@ impl Printer {
             }
 
             // === Verus Loop Constructs ===
+            ExecExpr::WhileLoop {
+                cond,
+                invariants,
+                decreases,
+                body,
+            } => {
+                self.write("while ");
+                self.print_expr(cond);
+                self.newline();
+                // Generate invariants
+                if !invariants.is_empty() {
+                    self.indent();
+                    self.write("invariant");
+                    self.newline();
+                    self.current_indent += 1;
+                    for inv in invariants {
+                        self.indent();
+                        self.write(inv);
+                        self.write(",");
+                        self.newline();
+                    }
+                    self.current_indent -= 1;
+                }
+                // Generate decreases
+                if let Some(dec) = decreases {
+                    self.indent();
+                    self.write("decreases ");
+                    self.write(dec);
+                    self.write(",");
+                    self.newline();
+                }
+                // Generate body
+                self.indent();
+                self.write("{");
+                self.newline();
+                self.current_indent += 1;
+                // Don't double-indent Block bodies (Block handles its own indentation)
+                if !matches!(body.as_ref(), ExecExpr::Block(_)) {
+                    self.indent();
+                }
+                self.print_expr(body);
+                self.newline();
+                self.current_indent -= 1;
+                self.indent();
+                self.write("}");
+            }
+
             ExecExpr::ForInIter {
                 var,
                 iter_name,

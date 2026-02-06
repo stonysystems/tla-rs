@@ -318,6 +318,7 @@ mod tests {
             input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
         }
     }
 
