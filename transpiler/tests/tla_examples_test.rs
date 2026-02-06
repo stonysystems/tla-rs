@@ -908,3 +908,30 @@ fn test_generated_primarybackup_translation() {
     assert!(verus_code.contains("spec fn LPrimaryWrite"), "Should translate PrimaryWrite");
     assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
 }
+
+#[test]
+fn test_generated_pbft_parsing() {
+    let source = read_generated_spec("PBFT", "Pbft");
+    let module = parse_module(&source).expect("Failed to parse generated PBFT");
+    let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
+    assert!(names.contains(&"Init"), "Should contain Init");
+    assert!(names.contains(&"PrePrepare"), "Should contain PrePrepare");
+    assert!(names.contains(&"ReceivePrepare"), "Should contain ReceivePrepare");
+    assert!(names.contains(&"EnterCommit"), "Should contain EnterCommit");
+    assert!(names.contains(&"ReceiveCommit"), "Should contain ReceiveCommit");
+    assert!(names.contains(&"ExecuteReply"), "Should contain ExecuteReply");
+    assert!(names.contains(&"ViewChange"), "Should contain ViewChange");
+    assert!(names.contains(&"NewRound"), "Should contain NewRound");
+    assert!(names.contains(&"Next"), "Should contain Next");
+}
+
+#[test]
+fn test_generated_pbft_translation() {
+    let source = read_generated_spec("PBFT", "Pbft");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
+    assert!(verus_code.contains("spec fn LPrePrepare"), "Should translate PrePrepare");
+    assert!(verus_code.contains("spec fn LEnterCommit"), "Should translate EnterCommit");
+    assert!(verus_code.contains("spec fn LViewChange"), "Should translate ViewChange");
+    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+}

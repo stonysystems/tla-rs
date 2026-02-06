@@ -1,6 +1,7 @@
 // pub mod lock;
 pub mod ChainReplication;
 pub mod LeaderElection;
+pub mod PBFT;
 pub mod Paxos;
 pub mod PrimaryBackup;
 pub mod Raft;
