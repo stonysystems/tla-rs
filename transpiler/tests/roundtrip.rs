@@ -481,3 +481,15 @@ fn test_chain_replication_roundtrip() {
     let tla = include_str!("../../src/tla+/ChainReplication/Chain.tla");
     assert!(check_rsl_roundtrip(tla, "ChainReplication/Chain.tla"));
 }
+
+#[test]
+fn test_primarybackup_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/PrimaryBackup/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "PrimaryBackup/Types.tla"));
+}
+
+#[test]
+fn test_primarybackup_roundtrip() {
+    let tla = include_str!("../../src/tla+/PrimaryBackup/Primarybackup.tla");
+    assert!(check_rsl_roundtrip(tla, "PrimaryBackup/Primarybackup.tla"));
+}
