@@ -1801,7 +1801,7 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] Add `use vstd::set_lib::*;` to custom_imports when `generate_proofs=true`
 - [x] ProofNeeds::analyze() scans ExecExpr tree to detect HashSet/Vec operations
 - [x] maybe_append_proof_block() wraps function body with proof block when needed
-- [ ] Transpiler emits `lemma_set_map_remove_commute()` helper + call when HashSet::remove is used (deferred — needs per-call arguments)
+- [x] Transpiler emits `lemma_set_map_remove_commute()` helper + call when HashSet::remove is used ✅ (implemented: `ProofNeeds.has_set_remove` detection, helper generation in `generate_set_helpers()`, per-call `RemoveSite` tracking with `lemma_set_map_remove_commute(source@, element)` emission; verified in LeaderElection + ChainReplication generated code; 6+ transpiler tests)
 - Note: For simple protocols (TwoPhase, Paxos, LeaderElection), validity (12.2.2) and spec refinement
   (12.2.3) proofs are automatic — Verus proves them without explicit proof blocks. Only the collection
   mapping lemmas are needed.
