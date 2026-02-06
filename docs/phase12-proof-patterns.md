@@ -448,6 +448,8 @@ fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 8. **`CAcceptor::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()` — needed for acceptor proofs (clone-delegate pattern)
 9. **`clone_cpacket_preserving_validity()` added** — CPacket clone that preserves both view and validity — needed because CPacket.clone_up_to_view() only ensures view preservation
 10. **`outbound_packets_to_vec()` added** — converts OutboundPackets to Vec<CPacket> with `ensures result@.map(...) =~= sent@` — bridges between impl's OutboundPackets return and gen's Vec<CPacket> interface
+11. **`CProposer::clone_up_to_view()` added** — `ensures self == result, result@ == self@, result.valid() == self.valid()` — full structural equality needed because impl checks concrete fields like `replica_ids@.contains(pkt.src)`
+12. **`clone_cpacket_full()` added** — CPacket clone with `ensures res == *p` — full concrete equality, needed when callee checks `replica_ids@.contains(pkt.src)` which requires the concrete EndPoint, not just the abstract view
 
 ## Verification Results
 
@@ -464,3 +466,4 @@ fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 | After RSL/executor (12.5.3) | 595 | 0 | ~149 | +0 verified, -19 assumes |
 | After RSL/acceptor (12.5.4) | 592 | 0 | ~126 | -3 verified, -23 assumes |
 | After RSL/election (12.5.5) | 588 | 0 | ~104 | -4 verified, -22 assumes |
+| After RSL/proposer (12.5.6) | 587 | 0 | ~74 | -1 verified, -30 assumes |

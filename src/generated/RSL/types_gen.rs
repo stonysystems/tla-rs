@@ -1326,6 +1326,16 @@ impl CProposer{
         &&& self.election_state.valid()
     }
 
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            self == result,
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+
     pub open spec fn view(self) -> LProposer
     recommends self.valid(),
     {

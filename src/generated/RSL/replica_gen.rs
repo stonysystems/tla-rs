@@ -152,7 +152,7 @@ let no_dup_src = {
         all_different
     };
     let result = if (contains(&s.proposer.constants.all.config.replica_ids, &received_packet.src) && (CBalEq(&m_bal_1b, &s.proposer.max_ballot_i_sent_1a) && ((s.proposer.current_state == 1) && no_dup_src))) {
-                assume(forall |other_packet: CPacket| (s.proposer.received_1b_packets@.contains(other_packet) ==> (other_packet.src != received_packet.src)));
+                assume(forall |other_packet: CPacket| (s.proposer.received_1b_packets@.contains(other_packet) ==> (other_packet.src@ != received_packet.src@)));
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcess1b(&s.proposer, &received_packet);
         let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorTruncateLog(&s.acceptor, &m_log_truncation_point);
         (CReplica {
@@ -490,6 +490,7 @@ ensures
 let next_op_known = match s.executor.next_op_to_execute { COutstandingOperation::COutstandingOpKnown{..} => true, _ => false };
 let result = if (next_op_known && (s.executor.ops_complete < s.executor.constants.all.params.max_integer_val && s.executor.constants.CReplicaConstantsValid())) {
                 let v = match &s.executor.next_op_to_execute { COutstandingOperation::COutstandingOpKnown{v, ..} => v.clone(), _ => unreachable_value() };
+                assume(crequestbatch_is_valid(&v));
                 let s_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &v);
         let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
         let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorExecute(&s.executor);
