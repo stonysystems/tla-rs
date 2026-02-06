@@ -1,5 +1,9 @@
 # CLAUDE.md - tla-rs Project Guide
 
+## Important: Generated Code Policy
+
+**Do NOT hand-edit files under `src/generated/`.** All code there must be produced by running the transpiler. To add proofs or fix assumes, improve the transpiler's proof generation (in `transpiler/src/`), then regenerate the output files. Do NOT delegate to manual implementation code or use "clone-delegate-extract" patterns in generated files. Read `TODO.md` Phase 12 for the full plan.
+
 ## Project Overview
 
 tla-rs is a Rust implementation of the IronFleet verified distributed systems framework, focused on Replicated State Machine (RSM) protocols. It provides formally verified implementations of Byzantine fault-tolerant consensus protocols using Verus (a deductive program verifier for Rust).
