@@ -146,12 +146,15 @@ impl Printer {
             ExecExpr::Block(stmts) => {
                 for (i, stmt) in stmts.iter().enumerate() {
                     self.indent();
-                    // When a Block appears as a statement inside another Block,
-                    // wrap it in { } braces (used for HashMap insert to discard Option<V>)
-                    if matches!(stmt, ExecExpr::Block(_)) {
-                        self.write("{ ");
-                        self.print_expr(stmt);
-                        self.write(" }");
+                    // When a non-empty Block appears as a statement inside another Block,
+                    // wrap it in { } braces (used for HashMap insert to discard Option<V>).
+                    // Empty blocks are rendered as nothing (just whitespace).
+                    if let ExecExpr::Block(inner) = stmt {
+                        if !inner.is_empty() {
+                            self.write("{ ");
+                            self.print_expr(stmt);
+                            self.write(" }");
+                        }
                     } else {
                         self.print_expr(stmt);
                     }

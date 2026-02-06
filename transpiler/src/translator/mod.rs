@@ -1708,7 +1708,6 @@ impl Translator {
                         cond: Box::new(cond),
                         then_branch: Box::new(ExecExpr::Block(vec![
                             mutation_stmt,
-                            ExecExpr::Block(vec![]),
                         ])),
                         else_branch: None,
                     });
@@ -1963,16 +1962,10 @@ impl Translator {
     }
 
     /// Get the clone helper function name for a clone_field, if a type mapping exists.
-    /// e.g., field "role" with type "CServerRole" returns "clone_server_role".
+    /// Uses the field name directly: field "role" returns "clone_role".
     fn get_clone_helper_name(&self, field_name: &str) -> Option<String> {
-        if let Some(type_name) = self.config.clone_field_types.get(field_name) {
-            // Strip exec prefix and convert to snake_case
-            let stripped = if type_name.starts_with('C') && type_name.len() > 1 && type_name.chars().nth(1).is_some_and(|c| c.is_uppercase()) {
-                &type_name[1..]
-            } else {
-                type_name.as_str()
-            };
-            Some(format!("clone_{}", Self::to_snake_case(stripped)))
+        if self.config.clone_field_types.contains_key(field_name) {
+            Some(format!("clone_{}", field_name))
         } else {
             None
         }
@@ -4183,10 +4176,11 @@ impl Translator {
         // Flatten the body: if it's a Block, extract pre-statements (mutations)
         // and only bind the final expression to `result`.
         // This transforms:  Block([pre_stmts..., StructExpr { ... }])
-        // into:             pre_stmts...
-        //                   let result = StructExpr { ... };
+        // into:             let result = { pre_stmts...; StructExpr { ... } };
         //                   proof { ... }
         //                   result
+        // This keeps mutations scoped inside `let result = { ... }` for clean scoping,
+        // while ensuring proof blocks can reference variables from the outer scope.
         let (pre_stmts, final_expr) = match body {
             ExecExpr::Block(mut stmts) if !stmts.is_empty() => {
                 let last = stmts.pop().unwrap();
@@ -4195,15 +4189,80 @@ impl Translator {
             other => (Vec::new(), other),
         };
 
-        let mut block = pre_stmts;
-        block.push(ExecExpr::Let {
-            pattern: "result".to_string(),
-            ty: None,
-            value: Box::new(final_expr),
-        });
+        // Check if the proof block references any variable defined in pre_stmts.
+        // If so, we need to keep pre_stmts outside the result binding.
+        let proof_vars = Self::collect_var_refs(&proof_block);
+        let pre_stmt_vars = Self::collect_let_names(&pre_stmts);
+        let has_scope_conflict = proof_vars.iter().any(|v| pre_stmt_vars.contains(v));
+
+        let mut block = Vec::new();
+        if has_scope_conflict || pre_stmts.is_empty() {
+            // Flat layout: pre_stmts before let result = final_expr
+            block.extend(pre_stmts);
+            block.push(ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(final_expr),
+            });
+        } else {
+            // Wrapped layout: let result = { pre_stmts; final_expr }
+            let mut inner = pre_stmts;
+            inner.push(final_expr);
+            block.push(ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Block(inner)),
+            });
+        }
         block.push(proof_block);
         block.push(ExecExpr::Var("result".to_string()));
         ExecExpr::Block(block)
+    }
+
+    /// Collect all variable names referenced (as Var) in an ExecExpr tree.
+    fn collect_var_refs(expr: &ExecExpr) -> HashSet<String> {
+        let mut refs = HashSet::new();
+        Self::collect_var_refs_inner(expr, &mut refs);
+        refs
+    }
+
+    fn collect_var_refs_inner(expr: &ExecExpr, refs: &mut HashSet<String>) {
+        match expr {
+            ExecExpr::Var(name) => { refs.insert(name.clone()); }
+            ExecExpr::Call { args, .. } => { for a in args { Self::collect_var_refs_inner(a, refs); } }
+            ExecExpr::MethodCall { receiver, args, .. } => {
+                Self::collect_var_refs_inner(receiver, refs);
+                for a in args { Self::collect_var_refs_inner(a, refs); }
+            }
+            ExecExpr::Block(stmts) => { for s in stmts { Self::collect_var_refs_inner(s, refs); } }
+            ExecExpr::ProofBlock { stmts } => { for s in stmts { Self::collect_var_refs_inner(s, refs); } }
+            ExecExpr::Let { value, .. } => { Self::collect_var_refs_inner(value, refs); }
+            ExecExpr::Unary { expr, .. } => { Self::collect_var_refs_inner(expr, refs); }
+            ExecExpr::Binary { lhs, rhs, .. } => {
+                Self::collect_var_refs_inner(lhs, refs);
+                Self::collect_var_refs_inner(rhs, refs);
+            }
+            ExecExpr::Field(base, _) => { Self::collect_var_refs_inner(base, refs); }
+            ExecExpr::Struct { fields, .. } => { for (_, e) in fields { Self::collect_var_refs_inner(e, refs); } }
+            ExecExpr::If { cond, then_branch, else_branch } => {
+                Self::collect_var_refs_inner(cond, refs);
+                Self::collect_var_refs_inner(then_branch, refs);
+                if let Some(eb) = else_branch { Self::collect_var_refs_inner(eb, refs); }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collect variable names defined by Let bindings in a list of statements.
+    fn collect_let_names(stmts: &[ExecExpr]) -> HashSet<String> {
+        let mut names = HashSet::new();
+        for stmt in stmts {
+            if let ExecExpr::Let { pattern, .. } = stmt {
+                let name = pattern.strip_prefix("mut ").unwrap_or(pattern);
+                names.insert(name.to_string());
+            }
+        }
+        names
     }
 
     /// Find the sequence parameter that is being recursed upon (has drop_first/skip in recursive calls)
@@ -17850,7 +17909,7 @@ mod tests {
 
         assert_eq!(
             translator.get_clone_helper_name("role"),
-            Some("clone_node_role".to_string())
+            Some("clone_role".to_string())
         );
         assert_eq!(translator.get_clone_helper_name("count"), None);
     }
@@ -17960,5 +18019,75 @@ mod tests {
         } else {
             panic!("Expected ProofBlock");
         }
+    }
+
+    #[test]
+    fn test_proof_block_scope_conflict_detection() {
+        // When a proof block references a variable defined in pre-stmts,
+        // the pre-stmts should NOT be wrapped inside `let result = { ... }`
+        // (they need to stay in outer scope so the proof block can access them).
+        let pre_stmts = vec![
+            ExecExpr::Let {
+                pattern: "entry".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Struct {
+                    name: "CLogEntry".to_string(),
+                    fields: vec![],
+                }),
+            },
+        ];
+
+        let proof_block = ExecExpr::ProofBlock {
+            stmts: vec![ExecExpr::Call {
+                func: "lemma_push".to_string(),
+                args: vec![ExecExpr::Var("entry".to_string())],
+            }],
+        };
+
+        let proof_vars = Translator::collect_var_refs(&proof_block);
+        let pre_stmt_vars = Translator::collect_let_names(&pre_stmts);
+
+        assert!(proof_vars.contains("entry"));
+        assert!(pre_stmt_vars.contains("entry"));
+        // Should detect scope conflict
+        assert!(proof_vars.iter().any(|v| pre_stmt_vars.contains(v)));
+    }
+
+    #[test]
+    fn test_proof_block_no_scope_conflict() {
+        // When proof block only references input params (not local let bindings),
+        // pre-stmts can be safely wrapped inside `let result = { ... }`.
+        let pre_stmts = vec![
+            ExecExpr::Let {
+                pattern: "mut __history".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("s".to_string())),
+                    "history".to_string(),
+                )))),
+            },
+        ];
+
+        let proof_block = ExecExpr::ProofBlock {
+            stmts: vec![ExecExpr::Call {
+                func: "lemma_push".to_string(),
+                args: vec![
+                    ExecExpr::Var("s.log@".to_string()),
+                    ExecExpr::Unary {
+                        op: "*".to_string(),
+                        expr: Box::new(ExecExpr::Var("value".to_string())),
+                    },
+                ],
+            }],
+        };
+
+        let proof_vars = Translator::collect_var_refs(&proof_block);
+        let pre_stmt_vars = Translator::collect_let_names(&pre_stmts);
+
+        // __history is in pre_stmts but NOT referenced by proof_block
+        assert!(pre_stmt_vars.contains("__history"));
+        assert!(!proof_vars.contains("__history"));
+        // No scope conflict
+        assert!(!proof_vars.iter().any(|v| pre_stmt_vars.contains(v)));
     }
 }

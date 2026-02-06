@@ -13,14 +13,15 @@ use vstd::set_lib::*;
 
 verus! {
 
-/// Helper proof: mapping over an empty set yields an empty set.
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
 ensures
     Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
 {
     let f = |x: u64| x as int;
     let s = Set::<u64>::empty().map(f);
-    assert forall|y: int| !(#[trigger] s.contains(y)) by { }
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
 }
 
 /// Helper proof: mapping over an empty Vec<CLogEntry> yields an empty seq.
@@ -50,7 +51,7 @@ ensures
 
 
 /// Helper: clone CServerRole preserving view (workaround for missing derive Clone spec).
-fn clone_server_role(r: &CServerRole) -> (res: CServerRole)
+fn clone_role(r: &CServerRole) -> (res: CServerRole)
 ensures
     res@ == r@,
     res.valid() == r.valid(),
@@ -98,17 +99,19 @@ ensures
     result.valid(),
     LTimeout(s@, result@, c@),
 {
-    let mut __votes_granted = clone_hashset(&HashSet::new());
-    __votes_granted.insert(c.my_id);
-    let result = CState {
-        current_term: (s.current_term + 1),
-        has_voted: true,
-        voted_for: c.my_id,
-        log: clone_log(&s.log),
-        commit_index: s.commit_index,
-        votes_granted: __votes_granted,
-        match_index: s.match_index.clone(),
-        role: CServerRole::Candidate,
+    let result = {
+        let mut __votes_granted = clone_hashset(&HashSet::new());
+        __votes_granted.insert(c.my_id);
+        CState {
+            current_term: (s.current_term + 1),
+            has_voted: true,
+            voted_for: c.my_id,
+            log: clone_log(&s.log),
+            commit_index: s.commit_index,
+            votes_granted: __votes_granted,
+            match_index: s.match_index.clone(),
+            role: CServerRole::Candidate,
+        }
     };
     proof {
         lemma_empty_set_map();
@@ -156,17 +159,19 @@ ensures
     result.valid(),
     LReceiveVoteGranted(s@, result@, c@, *voter as int),
 {
-    let mut __votes_granted = clone_hashset(&s.votes_granted);
-    __votes_granted.insert(*voter);
-    let result = CState {
-        current_term: s.current_term,
-        role: clone_server_role(&s.role),
-        has_voted: s.has_voted,
-        voted_for: s.voted_for,
-        log: clone_log(&s.log),
-        commit_index: s.commit_index,
-        votes_granted: __votes_granted,
-        match_index: s.match_index.clone(),
+    let result = {
+        let mut __votes_granted = clone_hashset(&s.votes_granted);
+        __votes_granted.insert(*voter);
+        CState {
+            current_term: s.current_term,
+            role: clone_role(&s.role),
+            has_voted: s.has_voted,
+            voted_for: s.voted_for,
+            log: clone_log(&s.log),
+            commit_index: s.commit_index,
+            votes_granted: __votes_granted,
+            match_index: s.match_index.clone(),
+        }
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
@@ -215,7 +220,7 @@ ensures
         __log.push(entry);
         CState {
             current_term: s.current_term,
-            role: clone_server_role(&s.role),
+            role: clone_role(&s.role),
             has_voted: s.has_voted,
             voted_for: s.voted_for,
             log: __log,
@@ -243,17 +248,19 @@ ensures
     result.valid(),
     LHandleAppendResponse(s@, result@, c@, *follower as int, *new_match_index as int),
 {
-    let mut __match_index = s.match_index.clone();
-    __match_index.insert(*follower, *new_match_index);
-    let result = CState {
-        current_term: s.current_term,
-        role: clone_server_role(&s.role),
-        has_voted: s.has_voted,
-        voted_for: s.voted_for,
-        log: clone_log(&s.log),
-        commit_index: s.commit_index,
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: __match_index,
+    let result = {
+        let mut __match_index = s.match_index.clone();
+        __match_index.insert(*follower, *new_match_index);
+        CState {
+            current_term: s.current_term,
+            role: clone_role(&s.role),
+            has_voted: s.has_voted,
+            voted_for: s.voted_for,
+            log: clone_log(&s.log),
+            commit_index: s.commit_index,
+            votes_granted: clone_hashset(&s.votes_granted),
+            match_index: __match_index,
+        }
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
@@ -276,7 +283,7 @@ ensures
 {
 CState {
         current_term: s.current_term,
-        role: clone_server_role(&s.role),
+        role: clone_role(&s.role),
         has_voted: s.has_voted,
         voted_for: s.voted_for,
         log: clone_log(&s.log),

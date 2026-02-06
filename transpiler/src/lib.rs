@@ -435,14 +435,15 @@ impl Transpiler {
         let mut output = String::new();
 
         // lemma_empty_set_map
-        output.push_str("/// Helper proof: mapping over an empty set yields an empty set.\n");
+        output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
         output.push_str("proof fn lemma_empty_set_map()\n");
         output.push_str("ensures\n");
         output.push_str("    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n");
         output.push_str("{\n");
         output.push_str("    let f = |x: u64| x as int;\n");
         output.push_str("    let s = Set::<u64>::empty().map(f);\n");
-        output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by { }\n");
+        output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
+        output.push_str("    }\n");
         output.push_str("}\n\n");
 
         // lemma_set_map_remove_commute — only when spec uses .remove()
@@ -584,7 +585,7 @@ impl Transpiler {
         let mut field_type_pairs: Vec<(&String, &String)> = clone_field_types.iter().collect();
         field_type_pairs.sort_by_key(|(field, _)| field.to_string());
 
-        for (_field_name, enum_type) in &field_type_pairs {
+        for (field_name, enum_type) in &field_type_pairs {
             if !seen_types.insert(enum_type.to_string()) {
                 continue; // Skip duplicate types
             }
@@ -605,18 +606,8 @@ impl Transpiler {
                 continue; // No variants found for this type
             }
 
-            // Use type name (snake_case, without exec prefix) for helper name
-            // e.g., "CServerRole" -> "clone_server_role", "CNodeRole" -> "clone_node_role"
-            let type_snake = {
-                // Strip common "C" exec prefix if present
-                let stripped = if enum_type.starts_with('C') && enum_type.len() > 1 && enum_type.chars().nth(1).is_some_and(|c| c.is_uppercase()) {
-                    &enum_type[1..]
-                } else {
-                    enum_type.as_str()
-                };
-                crate::translator::Translator::to_snake_case(stripped)
-            };
-            let fn_name = format!("clone_{}", type_snake);
+            // Use field name for helper name: field "role" -> "clone_role"
+            let fn_name = format!("clone_{}", field_name);
             output.push_str(&format!(
                 "/// Helper: clone {} preserving view (workaround for missing derive Clone spec).\n",
                 enum_type
@@ -1375,8 +1366,8 @@ mod tests {
 
         let output = Transpiler::generate_clone_helpers(&clone_field_types, &variant_remapping);
 
-        // Helper name is based on type name (snake_case, without C prefix): "clone_node_role"
-        assert!(output.contains("fn clone_node_role(r: &CNodeRole) -> (res: CNodeRole)"));
+        // Helper name is based on field name: field "role" -> "clone_role"
+        assert!(output.contains("fn clone_role(r: &CNodeRole) -> (res: CNodeRole)"));
         assert!(output.contains("res@ == r@,"));
         assert!(output.contains("res.valid() == r.valid(),"));
         assert!(output.contains("CNodeRole::Head => CNodeRole::Head,"));
