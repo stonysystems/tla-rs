@@ -472,3 +472,14 @@ fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 | After RSL/proposer (12.5.6) | 587 | 0 | ~74 | -1 verified, -30 assumes |
 | After RSL/replica (12.5.7) | 583 | 0 | ~21 | -4 verified, -53 assumes |
 | After scheduler/dispatch (12.5.8) | 583 | 0 | ~12 | +0 verified, -9 assumes |
+| After IO dispatch (12.5.9) | 584 | 0 | ~7 | +1 verified, -5 assumes |
+
+### Remaining Assumes (7 — Irreducible IO Trust Boundary)
+
+The 7 remaining `assume()` calls are at the IO trust boundary in `replica_gen.rs`.
+They cannot be eliminated because they depend on the runtime IO layer providing correctly
+structured IO sequences, which is outside the scope of protocol-level verification:
+
+1. `assume(received_packet.valid())` (2 sites) — IO layer must deliver valid packets
+2. `assume(LSpecPredicate(...))` (3 sites) — spec predicate depends on IO structure
+3. `assume(result.valid() && result@ == ...)` (2 sites) — top-level dispatch result
