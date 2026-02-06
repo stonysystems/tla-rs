@@ -417,3 +417,67 @@ fn test_printer_produces_parseable_tla() {
     let result = compare_tla_modules(&original_canon, &parsed_canon);
     assert!(result.equivalent, "Round-trip should preserve semantics: {:?}", result.differences);
 }
+
+// =============================================================================
+// Additional Protocol Round-trip Tests
+// =============================================================================
+
+#[test]
+fn test_twophase_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/TwoPhase/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "TwoPhase/Types.tla"));
+}
+
+#[test]
+fn test_twophase_roundtrip() {
+    let tla = include_str!("../../src/tla+/TwoPhase/Twophase.tla");
+    assert!(check_rsl_roundtrip(tla, "TwoPhase/Twophase.tla"));
+}
+
+#[test]
+fn test_paxos_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/Paxos/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "Paxos/Types.tla"));
+}
+
+#[test]
+fn test_paxos_roundtrip() {
+    let tla = include_str!("../../src/tla+/Paxos/Paxos.tla");
+    assert!(check_rsl_roundtrip(tla, "Paxos/Paxos.tla"));
+}
+
+#[test]
+fn test_leader_election_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/LeaderElection/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "LeaderElection/Types.tla"));
+}
+
+#[test]
+fn test_leader_election_roundtrip() {
+    let tla = include_str!("../../src/tla+/LeaderElection/Election.tla");
+    assert!(check_rsl_roundtrip(tla, "LeaderElection/Election.tla"));
+}
+
+#[test]
+fn test_raft_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/Raft/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "Raft/Types.tla"));
+}
+
+#[test]
+fn test_raft_roundtrip() {
+    let tla = include_str!("../../src/tla+/Raft/Raft.tla");
+    assert!(check_rsl_roundtrip(tla, "Raft/Raft.tla"));
+}
+
+#[test]
+fn test_chain_replication_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/ChainReplication/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "ChainReplication/Types.tla"));
+}
+
+#[test]
+fn test_chain_replication_roundtrip() {
+    let tla = include_str!("../../src/tla+/ChainReplication/Chain.tla");
+    assert!(check_rsl_roundtrip(tla, "ChainReplication/Chain.tla"));
+}

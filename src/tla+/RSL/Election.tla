@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Ballot, Request, UpperBound, Constants, ElectionState, RequestBatch, ReplicaConstants, RslPacket
+CONSTANTS UpperBound, ReplicaConstants, Ballot, Constants, RslPacket, ElectionState, RequestBatch, Request
 
 ElectionState ==
     [constants |-> ReplicaConstants, current_view |-> Ballot, current_view_suspectors |-> SUBSET Int, epoch_end_time |-> Int, epoch_length |-> Int, requests_received_this_epoch |-> Seq(Request), requests_received_prev_epochs |-> Seq(Request)]

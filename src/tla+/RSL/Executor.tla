@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS ReplyCache, Ballot, ReplicaConstants, RslPacket, Executor, Request, OperationNumber, RequestBatch, AbstractEndPoint, Reply
+CONSTANTS RslPacket, AbstractEndPoint, Ballot, OperationNumber, RequestBatch, Executor, ReplyCache, Request, Reply, ReplicaConstants
 
 Executor ==
     [constants |-> ReplicaConstants, app |-> AppState, ops_complete |-> Int, max_bal_reflected |-> Ballot, next_op_to_execute |-> OutstandingOperation, reply_cache |-> ReplyCache]

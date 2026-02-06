@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Request, RequestBatch, AppState
+CONSTANTS Request, AppState, RequestBatch
 
 HandleRequest(state, request) ==
     LET unused_0 == AppHandleRequest(state, request.request)

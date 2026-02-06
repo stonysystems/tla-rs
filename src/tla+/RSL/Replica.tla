@@ -4,13 +4,13 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS ReplicaConstants, RslPacket, ClockReading, Replica, RslIo, Scheduler
-
-Replica ==
-    [constants |-> ReplicaConstants, nextHeartbeatTime |-> Int, proposer |-> Proposer, acceptor |-> Acceptor, learner |-> Learner, executor |-> Executor]
+CONSTANTS ReplicaConstants, RslPacket, RslIo, Replica, ClockReading, Scheduler
 
 Scheduler ==
     [replica |-> Replica, nextActionIndex |-> Int]
+
+Replica ==
+    [constants |-> ReplicaConstants, nextHeartbeatTime |-> Int, proposer |-> Proposer, acceptor |-> Acceptor, learner |-> Learner, executor |-> Executor]
 
 ReplicaInit(r, c) ==
     /\ r.constants = c
