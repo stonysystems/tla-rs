@@ -1,7 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use crate::common::collections::hashsets::clone_hashset;
+use crate::protocol::LeaderElection::election::*;
 use crate::protocol::LeaderElection::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
@@ -20,16 +20,11 @@ pub struct CState {
 
 impl Clone for CState {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CState {
-            electing: self.electing.clone(),
-            has_leader: self.has_leader,
-            leader: self.leader,
-            alive: self.alive.clone(),
-            has_highest: self.has_highest,
-            highest_heard: self.highest_heard,
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CState {
@@ -60,12 +55,11 @@ pub struct CConstants {
 
 impl Clone for CConstants {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CConstants {
-            nodes: self.nodes.clone(),
-            num_nodes: self.num_nodes,
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CConstants {

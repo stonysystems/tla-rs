@@ -1,7 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use crate::common::collections::hashsets::clone_hashset;
+use crate::protocol::ChainReplication::chain::*;
 use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
@@ -23,15 +23,7 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    {
-        CState {
-            role: self.role.clone(),
-            history: self.history.clone(),
-            pending_sent: self.pending_sent.clone(),
-            committed_count: self.committed_count,
-            obj_value: self.obj_value,
-        }
-    }
+    { unimplemented!() }
 }
 
 impl CState {
@@ -46,7 +38,7 @@ impl View for CState {
     open spec fn view(&self) -> LState {
         LState {
             role: self.role@,
-            history: self.history@.map(|i: int, v: u64| v as int),
+            history: self.history@.map(|i: int, x: u64| x as int),
             pending_sent: self.pending_sent@.map(|x: u64| x as int),
             committed_count: self.committed_count as int,
             obj_value: self.obj_value as int,

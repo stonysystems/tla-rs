@@ -1,7 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use crate::common::collections::hashsets::clone_hashset;
+use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -50,18 +50,7 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    {
-        CState {
-            current_term: self.current_term,
-            role: self.role.clone(),
-            has_voted: self.has_voted,
-            voted_for: self.voted_for,
-            log: self.log.clone(),
-            commit_index: self.commit_index,
-            votes_granted: self.votes_granted.clone(),
-            match_index: self.match_index.clone(),
-        }
-    }
+    { unimplemented!() }
 }
 
 impl CState {
@@ -79,7 +68,7 @@ impl View for CState {
             role: self.role@,
             has_voted: self.has_voted,
             voted_for: self.voted_for as int,
-            log: self.log@.map(|i: int, e: CLogEntry| e@),
+            log: self.log@.map(|i: int, x: CLogEntry| x@),
             commit_index: self.commit_index as int,
             votes_granted: self.votes_granted@.map(|x: u64| x as int),
             match_index: self.match_index@,
@@ -95,13 +84,11 @@ pub struct CConstants {
 
 impl Clone for CConstants {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CConstants {
-            servers: self.servers.clone(),
-            quorum_size: self.quorum_size,
-            my_id: self.my_id,
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CConstants {

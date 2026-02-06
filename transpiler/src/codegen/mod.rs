@@ -210,13 +210,15 @@ impl TypeGenerator {
         code.push_str("}\n\n");
 
         // Generate external_body Clone impl if needed
+        // Note: #[verifier(external_body)] goes on the fn, not the impl block
+        // Include ensures clauses so Verus knows clone preserves View and validity
         if clone_strat == "external_body" {
+            code.push_str(&format!("impl Clone for {} {{\n", exec_name));
             code.push_str(&format!(
-                "#[verifier(external_body)]\nimpl Clone for {} {{\n",
-                exec_name
-            ));
-            code.push_str(&format!(
-                "{}fn clone(&self) -> Self {{ unimplemented!() }}\n",
+                "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n{}{{ unimplemented!() }}\n",
+                self.indent, self.indent, self.indent,
+                self.indent, self.indent,
+                self.validity_predicate_name, self.validity_predicate_name,
                 self.indent
             ));
             code.push_str("}\n\n");
@@ -267,13 +269,15 @@ impl TypeGenerator {
         code.push_str("}\n\n");
 
         // Generate external_body Clone impl if needed
+        // Note: #[verifier(external_body)] goes on the fn, not the impl block
+        // Include ensures clauses so Verus knows clone preserves View and validity
         if clone_strat == "external_body" {
+            code.push_str(&format!("impl Clone for {} {{\n", exec_name));
             code.push_str(&format!(
-                "#[verifier(external_body)]\nimpl Clone for {} {{\n",
-                exec_name
-            ));
-            code.push_str(&format!(
-                "{}fn clone(&self) -> Self {{ unimplemented!() }}\n",
+                "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n{}{{ unimplemented!() }}\n",
+                self.indent, self.indent, self.indent,
+                self.indent, self.indent,
+                self.validity_predicate_name, self.validity_predicate_name,
                 self.indent
             ));
             code.push_str("}\n\n");
@@ -624,6 +628,10 @@ impl TypeGenerator {
         match ty {
             Type::Named(path) => {
                 let name = path.last().unwrap_or("Unknown");
+                // Rust primitive types should pass through unchanged
+                if is_rust_primitive_type(name) {
+                    return name.to_string();
+                }
                 self.get_exec_type(name)
             }
             Type::Generic(path, args) => {
@@ -734,10 +742,14 @@ impl TypeGenerator {
 
     /// Generate the expression for a field in a View impl
     /// Handles:
+    /// - Collections with int/nat inner types needing `.map()` conversion
     /// - Types needing @ operator (structs, collections, etc.)
     /// - Types needing `as int` conversion (int, nat -> i64, u64)
     /// - Simple types that need no conversion
     fn generate_view_field_expr(&self, field_name: &str, ty: &Type) -> String {
+        if let Some(map_expr) = self.collection_view_map_expr(ty, &format!("self.{}", field_name)) {
+            return map_expr;
+        }
         if self.needs_view(ty) {
             format!("self.{}@", field_name)
         } else if needs_as_int_conversion(ty) {
@@ -751,12 +763,50 @@ impl TypeGenerator {
     /// Similar to generate_view_field_expr but for enum variant bindings
     /// (no `self.` prefix, uses `*` for dereferencing)
     fn generate_view_variant_field_expr(&self, binding_name: &str, ty: &Type) -> String {
+        if let Some(map_expr) = self.collection_view_map_expr(ty, binding_name) {
+            return map_expr;
+        }
         if self.needs_view(ty) {
             format!("{}@", binding_name)
         } else if needs_as_int_conversion(ty) {
             format!("*{} as int", binding_name)
         } else {
             format!("*{}", binding_name)
+        }
+    }
+
+    /// Generate a `.map()` expression for collection types whose inner elements need
+    /// type conversion in the View impl. For example, `Set<int>` maps to `HashSet<u64>`
+    /// in exec, so the View needs `self.field@.map(|x: u64| x as int)` to convert
+    /// `Set<u64>` back to `Set<int>`.
+    /// Returns None if no inner conversion is needed.
+    fn collection_view_map_expr(&self, ty: &Type, accessor: &str) -> Option<String> {
+        match ty {
+            Type::Set(inner) if needs_as_int_conversion(inner) => {
+                let exec_inner = self.translate_type(inner);
+                Some(format!("{}@.map(|x: {}| x as int)", accessor, exec_inner))
+            }
+            Type::Seq(inner) if needs_as_int_conversion(inner) => {
+                let exec_inner = self.translate_type(inner);
+                Some(format!(
+                    "{}@.map(|i: int, x: {}| x as int)",
+                    accessor, exec_inner
+                ))
+            }
+            // Seq<NamedType> where inner needs View: map each element with @
+            Type::Seq(inner) if inner_needs_view_map(inner) => {
+                let exec_inner = self.translate_type(inner);
+                Some(format!(
+                    "{}@.map(|i: int, x: {}| x@)",
+                    accessor, exec_inner
+                ))
+            }
+            // Set<NamedType> where inner needs View: map each element with @
+            Type::Set(inner) if inner_needs_view_map(inner) => {
+                let exec_inner = self.translate_type(inner);
+                Some(format!("{}@.map(|x: {}| x@)", accessor, exec_inner))
+            }
+            _ => None,
         }
     }
 }
@@ -780,6 +830,40 @@ fn needs_as_int_conversion(ty: &Type) -> bool {
         Type::Reference { ty, .. } => needs_as_int_conversion(ty),
         _ => false,
     }
+}
+
+/// Check if a collection's inner type needs `.map(|x| x@)` in View impl.
+/// Returns true for named spec types (e.g., LLogEntry) that have their own View trait.
+/// Returns false for Rust primitives (u64, bool) and abstract types (int, nat).
+fn inner_needs_view_map(ty: &Type) -> bool {
+    match ty {
+        Type::Named(path) => {
+            let name = path.last().unwrap_or("Unknown");
+            !is_rust_primitive_type(name)
+        }
+        Type::Generic(_, _) => true,
+        _ => false,
+    }
+}
+
+/// Check if a type name is a Rust primitive type that should not get spec→exec naming applied.
+/// These types appear in spec files when the user already uses concrete types (e.g., `Map<u64, u64>`).
+fn is_rust_primitive_type(name: &str) -> bool {
+    matches!(
+        name,
+        "u8" | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "String"
+    )
 }
 
 /// Check if a type name represents a primitive or stdlib type that doesn't have valid()
@@ -1169,6 +1253,24 @@ mod tests {
         let custom_gen = TypeGenerator::new(custom_config);
         assert_eq!(custom_gen.translate_type(&Type::Int), "u64");
         assert_eq!(custom_gen.translate_type(&Type::Nat), "u64");
+
+        // Test that Rust primitive types in Named position pass through unchanged
+        assert_eq!(
+            custom_gen.translate_type(&Type::Named(Path::single("u64".to_string()))),
+            "u64"
+        );
+        assert_eq!(
+            custom_gen.translate_type(&Type::Named(Path::single("i64".to_string()))),
+            "i64"
+        );
+        // Map<u64, u64> should stay as HashMap<u64, u64>, not HashMap<Cu64, Cu64>
+        assert_eq!(
+            custom_gen.translate_type(&Type::Map(
+                Box::new(Type::Named(Path::single("u64".to_string()))),
+                Box::new(Type::Named(Path::single("u64".to_string()))),
+            )),
+            "HashMap<u64, u64>"
+        );
     }
 
     #[test]
@@ -2378,6 +2480,249 @@ mod tests {
             !result.code.contains("ghost_data"),
             "Should skip ghost_data everywhere: {}",
             result.code
+        );
+    }
+
+    #[test]
+    fn test_view_impl_set_int_mapping() {
+        // Set<int> in spec -> HashSet<u64> in exec
+        // View should generate `.map(|x: u64| x as int)` to convert Set<u64> back to Set<int>
+        let config = NamingConfig {
+            int_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
+        let generator = TypeGenerator::new(config);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "rm_state".to_string(),
+                    ty: Type::Set(Box::new(Type::Int)),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "tm_prepared".to_string(),
+                    ty: Type::Set(Box::new(Type::Int)),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // View impl should map Set<u64> -> Set<int>
+        assert!(
+            result
+                .code
+                .contains("self.rm_state@.map(|x: u64| x as int)"),
+            "Should map Set<int> field rm_state with .map(): {}",
+            result.code
+        );
+        assert!(
+            result
+                .code
+                .contains("self.tm_prepared@.map(|x: u64| x as int)"),
+            "Should map Set<int> field tm_prepared with .map(): {}",
+            result.code
+        );
+        // Should NOT just use self.field@ without map
+        assert!(
+            !result.code.contains("rm_state: self.rm_state@,"),
+            "Should NOT use bare @ for Set<int> field: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_view_impl_seq_int_mapping() {
+        // Seq<int> in spec -> Vec<u64> in exec
+        // View should generate `.map(|i: int, x: u64| x as int)`
+        let config = NamingConfig {
+            int_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
+        let generator = TypeGenerator::new(config);
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "values".to_string(),
+                ty: Type::Seq(Box::new(Type::Int)),
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            result
+                .code
+                .contains("self.values@.map(|i: int, x: u64| x as int)"),
+            "Should map Seq<int> field with .map(|i, x|): {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_view_impl_set_nat_mapping() {
+        // Set<nat> in spec -> HashSet<u64> in exec
+        // nat also needs `as int` conversion since nat maps to u64
+        let generator = TypeGenerator::new(make_config());
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "ids".to_string(),
+                ty: Type::Set(Box::new(Type::Nat)),
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        assert!(
+            result
+                .code
+                .contains("self.ids@.map(|x: u64| x as int)"),
+            "Should map Set<nat> field with .map(): {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_view_impl_set_named_type_mapping() {
+        // Set<NamedType> where NamedType has its own View trait
+        // Should generate .map(|x: CEndPoint| x@) to apply View on each element
+        let generator = TypeGenerator::new(make_config());
+
+        let spec = StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "endpoints".to_string(),
+                ty: Type::Set(Box::new(Type::Named(Path::single(
+                    "EndPoint".to_string(),
+                )))),
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should use .map(|x| x@) for Set<NamedType> since inner type has View
+        assert!(
+            result
+                .code
+                .contains("self.endpoints@.map(|x: CEndPoint| x@)"),
+            "Should map Set<NamedType> with .map(|x| x@): {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_view_impl_enum_variant_set_int() {
+        // Enum variant with Set<int> field should also get .map() in View
+        let config = NamingConfig {
+            int_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
+        let generator = TypeGenerator::new(config);
+
+        let spec = EnumDef {
+            name: "LMsg".to_string(),
+            generics: Generics::default(),
+            variants: vec![
+                VariantDef {
+                    name: "Prepare".to_string(),
+                    fields: VariantFields::Struct(vec![FieldDef {
+                        name: "prepared_rms".to_string(),
+                        ty: Type::Set(Box::new(Type::Int)),
+                        is_public: true,
+                    }]),
+                },
+                VariantDef {
+                    name: "Empty".to_string(),
+                    fields: VariantFields::Unit,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_enum(&spec);
+
+        // Variant field should use .map() in View trait
+        assert!(
+            result
+                .code
+                .contains("prepared_rms@.map(|x: u64| x as int)"),
+            "Should map Set<int> in enum variant with .map(): {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_collection_view_map_expr_direct() {
+        // Directly test the collection_view_map_expr method
+        let config = NamingConfig {
+            int_type: "u64".to_string(),
+            ..NamingConfig::default()
+        };
+        let generator = TypeGenerator::new(config);
+
+        // Set<int> -> should produce map expression
+        let set_int = Type::Set(Box::new(Type::Int));
+        assert_eq!(
+            generator.collection_view_map_expr(&set_int, "self.field"),
+            Some("self.field@.map(|x: u64| x as int)".to_string())
+        );
+
+        // Seq<int> -> should produce map expression with index
+        let seq_int = Type::Seq(Box::new(Type::Int));
+        assert_eq!(
+            generator.collection_view_map_expr(&seq_int, "self.field"),
+            Some("self.field@.map(|i: int, x: u64| x as int)".to_string())
+        );
+
+        // Set<nat> -> should also produce map expression
+        let set_nat = Type::Set(Box::new(Type::Nat));
+        assert_eq!(
+            generator.collection_view_map_expr(&set_nat, "self.ids"),
+            Some("self.ids@.map(|x: u64| x as int)".to_string())
+        );
+
+        // Set<NamedType> -> should generate .map(|x| x@) for View conversion
+        let set_named = Type::Set(Box::new(Type::Named(Path::single("Foo".to_string()))));
+        assert_eq!(
+            generator.collection_view_map_expr(&set_named, "self.field"),
+            Some("self.field@.map(|x: CFoo| x@)".to_string())
+        );
+
+        // Set<u64> (Rust primitive as Named) -> should return None (no conversion needed)
+        let set_u64 = Type::Set(Box::new(Type::Named(Path::single("u64".to_string()))));
+        assert_eq!(
+            generator.collection_view_map_expr(&set_u64, "self.field"),
+            None
+        );
+
+        // Map<int, int> -> should return None (Map not handled yet)
+        let map_int_int = Type::Map(Box::new(Type::Int), Box::new(Type::Int));
+        assert_eq!(
+            generator.collection_view_map_expr(&map_int_int, "self.field"),
+            None
+        );
+
+        // Bool -> should return None
+        assert_eq!(
+            generator.collection_view_map_expr(&Type::Bool, "self.field"),
+            None
         );
     }
 }

@@ -46,6 +46,10 @@ clone_fields = ["role"]
     "s.log@[*new_commit_index as int - 1].term == s.current_term",
 ]
 
+[clone_strategy]
+"CState" = "external_body"
+"CConstants" = "external_body"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

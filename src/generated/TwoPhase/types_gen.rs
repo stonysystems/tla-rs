@@ -1,7 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use crate::common::collections::hashsets::clone_hashset;
+use crate::protocol::TwoPhase::twophase::*;
 use crate::protocol::TwoPhase::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
@@ -17,13 +17,11 @@ pub struct CState {
 
 impl Clone for CState {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CState {
-            rm_state: self.rm_state.clone(),
-            tm_state: self.tm_state.clone(),
-            tm_prepared: self.tm_prepared.clone(),
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CState {
@@ -50,11 +48,11 @@ pub struct CConstants {
 
 impl Clone for CConstants {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CConstants {
-            rm: self.rm.clone(),
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CConstants {

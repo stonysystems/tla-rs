@@ -23,6 +23,10 @@ nat_type = "u64"
 "LConstants" = "CConstants"
 "LNodeState" = "CNodeState"
 
+[clone_strategy]
+"CState" = "external_body"
+"CConstants" = "external_body"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true

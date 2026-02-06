@@ -25,6 +25,9 @@ clone_fields = ["role"]
 [extra_requires]
 "CInit" = ["c.node_id < c.chain_len"]
 
+[clone_strategy]
+"CState" = "external_body"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

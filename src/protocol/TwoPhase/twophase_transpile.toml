@@ -22,6 +22,10 @@ nat_type = "u64"
 "LConstants" = "CConstants"
 "LTMState" = "CTMState"
 
+[clone_strategy]
+"CState" = "external_body"
+"CConstants" = "external_body"
+
 [variant_remapping]
 "Init" = "CTMState::Init"
 "Committed" = "CTMState::Committed"

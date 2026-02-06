@@ -1,7 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
-use crate::common::collections::hashsets::clone_hashset;
+use crate::protocol::Paxos::paxos::*;
 use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
 use vstd::prelude::*;
@@ -18,14 +18,11 @@ pub struct CState {
 
 impl Clone for CState {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CState {
-            max_bal: self.max_bal.clone(),
-            max_v_bal: self.max_v_bal.clone(),
-            max_val: self.max_val.clone(),
-            msg_count: self.msg_count,
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CState {
@@ -54,12 +51,11 @@ pub struct CConstants {
 
 impl Clone for CConstants {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CConstants {
-            acceptors: self.acceptors.clone(),
-            quorum_size: self.quorum_size,
-        }
-    }
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
 }
 
 impl CConstants {
