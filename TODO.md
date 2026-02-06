@@ -1760,20 +1760,20 @@ assume(b.seqno < u64::MAX);
 Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to understand what proof code the transpiler must generate.
 
 **12.1.1: Analyze TwoPhase proof patterns**
-- [ ] Study the hand-proven `twophase_gen.rs` (in `generated_old/`)
-- [ ] Document what was needed:
+- [x] Study the hand-proven `twophase_gen.rs` (in `generated_reference/`)
+- [x] Document what was needed:
   - `lemma_empty_set_map()` helper proof for Init functions
   - `broadcast use Set::lemma_set_map_insert_commute` for HashSet insert proofs
   - Added `s.tm_state is Init` preconditions (from spec `recommends`)
   - `proof { ... }` blocks after construction
-- [ ] Identify which patterns are generalizable across all protocols
+- [x] Identify which patterns are generalizable across all protocols
 
-**12.1.2: Analyze patterns from other simple protocols (Paxos, LeaderElection)**
-- [ ] Study `paxos_gen.rs` and `election_gen.rs` from `generated_old/`
-- [ ] Document additional patterns: `lemma_set_map_remove_commute`, enum variant preconditions
+**12.1.2: Analyze patterns from other simple protocols (Paxos, LeaderElection, Raft, ChainReplication)**
+- [x] Study `paxos_gen.rs`, `election_gen.rs`, `raft_gen.rs`, `chain_gen.rs` from `generated_reference/`
+- [x] Document additional patterns: `lemma_set_map_remove_commute`, enum variant preconditions, Vec push/clone helpers
 
 **12.1.3: Catalog all proof patterns**
-- [ ] Create a pattern catalog for the transpiler to use:
+- [x] Created pattern catalog at `docs/dev/proof-pattern-catalog.md` with 12 patterns:
   - **P1**: Empty collection map: `Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()`
   - **P2**: HashSet insert + map commutativity: `broadcast use Set::lemma_set_map_insert_commute`
   - **P3**: HashSet remove + map commutativity: `lemma_set_map_remove_commute`
@@ -1784,6 +1784,8 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
   - **P8**: HashMap insert view identity
   - **P9**: clone_hashset ensures `res@ == s@`
   - **P10**: Unreachable arm from requires
+  - **P11**: Enum clone helper (with view/valid preservation)
+  - **P12**: Vec clone helper (external_body, with mapped view ensures)
 
 #### Phase 12.2: Extend Transpiler for Proof Generation
 
@@ -1927,7 +1929,7 @@ RSL is the most complex. Regenerate component by component using the improved tr
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 12.0 | Archive current generated code | ✅ DONE |
-| 12.1 | Study proof patterns from reference files | ❌ TODO |
+| 12.1 | Study proof patterns from reference files | ✅ DONE |
 | 12.2 | Extend transpiler for proof generation | ❌ TODO |
 | 12.3 | Regenerate simple protocols (TwoPhase, Paxos, LeaderElection) | ❌ TODO |
 | 12.4 | Regenerate Raft + ChainReplication | ❌ TODO |
