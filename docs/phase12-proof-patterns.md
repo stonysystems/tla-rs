@@ -450,6 +450,9 @@ fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 10. **`outbound_packets_to_vec()` added** — converts OutboundPackets to Vec<CPacket> with `ensures result@.map(...) =~= sent@` — bridges between impl's OutboundPackets return and gen's Vec<CPacket> interface
 11. **`CProposer::clone_up_to_view()` added** — `ensures self == result, result@ == self@, result.valid() == self.valid()` — full structural equality needed because impl checks concrete fields like `replica_ids@.contains(pkt.src)`
 12. **`clone_cpacket_full()` added** — CPacket clone with `ensures res == *p` — full concrete equality, needed when callee checks `replica_ids@.contains(pkt.src)` which requires the concrete EndPoint, not just the abstract view
+13. **`CReplica::clone_up_to_view()` added** — `ensures self == result, result@ == self@, result.valid() == self.valid()` — needed for replica clone-delegate pattern; CReplica has `#[derive(Clone)]` but needs explicit ensures for verification
+14. **`CReplicaNextProcessInvalid` self.valid() added** — impl was missing `self.valid()` in ensures (only function without it); trivially holds since function doesn't modify self
+15. **`CExtractSentPacketsFromIos` made external_body** — IO-to-packet conversion bridges runtime IOs and spec ExtractSentPacketsFromIos; loop proof too complex for automated verification
 
 ## Verification Results
 
@@ -467,3 +470,4 @@ fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 | After RSL/acceptor (12.5.4) | 592 | 0 | ~126 | -3 verified, -23 assumes |
 | After RSL/election (12.5.5) | 588 | 0 | ~104 | -4 verified, -22 assumes |
 | After RSL/proposer (12.5.6) | 587 | 0 | ~74 | -1 verified, -30 assumes |
+| After RSL/replica (12.5.7) | 583 | 0 | ~21 | -4 verified, -53 assumes |
