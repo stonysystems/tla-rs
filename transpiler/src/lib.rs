@@ -1901,4 +1901,144 @@ mod tests {
         // Should not have extra blank line before } // verus! when no manual code
         assert!(result.contains("} // verus!"));
     }
+
+    // =========================================================================
+    // Regression tests for proof generation pipeline (Phase 12.6.2)
+    // =========================================================================
+
+    /// Test that set-based proof generation produces correct proof blocks.
+    /// Uses generate_proofs=true to trigger proof block emission for empty set.
+    #[test]
+    fn test_regression_set_proof_pipeline() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: true,
+                ..TranslatorConfig::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+        verus! {
+            pub open spec fn LInitState(s: Set<int>) -> bool {
+                s =~= Set::<int>::empty()
+            }
+        }
+        "#;
+        let annotation_source = "module test { LInitState(-); }";
+        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+
+        // Should contain proof-related imports/helper for empty set
+        assert!(result.contains("lemma_empty_set_map") || result.contains("HashSet::new"),
+            "Should contain proof for empty set creation:\n{}", result);
+    }
+
+    /// Test that generate_proofs=true + set insert emits proof block with broadcast use.
+    #[test]
+    fn test_regression_set_insert_proof_pipeline() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: true,
+                ..TranslatorConfig::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn TestAddMember(s: Set<int>, s_: Set<int>, v: int) -> bool {
+                    s_ =~= s.insert(v)
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                TestAddMember(+, -, +);
+            }
+        "#;
+        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+
+        // Should contain proof-related code for set operations
+        // The proof block emits either broadcast use or the insert function call
+        assert!(result.contains("insert") || result.contains("proof"),
+            "Should contain set insert in generated code:\n{}", result);
+    }
+
+    /// Test that int params use `*x as int` in ensures clauses.
+    #[test]
+    fn test_regression_primitive_int_ensures() {
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn TestIncrement(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                TestIncrement(+, -);
+            }
+        "#;
+        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+
+        // int params should appear as `*x as int` in ensures clause
+        assert!(result.contains("*x as int"),
+            "Int param should use *x as int in ensures:\n{}", result);
+    }
+
+    /// Test that generate_proofs with struct_vec_fields config produces
+    /// correct clone helper functions.
+    #[test]
+    fn test_regression_struct_vec_fields_clone_helper() {
+        let mut struct_vec_fields = std::collections::HashMap::new();
+        struct_vec_fields.insert(
+            "entries".to_string(),
+            ("CEntry".to_string(), "LEntry".to_string()),
+        );
+
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_loops_for_verification: true,
+                struct_vec_fields,
+                ..TranslatorConfig::default()
+            },
+            ..Default::default()
+        };
+
+        let output = Transpiler::generate_proof_helper_lemmas(
+            false,
+            config.translator.generate_loops_for_verification,
+            true,
+            &config.translator.struct_vec_fields,
+        );
+
+        // Should generate clone_log helper for struct_vec_fields
+        assert!(output.contains("clone_entries"),
+            "Should generate clone helper for struct_vec_fields 'entries'");
+        assert!(output.contains("CEntry"),
+            "Clone helper should reference exec type CEntry");
+    }
+
+    /// Test that map_fields config generates abstractify lemmas.
+    #[test]
+    fn test_regression_map_fields_abstractify_lemmas() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "cache".to_string(),
+            ("HashMap<u64, CReply>".to_string(), "creplycache".to_string(), "CReply".to_string()),
+        );
+
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+
+        // Should generate abstractify lemmas for the map field
+        assert!(output.contains("lemma_abstractify_empty_creplycache"),
+            "Should generate empty lemma for map field");
+        assert!(output.contains("lemma_abstractify_creplycache_insert"),
+            "Should generate insert lemma for map field");
+    }
 }

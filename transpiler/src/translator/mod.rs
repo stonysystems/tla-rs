@@ -19338,4 +19338,381 @@ mod tests {
             result
         );
     }
+
+    // =========================================================================
+    // Tests for format_spec_arg with primitive_types
+    // (basic format_spec_arg tests exist above; these test the primitive_types config)
+    // =========================================================================
+
+    fn make_param(name: &str, ty: Type) -> crate::ast::Parameter {
+        crate::ast::Parameter {
+            name: name.to_string(),
+            ty,
+            mode: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+            span: None,
+        }
+    }
+
+    #[test]
+    fn test_format_spec_arg_primitive_type_named() {
+        // When a Named type is in primitive_types, it should get `*param as int`
+        let mut config = TranslatorConfig::default();
+        config.primitive_types.insert("OperationNumber".to_string());
+        let translator = Translator::new(config);
+        let param = make_param("opn", Type::Named(Path { segments: vec!["OperationNumber".to_string()] }));
+        assert_eq!(translator.format_spec_arg(&param), "*opn as int");
+    }
+
+    #[test]
+    fn test_format_spec_arg_non_primitive_named() {
+        // A Named type NOT in primitive_types gets param@
+        let mut config = TranslatorConfig::default();
+        config.primitive_types.insert("OperationNumber".to_string());
+        let translator = Translator::new(config);
+        let param = make_param("bal", Type::Named(Path { segments: vec!["Ballot".to_string()] }));
+        assert_eq!(translator.format_spec_arg(&param), "bal@");
+    }
+
+    #[test]
+    fn test_format_spec_arg_multiple_primitive_types() {
+        // Multiple primitive types all get `*param as int`
+        let mut config = TranslatorConfig::default();
+        config.primitive_types.insert("OperationNumber".to_string());
+        config.primitive_types.insert("Epoch".to_string());
+        let translator = Translator::new(config);
+        let param1 = make_param("opn", Type::Named(Path { segments: vec!["OperationNumber".to_string()] }));
+        let param2 = make_param("e", Type::Named(Path { segments: vec!["Epoch".to_string()] }));
+        let param3 = make_param("bal", Type::Named(Path { segments: vec!["Ballot".to_string()] }));
+        assert_eq!(translator.format_spec_arg(&param1), "*opn as int");
+        assert_eq!(translator.format_spec_arg(&param2), "*e as int");
+        assert_eq!(translator.format_spec_arg(&param3), "bal@");
+    }
+
+    // =========================================================================
+    // Additional tests for output_needs_view_map
+    // (basic tests exist above — these add coverage for edge cases)
+    // =========================================================================
+
+    #[test]
+    fn test_output_needs_view_map_seq_bool() {
+        // Seq<bool> should NOT need view map
+        let translator = Translator::default();
+        let ty = Type::Seq(Box::new(Type::Bool));
+        let result = translator.output_needs_view_map(&ty);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_output_needs_view_map_with_type_remapping() {
+        // When type_remapping is set, Seq<RslMessage> -> CMessage (remapped)
+        let mut remapping = HashMap::new();
+        remapping.insert("RslMessage".to_string(), "CMessage".to_string());
+        let config = TranslatorConfig {
+            type_remapping: remapping,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        let ty = Type::Seq(Box::new(Type::Named(Path { segments: vec!["RslMessage".to_string()] })));
+        let result = translator.output_needs_view_map(&ty);
+        assert_eq!(result, Some("CMessage".to_string()));
+    }
+
+    // =========================================================================
+    // Tests for map_field_empty_sites in ProofNeeds
+    // =========================================================================
+
+    #[test]
+    fn test_map_field_empty_sites_detection() {
+        // A struct with a HashMap::new() field should be detected
+        let expr = ExecExpr::Struct {
+            name: "CResult".to_string(),
+            fields: vec![
+                ("counter".to_string(), ExecExpr::Literal("0".to_string())),
+                ("cache".to_string(), ExecExpr::Call {
+                    func: "HashMap::new".to_string(),
+                    args: vec![],
+                }),
+            ],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert_eq!(needs.map_field_empty_sites, vec!["cache".to_string()]);
+    }
+
+    #[test]
+    fn test_map_field_empty_sites_no_hashmap() {
+        // A struct without HashMap::new() should have empty map_field_empty_sites
+        let expr = ExecExpr::Struct {
+            name: "CResult".to_string(),
+            fields: vec![
+                ("counter".to_string(), ExecExpr::Literal("0".to_string())),
+                ("name".to_string(), ExecExpr::Var("input".to_string())),
+            ],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.map_field_empty_sites.is_empty());
+    }
+
+    #[test]
+    fn test_map_field_empty_sites_multiple_hashmaps() {
+        // Multiple HashMap::new() fields should all be detected
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![
+                ("votes".to_string(), ExecExpr::Call {
+                    func: "HashMap::new".to_string(),
+                    args: vec![],
+                }),
+                ("cache".to_string(), ExecExpr::Call {
+                    func: "HashMap::new".to_string(),
+                    args: vec![],
+                }),
+            ],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert_eq!(needs.map_field_empty_sites.len(), 2);
+        assert!(needs.map_field_empty_sites.contains(&"votes".to_string()));
+        assert!(needs.map_field_empty_sites.contains(&"cache".to_string()));
+    }
+
+    #[test]
+    fn test_map_field_empty_sites_needs_proof_block() {
+        // map_field_empty_sites should trigger needs_proof_block()
+        let mut needs = ProofNeeds::default();
+        assert!(!needs.needs_proof_block());
+        needs.map_field_empty_sites.push("cache".to_string());
+        assert!(needs.needs_proof_block());
+    }
+
+    #[test]
+    fn test_map_field_empty_sites_proof_block_output() {
+        // build_proof_block should emit lemma_abstractify_empty_{prefix}(result.field)
+        let mut needs = ProofNeeds::default();
+        needs.map_field_empty_sites.push("cache".to_string());
+
+        let mut map_fields: HashMap<String, (String, String, String)> = HashMap::new();
+        map_fields.insert(
+            "cache".to_string(),
+            ("HashMap<u64, CReply>".to_string(), "creplycache".to_string(), "CReply".to_string()),
+        );
+
+        let block = needs.build_proof_block(&HashMap::new(), &map_fields).unwrap();
+        match block {
+            ExecExpr::ProofBlock { stmts } => {
+                assert_eq!(stmts.len(), 1);
+                match &stmts[0] {
+                    ExecExpr::Call { func, args } => {
+                        assert_eq!(func, "lemma_abstractify_empty_creplycache");
+                        assert_eq!(args.len(), 1);
+                        match &args[0] {
+                            ExecExpr::Var(path) => {
+                                assert_eq!(path, "result.cache");
+                            }
+                            other => panic!("Expected Var(\"result.cache\"), got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected Call, got {:?}", other),
+                }
+            }
+            other => panic!("Expected ProofBlock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_field_empty_sites_no_matching_config() {
+        // If map_field_empty_sites has a field not in map_fields config, skip it
+        let mut needs = ProofNeeds::default();
+        needs.map_field_empty_sites.push("cache".to_string());
+
+        let map_fields: HashMap<String, (String, String, String)> = HashMap::new();
+        // Empty map_fields config — the field "cache" won't match anything
+        let block = needs.build_proof_block(&HashMap::new(), &map_fields);
+        // Should return None since no actual proof statements were emitted
+        assert!(block.is_none());
+    }
+
+    // =========================================================================
+    // Tests for seq_comprehension_proof_block
+    // =========================================================================
+
+    #[test]
+    fn test_seq_comprehension_proof_block_basic() {
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["result".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // Spec struct element expression: LPacket{dst: s.src, src: s.dst}
+        let element_expr = Expr::Struct {
+            name: Path { segments: vec!["LPacket".to_string()] },
+            fields: vec![
+                ("dst".to_string(), Expr::Field(Box::new(Expr::Ident("s".to_string())), "src".to_string())),
+                ("src".to_string(), Expr::Field(Box::new(Expr::Ident("s".to_string())), "dst".to_string())),
+            ],
+        };
+
+        let result = translator.generate_seq_comprehension_proof_block(
+            &element_expr, "n as int", "i", &ctx
+        );
+        assert!(result.is_some(), "Should generate proof block for struct element");
+
+        match result.unwrap() {
+            ExecExpr::ProofBlock { stmts } => {
+                // Should have: let mapped = ..., assert(mapped.len() == ...), assert forall ...
+                assert_eq!(stmts.len(), 3, "Expected 3 proof statements: let, assert len, assert forall");
+
+                // First: let mapped = result@.map(...)
+                match &stmts[0] {
+                    ExecExpr::Let { pattern, .. } => assert_eq!(pattern, "mapped"),
+                    other => panic!("Expected Let, got {:?}", other),
+                }
+
+                // Second: assert(mapped.len() == n as int)
+                match &stmts[1] {
+                    ExecExpr::Assert(inner) => {
+                        if let ExecExpr::Literal(s) = inner.as_ref() {
+                            assert!(s.contains("mapped.len()"), "Should assert mapped length");
+                            assert!(s.contains("n as int"), "Should reference length_str");
+                        } else {
+                            panic!("Expected Literal in Assert");
+                        }
+                    }
+                    other => panic!("Expected Assert, got {:?}", other),
+                }
+
+                // Third: assert forall with per-field assertions
+                match &stmts[2] {
+                    ExecExpr::Literal(s) => {
+                        assert!(s.contains("assert forall"), "Should be an assert forall");
+                        assert!(s.contains("mapped[j]"), "Should reference mapped[j]");
+                        assert!(s.contains("LPacket"), "Should reference spec struct name");
+                        assert!(s.contains("dst"), "Should include dst field");
+                        assert!(s.contains("src"), "Should include src field");
+                    }
+                    other => panic!("Expected Literal (assert forall), got {:?}", other),
+                }
+            }
+            other => panic!("Expected ProofBlock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_seq_comprehension_proof_block_non_struct() {
+        // Non-struct element expression should return None
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec![],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // Non-struct expression (just a variable)
+        let element_expr = Expr::Ident("x".to_string());
+        let result = translator.generate_seq_comprehension_proof_block(
+            &element_expr, "n", "i", &ctx
+        );
+        assert!(result.is_none(), "Non-struct element should return None");
+    }
+
+    #[test]
+    fn test_seq_comprehension_proof_block_single_field() {
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["result".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // Single-field struct: LRequest{val: s.value}
+        let element_expr = Expr::Struct {
+            name: Path { segments: vec!["LRequest".to_string()] },
+            fields: vec![
+                ("val".to_string(), Expr::Field(Box::new(Expr::Ident("s".to_string())), "value".to_string())),
+            ],
+        };
+
+        let result = translator.generate_seq_comprehension_proof_block(
+            &element_expr, "s.items@.len()", "idx", &ctx
+        );
+        assert!(result.is_some());
+
+        match result.unwrap() {
+            ExecExpr::ProofBlock { stmts } => {
+                assert_eq!(stmts.len(), 3);
+                // Check the mapped variable uses CRequest (translated from LRequest)
+                match &stmts[0] {
+                    ExecExpr::Let { value, .. } => {
+                        if let ExecExpr::Literal(s) = value.as_ref() {
+                            assert!(s.contains("CRequest"), "Should use exec type name CRequest");
+                        }
+                    }
+                    other => panic!("Expected Let, got {:?}", other),
+                }
+            }
+            other => panic!("Expected ProofBlock, got {:?}", other),
+        }
+    }
+
+    // =========================================================================
+    // Tests for regeneration regression (protocol idempotency)
+    // =========================================================================
+
+    #[test]
+    fn test_proof_needs_default_all_false() {
+        let needs = ProofNeeds::default();
+        assert!(!needs.has_empty_set);
+        assert!(!needs.has_set_insert);
+        assert!(!needs.has_empty_vec);
+        assert!(!needs.has_vec_push);
+        assert!(needs.remove_sites.is_empty());
+        assert!(needs.push_sites.is_empty());
+        assert!(needs.map_field_empty_sites.is_empty());
+        assert!(!needs.needs_proof_block());
+    }
+
+    #[test]
+    fn test_proof_needs_combined_triggers() {
+        // Multiple triggers should all contribute to needs_proof_block
+        let mut needs = ProofNeeds::default();
+        assert!(!needs.needs_proof_block());
+
+        needs.has_empty_set = true;
+        assert!(needs.needs_proof_block());
+
+        needs.has_empty_set = false;
+        needs.has_set_insert = true;
+        assert!(needs.needs_proof_block());
+
+        needs.has_set_insert = false;
+        needs.has_empty_vec = true;
+        assert!(needs.needs_proof_block());
+
+        needs.has_empty_vec = false;
+        needs.has_vec_push = true;
+        assert!(needs.needs_proof_block());
+
+        needs.has_vec_push = false;
+        needs.remove_sites.push(RemoveSite { source_view: "s@".to_string(), element: "k".to_string(), field_name: Some("f".to_string()) });
+        assert!(needs.needs_proof_block());
+    }
 }

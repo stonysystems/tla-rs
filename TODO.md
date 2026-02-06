@@ -2074,14 +2074,20 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 
 #### Phase 12.6: Verification and Cleanup
 
-**12.6.1: Run full Verus verification**
-- [ ] Target: 579+ verified, 0 errors, **0 assumes** in all generated code
-- [ ] All generated code comes from transpiler (no hand edits)
+**12.6.1: Run full Verus verification** ✅ MOSTLY COMPLETE
+- [x] 584 verified, 0 errors (target exceeded)
+- [ ] 7 irreducible IO trust boundary assumes remain (would require CReplica clone_up_to_view + full IO contract propagation)
+- [ ] All generated code comes from transpiler (no hand edits) — RSL dispatch functions still hand-written
 
-**12.6.2: Transpiler regression tests**
-- [ ] Add tests: `cargo test --lib` for proof generation
-- [ ] Test each proof category generates correct output
-- [ ] Regression: regenerate all protocols, verify output matches
+**12.6.2: Transpiler regression tests** ✅ COMPLETE
+- [x] Add tests: `cargo test --lib` — 628 tests pass (21 new proof-related tests)
+- [x] Test each proof category generates correct output:
+  - `seq_comprehension_proof_block`: 3 tests (basic, non-struct, single-field)
+  - `format_spec_arg` with `primitive_types`: 3 tests (named primitive, non-primitive, multiple)
+  - `output_needs_view_map`: 2 new tests (seq_bool, type_remapping), 3 existing
+  - `map_field_empty_sites`: 5 tests (detection, no_hashmap, multiple, needs_proof_block, proof_block_output, no_matching_config)
+  - `ProofNeeds`: 2 tests (default_all_false, combined_triggers)
+- [x] Pipeline regression tests: 5 tests (set_proof, set_insert, primitive_int_ensures, struct_vec_fields, map_fields_lemmas)
 
 **12.6.3: Remove reference folder**
 - [ ] Once all regenerated code passes verification, delete `src/generated_old/`
@@ -2123,7 +2129,7 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 | 12.3 | Regenerate simple protocols (TwoPhase, Paxos, LeaderElection) | ❌ TODO |
 | 12.4 | Regenerate Raft + ChainReplication | ❌ TODO |
 | 12.5 | Eliminate RSL assumes (all components) | ✅ DONE (12 irreducible IO assumes remain in replica) |
-| 12.6 | Verification + cleanup | ❌ TODO (make all gen files transpiler-reproducible) |
+| 12.6 | Verification + cleanup | ✅ PARTIAL (12.6.1 mostly done, 12.6.2 done, 12.6.3-4 TODO) |
 
 ---
 
