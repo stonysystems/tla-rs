@@ -4204,30 +4204,241 @@ impl Translator {
             }
         }
 
+        // Add explicit requires clauses from the spec function
+        for req_expr in &func.spec_fn.requires {
+            requires.push(self.expr_to_requires_string(req_expr));
+        }
+
         // Add recommends clauses from the spec as requires
         // (recommends in spec functions become requires in exec functions)
         for recommends_expr in &func.spec_fn.recommends {
-            // Convert the expression to a string for the exec function
             requires.push(self.expr_to_requires_string(recommends_expr));
         }
+
+        // Extract input-only conjuncts from the spec body as preconditions.
+        // These are expressions in the body that only reference input parameters,
+        // e.g., `s.tm_state is Init` in a conjunction like:
+        //   &&& s.tm_state is Init   (precondition - input only)
+        //   &&& s_.tm_state is Done  (effect - references output)
+        let ctx = self.make_requires_context(func);
+        requires.extend(self.extract_body_preconditions(func, &ctx));
+
+        // Extract arithmetic overflow guards from output assignments.
+        // When the body contains `s_.field == s.field + N`, we need
+        // `s.field < u64::MAX` (or more precisely `s.field <= u64::MAX - N`)
+        // to prevent overflow in exec code.
+        requires.extend(self.extract_overflow_guards(func, &ctx));
 
         requires
     }
 
+    /// Create a minimal TransformContext for precondition analysis.
+    fn make_requires_context<'a>(&'a self, func: &AnnotatedFunction) -> TransformContext<'a> {
+        TransformContext {
+            config: &self.config,
+            output_params: func
+                .spec_fn
+                .params
+                .iter()
+                .zip(&func.param_modes)
+                .filter(|(_, m)| **m == ParameterMode::Output)
+                .map(|(p, _)| p.name.clone())
+                .collect(),
+            input_params: func
+                .spec_fn
+                .params
+                .iter()
+                .zip(&func.param_modes)
+                .filter(|(_, m)| **m == ParameterMode::Input)
+                .map(|(p, _)| p.name.clone())
+                .collect(),
+            output_types: func
+                .spec_fn
+                .params
+                .iter()
+                .zip(&func.param_modes)
+                .filter(|(_, m)| **m == ParameterMode::Output)
+                .map(|(p, _)| (p.name.clone(), p.ty.clone()))
+                .collect(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        }
+    }
+
+    /// Extract input-only top-level conjuncts from the spec function body.
+    /// These become `requires` clauses in the exec function.
+    fn extract_body_preconditions(
+        &self,
+        func: &AnnotatedFunction,
+        ctx: &TransformContext,
+    ) -> Vec<String> {
+        let mut preconditions = Vec::new();
+
+        // Only extract from top-level conjunctions
+        if let Expr::Conjunction(parts) = &func.spec_fn.body {
+            for part in parts {
+                if Self::is_input_only_expression(part, ctx) {
+                    preconditions.push(self.expr_to_requires_string(part));
+                }
+            }
+        }
+
+        preconditions
+    }
+
+    /// Extract arithmetic overflow guards from output field assignments.
+    /// When the spec body has `s_.field == s.field + N` (where N > 0),
+    /// the exec function needs `s.field < u64::MAX` to prevent overflow.
+    fn extract_overflow_guards(
+        &self,
+        func: &AnnotatedFunction,
+        ctx: &TransformContext,
+    ) -> Vec<String> {
+        let mut guards = Vec::new();
+
+        if let Expr::Conjunction(parts) = &func.spec_fn.body {
+            for part in parts {
+                // Look for s_.field == expr patterns
+                if let Expr::Eq(lhs, rhs) = part {
+                    // Check if lhs is output.field
+                    if let Expr::Field(base, _field) = lhs.as_ref() {
+                        if let Expr::Ident(name) = base.as_ref() {
+                            if ctx.is_output(name) {
+                                // Check if rhs contains addition with a positive literal
+                                if let Some(guard) =
+                                    self.detect_overflow_guard(rhs, ctx)
+                                {
+                                    if !guards.contains(&guard) {
+                                        guards.push(guard);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        guards
+    }
+
+    /// Detect if an expression contains `input.field + N` (N > 0) and return
+    /// an overflow guard string like `s.field < u64::MAX`.
+    fn detect_overflow_guard(&self, expr: &Expr, ctx: &TransformContext) -> Option<String> {
+        match expr {
+            Expr::Binary(lhs, crate::ast::BinOp::Add, rhs) => {
+                // Check: input_expr + positive_literal
+                if Self::is_input_only_expression(lhs, ctx) {
+                    if let Expr::Literal(crate::ast::Literal::Int(n)) = rhs.as_ref() {
+                        if *n > 0 {
+                            let field_str = self.expr_to_simple_string(lhs);
+                            return Some(format!(
+                                "{} < {}::MAX",
+                                field_str, self.config.int_type
+                            ));
+                        }
+                    }
+                }
+                // Check: positive_literal + input_expr
+                if Self::is_input_only_expression(rhs, ctx) {
+                    if let Expr::Literal(crate::ast::Literal::Int(n)) = lhs.as_ref() {
+                        if *n > 0 {
+                            let field_str = self.expr_to_simple_string(rhs);
+                            return Some(format!(
+                                "{} < {}::MAX",
+                                field_str, self.config.int_type
+                            ));
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     /// Convert an expression to a requires clause string
     fn expr_to_requires_string(&self, expr: &Expr) -> String {
-        // For now, use a simple string representation
-        // This can be enhanced to properly translate the expression
         match expr {
             Expr::Is(expr, variant) => {
-                // Pattern: inp.msg is RslMessage1a -> inp.msg is CMessage1a
+                // `is` expressions in requires clauses use the bare variant name.
+                // Variant names are shared between spec and exec enum types
+                // (e.g., both LTMState and CTMState have `Init`, `Committed`).
+                // The `is` keyword resolves the variant from the concrete type.
                 let base = self.expr_to_simple_string(expr);
-                // Translate the variant name using remapping
-                let translated_variant = self.translate_name(variant);
-                // For spec mode (is expression), extract just the variant part
-                // since Verus doesn't allow EnumType::Variant in `is` expressions
-                let spec_variant = self.extract_variant_name(&translated_variant);
-                format!("{} is {}", base, spec_variant)
+                format!("{} is {}", base, variant)
+            }
+            Expr::Conjunction(parts) => {
+                // Flatten conjunction into multiple clauses joined by &&
+                parts
+                    .iter()
+                    .map(|p| self.expr_to_requires_string(p))
+                    .collect::<Vec<_>>()
+                    .join(" && ")
+            }
+            Expr::Not(inner) => {
+                format!("!{}", self.expr_to_requires_string(inner))
+            }
+            Expr::Binary(lhs, op, rhs) => {
+                let lhs_str = self.expr_to_requires_string(lhs);
+                let rhs_str = self.expr_to_requires_string(rhs);
+                let op_str = match op {
+                    crate::ast::BinOp::Add => "+",
+                    crate::ast::BinOp::Sub => "-",
+                    crate::ast::BinOp::Mul => "*",
+                    crate::ast::BinOp::Div => "/",
+                    crate::ast::BinOp::Mod => "%",
+                    crate::ast::BinOp::And => "&&",
+                    crate::ast::BinOp::Or => "||",
+                    crate::ast::BinOp::BitAnd => "&",
+                    crate::ast::BinOp::BitOr => "|",
+                    crate::ast::BinOp::BitXor => "^",
+                    crate::ast::BinOp::Shl => "<<",
+                    crate::ast::BinOp::Shr => ">>",
+                };
+                format!("({} {} {})", lhs_str, op_str, rhs_str)
+            }
+            Expr::Eq(lhs, rhs) => {
+                format!(
+                    "({} == {})",
+                    self.expr_to_requires_string(lhs),
+                    self.expr_to_requires_string(rhs)
+                )
+            }
+            Expr::Ne(lhs, rhs) => {
+                format!(
+                    "({} != {})",
+                    self.expr_to_requires_string(lhs),
+                    self.expr_to_requires_string(rhs)
+                )
+            }
+            Expr::Lt(lhs, rhs) => {
+                format!(
+                    "({} < {})",
+                    self.expr_to_requires_string(lhs),
+                    self.expr_to_requires_string(rhs)
+                )
+            }
+            Expr::Le(lhs, rhs) => {
+                format!(
+                    "({} <= {})",
+                    self.expr_to_requires_string(lhs),
+                    self.expr_to_requires_string(rhs)
+                )
+            }
+            Expr::Gt(lhs, rhs) => {
+                format!(
+                    "({} > {})",
+                    self.expr_to_requires_string(lhs),
+                    self.expr_to_requires_string(rhs)
+                )
+            }
+            Expr::Ge(lhs, rhs) => {
+                format!(
+                    "({} >= {})",
+                    self.expr_to_requires_string(lhs),
+                    self.expr_to_requires_string(rhs)
+                )
             }
             _ => self.expr_to_simple_string(expr),
         }
@@ -15051,5 +15262,491 @@ mod tests {
             }
             _ => panic!("Expected Struct"),
         }
+    }
+
+    // === Tests for 12.3.0d: Emit spec preconditions as requires clauses ===
+
+    /// Helper to create an AnnotatedFunction for testing build_requires
+    fn make_annotated_func(
+        name: &str,
+        params: Vec<(String, Type)>,
+        modes: Vec<ParameterMode>,
+        body: Expr,
+    ) -> crate::moder::AnnotatedFunction {
+        use crate::ast::{Generics, Parameter, Path};
+        let spec_params: Vec<Parameter> = params
+            .into_iter()
+            .map(|(n, ty)| Parameter {
+                name: n,
+                ty,
+                mode: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+                span: None,
+            })
+            .collect();
+        let spec_fn = crate::ast::SpecFunction {
+            name: name.to_string(),
+            generics: Generics::default(),
+            params: spec_params,
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+        crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: modes,
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        }
+    }
+
+    #[test]
+    fn test_extract_body_preconditions_is_variant() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Spec body: &&& s.state is Init &&& s_.state is Done
+        let body = Expr::Conjunction(vec![
+            Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "state".to_string(),
+                )),
+                "Init".to_string(),
+            ),
+            Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "state".to_string(),
+                )),
+                "Done".to_string(),
+            ),
+        ]);
+
+        let func = make_annotated_func(
+            "LAction",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let preconditions = translator.extract_body_preconditions(&func, &ctx);
+
+        // Only s.state is Init should be extracted (input-only)
+        assert_eq!(preconditions.len(), 1);
+        assert_eq!(preconditions[0], "s.state is Init");
+    }
+
+    #[test]
+    fn test_extract_body_preconditions_comparison() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Spec body: &&& s.count > 0 &&& s_.count == s.count - 1
+        let body = Expr::Conjunction(vec![
+            Expr::Gt(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "count".to_string(),
+                )),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "count".to_string(),
+                )),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "count".to_string(),
+                    )),
+                    crate::ast::BinOp::Sub,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            ),
+        ]);
+
+        let func = make_annotated_func(
+            "LDecrement",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let preconditions = translator.extract_body_preconditions(&func, &ctx);
+
+        assert_eq!(preconditions.len(), 1);
+        assert_eq!(preconditions[0], "(s.count > 0)");
+    }
+
+    #[test]
+    fn test_extract_body_preconditions_no_preconditions() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Body with only output assignments (no input-only conjuncts)
+        let body = Expr::Conjunction(vec![Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "val".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        )]);
+
+        let func = make_annotated_func(
+            "LInit",
+            vec![
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+            ],
+            vec![ParameterMode::Output, ParameterMode::Input],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let preconditions = translator.extract_body_preconditions(&func, &ctx);
+        assert!(preconditions.is_empty());
+    }
+
+    #[test]
+    fn test_extract_overflow_guards_field_plus_one() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Spec body: &&& s_.count == s.count + 1
+        let body = Expr::Conjunction(vec![Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "count".to_string(),
+            )),
+            Box::new(Expr::Binary(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "count".to_string(),
+                )),
+                crate::ast::BinOp::Add,
+                Box::new(Expr::Literal(Literal::Int(1))),
+            )),
+        )]);
+
+        let func = make_annotated_func(
+            "LIncrement",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let guards = translator.extract_overflow_guards(&func, &ctx);
+
+        assert_eq!(guards.len(), 1);
+        assert_eq!(guards[0], "s.count < u64::MAX");
+    }
+
+    #[test]
+    fn test_extract_overflow_guards_no_addition() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Body: &&& s_.val == s.val (simple copy, no addition)
+        let body = Expr::Conjunction(vec![Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "val".to_string(),
+            )),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "val".to_string(),
+            )),
+        )]);
+
+        let func = make_annotated_func(
+            "LCopy",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let guards = translator.extract_overflow_guards(&func, &ctx);
+        assert!(guards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_overflow_guards_no_duplicate() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Two output fields both use s.count + 1 — should only produce one guard
+        let body = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "a".to_string(),
+                )),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "count".to_string(),
+                    )),
+                    crate::ast::BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "b".to_string(),
+                )),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "count".to_string(),
+                    )),
+                    crate::ast::BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            ),
+        ]);
+
+        let func = make_annotated_func(
+            "LDouble",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let guards = translator.extract_overflow_guards(&func, &ctx);
+        assert_eq!(guards.len(), 1);
+        assert_eq!(guards[0], "s.count < u64::MAX");
+    }
+
+    #[test]
+    fn test_build_requires_includes_explicit_requires() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        let translator = Translator::new(config);
+
+        let body = Expr::Literal(Literal::Bool(true));
+        let mut func = make_annotated_func(
+            "LAction",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        // Add an explicit requires clause
+        func.spec_fn.requires.push(Expr::Gt(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "count".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        ));
+
+        let requires = translator.build_requires(&func);
+        // Should include: s.valid() + the explicit requires
+        assert!(requires.contains(&"s.valid()".to_string()));
+        assert!(requires.iter().any(|r| r.contains("s.count") && r.contains("> 0")));
+    }
+
+    #[test]
+    fn test_build_requires_includes_recommends() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        let translator = Translator::new(config);
+
+        let body = Expr::Literal(Literal::Bool(true));
+        let mut func = make_annotated_func(
+            "LAction",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        // Add a recommends clause
+        func.spec_fn.recommends.push(Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "role".to_string(),
+            )),
+            "Leader".to_string(),
+        ));
+
+        let requires = translator.build_requires(&func);
+        assert!(requires.iter().any(|r| r == "s.role is Leader"));
+    }
+
+    #[test]
+    fn test_build_requires_full_pipeline() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        let translator = Translator::new(config);
+
+        // Simulate: LCommit(s, s_, c) with body:
+        //   &&& s.state is Init         (precondition — input only)
+        //   &&& s_.state is Done        (effect — output)
+        //   &&& s_.count == s.count + 1 (effect with overflow)
+        let body = Expr::Conjunction(vec![
+            Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "state".to_string(),
+                )),
+                "Init".to_string(),
+            ),
+            Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "state".to_string(),
+                )),
+                "Done".to_string(),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "count".to_string(),
+                )),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s".to_string())),
+                        "count".to_string(),
+                    )),
+                    crate::ast::BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            ),
+        ]);
+
+        let func = make_annotated_func(
+            "LCommit",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+            ],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+            ],
+            body,
+        );
+
+        let requires = translator.build_requires(&func);
+
+        // Should include:
+        // 1. s.valid(), c.valid() (validity)
+        // 2. s.state is Init (body precondition)
+        // 3. s.count < u64::MAX (overflow guard)
+        assert!(requires.contains(&"s.valid()".to_string()));
+        assert!(requires.contains(&"c.valid()".to_string()));
+        assert!(requires.iter().any(|r| r == "s.state is Init"));
+        assert!(requires.iter().any(|r| r == "s.count < u64::MAX"));
+        // Should NOT include s_.state is Done (output, not precondition)
+        assert!(!requires.iter().any(|r| r.contains("s_.state")));
+    }
+
+    #[test]
+    fn test_expr_to_requires_string_is_variant() {
+        let translator = Translator::default();
+        let expr = Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "tm_state".to_string(),
+            )),
+            "Init".to_string(),
+        );
+        assert_eq!(translator.expr_to_requires_string(&expr), "s.tm_state is Init");
+    }
+
+    #[test]
+    fn test_expr_to_requires_string_comparison() {
+        let translator = Translator::default();
+        let expr = Expr::Ge(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "count".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        );
+        assert_eq!(translator.expr_to_requires_string(&expr), "(s.count >= 0)");
+    }
+
+    #[test]
+    fn test_expr_to_requires_string_not() {
+        let translator = Translator::default();
+        let expr = Expr::Not(Box::new(Expr::Field(
+            Box::new(Expr::Ident("s".to_string())),
+            "has_voted".to_string(),
+        )));
+        assert_eq!(translator.expr_to_requires_string(&expr), "!s.has_voted");
+    }
+
+    #[test]
+    fn test_expr_to_requires_string_binary_or() {
+        let translator = Translator::default();
+        let expr = Expr::Binary(
+            Box::new(Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "role".to_string(),
+                )),
+                "Follower".to_string(),
+            )),
+            crate::ast::BinOp::Or,
+            Box::new(Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "role".to_string(),
+                )),
+                "Candidate".to_string(),
+            )),
+        );
+        assert_eq!(
+            translator.expr_to_requires_string(&expr),
+            "(s.role is Follower || s.role is Candidate)"
+        );
     }
 }

@@ -1870,11 +1870,15 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] 12 new tests covering struct fields, nested structs (tuple, block, let, if), struct update, config variants
 - Affects: All protocols (CInit functions)
 
-**12.3.0d: Emit spec preconditions as requires clauses**
-- [ ] Parse spec function `recommends` clauses and translate to exec `requires`
-- [ ] Add arithmetic overflow guards (`field < u64::MAX` for increment operations)
-- [ ] Add enum variant preconditions (`s.tm_state is Init`) from spec
-- Affects: All protocols
+**12.3.0d: Emit spec preconditions as requires clauses** ✅
+- [x] Parse spec function `recommends` clauses and translate to exec `requires` (was already done)
+- [x] Add explicit spec `requires` clauses to exec output (was previously ignored)
+- [x] Extract input-only conjuncts from spec body as preconditions (`extract_body_preconditions`)
+- [x] Add arithmetic overflow guards (`s.field < u64::MAX` for `s_.field == s.field + N` patterns)
+- [x] Add enum variant preconditions (`s.tm_state is Init`) — uses bare variant names (not C-prefixed)
+- [x] Enhanced `expr_to_requires_string` with proper `Binary`/comparison/`Not`/`Conjunction` handling
+- [x] 13 new tests covering precondition extraction, overflow guards, full pipeline, requires string formatting
+- Affects: All protocols (TwoPhase, Paxos, Raft, LeaderElection, ChainReplication)
 
 **12.3.0e: Fix proof block formatting**
 - [ ] Use `proof { stmt; }` with spaces (not `proof{stmt}`)
