@@ -353,6 +353,45 @@ For `std::collections::HashSet<EndPoint>@` (which is `Set<EndPoint>`):
 - Insert map: `broadcast use Set::lemma_set_map_insert_commute`
 - Negated contains through map: use `axiom_endpoint_view` (`e1@ == e2@ ==> e1 == e2`) + `assert forall |x| s.contains(x) implies x@ != target@ by { if x@ == target@ { assert(x == target); } }`
 
+**Pattern 15: Delegation to Verified Implementation**
+
+When the generated exec function duplicates a verified function from the hand-written implementation, delegate directly:
+```rust
+pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
+    requires forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
+    ensures creplycache_is_valid(&result),
+        abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
+{ CExecutor::CClientsInReplies(replies) }
+```
+The verified implementation's ensures are exactly what the generated function needs.
+
+**Pattern 16: Reply Cache Abstraction (abstractify_creplycache)**
+
+For `abstractify_creplycache` proofs:
+- Empty cache: `lemma_abstractify_empty_creplycache` — proves `abstractify_creplycache(&HashMap::new()) =~= Map::empty()` via `assert forall |ak| !abs.contains_key(ak) by {}`
+- Get through abstraction: `lemma_creplycache_get` (external_body) — connects `cache@[key]@` to `abstractify_creplycache(&cache)[key@]`
+- These are needed because `abstractify_creplycache` uses `Map::new` with `exists`/`choose`, making SMT reasoning about individual entries difficult
+
+**Pattern 17: CHandleRequestBatch Properties**
+
+`CHandleRequestBatch` only ensures mapped view equality, not structural properties like:
+- `states.len() == batch.len() + 1` (and > 0)
+- `replies.len() == batch.len()`
+- `forall |j| replies[j].valid()`
+
+These properties follow from `CHandleRequestBatchHidden` but aren't forwarded. Use external_body proof lemmas:
+- `lemma_CHandleRequestBatch_properties` — derives length/validity from the mapped view ensures
+- `lemma_HandleRequestBatch_spec_len` — spec-level length property needed for `temp.0[temp.0.len()-1]` indexing
+
+**Pattern 18: RepliesAreReplyType via GetPacketsFromReplies**
+
+`GetPacketsFromReplies` constructs all packets with `msg: RslMessageReply{...}`, but proving `RepliesAreReplyType(packets)` requires induction on the recursive definition. Use external_body:
+```rust
+lemma_RepliesAreReplyType(me, requests, replies, packets)
+    requires packets == GetPacketsFromReplies(me, requests, replies), requests.len() == replies.len()
+    ensures RepliesAreReplyType(packets)
+```
+
 ## Infrastructure Changes
 
 1. **`clone_hashset` ensures clause added:** `ensures res@ == s@` — this is critical for all protocols
@@ -361,6 +400,7 @@ For `std::collections::HashSet<EndPoint>@` (which is `Set<EndPoint>`):
 4. **`CLearnerTuple::clone_up_to_view()` validity ensures added:** `self.valid() ==> res.valid()` — needed for learner proofs
 5. **`clone_request_batch_up_to_view` validity/abstractability ensures added** — needed for tup_ construction proofs
 6. **`CLearner::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()`
+7. **`CExecutor::clone_up_to_view()` added** — `ensures res@ == self@, res.valid() == self.valid()` — needed for executor proofs where `s.clone()` must preserve view and validity
 
 ## Verification Results
 
@@ -374,3 +414,4 @@ For `std::collections::HashSet<EndPoint>@` (which is `Set<EndPoint>`):
 | After Raft (12.4.2) | 592 | 0 | ~182 | +4 verified, -20 assumes |
 | After RSL/broadcast (12.5.1) | 592 | 0 | ~180 | +0 verified, -2 assumes |
 | After RSL/learner (12.5.2) | 595 | 0 | ~168 | +3 verified, -12 assumes |
+| After RSL/executor (12.5.3) | 595 | 0 | ~149 | +0 verified, -19 assumes |
