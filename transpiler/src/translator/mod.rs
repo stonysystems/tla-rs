@@ -2508,7 +2508,9 @@ impl Translator {
         if func.is_recursive {
             match Self::detect_recursive_pattern(func) {
                 PatternAnalysis::Recognized(pattern) => {
-                    return self.translate_recursive_pattern(func, pattern);
+                    let mut result = self.translate_recursive_pattern(func, pattern)?;
+                    result.body = self.suffix_struct_int_literals(result.body);
+                    return Ok(result);
                 }
                 PatternAnalysis::UnrecognizedRecursive(reason) => {
                     return Err(TranspileError::CodeGen {
@@ -2527,10 +2529,15 @@ impl Translator {
         }
 
         // Dispatch based on function kind
-        match func.kind {
+        let mut result = match func.kind {
             FunctionKind::Helper => self.translate_helper(func),
             FunctionKind::Predicate => self.translate_predicate(func),
-        }
+        }?;
+
+        // Post-process: add integer type suffixes to literals in struct fields
+        result.body = self.suffix_struct_int_literals(result.body);
+
+        Ok(result)
     }
 
     /// Translate a recursive function that matches a known pattern.
@@ -6611,13 +6618,162 @@ impl Translator {
         Ok(ExecExpr::Block(stmts))
     }
 
-    /// Format a literal value
+    /// Format a literal value for exec code.
     fn format_literal(&self, lit: &crate::ast::Literal) -> String {
         match lit {
             crate::ast::Literal::Bool(b) => b.to_string(),
             crate::ast::Literal::Int(i) => i.to_string(),
             crate::ast::Literal::String(s) => format!("\"{}\"", s),
         }
+    }
+
+    /// Post-process an ExecExpr tree to add integer type suffixes to bare
+    /// integer literals in struct field initializers.
+    /// e.g., `CState { count: 0 }` → `CState { count: 0u64 }`
+    fn suffix_struct_int_literals(&self, expr: ExecExpr) -> ExecExpr {
+        self.suffix_walk(expr, false)
+    }
+
+    /// Recursive walk for suffix_struct_int_literals.
+    /// `in_struct_field` is true when we're processing a struct field value.
+    fn suffix_walk(&self, expr: ExecExpr, in_struct_field: bool) -> ExecExpr {
+        match expr {
+            ExecExpr::Literal(ref lit) if in_struct_field => {
+                // Check if this is a bare integer literal (digits only, no existing suffix)
+                if Self::is_bare_int_literal(lit) {
+                    ExecExpr::Literal(format!("{}{}", lit, self.config.int_type))
+                } else {
+                    expr
+                }
+            }
+            ExecExpr::Struct { name, fields } => ExecExpr::Struct {
+                name,
+                fields: fields
+                    .into_iter()
+                    .map(|(n, e)| (n, self.suffix_walk(e, true)))
+                    .collect(),
+            },
+            ExecExpr::StructUpdate { name, base, fields } => ExecExpr::StructUpdate {
+                name,
+                base: Box::new(self.suffix_walk(*base, false)),
+                fields: fields
+                    .into_iter()
+                    .map(|(n, e)| (n, self.suffix_walk(e, true)))
+                    .collect(),
+            },
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts
+                    .into_iter()
+                    .map(|s| self.suffix_walk(s, false))
+                    .collect(),
+            ),
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
+                pattern,
+                ty,
+                value: Box::new(self.suffix_walk(*value, false)),
+            },
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond: Box::new(self.suffix_walk(*cond, false)),
+                then_branch: Box::new(self.suffix_walk(*then_branch, in_struct_field)),
+                else_branch: else_branch.map(|e| Box::new(self.suffix_walk(*e, in_struct_field))),
+            },
+            ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
+                scrutinee: Box::new(self.suffix_walk(*scrutinee, false)),
+                arms: arms
+                    .into_iter()
+                    .map(|(p, e)| (p, self.suffix_walk(e, in_struct_field)))
+                    .collect(),
+            },
+            ExecExpr::Return(inner) => {
+                ExecExpr::Return(Box::new(self.suffix_walk(*inner, false)))
+            }
+            ExecExpr::Tuple(elems) => ExecExpr::Tuple(
+                elems
+                    .into_iter()
+                    .map(|e| self.suffix_walk(e, false))
+                    .collect(),
+            ),
+            ExecExpr::VecLit(elems) => ExecExpr::VecLit(
+                elems
+                    .into_iter()
+                    .map(|e| self.suffix_walk(e, false))
+                    .collect(),
+            ),
+            ExecExpr::Call { func, args } => ExecExpr::Call {
+                func,
+                args: args
+                    .into_iter()
+                    .map(|e| self.suffix_walk(e, false))
+                    .collect(),
+            },
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => ExecExpr::MethodCall {
+                receiver: Box::new(self.suffix_walk(*receiver, false)),
+                method,
+                args: args
+                    .into_iter()
+                    .map(|e| self.suffix_walk(e, false))
+                    .collect(),
+            },
+            ExecExpr::Clone(inner) => {
+                ExecExpr::Clone(Box::new(self.suffix_walk(*inner, false)))
+            }
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(self.suffix_walk(*lhs, false)),
+                op,
+                rhs: Box::new(self.suffix_walk(*rhs, false)),
+            },
+            ExecExpr::Unary { op, expr } => ExecExpr::Unary {
+                op,
+                expr: Box::new(self.suffix_walk(*expr, false)),
+            },
+            ExecExpr::ForInIter {
+                var,
+                iter_name,
+                iter_source,
+                invariants,
+                body,
+            } => ExecExpr::ForInIter {
+                var,
+                iter_name,
+                iter_source: Box::new(self.suffix_walk(*iter_source, false)),
+                invariants,
+                body: Box::new(self.suffix_walk(*body, false)),
+            },
+            ExecExpr::Closure { params, body } => ExecExpr::Closure {
+                params,
+                body: Box::new(self.suffix_walk(*body, false)),
+            },
+            ExecExpr::Cast(inner, ty) => {
+                ExecExpr::Cast(Box::new(self.suffix_walk(*inner, false)), ty)
+            }
+            ExecExpr::GhostVar {
+                name,
+                ty,
+                init,
+                mutable,
+            } => ExecExpr::GhostVar {
+                name,
+                ty,
+                init: Box::new(self.suffix_walk(*init, false)),
+                mutable,
+            },
+            // Leaf nodes and spec-mode nodes (no suffix needed)
+            _ => expr,
+        }
+    }
+
+    /// Check if a string represents a bare integer literal (no type suffix).
+    fn is_bare_int_literal(s: &str) -> bool {
+        let s = s.trim_start_matches('-');
+        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
     }
 
     /// Format a binding pattern for let expressions
@@ -14591,5 +14747,309 @@ mod tests {
 
         let spec_call = translator.build_spec_call(&annotated, &["s_".to_string()]);
         assert_eq!(spec_call, "LAction(s@, result@, flag)");
+    }
+
+    // === Tests for suffix_struct_int_literals (Phase 12.3.0c) ===
+
+    #[test]
+    fn test_is_bare_int_literal() {
+        assert!(Translator::is_bare_int_literal("0"));
+        assert!(Translator::is_bare_int_literal("42"));
+        assert!(Translator::is_bare_int_literal("-1"));
+        assert!(Translator::is_bare_int_literal("100"));
+        assert!(!Translator::is_bare_int_literal("0u64"));
+        assert!(!Translator::is_bare_int_literal("42i64"));
+        assert!(!Translator::is_bare_int_literal("true"));
+        assert!(!Translator::is_bare_int_literal("false"));
+        assert!(!Translator::is_bare_int_literal("\"hello\""));
+        assert!(!Translator::is_bare_int_literal(""));
+        assert!(!Translator::is_bare_int_literal("abc"));
+    }
+
+    #[test]
+    fn test_suffix_struct_int_literals_basic() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![
+                ("count".to_string(), ExecExpr::Literal("0".to_string())),
+                ("value".to_string(), ExecExpr::Literal("42".to_string())),
+                (
+                    "name".to_string(),
+                    ExecExpr::Var("input_name".to_string()),
+                ),
+            ],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Struct { fields, .. } => {
+                assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "0u64"));
+                assert!(matches!(&fields[1].1, ExecExpr::Literal(s) if s == "42u64"));
+                assert!(matches!(&fields[2].1, ExecExpr::Var(s) if s == "input_name"));
+            }
+            _ => panic!("Expected Struct"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_int_literals_no_double_suffix() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![(
+                "count".to_string(),
+                ExecExpr::Literal("0u64".to_string()),
+            )],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Struct { fields, .. } => {
+                // Already has suffix — should not double-suffix
+                assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "0u64"));
+            }
+            _ => panic!("Expected Struct"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_int_literals_bool_not_suffixed() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![
+                (
+                    "enabled".to_string(),
+                    ExecExpr::Literal("true".to_string()),
+                ),
+                (
+                    "disabled".to_string(),
+                    ExecExpr::Literal("false".to_string()),
+                ),
+            ],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Struct { fields, .. } => {
+                assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "true"));
+                assert!(matches!(&fields[1].1, ExecExpr::Literal(s) if s == "false"));
+            }
+            _ => panic!("Expected Struct"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_nested_in_block() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::Block(vec![ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![("count".to_string(), ExecExpr::Literal("0".to_string()))],
+        }]);
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Block(stmts) => match &stmts[0] {
+                ExecExpr::Struct { fields, .. } => {
+                    assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "0u64"));
+                }
+                _ => panic!("Expected Struct"),
+            },
+            _ => panic!("Expected Block"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_nested_in_tuple() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Simulate: (CState { count: 0 }, true)
+        let expr = ExecExpr::Tuple(vec![
+            ExecExpr::Struct {
+                name: "CState".to_string(),
+                fields: vec![("count".to_string(), ExecExpr::Literal("0".to_string()))],
+            },
+            ExecExpr::Literal("true".to_string()),
+        ]);
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Tuple(elems) => {
+                match &elems[0] {
+                    ExecExpr::Struct { fields, .. } => {
+                        assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "0u64"));
+                    }
+                    _ => panic!("Expected Struct"),
+                }
+                // Bool outside struct should NOT be suffixed
+                assert!(matches!(&elems[1], ExecExpr::Literal(s) if s == "true"));
+            }
+            _ => panic!("Expected Tuple"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_nested_in_let() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::Let {
+            pattern: "result".to_string(),
+            ty: None,
+            value: Box::new(ExecExpr::Struct {
+                name: "CState".to_string(),
+                fields: vec![("val".to_string(), ExecExpr::Literal("5".to_string()))],
+            }),
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Let { value, .. } => match *value {
+                ExecExpr::Struct { fields, .. } => {
+                    assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "5u64"));
+                }
+                _ => panic!("Expected Struct"),
+            },
+            _ => panic!("Expected Let"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_literal_outside_struct_unchanged() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Bare literal NOT inside a struct should remain unchanged
+        let expr = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("s".to_string())),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+            op: "==".to_string(),
+            rhs: Box::new(ExecExpr::Literal("0".to_string())),
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Binary { rhs, .. } => {
+                assert!(matches!(*rhs, ExecExpr::Literal(s) if s == "0"));
+            }
+            _ => panic!("Expected Binary"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_with_if_field() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Struct field with if-else: CState { val: if cond { 0 } else { x } }
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![(
+                "val".to_string(),
+                ExecExpr::If {
+                    cond: Box::new(ExecExpr::Var("cond".to_string())),
+                    then_branch: Box::new(ExecExpr::Literal("0".to_string())),
+                    else_branch: Some(Box::new(ExecExpr::Var("x".to_string()))),
+                },
+            )],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Struct { fields, .. } => match &fields[0].1 {
+                ExecExpr::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    // Literal in then-branch of struct field should be suffixed
+                    assert!(matches!(then_branch.as_ref(), ExecExpr::Literal(s) if s == "0u64"));
+                    assert!(matches!(else_branch.as_ref().unwrap().as_ref(), ExecExpr::Var(s) if s == "x"));
+                }
+                _ => panic!("Expected If"),
+            },
+            _ => panic!("Expected Struct"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_struct_update() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::StructUpdate {
+            name: "CState".to_string(),
+            base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string())))),
+            fields: vec![("count".to_string(), ExecExpr::Literal("0".to_string()))],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::StructUpdate { fields, .. } => {
+                assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "0u64"));
+            }
+            _ => panic!("Expected StructUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_with_i64_config() {
+        // Test with default i64 config
+        let translator = Translator::default();
+
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![("count".to_string(), ExecExpr::Literal("0".to_string()))],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Struct { fields, .. } => {
+                assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "0i64"));
+            }
+            _ => panic!("Expected Struct"),
+        }
+    }
+
+    #[test]
+    fn test_suffix_negative_literal() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![("val".to_string(), ExecExpr::Literal("-1".to_string()))],
+        };
+
+        let result = translator.suffix_struct_int_literals(expr);
+        match result {
+            ExecExpr::Struct { fields, .. } => {
+                assert!(matches!(&fields[0].1, ExecExpr::Literal(s) if s == "-1u64"));
+            }
+            _ => panic!("Expected Struct"),
+        }
     }
 }

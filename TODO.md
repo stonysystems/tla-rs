@@ -1862,8 +1862,12 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] 11 new tests covering format_spec_arg, build_spec_call, build_helper_spec_call
 - Affects: All protocols with u64 parameters (TwoPhase, Paxos, LeaderElection, Raft, ChainReplication)
 
-**12.3.0c: Fix integer literal type suffixes**
-- [ ] Emit `0u64` instead of bare `0` when constructing fields of type u64
+**12.3.0c: Fix integer literal type suffixes** ✅
+- [x] Emit `0u64` instead of bare `0` when constructing fields of type u64
+- [x] Added `suffix_struct_int_literals()` post-processing pass on ExecExpr tree
+- [x] Walks tree recursively, propagates `in_struct_field` context through If/Match branches
+- [x] `is_bare_int_literal()` helper detects unsuffixed integers (avoids double-suffixing)
+- [x] 12 new tests covering struct fields, nested structs (tuple, block, let, if), struct update, config variants
 - Affects: All protocols (CInit functions)
 
 **12.3.0d: Emit spec preconditions as requires clauses**
