@@ -924,10 +924,17 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
 
     // Custom imports (sorted case-insensitively for rustfmt compatibility)
+    // Filter out self-referential types_gen imports that would cause
+    // "cannot glob-import a module into itself" errors
     if cfg.custom_imports.is_empty() {
         all_code.push_str("use vstd::prelude::*;\n\n");
     } else {
-        let mut sorted_imports = cfg.custom_imports.to_vec();
+        let mut sorted_imports: Vec<String> = cfg
+            .custom_imports
+            .iter()
+            .filter(|imp| !imp.contains("types_gen"))
+            .cloned()
+            .collect();
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             all_code.push_str(import);

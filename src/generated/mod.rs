@@ -4,6 +4,7 @@
 pub mod ChainReplication;
 pub mod LeaderElection;
 pub mod Paxos;
+pub mod PrimaryBackup;
 pub mod Raft;
 pub mod RSL;
 pub mod TwoPhase;

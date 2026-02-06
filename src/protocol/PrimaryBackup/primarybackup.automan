@@ -1,0 +1,7 @@
+module PrimaryBackup::primarybackup {
+    LInit(-, +);
+    LPrimaryWrite(+, -, +, +);
+    LBackupAck(+, -, +);
+    LPrimaryCommit(+, -, +);
+    LFailover(+, -, +);
+}
