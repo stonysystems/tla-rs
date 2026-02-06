@@ -48,6 +48,7 @@ ensures
     v.clone()
 }
 
+
 /// Helper: clone CServerRole preserving view (workaround for missing derive Clone spec).
 fn clone_server_role(r: &CServerRole) -> (res: CServerRole)
 ensures
@@ -55,11 +56,12 @@ ensures
     res.valid() == r.valid(),
 {
     match r {
-        CServerRole::Follower => CServerRole::Follower,
         CServerRole::Candidate => CServerRole::Candidate,
+        CServerRole::Follower => CServerRole::Follower,
         CServerRole::Leader => CServerRole::Leader,
     }
 }
+
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -70,48 +72,50 @@ ensures
 {
     let result = CState {
         current_term: 0u64,
-        role: CServerRole::Follower,
         has_voted: false,
         voted_for: 0u64,
-        log: Vec::new(),
+        log: vec![],
         commit_index: 0u64,
         votes_granted: HashSet::new(),
         match_index: HashMap::new(),
+        role: CServerRole::Follower,
     };
     proof {
         lemma_empty_set_map();
         lemma_empty_log_map();
     }
     result
+
 }
 
 pub exec fn CTimeout(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.role is Follower || s.role is Candidate,
+    (s.role is Follower || s.role is Candidate),
     s.current_term < u64::MAX,
 ensures
     result.valid(),
     LTimeout(s@, result@, c@),
 {
-    let mut votes = HashSet::new();
-    votes.insert(c.my_id);
+    let mut __votes_granted = clone_hashset(&HashSet::new());
+    __votes_granted.insert(c.my_id);
     let result = CState {
-        current_term: s.current_term + 1,
-        role: CServerRole::Candidate,
+        current_term: (s.current_term + 1),
         has_voted: true,
         voted_for: c.my_id,
         log: clone_log(&s.log),
         commit_index: s.commit_index,
-        votes_granted: votes,
+        votes_granted: __votes_granted,
         match_index: s.match_index.clone(),
+        role: CServerRole::Candidate,
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
+
 }
 
 pub exec fn CGrantVote(s: &CState, c: &CConstants, candidate_term: &u64, candidate_last_log_term: &u64, candidate_last_log_index: &u64, candidate_id: &u64) -> (result: CState)
@@ -130,17 +134,16 @@ ensures
     result.valid(),
     LGrantVote(s@, result@, c@, *candidate_term as int, *candidate_last_log_term as int, *candidate_last_log_index as int, *candidate_id as int),
 {
-    let result = CState {
+CState {
         current_term: *candidate_term,
-        role: CServerRole::Follower,
         has_voted: true,
         voted_for: *candidate_id,
         log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
-    };
-    result
+        role: CServerRole::Follower,
+    }
 }
 
 pub exec fn CReceiveVoteGranted(s: &CState, c: &CConstants, voter: &u64) -> (result: CState)
@@ -153,8 +156,8 @@ ensures
     result.valid(),
     LReceiveVoteGranted(s@, result@, c@, *voter as int),
 {
-    let mut votes = clone_hashset(&s.votes_granted);
-    votes.insert(*voter);
+    let mut __votes_granted = clone_hashset(&s.votes_granted);
+    __votes_granted.insert(*voter);
     let result = CState {
         current_term: s.current_term,
         role: clone_server_role(&s.role),
@@ -162,13 +165,14 @@ ensures
         voted_for: s.voted_for,
         log: clone_log(&s.log),
         commit_index: s.commit_index,
-        votes_granted: votes,
+        votes_granted: __votes_granted,
         match_index: s.match_index.clone(),
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
+
 }
 
 pub exec fn CBecomeLeader(s: &CState, c: &CConstants) -> (result: CState)
@@ -176,22 +180,21 @@ requires
     s.valid(),
     c.valid(),
     s.role is Candidate,
-    s@.votes_granted.len() >= c@.quorum_size,
+    (s@.votes_granted.len() >= c.quorum_size),
 ensures
     result.valid(),
     LBecomeLeader(s@, result@, c@),
 {
-    let result = CState {
+CState {
         current_term: s.current_term,
-        role: CServerRole::Leader,
         has_voted: s.has_voted,
         voted_for: s.voted_for,
         log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: HashMap::new(),
-    };
-    result
+        role: CServerRole::Leader,
+    }
 }
 
 pub exec fn CClientRequest(s: &CState, c: &CConstants, value: &u64) -> (result: CState)
@@ -207,22 +210,25 @@ ensures
         term: s.current_term,
         value: *value,
     };
-    let mut new_log = clone_log(&s.log);
-    new_log.push(entry);
-    let result = CState {
-        current_term: s.current_term,
-        role: clone_server_role(&s.role),
-        has_voted: s.has_voted,
-        voted_for: s.voted_for,
-        log: new_log,
-        commit_index: s.commit_index,
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: s.match_index.clone(),
+    let result = {
+        let mut __log = clone_log(&s.log);
+        __log.push(entry);
+        CState {
+            current_term: s.current_term,
+            role: clone_server_role(&s.role),
+            has_voted: s.has_voted,
+            voted_for: s.voted_for,
+            log: __log,
+            commit_index: s.commit_index,
+            votes_granted: clone_hashset(&s.votes_granted),
+            match_index: s.match_index.clone(),
+        }
     };
     proof {
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
+        lemma_log_push_map_commute(s.log@, entry);
     }
     result
+
 }
 
 pub exec fn CHandleAppendResponse(s: &CState, c: &CConstants, follower: &u64, new_match_index: &u64) -> (result: CState)
@@ -231,14 +237,14 @@ requires
     c.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
-    *new_match_index as int >= 0int,
-    *new_match_index as int <= s@.log.len(),
+    (*new_match_index >= 0),
+    (*new_match_index <= s@.log.len()),
 ensures
     result.valid(),
     LHandleAppendResponse(s@, result@, c@, *follower as int, *new_match_index as int),
 {
-    let mut new_match = s.match_index.clone();
-    { new_match.insert(*follower, *new_match_index); }
+    let mut __match_index = s.match_index.clone();
+    __match_index.insert(*follower, *new_match_index);
     let result = CState {
         current_term: s.current_term,
         role: clone_server_role(&s.role),
@@ -247,9 +253,13 @@ ensures
         log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
-        match_index: new_match,
+        match_index: __match_index,
     };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
     result
+
 }
 
 pub exec fn CAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u64) -> (result: CState)
@@ -257,14 +267,14 @@ requires
     s.valid(),
     c.valid(),
     s.role is Leader,
-    *new_commit_index as int > s@.commit_index,
-    *new_commit_index as int <= s@.log.len(),
-    s@.log[*new_commit_index as int - 1].term == s@.current_term,
+    (*new_commit_index > s.commit_index),
+    (*new_commit_index as int <= s@.log.len()),
+    s.log@[*new_commit_index as int - 1].term == s.current_term,
 ensures
     result.valid(),
     LAdvanceCommitIndex(s@, result@, c@, *new_commit_index as int),
 {
-    let result = CState {
+CState {
         current_term: s.current_term,
         role: clone_server_role(&s.role),
         has_voted: s.has_voted,
@@ -273,33 +283,33 @@ ensures
         commit_index: *new_commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
-    };
-    result
+    }
 }
 
 pub exec fn CStepDown(s: &CState, c: &CConstants, new_term: &u64) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    *new_term as int > s@.current_term,
+    (*new_term > s.current_term),
 ensures
     result.valid(),
     LStepDown(s@, result@, c@, *new_term as int),
 {
     let result = CState {
         current_term: *new_term,
-        role: CServerRole::Follower,
         has_voted: false,
         voted_for: 0u64,
         log: clone_log(&s.log),
         commit_index: s.commit_index,
         votes_granted: HashSet::new(),
         match_index: s.match_index.clone(),
+        role: CServerRole::Follower,
     };
     proof {
         lemma_empty_set_map();
     }
     result
+
 }
 
 } // verus!

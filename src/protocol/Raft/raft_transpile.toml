@@ -12,7 +12,7 @@ primitive_types = []
 collection_fields = ["votes_granted", "servers"]
 
 # Fields that are Vec/HashMap types (Seq/Map) requiring .clone()
-vec_fields = ["log", "match_index"]
+vec_fields = ["match_index"]
 
 # Fields that are non-Copy types requiring .clone() but not @ in view
 clone_fields = ["role"]
@@ -20,6 +20,31 @@ clone_fields = ["role"]
 # Maps clone_fields to their exec enum types for generating clone helpers
 [clone_field_types]
 "role" = "CServerRole"
+
+# Maps struct-typed Vec field names to [exec_element_type, spec_element_type]
+# Generates clone_log wrapper, lemma_empty_log_map, lemma_log_push_map_commute
+[struct_vec_fields]
+"log" = ["CLogEntry", "LLogEntry"]
+
+# Extra requires clauses per exec function (transpiler can't derive these from spec)
+[extra_requires]
+"CClientRequest" = ["s.role is Leader"]
+"CGrantVote" = [
+    "*candidate_term >= s.current_term",
+    "!s.has_voted || s.voted_for == *candidate_id",
+    """({
+        let last_log_term: int = if s.log@.len() == 0 { 0int } else { s.log@[s.log@.len() - 1].term as int };
+        *candidate_last_log_term as int > last_log_term
+            || (*candidate_last_log_term as int == last_log_term
+                && *candidate_last_log_index as int >= s.log@.len())
+    })""",
+]
+"CAdvanceCommitIndex" = [
+    "s.role is Leader",
+    "(*new_commit_index > s.commit_index)",
+    "(*new_commit_index as int <= s@.log.len())",
+    "s.log@[*new_commit_index as int - 1].term == s.current_term",
+]
 
 [naming]
 spec_prefix = "L"

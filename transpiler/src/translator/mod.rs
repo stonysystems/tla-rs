@@ -81,6 +81,11 @@ pub struct TranslatorConfig {
     /// Maps clone_fields field names to their exec enum type names.
     /// Used to generate `clone_<type>()` helper functions with view/validity ensures.
     pub clone_field_types: HashMap<String, String>,
+    /// Struct fields that are Vec<T> where T has a mapped View type.
+    /// Maps field name to (ExecType, SpecType) pairs.
+    /// Used to generate clone_<field>, lemma_empty_<field>_map, lemma_<field>_push_map_commute helpers.
+    /// e.g., {"log" => ("CLogEntry", "LLogEntry")}
+    pub struct_vec_fields: HashMap<String, (String, String)>,
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive.
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
@@ -109,6 +114,7 @@ impl Default for TranslatorConfig {
             vec_fields: HashSet::new(),
             clone_fields: HashSet::new(),
             clone_field_types: HashMap::new(),
+            struct_vec_fields: HashMap::new(),
             extra_requires: HashMap::new(),
         }
     }
@@ -347,7 +353,9 @@ impl ProofNeeds {
             if let ExecExpr::Let { pattern, value, .. } = stmt {
                 if let Some(tmp_name) = pattern.strip_prefix("mut ") {
                     match value.as_ref() {
-                        ExecExpr::Call { func, args } if func == "clone_hashset" && args.len() == 1 => {
+                        ExecExpr::Call { func, args } if args.len() == 1
+                            && (func == "clone_hashset" || func.starts_with("clone_")) =>
+                        {
                             if let Some(source) = Self::extract_field_source(&args[0]) {
                                 tmp_to_source.insert(tmp_name.to_string(), source);
                             }
@@ -421,7 +429,7 @@ impl ProofNeeds {
     }
 
     /// Build a proof block ExecExpr containing the necessary lemma calls.
-    pub fn build_proof_block(&self) -> Option<ExecExpr> {
+    pub fn build_proof_block(&self, struct_vec_fields: &HashMap<String, (String, String)>) -> Option<ExecExpr> {
         let mut stmts = Vec::new();
 
         if self.has_empty_set {
@@ -459,25 +467,33 @@ impl ProofNeeds {
             });
         }
 
+        // Determine lemma names based on whether struct_vec_fields is configured.
+        // If a struct-typed Vec field exists, use field-specific names (e.g., lemma_empty_log_map).
+        // Otherwise, use generic names (e.g., lemma_empty_seq_map).
+        let first_field = struct_vec_fields.keys().next();
+
         if self.has_empty_vec {
+            let func_name = if let Some(field) = first_field {
+                format!("lemma_empty_{}_map", field)
+            } else {
+                "lemma_empty_seq_map".to_string()
+            };
             stmts.push(ExecExpr::Call {
-                func: "lemma_empty_seq_map".to_string(),
+                func: func_name,
                 args: vec![],
             });
         }
 
-        // Emit per-call lemma_seq_push_map_commute invocations with specific arguments.
+        // Emit per-call push-map-commute invocations with specific arguments.
         for site in &self.push_sites {
-            let element_expr = if site.element.starts_with('*') {
-                ExecExpr::Var(site.element.clone())
+            let element_expr = ExecExpr::Var(site.element.clone());
+            let func_name = if let Some(field) = first_field {
+                format!("lemma_{}_push_map_commute", field)
             } else {
-                ExecExpr::Unary {
-                    op: "*".to_string(),
-                    expr: Box::new(ExecExpr::Var(site.element.clone())),
-                }
+                "lemma_seq_push_map_commute".to_string()
             };
             stmts.push(ExecExpr::Call {
-                func: "lemma_seq_push_map_commute".to_string(),
+                func: func_name,
                 args: vec![
                     ExecExpr::Var(site.source_view.clone()),
                     element_expr,
@@ -882,6 +898,22 @@ impl Translator {
     /// Create a new translator with the given configuration
     pub fn new(config: TranslatorConfig) -> Self {
         Self { config }
+    }
+
+    /// Convert a PascalCase name to snake_case.
+    pub fn to_snake_case(s: &str) -> String {
+        let mut result = String::new();
+        for (i, c) in s.chars().enumerate() {
+            if c.is_uppercase() {
+                if i > 0 {
+                    result.push('_');
+                }
+                result.push(c.to_lowercase().next().unwrap());
+            } else {
+                result.push(c);
+            }
+        }
+        result
     }
 
     // ========================================================================
@@ -1555,10 +1587,19 @@ impl Translator {
                 // Generate: let mut __fname = <clone>(receiver); __fname.method(args);
                 let tmp_name = format!("__{}", fname);
 
-                // For push (Vec): use .clone(); for insert/remove (HashSet): use clone_hashset()
-                let is_vec_mutation = method == "push";
-                let clone_call = if is_vec_mutation {
-                    // Vec: receiver.clone()
+                // Clone the receiver based on field type:
+                // - struct_vec_fields (push): use clone_<field>(&recv)
+                // - vec_fields (insert on HashMap): use recv.clone()
+                // - collection_fields (insert/remove on HashSet): use clone_hashset(&recv)
+                let clone_call = if self.is_struct_vec_field(&fname) {
+                    ExecExpr::Call {
+                        func: format!("clone_{}", fname),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(recv),
+                        }],
+                    }
+                } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
                     // HashSet: clone_hashset(&receiver)
@@ -1598,8 +1639,15 @@ impl Translator {
                 // Generate: let mut __fname = clone(receiver); if cond { __fname.insert(*val); }
                 let tmp_name = format!("__{}", fname);
 
-                let is_vec_mutation = method == "push";
-                let clone_call = if is_vec_mutation {
+                let clone_call = if self.is_struct_vec_field(&fname) {
+                    ExecExpr::Call {
+                        func: format!("clone_{}", fname),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(recv),
+                        }],
+                    }
+                } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
                     ExecExpr::Call {
@@ -1769,6 +1817,15 @@ impl Translator {
                         },
                         _ => a,
                     },
+                    // Cast(Var(param), type) where param is an input ref — dereference instead of casting
+                    // Spec `param as u64` on a &u64 input becomes `*param`
+                    ExecExpr::Cast(inner, _) => match inner.as_ref() {
+                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: inner.clone(),
+                        },
+                        _ => a,
+                    },
                     _ => a,
                 }
             })
@@ -1788,7 +1845,16 @@ impl Translator {
             // Field access on input: s.field
             ExecExpr::Field(base, field_name) => {
                 if Self::is_input_var(base, ctx) {
-                    if self.is_hashset_field(field_name) {
+                    if self.is_struct_vec_field(field_name) {
+                        // Struct-typed Vec field: use clone_<field>(&s.field)
+                        ExecExpr::Call {
+                            func: format!("clone_{}", field_name),
+                            args: vec![ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(expr),
+                            }],
+                        }
+                    } else if self.is_hashset_field(field_name) {
                         // HashSet field: wrap with clone_hashset(&s.field)
                         ExecExpr::Call {
                             func: "clone_hashset".to_string(),
@@ -1825,7 +1891,16 @@ impl Translator {
             ExecExpr::Clone(inner) => {
                 match inner.as_ref() {
                     ExecExpr::Field(base, field_name) if Self::is_input_var(base, ctx) => {
-                        if self.is_hashset_field(field_name) {
+                        if self.is_struct_vec_field(field_name) {
+                            // Struct-typed Vec: replace .clone() with clone_<field>(&...)
+                            ExecExpr::Call {
+                                func: format!("clone_{}", field_name),
+                                args: vec![ExecExpr::Unary {
+                                    op: "&".to_string(),
+                                    expr: inner.clone(),
+                                }],
+                            }
+                        } else if self.is_hashset_field(field_name) {
                             // Replace .clone() with clone_hashset(&...)
                             ExecExpr::Call {
                                 func: "clone_hashset".to_string(),
@@ -1877,30 +1952,44 @@ impl Translator {
         self.config.vec_fields.contains(field_name)
     }
 
+    /// Check if a field is a struct-typed Vec requiring `clone_<field>()` wrapper.
+    fn is_struct_vec_field(&self, field_name: &str) -> bool {
+        self.config.struct_vec_fields.contains_key(field_name)
+    }
+
     /// Check if a field is a non-Copy type requiring `.clone()` but NOT `@` in view.
     fn is_clone_field(&self, field_name: &str) -> bool {
         self.config.clone_fields.contains(field_name)
     }
 
     /// Get the clone helper function name for a clone_field, if a type mapping exists.
-    /// e.g., field "role" with type "CNodeRole" returns "clone_role".
+    /// e.g., field "role" with type "CServerRole" returns "clone_server_role".
     fn get_clone_helper_name(&self, field_name: &str) -> Option<String> {
-        if self.config.clone_field_types.contains_key(field_name) {
-            Some(format!("clone_{}", field_name))
+        if let Some(type_name) = self.config.clone_field_types.get(field_name) {
+            // Strip exec prefix and convert to snake_case
+            let stripped = if type_name.starts_with('C') && type_name.len() > 1 && type_name.chars().nth(1).is_some_and(|c| c.is_uppercase()) {
+                &type_name[1..]
+            } else {
+                type_name.as_str()
+            };
+            Some(format!("clone_{}", Self::to_snake_case(stripped)))
         } else {
             None
         }
     }
 
-    /// Check if a field name is a non-Copy collection type (Set/Map/Vec/HashMap).
-    /// Returns true for both `collection_fields` (HashSet) and `vec_fields` (Vec/HashMap).
+    /// Check if a field name is a non-Copy collection type (Set/Map/Vec/HashMap/struct-typed Vec).
+    /// Returns true for `collection_fields` (HashSet), `vec_fields` (Vec/HashMap),
+    /// and `struct_vec_fields` (Vec<Struct>).
     /// Does NOT include `clone_fields` (they don't need `@` in view context).
     /// Used to determine if a field needs `@` in view context.
     fn is_collection_field(&self, field_name: &str) -> bool {
         if self.has_no_field_config() {
             true
         } else {
-            self.config.collection_fields.contains(field_name) || self.config.vec_fields.contains(field_name)
+            self.config.collection_fields.contains(field_name)
+                || self.config.vec_fields.contains(field_name)
+                || self.config.struct_vec_fields.contains_key(field_name)
         }
     }
 
@@ -1909,6 +1998,7 @@ impl Translator {
         self.config.collection_fields.is_empty()
             && self.config.vec_fields.is_empty()
             && self.config.clone_fields.is_empty()
+            && self.config.struct_vec_fields.is_empty()
     }
 
     /// Check if an expression is a variable reference to an input parameter
@@ -2052,6 +2142,44 @@ impl Translator {
             _ => false,
         }
     }
+
+    /// Check if a let-bound variable is only used as a standalone boolean conjunct
+    /// in the body expression (a precondition pattern like `let log_ok = ...; &&& log_ok`).
+    /// If so, the let binding can be skipped because the standalone conjunct will be
+    /// filtered out during conjunction handling (it is neither an input nor an output).
+    fn is_precondition_only_let(&self, name: &str, body: &Expr, ctx: &TransformContext) -> bool {
+        // The variable must not be an input or output parameter
+        if ctx.is_input(name) || ctx.is_output(name) {
+            return false;
+        }
+        match body {
+            Expr::Conjunction(parts) => {
+                // Check each conjunct: if it references `name`, it must be
+                // a standalone `Ident(name)` — not nested in a larger expression.
+                for part in parts {
+                    if let Expr::Ident(n) = part {
+                        if n == name {
+                            // Standalone usage as a boolean conjunct — this is fine
+                            continue;
+                        }
+                    }
+                    // If the conjunct references `name` inside a larger expression,
+                    // the let binding is needed for computation, not just as a precondition.
+                    if Self::expr_contains_ident(part, name) {
+                        return false;
+                    }
+                }
+                true
+            }
+            // For nested lets, check the inner body recursively
+            Expr::Let { body: inner, .. } => self.is_precondition_only_let(name, inner, ctx),
+            // If the body is just the variable itself, it is a pure precondition
+            Expr::Ident(n) if n == name => true,
+            // Otherwise, the variable might be used for computation
+            _ => false,
+        }
+    }
+
 
     /// Convert an ExecExpr to a string representation for use in invariants.
     /// This produces a Verus spec-level expression string.
@@ -4047,25 +4175,35 @@ impl Translator {
         }
 
         let needs = ProofNeeds::analyze(&body);
-        let proof_block = match needs.build_proof_block() {
+        let proof_block = match needs.build_proof_block(&self.config.struct_vec_fields) {
             Some(pb) => pb,
             None => return body, // No proofs needed
         };
 
-        // Wrap the body: bind it to `result`, add proof block, return `result`
-        // This transforms:  StructExpr { ... }
-        // into:             let result = StructExpr { ... };
+        // Flatten the body: if it's a Block, extract pre-statements (mutations)
+        // and only bind the final expression to `result`.
+        // This transforms:  Block([pre_stmts..., StructExpr { ... }])
+        // into:             pre_stmts...
+        //                   let result = StructExpr { ... };
         //                   proof { ... }
         //                   result
-        ExecExpr::Block(vec![
-            ExecExpr::Let {
-                pattern: "result".to_string(),
-                ty: None,
-                value: Box::new(body),
-            },
-            proof_block,
-            ExecExpr::Var("result".to_string()),
-        ])
+        let (pre_stmts, final_expr) = match body {
+            ExecExpr::Block(mut stmts) if !stmts.is_empty() => {
+                let last = stmts.pop().unwrap();
+                (stmts, last)
+            }
+            other => (Vec::new(), other),
+        };
+
+        let mut block = pre_stmts;
+        block.push(ExecExpr::Let {
+            pattern: "result".to_string(),
+            ty: None,
+            value: Box::new(final_expr),
+        });
+        block.push(proof_block);
+        block.push(ExecExpr::Var("result".to_string()));
+        ExecExpr::Block(block)
     }
 
     /// Find the sequence parameter that is being recursed upon (has drop_first/skip in recursive calls)
@@ -4480,6 +4618,12 @@ impl Translator {
         match ty {
             Type::Named(path) => {
                 let name = path.last().unwrap_or("Unknown");
+                // Primitive Rust types should not be translated
+                if matches!(name, "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+                    | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+                    | "bool" | "char" | "String" | "str") {
+                    return ExecType::Named(name.to_string());
+                }
                 if let Some(remapped) = self.config.type_remapping.get(name) {
                     ExecType::Named(remapped.clone())
                 } else {
@@ -4704,8 +4848,14 @@ impl Translator {
         // e.g., `s.tm_state is Init` in a conjunction like:
         //   &&& s.tm_state is Init   (precondition - input only)
         //   &&& s_.tm_state is Done  (effect - references output)
+        // Skip auto-derivation when extra_requires is configured for this function,
+        // since the manually specified requires replace auto-derived body preconditions.
         let ctx = self.make_requires_context(func);
-        requires.extend(self.extract_body_preconditions(func, &ctx));
+        let exec_name = self.translate_name(&func.spec_fn.name);
+        let has_extra_requires = self.config.extra_requires.contains_key(&exec_name);
+        if !has_extra_requires {
+            requires.extend(self.extract_body_preconditions(func, &ctx));
+        }
 
         // Extract arithmetic overflow guards from output assignments.
         // When the body contains `s_.field == s.field + N`, we need
@@ -4720,7 +4870,6 @@ impl Translator {
 
         // Add per-function extra requires from configuration.
         // These are manually specified preconditions that the transpiler can't derive.
-        let exec_name = self.translate_name(&func.spec_fn.name);
         if let Some(extra) = self.config.extra_requires.get(&exec_name) {
             for req in extra {
                 if !requires.contains(req) {
@@ -6141,6 +6290,20 @@ impl Translator {
                 value,
                 body,
             } => {
+                // Check if the let-bound variable is only used as a standalone boolean
+                // conjunct in the body (a precondition pattern like `let log_ok = ...; &&& log_ok`).
+                // If so, skip the let binding — the condition is handled by extra_requires.
+                let var_name = match &binding.pattern {
+                    crate::ast::Pattern::Ident(name) => Some(name.as_str()),
+                    _ => None,
+                };
+                if let Some(name) = var_name {
+                    if self.is_precondition_only_let(name, body, ctx) {
+                        // Skip this let binding, just translate the body
+                        return self.transform_expr(body, ctx);
+                    }
+                }
+
                 let value_expr = self.transform_expr(value, ctx)?;
                 let body_expr = self.transform_expr(body, ctx)?;
                 let pattern_str = self.format_binding_pattern(&binding.pattern);
@@ -6688,6 +6851,15 @@ impl Translator {
                             }
                         }
                     }
+                }
+            }
+
+            // Skip standalone identifiers that are neither input nor output parameters.
+            // These are local let-bound boolean variables used as precondition checks
+            // (e.g., `&&& log_ok` where log_ok is defined in a let binding).
+            if let Expr::Ident(name) = expr {
+                if !ctx.is_input(name) && !ctx.is_output(name) {
+                    continue;
                 }
             }
 
@@ -7527,6 +7699,15 @@ impl Translator {
                 // Skip input-only expressions - these are preconditions
                 if Self::is_input_only_expression(&expr, ctx) {
                     continue;
+                }
+
+                // Skip standalone identifiers that are neither input nor output parameters.
+                // These are local let-bound boolean variables used as precondition checks
+                // (e.g., `&&& log_ok` where log_ok is defined in a stripped let binding).
+                if let Expr::Ident(name) = &expr {
+                    if !ctx.is_input(name) && !ctx.is_output(name) {
+                        continue;
+                    }
                 }
 
                 // Check if this is s_ == Struct{...} with self-referential fields
@@ -15077,7 +15258,7 @@ mod tests {
     fn test_build_proof_block_empty_set_only() {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
-        let block = needs.build_proof_block().unwrap();
+        let block = needs.build_proof_block(&HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -15097,7 +15278,7 @@ mod tests {
     fn test_build_proof_block_insert_only() {
         let mut needs = ProofNeeds::default();
         needs.has_set_insert = true;
-        let block = needs.build_proof_block().unwrap();
+        let block = needs.build_proof_block(&HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -15117,7 +15298,7 @@ mod tests {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
         needs.has_set_insert = true;
-        let block = needs.build_proof_block().unwrap();
+        let block = needs.build_proof_block(&HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 2);
@@ -15133,7 +15314,7 @@ mod tests {
     #[test]
     fn test_build_proof_block_none() {
         let needs = ProofNeeds::default();
-        assert!(needs.build_proof_block().is_none());
+        assert!(needs.build_proof_block(&HashMap::new()).is_none());
     }
 
     #[test]
@@ -15316,7 +15497,7 @@ mod tests {
             source_view: "s.pending_sent@".to_string(),
             element: "*value".to_string(),
         });
-        let block = needs.build_proof_block().unwrap();
+        let block = needs.build_proof_block(&HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -15342,7 +15523,7 @@ mod tests {
             source_view: "s.alive@".to_string(),
             element: "*node".to_string(),
         });
-        let block = needs.build_proof_block().unwrap();
+        let block = needs.build_proof_block(&HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 2);
@@ -17669,8 +17850,115 @@ mod tests {
 
         assert_eq!(
             translator.get_clone_helper_name("role"),
-            Some("clone_role".to_string())
+            Some("clone_node_role".to_string())
         );
         assert_eq!(translator.get_clone_helper_name("count"), None);
+    }
+
+    #[test]
+    fn test_extra_requires_skips_auto_derived_body_preconditions() {
+        // When extra_requires is configured for a function, auto-derived body
+        // preconditions should NOT be generated (extra_requires replaces them).
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        config.extra_requires.insert(
+            "CAdvance".to_string(),
+            vec!["s.role is Leader".to_string(), "(*idx > s.commit_index)".to_string()],
+        );
+        let translator = Translator::new(config);
+
+        // Body has input-only conjuncts that would normally become auto-derived requires
+        let body = Expr::Conjunction(vec![
+            Expr::Is(Box::new(Expr::Arrow(Box::new(Expr::Ident("s".to_string())), "role".to_string())), "Leader".to_string()),
+            Expr::Eq(
+                Box::new(Expr::Arrow(Box::new(Expr::Ident("s_".to_string())), "commit_index".to_string())),
+                Box::new(Expr::Ident("idx".to_string())),
+            ),
+        ]);
+
+        let func = make_annotated_func(
+            "LAdvance",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                ("idx".to_string(), Type::Named(Path::single("int".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Input, ParameterMode::Input],
+            body,
+        );
+
+        let requires = translator.build_requires(&func);
+
+        // Should have extra_requires
+        assert!(requires.contains(&"s.role is Leader".to_string()));
+        assert!(requires.contains(&"(*idx > s.commit_index)".to_string()));
+        // Should NOT have auto-derived "s.role is Leader" from body (it would be duplicate)
+        // The key test: only 4 requires (s.valid(), c.valid(), and 2 extra)
+        // NOT 5 (which would include auto-derived body precondition)
+        assert_eq!(requires.iter().filter(|r| r.contains("Leader")).count(), 1);
+    }
+
+    #[test]
+    fn test_scan_block_detects_clone_field_mutations() {
+        // scan_block_for_mutation_sites should detect clone_<field>() calls
+        // (not just clone_hashset and .clone())
+        let stmts = vec![
+            ExecExpr::Let {
+                pattern: "mut __log".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Call {
+                    func: "clone_log".to_string(),
+                    args: vec![ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(ExecExpr::Field(Box::new(ExecExpr::Var("s".to_string())), "log".to_string())),
+                    }],
+                }),
+            },
+            ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("__log".to_string())),
+                method: "push".to_string(),
+                args: vec![ExecExpr::Var("entry".to_string())],
+            },
+        ];
+
+        let mut needs = ProofNeeds::default();
+        needs.scan_block_for_mutation_sites(&stmts);
+
+        // Should detect the push site
+        assert_eq!(needs.push_sites.len(), 1);
+        assert_eq!(needs.push_sites[0].source_view, "s.log@");
+        assert_eq!(needs.push_sites[0].element, "entry");
+    }
+
+    #[test]
+    fn test_push_proof_element_no_spurious_deref() {
+        // The push proof lemma argument should NOT add * to non-reference elements.
+        // e.g., `entry` (local var) should stay `entry`, not become `*entry`.
+        let mut needs = ProofNeeds::default();
+        needs.push_sites.push(PushSite {
+            source_view: "s.log@".to_string(),
+            element: "entry".to_string(),
+        });
+
+        let proof_block = needs.build_proof_block(&HashMap::new());
+        assert!(proof_block.is_some());
+
+        // Check the proof block structure:
+        // Should be ProofBlock with a Call containing Var("entry"), not Unary("*", Var("entry"))
+        if let ExecExpr::ProofBlock { stmts } = proof_block.unwrap() {
+            assert_eq!(stmts.len(), 1);
+            if let ExecExpr::Call { args, .. } = &stmts[0] {
+                assert_eq!(args.len(), 2);
+                // Second arg should be Var("entry"), not Unary("*", Var("entry"))
+                assert!(matches!(&args[1], ExecExpr::Var(name) if name == "entry"),
+                    "Expected Var(\"entry\"), got: {:?}", args[1]);
+            } else {
+                panic!("Expected Call, got: {:?}", stmts[0]);
+            }
+        } else {
+            panic!("Expected ProofBlock");
+        }
     }
 }

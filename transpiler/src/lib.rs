@@ -190,7 +190,12 @@ impl Transpiler {
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
             let has_vec_fields = !self.config.translator.vec_fields.is_empty();
-            let helpers = Self::generate_proof_helper_lemmas(has_vec_fields);
+            let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body));
+            let helpers = Self::generate_proof_helper_lemmas(
+                has_vec_fields,
+                has_set_remove,
+                &self.config.translator.struct_vec_fields,
+            );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
                 output.push('\n');
@@ -347,7 +352,12 @@ impl Transpiler {
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
             let has_vec_fields = !self.config.translator.vec_fields.is_empty();
-            let helpers = Self::generate_proof_helper_lemmas(has_vec_fields);
+            let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body));
+            let helpers = Self::generate_proof_helper_lemmas(
+                has_vec_fields,
+                has_set_remove,
+                &self.config.translator.struct_vec_fields,
+            );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
                 output.push('\n');
@@ -414,50 +424,119 @@ impl Transpiler {
     /// Currently emits:
     /// - `lemma_empty_set_map()`: proves `Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()`
     /// - `lemma_set_map_remove_commute(s, elt)`: proves `s.remove(elt).map(f) =~= s.map(f).remove(f(elt))`
-    /// - `lemma_empty_seq_map()`: proves `Seq::<u64>::empty().map(...) =~= Seq::<int>::empty()`
-    /// - `lemma_seq_push_map_commute(s, x)`: proves push commutes with Seq::map
-    fn generate_proof_helper_lemmas(has_vec_fields: bool) -> String {
+    /// - `lemma_empty_seq_map()` / `lemma_empty_<field>_map()`: empty Seq mapping proof
+    /// - `lemma_seq_push_map_commute(s, x)` / `lemma_<field>_push_map_commute(s, x)`: push commutativity
+    /// - `clone_<field>()`: external_body clone wrapper for struct-typed Vec fields
+    fn generate_proof_helper_lemmas(
+        has_vec_fields: bool,
+        has_set_remove: bool,
+        struct_vec_fields: &std::collections::HashMap<String, (String, String)>,
+    ) -> String {
         let mut output = String::new();
 
         // lemma_empty_set_map
-        output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
+        output.push_str("/// Helper proof: mapping over an empty set yields an empty set.\n");
         output.push_str("proof fn lemma_empty_set_map()\n");
         output.push_str("ensures\n");
         output.push_str("    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n");
         output.push_str("{\n");
         output.push_str("    let f = |x: u64| x as int;\n");
         output.push_str("    let s = Set::<u64>::empty().map(f);\n");
-        output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
-        output.push_str("    }\n");
+        output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by { }\n");
         output.push_str("}\n\n");
 
-        // lemma_set_map_remove_commute
-        output.push_str("/// Helper proof: removing an element commutes with mapping for injective functions.\n");
-        output.push_str("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)\n");
-        output.push_str("ensures\n");
-        output.push_str("    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),\n");
-        output.push_str("{\n");
-        output.push_str("    let f = |x: u64| x as int;\n");
-        output.push_str("    let lhs = s.remove(elt).map(f);\n");
-        output.push_str("    let rhs = s.map(f).remove(f(elt));\n");
-        output.push_str("    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {\n");
-        output.push_str("        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;\n");
-        output.push_str("        assert(s.contains(x));\n");
-        output.push_str("        assert(x != elt);\n");
-        output.push_str("        assert(f(x) != f(elt));\n");
-        output.push_str("        assert(s.map(f).contains(y));\n");
-        output.push_str("    }\n");
-        output.push_str("    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {\n");
-        output.push_str("        let x = choose|x: u64| s.contains(x) && f(x) == y;\n");
-        output.push_str("        assert(y != f(elt));\n");
-        output.push_str("        assert(f(x) != f(elt));\n");
-        output.push_str("        assert(x != elt);\n");
-        output.push_str("        assert(s.remove(elt).contains(x));\n");
-        output.push_str("    }\n");
-        output.push_str("}\n\n");
+        // lemma_set_map_remove_commute — only when spec uses .remove()
+        if has_set_remove {
+            output.push_str("/// Helper proof: removing an element commutes with mapping for injective functions.\n");
+            output.push_str("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)\n");
+            output.push_str("ensures\n");
+            output.push_str("    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),\n");
+            output.push_str("{\n");
+            output.push_str("    let f = |x: u64| x as int;\n");
+            output.push_str("    let lhs = s.remove(elt).map(f);\n");
+            output.push_str("    let rhs = s.map(f).remove(f(elt));\n");
+            output.push_str("    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {\n");
+            output.push_str("        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;\n");
+            output.push_str("        assert(s.contains(x));\n");
+            output.push_str("        assert(x != elt);\n");
+            output.push_str("        assert(f(x) != f(elt));\n");
+            output.push_str("        assert(s.map(f).contains(y));\n");
+            output.push_str("    }\n");
+            output.push_str("    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {\n");
+            output.push_str("        let x = choose|x: u64| s.contains(x) && f(x) == y;\n");
+            output.push_str("        assert(y != f(elt));\n");
+            output.push_str("        assert(f(x) != f(elt));\n");
+            output.push_str("        assert(x != elt);\n");
+            output.push_str("        assert(s.remove(elt).contains(x));\n");
+            output.push_str("    }\n");
+            output.push_str("}\n\n");
+        }
 
-        // Seq proof helpers only needed when vec_fields are configured
-        if has_vec_fields {
+        // Generate struct-typed Vec proof helpers and clone wrappers
+        if !struct_vec_fields.is_empty() {
+            let mut sorted_fields: Vec<_> = struct_vec_fields.iter().collect();
+            sorted_fields.sort_by_key(|(k, _)| k.to_string());
+
+            for (field, (exec_type, spec_type)) in &sorted_fields {
+                // lemma_empty_<field>_map
+                output.push_str(&format!(
+                    "/// Helper proof: mapping over an empty Vec<{}> yields an empty seq.\n",
+                    exec_type
+                ));
+                output.push_str(&format!(
+                    "proof fn lemma_empty_{}_map()\n",
+                    field
+                ));
+                output.push_str("ensures\n");
+                output.push_str(&format!(
+                    "    Seq::<{}>::empty().map(|i: int, e: {}| e@) =~= Seq::<{}>::empty(),\n",
+                    exec_type, exec_type, spec_type
+                ));
+                output.push_str("{\n");
+                output.push_str("}\n\n");
+
+                // lemma_<field>_push_map_commute
+                output.push_str(&format!(
+                    "/// Helper proof: push commutes with Seq::map for {} view.\n",
+                    exec_type
+                ));
+                output.push_str(&format!(
+                    "proof fn lemma_{}_push_map_commute(s: Seq<{}>, x: {})\n",
+                    field, exec_type, exec_type
+                ));
+                output.push_str("ensures\n");
+                output.push_str(&format!(
+                    "    s.push(x).map(|i: int, e: {}| e@) =~= s.map(|i: int, e: {}| e@).push(x@),\n",
+                    exec_type, exec_type
+                ));
+                output.push_str("{\n");
+                output.push_str("}\n\n");
+
+                // clone_<field> external_body wrapper
+                output.push_str(&format!(
+                    "/// Helper: clone a Vec<{}> preserving both raw and mapped view.\n",
+                    exec_type
+                ));
+                output.push_str(&format!(
+                    "/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.\n",
+                ));
+                output.push_str("#[verifier(external_body)]\n");
+                output.push_str(&format!(
+                    "fn clone_{}(v: &Vec<{}>) -> (res: Vec<{}>)\n",
+                    field, exec_type, exec_type
+                ));
+                output.push_str("ensures\n");
+                output.push_str("    res@ == v@,\n");
+                output.push_str(&format!(
+                    "    res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@),\n",
+                    exec_type, exec_type
+                ));
+                output.push_str("{\n");
+                output.push_str("    v.clone()\n");
+                output.push_str("}\n\n");
+            }
+        } else if has_vec_fields {
+            // Seq proof helpers only needed when vec_fields are configured (u64-typed)
             // lemma_empty_seq_map
             output.push_str("/// Helper proof: mapping over an empty Seq yields an empty Seq.\n");
             output.push_str("proof fn lemma_empty_seq_map()\n");
@@ -505,7 +584,7 @@ impl Transpiler {
         let mut field_type_pairs: Vec<(&String, &String)> = clone_field_types.iter().collect();
         field_type_pairs.sort_by_key(|(field, _)| field.to_string());
 
-        for (field_name, enum_type) in &field_type_pairs {
+        for (_field_name, enum_type) in &field_type_pairs {
             if !seen_types.insert(enum_type.to_string()) {
                 continue; // Skip duplicate types
             }
@@ -526,7 +605,18 @@ impl Transpiler {
                 continue; // No variants found for this type
             }
 
-            let fn_name = format!("clone_{}", field_name);
+            // Use type name (snake_case, without exec prefix) for helper name
+            // e.g., "CServerRole" -> "clone_server_role", "CNodeRole" -> "clone_node_role"
+            let type_snake = {
+                // Strip common "C" exec prefix if present
+                let stripped = if enum_type.starts_with('C') && enum_type.len() > 1 && enum_type.chars().nth(1).is_some_and(|c| c.is_uppercase()) {
+                    &enum_type[1..]
+                } else {
+                    enum_type.as_str()
+                };
+                crate::translator::Translator::to_snake_case(stripped)
+            };
+            let fn_name = format!("clone_{}", type_snake);
             output.push_str(&format!(
                 "/// Helper: clone {} preserving view (workaround for missing derive Clone spec).\n",
                 enum_type
@@ -548,6 +638,42 @@ impl Transpiler {
         }
 
         output
+    }
+
+    /// Check if a spec expression tree contains a `.remove()` method call.
+    /// Used to determine if `lemma_set_map_remove_commute` should be generated.
+    fn spec_uses_remove(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::MethodCall { method, receiver, args, .. } => {
+                if method == "remove" {
+                    return true;
+                }
+                Self::spec_uses_remove(receiver) || args.iter().any(|a| Self::spec_uses_remove(a))
+            }
+            Expr::Conjunction(parts) | Expr::Disjunction(parts) => {
+                parts.iter().any(|p| Self::spec_uses_remove(p))
+            }
+            Expr::Binary(lhs, _, rhs) | Expr::Eq(lhs, rhs) | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs) | Expr::Le(lhs, rhs) | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs) | Expr::Implies(lhs, rhs) => {
+                Self::spec_uses_remove(lhs) || Self::spec_uses_remove(rhs)
+            }
+            Expr::Not(inner) | Expr::Field(inner, _) | Expr::Arrow(inner, _) => {
+                Self::spec_uses_remove(inner)
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                Self::spec_uses_remove(cond) || Self::spec_uses_remove(then_branch)
+                    || else_branch.as_ref().is_some_and(|e| Self::spec_uses_remove(e))
+            }
+            Expr::Let { value, body, .. } => {
+                Self::spec_uses_remove(value) || Self::spec_uses_remove(body)
+            }
+            Expr::Call { args, .. } => args.iter().any(|a| Self::spec_uses_remove(a)),
+            Expr::Index(base, idx) => Self::spec_uses_remove(base) || Self::spec_uses_remove(idx),
+            Expr::Forall { body, .. } | Expr::Exists { body, .. } => Self::spec_uses_remove(body),
+            _ => false,
+        }
     }
 
     /// Generate wrapper methods for functions that take the impl type as first parameter.
@@ -1174,13 +1300,14 @@ mod tests {
 
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
-        let output = Transpiler::generate_proof_helper_lemmas(false);
+        let empty = std::collections::HashMap::new();
+        let output = Transpiler::generate_proof_helper_lemmas(false, true, &empty);
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
         assert!(output.contains("Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()"));
 
-        // Verify lemma_set_map_remove_commute
+        // Verify lemma_set_map_remove_commute (only when has_set_remove=true)
         assert!(output.contains("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)"));
         assert!(output.contains("s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int)"));
         assert!(output.contains("let lhs = s.remove(elt).map(f);"));
@@ -1192,11 +1319,16 @@ mod tests {
         // Seq lemmas should NOT be present without vec_fields
         assert!(!output.contains("lemma_empty_seq_map"));
         assert!(!output.contains("lemma_seq_push_map_commute"));
+
+        // When has_set_remove=false, remove_commute should NOT be present
+        let output_no_remove = Transpiler::generate_proof_helper_lemmas(false, false, &empty);
+        assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
     }
 
     #[test]
     fn test_generate_proof_helper_lemmas_with_vec_fields() {
-        let output = Transpiler::generate_proof_helper_lemmas(true);
+        let empty = std::collections::HashMap::new();
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, &empty);
 
         // Set lemmas should always be present
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -1205,6 +1337,30 @@ mod tests {
         // Seq lemmas should be present with vec_fields
         assert!(output.contains("proof fn lemma_empty_seq_map()"));
         assert!(output.contains("proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)"));
+    }
+
+    #[test]
+    fn test_generate_proof_helper_lemmas_with_struct_vec_fields() {
+        let mut svf = std::collections::HashMap::new();
+        svf.insert("log".to_string(), ("CLogEntry".to_string(), "LLogEntry".to_string()));
+        let output = Transpiler::generate_proof_helper_lemmas(true, false, &svf);
+
+        // Set lemmas should always be present
+        assert!(output.contains("proof fn lemma_empty_set_map()"));
+
+        // Struct-typed lemmas should be present
+        assert!(output.contains("proof fn lemma_empty_log_map()"));
+        assert!(output.contains("Seq::<CLogEntry>::empty().map(|i: int, e: CLogEntry| e@) =~= Seq::<LLogEntry>::empty()"));
+        assert!(output.contains("proof fn lemma_log_push_map_commute(s: Seq<CLogEntry>, x: CLogEntry)"));
+
+        // Clone wrapper should be present
+        assert!(output.contains("#[verifier(external_body)]"));
+        assert!(output.contains("fn clone_log(v: &Vec<CLogEntry>) -> (res: Vec<CLogEntry>)"));
+        assert!(output.contains("res@ == v@"));
+
+        // Generic u64-typed seq lemmas should NOT be present (struct_vec takes priority)
+        assert!(!output.contains("lemma_empty_seq_map"));
+        assert!(!output.contains("lemma_seq_push_map_commute"));
     }
 
     #[test]
@@ -1219,7 +1375,8 @@ mod tests {
 
         let output = Transpiler::generate_clone_helpers(&clone_field_types, &variant_remapping);
 
-        assert!(output.contains("fn clone_role(r: &CNodeRole) -> (res: CNodeRole)"));
+        // Helper name is based on type name (snake_case, without C prefix): "clone_node_role"
+        assert!(output.contains("fn clone_node_role(r: &CNodeRole) -> (res: CNodeRole)"));
         assert!(output.contains("res@ == r@,"));
         assert!(output.contains("res.valid() == r.valid(),"));
         assert!(output.contains("CNodeRole::Head => CNodeRole::Head,"));

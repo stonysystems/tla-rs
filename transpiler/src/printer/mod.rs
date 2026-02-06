@@ -146,7 +146,15 @@ impl Printer {
             ExecExpr::Block(stmts) => {
                 for (i, stmt) in stmts.iter().enumerate() {
                     self.indent();
-                    self.print_expr(stmt);
+                    // When a Block appears as a statement inside another Block,
+                    // wrap it in { } braces (used for HashMap insert to discard Option<V>)
+                    if matches!(stmt, ExecExpr::Block(_)) {
+                        self.write("{ ");
+                        self.print_expr(stmt);
+                        self.write(" }");
+                    } else {
+                        self.print_expr(stmt);
+                    }
                     // Add semicolon after statements except the last one (return value)
                     // Some statements already have semicolons from their own printing
                     let is_last = i == stmts.len() - 1;
@@ -160,6 +168,7 @@ impl Printer {
                             | ExecExpr::Comment(_)
                             | ExecExpr::ProofBlock { .. }
                             | ExecExpr::ForInIter { .. }
+                            | ExecExpr::Block(_)
                             | ExecExpr::Break
                     );
                     if !is_last && !has_own_semicolon {

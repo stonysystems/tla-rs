@@ -2001,9 +2001,9 @@ ChainReplication introduces patterns not seen in TwoPhase/Paxos/LeaderElection:
 - [ ] Run transpiler, compare against reference
 - [ ] Run Verus — target: 0 assumes
 
-**12.4.2: Regenerate Raft with proofs**
-- [ ] Run transpiler, compare against reference
-- [ ] Run Verus — target: 0 assumes
+**12.4.2: Regenerate Raft with proofs** ✅
+- [x] Run transpiler, compare against reference
+- [x] Run Verus — 585 verified, 0 errors
 
 #### Phase 12.5: Regenerate RSL (the main target — 182 assumes)
 

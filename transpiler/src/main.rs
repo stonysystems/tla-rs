@@ -924,6 +924,11 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             vec_fields: file_config.vec_fields.into_iter().collect(),
             clone_fields: file_config.clone_fields.into_iter().collect(),
             clone_field_types: file_config.clone_field_types.clone(),
+            struct_vec_fields: file_config.struct_vec_fields.iter().map(|(k, v)| {
+                let exec_type = v.first().cloned().unwrap_or_default();
+                let spec_type = v.get(1).cloned().unwrap_or_default();
+                (k.clone(), (exec_type, spec_type))
+            }).collect(),
             extra_requires: file_config.extra_requires.clone(),
             ..TranslatorConfig::default()
         },

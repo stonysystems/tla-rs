@@ -159,6 +159,16 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub clone_field_types: HashMap<String, String>,
 
+    /// Maps Vec field names to their [exec_element_type, spec_element_type] pairs.
+    /// Used for Vec fields containing struct elements that have a View trait (e.g., CLogEntry → LLogEntry).
+    /// Generates:
+    /// - `clone_<field>()`: external_body clone wrapper with mapped-view ensures
+    /// - `lemma_empty_<field>_map()`: empty Seq proof helper
+    /// - `lemma_<field>_push_map_commute()`: push commutativity proof helper
+    /// e.g., {"log" = ["CLogEntry", "LLogEntry"]}
+    #[serde(default)]
+    pub struct_vec_fields: HashMap<String, Vec<String>>,
+
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive
     /// automatically (e.g., covering conditions for implication groups).
