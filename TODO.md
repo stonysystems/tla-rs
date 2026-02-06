@@ -2073,12 +2073,12 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 #### Phase 12.6: Verification and Cleanup
 
 **12.6.1: Run full Verus verification** ✅ MOSTLY COMPLETE
-- [x] 584 verified, 0 errors (target exceeded)
+- [x] 627 verified, 0 errors (target exceeded; includes all 10 protocols)
 - [ ] 7 irreducible IO trust boundary assumes remain (would require CReplica clone_up_to_view + full IO contract propagation)
 - [ ] All generated code comes from transpiler (no hand edits) — RSL dispatch functions still hand-written
 
 **12.6.2: Transpiler regression tests** ✅ COMPLETE
-- [x] Add tests: `cargo test --lib` — 628 tests pass (21 new proof-related tests)
+- [x] Add tests: `cargo test --lib` — 642 tests pass (includes 8 View mapping tests)
 - [x] Test each proof category generates correct output:
   - `seq_comprehension_proof_block`: 3 tests (basic, non-struct, single-field)
   - `format_spec_arg` with `primitive_types`: 3 tests (named primitive, non-primitive, multiple)
@@ -2094,7 +2094,7 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 **12.6.4: Update documentation** ✅ COMPLETE
 - [x] Created `docs/transpiler-config-reference.md` — comprehensive reference for all TOML config options
 - [x] Updated `scripts/regenerate_rsl.sh` — uses per-module `*_transpile.toml` configs (was using shared `transpile.toml`)
-- [x] Created `scripts/regenerate_all.sh` — covers all 6 protocols with per-protocol and all-at-once modes
+- [x] Created `scripts/regenerate_all.sh` — covers all 10 protocols with per-protocol and all-at-once modes
 - [x] Updated `docs/phase12-proof-patterns.md` — added Phase 12.5.9 IO dispatch results + remaining assumes summary
 
 ### Key Technical Challenges
@@ -2113,10 +2113,10 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 
 1. [~] **0 `assume()` calls** in all files under `src/generated/` — 7 irreducible IO trust boundary assumes remain in replica_gen.rs
 2. [~] **All generated code produced by running the transpiler** (no hand edits) — RSL dispatch functions still have hand-written IO proofs
-3. [x] Verus: **584 verified, 0 errors** (target exceeded)
+3. [x] Verus: **627 verified, 0 errors** (target exceeded; 10 protocols)
 4. [x] All proofs are machine-checked by Verus (except 7 IO trust boundary assumes)
 5. [x] Transpiler regeneration is reproducible: `scripts/regenerate_all.sh` produces verified output
-6. [x] `cd transpiler && cargo test --lib`: 628 tests pass
+6. [x] `cd transpiler && cargo test --lib`: 642 tests pass
 
 ### Estimated Effort
 
@@ -2124,10 +2124,10 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 |-------|-------------|--------|
 | 12.0 | Archive current generated code | ✅ DONE |
 | 12.1 | Study proof patterns from reference files | ✅ DONE |
-| 12.2 | Extend transpiler for proof generation | ❌ TODO |
-| 12.3 | Regenerate simple protocols (TwoPhase, Paxos, LeaderElection) | ❌ TODO |
-| 12.4 | Regenerate Raft + ChainReplication | ❌ TODO |
-| 12.5 | Eliminate RSL assumes (all components) | ✅ DONE (12 irreducible IO assumes remain in replica) |
+| 12.2 | Extend transpiler for proof generation | ⏸️ DEFERRED (automatic for simple protocols) |
+| 12.3 | Regenerate simple protocols (TwoPhase, Paxos, LeaderElection) | ✅ DONE (regenerated with correct View mapping) |
+| 12.4 | Regenerate Raft + ChainReplication | ✅ DONE (regenerated with correct View mapping) |
+| 12.5 | Eliminate RSL assumes (all components) | ✅ DONE (7 irreducible IO assumes remain in replica) |
 | 12.6 | Verification + cleanup | ✅ DONE (12.6.1-4 complete) |
 
 ---
