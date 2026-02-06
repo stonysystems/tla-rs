@@ -1750,10 +1750,10 @@ assume(b.seqno < u64::MAX);
 #### Phase 12.0: Archive Current Generated Code
 
 **12.0.1: Move current generated code to reference folder**
-- [ ] Copy `src/generated/` to `src/generated_old/` (or `src/generated_reference/`)
-- [ ] This preserves the hand-edited code (with manual proofs and delegation) as reference
-- [ ] Do NOT include `generated_old/` in the Verus build (comment out or exclude from mod.rs)
-- [ ] The hand-edited files serve as a "target" to compare transpiler output against
+- [x] Copy `src/generated/` to `src/generated_reference/`
+- [x] This preserves the hand-edited code (with manual proofs and delegation) as reference
+- [x] Do NOT include `generated_reference/` in the Verus build (no `mod generated_reference;` in lib.rs)
+- [x] The hand-edited files serve as a "target" to compare transpiler output against
 
 #### Phase 12.1: Study Proof Patterns from TwoPhase (simplest protocol)
 
@@ -1926,7 +1926,7 @@ RSL is the most complex. Regenerate component by component using the improved tr
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 12.0 | Archive current generated code | ❌ TODO |
+| 12.0 | Archive current generated code | ✅ DONE |
 | 12.1 | Study proof patterns from reference files | ❌ TODO |
 | 12.2 | Extend transpiler for proof generation | ❌ TODO |
 | 12.3 | Regenerate simple protocols (TwoPhase, Paxos, LeaderElection) | ❌ TODO |
