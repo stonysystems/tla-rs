@@ -8,8 +8,14 @@ skip_functions = [
 # Primitive types that don't need valid() predicates
 primitive_types = []
 
-# Fields that are collection types (Set/Map/Seq) requiring clone_hashset() or .clone()
-collection_fields = ["pending_sent", "history"]
+# Fields that are HashSet types (Set) requiring clone_hashset()
+collection_fields = ["pending_sent"]
+
+# Fields that are Vec types (Seq) requiring .clone()
+vec_fields = ["history"]
+
+# Fields that are non-Copy types requiring .clone() but not @ in view
+clone_fields = ["role"]
 
 [naming]
 spec_prefix = "L"
@@ -21,6 +27,11 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LNodeRole" = "CNodeRole"
+
+[variant_remapping]
+"Head" = "CNodeRole::Head"
+"Middle" = "CNodeRole::Middle"
+"Tail" = "CNodeRole::Tail"
 
 [output]
 generate_abstraction_fns = true

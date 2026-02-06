@@ -8,8 +8,14 @@ skip_functions = [
 # Primitive types that don't need valid() predicates
 primitive_types = []
 
-# Fields that are collection types (Set/Map/Seq) requiring clone_hashset() or .clone()
-collection_fields = ["votes_granted", "match_index", "log", "servers"]
+# Fields that are HashSet types (Set) requiring clone_hashset()
+collection_fields = ["votes_granted", "servers"]
+
+# Fields that are Vec/HashMap types (Seq/Map) requiring .clone()
+vec_fields = ["log", "match_index"]
+
+# Fields that are non-Copy types requiring .clone() but not @ in view
+clone_fields = ["role"]
 
 [naming]
 spec_prefix = "L"

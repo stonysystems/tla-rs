@@ -138,6 +138,19 @@ pub struct TranspilerConfig {
     /// e.g., ["electing", "alive", "max_bal", "max_v_bal", "max_val", "pending_sent"]
     #[serde(default)]
     pub collection_fields: Vec<String>,
+
+    /// Fields that are Vec/HashMap types requiring `.clone()` instead of `clone_hashset()`.
+    /// These fields still need `@` in view context (like collection_fields) but use standard
+    /// `.clone()` for copying since `clone_hashset()` only works on HashSet.
+    /// e.g., ["log", "history", "match_index"]
+    #[serde(default)]
+    pub vec_fields: Vec<String>,
+
+    /// Fields that are non-Copy types requiring `.clone()` but NOT needing `@` in view context.
+    /// Used for enum fields or other types that need cloning but have identity View.
+    /// e.g., ["role"] for CNodeRole enum fields
+    #[serde(default)]
+    pub clone_fields: Vec<String>,
 }
 
 impl TranspilerConfig {
@@ -715,5 +728,25 @@ mod tests {
     fn test_collection_fields_default_empty() {
         let config = TranspilerConfig::default();
         assert!(config.collection_fields.is_empty());
+    }
+
+    #[test]
+    fn test_vec_fields_config() {
+        let toml = r#"
+            collection_fields = ["pending_sent"]
+            vec_fields = ["history", "log"]
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.collection_fields.len(), 1);
+        assert!(config.collection_fields.contains(&"pending_sent".to_string()));
+        assert_eq!(config.vec_fields.len(), 2);
+        assert!(config.vec_fields.contains(&"history".to_string()));
+        assert!(config.vec_fields.contains(&"log".to_string()));
+    }
+
+    #[test]
+    fn test_vec_fields_default_empty() {
+        let config = TranspilerConfig::default();
+        assert!(config.vec_fields.is_empty());
     }
 }

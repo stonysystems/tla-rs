@@ -189,7 +189,8 @@ impl Transpiler {
 
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
-            let helpers = Self::generate_proof_helper_lemmas();
+            let has_vec_fields = !self.config.translator.vec_fields.is_empty();
+            let helpers = Self::generate_proof_helper_lemmas(has_vec_fields);
             if !helpers.is_empty() {
                 output.push_str(&helpers);
                 output.push('\n');
@@ -336,7 +337,8 @@ impl Transpiler {
 
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
-            let helpers = Self::generate_proof_helper_lemmas();
+            let has_vec_fields = !self.config.translator.vec_fields.is_empty();
+            let helpers = Self::generate_proof_helper_lemmas(has_vec_fields);
             if !helpers.is_empty() {
                 output.push_str(&helpers);
                 output.push('\n');
@@ -394,7 +396,9 @@ impl Transpiler {
     /// Currently emits:
     /// - `lemma_empty_set_map()`: proves `Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()`
     /// - `lemma_set_map_remove_commute(s, elt)`: proves `s.remove(elt).map(f) =~= s.map(f).remove(f(elt))`
-    fn generate_proof_helper_lemmas() -> String {
+    /// - `lemma_empty_seq_map()`: proves `Seq::<u64>::empty().map(...) =~= Seq::<int>::empty()`
+    /// - `lemma_seq_push_map_commute(s, x)`: proves push commutes with Seq::map
+    fn generate_proof_helper_lemmas(has_vec_fields: bool) -> String {
         let mut output = String::new();
 
         // lemma_empty_set_map
@@ -433,6 +437,25 @@ impl Transpiler {
         output.push_str("        assert(s.remove(elt).contains(x));\n");
         output.push_str("    }\n");
         output.push_str("}\n\n");
+
+        // Seq proof helpers only needed when vec_fields are configured
+        if has_vec_fields {
+            // lemma_empty_seq_map
+            output.push_str("/// Helper proof: mapping over an empty Seq yields an empty Seq.\n");
+            output.push_str("proof fn lemma_empty_seq_map()\n");
+            output.push_str("ensures\n");
+            output.push_str("    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),\n");
+            output.push_str("{\n");
+            output.push_str("}\n\n");
+
+            // lemma_seq_push_map_commute
+            output.push_str("/// Helper proof: push commutes with Seq::map for index-ignoring functions.\n");
+            output.push_str("proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)\n");
+            output.push_str("ensures\n");
+            output.push_str("    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),\n");
+            output.push_str("{\n");
+            output.push_str("}\n\n");
+        }
 
         output
     }
@@ -1061,7 +1084,7 @@ mod tests {
 
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
-        let output = Transpiler::generate_proof_helper_lemmas();
+        let output = Transpiler::generate_proof_helper_lemmas(false);
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -1075,5 +1098,22 @@ mod tests {
         // Both directions of the proof
         assert!(output.contains("lhs.contains(y)) implies rhs.contains(y)"));
         assert!(output.contains("rhs.contains(y)) implies lhs.contains(y)"));
+
+        // Seq lemmas should NOT be present without vec_fields
+        assert!(!output.contains("lemma_empty_seq_map"));
+        assert!(!output.contains("lemma_seq_push_map_commute"));
+    }
+
+    #[test]
+    fn test_generate_proof_helper_lemmas_with_vec_fields() {
+        let output = Transpiler::generate_proof_helper_lemmas(true);
+
+        // Set lemmas should always be present
+        assert!(output.contains("proof fn lemma_empty_set_map()"));
+        assert!(output.contains("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)"));
+
+        // Seq lemmas should be present with vec_fields
+        assert!(output.contains("proof fn lemma_empty_seq_map()"));
+        assert!(output.contains("proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)"));
     }
 }

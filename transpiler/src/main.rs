@@ -921,6 +921,8 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             nat_type: file_config.naming.nat_type.clone(),
             variant_remapping: file_config.variant_remapping.clone(),
             collection_fields: file_config.collection_fields.into_iter().collect(),
+            vec_fields: file_config.vec_fields.into_iter().collect(),
+            clone_fields: file_config.clone_fields.into_iter().collect(),
             ..TranslatorConfig::default()
         },
         custom_imports: file_config.output.custom_imports,
