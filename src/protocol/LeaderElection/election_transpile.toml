@@ -8,6 +8,10 @@ skip_functions = [
 # Primitive types that don't need valid() predicates
 primitive_types = []
 
+# Fields that are collection types (Set/Map) requiring clone_hashset()
+# Non-listed fields are Copy types (u64, bool) and use direct access
+collection_fields = ["electing", "alive"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

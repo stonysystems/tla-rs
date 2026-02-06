@@ -920,6 +920,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             int_type: file_config.naming.int_type.clone(),
             nat_type: file_config.naming.nat_type.clone(),
             variant_remapping: file_config.variant_remapping.clone(),
+            collection_fields: file_config.collection_fields.into_iter().collect(),
             ..TranslatorConfig::default()
         },
         custom_imports: file_config.output.custom_imports,

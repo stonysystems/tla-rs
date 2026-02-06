@@ -1923,7 +1923,27 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] Ran transpiler on Paxos spec — output matches reference (cosmetic diffs only: comment wording, formatting)
 - [x] Verus: 584 verified, 0 errors, **0 assumes** — second protocol fully regenerated from transpiler
 
+**12.3.0i: Add `collection_fields` config to distinguish Set/Map from primitive fields** ✅
+- [x] Added `collection_fields: Vec<String>` to `TranspilerConfig` (config.rs)
+- [x] Added `collection_fields: HashSet<String>` to `TranslatorConfig` (translator/mod.rs)
+- [x] Wired through `load_config()` in main.rs
+- [x] Updated `clone_input_field_access()` to check `is_collection_field()` — only wraps Set/Map fields with `clone_hashset()`, primitive fields use direct access
+- [x] Backwards-compatible: empty `collection_fields` → all fields treated as collections
+- [x] Added `input_types: HashMap<String, Type>` to `TransformContext` (needed for future type-aware fixes)
+- [x] Configured `collection_fields` in all 5 protocol TOMLs (TwoPhase, Paxos, LeaderElection, Raft, ChainReplication)
+- [x] 4 new tests (2 translator + 2 config)
+- [x] Regenerated TwoPhase + Paxos: 585 verified, 0 errors, 0 assumes
+- Affects: All protocols (prevents `clone_hashset()` on primitive fields like `u64`, `bool`)
+
+**12.3.0j: Fix `&u64` parameter dereference in exec code and requires clauses**
+- [ ] Fix `s@.alive.contains(node)` → `s@.alive.contains(*node as int)` in requires (Set<int> needs int arg)
+- [ ] Fix `node.clone()` → `*node` for u64 params in struct field assignments
+- [ ] Fix `s.leader == node` → `s.leader == *node` in if conditions (u64 vs &u64)
+- [ ] Fix `c.nodes` → `clone_hashset(&c.nodes)` for collection fields from `&CConstants`
+- Affects: LeaderElection (10 errors), ChainReplication, Raft
+
 **12.3.3: Regenerate LeaderElection with proofs**
+- [ ] Requires 12.3.0j to be completed first
 - [ ] Run transpiler on LeaderElection spec
 - [ ] Compare against reference, run Verus — target: 0 assumes
 

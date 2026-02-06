@@ -131,6 +131,13 @@ pub struct TranspilerConfig {
     /// e.g., "Init" -> "CTMState::Init", "Committed" -> "CTMState::Committed"
     #[serde(default)]
     pub variant_remapping: HashMap<String, String>,
+
+    /// Fields that are collection types (Set, Map) requiring `clone_hashset()`.
+    /// Non-listed fields are assumed to be Copy types (u64, bool) and use direct access.
+    /// Used by `clone_input_field_access()` to avoid wrapping primitives with `clone_hashset()`.
+    /// e.g., ["electing", "alive", "max_bal", "max_v_bal", "max_val", "pending_sent"]
+    #[serde(default)]
+    pub collection_fields: Vec<String>,
 }
 
 impl TranspilerConfig {
@@ -690,5 +697,23 @@ mod tests {
     fn test_variant_remapping_default_empty() {
         let config = TranspilerConfig::default();
         assert!(config.variant_remapping.is_empty());
+    }
+
+    #[test]
+    fn test_collection_fields_config() {
+        let toml = r#"
+            collection_fields = ["electing", "alive", "pending_sent"]
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.collection_fields.len(), 3);
+        assert!(config.collection_fields.contains(&"electing".to_string()));
+        assert!(config.collection_fields.contains(&"alive".to_string()));
+        assert!(config.collection_fields.contains(&"pending_sent".to_string()));
+    }
+
+    #[test]
+    fn test_collection_fields_default_empty() {
+        let config = TranspilerConfig::default();
+        assert!(config.collection_fields.is_empty());
     }
 }

@@ -69,6 +69,9 @@ pub struct TranslatorConfig {
     /// Maps bare spec variant names to their fully-qualified exec enum paths.
     /// e.g., "Init" -> "CTMState::Init", "Committed" -> "CTMState::Committed"
     pub variant_remapping: HashMap<String, String>,
+    /// Fields that are collection types (Set, Map) requiring `clone_hashset()`.
+    /// Non-listed fields use direct access (Copy types like u64, bool).
+    pub collection_fields: HashSet<String>,
 }
 
 impl Default for TranslatorConfig {
@@ -89,6 +92,7 @@ impl Default for TranslatorConfig {
             int_type: "i64".to_string(),
             nat_type: "u64".to_string(),
             variant_remapping: HashMap::new(),
+            collection_fields: HashSet::new(),
         }
     }
 }
@@ -632,6 +636,8 @@ pub struct TransformContext<'a> {
     pub input_params: Vec<String>,
     /// Maps output parameter names to their types (for struct name derivation)
     pub output_types: HashMap<String, Type>,
+    /// Maps input parameter names to their spec types (for field type discrimination)
+    pub input_types: HashMap<String, Type>,
     /// Maps (output_var, field) pairs to substitution variable names
     /// e.g., ("s_", "proposer") -> "s_proposer"
     pub field_substitutions: HashMap<(String, String), String>,
@@ -1507,43 +1513,69 @@ impl Translator {
     }
 
     /// For field accesses on input parameters (e.g., `s.rm_state`), wrap with
-    /// `clone_hashset()` for collection fields or `.clone()` for other fields.
-    /// Uses a heuristic: if the expression is a field access on an input,
-    /// use clone_hashset (safe because non-collection types don't have this issue).
+    /// `clone_hashset()` for collection fields (Set, Map) or use direct access
+    /// for primitive/Copy fields (u64, bool).
+    ///
+    /// When `collection_fields` is configured in TOML, only those fields get
+    /// `clone_hashset()`. Unlisted fields are assumed Copy and accessed directly.
+    /// When `collection_fields` is empty, falls back to `clone_hashset()` for all
+    /// fields (backwards-compatible heuristic).
     fn clone_input_field_access(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
         match &expr {
-            // Field access on input: s.field -> clone_hashset(&s.field)
-            ExecExpr::Field(base, _) => {
+            // Field access on input: s.field
+            ExecExpr::Field(base, field_name) => {
                 if Self::is_input_var(base, ctx) {
-                    ExecExpr::Call {
-                        func: "clone_hashset".to_string(),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(expr),
-                        }],
+                    if self.is_collection_field(field_name) {
+                        // Collection field: wrap with clone_hashset(&s.field)
+                        ExecExpr::Call {
+                            func: "clone_hashset".to_string(),
+                            args: vec![ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(expr),
+                            }],
+                        }
+                    } else {
+                        // Primitive/Copy field: access directly (s.field)
+                        expr
                     }
                 } else {
                     expr
                 }
             }
-            // Already cloned input var: s.clone() -> clone_hashset(&s.field) won't apply
-            // Clone of field access: s.field.clone() -> already handled
+            // Clone of field access: s.field.clone()
             ExecExpr::Clone(inner) => {
                 match inner.as_ref() {
-                    ExecExpr::Field(base, _) if Self::is_input_var(base, ctx) => {
-                        // Replace .clone() with clone_hashset(&...)
-                        ExecExpr::Call {
-                            func: "clone_hashset".to_string(),
-                            args: vec![ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: inner.clone(),
-                            }],
+                    ExecExpr::Field(base, field_name) if Self::is_input_var(base, ctx) => {
+                        if self.is_collection_field(field_name) {
+                            // Replace .clone() with clone_hashset(&...)
+                            ExecExpr::Call {
+                                func: "clone_hashset".to_string(),
+                                args: vec![ExecExpr::Unary {
+                                    op: "&".to_string(),
+                                    expr: inner.clone(),
+                                }],
+                            }
+                        } else {
+                            // Primitive/Copy: use dereference instead of clone
+                            expr
                         }
                     }
                     _ => expr,
                 }
             }
             _ => expr,
+        }
+    }
+
+    /// Check if a field name is a collection type (Set/Map) based on config.
+    /// When `collection_fields` is empty, assumes ALL fields are collections
+    /// (backwards-compatible heuristic for protocols without config).
+    fn is_collection_field(&self, field_name: &str) -> bool {
+        if self.config.collection_fields.is_empty() {
+            // Backwards-compatible: treat all fields as collections when not configured
+            true
+        } else {
+            self.config.collection_fields.contains(field_name)
         }
     }
 
@@ -2821,6 +2853,7 @@ impl Translator {
             output_params: Vec::new(),
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -3021,6 +3054,7 @@ impl Translator {
             output_params: Vec::new(),
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -3128,6 +3162,7 @@ impl Translator {
             output_params: Vec::new(),
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -3535,6 +3570,16 @@ impl Translator {
             .map(|(p, _)| (p.name.clone(), p.ty.clone()))
             .collect();
 
+        // Build input types map for field type discrimination
+        let input_types: HashMap<String, Type> = func
+            .spec_fn
+            .params
+            .iter()
+            .zip(&func.param_modes)
+            .filter(|(_, m)| **m == ParameterMode::Input)
+            .map(|(p, _)| (p.name.clone(), p.ty.clone()))
+            .collect();
+
         // Transform function body
         let ctx = TransformContext {
             config: &self.config,
@@ -3548,6 +3593,7 @@ impl Translator {
                 .map(|(p, _)| p.name.clone())
                 .collect(),
             output_types,
+            input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -3590,6 +3636,7 @@ impl Translator {
             output_params: Vec::new(), // helpers have no output params
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -4365,6 +4412,7 @@ impl Translator {
                 .filter(|(_, m)| **m == ParameterMode::Output)
                 .map(|(p, _)| (p.name.clone(), p.ty.clone()))
                 .collect(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         }
@@ -5275,6 +5323,7 @@ impl Translator {
                         output_params: ctx.output_params.clone(),
                         input_params: ctx.input_params.clone(),
                         output_types: ctx.output_types.clone(),
+                        input_types: ctx.input_types.clone(),
                         field_substitutions: ctx.field_substitutions.clone(),
                         temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
                     }
@@ -6450,6 +6499,7 @@ impl Translator {
             output_params: ctx.output_params.clone(),
             input_params: ctx.input_params.clone(),
             output_types: ctx.output_types.clone(),
+            input_types: ctx.input_types.clone(),
             field_substitutions: new_subs,
             temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
         }
@@ -9252,6 +9302,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "inp".to_string()],
             output_types,
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         }
@@ -9689,6 +9740,7 @@ mod tests {
             output_params: vec!["s_".to_string(), "sent_packets".to_string()],
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -9737,6 +9789,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -9826,6 +9879,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions,
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -9863,6 +9917,7 @@ mod tests {
             output_params: vec!["s_".to_string(), "sent_packets".to_string()],
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -9990,6 +10045,7 @@ mod tests {
             output_params: vec!["s_".to_string(), "sent_packets".to_string()],
             input_params: vec!["s".to_string(), "received_packet".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -10115,6 +10171,7 @@ mod tests {
             output_params: vec!["votes_".to_string()],
             input_params: vec!["votes".to_string(), "log_truncation_point".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -10399,6 +10456,7 @@ mod tests {
             output_params: vec!["a".to_string()],
             input_params: vec!["c".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -10495,6 +10553,7 @@ mod tests {
                 "log_truncation_point".to_string(),
             ],
             output_types: std::collections::HashMap::new(),
+            input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -10645,6 +10704,7 @@ mod tests {
             output_params: vec!["votes_".to_string()],
             input_params: vec!["votes".to_string(), "log_truncation_point".to_string()],
             output_types: std::collections::HashMap::new(),
+            input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -10777,6 +10837,7 @@ mod tests {
                 "log_truncation_point".to_string(),
             ],
             output_types: std::collections::HashMap::new(),
+            input_types: std::collections::HashMap::new(),
             field_substitutions: std::collections::HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -14747,6 +14808,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "r".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -14822,6 +14884,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -14862,6 +14925,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "node".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -14898,6 +14962,7 @@ mod tests {
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string()],
             output_types: HashMap::new(),
+            input_types: HashMap::new(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         };
@@ -14934,6 +14999,84 @@ mod tests {
             ExecExpr::Literal(_) => {} // unchanged
             other => panic!("Expected Literal, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_clone_input_field_with_collection_fields() {
+        // Configure specific collection_fields
+        let config = TranslatorConfig {
+            collection_fields: vec!["alive".to_string(), "electing".to_string()]
+                .into_iter()
+                .collect(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config.clone());
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Collection field: s.alive -> clone_hashset(&s.alive)
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "alive".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::Call { func, .. } if func == "clone_hashset"),
+            "Collection field should use clone_hashset, got {:?}",
+            result
+        );
+
+        // Primitive field: s.has_leader -> direct access (unchanged)
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "has_leader".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::Field(_, name) if name == "has_leader"),
+            "Primitive field should be direct access, got {:?}",
+            result
+        );
+
+        // Another primitive field: s.highest_heard -> direct access
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "highest_heard".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::Field(_, name) if name == "highest_heard"),
+            "Non-collection field should be direct access, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_is_collection_field() {
+        // With empty collection_fields (backwards compatible)
+        let translator = Translator::default();
+        assert!(translator.is_collection_field("anything"));
+        assert!(translator.is_collection_field("has_leader"));
+
+        // With configured collection_fields
+        let config = TranslatorConfig {
+            collection_fields: vec!["alive".to_string(), "electing".to_string()]
+                .into_iter()
+                .collect(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        assert!(translator.is_collection_field("alive"));
+        assert!(translator.is_collection_field("electing"));
+        assert!(!translator.is_collection_field("has_leader"));
+        assert!(!translator.is_collection_field("highest_heard"));
     }
 
     #[test]

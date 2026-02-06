@@ -8,6 +8,9 @@ skip_functions = [
 # Primitive types that don't need valid() predicates
 primitive_types = []
 
+# Fields that are collection types (Set/Map) requiring clone_hashset()
+collection_fields = ["rm_state", "tm_prepared", "rm"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
