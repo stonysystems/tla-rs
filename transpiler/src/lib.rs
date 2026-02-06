@@ -195,6 +195,15 @@ impl Transpiler {
                 output.push_str(&helpers);
                 output.push('\n');
             }
+            // Generate clone helper functions for clone_field_types
+            let clone_helpers = Self::generate_clone_helpers(
+                &self.config.translator.clone_field_types,
+                &self.config.translator.variant_remapping,
+            );
+            if !clone_helpers.is_empty() {
+                output.push_str(&clone_helpers);
+                output.push('\n');
+            }
         }
 
         // Collect all translated functions
@@ -343,6 +352,15 @@ impl Transpiler {
                 output.push_str(&helpers);
                 output.push('\n');
             }
+            // Generate clone helper functions for clone_field_types
+            let clone_helpers = Self::generate_clone_helpers(
+                &self.config.translator.clone_field_types,
+                &self.config.translator.variant_remapping,
+            );
+            if !clone_helpers.is_empty() {
+                output.push_str(&clone_helpers);
+                output.push('\n');
+            }
         }
 
         // Collect all translated functions
@@ -454,6 +472,78 @@ impl Transpiler {
             output.push_str("ensures\n");
             output.push_str("    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),\n");
             output.push_str("{\n");
+            output.push_str("}\n\n");
+        }
+
+        output
+    }
+
+    /// Generate clone helper functions for non-Copy enum fields.
+    ///
+    /// For each entry in `clone_field_types`, generates a function like:
+    /// ```
+    /// fn clone_role(r: &CNodeRole) -> (res: CNodeRole)
+    /// ensures
+    ///     res@ == r@,
+    ///     res.valid() == r.valid(),
+    /// {
+    ///     match r {
+    ///         CNodeRole::Head => CNodeRole::Head,
+    ///         CNodeRole::Middle => CNodeRole::Middle,
+    ///         CNodeRole::Tail => CNodeRole::Tail,
+    ///     }
+    /// }
+    /// ```
+    fn generate_clone_helpers(
+        clone_field_types: &std::collections::HashMap<String, String>,
+        variant_remapping: &std::collections::HashMap<String, String>,
+    ) -> String {
+        let mut output = String::new();
+
+        // Collect unique enum types from clone_field_types
+        let mut seen_types = std::collections::HashSet::new();
+        let mut field_type_pairs: Vec<(&String, &String)> = clone_field_types.iter().collect();
+        field_type_pairs.sort_by_key(|(field, _)| field.to_string());
+
+        for (field_name, enum_type) in &field_type_pairs {
+            if !seen_types.insert(enum_type.to_string()) {
+                continue; // Skip duplicate types
+            }
+
+            // Collect variants for this enum type from variant_remapping
+            let mut variants: Vec<String> = Vec::new();
+            for (_spec_variant, qualified_path) in variant_remapping {
+                if let Some(pos) = qualified_path.rfind("::") {
+                    let type_prefix = &qualified_path[..pos];
+                    if type_prefix == enum_type.as_str() {
+                        variants.push(qualified_path.clone());
+                    }
+                }
+            }
+            variants.sort();
+
+            if variants.is_empty() {
+                continue; // No variants found for this type
+            }
+
+            let fn_name = format!("clone_{}", field_name);
+            output.push_str(&format!(
+                "/// Helper: clone {} preserving view (workaround for missing derive Clone spec).\n",
+                enum_type
+            ));
+            output.push_str(&format!(
+                "fn {}(r: &{}) -> (res: {})\n",
+                fn_name, enum_type, enum_type
+            ));
+            output.push_str("ensures\n");
+            output.push_str("    res@ == r@,\n");
+            output.push_str("    res.valid() == r.valid(),\n");
+            output.push_str("{\n");
+            output.push_str("    match r {\n");
+            for variant in &variants {
+                output.push_str(&format!("        {} => {},\n", variant, variant));
+            }
+            output.push_str("    }\n");
             output.push_str("}\n\n");
         }
 
@@ -1115,5 +1205,47 @@ mod tests {
         // Seq lemmas should be present with vec_fields
         assert!(output.contains("proof fn lemma_empty_seq_map()"));
         assert!(output.contains("proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)"));
+    }
+
+    #[test]
+    fn test_generate_clone_helpers_basic() {
+        let mut clone_field_types = std::collections::HashMap::new();
+        clone_field_types.insert("role".to_string(), "CNodeRole".to_string());
+
+        let mut variant_remapping = std::collections::HashMap::new();
+        variant_remapping.insert("Head".to_string(), "CNodeRole::Head".to_string());
+        variant_remapping.insert("Middle".to_string(), "CNodeRole::Middle".to_string());
+        variant_remapping.insert("Tail".to_string(), "CNodeRole::Tail".to_string());
+
+        let output = Transpiler::generate_clone_helpers(&clone_field_types, &variant_remapping);
+
+        assert!(output.contains("fn clone_role(r: &CNodeRole) -> (res: CNodeRole)"));
+        assert!(output.contains("res@ == r@,"));
+        assert!(output.contains("res.valid() == r.valid(),"));
+        assert!(output.contains("CNodeRole::Head => CNodeRole::Head,"));
+        assert!(output.contains("CNodeRole::Middle => CNodeRole::Middle,"));
+        assert!(output.contains("CNodeRole::Tail => CNodeRole::Tail,"));
+    }
+
+    #[test]
+    fn test_generate_clone_helpers_empty() {
+        let clone_field_types = std::collections::HashMap::new();
+        let variant_remapping = std::collections::HashMap::new();
+
+        let output = Transpiler::generate_clone_helpers(&clone_field_types, &variant_remapping);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_generate_clone_helpers_no_matching_variants() {
+        let mut clone_field_types = std::collections::HashMap::new();
+        clone_field_types.insert("role".to_string(), "CUnknownRole".to_string());
+
+        let mut variant_remapping = std::collections::HashMap::new();
+        variant_remapping.insert("Head".to_string(), "CNodeRole::Head".to_string());
+
+        let output = Transpiler::generate_clone_helpers(&clone_field_types, &variant_remapping);
+        // No matching variants for CUnknownRole, so no helper generated
+        assert!(output.is_empty());
     }
 }

@@ -17,6 +17,14 @@ vec_fields = ["history"]
 # Fields that are non-Copy types requiring .clone() but not @ in view
 clone_fields = ["role"]
 
+# Maps clone_fields to their exec enum types for generating clone helpers
+[clone_field_types]
+"role" = "CNodeRole"
+
+# Extra requires clauses that the transpiler can't derive automatically
+[extra_requires]
+"CInit" = ["c.node_id < c.chain_len"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

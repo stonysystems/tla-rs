@@ -17,6 +17,10 @@ vec_fields = ["log", "match_index"]
 # Fields that are non-Copy types requiring .clone() but not @ in view
 clone_fields = ["role"]
 
+# Maps clone_fields to their exec enum types for generating clone helpers
+[clone_field_types]
+"role" = "CServerRole"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

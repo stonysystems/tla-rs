@@ -151,6 +151,20 @@ pub struct TranspilerConfig {
     /// e.g., ["role"] for CNodeRole enum fields
     #[serde(default)]
     pub clone_fields: Vec<String>,
+
+    /// Maps clone_fields field names to their exec enum type names.
+    /// Used to generate `clone_<lowercase_type>()` helper functions with view/validity ensures.
+    /// The variants for each type are derived from `variant_remapping`.
+    /// e.g., {"role" = "CNodeRole"} generates `fn clone_cnoderol(r: &CNodeRole) -> CNodeRole`
+    #[serde(default)]
+    pub clone_field_types: HashMap<String, String>,
+
+    /// Extra requires clauses per exec function name.
+    /// These are manually specified preconditions that the transpiler can't derive
+    /// automatically (e.g., covering conditions for implication groups).
+    /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
+    #[serde(default)]
+    pub extra_requires: HashMap<String, Vec<String>>,
 }
 
 impl TranspilerConfig {
@@ -748,5 +762,54 @@ mod tests {
     fn test_vec_fields_default_empty() {
         let config = TranspilerConfig::default();
         assert!(config.vec_fields.is_empty());
+    }
+
+    #[test]
+    fn test_clone_field_types_config() {
+        let toml = r#"
+            clone_fields = ["role"]
+
+            [clone_field_types]
+            "role" = "CNodeRole"
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.clone_fields.len(), 1);
+        assert!(config.clone_fields.contains(&"role".to_string()));
+        assert_eq!(config.clone_field_types.len(), 1);
+        assert_eq!(
+            config.clone_field_types.get("role"),
+            Some(&"CNodeRole".to_string())
+        );
+    }
+
+    #[test]
+    fn test_clone_field_types_default_empty() {
+        let config = TranspilerConfig::default();
+        assert!(config.clone_field_types.is_empty());
+    }
+
+    #[test]
+    fn test_extra_requires_config() {
+        let toml = r#"
+            [extra_requires]
+            "CInit" = ["c.node_id < c.chain_len"]
+            "CStartElection" = ["c.valid()", "s.alive.len() > 0"]
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.extra_requires.len(), 2);
+        assert_eq!(
+            config.extra_requires.get("CInit"),
+            Some(&vec!["c.node_id < c.chain_len".to_string()])
+        );
+        assert_eq!(
+            config.extra_requires.get("CStartElection").unwrap().len(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_extra_requires_default_empty() {
+        let config = TranspilerConfig::default();
+        assert!(config.extra_requires.is_empty());
     }
 }

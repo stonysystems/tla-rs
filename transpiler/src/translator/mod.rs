@@ -78,6 +78,13 @@ pub struct TranslatorConfig {
     /// Fields that are non-Copy types requiring `.clone()` but NOT `@` in view context.
     /// Used for enum fields or other non-Copy types with identity View.
     pub clone_fields: HashSet<String>,
+    /// Maps clone_fields field names to their exec enum type names.
+    /// Used to generate `clone_<type>()` helper functions with view/validity ensures.
+    pub clone_field_types: HashMap<String, String>,
+    /// Extra requires clauses per exec function name.
+    /// These are manually specified preconditions that the transpiler can't derive.
+    /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
+    pub extra_requires: HashMap<String, Vec<String>>,
 }
 
 impl Default for TranslatorConfig {
@@ -101,6 +108,8 @@ impl Default for TranslatorConfig {
             collection_fields: HashSet::new(),
             vec_fields: HashSet::new(),
             clone_fields: HashSet::new(),
+            clone_field_types: HashMap::new(),
+            extra_requires: HashMap::new(),
         }
     }
 }
@@ -1788,8 +1797,21 @@ impl Translator {
                                 expr: Box::new(expr),
                             }],
                         }
-                    } else if self.is_vec_field(field_name) || self.is_clone_field(field_name) {
-                        // Vec/HashMap/non-Copy field: use .clone()
+                    } else if self.is_clone_field(field_name) {
+                        // Non-Copy field with clone helper: use clone_<type>(&s.field)
+                        if let Some(helper) = self.get_clone_helper_name(field_name) {
+                            ExecExpr::Call {
+                                func: helper,
+                                args: vec![ExecExpr::Unary {
+                                    op: "&".to_string(),
+                                    expr: Box::new(expr),
+                                }],
+                            }
+                        } else {
+                            ExecExpr::Clone(Box::new(expr))
+                        }
+                    } else if self.is_vec_field(field_name) {
+                        // Vec/HashMap field: use .clone()
                         ExecExpr::Clone(Box::new(expr))
                     } else {
                         // Primitive/Copy field: access directly (s.field)
@@ -1812,8 +1834,21 @@ impl Translator {
                                     expr: inner.clone(),
                                 }],
                             }
-                        } else if self.is_vec_field(field_name) || self.is_clone_field(field_name) {
-                            // Vec/HashMap/non-Copy: keep .clone()
+                        } else if self.is_clone_field(field_name) {
+                            // Non-Copy field with clone helper
+                            if let Some(helper) = self.get_clone_helper_name(field_name) {
+                                ExecExpr::Call {
+                                    func: helper,
+                                    args: vec![ExecExpr::Unary {
+                                        op: "&".to_string(),
+                                        expr: inner.clone(),
+                                    }],
+                                }
+                            } else {
+                                expr
+                            }
+                        } else if self.is_vec_field(field_name) {
+                            // Vec/HashMap: keep .clone()
                             expr
                         } else {
                             // Primitive/Copy: use dereference instead of clone
@@ -1845,6 +1880,16 @@ impl Translator {
     /// Check if a field is a non-Copy type requiring `.clone()` but NOT `@` in view.
     fn is_clone_field(&self, field_name: &str) -> bool {
         self.config.clone_fields.contains(field_name)
+    }
+
+    /// Get the clone helper function name for a clone_field, if a type mapping exists.
+    /// e.g., field "role" with type "CNodeRole" returns "clone_role".
+    fn get_clone_helper_name(&self, field_name: &str) -> Option<String> {
+        if self.config.clone_field_types.contains_key(field_name) {
+            Some(format!("clone_{}", field_name))
+        } else {
+            None
+        }
     }
 
     /// Check if a field name is a non-Copy collection type (Set/Map/Vec/HashMap).
@@ -4668,6 +4713,22 @@ impl Translator {
         // to prevent overflow in exec code.
         requires.extend(self.extract_overflow_guards(func, &ctx));
 
+        // Extract subtraction underflow guards from the body.
+        // When the body contains `A - B` where A is input-only, we need `A >= B`
+        // to prevent underflow in u64 exec code.
+        requires.extend(self.extract_subtraction_underflow_guards(func, &ctx));
+
+        // Add per-function extra requires from configuration.
+        // These are manually specified preconditions that the transpiler can't derive.
+        let exec_name = self.translate_name(&func.spec_fn.name);
+        if let Some(extra) = self.config.extra_requires.get(&exec_name) {
+            for req in extra {
+                if !requires.contains(req) {
+                    requires.push(req.clone());
+                }
+            }
+        }
+
         requires
     }
 
@@ -4822,6 +4883,90 @@ impl Translator {
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Extract subtraction underflow guards from the spec body.
+    /// Scans the entire body recursively for `A - B` patterns where A is input-only.
+    /// For each such pattern, generates `A >= B` as a requires clause.
+    fn extract_subtraction_underflow_guards(
+        &self,
+        func: &AnnotatedFunction,
+        ctx: &TransformContext,
+    ) -> Vec<String> {
+        let mut guards = Vec::new();
+        self.scan_subtraction_guards(&func.spec_fn.body, ctx, &mut guards);
+        guards
+    }
+
+    /// Recursively scan an expression for subtraction patterns on input-only operands.
+    fn scan_subtraction_guards(
+        &self,
+        expr: &Expr,
+        ctx: &TransformContext,
+        guards: &mut Vec<String>,
+    ) {
+        match expr {
+            Expr::Binary(lhs, crate::ast::BinOp::Sub, rhs) => {
+                // input_expr - literal_or_expr → need input_expr >= rhs
+                if Self::is_input_only_expression(lhs, ctx) {
+                    let lhs_str = self.expr_to_simple_string(lhs);
+                    let rhs_str = if let Expr::Literal(crate::ast::Literal::Int(n)) = rhs.as_ref() {
+                        // For `A - N` where N is a literal, add `A >= N`
+                        // But if N is used in `== A - N` context (i.e., comparing against result),
+                        // we need A >= N to prevent underflow.
+                        // For safety, generate `A >= N+1` to account for the comparison
+                        // producing meaningful results (e.g., chain_len - 1 needs chain_len >= 2
+                        // when the subtracted result is used as an index)
+                        format!("{}", n + 1)
+                    } else if Self::is_input_only_expression(rhs, ctx) {
+                        self.expr_to_simple_string(rhs)
+                    } else {
+                        // RHS not input-only and not a literal — skip
+                        return;
+                    };
+                    let guard = format!("{} >= {}", lhs_str, rhs_str);
+                    if !guards.contains(&guard) {
+                        guards.push(guard);
+                    }
+                }
+                // Still recurse into both sides
+                self.scan_subtraction_guards(lhs, ctx, guards);
+                self.scan_subtraction_guards(rhs, ctx, guards);
+            }
+            // Recurse into all sub-expressions
+            Expr::Conjunction(parts) | Expr::Disjunction(parts) => {
+                for p in parts {
+                    self.scan_subtraction_guards(p, ctx, guards);
+                }
+            }
+            Expr::Binary(lhs, _, rhs)
+            | Expr::Eq(lhs, rhs)
+            | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs)
+            | Expr::Le(lhs, rhs)
+            | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs)
+            | Expr::Implies(lhs, rhs) => {
+                self.scan_subtraction_guards(lhs, ctx, guards);
+                self.scan_subtraction_guards(rhs, ctx, guards);
+            }
+            Expr::Not(inner) | Expr::Field(inner, _) => {
+                self.scan_subtraction_guards(inner, ctx, guards);
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                self.scan_subtraction_guards(cond, ctx, guards);
+                self.scan_subtraction_guards(then_branch, ctx, guards);
+                if let Some(eb) = else_branch {
+                    self.scan_subtraction_guards(eb, ctx, guards);
+                }
+            }
+            Expr::Call { args, .. } => {
+                for a in args {
+                    self.scan_subtraction_guards(a, ctx, guards);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -17376,5 +17521,156 @@ mod tests {
         );
         let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
         assert_eq!(result, "(*node > s.highest_heard)");
+    }
+
+    #[test]
+    fn test_extract_subtraction_underflow_guards() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Spec body with implication using subtraction:
+        // &&& (c.node_id == c.chain_len - 1 ==> s_.role is Tail)
+        let body = Expr::Conjunction(vec![Expr::Implies(
+            Box::new(Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("c".to_string())),
+                    "node_id".to_string(),
+                )),
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("c".to_string())),
+                        "chain_len".to_string(),
+                    )),
+                    crate::ast::BinOp::Sub,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            )),
+            Box::new(Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "role".to_string(),
+                )),
+                "Tail".to_string(),
+            )),
+        )]);
+
+        let func = make_annotated_func(
+            "LInit",
+            vec![
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
+            ],
+            vec![ParameterMode::Output, ParameterMode::Input],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let guards = translator.extract_subtraction_underflow_guards(&func, &ctx);
+
+        // c.chain_len - 1 → c.chain_len >= 2
+        assert_eq!(guards.len(), 1);
+        assert_eq!(guards[0], "c.chain_len >= 2");
+    }
+
+    #[test]
+    fn test_extract_subtraction_underflow_guards_no_subtraction() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+
+        // Body with no subtraction
+        let body = Expr::Conjunction(vec![Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "count".to_string(),
+            )),
+            Box::new(Expr::Binary(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "count".to_string(),
+                )),
+                crate::ast::BinOp::Add,
+                Box::new(Expr::Literal(Literal::Int(1))),
+            )),
+        )]);
+
+        let func = make_annotated_func(
+            "LIncrement",
+            vec![
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let ctx = translator.make_requires_context(&func);
+        let guards = translator.extract_subtraction_underflow_guards(&func, &ctx);
+        assert!(guards.is_empty());
+    }
+
+    #[test]
+    fn test_build_requires_with_extra_requires() {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        config.extra_requires.insert(
+            "CInit".to_string(),
+            vec!["c.node_id < c.chain_len".to_string()],
+        );
+        let translator = Translator::new(config);
+
+        let body = Expr::Literal(Literal::Bool(true));
+        let func = make_annotated_func(
+            "LInit",
+            vec![
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
+            ],
+            vec![ParameterMode::Output, ParameterMode::Input],
+            body,
+        );
+
+        let requires = translator.build_requires(&func);
+
+        // Should include the extra requires
+        assert!(requires.contains(&"c.node_id < c.chain_len".to_string()));
+        // Should also include c.valid()
+        assert!(requires.contains(&"c.valid()".to_string()));
+    }
+
+    #[test]
+    fn test_get_clone_helper_name() {
+        let mut config = TranslatorConfig::default();
+        config.clone_fields.insert("role".to_string());
+        config
+            .clone_field_types
+            .insert("role".to_string(), "CNodeRole".to_string());
+        let translator = Translator::new(config);
+
+        assert_eq!(
+            translator.get_clone_helper_name("role"),
+            Some("clone_role".to_string())
+        );
+        assert_eq!(translator.get_clone_helper_name("count"), None);
     }
 }
