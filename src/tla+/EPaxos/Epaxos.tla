@@ -1,4 +1,4 @@
----- MODULE epaxos ----
+---- MODULE Epaxos ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 

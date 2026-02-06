@@ -84,11 +84,19 @@ impl Verus2TlaConverter {
         // Register extracted types in the type mapper
         self.register_types_from_defs(&type_defs);
 
-        let module_name = path
+        let file_stem = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("Module")
             .to_string();
+        // Capitalize first letter to match TLA+ naming convention (filename = module name)
+        let module_name = {
+            let mut chars = file_stem.chars();
+            match chars.next() {
+                None => file_stem,
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        };
 
         self.convert_functions(&module_name, spec_functions)
     }
@@ -1368,7 +1376,7 @@ verus! {
         std::fs::remove_file(&temp_file).unwrap();
 
         // Verify module structure
-        assert_eq!(module.name, "test_verus_types");
+        assert_eq!(module.name, "Test_verus_types");
 
         // Print operators for debugging
         println!("Generated operators: {:?}", module.operators.iter().map(|o| &o.name).collect::<Vec<_>>());
@@ -1433,6 +1441,61 @@ verus! {
         let printer = crate::verus2tla::printer::TlaPrinter::new();
         let output = printer.print_module(&module);
         println!("\n=== TLA+ Output ===\n{}", output);
+    }
+
+    #[test]
+    fn test_convert_file_capitalizes_module_name() {
+        use std::io::Write;
+
+        // Create a temp file with a lowercase name
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("my_protocol.rs");
+        let source = r#"
+use vstd::prelude::*;
+verus! {
+    pub open spec fn LInit(s: int) -> bool { s == 0 }
+}
+"#;
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        file.write_all(source.as_bytes()).unwrap();
+
+        let mut converter = Verus2TlaConverter::new();
+        let module = converter.convert_file(&temp_file).unwrap();
+        std::fs::remove_file(&temp_file).unwrap();
+
+        // Module name should have capitalized first letter to match TLA+ convention
+        assert_eq!(module.name, "My_protocol",
+            "Module name should capitalize first letter for SANY compatibility");
+
+        // Verify the printed output has matching MODULE header
+        let printer = crate::verus2tla::printer::TlaPrinter::new();
+        let output = printer.print_module(&module);
+        assert!(output.contains("---- MODULE My_protocol ----"),
+            "Printed MODULE header should match capitalized name");
+    }
+
+    #[test]
+    fn test_convert_file_already_capitalized() {
+        use std::io::Write;
+
+        // Create a temp file with already-capitalized name
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("Protocol.rs");
+        let source = r#"
+use vstd::prelude::*;
+verus! {
+    pub open spec fn LInit(s: int) -> bool { s == 0 }
+}
+"#;
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        file.write_all(source.as_bytes()).unwrap();
+
+        let mut converter = Verus2TlaConverter::new();
+        let module = converter.convert_file(&temp_file).unwrap();
+        std::fs::remove_file(&temp_file).unwrap();
+
+        // Already capitalized — should stay the same
+        assert_eq!(module.name, "Protocol");
     }
 
     #[test]

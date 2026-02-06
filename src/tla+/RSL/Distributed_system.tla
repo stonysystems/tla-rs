@@ -1,10 +1,10 @@
----- MODULE distributed_system ----
+---- MODULE Distributed_system ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS RslIo, RslState, Constants, AbstractEndPoint
+CONSTANTS RslIo, Constants, RslState, AbstractEndPoint
 
 RslState ==
     [constants |-> Constants, environment |-> Environment, replicas |-> Seq(Scheduler), clients |-> Seq(AbstractEndPoint)]

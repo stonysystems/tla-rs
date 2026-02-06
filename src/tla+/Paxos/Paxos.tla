@@ -1,4 +1,4 @@
----- MODULE paxos ----
+---- MODULE Paxos ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 

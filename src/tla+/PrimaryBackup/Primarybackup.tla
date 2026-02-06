@@ -1,4 +1,4 @@
----- MODULE primarybackup ----
+---- MODULE Primarybackup ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 

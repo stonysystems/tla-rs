@@ -1,10 +1,10 @@
----- MODULE election ----
+---- MODULE Election ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS UpperBound, ReplicaConstants, Ballot, Constants, RslPacket, ElectionState, RequestBatch, Request
+CONSTANTS Request, Ballot, RslPacket, RequestBatch, Constants, ReplicaConstants, UpperBound, ElectionState
 
 ElectionState ==
     [constants |-> ReplicaConstants, current_view |-> Ballot, current_view_suspectors |-> SUBSET Int, epoch_end_time |-> Int, epoch_length |-> Int, requests_received_this_epoch |-> Seq(Request), requests_received_prev_epochs |-> Seq(Request)]

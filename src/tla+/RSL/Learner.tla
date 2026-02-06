@@ -1,10 +1,10 @@
----- MODULE learner ----
+---- MODULE Learner ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Learner, OperationNumber, ReplicaConstants, RslPacket
+CONSTANTS ReplicaConstants, Learner, RslPacket, OperationNumber
 
 Learner ==
     [constants |-> ReplicaConstants, max_ballot_seen |-> Ballot, unexecuted_learner_state |-> earnerState]

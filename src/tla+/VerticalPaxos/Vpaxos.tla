@@ -1,10 +1,10 @@
----- MODULE vpaxos ----
+---- MODULE Vpaxos ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Constants, State
+CONSTANTS State, Constants
 
 Init(s, c) ==
     /\ s.config_num = 0

@@ -1,16 +1,16 @@
----- MODULE replica ----
+---- MODULE Replica ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS ReplicaConstants, RslPacket, RslIo, Replica, ClockReading, Scheduler
-
-Scheduler ==
-    [replica |-> Replica, nextActionIndex |-> Int]
+CONSTANTS ReplicaConstants, RslPacket, RslIo, ClockReading, Scheduler, Replica
 
 Replica ==
     [constants |-> ReplicaConstants, nextHeartbeatTime |-> Int, proposer |-> Proposer, acceptor |-> Acceptor, learner |-> Learner, executor |-> Executor]
+
+Scheduler ==
+    [replica |-> Replica, nextActionIndex |-> Int]
 
 ReplicaInit(r, c) ==
     /\ r.constants = c

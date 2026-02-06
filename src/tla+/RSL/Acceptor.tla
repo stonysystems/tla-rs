@@ -1,10 +1,10 @@
----- MODULE acceptor ----
+---- MODULE Acceptor ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS OperationNumber, Acceptor, ReplicaConstants, Configuration, RslPacket, Votes, Vote
+CONSTANTS Votes, Acceptor, OperationNumber, Configuration, ReplicaConstants, RslPacket, Vote
 
 Acceptor ==
     [constants |-> ReplicaConstants, max_bal |-> Ballot, votes |-> Votes, last_checkpointed_operation |-> Seq(OperationNumber), log_truncation_point |-> OperationNumber]

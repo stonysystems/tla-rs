@@ -1,10 +1,10 @@
----- MODULE chain ----
+---- MODULE Chain ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS State, Constants
+CONSTANTS Constants, State
 
 Init(s, c) ==
     /\ s.history = <<>>

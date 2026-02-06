@@ -1,10 +1,10 @@
----- MODULE executor ----
+---- MODULE Executor ----
 \* Auto-generated from Verus spec by verus2tla
 \* DO NOT EDIT MANUALLY
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS RslPacket, AbstractEndPoint, Ballot, OperationNumber, RequestBatch, Executor, ReplyCache, Request, Reply, ReplicaConstants
+CONSTANTS ReplicaConstants, AbstractEndPoint, ReplyCache, RequestBatch, Request, Ballot, Reply, RslPacket, OperationNumber, Executor
 
 Executor ==
     [constants |-> ReplicaConstants, app |-> AppState, ops_complete |-> Int, max_bal_reflected |-> Ballot, next_op_to_execute |-> OutstandingOperation, reply_cache |-> ReplyCache]
