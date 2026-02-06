@@ -12,15 +12,41 @@ use vstd::set_lib::*;
 
 verus! {
 
-/// Helper proof: mapping over an empty set yields an empty set.
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
 ensures
     Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
 {
     let f = |x: u64| x as int;
     let s = Set::<u64>::empty().map(f);
-    assert forall|y: int| !(#[trigger] s.contains(y)) by { }
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
 }
+
+/// Helper proof: removing an element commutes with mapping for injective functions.
+proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)
+ensures
+    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),
+{
+    let f = |x: u64| x as int;
+    let lhs = s.remove(elt).map(f);
+    let rhs = s.map(f).remove(f(elt));
+    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {
+        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;
+        assert(s.contains(x));
+        assert(x != elt);
+        assert(f(x) != f(elt));
+        assert(s.map(f).contains(y));
+    }
+    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {
+        let x = choose|x: u64| s.contains(x) && f(x) == y;
+        assert(y != f(elt));
+        assert(f(x) != f(elt));
+        assert(x != elt);
+        assert(s.remove(elt).contains(x));
+    }
+}
+
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -39,6 +65,7 @@ ensures
         lemma_empty_set_map();
     }
     result
+
 }
 
 pub exec fn CSend1a(s: &CState, c: &CConstants, b: &u64) -> (result: CState)
@@ -50,13 +77,12 @@ ensures
     result.valid(),
     LSend1a(s@, result@, c@, *b as int),
 {
-    let result = CState {
+CState {
         max_bal: clone_hashset(&s.max_bal),
         max_v_bal: clone_hashset(&s.max_v_bal),
         max_val: clone_hashset(&s.max_val),
-        msg_count: s.msg_count + 1,
-    };
-    result
+        msg_count: (s.msg_count + 1),
+    }
 }
 
 pub exec fn CSend1b(s: &CState, c: &CConstants, b: &u64) -> (result: CState)
@@ -68,18 +94,21 @@ ensures
     result.valid(),
     LSend1b(s@, result@, c@, *b as int),
 {
-    let mut max_bal = clone_hashset(&s.max_bal);
-    max_bal.insert(*b);
-    let result = CState {
-        max_bal: max_bal,
-        max_v_bal: clone_hashset(&s.max_v_bal),
-        max_val: clone_hashset(&s.max_val),
-        msg_count: s.msg_count + 1,
+    let result = {
+        let mut __max_bal = clone_hashset(&s.max_bal);
+        __max_bal.insert(*b);
+        CState {
+            max_bal: __max_bal,
+            max_v_bal: clone_hashset(&s.max_v_bal),
+            max_val: clone_hashset(&s.max_val),
+            msg_count: (s.msg_count + 1),
+        }
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
+
 }
 
 pub exec fn CSend2a(s: &CState, c: &CConstants, b: &u64, v: &u64) -> (result: CState)
@@ -91,13 +120,12 @@ ensures
     result.valid(),
     LSend2a(s@, result@, c@, *b as int, *v as int),
 {
-    let result = CState {
+CState {
         max_bal: clone_hashset(&s.max_bal),
         max_v_bal: clone_hashset(&s.max_v_bal),
         max_val: clone_hashset(&s.max_val),
-        msg_count: s.msg_count + 1,
-    };
-    result
+        msg_count: (s.msg_count + 1),
+    }
 }
 
 pub exec fn CSend2b(s: &CState, c: &CConstants, b: &u64, v: &u64) -> (result: CState)
@@ -109,20 +137,23 @@ ensures
     result.valid(),
     LSend2b(s@, result@, c@, *b as int, *v as int),
 {
-    let mut max_v_bal = clone_hashset(&s.max_v_bal);
-    max_v_bal.insert(*b);
-    let mut max_val = clone_hashset(&s.max_val);
-    max_val.insert(*v);
-    let result = CState {
-        max_bal: clone_hashset(&s.max_bal),
-        max_v_bal: max_v_bal,
-        max_val: max_val,
-        msg_count: s.msg_count + 1,
+    let result = {
+        let mut __max_v_bal = clone_hashset(&s.max_v_bal);
+        __max_v_bal.insert(*b);
+        let mut __max_val = clone_hashset(&s.max_val);
+        __max_val.insert(*v);
+        CState {
+            max_bal: clone_hashset(&s.max_bal),
+            max_v_bal: __max_v_bal,
+            max_val: __max_val,
+            msg_count: (s.msg_count + 1),
+        }
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
+
 }
 
 } // verus!

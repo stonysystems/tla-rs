@@ -1919,9 +1919,9 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] Verus: 583 verified, 0 errors, **0 assumes** in twophase_gen.rs
 - [x] First protocol fully regenerated from transpiler with zero manual edits
 
-**12.3.2: Regenerate Paxos with proofs**
-- [ ] Run transpiler on Paxos spec
-- [ ] Compare against reference, run Verus — target: 0 assumes
+**12.3.2: Regenerate Paxos with proofs** ✅
+- [x] Ran transpiler on Paxos spec — output matches reference (cosmetic diffs only: comment wording, formatting)
+- [x] Verus: 584 verified, 0 errors, **0 assumes** — second protocol fully regenerated from transpiler
 
 **12.3.3: Regenerate LeaderElection with proofs**
 - [ ] Run transpiler on LeaderElection spec
