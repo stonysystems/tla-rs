@@ -27,6 +27,7 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
+generate_proofs = true
 generate_inline_types = false
 custom_imports = [
     "use vstd::prelude::*;",

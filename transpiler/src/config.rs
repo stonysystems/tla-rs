@@ -317,6 +317,13 @@ pub struct OutputConfig {
     #[serde(default)]
     pub generate_inline_types: bool,
 
+    /// Whether to generate proof blocks instead of assume() calls.
+    /// When true, the transpiler emits `proof { ... }` blocks with assertions
+    /// and lemma calls that Verus can verify. When false (default), emits
+    /// `assume(...)` calls as trusted placeholders.
+    #[serde(default)]
+    pub generate_proofs: bool,
+
     /// Whether to generate wrapper methods in an impl block for &mut self pattern.
     /// When true, generates wrapper methods that call the functional-style generated
     /// functions and update `*self` with the result.
@@ -350,6 +357,7 @@ impl Default for OutputConfig {
             custom_imports: Vec::new(),
             generate_loops_for_verification: false,
             generate_inline_types: false,
+            generate_proofs: false,
             generate_wrapper_methods: false,
             wrapper_impl_type: None,
         }
@@ -604,5 +612,45 @@ mod tests {
         assert!(config
             .re_exports
             .contains(&"crate::implementation::RSL::types_i::*".to_string()));
+    }
+
+    #[test]
+    fn test_generate_proofs_default_false() {
+        let config = TranspilerConfig::default();
+        assert!(!config.output.generate_proofs);
+    }
+
+    #[test]
+    fn test_generate_proofs_from_toml() {
+        let toml = r#"
+            [output]
+            generate_proofs = true
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(config.output.generate_proofs);
+    }
+
+    #[test]
+    fn test_generate_proofs_false_from_toml() {
+        let toml = r#"
+            [output]
+            generate_proofs = false
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(!config.output.generate_proofs);
+    }
+
+    #[test]
+    fn test_generate_proofs_omitted_defaults_false() {
+        let toml = r#"
+            [output]
+            generate_loops_for_verification = true
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(!config.output.generate_proofs);
+        assert!(config.output.generate_loops_for_verification);
     }
 }

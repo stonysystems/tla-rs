@@ -39,6 +39,7 @@ generate_clone = true
 include_debug_comments = false
 # Generate explicit for loops instead of iterators for better Verus verification
 generate_loops_for_verification = true
+generate_proofs = true
 # Generate CLearner inline instead of importing from LearnerImpl.rs
 generate_inline_types = true
 # Custom imports for learner module

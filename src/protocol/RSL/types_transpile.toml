@@ -90,6 +90,7 @@ generate_validity_predicates = true
 validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
+generate_proofs = true
 # Custom imports for RSL types
 custom_imports = [
     "use vstd::prelude::*;",

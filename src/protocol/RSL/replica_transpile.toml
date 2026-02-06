@@ -73,6 +73,7 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
+generate_proofs = true
 # Generate CReplica and CScheduler inline
 generate_inline_types = true
 # Custom imports for replica module

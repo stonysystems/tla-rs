@@ -56,6 +56,10 @@ pub struct TranslatorConfig {
     /// When true, generates Verus-verifiable loop code with placeholders for invariants.
     /// When false (default), generates iterator-based code (.iter().filter().collect()).
     pub generate_loops_for_verification: bool,
+    /// Whether to generate proof blocks instead of assume() calls.
+    /// When true, emits `proof { ... }` blocks with lemma calls and assertions.
+    /// When false (default), emits `assume(...)` as trusted placeholders.
+    pub generate_proofs: bool,
     /// Rust type to use for spec `int` type (default: "i64")
     /// Use "u64" for codebases that use unsigned integers
     pub int_type: String,
@@ -77,6 +81,7 @@ impl Default for TranslatorConfig {
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
             generate_loops_for_verification: false,
+            generate_proofs: false,
             int_type: "i64".to_string(),
             nat_type: "u64".to_string(),
         }
@@ -9944,6 +9949,26 @@ mod tests {
             !config.generate_loops_for_verification,
             "Default should be false"
         );
+    }
+
+    #[test]
+    fn test_generate_proofs_config_default_false() {
+        let config = TranslatorConfig::default();
+        assert!(
+            !config.generate_proofs,
+            "Default should be false"
+        );
+    }
+
+    #[test]
+    fn test_generate_proofs_config_set_true() {
+        let config = TranslatorConfig {
+            generate_proofs: true,
+            ..TranslatorConfig::default()
+        };
+        assert!(config.generate_proofs);
+        let translator = Translator::new(config);
+        assert!(translator.config.generate_proofs);
     }
 
     #[test]

@@ -911,6 +911,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
         translator: TranslatorConfig {
             validity_predicate_name: file_config.output.validity_predicate_name,
             generate_loops_for_verification: file_config.output.generate_loops_for_verification,
+            generate_proofs: file_config.output.generate_proofs,
             type_remapping: file_config.remapping.clone(),
             function_paths: file_config.function_paths.clone(),
             spec_only_functions: file_config.spec_only_functions.into_iter().collect(),
@@ -1209,5 +1210,55 @@ Next == count' = count + N
             }
             _ => panic!("Expected Pipeline command"),
         }
+    }
+
+    #[test]
+    fn test_load_config_generate_proofs() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("test.toml");
+        let mut f = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            f,
+            r#"
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "u64"
+
+[output]
+generate_loops_for_verification = true
+generate_proofs = true
+validity_predicate_name = "valid"
+"#
+        )
+        .unwrap();
+
+        let config = load_config(&config_path).unwrap();
+        assert!(config.translator.generate_proofs);
+        assert!(config.translator.generate_loops_for_verification);
+    }
+
+    #[test]
+    fn test_load_config_generate_proofs_default() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("test.toml");
+        let mut f = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            f,
+            r#"
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[output]
+validity_predicate_name = "valid"
+"#
+        )
+        .unwrap();
+
+        let config = load_config(&config_path).unwrap();
+        assert!(!config.translator.generate_proofs);
     }
 }

@@ -1790,9 +1790,11 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 #### Phase 12.2: Extend Transpiler for Proof Generation
 
 **12.2.1: Add `generate_proofs` config option**
-- [ ] Add `generate_proofs = true/false` to transpiler TOML config (default: false)
-- [ ] When true, transpiler emits `proof { ... }` blocks instead of `assume(...)`
-- [ ] When false, existing behavior (emit assumes)
+- [x] Add `generate_proofs = true/false` to transpiler TOML config (default: false)
+- [x] Threaded through: FileConfig (config.rs) → TranslatorConfig (translator/mod.rs) → load_config (main.rs)
+- [x] Added `generate_proofs = true` to all 13 protocol TOML configs
+- [x] When true, transpiler will emit `proof { ... }` blocks (implementation in 12.2.2+)
+- [x] When false, existing behavior (emit assumes)
 
 **12.2.2: Generate validity proofs (Category 1)**
 - [ ] In `translator/mod.rs`, add `generate_validity_proof()` function
