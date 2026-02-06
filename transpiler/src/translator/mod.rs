@@ -387,13 +387,24 @@ impl ProofNeeds {
             ));
         }
 
-        // Emit per-call lemma_set_map_remove_commute invocations with specific arguments
+        // Emit per-call lemma_set_map_remove_commute invocations with specific arguments.
+        // The proof function takes owned values (u64), but remove() passes references (&u64),
+        // so dereference bare variable arguments that don't already have a deref prefix.
         for site in &self.remove_sites {
+            let element_expr = if site.element.starts_with('*') {
+                ExecExpr::Var(site.element.clone())
+            } else {
+                // Bare variable from remove(&ref) — dereference for proof call
+                ExecExpr::Unary {
+                    op: "*".to_string(),
+                    expr: Box::new(ExecExpr::Var(site.element.clone())),
+                }
+            };
             stmts.push(ExecExpr::Call {
                 func: "lemma_set_map_remove_commute".to_string(),
                 args: vec![
                     ExecExpr::Var(site.source_view.clone()),
-                    ExecExpr::Var(site.element.clone()),
+                    element_expr,
                 ],
             });
         }
@@ -1380,14 +1391,54 @@ impl Translator {
     // End Recursive Pattern Detection
     // ========================================================================
 
-    /// Wrap an expression with .clone() if it directly references an input parameter.
+    /// Wrap an expression with .clone() or dereference if it references an input parameter.
     /// Input parameters are passed by reference, so when assigning to struct fields
-    /// (which expect owned types), we need to clone.
+    /// (which expect owned types), we need to clone (structs) or dereference (scalars).
+    /// Also handles field access on input params: wraps collection fields with clone_hashset.
     fn clone_if_input_ref(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
         match &expr {
-            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Clone(Box::new(expr)),
+            ExecExpr::Var(name) if ctx.is_input(name) => {
+                if self.is_scalar_input_param(name, ctx) {
+                    // Scalar param (u64, bool): dereference instead of clone
+                    ExecExpr::Unary {
+                        op: "*".to_string(),
+                        expr: Box::new(expr),
+                    }
+                } else {
+                    ExecExpr::Clone(Box::new(expr))
+                }
+            }
+            // Field access on input param: delegate to clone_input_field_access
+            ExecExpr::Field(base, _) if Self::is_input_var(base, ctx) => {
+                self.clone_input_field_access(expr, ctx)
+            }
             _ => expr,
         }
+    }
+
+    /// Check if a named input parameter is a scalar type (Int/Nat/Bool → u64/bool).
+    /// Scalar params are passed by &u64/&bool and need dereferencing, not cloning.
+    fn is_scalar_input_param(&self, name: &str, ctx: &TransformContext) -> bool {
+        if let Some(ty) = ctx.input_types.get(name) {
+            matches!(ty, Type::Int | Type::Nat | Type::Bool)
+        } else {
+            false
+        }
+    }
+
+    /// Dereference a bare scalar input parameter reference in exec expressions.
+    /// Wraps `Var("node")` → `Unary("*", Var("node"))` when `node` is a scalar input (&u64).
+    /// Leaves non-scalar and non-input expressions unchanged.
+    fn deref_scalar_input_in_expr(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
+        if let ExecExpr::Var(ref name) = expr {
+            if self.is_scalar_input_param(name, ctx) {
+                return ExecExpr::Unary {
+                    op: "*".to_string(),
+                    expr: Box::new(expr),
+                };
+            }
+        }
+        expr
     }
 
     /// Extract HashSet/HashMap mutations from struct field expressions.
@@ -1445,27 +1496,34 @@ impl Translator {
                 });
 
                 // __field.insert(val) or __field.remove(val)
-                // Dereference the argument if it comes from a reference parameter
+                // For insert(): dereference reference params (takes owned T)
+                // For remove(): keep reference params as-is (takes &Q)
+                let needs_deref = method == "insert";
                 let deref_args: Vec<ExecExpr> = args
                     .into_iter()
-                    .map(|a| match &a {
-                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
-                            op: "*".to_string(),
-                            expr: Box::new(a),
-                        },
-                        ExecExpr::Clone(inner) => {
-                            match inner.as_ref() {
-                                ExecExpr::Var(_) => {
-                                    // For cloned input vars, dereference instead of clone
-                                    ExecExpr::Unary {
-                                        op: "*".to_string(),
-                                        expr: inner.clone(),
-                                    }
-                                }
-                                _ => a,
-                            }
+                    .map(|a| {
+                        if !needs_deref {
+                            return a; // remove() takes &Q, keep refs
                         }
-                        _ => a,
+                        match &a {
+                            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
+                                op: "*".to_string(),
+                                expr: Box::new(a),
+                            },
+                            ExecExpr::Clone(inner) => {
+                                match inner.as_ref() {
+                                    ExecExpr::Var(_) => {
+                                        // For cloned input vars, dereference instead of clone
+                                        ExecExpr::Unary {
+                                            op: "*".to_string(),
+                                            expr: inner.clone(),
+                                        }
+                                    }
+                                    _ => a,
+                                }
+                            }
+                            _ => a,
+                        }
                     })
                     .collect();
 
@@ -4412,7 +4470,14 @@ impl Translator {
                 .filter(|(_, m)| **m == ParameterMode::Output)
                 .map(|(p, _)| (p.name.clone(), p.ty.clone()))
                 .collect(),
-            input_types: HashMap::new(),
+            input_types: func
+                .spec_fn
+                .params
+                .iter()
+                .zip(&func.param_modes)
+                .filter(|(_, m)| **m == ParameterMode::Input)
+                .map(|(p, _)| (p.name.clone(), p.ty.clone()))
+                .collect(),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
         }
@@ -4438,12 +4503,21 @@ impl Translator {
             .map(|p| p.name.clone())
             .collect();
 
+        // Identify scalar input params (int/nat → &u64) that need dereferencing in requires.
+        let scalar_params: HashSet<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .filter(|p| ctx.is_input(&p.name) && matches!(&p.ty, Type::Int | Type::Nat))
+            .map(|p| p.name.clone())
+            .collect();
+
         // Only extract from top-level conjunctions
         if let Expr::Conjunction(parts) = &func.spec_fn.body {
             for part in parts {
                 if Self::is_input_only_expression(part, ctx) {
                     preconditions
-                        .push(self.expr_to_view_requires_string(part, &view_params));
+                        .push(self.expr_to_view_requires_string(part, &view_params, &scalar_params));
                 }
             }
         }
@@ -4616,69 +4690,71 @@ impl Translator {
         &self,
         expr: &Expr,
         view_params: &HashSet<String>,
+        scalar_params: &HashSet<String>,
     ) -> String {
         match expr {
             Expr::Is(expr, variant) => {
-                // `is` variant checks work on exec types directly (no @ needed)
-                let base = self.expr_to_view_simple_string(expr, view_params);
+                // `is` variant checks need `@` view operator on struct params
+                // because they test spec-level enum variants (e.g., s@.tm_state is Init)
+                let base = self.expr_to_view_always_at_string(expr, view_params);
                 format!("{} is {}", base, variant)
             }
             Expr::Eq(lhs, rhs) => {
                 format!(
                     "{} == {}",
-                    self.expr_to_view_requires_string(lhs, view_params),
-                    self.expr_to_view_requires_string(rhs, view_params)
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
             Expr::Ne(lhs, rhs) => {
                 format!(
                     "({} != {})",
-                    self.expr_to_view_requires_string(lhs, view_params),
-                    self.expr_to_view_requires_string(rhs, view_params)
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
             Expr::Lt(lhs, rhs) => {
                 format!(
                     "({} < {})",
-                    self.expr_to_view_requires_string(lhs, view_params),
-                    self.expr_to_view_requires_string(rhs, view_params)
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
             Expr::Le(lhs, rhs) => {
                 format!(
                     "({} <= {})",
-                    self.expr_to_view_requires_string(lhs, view_params),
-                    self.expr_to_view_requires_string(rhs, view_params)
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
             Expr::Gt(lhs, rhs) => {
                 format!(
                     "({} > {})",
-                    self.expr_to_view_requires_string(lhs, view_params),
-                    self.expr_to_view_requires_string(rhs, view_params)
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
             Expr::Ge(lhs, rhs) => {
                 format!(
                     "({} >= {})",
-                    self.expr_to_view_requires_string(lhs, view_params),
-                    self.expr_to_view_requires_string(rhs, view_params)
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
             Expr::Conjunction(parts) => parts
                 .iter()
-                .map(|p| self.expr_to_view_requires_string(p, view_params))
+                .map(|p| self.expr_to_view_requires_string(p, view_params, scalar_params))
                 .collect::<Vec<_>>()
                 .join(" && "),
             Expr::Not(inner) => {
                 format!(
                     "!{}",
-                    self.expr_to_view_requires_string(inner, view_params)
+                    self.expr_to_view_requires_string(inner, view_params, scalar_params)
                 )
             }
             Expr::Binary(lhs, op, rhs) => {
-                let lhs_str = self.expr_to_view_requires_string(lhs, view_params);
-                let rhs_str = self.expr_to_view_requires_string(rhs, view_params);
+                let lhs_str = self.expr_to_view_requires_string(lhs, view_params, scalar_params);
+                let rhs_str = self.expr_to_view_requires_string(rhs, view_params, scalar_params);
                 let op_str = match op {
                     crate::ast::BinOp::Add => "+",
                     crate::ast::BinOp::Sub => "-",
@@ -4695,27 +4771,35 @@ impl Translator {
                 };
                 format!("({} {} {})", lhs_str, op_str, rhs_str)
             }
-            _ => self.expr_to_view_simple_string(expr, view_params),
+            _ => self.expr_to_view_simple_string(expr, view_params, scalar_params),
         }
     }
 
-    /// Convert an expression to a simple string, adding `@` to struct params in field access.
+    /// Convert an expression to a simple string, adding `@` to struct params for collection
+    /// field access, dereferencing scalar params, and casting to int where needed.
     fn expr_to_view_simple_string(
         &self,
         expr: &Expr,
         view_params: &HashSet<String>,
+        scalar_params: &HashSet<String>,
     ) -> String {
         match expr {
             Expr::Field(base, field) => {
-                // For struct-type params, emit `param@.field` instead of `param.field`
+                // For struct-type params, use `@` only for collection fields
                 if let Expr::Ident(name) = base.as_ref() {
                     if view_params.contains(name) {
-                        return format!("{}@.{}", name, field);
+                        if self.is_collection_field(field) {
+                            // Collection field: s@.field (need spec-level view)
+                            return format!("{}@.{}", name, field);
+                        } else {
+                            // Primitive field: s.field (exec-level access)
+                            return format!("{}.{}", name, field);
+                        }
                     }
                 }
                 format!(
                     "{}.{}",
-                    self.expr_to_view_simple_string(base, view_params),
+                    self.expr_to_view_simple_string(base, view_params, scalar_params),
                     field
                 )
             }
@@ -4724,14 +4808,55 @@ impl Translator {
                 method,
                 args,
             } => {
-                let recv = self.expr_to_view_simple_string(receiver, view_params);
+                let recv = self.expr_to_view_simple_string(receiver, view_params, scalar_params);
+                // For .contains() on a collection (which uses Set<int>), cast scalar args to int
+                let is_spec_set_method = method == "contains";
                 let args_str: Vec<_> = args
                     .iter()
-                    .map(|a| self.expr_to_view_simple_string(a, view_params))
+                    .map(|a| {
+                        let s = self.expr_to_view_simple_string(a, view_params, scalar_params);
+                        if is_spec_set_method {
+                            if let Expr::Ident(name) = a {
+                                if scalar_params.contains(name) {
+                                    // Scalar param in .contains(): *name as int
+                                    return format!("*{} as int", name);
+                                }
+                            }
+                        }
+                        s
+                    })
                     .collect();
                 format!("{}.{}({})", recv, method, args_str.join(", "))
             }
+            Expr::Ident(name) if scalar_params.contains(name) => {
+                // Scalar input param (int/nat → &u64): dereference
+                format!("*{}", name)
+            }
             // For other expressions, delegate to expr_to_simple_string
+            _ => self.expr_to_simple_string(expr),
+        }
+    }
+
+    /// Convert an expression to a string that always uses `@` for view_params in field access.
+    /// Used for `is` variant checks where the spec view is always needed (e.g., `s@.tm_state is Init`).
+    fn expr_to_view_always_at_string(
+        &self,
+        expr: &Expr,
+        view_params: &HashSet<String>,
+    ) -> String {
+        match expr {
+            Expr::Field(base, field) => {
+                if let Expr::Ident(name) = base.as_ref() {
+                    if view_params.contains(name) {
+                        return format!("{}@.{}", name, field);
+                    }
+                }
+                format!(
+                    "{}.{}",
+                    self.expr_to_view_always_at_string(base, view_params),
+                    field
+                )
+            }
             _ => self.expr_to_simple_string(expr),
         }
     }
@@ -6107,9 +6232,11 @@ impl Translator {
             }
         }
 
-        // Regular equality comparison
+        // Regular equality comparison — deref scalar input params (&u64 → u64)
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
+        let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
+        let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
         Ok(ExecExpr::Binary {
             lhs: Box::new(lhs_expr),
             op: "==".to_string(),
@@ -6879,11 +7006,12 @@ impl Translator {
                         results.push(ExecExpr::Block(block));
                     }
                 } else if let Some(base) = base_input {
-                    // Check if any field is a field access on an input param
-                    // If so, wrap with clone_hashset and use explicit Struct (not StructUpdate)
+                    // Check if any field is a field access on an input param (or already cloned)
+                    // If so, use explicit Struct (not StructUpdate) to avoid partial clone
                     let has_input_field_access = translated_fields.iter().any(|(_, expr)| {
                         matches!(expr, ExecExpr::Field(b, _) if Self::is_input_var(b, ctx))
                             || matches!(expr, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(b, _) if Self::is_input_var(b, ctx)))
+                            || matches!(expr, ExecExpr::Call { func, .. } if func == "clone_hashset")
                     });
                     if has_input_field_access {
                         // Convert to explicit Struct with clone_hashset for input field accesses
@@ -7000,6 +7128,7 @@ impl Translator {
                                         translated_fields.iter().any(|(_, expr)| {
                                             matches!(expr, ExecExpr::Field(b, _) if Self::is_input_var(b, ctx))
                                                 || matches!(expr, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(b, _) if Self::is_input_var(b, ctx)))
+                                                || matches!(expr, ExecExpr::Call { func, .. } if func == "clone_hashset")
                                         });
                                     if has_input_field_access {
                                         let cloned_fields: Vec<_> = translated_fields
@@ -7072,6 +7201,9 @@ impl Translator {
     ) -> TranspileResult<ExecExpr> {
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
+        // Deref scalar input params (&u64 → u64) in comparisons and arithmetic
+        let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
+        let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
 
         // Check if either operand is a Block that needs hoisting
         let lhs_is_block = matches!(lhs_expr, ExecExpr::Block(_));
@@ -16461,8 +16593,10 @@ mod tests {
             )),
         );
 
-        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        let scalar_params = HashSet::new();
+        let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
         // s is in view_params so gets @, c is not so stays as-is
+        // (default empty collection_fields → all fields treated as collections)
         assert_eq!(result, "s@.tm_prepared == c.rm");
     }
 
@@ -16484,7 +16618,8 @@ mod tests {
             )),
         );
 
-        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        let scalar_params = HashSet::new();
+        let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
         assert_eq!(result, "s@.tm_prepared == c@.rm");
     }
 
@@ -16503,9 +16638,11 @@ mod tests {
             "Init".to_string(),
         );
 
-        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        let scalar_params = HashSet::new();
+        let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
         // `is` checks work on exec types, so @ is added to field access
         // s@.tm_state is Init is valid Verus (checks LTMState::Init on spec view)
+        // (default empty collection_fields → all fields treated as collections)
         assert_eq!(result, "s@.tm_state is Init");
     }
 
@@ -16523,8 +16660,302 @@ mod tests {
             Box::new(Expr::Literal(Literal::Int(0))),
         );
 
-        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        let scalar_params = HashSet::new();
+        let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
         // No view params, so no @ added
         assert_eq!(result, "(s.count > 0)");
+    }
+
+    #[test]
+    fn test_is_scalar_input_param() {
+        let translator = Translator::default();
+        let mut input_types = HashMap::new();
+        input_types.insert("node".to_string(), Type::Int);
+        input_types.insert("count".to_string(), Type::Nat);
+        input_types.insert("flag".to_string(), Type::Bool);
+        input_types.insert(
+            "s".to_string(),
+            Type::Named(Path {
+                segments: vec!["LState".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec![
+                "node".to_string(),
+                "count".to_string(),
+                "flag".to_string(),
+                "s".to_string(),
+            ],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        assert!(translator.is_scalar_input_param("node", &ctx));
+        assert!(translator.is_scalar_input_param("count", &ctx));
+        assert!(translator.is_scalar_input_param("flag", &ctx));
+        assert!(!translator.is_scalar_input_param("s", &ctx)); // Named type
+        assert!(!translator.is_scalar_input_param("unknown", &ctx)); // Not in map
+    }
+
+    #[test]
+    fn test_deref_scalar_input_in_expr() {
+        let translator = Translator::default();
+        let mut input_types = HashMap::new();
+        input_types.insert("node".to_string(), Type::Int);
+        input_types.insert(
+            "s".to_string(),
+            Type::Named(Path {
+                segments: vec!["LState".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["node".to_string(), "s".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Scalar param: wrap with deref
+        let expr = ExecExpr::Var("node".to_string());
+        let result = translator.deref_scalar_input_in_expr(expr, &ctx);
+        assert!(matches!(
+            result,
+            ExecExpr::Unary { op, expr: _ } if op == "*"
+        ));
+
+        // Non-scalar param: leave unchanged
+        let expr = ExecExpr::Var("s".to_string());
+        let result = translator.deref_scalar_input_in_expr(expr, &ctx);
+        assert!(matches!(result, ExecExpr::Var(name) if name == "s"));
+
+        // Non-input var: leave unchanged
+        let expr = ExecExpr::Var("x".to_string());
+        let result = translator.deref_scalar_input_in_expr(expr, &ctx);
+        assert!(matches!(result, ExecExpr::Var(name) if name == "x"));
+    }
+
+    #[test]
+    fn test_clone_if_input_ref_scalar_param() {
+        let translator = Translator::default();
+        let mut input_types = HashMap::new();
+        input_types.insert("node".to_string(), Type::Nat);
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["node".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Scalar input param: should deref, not clone
+        let expr = ExecExpr::Var("node".to_string());
+        let result = translator.clone_if_input_ref(expr, &ctx);
+        assert!(matches!(
+            result,
+            ExecExpr::Unary { op, expr: _ } if op == "*"
+        ));
+    }
+
+    #[test]
+    fn test_clone_if_input_ref_struct_param() {
+        let translator = Translator::default();
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "s".to_string(),
+            Type::Named(Path {
+                segments: vec!["LState".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Struct input param: should clone
+        let expr = ExecExpr::Var("s".to_string());
+        let result = translator.clone_if_input_ref(expr, &ctx);
+        assert!(matches!(result, ExecExpr::Clone(_)));
+    }
+
+    #[test]
+    fn test_clone_if_input_ref_field_access_collection() {
+        let mut config = TranslatorConfig::default();
+        config.collection_fields.insert("nodes".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "c".to_string(),
+            Type::Named(Path {
+                segments: vec!["LConstants".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["c".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Field access on input param + collection field: should clone_hashset
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("c".to_string())),
+            "nodes".to_string(),
+        );
+        let result = translator.clone_if_input_ref(expr, &ctx);
+        assert!(matches!(result, ExecExpr::Call { func, .. } if func == "clone_hashset"));
+    }
+
+    #[test]
+    fn test_clone_if_input_ref_field_access_primitive() {
+        let mut config = TranslatorConfig::default();
+        config.collection_fields.insert("nodes".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "c".to_string(),
+            Type::Named(Path {
+                segments: vec!["LConstants".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["c".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Field access on input param + primitive field: direct access
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("c".to_string())),
+            "num_nodes".to_string(),
+        );
+        let result = translator.clone_if_input_ref(expr, &ctx);
+        // Should return the original expression unchanged
+        assert!(matches!(result, ExecExpr::Field(_, name) if name == "num_nodes"));
+    }
+
+    #[test]
+    fn test_view_requires_collection_aware_at() {
+        // With collection_fields configured, only collection fields get @
+        let mut config = TranslatorConfig::default();
+        config
+            .collection_fields
+            .insert("electing".to_string());
+        config.collection_fields.insert("alive".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut view_params = HashSet::new();
+        view_params.insert("s".to_string());
+        let scalar_params = HashSet::new();
+
+        // Collection field: s@.alive
+        let expr = Expr::Field(
+            Box::new(Expr::Ident("s".to_string())),
+            "alive".to_string(),
+        );
+        let result = translator.expr_to_view_simple_string(&expr, &view_params, &scalar_params);
+        assert_eq!(result, "s@.alive");
+
+        // Primitive field: s.has_leader (no @)
+        let expr = Expr::Field(
+            Box::new(Expr::Ident("s".to_string())),
+            "has_leader".to_string(),
+        );
+        let result = translator.expr_to_view_simple_string(&expr, &view_params, &scalar_params);
+        assert_eq!(result, "s.has_leader");
+    }
+
+    #[test]
+    fn test_view_requires_scalar_param_deref() {
+        let translator = Translator::default();
+        let view_params = HashSet::new();
+        let mut scalar_params = HashSet::new();
+        scalar_params.insert("node".to_string());
+
+        // Bare scalar param: *node
+        let expr = Expr::Ident("node".to_string());
+        let result = translator.expr_to_view_simple_string(&expr, &view_params, &scalar_params);
+        assert_eq!(result, "*node");
+    }
+
+    #[test]
+    fn test_view_requires_scalar_in_contains() {
+        // scalar param in .contains() gets *name as int
+        let mut config = TranslatorConfig::default();
+        config.collection_fields.insert("alive".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut view_params = HashSet::new();
+        view_params.insert("s".to_string());
+        let mut scalar_params = HashSet::new();
+        scalar_params.insert("node".to_string());
+
+        // s.alive.contains(node) → s@.alive.contains(*node as int)
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "alive".to_string(),
+            )),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("node".to_string())],
+        };
+        let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
+        assert_eq!(result, "s@.alive.contains(*node as int)");
+    }
+
+    #[test]
+    fn test_view_requires_scalar_in_comparison() {
+        // scalar param in comparison: !s.has_highest || (node > s.highest_heard)
+        let mut config = TranslatorConfig::default();
+        config.collection_fields.insert("alive".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut view_params = HashSet::new();
+        view_params.insert("s".to_string());
+        let mut scalar_params = HashSet::new();
+        scalar_params.insert("node".to_string());
+
+        // node > s.highest_heard → (*node > s.highest_heard)
+        let expr = Expr::Gt(
+            Box::new(Expr::Ident("node".to_string())),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "highest_heard".to_string(),
+            )),
+        );
+        let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
+        assert_eq!(result, "(*node > s.highest_heard)");
     }
 }

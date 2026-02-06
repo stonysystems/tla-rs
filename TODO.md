@@ -1935,17 +1935,25 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] Regenerated TwoPhase + Paxos: 585 verified, 0 errors, 0 assumes
 - Affects: All protocols (prevents `clone_hashset()` on primitive fields like `u64`, `bool`)
 
-**12.3.0j: Fix `&u64` parameter dereference in exec code and requires clauses**
-- [ ] Fix `s@.alive.contains(node)` → `s@.alive.contains(*node as int)` in requires (Set<int> needs int arg)
-- [ ] Fix `node.clone()` → `*node` for u64 params in struct field assignments
-- [ ] Fix `s.leader == node` → `s.leader == *node` in if conditions (u64 vs &u64)
-- [ ] Fix `c.nodes` → `clone_hashset(&c.nodes)` for collection fields from `&CConstants`
-- Affects: LeaderElection (10 errors), ChainReplication, Raft
+**12.3.0j: Fix `&u64` parameter dereference in exec code and requires clauses** ✅
+- [x] Fix `s@.alive.contains(node)` → `s@.alive.contains(*node as int)` in requires (Set<int> needs int arg)
+- [x] Fix `node.clone()` → `*node` for u64 params in struct field assignments
+- [x] Fix `s.leader == node` → `s.leader == *node` in if conditions (u64 vs &u64)
+- [x] Fix `c.nodes` → `clone_hashset(&c.nodes)` for collection fields from `&CConstants`
+- [x] Fix `is` variant checks to always use `@` view (e.g., `s@.tm_state is Init`)
+- [x] Fix `HashSet::remove()` to pass `&Q` not `Q` (remove takes reference, insert takes owned)
+- [x] Fix proof `lemma_set_map_remove_commute()` to dereference args (proof takes owned `u64`)
+- [x] Fix `has_input_field_access` to detect `clone_hashset()` calls (prevents struct update regression)
+- [x] Added `is_scalar_input_param()`, `deref_scalar_input_in_expr()`, `expr_to_view_always_at_string()`
+- [x] Added `nodes` to LeaderElection `collection_fields` config
+- [x] 10 new tests for scalar param handling, collection-aware `@`, deref, clone_if_input_ref
+- Verified: TwoPhase + Paxos regenerate identically; 585 verified, 0 errors
+- Affects: All protocols (correct `&u64` dereference in exec code and requires/proof clauses)
 
-**12.3.3: Regenerate LeaderElection with proofs**
-- [ ] Requires 12.3.0j to be completed first
-- [ ] Run transpiler on LeaderElection spec
-- [ ] Compare against reference, run Verus — target: 0 assumes
+**12.3.3: Regenerate LeaderElection with proofs** ✅
+- [x] Requires 12.3.0j to be completed first
+- [x] Run transpiler on LeaderElection spec
+- [x] Compare against reference, run Verus — 585 verified, 0 errors, 0 assumes
 
 #### Phase 12.4: Regenerate Raft and ChainReplication
 

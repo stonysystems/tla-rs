@@ -12,19 +12,18 @@ use vstd::set_lib::*;
 
 verus! {
 
-/// Helper proof: mapping over an empty set yields an empty set.
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
 ensures
     Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
 {
     let f = |x: u64| x as int;
     let s = Set::<u64>::empty().map(f);
-    assert forall|y: int| !(#[trigger] s.contains(y)) by { }
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
 }
 
 /// Helper proof: removing an element commutes with mapping for injective functions.
-/// Specifically: s.remove(elt).map(f) =~= s.map(f).remove(f(elt))
-/// when f is injective (which |x: u64| x as int is).
 proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)
 ensures
     s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),
@@ -32,27 +31,22 @@ ensures
     let f = |x: u64| x as int;
     let lhs = s.remove(elt).map(f);
     let rhs = s.map(f).remove(f(elt));
-
-    // Forward: lhs.contains(y) ==> rhs.contains(y)
     assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {
-        // y in lhs means exists x in s.remove(elt) such that f(x) == y
         let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;
         assert(s.contains(x));
         assert(x != elt);
-        assert(f(x) != f(elt));  // injectivity of |x: u64| x as int
+        assert(f(x) != f(elt));
         assert(s.map(f).contains(y));
     }
-
-    // Backward: rhs.contains(y) ==> lhs.contains(y)
     assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {
-        // y in rhs means y in s.map(f) and y != f(elt)
         let x = choose|x: u64| s.contains(x) && f(x) == y;
         assert(y != f(elt));
         assert(f(x) != f(elt));
-        assert(x != elt);  // injectivity
+        assert(x != elt);
         assert(s.remove(elt).contains(x));
     }
 }
+
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -73,6 +67,7 @@ ensures
         lemma_empty_set_map();
     }
     result
+
 }
 
 pub exec fn CStartElection(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
@@ -84,20 +79,23 @@ ensures
     result.valid(),
     LStartElection(s@, result@, c@, *node as int),
 {
-    let mut electing = clone_hashset(&s.electing);
-    electing.insert(*node);
-    let result = CState {
-        electing: electing,
-        has_leader: false,
-        leader: 0u64,
-        alive: clone_hashset(&s.alive),
-        has_highest: s.has_highest,
-        highest_heard: s.highest_heard,
+    let result = {
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.insert(*node);
+        CState {
+            electing: __electing,
+            has_leader: false,
+            leader: 0u64,
+            alive: clone_hashset(&s.alive),
+            has_highest: s.has_highest,
+            highest_heard: s.highest_heard,
+        }
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
+
 }
 
 pub exec fn CRespondHigher(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
@@ -105,20 +103,19 @@ requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
-    !s.has_highest || *node > s.highest_heard,
+    (!s.has_highest || (*node > s.highest_heard)),
 ensures
     result.valid(),
     LRespondHigher(s@, result@, c@, *node as int),
 {
-    let result = CState {
+CState {
         has_highest: true,
         highest_heard: *node,
         electing: clone_hashset(&s.electing),
         has_leader: s.has_leader,
         leader: s.leader,
         alive: clone_hashset(&s.alive),
-    };
-    result
+    }
 }
 
 pub exec fn CBecomeLeader(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
@@ -131,20 +128,23 @@ ensures
     result.valid(),
     LBecomeLeader(s@, result@, c@, *node as int),
 {
-    let mut electing = clone_hashset(&s.electing);
-    electing.remove(node);
-    let result = CState {
-        has_leader: true,
-        leader: *node,
-        electing: electing,
-        alive: clone_hashset(&s.alive),
-        has_highest: s.has_highest,
-        highest_heard: s.highest_heard,
+    let result = {
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.remove(node);
+        CState {
+            has_leader: true,
+            leader: *node,
+            electing: __electing,
+            alive: clone_hashset(&s.alive),
+            has_highest: s.has_highest,
+            highest_heard: s.highest_heard,
+        }
     };
     proof {
         lemma_set_map_remove_commute(s.electing@, *node);
     }
     result
+
 }
 
 pub exec fn CNodeFail(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
@@ -156,28 +156,34 @@ ensures
     result.valid(),
     LNodeFail(s@, result@, c@, *node as int),
 {
-    let mut alive = clone_hashset(&s.alive);
-    alive.remove(node);
-    let mut electing = clone_hashset(&s.electing);
-    electing.remove(node);
-    let (new_has_leader, new_leader) = if s.has_leader && s.leader == *node {
-        (false, 0u64)
-    } else {
-        (s.has_leader, s.leader)
-    };
-    let result = CState {
-        alive: alive,
-        electing: electing,
-        has_leader: new_has_leader,
-        leader: new_leader,
-        has_highest: s.has_highest,
-        highest_heard: s.highest_heard,
+    let result = {
+        let mut __alive = clone_hashset(&s.alive);
+        __alive.remove(node);
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.remove(node);
+        CState {
+            alive: __alive,
+            electing: __electing,
+            has_leader: if (s.has_leader && (s.leader == *node)) {
+                false
+            } else {
+                s.has_leader
+            },
+            leader: if (s.has_leader && (s.leader == *node)) {
+                0u64
+            } else {
+                s.leader
+            },
+            has_highest: s.has_highest,
+            highest_heard: s.highest_heard,
+        }
     };
     proof {
         lemma_set_map_remove_commute(s.alive@, *node);
         lemma_set_map_remove_commute(s.electing@, *node);
     }
     result
+
 }
 
 } // verus!
