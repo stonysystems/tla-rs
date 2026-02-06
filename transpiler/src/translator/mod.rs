@@ -108,6 +108,195 @@ impl TranslatorConfig {
     }
 }
 
+/// Analysis of what proof helpers a function body needs.
+/// Used when `generate_proofs` is enabled to determine which
+/// lemma calls and broadcast uses to emit in proof blocks.
+#[derive(Debug, Clone, Default)]
+pub struct ProofNeeds {
+    /// Function body contains `HashSet::new()` — needs `lemma_empty_set_map()` call
+    pub has_empty_set: bool,
+    /// Function body contains `HashSet::insert()` — needs `broadcast use Set::lemma_set_map_insert_commute`
+    pub has_set_insert: bool,
+    /// Function body contains `HashSet::remove()` — needs `lemma_set_map_remove_commute()` call
+    pub has_set_remove: bool,
+    /// Function body contains `Vec::new()` — needs `lemma_empty_seq_map()` if element type has View
+    pub has_empty_vec: bool,
+    /// Function body contains `Vec::push()` — needs `lemma_seq_push_map_commute()` call
+    pub has_vec_push: bool,
+}
+
+impl ProofNeeds {
+    /// Returns true if any proof helpers are needed.
+    pub fn needs_proof_block(&self) -> bool {
+        self.has_empty_set || self.has_set_insert || self.has_set_remove
+    }
+
+    /// Scan an ExecExpr tree to determine what proof helpers are needed.
+    pub fn analyze(expr: &ExecExpr) -> Self {
+        let mut needs = ProofNeeds::default();
+        needs.scan_expr(expr);
+        needs
+    }
+
+    fn scan_expr(&mut self, expr: &ExecExpr) {
+        match expr {
+            ExecExpr::Call { func, args } => {
+                if func == "HashSet::new" || func == "HashSet::<u64>::new" {
+                    self.has_empty_set = true;
+                }
+                if func == "Vec::new" {
+                    self.has_empty_vec = true;
+                }
+                for arg in args {
+                    self.scan_expr(arg);
+                }
+            }
+            ExecExpr::MethodCall { receiver, method, args } => {
+                if method == "insert" {
+                    // Check if receiver is a HashSet-typed expression
+                    // Heuristic: if the method is insert and appears in a set context
+                    self.has_set_insert = true;
+                }
+                if method == "remove" {
+                    self.has_set_remove = true;
+                }
+                if method == "push" {
+                    self.has_vec_push = true;
+                }
+                self.scan_expr(receiver);
+                for arg in args {
+                    self.scan_expr(arg);
+                }
+            }
+            ExecExpr::Block(stmts) => {
+                for stmt in stmts {
+                    self.scan_expr(stmt);
+                }
+            }
+            ExecExpr::Struct { fields, .. } => {
+                for (_, expr) in fields {
+                    self.scan_expr(expr);
+                }
+            }
+            ExecExpr::Let { value, .. } => {
+                self.scan_expr(value);
+            }
+            ExecExpr::If { cond, then_branch, else_branch } => {
+                self.scan_expr(cond);
+                self.scan_expr(then_branch);
+                if let Some(eb) = else_branch {
+                    self.scan_expr(eb);
+                }
+            }
+            ExecExpr::Binary { lhs, rhs, .. } => {
+                self.scan_expr(lhs);
+                self.scan_expr(rhs);
+            }
+            ExecExpr::Unary { expr, .. } => {
+                self.scan_expr(expr);
+            }
+            ExecExpr::Field(expr, _) => {
+                self.scan_expr(expr);
+            }
+            ExecExpr::Tuple(exprs) => {
+                for e in exprs {
+                    self.scan_expr(e);
+                }
+            }
+            ExecExpr::MapUpdateWithInsert { source, filter, new_key, .. } => {
+                self.scan_expr(source);
+                self.scan_expr(filter);
+                self.scan_expr(new_key);
+            }
+            ExecExpr::ForInIter { body, .. } => {
+                self.scan_expr(body);
+            }
+            ExecExpr::ProofBlock { stmts } => {
+                for stmt in stmts {
+                    self.scan_expr(stmt);
+                }
+            }
+            ExecExpr::Assume(e) | ExecExpr::Assert(e) => {
+                self.scan_expr(e);
+            }
+            ExecExpr::Match { scrutinee, arms } => {
+                self.scan_expr(scrutinee);
+                for (_, body) in arms {
+                    self.scan_expr(body);
+                }
+            }
+            ExecExpr::StructUpdate { base, fields, .. } => {
+                self.scan_expr(base);
+                for (_, expr) in fields {
+                    self.scan_expr(expr);
+                }
+            }
+            ExecExpr::Clone(inner) => {
+                self.scan_expr(inner);
+            }
+            ExecExpr::Cast(inner, _) => {
+                self.scan_expr(inner);
+            }
+            ExecExpr::Return(inner) => {
+                self.scan_expr(inner);
+            }
+            ExecExpr::VecLit(exprs) => {
+                for e in exprs {
+                    self.scan_expr(e);
+                }
+            }
+            ExecExpr::Range { start, end } => {
+                self.scan_expr(start);
+                self.scan_expr(end);
+            }
+            ExecExpr::Closure { body, .. } => {
+                self.scan_expr(body);
+            }
+            ExecExpr::GhostVar { init, .. } => {
+                self.scan_expr(init);
+            }
+            ExecExpr::IsVariant { expr, .. } => {
+                self.scan_expr(expr);
+            }
+            ExecExpr::ArrowAccess { base, .. } => {
+                self.scan_expr(base);
+            }
+            // Leaf expressions — no recursion needed
+            ExecExpr::Var(_) | ExecExpr::Literal(_) | ExecExpr::BroadcastUse(_)
+            | ExecExpr::Break | ExecExpr::Comment(_) | ExecExpr::Matches { .. } => {}
+        }
+    }
+
+    /// Build a proof block ExecExpr containing the necessary lemma calls.
+    pub fn build_proof_block(&self) -> Option<ExecExpr> {
+        let mut stmts = Vec::new();
+
+        if self.has_empty_set {
+            stmts.push(ExecExpr::Call {
+                func: "lemma_empty_set_map".to_string(),
+                args: vec![],
+            });
+        }
+
+        if self.has_set_insert {
+            stmts.push(ExecExpr::BroadcastUse(
+                "Set::lemma_set_map_insert_commute".to_string(),
+            ));
+        }
+
+        // Note: set_remove needs a per-call lemma invocation with arguments,
+        // which requires more context. For now, just flag it.
+        // The actual lemma_set_map_remove_commute(s, elt) call needs the
+        // specific set and element, which we don't have in this simple analysis.
+
+        if stmts.is_empty() {
+            None
+        } else {
+            Some(ExecExpr::ProofBlock { stmts })
+        }
+    }
+}
+
 /// Generated exec function
 #[derive(Debug, Clone)]
 pub struct ExecFunction {
@@ -3084,6 +3273,9 @@ impl Translator {
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
+        // If generate_proofs is enabled, analyze the body and append proof blocks
+        let body = self.maybe_append_proof_block(body);
+
         Ok(ExecFunction {
             name: exec_name,
             params,
@@ -3122,6 +3314,9 @@ impl Translator {
             temp_var_counter: std::cell::RefCell::new(0),
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
+
+        // If generate_proofs is enabled, analyze the body and append proof blocks
+        let body = self.maybe_append_proof_block(body);
 
         // Build decreases clause for recursive functions
         let decreases = self.build_decreases(func);
@@ -3178,6 +3373,40 @@ impl Translator {
 
         // Default: empty (will require manual annotation)
         Vec::new()
+    }
+
+    /// If `generate_proofs` is enabled, analyze the body for proof needs
+    /// and append a proof block with the necessary lemma calls.
+    ///
+    /// Transforms:
+    ///   `StructExpr { ... }`
+    /// into:
+    ///   `Block [ Let { result = StructExpr }, ProofBlock { lemma_calls }, Var(result) ]`
+    fn maybe_append_proof_block(&self, body: ExecExpr) -> ExecExpr {
+        if !self.config.generate_proofs {
+            return body;
+        }
+
+        let needs = ProofNeeds::analyze(&body);
+        let proof_block = match needs.build_proof_block() {
+            Some(pb) => pb,
+            None => return body, // No proofs needed
+        };
+
+        // Wrap the body: bind it to `result`, add proof block, return `result`
+        // This transforms:  StructExpr { ... }
+        // into:             let result = StructExpr { ... };
+        //                   proof { ... }
+        //                   result
+        ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(body),
+            },
+            proof_block,
+            ExecExpr::Var("result".to_string()),
+        ])
     }
 
     /// Find the sequence parameter that is being recursed upon (has drop_first/skip in recursive calls)
@@ -13122,5 +13351,257 @@ mod tests {
             contains_for_loop(&exec_fn.body),
             "Should generate loop for fold-to-map pattern"
         );
+    }
+
+    // ======== Phase 12.2.7: ProofNeeds tests ========
+
+    #[test]
+    fn test_proof_needs_empty_set() {
+        let expr = ExecExpr::Call {
+            func: "HashSet::new".to_string(),
+            args: vec![],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.has_empty_set);
+        assert!(!needs.has_set_insert);
+        assert!(!needs.has_set_remove);
+        assert!(needs.needs_proof_block());
+    }
+
+    #[test]
+    fn test_proof_needs_set_insert() {
+        let expr = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("votes".to_string())),
+            method: "insert".to_string(),
+            args: vec![ExecExpr::Var("voter".to_string())],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(!needs.has_empty_set);
+        assert!(needs.has_set_insert);
+        assert!(needs.needs_proof_block());
+    }
+
+    #[test]
+    fn test_proof_needs_set_remove() {
+        let expr = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("pending".to_string())),
+            method: "remove".to_string(),
+            args: vec![ExecExpr::Var("value".to_string())],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.has_set_remove);
+        // set_remove alone doesn't trigger proof block (needs per-call lemma)
+        assert!(!needs.has_empty_set);
+        assert!(!needs.has_set_insert);
+    }
+
+    #[test]
+    fn test_proof_needs_vec_push() {
+        let expr = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("log".to_string())),
+            method: "push".to_string(),
+            args: vec![ExecExpr::Var("entry".to_string())],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.has_vec_push);
+        assert!(!needs.has_empty_set);
+    }
+
+    #[test]
+    fn test_proof_needs_no_proofs() {
+        let expr = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![
+                ("field1".to_string(), ExecExpr::Var("x".to_string())),
+                ("field2".to_string(), ExecExpr::Literal("0u64".to_string())),
+            ],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(!needs.needs_proof_block());
+    }
+
+    #[test]
+    fn test_proof_needs_nested_in_block() {
+        // HashSet::new() nested inside a Block > Let > Call
+        let expr = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "votes".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Call {
+                    func: "HashSet::new".to_string(),
+                    args: vec![],
+                }),
+            },
+            ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("votes".to_string())),
+                method: "insert".to_string(),
+                args: vec![ExecExpr::Var("id".to_string())],
+            },
+        ]);
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.has_empty_set);
+        assert!(needs.has_set_insert);
+        assert!(needs.needs_proof_block());
+    }
+
+    #[test]
+    fn test_proof_needs_nested_in_if() {
+        let expr = ExecExpr::If {
+            cond: Box::new(ExecExpr::Var("flag".to_string())),
+            then_branch: Box::new(ExecExpr::Call {
+                func: "HashSet::new".to_string(),
+                args: vec![],
+            }),
+            else_branch: Some(Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("s".to_string())),
+                method: "insert".to_string(),
+                args: vec![ExecExpr::Var("v".to_string())],
+            })),
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.has_empty_set);
+        assert!(needs.has_set_insert);
+    }
+
+    #[test]
+    fn test_proof_needs_nested_in_match() {
+        let expr = ExecExpr::Match {
+            scrutinee: Box::new(ExecExpr::Var("role".to_string())),
+            arms: vec![
+                ("Head".to_string(), ExecExpr::Call {
+                    func: "HashSet::new".to_string(),
+                    args: vec![],
+                }),
+                ("Tail".to_string(), ExecExpr::Var("existing".to_string())),
+            ],
+        };
+        let needs = ProofNeeds::analyze(&expr);
+        assert!(needs.has_empty_set);
+        assert!(!needs.has_set_insert);
+    }
+
+    #[test]
+    fn test_build_proof_block_empty_set_only() {
+        let mut needs = ProofNeeds::default();
+        needs.has_empty_set = true;
+        let block = needs.build_proof_block().unwrap();
+        match block {
+            ExecExpr::ProofBlock { stmts } => {
+                assert_eq!(stmts.len(), 1);
+                match &stmts[0] {
+                    ExecExpr::Call { func, args } => {
+                        assert_eq!(func, "lemma_empty_set_map");
+                        assert!(args.is_empty());
+                    }
+                    other => panic!("Expected Call, got {:?}", other),
+                }
+            }
+            other => panic!("Expected ProofBlock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_build_proof_block_insert_only() {
+        let mut needs = ProofNeeds::default();
+        needs.has_set_insert = true;
+        let block = needs.build_proof_block().unwrap();
+        match block {
+            ExecExpr::ProofBlock { stmts } => {
+                assert_eq!(stmts.len(), 1);
+                match &stmts[0] {
+                    ExecExpr::BroadcastUse(path) => {
+                        assert_eq!(path, "Set::lemma_set_map_insert_commute");
+                    }
+                    other => panic!("Expected BroadcastUse, got {:?}", other),
+                }
+            }
+            other => panic!("Expected ProofBlock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_build_proof_block_both() {
+        let mut needs = ProofNeeds::default();
+        needs.has_empty_set = true;
+        needs.has_set_insert = true;
+        let block = needs.build_proof_block().unwrap();
+        match block {
+            ExecExpr::ProofBlock { stmts } => {
+                assert_eq!(stmts.len(), 2);
+                // First: lemma_empty_set_map
+                assert!(matches!(&stmts[0], ExecExpr::Call { func, .. } if func == "lemma_empty_set_map"));
+                // Second: broadcast use
+                assert!(matches!(&stmts[1], ExecExpr::BroadcastUse(p) if p == "Set::lemma_set_map_insert_commute"));
+            }
+            other => panic!("Expected ProofBlock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_build_proof_block_none() {
+        let needs = ProofNeeds::default();
+        assert!(needs.build_proof_block().is_none());
+    }
+
+    #[test]
+    fn test_maybe_append_proof_block_disabled() {
+        let config = TranslatorConfig {
+            generate_proofs: false,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        let body = ExecExpr::Call {
+            func: "HashSet::new".to_string(),
+            args: vec![],
+        };
+        let result = translator.maybe_append_proof_block(body.clone());
+        // When proofs disabled, body should be returned as-is
+        match result {
+            ExecExpr::Call { func, .. } => assert_eq!(func, "HashSet::new"),
+            other => panic!("Expected original Call, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_maybe_append_proof_block_enabled() {
+        let config = TranslatorConfig {
+            generate_proofs: true,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        let body = ExecExpr::Call {
+            func: "HashSet::new".to_string(),
+            args: vec![],
+        };
+        let result = translator.maybe_append_proof_block(body);
+        // Should wrap in Block with Let, ProofBlock, Var
+        match result {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 3);
+                assert!(matches!(&stmts[0], ExecExpr::Let { pattern, .. } if pattern == "result"));
+                assert!(matches!(&stmts[1], ExecExpr::ProofBlock { .. }));
+                assert!(matches!(&stmts[2], ExecExpr::Var(name) if name == "result"));
+            }
+            other => panic!("Expected Block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_maybe_append_proof_block_no_proofs_needed() {
+        let config = TranslatorConfig {
+            generate_proofs: true,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        let body = ExecExpr::Struct {
+            name: "CState".to_string(),
+            fields: vec![("x".to_string(), ExecExpr::Literal("0u64".to_string()))],
+        };
+        let result = translator.maybe_append_proof_block(body);
+        // No proof needs -> body returned as-is
+        match result {
+            ExecExpr::Struct { name, .. } => assert_eq!(name, "CState"),
+            other => panic!("Expected original Struct, got {:?}", other),
+        }
     }
 }

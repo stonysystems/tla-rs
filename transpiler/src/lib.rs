@@ -123,6 +123,19 @@ impl Transpiler {
 
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
+        // Auto-add proof-related imports when generate_proofs is enabled
+        if self.config.translator.generate_proofs {
+            let proof_imports = [
+                "use vstd::set_lib::*;",
+                "use crate::common::collections::hashsets::clone_hashset;",
+            ];
+            for imp in &proof_imports {
+                let imp_str = imp.to_string();
+                if !sorted_imports.contains(&imp_str) {
+                    sorted_imports.push(imp_str);
+                }
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
@@ -171,6 +184,15 @@ impl Transpiler {
                     output.push_str(&generated.code);
                     output.push('\n');
                 }
+            }
+        }
+
+        // Generate proof helper lemmas if generate_proofs is enabled
+        if self.config.translator.generate_proofs {
+            let helpers = Self::generate_proof_helper_lemmas();
+            if !helpers.is_empty() {
+                output.push_str(&helpers);
+                output.push('\n');
             }
         }
 
@@ -247,6 +269,19 @@ impl Transpiler {
 
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
+        // Auto-add proof-related imports when generate_proofs is enabled
+        if self.config.translator.generate_proofs {
+            let proof_imports = [
+                "use vstd::set_lib::*;",
+                "use crate::common::collections::hashsets::clone_hashset;",
+            ];
+            for imp in &proof_imports {
+                let imp_str = imp.to_string();
+                if !sorted_imports.contains(&imp_str) {
+                    sorted_imports.push(imp_str);
+                }
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
@@ -299,6 +334,15 @@ impl Transpiler {
             }
         }
 
+        // Generate proof helper lemmas if generate_proofs is enabled
+        if self.config.translator.generate_proofs {
+            let helpers = Self::generate_proof_helper_lemmas();
+            if !helpers.is_empty() {
+                output.push_str(&helpers);
+                output.push('\n');
+            }
+        }
+
         // Collect all translated functions
         let mut exec_functions = Vec::new();
 
@@ -342,6 +386,26 @@ impl Transpiler {
         output.push_str("} // verus!\n");
 
         Ok(output)
+    }
+
+    /// Generate proof helper lemma functions that are emitted at the top of
+    /// the generated file when `generate_proofs` is enabled.
+    ///
+    /// Currently emits:
+    /// - `lemma_empty_set_map()`: proves `Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()`
+    fn generate_proof_helper_lemmas() -> String {
+        let mut output = String::new();
+        output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
+        output.push_str("proof fn lemma_empty_set_map()\n");
+        output.push_str("ensures\n");
+        output.push_str("    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n");
+        output.push_str("{\n");
+        output.push_str("    let f = |x: u64| x as int;\n");
+        output.push_str("    let s = Set::<u64>::empty().map(f);\n");
+        output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
+        output.push_str("    }\n");
+        output.push_str("}\n\n");
+        output
     }
 
     /// Generate wrapper methods for functions that take the impl type as first parameter.
@@ -813,5 +877,167 @@ mod tests {
             "Should NOT generate impl CState block when disabled: {}",
             result
         );
+    }
+
+    #[test]
+    fn test_generate_proofs_emits_helper_lemma() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn LInit(s: Set<int>) -> bool {
+                    s =~= Set::<int>::empty()
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                LInit(-);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Should emit the helper lemma
+        assert!(
+            result.contains("lemma_empty_set_map"),
+            "Should contain lemma_empty_set_map when generate_proofs=true: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generate_proofs_disabled_no_helper_lemma() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn LInit(s: Set<int>) -> bool {
+                    s =~= Set::<int>::empty()
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                LInit(-);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Should NOT emit the helper lemma
+        assert!(
+            !result.contains("lemma_empty_set_map"),
+            "Should NOT contain lemma_empty_set_map when generate_proofs=false: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generate_proofs_auto_imports() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: true,
+                ..Default::default()
+            },
+            custom_imports: vec!["use vstd::prelude::*;".to_string()],
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn LTest(x: int) -> bool { x > 0 }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                LTest(+);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Should auto-add proof-related imports
+        assert!(
+            result.contains("use vstd::set_lib::*;"),
+            "Should auto-import vstd::set_lib when generate_proofs=true: {}",
+            result
+        );
+        assert!(
+            result.contains("use crate::common::collections::hashsets::clone_hashset;"),
+            "Should auto-import clone_hashset when generate_proofs=true: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generate_proofs_no_duplicate_imports() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: true,
+                ..Default::default()
+            },
+            custom_imports: vec![
+                "use vstd::prelude::*;".to_string(),
+                "use vstd::set_lib::*;".to_string(), // Already present
+            ],
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn LTest(x: int) -> bool { x > 0 }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                LTest(+);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        // Count occurrences of set_lib import — should be exactly 1
+        let count = result.matches("use vstd::set_lib::*;").count();
+        assert_eq!(
+            count, 1,
+            "Should not duplicate set_lib import, found {} occurrences",
+            count
+        );
+    }
+
+    #[test]
+    fn test_generate_proof_helper_lemmas_content() {
+        let output = Transpiler::generate_proof_helper_lemmas();
+
+        // Verify structure of the emitted lemma
+        assert!(output.contains("proof fn lemma_empty_set_map()"));
+        assert!(output.contains("ensures"));
+        assert!(output.contains("Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()"));
+        assert!(output.contains("assert forall|y: int|"));
     }
 }

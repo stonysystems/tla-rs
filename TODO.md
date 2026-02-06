@@ -1796,39 +1796,46 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] When true, transpiler will emit `proof { ... }` blocks (implementation in 12.2.2+)
 - [x] When false, existing behavior (emit assumes)
 
-**12.2.2: Generate validity proofs (Category 1)**
+**12.2.7: Generate proof helper lemmas** ← DONE
+- [x] Transpiler emits `lemma_empty_set_map()` when `generate_proofs=true` and HashSet::new() is used
+- [x] Transpiler emits `proof { lemma_empty_set_map(); }` block after struct construction with empty sets
+- [x] Transpiler emits `proof { broadcast use Set::lemma_set_map_insert_commute; }` after HashSet::insert
+- [x] Add `use vstd::set_lib::*;` to custom_imports when `generate_proofs=true`
+- [x] ProofNeeds::analyze() scans ExecExpr tree to detect HashSet/Vec operations
+- [x] maybe_append_proof_block() wraps function body with proof block when needed
+- [ ] Transpiler emits `lemma_set_map_remove_commute()` helper + call when HashSet::remove is used (deferred — needs per-call arguments)
+- Note: For simple protocols (TwoPhase, Paxos, LeaderElection), validity (12.2.2) and spec refinement
+  (12.2.3) proofs are automatic — Verus proves them without explicit proof blocks. Only the collection
+  mapping lemmas are needed.
+
+**12.2.2: Generate validity proofs (Category 1)** — DEFERRED (automatic for simple protocols)
 - [ ] In `translator/mod.rs`, add `generate_validity_proof()` function
 - [ ] For each field of the constructed result, generate assertion matching valid() predicate
 - [ ] Handle: primitive bounds, collection length, nested struct valid(), enum variant valid()
 - [ ] Use the type registry (already parsed) to look up valid() definitions
 
-**12.2.3: Generate spec refinement proofs (Category 2)**
+**12.2.3: Generate spec refinement proofs (Category 2)** — DEFERRED (automatic for simple protocols)
 - [ ] In `translator/mod.rs`, add `generate_refinement_proof()` function
 - [ ] Parse spec predicate body → extract individual conjuncts
 - [ ] For each conjunct, generate `assert` linking exec construction to spec via View (`@`)
 - [ ] Handle `=~=`, `==`, field projections, conditional branches (if/else)
 - [ ] Handle collection operations: `Set::insert`, `Map::insert`, `Seq::push` view mappings
 
-**12.2.4: Generate precondition proofs (Category 3)**
+**12.2.4: Generate precondition proofs (Category 3)** — DEFERRED (RSL-specific)
 - [ ] Before each function call, emit assertion proving callee's `requires` clause
 - [ ] After each struct construction, emit assertion proving intermediate validity
 - [ ] Use caller's `requires` + prior assertions as proof context
 
-**12.2.5: Generate collection proof helpers (Category 4)**
+**12.2.5: Generate collection proof helpers (Category 4)** — DEFERRED (RSL-specific)
 - [ ] When transpiler generates a HashMap filter loop, emit call to verified `hashmap_filter()` helper
 - [ ] When transpiler generates HashSet iteration, emit proper invariants with `broadcast use` lemmas
 - [ ] Create verified helper library (`common/collections/`) with proven contracts:
   - `hashmap_filter(m, pred) -> HashMap` with `ensures result@ == m@.restrict(pred)`
   - `hashmap_retain(m, pred) -> HashMap` with proven filter semantics
 
-**12.2.6: Handle unreachable arms (Category 5)**
+**12.2.6: Handle unreachable arms (Category 5)** — DEFERRED (RSL-specific)
 - [ ] Generate `proof { assert(false) by { /* from requires */ } }` instead of `assume(false)`
 - [ ] Extract contradiction from function's `requires` clause
-
-**12.2.7: Generate proof helper lemmas**
-- [ ] Transpiler emits `lemma_empty_set_map()` when needed (once per file)
-- [ ] Transpiler emits `broadcast use Set::lemma_set_map_insert_commute` in proof blocks
-- [ ] Transpiler emits `broadcast use vstd::std_specs::hash::group_hash_axioms` where needed
 
 #### Phase 12.3: Regenerate Simple Protocols (TwoPhase, Paxos, LeaderElection)
 
