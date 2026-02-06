@@ -1839,9 +1839,49 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 
 #### Phase 12.3: Regenerate Simple Protocols (TwoPhase, Paxos, LeaderElection)
 
+**Prerequisite transpiler fixes** — Issues found when comparing fresh transpiler output against hand-verified reference code. These must be fixed before regeneration can produce Verus-verifiable code.
+
+**12.3.0a: Fix HashSet mutation in struct construction** ← DONE
+- [x] When a struct field is assigned `s.field.insert(val)` or `s.field.remove(val)`, the transpiler
+  generates: `let mut __field = clone_hashset(&s.field); __field.insert(val);` and uses `__field` in
+  the struct constructor. Fixed via `extract_set_mutations_from_struct()`.
+- [x] For non-mutated HashSet fields from `&self`, generates `clone_hashset(&s.field)` instead of `s.field`.
+  Fixed via `clone_input_field_access()`.
+- [x] Stopped using `..s.clone()` spread — converts to explicit `Struct` with `clone_hashset` for all
+  input field accesses when mutations are present or when fields reference input params.
+- [x] Fixed proof block formatting: `proof { stmt; }` with spaces (was `proof{stmt};`)
+- Verified: All 6 protocols (TwoPhase, Paxos, LeaderElection, Raft, ChainReplication) produce
+  0 occurrences of `..s.clone()` in transpiler output.
+- Affects: All protocols
+
+**12.3.0b: Fix u64 parameter view in ensures clauses**
+- [ ] For `&u64` parameters, generates `*r as int` in ensures (not `r@`, since `u64@ == u64` not `int`)
+- [ ] Detect when ensures clause references a `&u64` param and apply `*param as int` conversion
+- Affects: All protocols with u64 parameters
+
+**12.3.0c: Fix integer literal type suffixes**
+- [ ] Emit `0u64` instead of bare `0` when constructing fields of type u64
+- Affects: All protocols (CInit functions)
+
+**12.3.0d: Emit spec preconditions as requires clauses**
+- [ ] Parse spec function `recommends` clauses and translate to exec `requires`
+- [ ] Add arithmetic overflow guards (`field < u64::MAX` for increment operations)
+- [ ] Add enum variant preconditions (`s.tm_state is Init`) from spec
+- Affects: All protocols
+
+**12.3.0e: Fix proof block formatting**
+- [ ] Use `proof { stmt; }` with spaces (not `proof{stmt}`)
+- [ ] Generate single-line `proof { ... }` for simple blocks, multi-line for complex
+- Minor formatting issue
+
+**12.3.0f: Generate `lemma_set_map_remove_commute` proof helper**
+- [ ] Emit proof helper when `generate_proofs=true` and `HashSet::remove()` is used
+- [ ] This was deferred in 12.2.7 as "needs per-call arguments" — now needed for LeaderElection
+- Affects: LeaderElection, ChainReplication
+
 **12.3.1: Regenerate TwoPhase with proofs**
 - [ ] Run: `cd transpiler && cargo run -- ... -c twophase_transpile.toml -o twophase_gen.rs`
-- [ ] Compare output against `generated_old/TwoPhase/twophase_gen.rs` (should be similar)
+- [ ] Compare output against `generated_reference/TwoPhase/twophase_gen.rs` (should be similar)
 - [ ] Run Verus — target: 0 assumes, 0 errors
 
 **12.3.2: Regenerate Paxos with proofs**

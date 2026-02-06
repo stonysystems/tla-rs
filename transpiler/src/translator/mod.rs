@@ -1279,6 +1279,174 @@ impl Translator {
         }
     }
 
+    /// Extract HashSet/HashMap mutations from struct field expressions.
+    ///
+    /// In spec code, `Set::insert` returns a new set (functional style).
+    /// In exec code, `HashSet::insert` mutates in place (`&mut self`).
+    /// This method detects struct fields like `field: receiver.insert(val)`
+    /// and transforms them into:
+    ///   `let mut __field = clone_hashset(&receiver); __field.insert(val);`
+    /// with the field value replaced by `__field`.
+    ///
+    /// Also handles `.remove()` mutations similarly.
+    ///
+    /// For non-mutated fields that are field accesses on input parameters
+    /// (e.g., `s.rm_state`), wraps them with `clone_hashset()` when the struct
+    /// also contains mutated HashSet fields (heuristic: if any field is mutated,
+    /// other field-access-on-input fields are likely also collection types).
+    fn extract_set_mutations_from_struct(
+        &self,
+        fields: Vec<(String, ExecExpr)>,
+        ctx: &TransformContext,
+    ) -> (Vec<ExecExpr>, Vec<(String, ExecExpr)>) {
+        let mut pre_stmts: Vec<ExecExpr> = Vec::new();
+        let mut new_fields: Vec<(String, ExecExpr)> = Vec::new();
+        let mut has_mutations = false;
+
+        // First pass: check if any field has a set mutation
+        for (_, ref expr) in &fields {
+            if Self::is_set_mutation(expr) {
+                has_mutations = true;
+                break;
+            }
+        }
+
+        for (fname, fexpr) in fields {
+            if let Some((recv, method, args)) = Self::extract_mutation_info(&fexpr) {
+                // This field is `receiver.insert(val)` or `receiver.remove(val)`
+                // Generate: let mut __fname = clone_hashset(&receiver); __fname.method(args);
+                let tmp_name = format!("__{}", fname);
+
+                // clone_hashset(&receiver)
+                let clone_call = ExecExpr::Call {
+                    func: "clone_hashset".to_string(),
+                    args: vec![ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(recv),
+                    }],
+                };
+
+                // let mut __field = clone_hashset(&receiver);
+                pre_stmts.push(ExecExpr::Let {
+                    pattern: format!("mut {}", tmp_name),
+                    ty: None,
+                    value: Box::new(clone_call),
+                });
+
+                // __field.insert(val) or __field.remove(val)
+                // Dereference the argument if it comes from a reference parameter
+                let deref_args: Vec<ExecExpr> = args
+                    .into_iter()
+                    .map(|a| match &a {
+                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(a),
+                        },
+                        ExecExpr::Clone(inner) => {
+                            match inner.as_ref() {
+                                ExecExpr::Var(_) => {
+                                    // For cloned input vars, dereference instead of clone
+                                    ExecExpr::Unary {
+                                        op: "*".to_string(),
+                                        expr: inner.clone(),
+                                    }
+                                }
+                                _ => a,
+                            }
+                        }
+                        _ => a,
+                    })
+                    .collect();
+
+                pre_stmts.push(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(tmp_name.clone())),
+                    method: method,
+                    args: deref_args,
+                });
+
+                new_fields.push((fname, ExecExpr::Var(tmp_name)));
+            } else if has_mutations {
+                // This is a non-mutated field. If it's a field access on an input param,
+                // wrap with clone_hashset (for HashSet fields) or .clone() (for others).
+                let new_expr = self.clone_input_field_access(fexpr, ctx);
+                new_fields.push((fname, new_expr));
+            } else {
+                new_fields.push((fname, fexpr));
+            }
+        }
+
+        (pre_stmts, new_fields)
+    }
+
+    /// Check if an ExecExpr is a set/map mutation (insert or remove method call)
+    fn is_set_mutation(expr: &ExecExpr) -> bool {
+        matches!(
+            expr,
+            ExecExpr::MethodCall { method, .. }
+            if method == "insert" || method == "remove"
+        )
+    }
+
+    /// Extract mutation info from an ExecExpr: (receiver, method, args)
+    fn extract_mutation_info(expr: &ExecExpr) -> Option<(ExecExpr, String, Vec<ExecExpr>)> {
+        match expr {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } if method == "insert" || method == "remove" => {
+                Some((*receiver.clone(), method.clone(), args.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    /// For field accesses on input parameters (e.g., `s.rm_state`), wrap with
+    /// `clone_hashset()` for collection fields or `.clone()` for other fields.
+    /// Uses a heuristic: if the expression is a field access on an input,
+    /// use clone_hashset (safe because non-collection types don't have this issue).
+    fn clone_input_field_access(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
+        match &expr {
+            // Field access on input: s.field -> clone_hashset(&s.field)
+            ExecExpr::Field(base, _) => {
+                if Self::is_input_var(base, ctx) {
+                    ExecExpr::Call {
+                        func: "clone_hashset".to_string(),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(expr),
+                        }],
+                    }
+                } else {
+                    expr
+                }
+            }
+            // Already cloned input var: s.clone() -> clone_hashset(&s.field) won't apply
+            // Clone of field access: s.field.clone() -> already handled
+            ExecExpr::Clone(inner) => {
+                match inner.as_ref() {
+                    ExecExpr::Field(base, _) if Self::is_input_var(base, ctx) => {
+                        // Replace .clone() with clone_hashset(&...)
+                        ExecExpr::Call {
+                            func: "clone_hashset".to_string(),
+                            args: vec![ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: inner.clone(),
+                            }],
+                        }
+                    }
+                    _ => expr,
+                }
+            }
+            _ => expr,
+        }
+    }
+
+    /// Check if an expression is a variable reference to an input parameter
+    fn is_input_var(expr: &ExecExpr, ctx: &TransformContext) -> bool {
+        matches!(expr, ExecExpr::Var(name) if ctx.is_input(name))
+    }
+
     /// Check if an expression only references input parameters (or literals/constants).
     /// Such expressions are preconditions and should not be emitted as executable code.
     /// Returns true if the expression is a "pure input" expression that:
@@ -5031,10 +5199,24 @@ impl Translator {
                         Ok((fname.clone(), expr))
                     })
                     .collect();
-                Ok(ExecExpr::Struct {
+
+                // Post-process: extract HashSet mutations from struct fields
+                let (pre_stmts, new_fields) =
+                    self.extract_set_mutations_from_struct(translated_fields?, ctx);
+
+                let struct_expr = ExecExpr::Struct {
                     name: exec_name,
-                    fields: translated_fields?,
-                })
+                    fields: new_fields,
+                };
+
+                if pre_stmts.is_empty() {
+                    Ok(struct_expr)
+                } else {
+                    // Wrap in block: pre_stmts + struct_expr
+                    let mut block = pre_stmts;
+                    block.push(struct_expr);
+                    Ok(ExecExpr::Block(block))
+                }
             }
 
             Expr::StructUpdate { base, fields, name } => {
@@ -5055,11 +5237,38 @@ impl Translator {
                 } else {
                     "Unknown".to_string()
                 };
-                Ok(ExecExpr::StructUpdate {
-                    name: struct_name,
-                    base: Box::new(base_expr),
-                    fields: translated_fields?,
-                })
+
+                // Post-process: extract HashSet mutations from struct fields
+                let translated_fields = translated_fields?;
+                let has_mutations = translated_fields
+                    .iter()
+                    .any(|(_, expr)| Self::is_set_mutation(expr));
+
+                if has_mutations {
+                    // When there are set mutations, convert StructUpdate to explicit Struct
+                    // to avoid issues with ..base.clone() and HashSet fields
+                    let (pre_stmts, new_fields) =
+                        self.extract_set_mutations_from_struct(translated_fields, ctx);
+
+                    let struct_expr = ExecExpr::Struct {
+                        name: struct_name,
+                        fields: new_fields,
+                    };
+
+                    if pre_stmts.is_empty() {
+                        Ok(struct_expr)
+                    } else {
+                        let mut block = pre_stmts;
+                        block.push(struct_expr);
+                        Ok(ExecExpr::Block(block))
+                    }
+                } else {
+                    Ok(ExecExpr::StructUpdate {
+                        name: struct_name,
+                        base: Box::new(base_expr),
+                        fields: translated_fields,
+                    })
+                }
             }
 
             // Binary operators from Expr::Binary
@@ -6121,13 +6330,52 @@ impl Translator {
                     }
                 }
 
-                if let Some(base) = base_input {
-                    // Struct update syntax: S { field: value, ..base.clone() }
-                    results.push(ExecExpr::StructUpdate {
+                // Post-process: extract HashSet mutations from struct fields
+                let has_mutations = translated_fields
+                    .iter()
+                    .any(|(_, expr)| Self::is_set_mutation(expr));
+
+                if has_mutations {
+                    let (pre_stmts, new_fields) =
+                        self.extract_set_mutations_from_struct(translated_fields, ctx);
+                    let struct_expr = ExecExpr::Struct {
                         name: struct_name,
-                        base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(base)))),
-                        fields: translated_fields,
+                        fields: new_fields,
+                    };
+                    if pre_stmts.is_empty() {
+                        results.push(struct_expr);
+                    } else {
+                        let mut block = pre_stmts;
+                        block.push(struct_expr);
+                        results.push(ExecExpr::Block(block));
+                    }
+                } else if let Some(base) = base_input {
+                    // Check if any field is a field access on an input param
+                    // If so, wrap with clone_hashset and use explicit Struct (not StructUpdate)
+                    let has_input_field_access = translated_fields.iter().any(|(_, expr)| {
+                        matches!(expr, ExecExpr::Field(b, _) if Self::is_input_var(b, ctx))
+                            || matches!(expr, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(b, _) if Self::is_input_var(b, ctx)))
                     });
+                    if has_input_field_access {
+                        // Convert to explicit Struct with clone_hashset for input field accesses
+                        let cloned_fields: Vec<_> = translated_fields
+                            .into_iter()
+                            .map(|(fname, fexpr)| {
+                                (fname, self.clone_input_field_access(fexpr, ctx))
+                            })
+                            .collect();
+                        results.push(ExecExpr::Struct {
+                            name: struct_name,
+                            fields: cloned_fields,
+                        });
+                    } else {
+                        // Struct update syntax: S { field: value, ..base.clone() }
+                        results.push(ExecExpr::StructUpdate {
+                            name: struct_name,
+                            base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(base)))),
+                            fields: translated_fields,
+                        });
+                    }
                 } else {
                     // Generate a struct literal
                     results.push(ExecExpr::Struct {
@@ -6194,18 +6442,63 @@ impl Translator {
                                     })
                                     .collect();
 
-                                if let Some(base) = base_input {
-                                    results.push(ExecExpr::StructUpdate {
-                                        name: exec_name,
-                                        base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var(
-                                            base,
-                                        )))),
-                                        fields: translated_fields?,
-                                    });
+                                // Post-process: extract HashSet mutations from struct fields
+                                let translated_fields = translated_fields?;
+                                let has_mutations = translated_fields
+                                    .iter()
+                                    .any(|(_, expr)| Self::is_set_mutation(expr));
+
+                                if has_mutations {
+                                    let (pre_stmts, new_fields) =
+                                        self.extract_set_mutations_from_struct(
+                                            translated_fields,
+                                            ctx,
+                                        );
+                                    let struct_expr = ExecExpr::Struct {
+                                        name: exec_name.clone(),
+                                        fields: new_fields,
+                                    };
+                                    if pre_stmts.is_empty() {
+                                        results.push(struct_expr);
+                                    } else {
+                                        let mut block = pre_stmts;
+                                        block.push(struct_expr);
+                                        results.push(ExecExpr::Block(block));
+                                    }
+                                } else if let Some(base) = base_input {
+                                    // Check if any field is a field access on an input param
+                                    let has_input_field_access =
+                                        translated_fields.iter().any(|(_, expr)| {
+                                            matches!(expr, ExecExpr::Field(b, _) if Self::is_input_var(b, ctx))
+                                                || matches!(expr, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(b, _) if Self::is_input_var(b, ctx)))
+                                        });
+                                    if has_input_field_access {
+                                        let cloned_fields: Vec<_> = translated_fields
+                                            .into_iter()
+                                            .map(|(fname, fexpr)| {
+                                                (
+                                                    fname,
+                                                    self.clone_input_field_access(fexpr, ctx),
+                                                )
+                                            })
+                                            .collect();
+                                        results.push(ExecExpr::Struct {
+                                            name: exec_name,
+                                            fields: cloned_fields,
+                                        });
+                                    } else {
+                                        results.push(ExecExpr::StructUpdate {
+                                            name: exec_name,
+                                            base: Box::new(ExecExpr::Clone(Box::new(
+                                                ExecExpr::Var(base),
+                                            ))),
+                                            fields: translated_fields,
+                                        });
+                                    }
                                 } else {
                                     results.push(ExecExpr::Struct {
                                         name: exec_name,
-                                        fields: translated_fields?,
+                                        fields: translated_fields,
                                     });
                                 }
                                 continue;
@@ -13603,5 +13896,224 @@ mod tests {
             ExecExpr::Struct { name, .. } => assert_eq!(name, "CState"),
             other => panic!("Expected original Struct, got {:?}", other),
         }
+    }
+
+    // ======== Phase 12.3.0a: HashSet mutation extraction tests ========
+
+    #[test]
+    fn test_extract_set_mutations_insert() {
+        let translator = Translator::default();
+        let ctx = TransformContext {
+            config: &TranslatorConfig::default(),
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "r".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Field: tm_prepared: s.tm_prepared.insert(r)
+        let fields = vec![
+            (
+                "tm_prepared".to_string(),
+                ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Field(
+                        Box::new(ExecExpr::Var("s".to_string())),
+                        "tm_prepared".to_string(),
+                    )),
+                    method: "insert".to_string(),
+                    args: vec![ExecExpr::Var("r".to_string())],
+                },
+            ),
+            (
+                "rm_state".to_string(),
+                ExecExpr::Field(
+                    Box::new(ExecExpr::Var("s".to_string())),
+                    "rm_state".to_string(),
+                ),
+            ),
+        ];
+
+        let (pre_stmts, new_fields) =
+            translator.extract_set_mutations_from_struct(fields, &ctx);
+
+        // Should extract 2 pre-stmts: let mut __tm_prepared = clone_hashset(...); __tm_prepared.insert(...)
+        assert_eq!(pre_stmts.len(), 2, "Expected 2 pre-statements for mutation extraction");
+
+        // First pre-stmt: let mut __tm_prepared = clone_hashset(&s.tm_prepared)
+        match &pre_stmts[0] {
+            ExecExpr::Let { pattern, .. } => {
+                assert!(pattern.contains("__tm_prepared"), "Expected __tm_prepared, got {}", pattern);
+            }
+            other => panic!("Expected Let, got {:?}", other),
+        }
+
+        // Second pre-stmt: __tm_prepared.insert(...)
+        match &pre_stmts[1] {
+            ExecExpr::MethodCall { receiver, method, .. } => {
+                assert_eq!(method, "insert");
+                match receiver.as_ref() {
+                    ExecExpr::Var(name) => assert_eq!(name, "__tm_prepared"),
+                    other => panic!("Expected Var(__tm_prepared), got {:?}", other),
+                }
+            }
+            other => panic!("Expected MethodCall, got {:?}", other),
+        }
+
+        // tm_prepared field should now be Var(__tm_prepared)
+        assert_eq!(new_fields[0].0, "tm_prepared");
+        match &new_fields[0].1 {
+            ExecExpr::Var(name) => assert_eq!(name, "__tm_prepared"),
+            other => panic!("Expected Var(__tm_prepared), got {:?}", other),
+        }
+
+        // rm_state field should be wrapped with clone_hashset (since has_mutations is true)
+        assert_eq!(new_fields[1].0, "rm_state");
+        match &new_fields[1].1 {
+            ExecExpr::Call { func, .. } => assert_eq!(func, "clone_hashset"),
+            other => panic!("Expected clone_hashset Call, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_extract_set_mutations_no_mutations() {
+        let translator = Translator::default();
+        let ctx = TransformContext {
+            config: &TranslatorConfig::default(),
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // No mutations — just field copies
+        let fields = vec![
+            (
+                "rm_state".to_string(),
+                ExecExpr::Field(
+                    Box::new(ExecExpr::Var("s".to_string())),
+                    "rm_state".to_string(),
+                ),
+            ),
+            (
+                "tm_state".to_string(),
+                ExecExpr::Literal("CCommitted".to_string()),
+            ),
+        ];
+
+        let (pre_stmts, new_fields) =
+            translator.extract_set_mutations_from_struct(fields, &ctx);
+
+        // No mutations → no pre-stmts, fields unchanged
+        assert!(pre_stmts.is_empty());
+        assert_eq!(new_fields.len(), 2);
+        // Fields should NOT be wrapped with clone_hashset (no mutations detected)
+        match &new_fields[0].1 {
+            ExecExpr::Field(_, _) => {} // still a raw field access
+            other => panic!("Expected Field, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_extract_set_mutations_remove() {
+        let translator = Translator::default();
+        let ctx = TransformContext {
+            config: &TranslatorConfig::default(),
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "node".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        let fields = vec![(
+            "electing".to_string(),
+            ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("s".to_string())),
+                    "electing".to_string(),
+                )),
+                method: "remove".to_string(),
+                args: vec![ExecExpr::Var("node".to_string())],
+            },
+        )];
+
+        let (pre_stmts, new_fields) =
+            translator.extract_set_mutations_from_struct(fields, &ctx);
+
+        // Should extract: let mut __electing = clone_hashset(...); __electing.remove(...)
+        assert_eq!(pre_stmts.len(), 2);
+        assert_eq!(new_fields[0].0, "electing");
+        match &new_fields[0].1 {
+            ExecExpr::Var(name) => assert_eq!(name, "__electing"),
+            other => panic!("Expected Var(__electing), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_clone_input_field_access() {
+        let translator = Translator::default();
+        let ctx = TransformContext {
+            config: &TranslatorConfig::default(),
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+        };
+
+        // Field access on input: s.rm_state -> clone_hashset(&s.rm_state)
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "rm_state".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "clone_hashset");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("Expected clone_hashset Call, got {:?}", other),
+        }
+
+        // Non-input field access: x.field -> unchanged
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("x".to_string())),
+            "field".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        match result {
+            ExecExpr::Field(_, _) => {} // unchanged
+            other => panic!("Expected Field, got {:?}", other),
+        }
+
+        // Literal -> unchanged
+        let expr = ExecExpr::Literal("42".to_string());
+        let result = translator.clone_input_field_access(expr, &ctx);
+        match result {
+            ExecExpr::Literal(_) => {} // unchanged
+            other => panic!("Expected Literal, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_is_set_mutation() {
+        assert!(Translator::is_set_mutation(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("x".to_string())),
+            method: "insert".to_string(),
+            args: vec![],
+        }));
+        assert!(Translator::is_set_mutation(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("x".to_string())),
+            method: "remove".to_string(),
+            args: vec![],
+        }));
+        assert!(!Translator::is_set_mutation(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("x".to_string())),
+            method: "push".to_string(),
+            args: vec![],
+        }));
+        assert!(!Translator::is_set_mutation(&ExecExpr::Var("x".to_string())));
     }
 }

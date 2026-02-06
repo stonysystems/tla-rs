@@ -568,23 +568,32 @@ impl Printer {
             }
 
             ExecExpr::ProofBlock { stmts } => {
-                // Verus proof blocks: proof{stmt};
-                self.write("proof{");
-                // For single-statement proof blocks, keep it compact
-                if stmts.len() == 1 {
-                    self.print_expr(&stmts[0]);
-                } else {
-                    self.newline();
-                    self.current_indent += 1;
-                    for stmt in stmts {
-                        self.indent();
-                        self.print_expr(stmt);
-                        self.newline();
-                    }
-                    self.current_indent -= 1;
+                // Verus proof blocks: proof { stmt; }
+                self.write("proof {");
+                self.newline();
+                self.current_indent += 1;
+                for stmt in stmts {
                     self.indent();
+                    self.print_expr(stmt);
+                    // Some statements already include their own semicolons
+                    let has_own_semicolon = matches!(
+                        stmt,
+                        ExecExpr::Let { .. }
+                            | ExecExpr::Assume(_)
+                            | ExecExpr::Assert(_)
+                            | ExecExpr::BroadcastUse(_)
+                            | ExecExpr::GhostVar { .. }
+                            | ExecExpr::Comment(_)
+                            | ExecExpr::ProofBlock { .. }
+                    );
+                    if !has_own_semicolon {
+                        self.write(";");
+                    }
+                    self.newline();
                 }
-                self.write("};");
+                self.current_indent -= 1;
+                self.indent();
+                self.write("}");
             }
 
             ExecExpr::Assume(expr) => {
@@ -812,10 +821,10 @@ mod tests {
         printer.print_expr(&expr);
         let output = printer.output;
 
-        // For single-statement proof blocks, output is compact: proof{stmt};
-        assert!(output.contains("proof{"));
+        // Proof blocks use spaced format: proof { stmt; }
+        assert!(output.contains("proof {"), "Should use 'proof {{' with space, got: {}", output);
         assert!(output.contains("seen_keys = seen_keys.insert"));
-        assert!(output.contains("};"));
+        assert!(output.contains("}"), "Should close with }}");
     }
 
     #[test]
