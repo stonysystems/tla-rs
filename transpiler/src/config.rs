@@ -124,6 +124,13 @@ pub struct TranspilerConfig {
     /// Value: list of field names to skip (e.g., ["clientIds"])
     #[serde(default)]
     pub skip_fields: HashMap<String, Vec<String>>,
+
+    /// Enum variant remapping for struct field initialization.
+    /// Maps bare spec variant names to their fully-qualified exec enum paths.
+    /// Used when spec has `s_.field is Variant` and exec needs `EnumType::Variant`.
+    /// e.g., "Init" -> "CTMState::Init", "Committed" -> "CTMState::Committed"
+    #[serde(default)]
+    pub variant_remapping: HashMap<String, String>,
 }
 
 impl TranspilerConfig {
@@ -652,5 +659,36 @@ mod tests {
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert!(!config.output.generate_proofs);
         assert!(config.output.generate_loops_for_verification);
+    }
+
+    #[test]
+    fn test_variant_remapping_config() {
+        let toml = r#"
+            [variant_remapping]
+            "Init" = "CTMState::Init"
+            "Committed" = "CTMState::Committed"
+            "Aborted" = "CTMState::Aborted"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.variant_remapping.len(), 3);
+        assert_eq!(
+            config.variant_remapping.get("Init"),
+            Some(&"CTMState::Init".to_string())
+        );
+        assert_eq!(
+            config.variant_remapping.get("Committed"),
+            Some(&"CTMState::Committed".to_string())
+        );
+        assert_eq!(
+            config.variant_remapping.get("Aborted"),
+            Some(&"CTMState::Aborted".to_string())
+        );
+    }
+
+    #[test]
+    fn test_variant_remapping_default_empty() {
+        let config = TranspilerConfig::default();
+        assert!(config.variant_remapping.is_empty());
     }
 }

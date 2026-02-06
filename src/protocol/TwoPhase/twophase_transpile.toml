@@ -19,6 +19,11 @@ nat_type = "u64"
 "LConstants" = "CConstants"
 "LTMState" = "CTMState"
 
+[variant_remapping]
+"Init" = "CTMState::Init"
+"Committed" = "CTMState::Committed"
+"Aborted" = "CTMState::Aborted"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true

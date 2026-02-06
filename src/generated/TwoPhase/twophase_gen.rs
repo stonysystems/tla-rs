@@ -23,6 +23,7 @@ ensures
     }
 }
 
+
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
     c.valid(),
@@ -39,71 +40,65 @@ ensures
         lemma_empty_set_map();
     }
     result
+
 }
 
 pub exec fn CTMRcvPrepared(s: &CState, c: &CConstants, r: &u64) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.tm_state is Init,
+    s@.tm_state is Init,
 ensures
     result.valid(),
     LTMRcvPrepared(s@, result@, c@, *r as int),
 {
-    let mut tm_prepared = clone_hashset(&s.tm_prepared);
-    tm_prepared.insert(*r);
-    let result = CState {
-        tm_prepared: tm_prepared,
-        rm_state: clone_hashset(&s.rm_state),
-        tm_state: CTMState::Init,
+    let result = {
+        let mut __tm_prepared = clone_hashset(&s.tm_prepared);
+        __tm_prepared.insert(*r);
+        CState {
+            tm_prepared: __tm_prepared,
+            rm_state: clone_hashset(&s.rm_state),
+            tm_state: CTMState::Init,
+        }
     };
     proof {
-        // Prove: result@.tm_prepared == s@.tm_prepared.insert(*r as int)
-        // clone_hashset ensures: clone@ == s.tm_prepared@
-        // insert ensures: tm_prepared@ == old(tm_prepared)@.insert(*r) == s.tm_prepared@.insert(*r)
-        // View maps: result@.tm_prepared == tm_prepared@.map(|x: u64| x as int)
-        //   == s.tm_prepared@.insert(*r).map(|x: u64| x as int)
-        // By lemma_set_map_insert_commute:
-        //   == s.tm_prepared@.map(|x: u64| x as int).insert((*r) as int)
-        //   == s@.tm_prepared.insert(*r as int)
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
+
 }
 
 pub exec fn CTMCommit(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.tm_state is Init,
+    s@.tm_state is Init,
     s@.tm_prepared == c@.rm,
 ensures
     result.valid(),
     LTMCommit(s@, result@, c@),
 {
-    let result = CState {
+CState {
         rm_state: clone_hashset(&s.rm_state),
         tm_prepared: clone_hashset(&s.tm_prepared),
         tm_state: CTMState::Committed,
-    };
-    result
+    }
 }
 
 pub exec fn CTMAbort(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.tm_state is Init,
+    s@.tm_state is Init,
 ensures
     result.valid(),
     LTMAbort(s@, result@, c@),
 {
-    let result = CState {
+CState {
         rm_state: clone_hashset(&s.rm_state),
         tm_prepared: clone_hashset(&s.tm_prepared),
         tm_state: CTMState::Aborted,
-    };
-    result
+    }
 }
 
 } // verus!

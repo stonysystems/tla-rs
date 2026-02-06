@@ -20,6 +20,11 @@ nat_type = "u64"
 "LServerRole" = "CServerRole"
 "LLogEntry" = "CLogEntry"
 
+[variant_remapping]
+"Follower" = "CServerRole::Follower"
+"Candidate" = "CServerRole::Candidate"
+"Leader" = "CServerRole::Leader"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true

@@ -1880,20 +1880,39 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
 - [x] 13 new tests covering precondition extraction, overflow guards, full pipeline, requires string formatting
 - Affects: All protocols (TwoPhase, Paxos, Raft, LeaderElection, ChainReplication)
 
-**12.3.0e: Fix proof block formatting**
-- [ ] Use `proof { stmt; }` with spaces (not `proof{stmt}`)
-- [ ] Generate single-line `proof { ... }` for simple blocks, multi-line for complex
-- Minor formatting issue
+**12.3.0e: Fix proof block formatting** ✅ (already fixed in 12.3.0a)
+- [x] Use `proof { stmt; }` with spaces (not `proof{stmt}`) — printer already uses `"proof {"` with space
+- [x] Generate single-line `proof { ... }` for simple blocks, multi-line for complex — printer handles both
+- Already resolved in 12.3.0a and printer/mod.rs ProofBlock formatting
 
 **12.3.0f: Generate `lemma_set_map_remove_commute` proof helper**
 - [ ] Emit proof helper when `generate_proofs=true` and `HashSet::remove()` is used
 - [ ] This was deferred in 12.2.7 as "needs per-call arguments" — now needed for LeaderElection
 - Affects: LeaderElection, ChainReplication
 
-**12.3.1: Regenerate TwoPhase with proofs**
-- [ ] Run: `cd transpiler && cargo run -- ... -c twophase_transpile.toml -o twophase_gen.rs`
-- [ ] Compare output against `generated_reference/TwoPhase/twophase_gen.rs` (should be similar)
-- [ ] Run Verus — target: 0 assumes, 0 errors
+**12.3.0g: Add enum variant qualification via `variant_remapping` config** ✅
+- [x] Added `variant_remapping` field to `TranspilerConfig` (config.rs) and `TranslatorConfig` (translator/mod.rs)
+- [x] Maps bare spec variant names to fully-qualified exec enum paths (e.g., `"Init" → "CTMState::Init"`)
+- [x] Pattern 3b (`s_.field is Variant`) now checks `variant_remapping` before falling back to `translate_name()`
+- [x] Wired through `load_config()` in main.rs
+- [x] Added `[variant_remapping]` sections to TwoPhase and Raft TOML configs
+- [x] 2 config tests + 2 translator tests (variant_remapping, fallback)
+- Affects: TwoPhase (CTMState), Raft (CServerRole)
+
+**12.3.0h: Add `@` view operator in spec-level preconditions** ✅
+- [x] Added `expr_to_view_requires_string()` method — adds `@` to struct-type input params in field access
+- [x] Added `expr_to_view_simple_string()` helper — detects `Expr::Field(Expr::Ident(param), field)` and emits `param@.field`
+- [x] `extract_body_preconditions()` identifies struct-type params via `Type::Named` and passes as `view_params`
+- [x] Generates `s@.tm_prepared == c@.rm` instead of `(s.tm_prepared == c.rm)`
+- [x] Overflow guards (exec-level) remain without `@` — `s.count < u64::MAX` stays correct
+- [x] 4 translator tests (view string with/without struct params, both params, is-no-view)
+- Affects: All protocols with spec-level preconditions (TwoPhase: `s@.tm_prepared == c@.rm`)
+
+**12.3.1: Regenerate TwoPhase with proofs** ✅
+- [x] Ran transpiler: `cd transpiler && cargo run -- -i .../twophase.rs -a .../twophase.automan -c .../twophase_transpile.toml -o .../twophase_gen.rs`
+- [x] Output matches reference (minor cosmetic diffs: block wrapping, proof comments)
+- [x] Verus: 583 verified, 0 errors, **0 assumes** in twophase_gen.rs
+- [x] First protocol fully regenerated from transpiler with zero manual edits
 
 **12.3.2: Regenerate Paxos with proofs**
 - [ ] Run transpiler on Paxos spec

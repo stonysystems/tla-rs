@@ -65,6 +65,10 @@ pub struct TranslatorConfig {
     pub int_type: String,
     /// Rust type to use for spec `nat` type (default: "u64")
     pub nat_type: String,
+    /// Enum variant remapping for struct field initialization.
+    /// Maps bare spec variant names to their fully-qualified exec enum paths.
+    /// e.g., "Init" -> "CTMState::Init", "Committed" -> "CTMState::Committed"
+    pub variant_remapping: HashMap<String, String>,
 }
 
 impl Default for TranslatorConfig {
@@ -84,6 +88,7 @@ impl Default for TranslatorConfig {
             generate_proofs: false,
             int_type: "i64".to_string(),
             nat_type: "u64".to_string(),
+            variant_remapping: HashMap::new(),
         }
     }
 }
@@ -4274,11 +4279,23 @@ impl Translator {
     ) -> Vec<String> {
         let mut preconditions = Vec::new();
 
+        // Identify struct-type input params that need `@` view operator in requires clauses.
+        // Spec expressions reference spec types (LState, LConstants) but exec requires
+        // clauses operate on exec types (CState, CConstants), so field access needs `@`.
+        let view_params: HashSet<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .filter(|p| ctx.is_input(&p.name) && matches!(&p.ty, Type::Named(_)))
+            .map(|p| p.name.clone())
+            .collect();
+
         // Only extract from top-level conjunctions
         if let Expr::Conjunction(parts) = &func.spec_fn.body {
             for part in parts {
                 if Self::is_input_only_expression(part, ctx) {
-                    preconditions.push(self.expr_to_requires_string(part));
+                    preconditions
+                        .push(self.expr_to_view_requires_string(part, &view_params));
                 }
             }
         }
@@ -4440,6 +4457,133 @@ impl Translator {
                     self.expr_to_requires_string(rhs)
                 )
             }
+            _ => self.expr_to_simple_string(expr),
+        }
+    }
+
+    /// Convert an expression to a requires clause string, adding `@` view operator
+    /// to struct-type parameter identifiers when they appear in field access positions.
+    /// `view_params` is the set of parameter names that need `@` for field access.
+    fn expr_to_view_requires_string(
+        &self,
+        expr: &Expr,
+        view_params: &HashSet<String>,
+    ) -> String {
+        match expr {
+            Expr::Is(expr, variant) => {
+                // `is` variant checks work on exec types directly (no @ needed)
+                let base = self.expr_to_view_simple_string(expr, view_params);
+                format!("{} is {}", base, variant)
+            }
+            Expr::Eq(lhs, rhs) => {
+                format!(
+                    "{} == {}",
+                    self.expr_to_view_requires_string(lhs, view_params),
+                    self.expr_to_view_requires_string(rhs, view_params)
+                )
+            }
+            Expr::Ne(lhs, rhs) => {
+                format!(
+                    "({} != {})",
+                    self.expr_to_view_requires_string(lhs, view_params),
+                    self.expr_to_view_requires_string(rhs, view_params)
+                )
+            }
+            Expr::Lt(lhs, rhs) => {
+                format!(
+                    "({} < {})",
+                    self.expr_to_view_requires_string(lhs, view_params),
+                    self.expr_to_view_requires_string(rhs, view_params)
+                )
+            }
+            Expr::Le(lhs, rhs) => {
+                format!(
+                    "({} <= {})",
+                    self.expr_to_view_requires_string(lhs, view_params),
+                    self.expr_to_view_requires_string(rhs, view_params)
+                )
+            }
+            Expr::Gt(lhs, rhs) => {
+                format!(
+                    "({} > {})",
+                    self.expr_to_view_requires_string(lhs, view_params),
+                    self.expr_to_view_requires_string(rhs, view_params)
+                )
+            }
+            Expr::Ge(lhs, rhs) => {
+                format!(
+                    "({} >= {})",
+                    self.expr_to_view_requires_string(lhs, view_params),
+                    self.expr_to_view_requires_string(rhs, view_params)
+                )
+            }
+            Expr::Conjunction(parts) => parts
+                .iter()
+                .map(|p| self.expr_to_view_requires_string(p, view_params))
+                .collect::<Vec<_>>()
+                .join(" && "),
+            Expr::Not(inner) => {
+                format!(
+                    "!{}",
+                    self.expr_to_view_requires_string(inner, view_params)
+                )
+            }
+            Expr::Binary(lhs, op, rhs) => {
+                let lhs_str = self.expr_to_view_requires_string(lhs, view_params);
+                let rhs_str = self.expr_to_view_requires_string(rhs, view_params);
+                let op_str = match op {
+                    crate::ast::BinOp::Add => "+",
+                    crate::ast::BinOp::Sub => "-",
+                    crate::ast::BinOp::Mul => "*",
+                    crate::ast::BinOp::Div => "/",
+                    crate::ast::BinOp::Mod => "%",
+                    crate::ast::BinOp::And => "&&",
+                    crate::ast::BinOp::Or => "||",
+                    crate::ast::BinOp::BitAnd => "&",
+                    crate::ast::BinOp::BitOr => "|",
+                    crate::ast::BinOp::BitXor => "^",
+                    crate::ast::BinOp::Shl => "<<",
+                    crate::ast::BinOp::Shr => ">>",
+                };
+                format!("({} {} {})", lhs_str, op_str, rhs_str)
+            }
+            _ => self.expr_to_view_simple_string(expr, view_params),
+        }
+    }
+
+    /// Convert an expression to a simple string, adding `@` to struct params in field access.
+    fn expr_to_view_simple_string(
+        &self,
+        expr: &Expr,
+        view_params: &HashSet<String>,
+    ) -> String {
+        match expr {
+            Expr::Field(base, field) => {
+                // For struct-type params, emit `param@.field` instead of `param.field`
+                if let Expr::Ident(name) = base.as_ref() {
+                    if view_params.contains(name) {
+                        return format!("{}@.{}", name, field);
+                    }
+                }
+                format!(
+                    "{}.{}",
+                    self.expr_to_view_simple_string(base, view_params),
+                    field
+                )
+            }
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                let recv = self.expr_to_view_simple_string(receiver, view_params);
+                let args_str: Vec<_> = args
+                    .iter()
+                    .map(|a| self.expr_to_view_simple_string(a, view_params))
+                    .collect();
+                format!("{}.{}({})", recv, method, args_str.join(", "))
+            }
+            // For other expressions, delegate to expr_to_simple_string
             _ => self.expr_to_simple_string(expr),
         }
     }
@@ -6291,16 +6435,21 @@ impl Translator {
                 }
             }
             // Pattern 3b: s_.field is Variant (field should be initialized to enum variant)
-            // Example: s.incomplete_batch_timer is IncompleteBatchTimerOff
-            // Becomes: incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOff
+            // Example: s_.tm_state is Committed
+            // Becomes: tm_state: CTMState::Committed
             else if let Expr::Is(base_expr, variant) = expr {
                 if let Expr::Field(base, field) = base_expr.as_ref() {
                     if let Expr::Ident(name) = base.as_ref() {
                         if ctx.is_output(name) {
-                            // Translate the variant name using remapping
-                            // The remapping should provide the fully qualified path like
-                            // "IncompleteBatchTimerOff" -> "CIncompleteBatchTimer::CIncompleteBatchTimerOff"
-                            let translated_variant = self.translate_name(variant);
+                            // Use variant_remapping for fully-qualified enum variant paths.
+                            // Falls back to translate_name() for backwards compatibility.
+                            let translated_variant = if let Some(qualified) =
+                                self.config.variant_remapping.get(variant)
+                            {
+                                qualified.clone()
+                            } else {
+                                self.translate_name(variant)
+                            };
                             // Store as a Var expression with the translated variant name
                             pre_translated
                                 .entry(name.clone())
@@ -15345,8 +15494,9 @@ mod tests {
         let preconditions = translator.extract_body_preconditions(&func, &ctx);
 
         // Only s.state is Init should be extracted (input-only)
+        // Since `s` is Type::Named (struct), field access gets `@` view operator
         assert_eq!(preconditions.len(), 1);
-        assert_eq!(preconditions[0], "s.state is Init");
+        assert_eq!(preconditions[0], "s@.state is Init");
     }
 
     #[test]
@@ -15393,8 +15543,9 @@ mod tests {
         let ctx = translator.make_requires_context(&func);
         let preconditions = translator.extract_body_preconditions(&func, &ctx);
 
+        // Since `s` is Type::Named (struct), field access gets `@` view operator
         assert_eq!(preconditions.len(), 1);
-        assert_eq!(preconditions[0], "(s.count > 0)");
+        assert_eq!(preconditions[0], "(s@.count > 0)");
     }
 
     #[test]
@@ -15678,11 +15829,11 @@ mod tests {
 
         // Should include:
         // 1. s.valid(), c.valid() (validity)
-        // 2. s.state is Init (body precondition)
-        // 3. s.count < u64::MAX (overflow guard)
+        // 2. s@.state is Init (body precondition — struct params get @ view)
+        // 3. s.count < u64::MAX (overflow guard — exec-level, no @)
         assert!(requires.contains(&"s.valid()".to_string()));
         assert!(requires.contains(&"c.valid()".to_string()));
-        assert!(requires.iter().any(|r| r == "s.state is Init"));
+        assert!(requires.iter().any(|r| r == "s@.state is Init"));
         assert!(requires.iter().any(|r| r == "s.count < u64::MAX"));
         // Should NOT include s_.state is Done (output, not precondition)
         assert!(!requires.iter().any(|r| r.contains("s_.state")));
@@ -15748,5 +15899,178 @@ mod tests {
             translator.expr_to_requires_string(&expr),
             "(s.role is Follower || s.role is Candidate)"
         );
+    }
+
+    #[test]
+    fn test_variant_remapping_in_struct_field() {
+        // When variant_remapping has an entry, Pattern 3b should use qualified name
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        config.variant_remapping.insert("Init".to_string(), "CTMState::Init".to_string());
+        config.variant_remapping.insert("Committed".to_string(), "CTMState::Committed".to_string());
+        let translator = Translator::new(config);
+
+        // Spec body: &&& s.tm_state is Init &&& s_.tm_state is Committed
+        let body = Expr::Conjunction(vec![
+            Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "tm_state".to_string(),
+                )),
+                "Init".to_string(),
+            ),
+            Expr::Is(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "tm_state".to_string(),
+                )),
+                "Committed".to_string(),
+            ),
+        ]);
+
+        let func = make_annotated_func(
+            "LCommit",
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            body,
+        );
+
+        let exec_fn = translator.translate(&func).unwrap();
+        let code = crate::printer::print_function(&exec_fn);
+        // The output struct field should use fully-qualified CTMState::Committed
+        assert!(
+            code.contains("CTMState::Committed"),
+            "Should use fully-qualified variant name, got:\n{}",
+            code
+        );
+        // Should NOT contain bare CCommitted
+        assert!(
+            !code.contains("CCommitted"),
+            "Should not have bare CCommitted, got:\n{}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_variant_remapping_fallback() {
+        // Without variant_remapping, should fall back to translate_name()
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        // No variant_remapping entries
+        let translator = Translator::new(config);
+
+        let body = Expr::Conjunction(vec![Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "state".to_string(),
+            )),
+            "Done".to_string(),
+        )]);
+
+        let func = make_annotated_func(
+            "LAction",
+            vec![("s_".to_string(), Type::Named(Path::single("LState".to_string())))],
+            vec![ParameterMode::Output],
+            body,
+        );
+
+        let exec_fn = translator.translate(&func).unwrap();
+        let code = crate::printer::print_function(&exec_fn);
+        // Without remapping, falls back to translate_name("Done") -> "CDone"
+        assert!(
+            code.contains("CDone"),
+            "Without variant_remapping, should use translate_name fallback, got:\n{}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_view_requires_string_struct_param() {
+        let translator = Translator::default();
+        let mut view_params = HashSet::new();
+        view_params.insert("s".to_string());
+
+        // Expr: s.tm_prepared == c.rm
+        let expr = Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "tm_prepared".to_string(),
+            )),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("c".to_string())),
+                "rm".to_string(),
+            )),
+        );
+
+        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        // s is in view_params so gets @, c is not so stays as-is
+        assert_eq!(result, "s@.tm_prepared == c.rm");
+    }
+
+    #[test]
+    fn test_view_requires_string_both_params() {
+        let translator = Translator::default();
+        let mut view_params = HashSet::new();
+        view_params.insert("s".to_string());
+        view_params.insert("c".to_string());
+
+        let expr = Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "tm_prepared".to_string(),
+            )),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("c".to_string())),
+                "rm".to_string(),
+            )),
+        );
+
+        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        assert_eq!(result, "s@.tm_prepared == c@.rm");
+    }
+
+    #[test]
+    fn test_view_requires_string_is_no_view() {
+        // `is` checks should NOT add @ to the base expression
+        let translator = Translator::default();
+        let mut view_params = HashSet::new();
+        view_params.insert("s".to_string());
+
+        let expr = Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "tm_state".to_string(),
+            )),
+            "Init".to_string(),
+        );
+
+        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        // `is` checks work on exec types, so @ is added to field access
+        // s@.tm_state is Init is valid Verus (checks LTMState::Init on spec view)
+        assert_eq!(result, "s@.tm_state is Init");
+    }
+
+    #[test]
+    fn test_view_requires_string_no_struct_param() {
+        // Non-struct params (e.g., u64) should NOT get @
+        let translator = Translator::default();
+        let view_params = HashSet::new(); // empty — no struct params
+
+        let expr = Expr::Gt(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "count".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        );
+
+        let result = translator.expr_to_view_requires_string(&expr, &view_params);
+        // No view params, so no @ added
+        assert_eq!(result, "(s.count > 0)");
     }
 }
