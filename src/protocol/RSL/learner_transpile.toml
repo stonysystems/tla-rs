@@ -7,6 +7,22 @@ primitive_types = [
     "OperationNumber",
 ]
 
+# Functions too complex for auto-generation (multi-branch map proofs, endpoint axioms)
+skip_functions = [
+    "LLearnerProcess2b",
+    "LLearnerForgetDecision",
+    "LLearnerForgetOperationsBefore",
+]
+
+# Field categories for clone dispatch
+# constants: non-Copy CReplicaConstants, uses clone_up_to_view()
+clone_fields = ["constants"]
+
+# HashMap fields with deep abstraction (key AND value type conversion)
+# Format: field_name = [exec_map_type, abstractify_prefix, exec_value_type]
+[map_fields]
+"unexecuted_learner_state" = ["CLearnerState", "clearnerstate", "CLearnerTuple"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -40,12 +56,13 @@ include_debug_comments = false
 # Generate explicit for loops instead of iterators for better Verus verification
 generate_loops_for_verification = true
 generate_proofs = true
-# Generate CLearner inline instead of importing from LearnerImpl.rs
-generate_inline_types = true
+# Don't generate CLearner inline — it's in types_gen.rs
+generate_inline_types = false
+# Use clone_up_to_view() for proof-compatible cloning
+clone_method = "clone_up_to_view"
+# Path to manually-written complex functions (relative to this TOML file)
+manual_code = "learner_manual.rs"
 # Custom imports for learner module
-# Note: Still need implementation imports for shared infrastructure types
-# (types_i, cconstants, cmessage, cbroadcast). These contain marshalling-enabled
-# types that can't easily be generated. Future work: move to shared location.
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
@@ -54,12 +71,10 @@ custom_imports = [
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",
     "use crate::common::collections::hashsets::*;",
-    "use crate::common::native::io_s::EndPoint;",
+    "use crate::common::collections::vecs::*;",
+    "use crate::common::native::io_s::{AbstractEndPoint, EndPoint};",
     "use crate::generated::RSL::types_gen::*;",
-    "use crate::implementation::RSL::cconstants::*;",
-    "use crate::implementation::RSL::cmessage::*;",
-    "use crate::implementation::RSL::cbroadcast::*;",
-    # CLearner now generated inline with generate_inline_types = true
     "use crate::protocol::RSL::learner::*;",
     "use crate::protocol::RSL::types::*;",
+    "use vstd::std_specs::hash::KeysAdditionalSpecFns;",
 ]

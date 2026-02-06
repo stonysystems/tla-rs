@@ -169,6 +169,20 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub struct_vec_fields: HashMap<String, Vec<String>>,
 
+    /// Maps HashMap field names to their [exec_map_type, abstractify_prefix, exec_value_type] triples.
+    /// Used for HashMap<u64, V> fields with deep abstraction (key and value type conversion).
+    /// The abstractify function is `abstractify_{prefix}()` and validity is `{prefix}_is_valid()`.
+    /// Generates:
+    /// - `clone_{prefix}()`: external_body clone wrapper
+    /// - `filter_{prefix}()`: external_body filter-by-key-threshold helper
+    /// - `lemma_abstractify_empty_{prefix}()`: empty map proof
+    /// - `lemma_abstractify_{prefix}_insert()`: insert commutativity proof
+    /// - `lemma_abstractify_{prefix}_remove()`: remove commutativity proof
+    /// - `lemma_abstractify_singleton_{prefix}()`: singleton map proof
+    /// e.g., {"unexecuted_learner_state" = ["CLearnerState", "clearnerstate", "CLearnerTuple"]}
+    #[serde(default)]
+    pub map_fields: HashMap<String, Vec<String>>,
+
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive
     /// automatically (e.g., covering conditions for implication groups).
@@ -392,6 +406,13 @@ pub struct OutputConfig {
     /// Needed for types where `.clone()` doesn't have `ensures res@ == self@` spec.
     #[serde(default)]
     pub clone_method: Option<String>,
+
+    /// Path to a file containing manual Verus code to inject into the generated output.
+    /// The file contents are inserted inside the `verus! {}` block after all auto-generated
+    /// functions. Use this for functions too complex for auto-generation (e.g., multi-branch
+    /// proofs with protocol-specific reasoning). The path is relative to the config file.
+    #[serde(default)]
+    pub manual_code: Option<String>,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -418,6 +439,7 @@ impl Default for OutputConfig {
             generate_wrapper_methods: false,
             wrapper_impl_type: None,
             clone_method: None,
+            manual_code: None,
         }
     }
 }
@@ -828,5 +850,28 @@ mod tests {
     fn test_extra_requires_default_empty() {
         let config = TranspilerConfig::default();
         assert!(config.extra_requires.is_empty());
+    }
+
+    #[test]
+    fn test_map_fields_config() {
+        let toml = r#"
+            [map_fields]
+            "unexecuted_learner_state" = ["CLearnerState", "clearnerstate", "CLearnerTuple"]
+            "votes" = ["CVotes", "cvotes", "CVote"]
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.map_fields.len(), 2);
+        let learner = config.map_fields.get("unexecuted_learner_state").unwrap();
+        assert_eq!(learner[0], "CLearnerState");
+        assert_eq!(learner[1], "clearnerstate");
+        assert_eq!(learner[2], "CLearnerTuple");
+        let votes = config.map_fields.get("votes").unwrap();
+        assert_eq!(votes[0], "CVotes");
+    }
+
+    #[test]
+    fn test_map_fields_default_empty() {
+        let config = TranspilerConfig::default();
+        assert!(config.map_fields.is_empty());
     }
 }

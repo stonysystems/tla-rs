@@ -87,6 +87,9 @@ pub struct TranspilerConfig {
     pub skip_functions: Vec<String>,
     /// The type name for the impl block when generating wrapper methods.
     pub wrapper_impl_type: Option<String>,
+    /// Raw Verus code to inject at the end of the `verus! {}` block.
+    /// Used for functions too complex for auto-generation.
+    pub manual_code: Option<String>,
 }
 
 /// Main transpiler orchestrating the pipeline
@@ -212,6 +215,16 @@ impl Transpiler {
                 output.push_str(&clone_helpers);
                 output.push('\n');
             }
+            // Generate HashMap abstractify proof lemmas for map_fields
+            if self.has_map_fields() {
+                let map_helpers = Self::generate_map_proof_lemmas(
+                    &self.config.translator.map_fields,
+                );
+                if !map_helpers.is_empty() {
+                    output.push_str(&map_helpers);
+                    output.push('\n');
+                }
+            }
         }
 
         // Collect all translated functions
@@ -260,6 +273,13 @@ impl Transpiler {
                     output.push('\n');
                 }
             }
+        }
+
+        // Inject manual code if configured
+        if let Some(ref manual) = self.config.manual_code {
+            output.push('\n');
+            output.push_str(manual);
+            output.push('\n');
         }
 
         output.push_str("} // verus!\n");
@@ -377,6 +397,16 @@ impl Transpiler {
                 output.push_str(&clone_helpers);
                 output.push('\n');
             }
+            // Generate HashMap abstractify proof lemmas for map_fields
+            if self.has_map_fields() {
+                let map_helpers = Self::generate_map_proof_lemmas(
+                    &self.config.translator.map_fields,
+                );
+                if !map_helpers.is_empty() {
+                    output.push_str(&map_helpers);
+                    output.push('\n');
+                }
+            }
         }
 
         // Collect all translated functions
@@ -417,6 +447,13 @@ impl Transpiler {
                     output.push('\n');
                 }
             }
+        }
+
+        // Inject manual code if configured
+        if let Some(ref manual) = self.config.manual_code {
+            output.push('\n');
+            output.push_str(manual);
+            output.push('\n');
         }
 
         output.push_str("} // verus!\n");
@@ -648,7 +685,297 @@ impl Transpiler {
             || (self.config.translator.collection_fields.is_empty()
                 && self.config.translator.vec_fields.is_empty()
                 && self.config.translator.clone_fields.is_empty()
-                && self.config.translator.struct_vec_fields.is_empty())
+                && self.config.translator.struct_vec_fields.is_empty()
+                && self.config.translator.map_fields.is_empty())
+    }
+
+    /// Check if this transpiler config uses HashMap fields with deep abstraction (map_fields).
+    fn has_map_fields(&self) -> bool {
+        !self.config.translator.map_fields.is_empty()
+    }
+
+    /// Generate HashMap abstractify proof lemmas and helpers for map_fields.
+    ///
+    /// For each entry in `map_fields`, generates:
+    /// - `lemma_abstractify_empty_{prefix}()`: empty map abstractifies to empty
+    /// - `lemma_abstractify_{prefix}_insert()`: insert commutes with abstractify
+    /// - `lemma_abstractify_{prefix}_remove()`: remove commutes with abstractify
+    /// - `lemma_abstractify_singleton_{prefix}()`: singleton map abstractify
+    /// - `clone_{prefix}()`: external_body clone wrapper
+    /// - `filter_{prefix}()`: external_body filter-by-key-threshold helper
+    fn generate_map_proof_lemmas(
+        map_fields: &std::collections::HashMap<String, (String, String, String)>,
+    ) -> String {
+        let mut output = String::new();
+
+        let mut sorted_fields: Vec<_> = map_fields.iter().collect();
+        sorted_fields.sort_by_key(|(k, _)| k.to_string());
+
+        for (_field, (exec_type, prefix, value_type)) in &sorted_fields {
+            // =========================================================
+            // lemma_abstractify_empty_{prefix}
+            // =========================================================
+            output.push_str(&format!(
+                "/// If m@ is empty, abstractify_{} is empty.\n", prefix
+            ));
+            output.push_str(&format!(
+                "proof fn lemma_abstractify_empty_{}(m: {})\n", prefix, exec_type
+            ));
+            output.push_str("requires\n");
+            output.push_str(&format!(
+                "    m@ == Map::<COperationNumber, {}>::empty(),\n", value_type
+            ));
+            output.push_str("ensures\n");
+            output.push_str(&format!(
+                "    abstractify_{}(m) =~= Map::<OperationNumber, {}>::empty(),\n",
+                prefix,
+                // Derive spec value type: strip C prefix from value_type
+                if value_type.starts_with("C") { &value_type[1..] } else { value_type }
+            ));
+            output.push_str("{\n");
+            output.push_str(&format!(
+                "    let abs = abstractify_{}(m);\n", prefix
+            ));
+            output.push_str("    assert forall |ak: int| !abs.contains_key(ak) by { }\n");
+            output.push_str("}\n\n");
+
+            // Derive spec value type for reuse
+            let spec_value_type = if value_type.starts_with("C") {
+                &value_type[1..]
+            } else {
+                value_type.as_str()
+            };
+
+            // =========================================================
+            // lemma_abstractify_{prefix}_insert
+            // =========================================================
+            output.push_str(&format!(
+                "/// If m2@ =~= old@.insert(k, v) and old is abstractable and v is abstractable,\n"
+            ));
+            output.push_str(&format!(
+                "/// then abstractify on m2 = abstractify on old + insert.\n"
+            ));
+            output.push_str(&format!(
+                "proof fn lemma_abstractify_{}_insert(\n", prefix
+            ));
+            output.push_str(&format!(
+                "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n    v: {1},\n)\n",
+                exec_type, value_type
+            ));
+            output.push_str("requires\n");
+            output.push_str(&format!("    {}_is_abstractable(old_m),\n", prefix));
+            output.push_str("    v.abstractable(),\n");
+            output.push_str("    m2@ =~= old_m@.insert(k, v),\n");
+            output.push_str("ensures\n");
+            output.push_str(&format!(
+                "    abstractify_{0}(m2) =~= abstractify_{0}(old_m).insert(k as int, v@),\n", prefix
+            ));
+            output.push_str(&format!("    {}_is_abstractable(m2),\n", prefix));
+            output.push_str(&format!(
+                "    {0}_is_valid(old_m) && v.valid() ==> {0}_is_valid(m2),\n", prefix
+            ));
+            output.push_str("{\n");
+            output.push_str(&format!(
+                "    let abs2 = abstractify_{0}(m2);\n    let expected = abstractify_{0}(old_m).insert(k as int, v@);\n", prefix
+            ));
+            // Domain equivalence
+            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) == expected.contains_key(ak) by {\n");
+            output.push_str("        if expected.contains_key(ak) {\n");
+            output.push_str("            if ak == k as int {\n");
+            output.push_str("                assert(m2@.contains_key(k) && (k as int) == ak);\n");
+            output.push_str("            } else {\n");
+            output.push_str("                let k0 = choose |k0: u64| old_m@.contains_key(k0) && k0 as int == ak;\n");
+            output.push_str("                assert(m2@.contains_key(k0) && k0 as int == ak);\n");
+            output.push_str("            }\n");
+            output.push_str("        }\n");
+            output.push_str("        if abs2.contains_key(ak) {\n");
+            output.push_str("            let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str("            if kw == k { assert(ak == k as int); }\n");
+            output.push_str("            else { assert(old_m@.contains_key(kw) && kw as int == ak); }\n");
+            output.push_str("        }\n");
+            output.push_str("    }\n");
+            // Value equivalence
+            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
+            output.push_str("        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str("        if ak == k as int { assert(kw == k); assert(m2@[kw] == v); }\n");
+            output.push_str("        else { assert(m2@[kw] == old_m@[kw]); }\n");
+            output.push_str("    }\n");
+            // Abstractability
+            output.push_str("    assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
+            output.push_str("        COperationNumberIsAbstractable(i) && m2@[i].abstractable()\n");
+            output.push_str("    by {\n");
+            output.push_str("        if i == k { assert(m2@[i] == v); }\n");
+            output.push_str("        else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }\n");
+            output.push_str("    }\n");
+            // Validity (conditional)
+            output.push_str(&format!("    if {}_is_valid(old_m) && v.valid() {{\n", prefix));
+            output.push_str("        assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
+            output.push_str("            COperationNumberIsValid(i) && m2@[i].valid()\n");
+            output.push_str("        by {\n");
+            output.push_str("            if i == k { assert(m2@[i] == v); }\n");
+            output.push_str("            else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }\n");
+            output.push_str("        }\n");
+            output.push_str("    }\n");
+            output.push_str("}\n\n");
+
+            // =========================================================
+            // lemma_abstractify_{prefix}_remove
+            // =========================================================
+            output.push_str(&format!(
+                "/// If m2@ =~= old@.remove(k) and old is abstractable,\n/// then abstractify on m2 = abstractify on old - remove.\n"
+            ));
+            output.push_str(&format!(
+                "proof fn lemma_abstractify_{}_remove(\n", prefix
+            ));
+            output.push_str(&format!(
+                "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n)\n", exec_type
+            ));
+            output.push_str("requires\n");
+            output.push_str(&format!("    {}_is_abstractable(old_m),\n", prefix));
+            output.push_str("    m2@ =~= old_m@.remove(k),\n");
+            output.push_str("ensures\n");
+            output.push_str(&format!(
+                "    abstractify_{0}(m2) =~= abstractify_{0}(old_m).remove(k as int),\n", prefix
+            ));
+            output.push_str(&format!("    {}_is_abstractable(m2),\n", prefix));
+            output.push_str(&format!("    {0}_is_valid(old_m) ==> {0}_is_valid(m2),\n", prefix));
+            output.push_str("{\n");
+            output.push_str(&format!(
+                "    let abs2 = abstractify_{0}(m2);\n    let expected = abstractify_{0}(old_m).remove(k as int);\n", prefix
+            ));
+            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) == expected.contains_key(ak) by {\n");
+            output.push_str("        if expected.contains_key(ak) {\n");
+            output.push_str("            let kw = choose |kw: u64| old_m@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str("            assert(kw != k);\n");
+            output.push_str("            assert(m2@.contains_key(kw) && kw as int == ak);\n");
+            output.push_str("        }\n");
+            output.push_str("        if abs2.contains_key(ak) {\n");
+            output.push_str("            let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str("            assert(kw != k);\n");
+            output.push_str("            assert(old_m@.contains_key(kw) && kw as int == ak);\n");
+            output.push_str("        }\n");
+            output.push_str("    }\n");
+            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
+            output.push_str("        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str("        let kw_orig = choose |kw2: u64| old_m@.contains_key(kw2) && kw2 as int == ak;\n");
+            output.push_str("        assert(kw_orig == kw);\n");
+            output.push_str("        assert(m2@[kw] == old_m@[kw]);\n");
+            output.push_str("    }\n");
+            // Abstractability
+            output.push_str("    assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
+            output.push_str("        COperationNumberIsAbstractable(i) && m2@[i].abstractable()\n");
+            output.push_str("    by {\n");
+            output.push_str("        assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]);\n");
+            output.push_str("    }\n");
+            // Validity
+            output.push_str(&format!("    if {}_is_valid(old_m) {{\n", prefix));
+            output.push_str("        assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
+            output.push_str("            COperationNumberIsValid(i) && m2@[i].valid()\n");
+            output.push_str("        by {\n");
+            output.push_str("            assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]);\n");
+            output.push_str("        }\n");
+            output.push_str("    }\n");
+            output.push_str("}\n\n");
+
+            // =========================================================
+            // lemma_abstractify_singleton_{prefix}
+            // =========================================================
+            output.push_str(&format!(
+                "/// Singleton: if m@ =~= Map::empty().insert(opn, tup), prove abstractify result.\n"
+            ));
+            output.push_str(&format!(
+                "proof fn lemma_abstractify_singleton_{}(m: {}, opn: COperationNumber, tup: {})\n",
+                prefix, exec_type, value_type
+            ));
+            output.push_str("requires\n");
+            output.push_str(&format!(
+                "    m@ =~= Map::<COperationNumber, {}>::empty().insert(opn, tup),\n", value_type
+            ));
+            output.push_str("    tup.abstractable(),\n");
+            output.push_str("ensures\n");
+            output.push_str(&format!(
+                "    abstractify_{0}(m) =~= Map::<OperationNumber, {1}>::empty().insert(opn as int, tup@),\n",
+                prefix, spec_value_type
+            ));
+            output.push_str(&format!("    {}_is_abstractable(m),\n", prefix));
+            output.push_str(&format!("    tup.valid() ==> {}_is_valid(m),\n", prefix));
+            output.push_str("{\n");
+            output.push_str(&format!(
+                "    let abs = abstractify_{0}(m);\n    let expected = Map::<OperationNumber, {1}>::empty().insert(opn as int, tup@);\n",
+                prefix, spec_value_type
+            ));
+            output.push_str("    assert forall |ak: int| abs.contains_key(ak) == expected.contains_key(ak) by {\n");
+            output.push_str("        if expected.contains_key(ak) { assert(m@.contains_key(opn) && (opn as int) == ak); }\n");
+            output.push_str("        if abs.contains_key(ak) {\n");
+            output.push_str("            let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n");
+            output.push_str("            assert(k == opn);\n");
+            output.push_str("        }\n");
+            output.push_str("    }\n");
+            output.push_str("    assert forall |ak: int| abs.contains_key(ak) implies abs[ak] == expected[ak] by {\n");
+            output.push_str("        let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n");
+            output.push_str("        assert(k == opn); assert(m@[k] == tup);\n");
+            output.push_str("    }\n");
+            // Abstractability + validity
+            output.push_str("    assert forall |i: COperationNumber| #![auto] m@.contains_key(i) implies\n");
+            output.push_str("        COperationNumberIsAbstractable(i) && m@[i].abstractable()\n");
+            output.push_str("    by { assert(i == opn); assert(m@[i] == tup); }\n");
+            output.push_str("    if tup.valid() {\n");
+            output.push_str("        assert forall |i: COperationNumber| #![auto] m@.contains_key(i) implies\n");
+            output.push_str("            COperationNumberIsValid(i) && m@[i].valid()\n");
+            output.push_str("        by { assert(i == opn); assert(m@[i] == tup); }\n");
+            output.push_str("    }\n");
+            output.push_str("}\n\n");
+
+            // =========================================================
+            // clone_{prefix} external_body helper
+            // =========================================================
+            output.push_str(&format!(
+                "/// Helper: clone a {} preserving view.\n", exec_type
+            ));
+            output.push_str("#[verifier(external_body)]\n");
+            output.push_str(&format!(
+                "fn clone_{}(m: &{}) -> (res: {})\n", prefix, exec_type, exec_type
+            ));
+            output.push_str("ensures\n");
+            output.push_str("    res@ == m@,\n");
+            output.push_str("{\n");
+            output.push_str("    m.clone()\n");
+            output.push_str("}\n\n");
+
+            // =========================================================
+            // filter_{prefix} external_body helper
+            // =========================================================
+            output.push_str(&format!(
+                "/// Helper: filter {} keeping only entries with key >= threshold.\n", exec_type
+            ));
+            output.push_str("#[verifier(external_body)]\n");
+            output.push_str(&format!(
+                "fn filter_{}(m: &{}, threshold: u64) -> (res: {})\n",
+                prefix, exec_type, exec_type
+            ));
+            output.push_str("requires\n");
+            output.push_str(&format!("    {}_is_valid(*m),\n", prefix));
+            output.push_str("ensures\n");
+            output.push_str(&format!("    {}_is_valid(res),\n", prefix));
+            output.push_str(&format!("    {}_is_abstractable(res),\n", prefix));
+            output.push_str("    forall |k: COperationNumber| res@.contains_key(k) ==>\n");
+            output.push_str("        m@.contains_key(k) && k >= threshold && (#[trigger] res@[k])@ == m@[k]@,\n");
+            output.push_str("    forall |k: COperationNumber| m@.contains_key(k) && k >= threshold ==>\n");
+            output.push_str("        res@.contains_key(k),\n");
+            output.push_str("    forall |k: COperationNumber| res@.contains_key(k) ==>\n");
+            output.push_str("        m@.contains_key(k),\n");
+            output.push_str("{\n");
+            output.push_str("    let mut filtered = HashMap::new();\n");
+            output.push_str("    for (k, v) in m.iter() {\n");
+            output.push_str("        if *k >= threshold {\n");
+            output.push_str("            filtered.insert(*k, v.clone_up_to_view());\n");
+            output.push_str("        }\n");
+            output.push_str("    }\n");
+            output.push_str("    filtered\n");
+            output.push_str("}\n\n");
+        }
+
+        output
     }
 
     /// Check if a spec expression tree contains a `.remove()` method call.
@@ -1423,6 +1750,83 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_map_proof_lemmas() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "unexecuted_learner_state".to_string(),
+            ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()),
+        );
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+
+        // Check all 4 proof lemmas are generated
+        assert!(output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)"),
+            "Should contain empty lemma");
+        assert!(output.contains("proof fn lemma_abstractify_clearnerstate_insert("),
+            "Should contain insert lemma");
+        assert!(output.contains("proof fn lemma_abstractify_clearnerstate_remove("),
+            "Should contain remove lemma");
+        assert!(output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: CLearnerState"),
+            "Should contain singleton lemma");
+
+        // Check helpers are generated
+        assert!(output.contains("fn clone_clearnerstate(m: &CLearnerState) -> (res: CLearnerState)"),
+            "Should contain clone helper");
+        assert!(output.contains("fn filter_clearnerstate(m: &CLearnerState, threshold: u64) -> (res: CLearnerState)"),
+            "Should contain filter helper");
+
+        // Check spec value type derivation (CLearnerTuple -> LearnerTuple)
+        assert!(output.contains("Map::<OperationNumber, LearnerTuple>::empty()"),
+            "Should use derived spec value type LearnerTuple");
+
+        // Check validity/abstractability ensures
+        assert!(output.contains("clearnerstate_is_abstractable(m2)"),
+            "Should check abstractability");
+        assert!(output.contains("clearnerstate_is_valid(old_m)"),
+            "Should check validity");
+    }
+
+    #[test]
+    fn test_generate_map_proof_lemmas_empty() {
+        let map_fields = std::collections::HashMap::new();
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+        assert!(output.is_empty(), "Empty map_fields should generate nothing");
+    }
+
+    #[test]
+    fn test_generate_map_proof_lemmas_filter_helper() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "votes".to_string(),
+            ("CVotes".to_string(), "cvotes".to_string(), "CVote".to_string()),
+        );
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+
+        // Should have filter helper with proper type
+        assert!(output.contains("fn filter_cvotes(m: &CVotes, threshold: u64) -> (res: CVotes)"));
+        assert!(output.contains("cvotes_is_valid(*m)"));
+        assert!(output.contains("cvotes_is_valid(res)"));
+        assert!(output.contains("v.clone_up_to_view()"));
+    }
+
+    #[test]
+    fn test_needs_set_helpers_with_map_fields_only() {
+        // When only map_fields is configured, needs_set_helpers should return false
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                map_fields: vec![
+                    ("state".to_string(),
+                     ("CState".to_string(), "cstate".to_string(), "CEntry".to_string()))
+                ].into_iter().collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+        assert!(!transpiler.needs_set_helpers(), "map_fields only should not need set helpers");
+        assert!(transpiler.has_map_fields(), "should have map_fields");
+    }
+
+    #[test]
     fn test_needs_set_helpers_with_collection_fields() {
         // When collection_fields is configured, needs_set_helpers should return true
         let config = TranspilerConfig {
@@ -1457,5 +1861,44 @@ mod tests {
         };
         let transpiler = Transpiler::new(config);
         assert!(!transpiler.needs_set_helpers());
+    }
+
+    #[test]
+    fn test_manual_code_injection() {
+        let config = TranspilerConfig {
+            manual_code: Some("// manual code block\npub exec fn ManualFunc() { }".to_string()),
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+        verus! {
+            pub open spec fn LTest(x: int) -> bool { x > 0 }
+        }
+        "#;
+        let annotation_source = "module test { LTest(+); }";
+        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        assert!(result.contains("// manual code block"), "Manual code should be injected");
+        assert!(result.contains("pub exec fn ManualFunc()"), "Manual function should be present");
+        // Manual code should appear before } // verus!
+        let manual_pos = result.find("ManualFunc").unwrap();
+        let end_pos = result.find("} // verus!").unwrap();
+        assert!(manual_pos < end_pos, "Manual code should appear before verus! closing");
+    }
+
+    #[test]
+    fn test_manual_code_none() {
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+        verus! {
+            pub open spec fn LTest(x: int) -> bool { x > 0 }
+        }
+        "#;
+        let annotation_source = "module test { LTest(+); }";
+        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        // Should not have extra blank line before } // verus! when no manual code
+        assert!(result.contains("} // verus!"));
     }
 }

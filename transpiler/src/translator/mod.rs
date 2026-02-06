@@ -86,6 +86,11 @@ pub struct TranslatorConfig {
     /// Used to generate clone_<field>, lemma_empty_<field>_map, lemma_<field>_push_map_commute helpers.
     /// e.g., {"log" => ("CLogEntry", "LLogEntry")}
     pub struct_vec_fields: HashMap<String, (String, String)>,
+    /// HashMap fields with deep abstraction (key and value type conversion).
+    /// Maps field name to (ExecMapType, abstractify_prefix, ExecValueType).
+    /// Generates clone/filter helpers and abstractify proof lemmas.
+    /// e.g., {"unexecuted_learner_state" => ("CLearnerState", "clearnerstate", "CLearnerTuple")}
+    pub map_fields: HashMap<String, (String, String, String)>,
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive.
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
@@ -118,6 +123,7 @@ impl Default for TranslatorConfig {
             clone_fields: HashSet::new(),
             clone_field_types: HashMap::new(),
             struct_vec_fields: HashMap::new(),
+            map_fields: HashMap::new(),
             extra_requires: HashMap::new(),
             clone_method: None,
         }
@@ -152,6 +158,9 @@ pub struct RemoveSite {
     pub source_view: String,
     /// The element expression string, e.g. "*value"
     pub element: String,
+    /// The field name this remove operates on (e.g., "unexecuted_learner_state")
+    /// Used to dispatch to map_field-specific lemmas when applicable.
+    pub field_name: Option<String>,
 }
 
 /// Tracks a Vec `.push()` call site with its source vec and element,
@@ -183,6 +192,8 @@ pub struct ProofNeeds {
     pub has_vec_push: bool,
     /// Specific push sites with source vec and element info
     pub push_sites: Vec<PushSite>,
+    /// Map field names that have HashMap::new() assigned (need lemma_abstractify_empty_{prefix})
+    pub map_field_empty_sites: Vec<String>,
 }
 
 impl ProofNeeds {
@@ -190,6 +201,7 @@ impl ProofNeeds {
     pub fn needs_proof_block(&self) -> bool {
         self.has_empty_set || self.has_set_insert || !self.remove_sites.is_empty()
             || self.has_empty_vec || self.has_vec_push
+            || !self.map_field_empty_sites.is_empty()
     }
 
     /// Scan an ExecExpr tree to determine what proof helpers are needed.
@@ -240,8 +252,14 @@ impl ProofNeeds {
                 }
             }
             ExecExpr::Struct { fields, .. } => {
-                for (_, expr) in fields {
-                    self.scan_expr(expr);
+                for (fname, fexpr) in fields {
+                    // Detect HashMap::new() in struct fields for map_field empty lemma
+                    if let ExecExpr::Call { func, .. } = fexpr {
+                        if func == "HashMap::new" {
+                            self.map_field_empty_sites.push(fname.clone());
+                        }
+                    }
+                    self.scan_expr(fexpr);
                 }
             }
             ExecExpr::Let { value, .. } => {
@@ -387,9 +405,12 @@ impl ProofNeeds {
                         if let Some(source) = tmp_to_source.get(tmp_name) {
                             let element = Self::expr_to_proof_arg(&args[0]);
                             if method == "remove" {
+                                // Extract field name from source (e.g., "s.field" → "field")
+                                let field_name = source.split('.').last().map(|s| s.to_string());
                                 self.remove_sites.push(RemoveSite {
                                     source_view: format!("{}@", source),
                                     element,
+                                    field_name,
                                 });
                             } else if method == "push" {
                                 self.push_sites.push(PushSite {
@@ -438,7 +459,11 @@ impl ProofNeeds {
     }
 
     /// Build a proof block ExecExpr containing the necessary lemma calls.
-    pub fn build_proof_block(&self, struct_vec_fields: &HashMap<String, (String, String)>) -> Option<ExecExpr> {
+    pub fn build_proof_block(
+        &self,
+        struct_vec_fields: &HashMap<String, (String, String)>,
+        map_fields: &HashMap<String, (String, String, String)>,
+    ) -> Option<ExecExpr> {
         let mut stmts = Vec::new();
 
         if self.has_empty_set {
@@ -454,9 +479,8 @@ impl ProofNeeds {
             ));
         }
 
-        // Emit per-call lemma_set_map_remove_commute invocations with specific arguments.
-        // The proof function takes owned values (u64), but remove() passes references (&u64),
-        // so dereference bare variable arguments that don't already have a deref prefix.
+        // Emit per-call remove lemma invocations with specific arguments.
+        // For map_fields, use lemma_abstractify_{prefix}_remove instead of lemma_set_map_remove_commute.
         for site in &self.remove_sites {
             let element_expr = if site.element.starts_with('*') {
                 ExecExpr::Var(site.element.clone())
@@ -467,13 +491,33 @@ impl ProofNeeds {
                     expr: Box::new(ExecExpr::Var(site.element.clone())),
                 }
             };
-            stmts.push(ExecExpr::Call {
-                func: "lemma_set_map_remove_commute".to_string(),
-                args: vec![
-                    ExecExpr::Var(site.source_view.clone()),
-                    element_expr,
-                ],
-            });
+
+            // Check if this remove is on a map_field
+            let is_map_remove = site.field_name.as_ref()
+                .map(|f| map_fields.contains_key(f))
+                .unwrap_or(false);
+
+            if is_map_remove {
+                let prefix = &map_fields[site.field_name.as_ref().unwrap()].1;
+                let field_name = site.field_name.as_ref().unwrap();
+                // For map_fields, call lemma_abstractify_{prefix}_remove(s.field, result.field, key)
+                stmts.push(ExecExpr::Call {
+                    func: format!("lemma_abstractify_{}_remove", prefix),
+                    args: vec![
+                        ExecExpr::Var(format!("s.{}", field_name)),
+                        ExecExpr::Var(format!("result.{}", field_name)),
+                        element_expr,
+                    ],
+                });
+            } else {
+                stmts.push(ExecExpr::Call {
+                    func: "lemma_set_map_remove_commute".to_string(),
+                    args: vec![
+                        ExecExpr::Var(site.source_view.clone()),
+                        element_expr,
+                    ],
+                });
+            }
         }
 
         // Determine lemma names based on whether struct_vec_fields is configured.
@@ -508,6 +552,18 @@ impl ProofNeeds {
                     element_expr,
                 ],
             });
+        }
+
+        // Emit lemma_abstractify_empty_{prefix}(result.field) for map_fields with HashMap::new()
+        for field_name in &self.map_field_empty_sites {
+            if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
+                stmts.push(ExecExpr::Call {
+                    func: format!("lemma_abstractify_empty_{}", prefix),
+                    args: vec![
+                        ExecExpr::Var(format!("result.{}", field_name)),
+                    ],
+                });
+            }
         }
 
         if stmts.is_empty() {
@@ -1542,6 +1598,13 @@ impl Translator {
                         op: "*".to_string(),
                         expr: Box::new(expr),
                     }
+                } else if let Some(ref method) = self.config.clone_method {
+                    // Use configured clone_method (e.g., clone_up_to_view)
+                    ExecExpr::MethodCall {
+                        receiver: Box::new(expr),
+                        method: method.clone(),
+                        args: vec![],
+                    }
                 } else {
                     ExecExpr::Clone(Box::new(expr))
                 }
@@ -1629,6 +1692,16 @@ impl Translator {
                             expr: Box::new(recv),
                         }],
                     }
+                } else if self.is_map_field(&fname) {
+                    // HashMap with deep abstraction: clone_{prefix}(&receiver)
+                    let prefix = self.get_map_field_prefix(&fname).unwrap().to_string();
+                    ExecExpr::Call {
+                        func: format!("clone_{}", prefix),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(recv),
+                        }],
+                    }
                 } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
@@ -1672,6 +1745,15 @@ impl Translator {
                 let clone_call = if self.is_struct_vec_field(&fname) {
                     ExecExpr::Call {
                         func: format!("clone_{}", fname),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(recv),
+                        }],
+                    }
+                } else if self.is_map_field(&fname) {
+                    let prefix = self.get_map_field_prefix(&fname).unwrap().to_string();
+                    ExecExpr::Call {
+                        func: format!("clone_{}", prefix),
                         args: vec![ExecExpr::Unary {
                             op: "&".to_string(),
                             expr: Box::new(recv),
@@ -1883,6 +1965,16 @@ impl Translator {
                                 expr: Box::new(expr),
                             }],
                         }
+                    } else if self.is_map_field(field_name) {
+                        // HashMap with deep abstraction: use clone_{prefix}(&s.field)
+                        let prefix = self.get_map_field_prefix(field_name).unwrap().to_string();
+                        ExecExpr::Call {
+                            func: format!("clone_{}", prefix),
+                            args: vec![ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(expr),
+                            }],
+                        }
                     } else if self.is_hashset_field(field_name) {
                         // HashSet field: wrap with clone_hashset(&s.field)
                         ExecExpr::Call {
@@ -1901,6 +1993,13 @@ impl Translator {
                                     op: "&".to_string(),
                                     expr: Box::new(expr),
                                 }],
+                            }
+                        } else if let Some(ref method) = self.config.clone_method {
+                            // Use configured clone_method (e.g., clone_up_to_view)
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(expr),
+                                method: method.clone(),
+                                args: vec![],
                             }
                         } else {
                             ExecExpr::Clone(Box::new(expr))
@@ -1929,6 +2028,16 @@ impl Translator {
                                     expr: inner.clone(),
                                 }],
                             }
+                        } else if self.is_map_field(field_name) {
+                            // HashMap with deep abstraction: replace .clone() with clone_{prefix}(&...)
+                            let prefix = self.get_map_field_prefix(field_name).unwrap().to_string();
+                            ExecExpr::Call {
+                                func: format!("clone_{}", prefix),
+                                args: vec![ExecExpr::Unary {
+                                    op: "&".to_string(),
+                                    expr: inner.clone(),
+                                }],
+                            }
                         } else if self.is_hashset_field(field_name) {
                             // Replace .clone() with clone_hashset(&...)
                             ExecExpr::Call {
@@ -1947,6 +2056,13 @@ impl Translator {
                                         op: "&".to_string(),
                                         expr: inner.clone(),
                                     }],
+                                }
+                            } else if let Some(ref method) = self.config.clone_method {
+                                // Replace .clone() with configured clone method
+                                ExecExpr::MethodCall {
+                                    receiver: inner.clone(),
+                                    method: method.clone(),
+                                    args: vec![],
                                 }
                             } else {
                                 expr
@@ -1986,6 +2102,16 @@ impl Translator {
         self.config.struct_vec_fields.contains_key(field_name)
     }
 
+    /// Check if a field is a HashMap with deep abstraction requiring `clone_{prefix}()`.
+    fn is_map_field(&self, field_name: &str) -> bool {
+        self.config.map_fields.contains_key(field_name)
+    }
+
+    /// Get the abstractify prefix for a map_field (e.g., "clearnerstate").
+    fn get_map_field_prefix(&self, field_name: &str) -> Option<&str> {
+        self.config.map_fields.get(field_name).map(|(_, prefix, _)| prefix.as_str())
+    }
+
     /// Check if a field is a non-Copy type requiring `.clone()` but NOT `@` in view.
     fn is_clone_field(&self, field_name: &str) -> bool {
         self.config.clone_fields.contains(field_name)
@@ -2003,7 +2129,7 @@ impl Translator {
 
     /// Check if a field name is a non-Copy collection type (Set/Map/Vec/HashMap/struct-typed Vec).
     /// Returns true for `collection_fields` (HashSet), `vec_fields` (Vec/HashMap),
-    /// and `struct_vec_fields` (Vec<Struct>).
+    /// `struct_vec_fields` (Vec<Struct>), and `map_fields` (HashMap with deep abstraction).
     /// Does NOT include `clone_fields` (they don't need `@` in view context).
     /// Used to determine if a field needs `@` in view context.
     fn is_collection_field(&self, field_name: &str) -> bool {
@@ -2013,6 +2139,7 @@ impl Translator {
             self.config.collection_fields.contains(field_name)
                 || self.config.vec_fields.contains(field_name)
                 || self.config.struct_vec_fields.contains_key(field_name)
+                || self.config.map_fields.contains_key(field_name)
         }
     }
 
@@ -2022,6 +2149,7 @@ impl Translator {
             && self.config.vec_fields.is_empty()
             && self.config.clone_fields.is_empty()
             && self.config.struct_vec_fields.is_empty()
+            && self.config.map_fields.is_empty()
     }
 
     /// Check if an expression is a variable reference to an input parameter
@@ -4518,7 +4646,7 @@ impl Translator {
         }
 
         let needs = ProofNeeds::analyze(&body);
-        let proof_block = match needs.build_proof_block(&self.config.struct_vec_fields) {
+        let proof_block = match needs.build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields) {
             Some(pb) => pb,
             None => return body, // No proofs needed
         };
@@ -5022,11 +5150,20 @@ impl Translator {
     /// Format a spec argument for ensures clauses.
     /// For int/nat params (which become &u64 in exec), generates `*param as int`.
     /// For bool params, generates just `param`.
+    /// For primitive_types (e.g., OperationNumber → u64), generates `*param as int`.
     /// For struct/enum params, generates `param@`.
     fn format_spec_arg(&self, param: &crate::ast::Parameter) -> String {
         match &param.ty {
             Type::Int | Type::Nat => format!("*{} as int", param.name),
             Type::Bool => param.name.clone(),
+            Type::Named(path) => {
+                if let Some(type_name) = path.last() {
+                    if self.config.primitive_types.contains(type_name) {
+                        return format!("*{} as int", param.name);
+                    }
+                }
+                format!("{}@", param.name)
+            }
             _ => format!("{}@", param.name),
         }
     }
@@ -7146,29 +7283,99 @@ impl Translator {
             }),
 
             Expr::SetLit(elems) => {
-                // Generate HashSet::from([...])
-                let translated: TranspileResult<Vec<_>> =
-                    elems.iter().map(|e| self.transform_expr(e, ctx)).collect();
-                Ok(ExecExpr::Call {
-                    func: "HashSet::from".to_string(),
-                    args: vec![ExecExpr::VecLit(translated?)],
-                })
+                if self.config.generate_loops_for_verification && !elems.is_empty() {
+                    // Generate: { let mut hs = HashSet::new(); hs.insert(elem); ... hs }
+                    let translated: TranspileResult<Vec<_>> =
+                        elems.iter().map(|e| self.transform_expr(e, ctx)).collect();
+                    let translated = translated?;
+                    let mut stmts: Vec<ExecExpr> = Vec::new();
+                    // Broadcast use hash axioms for insert
+                    stmts.push(ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()));
+                    stmts.push(ExecExpr::Let {
+                        pattern: "mut __hs".to_string(),
+                        ty: None,
+                        value: Box::new(ExecExpr::Call {
+                            func: "HashSet::new".to_string(),
+                            args: vec![],
+                        }),
+                    });
+                    for elem in &translated {
+                        let clone_elem = if let Some(ref method) = self.config.clone_method {
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(elem.clone()),
+                                method: method.clone(),
+                                args: vec![],
+                            }
+                        } else {
+                            ExecExpr::Clone(Box::new(elem.clone()))
+                        };
+                        stmts.push(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__hs".to_string())),
+                            method: "insert".to_string(),
+                            args: vec![clone_elem],
+                        });
+                    }
+                    stmts.push(ExecExpr::Var("__hs".to_string()));
+                    Ok(ExecExpr::Block(stmts))
+                } else {
+                    // Generate HashSet::from([...])
+                    let translated: TranspileResult<Vec<_>> =
+                        elems.iter().map(|e| self.transform_expr(e, ctx)).collect();
+                    Ok(ExecExpr::Call {
+                        func: "HashSet::from".to_string(),
+                        args: vec![ExecExpr::VecLit(translated?)],
+                    })
+                }
             }
 
             Expr::MapLit(pairs) => {
-                // Generate HashMap::from([...])
-                let translated: TranspileResult<Vec<_>> = pairs
-                    .iter()
-                    .map(|(k, v)| {
-                        let key = self.transform_expr(k, ctx)?;
-                        let val = self.transform_expr(v, ctx)?;
-                        Ok(ExecExpr::Tuple(vec![key, val]))
+                if self.config.generate_loops_for_verification && !pairs.is_empty() {
+                    // Generate: { let mut __hm = HashMap::new(); __hm.insert(k, v); ... __hm }
+                    let translated: TranspileResult<Vec<_>> = pairs
+                        .iter()
+                        .map(|(k, v)| {
+                            let key = self.transform_expr(k, ctx)?;
+                            let val = self.transform_expr(v, ctx)?;
+                            Ok((key, val))
+                        })
+                        .collect();
+                    let translated = translated?;
+                    let mut stmts: Vec<ExecExpr> = Vec::new();
+                    stmts.push(ExecExpr::Let {
+                        pattern: "mut __hm".to_string(),
+                        ty: None,
+                        value: Box::new(ExecExpr::Call {
+                            func: "HashMap::new".to_string(),
+                            args: vec![],
+                        }),
+                    });
+                    for (key, val) in &translated {
+                        // Wrap insert in block to discard Option return
+                        stmts.push(ExecExpr::Block(vec![
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("__hm".to_string())),
+                                method: "insert".to_string(),
+                                args: vec![key.clone(), val.clone()],
+                            },
+                        ]));
+                    }
+                    stmts.push(ExecExpr::Var("__hm".to_string()));
+                    Ok(ExecExpr::Block(stmts))
+                } else {
+                    // Generate HashMap::from([...])
+                    let translated: TranspileResult<Vec<_>> = pairs
+                        .iter()
+                        .map(|(k, v)| {
+                            let key = self.transform_expr(k, ctx)?;
+                            let val = self.transform_expr(v, ctx)?;
+                            Ok(ExecExpr::Tuple(vec![key, val]))
+                        })
+                        .collect();
+                    Ok(ExecExpr::Call {
+                        func: "HashMap::from".to_string(),
+                        args: vec![ExecExpr::VecLit(translated?)],
                     })
-                    .collect();
-                Ok(ExecExpr::Call {
-                    func: "HashMap::from".to_string(),
-                    args: vec![ExecExpr::VecLit(translated?)],
-                })
+                }
             }
 
             Expr::SeqLit(elems) => {
@@ -7325,7 +7532,16 @@ impl Translator {
                 // Check if rhs is also an identifier (copy case)
                 if let Expr::Ident(rhs_name) = rhs {
                     if ctx.input_params.contains(rhs_name) {
-                        return Ok(ExecExpr::Clone(Box::new(ExecExpr::Var(rhs_name.clone()))));
+                        let var = ExecExpr::Var(rhs_name.clone());
+                        return Ok(if let Some(ref method) = self.config.clone_method {
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(var),
+                                method: method.clone(),
+                                args: vec![],
+                            }
+                        } else {
+                            ExecExpr::Clone(Box::new(var))
+                        });
                     }
                 }
                 return self.transform_expr(rhs, ctx);
@@ -7375,10 +7591,17 @@ impl Translator {
                         // Check if RHS is an input param - if so, generate clone
                         if let Expr::Ident(rhs_name) = rhs.as_ref() {
                             if ctx.input_params.contains(rhs_name) {
-                                output_exprs.push((
-                                    name.clone(),
-                                    ExecExpr::Clone(Box::new(ExecExpr::Var(rhs_name.clone()))),
-                                ));
+                                let var = ExecExpr::Var(rhs_name.clone());
+                                let cloned = if let Some(ref method) = self.config.clone_method {
+                                    ExecExpr::MethodCall {
+                                        receiver: Box::new(var),
+                                        method: method.clone(),
+                                        args: vec![],
+                                    }
+                                } else {
+                                    ExecExpr::Clone(Box::new(var))
+                                };
+                                output_exprs.push((name.clone(), cloned));
                                 continue;
                             }
                         }
@@ -7393,10 +7616,17 @@ impl Translator {
                         // Check if LHS is an input param - if so, generate clone
                         if let Expr::Ident(lhs_name) = lhs.as_ref() {
                             if ctx.input_params.contains(lhs_name) {
-                                output_exprs.push((
-                                    name.clone(),
-                                    ExecExpr::Clone(Box::new(ExecExpr::Var(lhs_name.clone()))),
-                                ));
+                                let var = ExecExpr::Var(lhs_name.clone());
+                                let cloned = if let Some(ref method) = self.config.clone_method {
+                                    ExecExpr::MethodCall {
+                                        receiver: Box::new(var),
+                                        method: method.clone(),
+                                        args: vec![],
+                                    }
+                                } else {
+                                    ExecExpr::Clone(Box::new(var))
+                                };
+                                output_exprs.push((name.clone(), cloned));
                                 continue;
                             }
                         }
@@ -10787,6 +11017,109 @@ mod tests {
             ExecExpr::Call { func, args } => {
                 assert_eq!(func, "HashSet::new");
                 assert!(args.is_empty());
+            }
+            _ => panic!("Expected Call, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_set_lit_verified() {
+        // With generate_loops_for_verification, SetLit should expand to
+        // { broadcast use ...; let mut __hs = HashSet::new(); __hs.insert(elem); __hs }
+        let mut translator = Translator::default();
+        translator.config.generate_loops_for_verification = true;
+        let ctx = make_ctx();
+
+        let expr = Expr::SetLit(vec![Expr::Ident("x".to_string())]);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 4, "Expected 4 stmts: broadcast, let, insert, var");
+                assert!(matches!(&stmts[0], ExecExpr::BroadcastUse(p) if p.contains("hash")));
+                assert!(matches!(&stmts[1], ExecExpr::Let { pattern, .. } if pattern == "mut __hs"));
+                assert!(matches!(&stmts[2], ExecExpr::MethodCall { method, .. } if method == "insert"));
+                assert!(matches!(&stmts[3], ExecExpr::Var(v) if v == "__hs"));
+            }
+            _ => panic!("Expected Block, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_set_lit_verified_clone_method() {
+        // With clone_method set, the inserted element should use that method
+        let mut translator = Translator::default();
+        translator.config.generate_loops_for_verification = true;
+        translator.config.clone_method = Some("clone_up_to_view".to_string());
+        let ctx = make_ctx();
+
+        let expr = Expr::SetLit(vec![Expr::Ident("x".to_string())]);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::Block(stmts) => {
+                // The insert arg should use clone_up_to_view method call
+                if let ExecExpr::MethodCall { args, .. } = &stmts[2] {
+                    assert!(matches!(&args[0], ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"));
+                } else {
+                    panic!("Expected MethodCall for insert");
+                }
+            }
+            _ => panic!("Expected Block, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_set_lit_no_verification() {
+        // Without generate_loops_for_verification, SetLit falls back to HashSet::from
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::SetLit(vec![Expr::Ident("x".to_string())]);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::Call { func, .. } => {
+                assert_eq!(func, "HashSet::from");
+            }
+            _ => panic!("Expected Call, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_map_lit_verified() {
+        // With generate_loops_for_verification, MapLit should expand to
+        // { let mut __hm = HashMap::new(); { __hm.insert(k, v); } __hm }
+        let mut translator = Translator::default();
+        translator.config.generate_loops_for_verification = true;
+        let ctx = make_ctx();
+
+        let expr = Expr::MapLit(vec![
+            (Expr::Ident("k".to_string()), Expr::Ident("v".to_string())),
+        ]);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 3, "Expected 3 stmts: let, block(insert), var");
+                assert!(matches!(&stmts[0], ExecExpr::Let { pattern, .. } if pattern == "mut __hm"));
+                // Insert wrapped in a Block to discard Option<V> return
+                assert!(matches!(&stmts[1], ExecExpr::Block(_)));
+                assert!(matches!(&stmts[2], ExecExpr::Var(v) if v == "__hm"));
+            }
+            _ => panic!("Expected Block, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_map_lit_no_verification() {
+        // Without generate_loops_for_verification, MapLit falls back to HashMap::from
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::MapLit(vec![
+            (Expr::Ident("k".to_string()), Expr::Ident("v".to_string())),
+        ]);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::Call { func, .. } => {
+                assert_eq!(func, "HashMap::from");
             }
             _ => panic!("Expected Call, got {:?}", result),
         }
@@ -15859,7 +16192,7 @@ mod tests {
     fn test_build_proof_block_empty_set_only() {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
-        let block = needs.build_proof_block(&HashMap::new()).unwrap();
+        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -15879,7 +16212,7 @@ mod tests {
     fn test_build_proof_block_insert_only() {
         let mut needs = ProofNeeds::default();
         needs.has_set_insert = true;
-        let block = needs.build_proof_block(&HashMap::new()).unwrap();
+        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -15899,7 +16232,7 @@ mod tests {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
         needs.has_set_insert = true;
-        let block = needs.build_proof_block(&HashMap::new()).unwrap();
+        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 2);
@@ -15915,7 +16248,7 @@ mod tests {
     #[test]
     fn test_build_proof_block_none() {
         let needs = ProofNeeds::default();
-        assert!(needs.build_proof_block(&HashMap::new()).is_none());
+        assert!(needs.build_proof_block(&HashMap::new(), &HashMap::new()).is_none());
     }
 
     #[test]
@@ -16097,8 +16430,9 @@ mod tests {
         needs.remove_sites.push(RemoveSite {
             source_view: "s.pending_sent@".to_string(),
             element: "*value".to_string(),
+            field_name: None,
         });
-        let block = needs.build_proof_block(&HashMap::new()).unwrap();
+        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -16123,8 +16457,9 @@ mod tests {
         needs.remove_sites.push(RemoveSite {
             source_view: "s.alive@".to_string(),
             element: "*node".to_string(),
+            field_name: None,
         });
-        let block = needs.build_proof_block(&HashMap::new()).unwrap();
+        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 2);
@@ -18555,7 +18890,7 @@ mod tests {
             element: "entry".to_string(),
         });
 
-        let proof_block = needs.build_proof_block(&HashMap::new());
+        let proof_block = needs.build_proof_block(&HashMap::new(), &HashMap::new());
         assert!(proof_block.is_some());
 
         // Check the proof block structure:
@@ -18871,5 +19206,136 @@ mod tests {
         ]);
         let needs = ProofNeeds::analyze(&body);
         assert!(!needs.has_empty_vec, "Should NOT detect Vec::new inside WhileLoop");
+    }
+
+    #[test]
+    fn test_clone_input_field_with_map_fields() {
+        // Configure map_fields for HashMap with deep abstraction
+        let config = TranslatorConfig {
+            map_fields: vec![
+                ("unexecuted_learner_state".to_string(),
+                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
+            ].into_iter().collect(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config.clone());
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // map_field: s.unexecuted_learner_state -> clone_clearnerstate(&s.unexecuted_learner_state)
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "unexecuted_learner_state".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::Call { func, .. } if func == "clone_clearnerstate"),
+            "map_field should use clone_clearnerstate, got {:?}",
+            result
+        );
+
+        // Primitive field: s.max_ballot_seen -> direct access (Copy type since no field config matches)
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "max_ballot_seen".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::Field(_, name) if name == "max_ballot_seen"),
+            "Non-map_field should be direct access, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_is_map_field() {
+        let config = TranslatorConfig {
+            map_fields: vec![
+                ("unexecuted_learner_state".to_string(),
+                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
+            ].into_iter().collect(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        assert!(translator.is_map_field("unexecuted_learner_state"));
+        assert!(!translator.is_map_field("max_ballot_seen"));
+        assert!(!translator.is_map_field("constants"));
+    }
+
+    #[test]
+    fn test_map_field_is_collection_field() {
+        // map_fields should be treated as collection fields (need @ in view)
+        let config = TranslatorConfig {
+            map_fields: vec![
+                ("unexecuted_learner_state".to_string(),
+                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
+            ].into_iter().collect(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        assert!(translator.is_collection_field("unexecuted_learner_state"));
+        assert!(!translator.is_collection_field("max_ballot_seen"));
+        // has_no_field_config should return false since map_fields is set
+        assert!(!translator.has_no_field_config());
+    }
+
+    #[test]
+    fn test_get_map_field_prefix() {
+        let config = TranslatorConfig {
+            map_fields: vec![
+                ("unexecuted_learner_state".to_string(),
+                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
+            ].into_iter().collect(),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+        assert_eq!(translator.get_map_field_prefix("unexecuted_learner_state"), Some("clearnerstate"));
+        assert_eq!(translator.get_map_field_prefix("max_ballot_seen"), None);
+    }
+
+    #[test]
+    fn test_clone_field_with_clone_method() {
+        // When clone_method is set and a field is in clone_fields (without clone_field_types),
+        // it should use the clone_method instead of .clone()
+        let config = TranslatorConfig {
+            clone_fields: vec!["constants".to_string()].into_iter().collect(),
+            map_fields: vec![
+                ("unexecuted_learner_state".to_string(),
+                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
+            ].into_iter().collect(),
+            clone_method: Some("clone_up_to_view".to_string()),
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config.clone());
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // clone_field + clone_method: s.constants -> s.constants.clone_up_to_view()
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "constants".to_string(),
+        );
+        let result = translator.clone_input_field_access(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"),
+            "clone_field + clone_method should use clone_up_to_view, got {:?}",
+            result
+        );
     }
 }

@@ -929,6 +929,12 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
                 let spec_type = v.get(1).cloned().unwrap_or_default();
                 (k.clone(), (exec_type, spec_type))
             }).collect(),
+            map_fields: file_config.map_fields.iter().map(|(k, v)| {
+                let exec_map_type = v.first().cloned().unwrap_or_default();
+                let abstractify_prefix = v.get(1).cloned().unwrap_or_default();
+                let exec_value_type = v.get(2).cloned().unwrap_or_default();
+                (k.clone(), (exec_map_type, abstractify_prefix, exec_value_type))
+            }).collect(),
             extra_requires: file_config.extra_requires.clone(),
             clone_method: file_config.output.clone_method.clone(),
             ..TranslatorConfig::default()
@@ -939,6 +945,11 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
         generate_wrapper_methods: file_config.output.generate_wrapper_methods,
         wrapper_impl_type: file_config.output.wrapper_impl_type,
         skip_functions: file_config.skip_functions,
+        manual_code: file_config.output.manual_code.and_then(|rel_path| {
+            let base_dir = path.parent().unwrap_or(Path::new("."));
+            let manual_path = base_dir.join(&rel_path);
+            std::fs::read_to_string(&manual_path).ok()
+        }),
         ..TranspilerConfig::default()
     })
 }
