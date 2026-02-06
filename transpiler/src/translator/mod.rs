@@ -3837,10 +3837,22 @@ impl Translator {
             .spec_fn
             .params
             .iter()
-            .map(|param| format!("{}@", param.name))
+            .map(|param| self.format_spec_arg(param))
             .collect();
 
         format!("result@ == {}({})", func.spec_fn.name, args.join(", "))
+    }
+
+    /// Format a spec argument for ensures clauses.
+    /// For int/nat params (which become &u64 in exec), generates `*param as int`.
+    /// For bool params, generates just `param`.
+    /// For struct/enum params, generates `param@`.
+    fn format_spec_arg(&self, param: &crate::ast::Parameter) -> String {
+        match &param.ty {
+            Type::Int | Type::Nat => format!("*{} as int", param.name),
+            Type::Bool => param.name.clone(),
+            _ => format!("{}@", param.name),
+        }
     }
 
     /// Translate spec name to exec name for function DEFINITIONS (L* -> C*)
@@ -4501,7 +4513,7 @@ impl Translator {
             .iter()
             .zip(&func.param_modes)
             .map(|(param, mode)| match mode {
-                ParameterMode::Input => format!("{}@", param.name),
+                ParameterMode::Input => self.format_spec_arg(param),
                 ParameterMode::Output => {
                     let output_idx = output_names
                         .iter()
@@ -14115,5 +14127,469 @@ mod tests {
             args: vec![],
         }));
         assert!(!Translator::is_set_mutation(&ExecExpr::Var("x".to_string())));
+    }
+
+    #[test]
+    fn test_format_spec_arg_int() {
+        use crate::ast::{Parameter, Path};
+        let translator = Translator::default();
+        let param = Parameter {
+            name: "r".to_string(),
+            ty: Type::Int,
+            mode: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+            span: None,
+        };
+        assert_eq!(translator.format_spec_arg(&param), "*r as int");
+    }
+
+    #[test]
+    fn test_format_spec_arg_nat() {
+        use crate::ast::Parameter;
+        let translator = Translator::default();
+        let param = Parameter {
+            name: "n".to_string(),
+            ty: Type::Nat,
+            mode: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+            span: None,
+        };
+        assert_eq!(translator.format_spec_arg(&param), "*n as int");
+    }
+
+    #[test]
+    fn test_format_spec_arg_bool() {
+        use crate::ast::Parameter;
+        let translator = Translator::default();
+        let param = Parameter {
+            name: "flag".to_string(),
+            ty: Type::Bool,
+            mode: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+            span: None,
+        };
+        assert_eq!(translator.format_spec_arg(&param), "flag");
+    }
+
+    #[test]
+    fn test_format_spec_arg_named_type() {
+        use crate::ast::{Parameter, Path};
+        let translator = Translator::default();
+        let param = Parameter {
+            name: "s".to_string(),
+            ty: Type::Named(Path::single("LState".to_string())),
+            mode: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+            span: None,
+        };
+        assert_eq!(translator.format_spec_arg(&param), "s@");
+    }
+
+    #[test]
+    fn test_format_spec_arg_seq_type() {
+        use crate::ast::{Parameter, Path};
+        let translator = Translator::default();
+        let param = Parameter {
+            name: "log".to_string(),
+            ty: Type::Seq(Box::new(Type::Named(Path::single("Entry".to_string())))),
+            mode: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+            span: None,
+        };
+        assert_eq!(translator.format_spec_arg(&param), "log@");
+    }
+
+    #[test]
+    fn test_build_helper_spec_call_with_int_params() {
+        use crate::ast::{Generics, Parameter, Path};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LTMRcvPrepared".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "c".to_string(),
+                    ty: Type::Named(Path::single("LConstants".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "r".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Named(Path::single("LState".to_string())),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_helper_spec_call(&annotated);
+        assert_eq!(
+            spec_call,
+            "result@ == LTMRcvPrepared(s@, c@, *r as int)"
+        );
+    }
+
+    #[test]
+    fn test_build_helper_spec_call_with_mixed_params() {
+        use crate::ast::{Generics, Parameter, Path};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LAction".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "val".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "enabled".to_string(),
+                    ty: Type::Bool,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "count".to_string(),
+                    ty: Type::Nat,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Named(Path::single("LState".to_string())),
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Helper,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_helper_spec_call(&annotated);
+        assert_eq!(
+            spec_call,
+            "result@ == LAction(s@, *val as int, enabled, *count as int)"
+        );
+    }
+
+    #[test]
+    fn test_build_spec_call_with_int_input_params() {
+        use crate::ast::{Generics, Parameter, Path};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LSend1b".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "s_".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "c".to_string(),
+                    ty: Type::Named(Path::single("LConstants".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "b".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_spec_call(&annotated, &["s_".to_string()]);
+        assert_eq!(spec_call, "LSend1b(s@, result@, c@, *b as int)");
+    }
+
+    #[test]
+    fn test_build_spec_call_with_multiple_int_params() {
+        use crate::ast::{Generics, Parameter, Path};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LGrantVote".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "s_".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "c".to_string(),
+                    ty: Type::Named(Path::single("LConstants".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "term".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "log_term".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "log_index".to_string(),
+                    ty: Type::Nat,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "id".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_spec_call(&annotated, &["s_".to_string()]);
+        assert_eq!(
+            spec_call,
+            "LGrantVote(s@, result@, c@, *term as int, *log_term as int, *log_index as int, *id as int)"
+        );
+    }
+
+    #[test]
+    fn test_build_spec_call_no_int_params() {
+        use crate::ast::{Generics, Parameter, Path};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LInit".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s_".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "c".to_string(),
+                    ty: Type::Named(Path::single("LConstants".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Output, ParameterMode::Input],
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_spec_call(&annotated, &["s_".to_string()]);
+        assert_eq!(spec_call, "LInit(result@, c@)");
+    }
+
+    #[test]
+    fn test_build_spec_call_bool_input_param() {
+        use crate::ast::{Generics, Parameter, Path};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LAction".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "s_".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "flag".to_string(),
+                    ty: Type::Bool,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+            ],
+            return_type: Some("LState".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_spec_call(&annotated, &["s_".to_string()]);
+        assert_eq!(spec_call, "LAction(s@, result@, flag)");
     }
 }

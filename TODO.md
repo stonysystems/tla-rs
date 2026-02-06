@@ -1854,10 +1854,13 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
   0 occurrences of `..s.clone()` in transpiler output.
 - Affects: All protocols
 
-**12.3.0b: Fix u64 parameter view in ensures clauses**
-- [ ] For `&u64` parameters, generates `*r as int` in ensures (not `r@`, since `u64@ == u64` not `int`)
-- [ ] Detect when ensures clause references a `&u64` param and apply `*param as int` conversion
-- Affects: All protocols with u64 parameters
+**12.3.0b: Fix u64 parameter view in ensures clauses** ✅
+- [x] For `&u64` parameters, generates `*r as int` in ensures (not `r@`, since `u64@ == u64` not `int`)
+- [x] Detect when ensures clause references a `&u64` param and apply `*param as int` conversion
+- [x] Added `format_spec_arg()` helper: Int/Nat → `*param as int`, Bool → `param`, Named → `param@`
+- [x] Fixed both `build_spec_call()` and `build_helper_spec_call()` to use `format_spec_arg()`
+- [x] 11 new tests covering format_spec_arg, build_spec_call, build_helper_spec_call
+- Affects: All protocols with u64 parameters (TwoPhase, Paxos, LeaderElection, Raft, ChainReplication)
 
 **12.3.0c: Fix integer literal type suffixes**
 - [ ] Emit `0u64` instead of bare `0` when constructing fields of type u64
