@@ -44,6 +44,7 @@ pub mod templates;
 pub mod tla;
 pub mod translator;
 pub mod types;
+pub mod verus2tla;
 
 // Re-export commonly used types
 pub use annotation::{AnnotationParser, FunctionAnnotation, ModuleAnnotations};

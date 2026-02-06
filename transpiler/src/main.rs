@@ -130,6 +130,33 @@ enum Commands {
         state_name: String,
     },
 
+    /// Convert Verus spec to TLA+ (verus2tla)
+    Verus2Tla {
+        /// Input Verus spec file (.rs) or directory for batch mode
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Output TLA+ file (.tla) or directory for batch mode
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Spec prefix to strip from names (default: "L")
+        #[arg(long, default_value = "L")]
+        spec_prefix: String,
+
+        /// Include recommends as ASSUME statements
+        #[arg(long)]
+        include_recommends: bool,
+
+        /// Generate type definitions (default: true)
+        #[arg(long, default_value = "true")]
+        generate_types: bool,
+
+        /// Batch mode: process all .rs files in the input directory
+        #[arg(long)]
+        batch: bool,
+    },
+
     /// Full pipeline: TLA+ → Verus spec → Verus exec (T7.2)
     Pipeline {
         /// Input TLA+ file (.tla)
@@ -422,6 +449,165 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 );
             } else {
                 println!("{}", all_code);
+            }
+
+            Ok(())
+        }
+
+        Commands::Verus2Tla {
+            input,
+            output,
+            spec_prefix,
+            include_recommends,
+            generate_types,
+            batch,
+        } => {
+            use verus_transpiler::verus2tla::{
+                converter::{ConverterConfig, Verus2TlaConverter},
+                printer::TlaPrinter,
+            };
+
+            // Configure converter
+            let config = ConverterConfig {
+                spec_prefix: spec_prefix.clone(),
+                include_recommends: *include_recommends,
+                generate_type_defs: *generate_types,
+                ..ConverterConfig::default()
+            };
+
+            if *batch {
+                // Batch mode: process all .rs files in input directory
+                if !input.is_dir() {
+                    return Err(miette::miette!(
+                        "In batch mode, --input must be a directory, got: {}",
+                        input.display()
+                    ));
+                }
+
+                let output_dir = output.as_ref().ok_or_else(|| {
+                    miette::miette!("In batch mode, --output must be specified as output directory")
+                })?;
+
+                // Create output directory if needed
+                std::fs::create_dir_all(output_dir)
+                    .map_err(|e| miette::miette!("Failed to create output directory: {}", e))?;
+
+                if cli.verbose {
+                    eprintln!("=== Verus to TLA+ Batch Conversion ===");
+                    eprintln!("Input directory: {}", input.display());
+                    eprintln!("Output directory: {}", output_dir.display());
+                }
+
+                // Find all .rs files (excluding mod.rs)
+                let mut files: Vec<_> = std::fs::read_dir(input)
+                    .map_err(|e| miette::miette!("Failed to read input directory: {}", e))?
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| {
+                        let path = entry.path();
+                        path.is_file()
+                            && path.extension().map(|e| e == "rs").unwrap_or(false)
+                            && path.file_name().map(|n| n != "mod.rs").unwrap_or(true)
+                    })
+                    .collect();
+
+                files.sort_by_key(|e| e.path());
+
+                let printer = TlaPrinter::new();
+                let mut converted_count = 0;
+
+                for entry in files {
+                    let input_path = entry.path();
+                    let file_stem = input_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("module");
+
+                    // Convert filename to TLA+ naming convention (capitalize first letter)
+                    let tla_name = {
+                        let mut chars = file_stem.chars();
+                        match chars.next() {
+                            None => file_stem.to_string(),
+                            Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                        }
+                    };
+                    let output_path = output_dir.join(format!("{}.tla", tla_name));
+
+                    // Convert
+                    let mut converter = Verus2TlaConverter::with_config(config.clone());
+                    match converter.convert_file(&input_path) {
+                        Ok(tla_module) => {
+                            let tla_code = printer.print_module(&tla_module);
+                            if let Err(e) = std::fs::write(&output_path, &tla_code) {
+                                eprintln!(
+                                    "Warning: Failed to write {}: {}",
+                                    output_path.display(),
+                                    e
+                                );
+                            } else {
+                                if cli.verbose {
+                                    eprintln!(
+                                        "  {} -> {}",
+                                        input_path.display(),
+                                        output_path.display()
+                                    );
+                                }
+                                converted_count += 1;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "Warning: Failed to convert {}: {}",
+                                input_path.display(),
+                                e
+                            );
+                        }
+                    }
+                }
+
+                println!(
+                    "Batch conversion complete: {} files converted to {}",
+                    converted_count,
+                    output_dir.display()
+                );
+            } else {
+                // Single file mode
+                if cli.verbose {
+                    eprintln!("=== Verus to TLA+ Conversion ===");
+                    eprintln!("Input: {}", input.display());
+                }
+
+                // Create converter and convert
+                let mut converter = Verus2TlaConverter::with_config(config);
+                let tla_module = converter
+                    .convert_file(input)
+                    .map_err(|e| miette::miette!("Failed to convert Verus to TLA+: {}", e))?;
+
+                if cli.verbose {
+                    eprintln!("  Module: {}", tla_module.name);
+                    eprintln!(
+                        "  Operators: {:?}",
+                        tla_module
+                            .operators
+                            .iter()
+                            .map(|o| &o.name)
+                            .collect::<Vec<_>>()
+                    );
+                }
+
+                // Print TLA+ output
+                let printer = TlaPrinter::new();
+                let tla_code = printer.print_module(&tla_module);
+
+                // Output
+                if let Some(output_path) = output {
+                    std::fs::write(output_path, &tla_code)
+                        .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                    println!("Converted {} -> {}", input.display(), output_path.display());
+                } else if cli.stdout {
+                    println!("{}", tla_code);
+                } else {
+                    println!("{}", tla_code);
+                }
             }
 
             Ok(())
