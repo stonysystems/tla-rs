@@ -56,6 +56,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 12. [Phase 12: Generate Proof Code — TOP PRIORITY](#phase-12-generate-proof-code--top-priority-eliminate-assumes)
 13. [Phase 13: Port tla+2tlars Branch Features to Main](#phase-13-port-tla2tlars-branch-features-to-main-eliminate-branch)
 14. [Phase 9: TLA+ to TLA-rs Transpilation](#11-phase-9-tla-to-tla-rs-transpilation)
+15. [Phase 14: Regeneration Audit](#phase-14-regeneration-audit--freshly-regenerate-all-protocols-and-diff-against-current-generated-code)
 
 ---
 
@@ -4048,3 +4049,175 @@ Instead of building a TLA+ parser from scratch, consider:
   - Evaluate quality and completeness
 
 **Recommendation**: Start with tree-sitter-tlaplus for parsing, focus effort on Verus translation.
+
+---
+
+## Phase 14: Regeneration Audit — Freshly Regenerate All Protocols and Diff Against Current Generated Code
+
+**Goal**: Regenerate implementations for every protocol into a separate directory (`src/generated_fresh/`), then produce a structured diff report comparing them against the current `src/generated/` files. This reveals any manual edits, post-generation patches, or transpiler drift that have accumulated.
+
+**Why**: The project policy is that `src/generated/` must be fully reproducible by the transpiler. This audit determines how close we are to that goal and identifies exactly what gaps remain.
+
+---
+
+### Phase 14.1: Build the Transpiler
+
+- [ ] Build the transpiler in release mode:
+  ```bash
+  cd transpiler && cargo build --release
+  ```
+- [ ] Record the transpiler version/commit for the report header.
+
+---
+
+### Phase 14.2: Create Fresh Output Directory
+
+- [ ] Create `src/generated_fresh/` with subdirectories mirroring `src/generated/`:
+  ```
+  src/generated_fresh/
+  ├── TwoPhase/
+  ├── Paxos/
+  ├── LeaderElection/
+  ├── Raft/
+  ├── ChainReplication/
+  ├── PrimaryBackup/
+  ├── PBFT/
+  ├── VerticalPaxos/
+  ├── EPaxos/
+  └── RSL/
+  ```
+
+---
+
+### Phase 14.3: Regenerate Simple (Single-Module) Protocols
+
+For each of the 9 simple protocols, run two transpiler commands (types + functions) into the fresh directory.
+
+| Protocol | Module Name | Spec Dir | Config |
+|----------|------------|----------|--------|
+| TwoPhase | twophase | src/protocol/TwoPhase | twophase_transpile.toml |
+| Paxos | paxos | src/protocol/Paxos | paxos_transpile.toml |
+| LeaderElection | election | src/protocol/LeaderElection | election_transpile.toml |
+| Raft | raft | src/protocol/Raft | raft_transpile.toml |
+| ChainReplication | chain | src/protocol/ChainReplication | chain_transpile.toml |
+| PrimaryBackup | primarybackup | src/protocol/PrimaryBackup | primarybackup_transpile.toml |
+| PBFT | pbft | src/protocol/PBFT | pbft_transpile.toml |
+| VerticalPaxos | vpaxos | src/protocol/VerticalPaxos | vpaxos_transpile.toml |
+| EPaxos | epaxos | src/protocol/EPaxos | epaxos_transpile.toml |
+
+For each protocol:
+- [ ] Generate `types_gen.rs`:
+  ```bash
+  verus-transpile generate-types \
+      -i src/protocol/$PROTOCOL/types.rs \
+      -c src/protocol/$PROTOCOL/${MODULE}_transpile.toml \
+      -o src/generated_fresh/$PROTOCOL/types_gen.rs
+  ```
+- [ ] Generate `${MODULE}_gen.rs`:
+  ```bash
+  verus-transpile \
+      --input src/protocol/$PROTOCOL/${MODULE}.rs \
+      --annotations src/protocol/$PROTOCOL/${MODULE}.automan \
+      --config src/protocol/$PROTOCOL/${MODULE}_transpile.toml \
+      --output src/generated_fresh/$PROTOCOL/${MODULE}_gen.rs
+  ```
+- [ ] Record success/failure and any warnings for each.
+
+---
+
+### Phase 14.4: Regenerate RSL (Multi-Module Protocol)
+
+RSL requires special handling — multiple input files for types and per-module configs.
+
+- [ ] Generate `types_gen.rs` (struct/enum definitions only):
+  ```bash
+  verus-transpile generate-types \
+      -i src/protocol/RSL/types.rs \
+      -i src/protocol/RSL/parameters.rs \
+      -i src/protocol/RSL/configuration.rs \
+      -i src/protocol/RSL/constants.rs \
+      -i src/protocol/RSL/acceptor.rs \
+      -i src/protocol/RSL/learner.rs \
+      -i src/protocol/RSL/election.rs \
+      -i src/protocol/RSL/executor.rs \
+      -i src/protocol/RSL/proposer.rs \
+      -i src/protocol/RSL/replica.rs \
+      -c src/protocol/RSL/types_transpile.toml \
+      -o src/generated_fresh/RSL/types_gen.rs
+  ```
+  Note: RSL `types_gen.rs` has manually appended helper functions (abstractify_*, validity predicates, ballot comparisons, StaticParams, InitReplicaConstants, clone helpers). These will NOT appear in the fresh output — the diff will capture them.
+
+- [ ] Generate each module's `*_gen.rs`:
+  ```bash
+  for module in acceptor learner executor proposer replica broadcast election; do
+      verus-transpile \
+          --input src/protocol/RSL/${module}.rs \
+          --annotations src/protocol/RSL/${module}.automan \
+          --config src/protocol/RSL/${module}_transpile.toml \
+          --output src/generated_fresh/RSL/${module}_gen.rs
+  done
+  ```
+- [ ] Record success/failure and any warnings for each module.
+
+---
+
+### Phase 14.5: Compute Diffs
+
+For every generated file, produce a unified diff:
+
+- [ ] Run `diff -u` for each pair of files:
+  ```bash
+  for protocol_dir in src/generated/*/; do
+      protocol=$(basename "$protocol_dir")
+      for gen_file in "$protocol_dir"/*_gen.rs; do
+          filename=$(basename "$gen_file")
+          fresh_file="src/generated_fresh/$protocol/$filename"
+          if [ -f "$fresh_file" ]; then
+              diff -u "$fresh_file" "$gen_file" > "diffs/${protocol}_${filename}.diff" || true
+          else
+              echo "MISSING in fresh: $fresh_file" >> diffs/missing.txt
+          fi
+      done
+      # Check for files in fresh that don't exist in current
+      for fresh_file in "src/generated_fresh/$protocol/"*_gen.rs; do
+          filename=$(basename "$fresh_file")
+          if [ ! -f "src/generated/$protocol/$filename" ]; then
+              echo "NEW in fresh: src/generated_fresh/$protocol/$filename" >> diffs/new.txt
+          fi
+      done
+  done
+  ```
+- [ ] Also diff any `mod.rs` files if present.
+
+---
+
+### Phase 14.6: Generate the Report
+
+Produce `docs/dev/regeneration-audit-report.md` with the following structure:
+
+- [ ] **Header**: Date, transpiler commit, Verus version, Rust toolchain.
+- [ ] **Summary table**: For each protocol/file, show:
+  | Protocol | File | Lines (current) | Lines (fresh) | Diff Lines | Status |
+  with status being one of: `Identical`, `Minor drift`, `Manual edits present`, `Significant divergence`.
+- [ ] **Per-protocol sections**: For each file with differences:
+  - Category of changes (manual helper functions, proof edits, assume removal, formatting, etc.)
+  - Key excerpts from the diff (truncated if large)
+  - Assessment: can the diff be eliminated by improving the transpiler config, or does it require transpiler code changes?
+- [ ] **RSL types_gen.rs special section**: List all manually appended helper functions that the transpiler does not generate, with line ranges.
+- [ ] **Actionable items**: Prioritized list of changes needed to make `src/generated/` fully reproducible from `scripts/regenerate_all.sh`.
+
+---
+
+### Phase 14.7: Cleanup
+
+- [ ] Keep `src/generated_fresh/` and `diffs/` for reference (do NOT commit; add to `.gitignore`).
+- [ ] Update this section with results after the audit is complete.
+
+---
+
+### Success Criteria
+
+- All 10 protocols regenerated successfully (no transpiler crashes).
+- Every `*_gen.rs` file in `src/generated/` has a corresponding diff.
+- Report clearly identifies which files are fully reproducible vs. which have manual edits.
+- Actionable items are prioritized for closing the reproducibility gap.
