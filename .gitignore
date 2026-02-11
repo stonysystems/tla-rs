@@ -14,3 +14,7 @@ bin/
 doubts.txt
 .apas
 Cargo.lock
+# Phase 14 regeneration artifacts
+src/generated_fresh/
+diffs/
+Phase14_Regeneration_Audit_Report.md
