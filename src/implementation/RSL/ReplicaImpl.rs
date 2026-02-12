@@ -1,6 +1,7 @@
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::generated::RSL::acceptor_gen as generated_acceptor;
+use crate::generated::RSL::learner_gen as generated_learner;
 use crate::implementation::RSL::types_i::*;
 use vstd::prelude::*;
 use crate::implementation::RSL::acceptorimpl::*;
@@ -42,7 +43,7 @@ impl CReplica{
             nextHeartbeatTime: 0,
             proposer: CProposer::CProposerInit(c.clone_up_to_view()),
             acceptor: generated_acceptor::CAcceptorInit(&c),
-            learner: CLearner::CLearnerInit(c.clone_up_to_view()),
+            learner: generated_learner::CLearnerInit(&c),
             executor: CExecutor::CExecutorInit(c.clone_up_to_view())
         };
         s
@@ -413,12 +414,12 @@ impl CReplica{
                 match &self.executor.next_op_to_execute {
                     COutstandingOperation::COutstandingOpUnknown{} => {
                         if self.executor.ops_complete < opn_2b || self.executor.ops_complete == opn_2b{
-                            self.learner.CLearnerProcess2b(received_packet);
+                            self.learner = generated_learner::CLearnerProcess2b(&self.learner, &received_packet);
                         }
                     }
                     COutstandingOperation::COutstandingOpKnown{v, bal} => {
                         if self.executor.ops_complete < opn_2b {
-                            self.learner.CLearnerProcess2b(received_packet);
+                            self.learner = generated_learner::CLearnerProcess2b(&self.learner, &received_packet);
                         }
                     }
                 }
@@ -487,7 +488,7 @@ impl CReplica{
                 if contains(&self.executor.constants.all.config.replica_ids, &received_packet.src)
                     && opn_state_supply > self.executor.ops_complete
                 {
-                    self.learner.CLearnerForgetOperationsBefore(opn_state_supply);
+                    self.learner = generated_learner::CLearnerForgetOperationsBefore(&self.learner, &opn_state_supply);
                     self.executor.CExecutorProcessAppStateSupply(received_packet);
                 }
 
@@ -703,7 +704,7 @@ impl CReplica{
                     && self.executor.constants.CReplicaConstantsValid()
                 {
                     self.proposer.CProposerResetViewTimerDueToExecution(&v);
-                    self.learner.CLearnerForgetDecision(self.executor.ops_complete);
+                    self.learner = generated_learner::CLearnerForgetDecision(&self.learner, &self.executor.ops_complete);
                     self.executor.CExecutorExecute()
                 } else {
                     let mut pkt_vec: Vec<CPacket> = Vec::new();

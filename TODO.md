@@ -1450,7 +1450,15 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
             - `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes.
           - Follow-up suite unblock:
             - fixed pre-existing PBFT generated arithmetic overflow check by adding a no-overflow precondition to `src/generated/PBFT/pbft_gen.rs::CCheckpoint`.
-        - [ ] Phase D: Wire ReplicaImpl learner calls to generated functions (~4 call sites)
+        - [x] Phase D: Wire ReplicaImpl learner calls to generated functions (~5 call sites) [26:02:12]
+          - Enabled `learner_gen` module in `src/generated/RSL/mod.rs`
+          - Switched 5 learner call sites in `ReplicaImpl.rs` from manual `learnerimpl` methods to `generated_learner` free functions:
+            - `CLearnerInit`: functional init with `&CReplicaConstants` ref
+            - `CLearnerProcess2b` (×2): return new `CLearner` state instead of mutating `&mut self`
+            - `CLearnerForgetOperationsBefore`: return new state with `&u64` param
+            - `CLearnerForgetDecision`: return new state with `&u64` param
+          - No packet validity assertions needed (learner functions don't generate packets)
+          - Result: 532 verified, 0 errors (up from 509 with Phase C only)
         - [ ] Phase E: Wire ReplicaImpl executor calls to generated functions (~7 call sites)
         - [ ] Phase F: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
         - [ ] Phase G: Wire ReplicaImpl replica-level init to generated functions
@@ -4772,3 +4780,110 @@ After all spec enhancements are complete:
 - All 9 protocols regenerate successfully with the transpiler
 - All generated implementations pass Verus verification (0 errors)
 - Each protocol models: state transitions, message types, and a Next relation covering all actions
+
+---
+
+### Phase 16: End-to-End Compile & Run Testing
+
+**Goal**: Every example must not only transpile successfully, but also **compile** and **run** correctly. Track status in `docs/conversion-testing-guide.md` and fix transpiler bugs iteratively until all examples pass.
+
+**Status tracking**: `docs/conversion-testing-guide.md` contains the "Compile & Run Status Matrix" with per-example, per-direction results.
+
+#### 16.1: TLA+ → Verus Spec — Compile Testing
+All 7 TLA+ examples transpile successfully. Need to verify generated specs compile with Verus.
+
+- [x] SimpleCounter: transpiles ✅
+- [x] DieHard: transpiles ✅
+- [x] EWD840: transpiles ✅
+- [x] TwoPhase: transpiles ✅
+- [x] Raft: transpiles ✅
+- [x] Paxos: transpiles ✅
+- [x] PBFT: transpiles ✅
+- [ ] Verify all 7 generated specs compile with Verus (standalone)
+
+**Command**:
+```bash
+cd transpiler
+cargo run --release -- translate-tla --input tests/tla_examples/<NAME>.tla --output /tmp/<name>.rs --gen-modes
+```
+
+#### 16.2: Verus Spec → Verus Exec — Fix TLA-Generated Spec Parsing
+5 of 7 TLA-generated specs fail at the spec→exec stage. Fix parser/annotation issues.
+
+- [x] SimpleCounter: transpiles ✅
+- [x] DieHard: transpiles ✅
+- [ ] EWD840: ❌ Annotation error — parameter count mismatch
+- [ ] TwoPhase: ❌ Parse error — Expected identifier, found `"`
+- [ ] Raft: ❌ Parse error — Expected identifier, found `"`
+- [ ] Paxos: ❌ Parse error — Expected identifier, found `"`
+- [ ] PBFT: ❌ Parse error — Expected identifier, found `"`
+- [ ] Verify all 7 generated exec files compile with Verus
+
+**Command**:
+```bash
+cd transpiler
+# Two-step: first translate-tla, then spec→exec
+cargo run --release -- translate-tla --input tests/tla_examples/<NAME>.tla --output /tmp/<name>.rs --gen-modes
+cargo run --release -- --input /tmp/<name>.rs --annotations /tmp/<name>.automan --output /tmp/<name>_exec.rs
+```
+
+#### 16.3: Verus Spec → TLA+ — Fix Parse Errors
+4 of 7 TLA-generated specs fail verus2tla conversion.
+
+- [x] SimpleCounter: ✅
+- [x] DieHard: ✅
+- [x] EWD840: ✅
+- [ ] TwoPhase: ❌ Parse error on generated spec
+- [ ] Raft: ❌ Parse error on generated spec
+- [ ] Paxos: ❌ Parse error on generated spec
+- [ ] PBFT: ❌ Parse error on generated spec
+- [x] RSL/election.rs: ✅ (hand-written spec)
+- [x] RSL/acceptor.rs: ✅ (hand-written spec)
+
+**Command**:
+```bash
+cd transpiler
+cargo run --release -- verus2-tla --input /tmp/<name>.rs --output /tmp/<name>.tla
+```
+
+#### 16.4: TLA+ → Verus Exec (Pipeline) — End-to-End
+Same failures as 16.2 since the pipeline chains direction 1 and 2.
+
+- [x] SimpleCounter: pipeline ✅
+- [x] DieHard: pipeline ✅
+- [ ] EWD840: ❌ (fails at exec stage)
+- [ ] TwoPhase: ❌ (fails at exec stage)
+- [ ] Raft: ❌ (fails at exec stage)
+- [ ] Paxos: ❌ (fails at exec stage)
+- [ ] PBFT: ❌ (fails at exec stage)
+- [ ] Verify all 7 pipeline outputs compile with Verus
+
+**Command**:
+```bash
+cd transpiler
+cargo run --release -- pipeline --tla-input tests/tla_examples/<NAME>.tla --exec-output /tmp/<name>_exec.rs --keep-intermediate
+```
+
+#### 16.5: Generated Protocol Code — Verus Compilation
+Generated code in `src/generated/` currently has 128 errors when built with Verus.
+
+- [ ] Fix `iter:` prefix bug in printer (`printer/mod.rs:487`) — all generated loops have invalid syntax
+- [ ] Fix missing `.clone()` on shared reference fields (102 E0507 errors)
+- [ ] Fix Clone derive issues in types_gen.rs files across all protocols
+- [ ] RSL/election_gen.rs: 7 errors → 0 errors
+- [ ] RSL/acceptor_gen.rs: 8 errors → 0 errors
+- [ ] RSL/executor_gen.rs: 5 errors → 0 errors
+- [ ] RSL/proposer_gen.rs: 24 errors → 0 errors
+- [ ] RSL/replica_gen.rs: 58 errors → 0 errors
+- [ ] Non-RSL protocols types_gen.rs: fix all Clone derive issues
+- [ ] Full Verus build passes: `scons --verus-path=... liblib.so` with 0 errors
+
+**Command**:
+```bash
+scons --verus-path=/home/users/zihao/verus/verus liblib.so
+```
+
+#### 16.6: Continuous Tracking
+- [ ] Update `docs/conversion-testing-guide.md` status matrix after each fix
+- [ ] Add CI step to run all 4 directions on all examples and report status
+- [ ] All examples pass compile and run in all applicable directions
