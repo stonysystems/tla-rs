@@ -1258,7 +1258,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - [x] Extract component section part 2 (`CProposer`, `CReplica`, `CScheduler`, CRslIo abstractify helpers, `unreachable_value`) [26:02:12, 23:25]
           - Scope/plan check: source range `src/generated/RSL/types_gen.rs:1287-1544` (~258 LOC), which fits the <500 LOC leaf target
           - Appended block to `src/protocol/RSL/types_manual_helpers.rs` and preserved original ordering of helper sections
-    - [ ] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs
+    - [x] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs [26:02:12, 23:55]
+      - Scope/plan check: this leaf is config + validation only (<100 LOC changes) and stays below the <500 LOC target
+      - Added `output.manual_code = "types_manual_helpers.rs"` to `src/protocol/RSL/types_transpile.toml`
+      - Added transpiler CLI test to validate the config loads helper contents from the dedicated source file
     - [ ] Regenerate RSL (`scripts/regenerate_all.sh RSL`) and close type compatibility drift (generated/implementation type path alignment, helper visibility, marshalable boundaries)
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)

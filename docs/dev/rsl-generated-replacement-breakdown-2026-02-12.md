@@ -43,3 +43,6 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 - Completed component section part 2 extraction:
   - copied `src/generated/RSL/types_gen.rs:1287-1544` (~258 LOC, under the <500 LOC leaf target)
   - extracted `CProposer`, `CReplica`, `CScheduler`, `abstractify_clpacket`, `abstractify_crslio`, `abstractify_crslio_seq`, and `unreachable_value`
+- Wired RSL type generation config to externalized helper source:
+  - set `output.manual_code = "types_manual_helpers.rs"` in `src/protocol/RSL/types_transpile.toml`
+  - added a CLI config-loading test to ensure this file is read and injected via `generate-types`

@@ -1321,6 +1321,24 @@ manual_code = "manual_helpers.rs"
     }
 
     #[test]
+    fn test_rsl_types_config_loads_manual_helpers() {
+        let config_path = PathBuf::from("../src/protocol/RSL/types_transpile.toml");
+        let config = load_config(&config_path).expect("RSL type config should load");
+        let manual = config
+            .manual_code
+            .expect("RSL type config should load output.manual_code file");
+
+        assert!(
+            manual.contains("pub struct CProposer"),
+            "loaded manual helper block should include extracted proposer section"
+        );
+        assert!(
+            manual.contains("pub fn unreachable_value<T>()"),
+            "loaded manual helper block should include unreachable_value helper"
+        );
+    }
+
+    #[test]
     fn test_load_config_generate_proofs() {
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
