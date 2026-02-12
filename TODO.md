@@ -1242,6 +1242,12 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Wired CLI `generate-types` path to resolve and load `output.manual_code` from TOML
       - Added codegen regression test: `test_manual_code_injected_before_verus_close`
     - [ ] Extract current RSL manual helper block from `src/generated/RSL/types_gen.rs` into a dedicated source file under `src/protocol/RSL/`
+      - Scope analysis [26:02:12, 21:00]: full helper block is ~1.1k inserted LOC vs fresh type generation output, so this extraction is split into <500 LOC leaves.
+      - [x] Extract foundational helper-only section into `src/protocol/RSL/types_manual_helpers.rs` [26:02:12, 21:10]
+        - Included: `COperationNumber` helper predicates, ballot comparison helpers, request/reply/votes abstraction+clone helpers, learner-state abstraction helpers
+        - Excluded for next leaves: large impl-heavy sections (`CConfiguration`, `CConstants`, `CReplicaConstants`, `CAcceptor`, `CExecutor`, `CProposer`, etc.)
+      - [ ] Extract struct/impl extension sections (`CParameters`, `CConfiguration`, `CConstants`, `CReplicaConstants`) into the same helper file
+      - [ ] Extract remaining component extension sections (`CAcceptor`, `CLearner`, `CElectionState`, `CExecutor`, `CProposer`, `CReplica`, `CScheduler`, IO abstractify helpers)
     - [ ] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs
     - [ ] Regenerate RSL (`scripts/regenerate_all.sh RSL`) and close type compatibility drift (generated/implementation type path alignment, helper visibility, marshalable boundaries)
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover

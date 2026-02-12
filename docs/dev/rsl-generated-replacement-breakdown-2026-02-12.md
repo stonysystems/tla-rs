@@ -22,3 +22,13 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 ## Completed in this iteration
 - Implemented leaf (1): `generate-types` now supports manual code injection for type output.
 - Added regression test coverage in transpiler codegen.
+
+## Follow-up extraction progress (same day)
+- Measured helper drift in `src/generated/RSL/types_gen.rs` against fresh generation:
+  - net helper/custom section size is too large for one safe leaf (~1.1k inserted lines).
+- Split extraction into smaller leaves in `TODO.md`.
+- Completed first extraction leaf by creating `src/protocol/RSL/types_manual_helpers.rs` with foundational helper-only code:
+  - operation-number abstraction/validity helpers
+  - ballot comparison helpers
+  - request/reply/vote clone+abstraction helpers
+  - learner-state abstraction helpers

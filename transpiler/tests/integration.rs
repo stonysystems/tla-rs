@@ -861,3 +861,36 @@ fn test_chain_replication_config_loading() {
     assert_eq!(remapping["LConstants"].as_str(), Some("CConstants"));
     assert_eq!(remapping["LNodeRole"].as_str(), Some("CNodeRole"));
 }
+
+#[test]
+fn test_rsl_types_manual_helpers_foundational_symbols_present() {
+    let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
+        .expect("Failed to read RSL types manual helpers");
+
+    let expected_symbols = [
+        "AbstractifyCOperationNumberToOperationNumber",
+        "COperationNumberIsAbstractable",
+        "COperationNumberIsValid",
+        "CBalLt",
+        "CBalLeq",
+        "CBalEq",
+        "clone_request_batch_up_to_view",
+        "crequestbatch_is_valid",
+        "clone_creply_cache_up_to_view",
+        "creplycache_is_valid",
+        "clone_cvotes_up_to_view",
+        "cvotes_is_valid",
+        "abstractify_cvotes",
+        "clearnerstate_is_valid",
+        "abstractify_clearnerstate",
+        "clone_vec_coperationnumber",
+    ];
+
+    for symbol in expected_symbols {
+        assert!(
+            source.contains(symbol),
+            "missing symbol `{}` in extracted helper file",
+            symbol
+        );
+    }
+}
