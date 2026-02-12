@@ -24,40 +24,6 @@ use vstd::set_lib::*;
 
 verus! {
 
-#[derive(Clone)]
-pub struct CElectionState {
-    pub constants: CReplicaConstants,
-    pub current_view: CBallot,
-    pub current_view_suspectors: HashSet<u64>,
-    pub epoch_end_time: u64,
-    pub epoch_length: u64,
-    pub requests_received_this_epoch: Vec<CRequest>,
-    pub requests_received_prev_epochs: Vec<CRequest>,
-}
-
-impl CElectionState {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.constants.valid()
-        &&& self.current_view.valid()
-    }
-}
-
-impl View for CElectionState {
-    type V = ElectionState;
-
-    open spec fn view(&self) -> ElectionState {
-        ElectionState {
-            constants: self.constants@,
-            current_view: self.current_view@,
-            current_view_suspectors: self.current_view_suspectors@.map(|x: u64| x as int),
-            epoch_end_time: self.epoch_end_time as int,
-            epoch_length: self.epoch_length as int,
-            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i: int, x: CRequest| x@),
-            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i: int, x: CRequest| x@),
-        }
-    }
-}
-
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
 ensures
@@ -166,6 +132,8 @@ ensures
         epoch_length: c.all.params.baseline_view_timeout_period,
         requests_received_this_epoch: vec![],
         requests_received_prev_epochs: vec![],
+        cur_req_set: HashSet::new(),
+        prev_req_set: HashSet::new(),
     };
     proof {
         lemma_empty_set_map();
@@ -205,6 +173,8 @@ ensures
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: es.requests_received_this_epoch.clone(),
                 requests_received_prev_epochs: es.requests_received_prev_epochs.clone(),
+                cur_req_set: HashSet::new(),
+                prev_req_set: HashSet::new(),
             }
         } else {
             if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
@@ -225,6 +195,8 @@ ensures
                     epoch_length: new_epoch_length,
                     requests_received_this_epoch: vec![],
                     requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
+                    cur_req_set: HashSet::new(),
+                    prev_req_set: HashSet::new(),
                 }
 
             } else {
@@ -262,6 +234,8 @@ ensures
                 epoch_length: new_epoch_length,
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: es.requests_received_this_epoch.clone(),
+                cur_req_set: HashSet::new(),
+                prev_req_set: HashSet::new(),
             }
 
         } else {
@@ -281,6 +255,8 @@ ensures
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
+                cur_req_set: HashSet::new(),
+                prev_req_set: HashSet::new(),
             }
         }
     };
@@ -312,6 +288,8 @@ ensures
             epoch_length: new_epoch_length,
             requests_received_this_epoch: vec![],
             requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
+            cur_req_set: HashSet::new(),
+            prev_req_set: HashSet::new(),
         }
 
     };
@@ -369,6 +347,8 @@ if {
             epoch_length: es.epoch_length,
             requests_received_this_epoch: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_this_epoch, &vec![req.clone()]), es.constants.all.params.max_integer_val),
             requests_received_prev_epochs: es.requests_received_prev_epochs.clone(),
+            cur_req_set: HashSet::new(),
+            prev_req_set: HashSet::new(),
         }
     }
 }

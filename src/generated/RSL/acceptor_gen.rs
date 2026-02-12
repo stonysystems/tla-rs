@@ -18,36 +18,6 @@ use vstd::set::*;
 
 verus! {
 
-#[derive(Clone)]
-pub struct CAcceptor {
-    pub constants: CReplicaConstants,
-    pub max_bal: CBallot,
-    pub votes: CVotes,
-    pub last_checkpointed_operation: Vec<u64>,
-    pub log_truncation_point: u64,
-}
-
-impl CAcceptor {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.constants.valid()
-        &&& self.max_bal.valid()
-    }
-}
-
-impl View for CAcceptor {
-    type V = LAcceptor;
-
-    open spec fn view(&self) -> LAcceptor {
-        LAcceptor {
-            constants: self.constants@,
-            max_bal: self.max_bal@,
-            votes: self.votes@,
-            last_checkpointed_operation: self.last_checkpointed_operation@.map(|i: int, x: u64| x@),
-            log_truncation_point: self.log_truncation_point@,
-        }
-    }
-}
-
 /// Helper proof: mapping over an empty Seq yields an empty Seq.
 proof fn lemma_empty_seq_map()
 ensures
@@ -190,6 +160,7 @@ CAcceptor {
         votes: HashMap::new(),
         log_truncation_point: 0u64,
         last_checkpointed_operation: (0..c.all.config.replica_ids.len()).map(|_| 0).collect(),
+        min_vote_opn: 0u64,
     }
 }
 
@@ -212,6 +183,7 @@ ensures
     votes: s.votes,
     last_checkpointed_operation: s.last_checkpointed_operation,
     log_truncation_point: s.log_truncation_point,
+    min_vote_opn: 0u64,
 }, vec![CPacket {
     src: s.constants.all.config.replica_ids[s.constants.my_index],
     dst: inp.src,
@@ -269,6 +241,7 @@ ensures
     } else {
         s.votes
     },
+    min_vote_opn: 0u64,
 }, sent_packets)
  }
  }
@@ -293,6 +266,7 @@ if s.constants.all.config.replica_ids.contains(inp.src) {
                 max_bal: s.max_bal,
                 votes: s.votes,
                 log_truncation_point: s.log_truncation_point,
+                min_vote_opn: 0u64,
             }
         } else {
             s.clone()
@@ -320,6 +294,7 @@ if (opn <= s.log_truncation_point) {
             votes: s_votes,
             last_checkpointed_operation: s.last_checkpointed_operation,
             log_truncation_point: opn.clone(),
+            min_vote_opn: 0u64,
         }
 
     }

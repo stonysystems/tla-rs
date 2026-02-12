@@ -3,6 +3,8 @@
 //! This module handles pretty-printing of generated Verus exec functions
 //! to properly formatted Rust source code.
 
+use std::collections::HashMap;
+
 use crate::translator::{ExecExpr, ExecFunction, ExecParameter};
 
 /// Configuration for code printing
@@ -14,6 +16,11 @@ pub struct PrinterConfig {
     pub max_width: usize,
     /// Whether to include comments
     pub include_comments: bool,
+    /// Extra fields to append to struct constructions.
+    /// Key format: "TypeName.field_name", Value: "type = default_value"
+    /// When a struct construction for TypeName is printed, any extra fields
+    /// not already present will be appended with their default values.
+    pub extra_fields: HashMap<String, String>,
 }
 
 impl Default for PrinterConfig {
@@ -22,6 +29,7 @@ impl Default for PrinterConfig {
             indent: "    ".to_string(),
             max_width: 100,
             include_comments: true,
+            extra_fields: HashMap::new(),
         }
     }
 }
@@ -250,6 +258,8 @@ impl Printer {
                 self.write(" {");
                 self.newline();
                 self.current_indent += 1;
+                let existing_field_names: std::collections::HashSet<&str> =
+                    fields.iter().map(|(n, _)| n.as_str()).collect();
                 for (field_name, field_value) in fields {
                     self.indent();
                     self.write(field_name);
@@ -267,6 +277,25 @@ impl Printer {
                     } else {
                         self.print_expr(field_value);
                     }
+                    self.write(",");
+                    self.newline();
+                }
+                // Append extra fields from config that aren't already present
+                let prefix = format!("{}.", name);
+                let mut extra: Vec<(String, String)> = self.config.extra_fields.iter()
+                    .filter_map(|(key, value)| {
+                        key.strip_prefix(&prefix).map(|field_name| (field_name.to_string(), value.clone()))
+                    })
+                    .filter(|(field_name, _)| !existing_field_names.contains(field_name.as_str()))
+                    .collect();
+                extra.sort_by(|(a, _), (b, _)| a.cmp(b));
+                for (field_name, value) in &extra {
+                    // Parse "type = default" format — use only the default value
+                    let default_val = value.split('=').nth(1).map(|s| s.trim()).unwrap_or("Default::default()");
+                    self.indent();
+                    self.write(field_name);
+                    self.write(": ");
+                    self.write(default_val);
                     self.write(",");
                     self.newline();
                 }
@@ -1007,5 +1036,79 @@ mod tests {
         );
         assert!(output.contains("let x = 1;"), "expected let binding in wrapped block");
         assert!(output.contains("x"), "expected block tail expression");
+    }
+
+    #[test]
+    fn test_print_struct_extra_fields() {
+        let mut extra = HashMap::new();
+        extra.insert("CAcceptor.min_vote_opn".to_string(), "u64 = 0u64".to_string());
+        extra.insert("CAcceptor.extra_flag".to_string(), "bool = false".to_string());
+        let config = PrinterConfig {
+            extra_fields: extra,
+            ..Default::default()
+        };
+        let mut printer = Printer::new(config);
+
+        let expr = ExecExpr::Struct {
+            name: "CAcceptor".to_string(),
+            fields: vec![
+                ("max_bal".to_string(), ExecExpr::Literal("0".to_string())),
+            ],
+        };
+
+        printer.print_expr(&expr);
+        let output = &printer.output;
+        assert!(output.contains("max_bal: 0,"), "expected original field: {}", output);
+        assert!(output.contains("extra_flag: false,"), "expected extra_flag: {}", output);
+        assert!(output.contains("min_vote_opn: 0u64,"), "expected min_vote_opn: {}", output);
+    }
+
+    #[test]
+    fn test_print_struct_extra_fields_not_duplicated() {
+        let mut extra = HashMap::new();
+        extra.insert("CAcceptor.min_vote_opn".to_string(), "u64 = 0u64".to_string());
+        let config = PrinterConfig {
+            extra_fields: extra,
+            ..Default::default()
+        };
+        let mut printer = Printer::new(config);
+
+        // min_vote_opn is already present, so it should not be duplicated
+        let expr = ExecExpr::Struct {
+            name: "CAcceptor".to_string(),
+            fields: vec![
+                ("max_bal".to_string(), ExecExpr::Literal("0".to_string())),
+                ("min_vote_opn".to_string(), ExecExpr::Literal("42".to_string())),
+            ],
+        };
+
+        printer.print_expr(&expr);
+        let output = &printer.output;
+        assert!(output.contains("min_vote_opn: 42,"), "expected original min_vote_opn value: {}", output);
+        // Count occurrences of "min_vote_opn" — should be exactly 1
+        assert_eq!(output.matches("min_vote_opn").count(), 1, "extra field should not be duplicated: {}", output);
+    }
+
+    #[test]
+    fn test_print_struct_extra_fields_wrong_type_ignored() {
+        let mut extra = HashMap::new();
+        extra.insert("CProposer.extra_field".to_string(), "u64 = 0".to_string());
+        let config = PrinterConfig {
+            extra_fields: extra,
+            ..Default::default()
+        };
+        let mut printer = Printer::new(config);
+
+        // Struct is CAcceptor, not CProposer, so extra_field should not appear
+        let expr = ExecExpr::Struct {
+            name: "CAcceptor".to_string(),
+            fields: vec![
+                ("max_bal".to_string(), ExecExpr::Literal("0".to_string())),
+            ],
+        };
+
+        printer.print_expr(&expr);
+        let output = &printer.output;
+        assert!(!output.contains("extra_field"), "extra_field should not appear for CAcceptor: {}", output);
     }
 }

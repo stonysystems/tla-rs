@@ -46,6 +46,9 @@ nat_type = "u64"
 [function_paths]
 "BroadcastToEveryone" = "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
 
+[extra_fields]
+"CAcceptor.min_vote_opn" = "u64 = 0u64"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
@@ -54,8 +57,8 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
-# Generate CAcceptor inline
-generate_inline_types = true
+# CAcceptor comes from types_gen.rs (includes optimization field min_vote_opn)
+generate_inline_types = false
 # Custom imports for acceptor module
 # Note: Shared infrastructure types needed for CBallot, CMessage, etc.
 custom_imports = [

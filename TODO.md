@@ -1411,6 +1411,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - [x] Phase A: Fix generated module imports to use types_gen instead of manual modules [26:02:12]
           - [x] Fix `proposer_gen.rs` import: change `CIncompleteBatchTimerOff` from `ProposerImpl` to `types_gen` — updated both generated code and transpiler config (`proposer_transpile.toml`)
           - [x] Fix `replica_gen.rs` import: removed unused `CIsLogTruncationPointValid` import from both generated code and transpiler config (`replica_transpile.toml`)
+        - [x] Phase A.5: Unify generated types with types_gen.rs (eliminate inline type conflicts) [26:02:12]
+          - Added `extra_fields` support to transpiler printer (`printer/mod.rs`): struct constructions now auto-inject optimization fields with default values
+          - Wired `extra_fields` config from TOML through `main.rs` to `PrinterConfig`
+          - Set `generate_inline_types = false` in acceptor/proposer/election configs
+          - Added `[extra_fields]` sections: CAcceptor.min_vote_opn, CProposer.max_log_truncation_point/max_opn_with_proposal, CElectionState.cur_req_set/prev_req_set
+          - Regenerated acceptor_gen.rs, proposer_gen.rs, election_gen.rs — all use types_gen.rs definitions now
+          - Verified: 509 verified, 1 pre-existing error; 852 transpiler tests pass
         - [ ] Phase B: Wire ReplicaImpl acceptor calls to generated functions (~5 call sites)
         - [ ] Phase C: Wire ReplicaImpl learner calls to generated functions (~4 call sites)
         - [ ] Phase D: Wire ReplicaImpl executor calls to generated functions (~7 call sites)

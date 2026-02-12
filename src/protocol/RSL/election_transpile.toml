@@ -42,6 +42,10 @@ nat_type = "u64"
 [function_paths]
 "BoundRequestSequence" = "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"
 
+[extra_fields]
+"CElectionState.cur_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
+"CElectionState.prev_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
@@ -50,7 +54,8 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
-generate_inline_types = true
+# CElectionState comes from types_gen.rs (includes optimization fields)
+generate_inline_types = false
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",

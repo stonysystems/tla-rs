@@ -53,6 +53,10 @@ nat_type = "u64"
 "RslMessageRequest" = "CMessage::CMessageRequest"
 "RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
 
+[extra_fields]
+"CProposer.max_log_truncation_point" = "u64 = 0u64"
+"CProposer.max_opn_with_proposal" = "u64 = 0u64"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
@@ -61,8 +65,8 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
-# Generate CProposer inline instead of importing from ProposerImpl.rs
-generate_inline_types = true
+# CProposer comes from types_gen.rs (includes optimization fields)
+generate_inline_types = false
 # Custom imports for proposer module
 # Note: Still need implementation imports for shared infrastructure types.
 # CElectionState needed from ElectionImpl until election module is fully generated.

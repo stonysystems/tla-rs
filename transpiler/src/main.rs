@@ -963,6 +963,10 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             let manual_path = base_dir.join(&rel_path);
             std::fs::read_to_string(&manual_path).ok()
         }),
+        printer: verus_transpiler::PrinterConfig {
+            extra_fields: file_config.extra_fields,
+            ..Default::default()
+        },
         ..TranspilerConfig::default()
     })
 }
