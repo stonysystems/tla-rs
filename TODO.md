@@ -1407,6 +1407,15 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - Fixed transpiler parser: parenthesized expressions now support postfix `as` casts
         - Result: 509 verified, 1 pre-existing proof error in ReplicaImpl.rs:906
       - [ ] Wire `ReplicaImpl` to use generated modules instead of manual implementation modules (update imports in `src/implementation/RSL/ReplicaImpl.rs` and callers)
+        - Analysis [26:02:12]: Major structural mismatch — manual uses `&mut self` mutation, generated uses `&self → new_state` rebinding. 96 call sites across ~1000 lines. Generated code also imports helpers from manual code (`CIsLogTruncationPointValid` from acceptorimpl, `CIncompleteBatchTimerOff` from ProposerImpl). Optimized variants are commented out, not blocking.
+        - [x] Phase A: Fix generated module imports to use types_gen instead of manual modules [26:02:12]
+          - [x] Fix `proposer_gen.rs` import: change `CIncompleteBatchTimerOff` from `ProposerImpl` to `types_gen` — updated both generated code and transpiler config (`proposer_transpile.toml`)
+          - [x] Fix `replica_gen.rs` import: removed unused `CIsLogTruncationPointValid` import from both generated code and transpiler config (`replica_transpile.toml`)
+        - [ ] Phase B: Wire ReplicaImpl acceptor calls to generated functions (~5 call sites)
+        - [ ] Phase C: Wire ReplicaImpl learner calls to generated functions (~4 call sites)
+        - [ ] Phase D: Wire ReplicaImpl executor calls to generated functions (~7 call sites)
+        - [ ] Phase E: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
+        - [ ] Phase F: Wire ReplicaImpl replica-level init to generated functions
       - [ ] Add integration test verifying generated modules are accessible and produce correct types
       - [ ] Deprecate manual implementation modules (mark with `#[deprecated]` or move to `_legacy/`)
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)

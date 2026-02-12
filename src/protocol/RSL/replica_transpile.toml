@@ -102,7 +102,6 @@ custom_imports = [
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::CUpperBoundedAddition;",
-    "use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;",
     "use crate::protocol::RSL::replica::*;",
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::RSL::configuration::*;",

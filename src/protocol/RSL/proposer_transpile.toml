@@ -81,8 +81,8 @@ custom_imports = [
     "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    # CProposer now generated inline with generate_inline_types = true - but we need the timer enum
-    "use crate::implementation::RSL::ProposerImpl::CIncompleteBatchTimer::CIncompleteBatchTimerOff;",
+    # CIncompleteBatchTimer is defined in types_gen.rs - import the variant for convenience
+    "use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTimerOff;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::CUpperBoundedAddition;",
     "use crate::protocol::RSL::proposer::*;",

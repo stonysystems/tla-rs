@@ -13,7 +13,6 @@ use crate::generated::RSL::proposer_gen::*;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
