@@ -1484,7 +1484,19 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Removed unnecessary CWellFormedCConfiguration preconditions from CReplicaInit and CSchedulerInit
           - Added missing self.valid() postcondition to CReplicaNextProcessInvalid in ReplicaImpl.rs
           - Result: 581 verified, 0 errors (up from 553 with Phase F only)
-      - [ ] Add integration test verifying generated modules are accessible and produce correct types
+      - [x] Add integration test verifying generated modules are accessible and produce correct types [26:02:12]
+          - Added 10 integration tests to transpiler/tests/integration.rs:
+            1. test_generated_rsl_modules_enabled — verifies mod.rs has all 7 modules enabled
+            2. test_generated_acceptor_module_public_api — verifies acceptor function signatures and ensures
+            3. test_generated_learner_module_public_api — verifies learner functions
+            4. test_generated_executor_module_public_api — verifies executor functions + packet validity
+            5. test_generated_proposer_module_public_api — verifies 12 proposer functions
+            6. test_generated_replica_module_public_api — verifies 22 replica functions + validity ensures
+            7. test_generated_types_module_public_api — verifies type definitions and aliases
+            8. test_generated_broadcast_module_public_api — verifies CBroadcastToEveryone
+            9. test_replica_impl_uses_all_generated_modules — verifies imports and generated_* calls
+            10. test_replica_impl_no_direct_subcomponent_method_calls — verifies no direct method calls remain
+          - All 38 transpiler tests pass (including 10 new ones)
       - [ ] Deprecate manual implementation modules (mark with `#[deprecated]` or move to `_legacy/`)
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]

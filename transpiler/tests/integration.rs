@@ -1041,6 +1041,488 @@ fn test_transpilation_determinism_with_struct_substitutions() {
     }
 }
 
+// ============================================================================
+// Generated RSL Module Integration Tests (Phase 5 verification)
+// ============================================================================
+
+/// Verify all expected generated RSL modules are enabled in mod.rs
+#[test]
+fn test_generated_rsl_modules_enabled() {
+    let mod_source = std::fs::read_to_string("../src/generated/RSL/mod.rs")
+        .expect("Failed to read generated RSL mod.rs");
+
+    let expected_enabled = [
+        "pub mod acceptor_gen;",
+        "pub mod broadcast_gen;",
+        "pub mod executor_gen;",
+        "pub mod learner_gen;",
+        "pub mod proposer_gen;",
+        "pub mod replica_gen;",
+        "pub mod types_gen;",
+    ];
+
+    for module in expected_enabled {
+        assert!(
+            mod_source.contains(module),
+            "Module `{}` should be enabled in generated/RSL/mod.rs",
+            module
+        );
+    }
+}
+
+/// Verify acceptor_gen.rs has all expected public functions with correct signatures
+#[test]
+fn test_generated_acceptor_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
+        .expect("Failed to read acceptor_gen.rs");
+
+    // Expected public exec functions
+    let expected_functions = [
+        "pub exec fn CAcceptorInit",
+        "pub exec fn CAcceptorProcess1a",
+        "pub exec fn CAcceptorProcess2a",
+        "pub exec fn CAcceptorProcessHeartbeat",
+        "pub exec fn CAcceptorTruncateLog",
+    ];
+
+    for func in expected_functions {
+        assert!(
+            source.contains(func),
+            "acceptor_gen.rs should contain `{}`",
+            func
+        );
+    }
+
+    // Verify functional style: takes &CAcceptor, returns CAcceptor or tuple
+    assert!(
+        source.contains("s: &CAcceptor"),
+        "Acceptor functions should take &CAcceptor"
+    );
+
+    // Verify spec predicate ensures
+    let spec_predicates = [
+        "LAcceptorInit(",
+        "LAcceptorProcess1a(",
+        "LAcceptorProcess2a(",
+        "LAcceptorProcessHeartbeat(",
+        "LAcceptorTruncateLog(",
+    ];
+
+    for pred in spec_predicates {
+        assert!(
+            source.contains(pred),
+            "acceptor_gen.rs should reference spec predicate `{}`",
+            pred
+        );
+    }
+
+    // Verify packet validity ensures on packet-returning functions
+    assert!(
+        source.contains("forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid()"),
+        "Packet-returning functions should ensure packet validity"
+    );
+    assert!(
+        source.contains("forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable()"),
+        "Packet-returning functions should ensure packet abstractability"
+    );
+}
+
+/// Verify learner_gen.rs has all expected public functions
+#[test]
+fn test_generated_learner_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/learner_gen.rs")
+        .expect("Failed to read learner_gen.rs");
+
+    let expected_functions = [
+        "pub exec fn CLearnerInit",
+        "pub exec fn CLearnerForgetDecision",
+        "pub exec fn CLearnerProcess2b",
+        "pub exec fn CLearnerForgetOperationsBefore",
+    ];
+
+    for func in expected_functions {
+        assert!(
+            source.contains(func),
+            "learner_gen.rs should contain `{}`",
+            func
+        );
+    }
+
+    // Verify functional style
+    assert!(
+        source.contains("s: &CLearner"),
+        "Learner functions should take &CLearner"
+    );
+
+    // Verify spec predicate ensures
+    let spec_predicates = [
+        "LLearnerInit(",
+        "LLearnerForgetDecision(",
+        "LLearnerProcess2b(",
+        "LLearnerForgetOperationsBefore(",
+    ];
+
+    for pred in spec_predicates {
+        assert!(
+            source.contains(pred),
+            "learner_gen.rs should reference spec predicate `{}`",
+            pred
+        );
+    }
+}
+
+/// Verify executor_gen.rs has all expected public functions and packet validity
+#[test]
+fn test_generated_executor_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
+        .expect("Failed to read executor_gen.rs");
+
+    let expected_functions = [
+        "pub exec fn CExecutorInit",
+        "pub exec fn CExecutorGetDecision",
+        "pub exec fn CExecutorProcessRequest",
+        "pub exec fn CExecutorProcessStartingPhase2",
+        "pub exec fn CExecutorProcessAppStateSupply",
+        "pub exec fn CExecutorProcessAppStateRequest",
+    ];
+
+    for func in expected_functions {
+        assert!(
+            source.contains(func),
+            "executor_gen.rs should contain `{}`",
+            func
+        );
+    }
+
+    // Verify functional style
+    assert!(
+        source.contains("s: &CExecutor"),
+        "Executor functions should take &CExecutor"
+    );
+
+    // Verify spec predicates
+    let spec_predicates = [
+        "LExecutorInit(",
+        "LExecutorGetDecision(",
+        "LExecutorProcessRequest(",
+        "LExecutorProcessStartingPhase2(",
+        "LExecutorProcessAppStateSupply(",
+        "LExecutorProcessAppStateRequest(",
+    ];
+
+    for pred in spec_predicates {
+        assert!(
+            source.contains(pred),
+            "executor_gen.rs should reference spec predicate `{}`",
+            pred
+        );
+    }
+
+    // Verify packet validity ensures on 3 packet-returning functions
+    let validity_count = source.matches("result@[i].valid()").count()
+        + source.matches("result.1@[i].valid()").count();
+    assert!(
+        validity_count >= 3,
+        "executor_gen.rs should have >= 3 packet validity ensures, found {}",
+        validity_count
+    );
+}
+
+/// Verify proposer_gen.rs has all expected public functions
+#[test]
+fn test_generated_proposer_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/proposer_gen.rs")
+        .expect("Failed to read proposer_gen.rs");
+
+    let expected_functions = [
+        "pub exec fn CProposerInit",
+        "pub exec fn CProposerProcessRequest",
+        "pub exec fn CProposerMaybeEnterNewViewAndSend1a",
+        "pub exec fn CProposerProcess1b",
+        "pub exec fn CProposerMaybeEnterPhase2",
+        "pub exec fn CProposerNominateNewValueAndSend2a",
+        "pub exec fn CProposerNominateOldValueAndSend2a",
+        "pub exec fn CProposerMaybeNominateValueAndSend2a",
+        "pub exec fn CProposerProcessHeartbeat",
+        "pub exec fn CProposerCheckForViewTimeout",
+        "pub exec fn CProposerCheckForQuorumOfViewSuspicions",
+        "pub exec fn CProposerResetViewTimerDueToExecution",
+    ];
+
+    for func in expected_functions {
+        assert!(
+            source.contains(func),
+            "proposer_gen.rs should contain `{}`",
+            func
+        );
+    }
+
+    // Verify functional style
+    assert!(
+        source.contains("s: &CProposer"),
+        "Proposer functions should take &CProposer"
+    );
+
+    // Verify packet validity ensures on outbound_packets_to_vec helper
+    assert!(
+        source.contains("forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()"),
+        "outbound_packets_to_vec should ensure packet validity"
+    );
+}
+
+/// Verify replica_gen.rs has all expected public functions
+#[test]
+fn test_generated_replica_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+
+    let expected_functions = [
+        "pub exec fn CReplicaInit",
+        "pub exec fn CReplicaNextProcessInvalid",
+        "pub exec fn CReplicaNextProcessRequest",
+        "pub exec fn CReplicaNextProcess1a",
+        "pub exec fn CReplicaNextProcess1b",
+        "pub exec fn CReplicaNextProcessStartingPhase2",
+        "pub exec fn CReplicaNextProcess2a",
+        "pub exec fn CReplicaNextProcess2b",
+        "pub exec fn CReplicaNextProcessReply",
+        "pub exec fn CReplicaNextProcessAppStateSupply",
+        "pub exec fn CReplicaNextProcessAppStateRequest",
+        "pub exec fn CReplicaNextProcessHeartbeat",
+        "pub exec fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a",
+        "pub exec fn CReplicaNextSpontaneousMaybeEnterPhase2",
+        "pub exec fn CReplicaNextSpontaneousMaybeMakeDecision",
+        "pub exec fn CReplicaNextSpontaneousMaybeExecute",
+        "pub exec fn CReplicaNextReadClockMaybeSendHeartbeat",
+        "pub exec fn CReplicaNextReadClockCheckForViewTimeout",
+        "pub exec fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions",
+        "pub exec fn CSchedulerInit",
+        "pub exec fn CSchedulerNext",
+        "pub exec fn CReplicaNumActions",
+    ];
+
+    for func in expected_functions {
+        assert!(
+            source.contains(func),
+            "replica_gen.rs should contain `{}`",
+            func
+        );
+    }
+
+    // Verify functional style: takes &CReplica, returns (CReplica, Vec<CPacket>)
+    assert!(
+        source.contains("s: &CReplica"),
+        "Replica functions should take &CReplica"
+    );
+    assert!(
+        source.contains("-> (result: (CReplica, Vec<CPacket>))"),
+        "Replica functions should return (CReplica, Vec<CPacket>)"
+    );
+
+    // Verify packet validity ensures
+    let validity_count = source.matches("result.1@[i].valid()").count();
+    assert!(
+        validity_count >= 20,
+        "replica_gen.rs should have >= 20 packet validity ensures (one per function), found {}",
+        validity_count
+    );
+
+    // Verify dispatch functions
+    assert!(
+        source.contains("pub exec fn CReplicaNextProcessPacket"),
+        "Should have top-level packet dispatch"
+    );
+    assert!(
+        source.contains("pub exec fn CReplicaNoReceiveNext"),
+        "Should have no-receive dispatch"
+    );
+}
+
+/// Verify types_gen.rs has all expected concrete types
+#[test]
+fn test_generated_types_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/types_gen.rs")
+        .expect("Failed to read types_gen.rs");
+
+    let expected_types = [
+        "pub struct CParameters",
+        "pub struct CConfiguration",
+        "pub struct CConstants",
+        "pub struct CReplicaConstants",
+        "pub struct CAcceptor",
+        "pub struct CLearner",
+        "pub struct CElectionState",
+        "pub struct CExecutor",
+        "pub struct CProposer",
+        "pub struct CReplica",
+        "pub struct CScheduler",
+        "pub enum COutstandingOperation",
+        "pub enum CIncompleteBatchTimer",
+    ];
+
+    for ty in expected_types {
+        assert!(
+            source.contains(ty),
+            "types_gen.rs should contain `{}`",
+            ty
+        );
+    }
+
+    // Verify type aliases
+    let expected_aliases = [
+        "pub type COperationNumber = u64",
+        "pub type CRequestBatch = Vec<CRequest>",
+        "pub type CReplyCache = HashMap<EndPoint, CReply>",
+        "pub type CVotes = HashMap<COperationNumber, CVote>",
+        "pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>",
+    ];
+
+    for alias in expected_aliases {
+        assert!(
+            source.contains(alias),
+            "types_gen.rs should contain type alias `{}`",
+            alias
+        );
+    }
+
+    // Verify each struct has valid() and View implementations
+    let valid_count = source.matches("pub open spec fn valid").count();
+    assert!(
+        valid_count >= 8,
+        "types_gen.rs should have >= 8 valid() definitions, found {}",
+        valid_count
+    );
+
+    let view_count = source.matches("impl View for").count();
+    assert!(
+        view_count >= 8,
+        "types_gen.rs should have >= 8 View implementations, found {}",
+        view_count
+    );
+}
+
+/// Verify broadcast_gen.rs has CBroadcastToEveryone
+#[test]
+fn test_generated_broadcast_module_public_api() {
+    let source = std::fs::read_to_string("../src/generated/RSL/broadcast_gen.rs")
+        .expect("Failed to read broadcast_gen.rs");
+
+    assert!(
+        source.contains("pub exec fn CBroadcastToEveryone"),
+        "broadcast_gen.rs should contain CBroadcastToEveryone"
+    );
+
+    // Verify functional style
+    assert!(
+        source.contains("c: &CConfiguration"),
+        "CBroadcastToEveryone should take &CConfiguration"
+    );
+    assert!(
+        source.contains("m: &CMessage"),
+        "CBroadcastToEveryone should take &CMessage"
+    );
+    assert!(
+        source.contains("-> (result: Vec<CPacket>)"),
+        "CBroadcastToEveryone should return Vec<CPacket>"
+    );
+
+    // Verify spec predicate
+    assert!(
+        source.contains("LBroadcastToEveryone("),
+        "Should reference LBroadcastToEveryone in ensures"
+    );
+}
+
+/// Verify ReplicaImpl.rs imports all generated modules correctly
+#[test]
+fn test_replica_impl_uses_all_generated_modules() {
+    let source = std::fs::read_to_string("../src/implementation/RSL/ReplicaImpl.rs")
+        .expect("Failed to read ReplicaImpl.rs");
+
+    let expected_imports = [
+        "use crate::generated::RSL::acceptor_gen as generated_acceptor;",
+        "use crate::generated::RSL::executor_gen as generated_executor;",
+        "use crate::generated::RSL::learner_gen as generated_learner;",
+        "use crate::generated::RSL::proposer_gen as generated_proposer;",
+    ];
+
+    for import in expected_imports {
+        assert!(
+            source.contains(import),
+            "ReplicaImpl.rs should import `{}`",
+            import
+        );
+    }
+
+    // Verify no direct CProposer::, CAcceptor::, CLearner:: static method calls remain
+    // (all should go through generated_* wrappers)
+    assert!(
+        !source.contains("CProposer::CProposerInit"),
+        "Should not call CProposer::CProposerInit directly"
+    );
+    assert!(
+        !source.contains("CAcceptor::CAcceptorInit"),
+        "Should not call CAcceptor::CAcceptorInit directly"
+    );
+
+    // Verify generated function calls are present
+    let generated_calls = [
+        "generated_acceptor::",
+        "generated_executor::",
+        "generated_learner::",
+        "generated_proposer::",
+    ];
+
+    for call in generated_calls {
+        assert!(
+            source.contains(call),
+            "ReplicaImpl.rs should use `{}`",
+            call
+        );
+    }
+}
+
+/// Verify no self.proposer.C*, self.acceptor.C*, self.learner.C* direct method calls remain
+#[test]
+fn test_replica_impl_no_direct_subcomponent_method_calls() {
+    let source = std::fs::read_to_string("../src/implementation/RSL/ReplicaImpl.rs")
+        .expect("Failed to read ReplicaImpl.rs");
+
+    // Filter out commented lines for pattern matching
+    let active_lines: String = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // These patterns should NOT appear in active code — all wired to generated functions
+    let forbidden_patterns = [
+        "self.proposer.CProposer",
+        "self.acceptor.CAcceptor",
+        "self.learner.CLearner",
+        "self.executor.CExecutorInit",
+        "self.executor.CExecutorGetDecision",
+        "self.executor.CExecutorProcessRequest",
+        "self.executor.CExecutorProcessStartingPhase2",
+        "self.executor.CExecutorProcessAppStateSupply",
+        "self.executor.CExecutorProcessAppStateRequest",
+    ];
+
+    for pattern in forbidden_patterns {
+        assert!(
+            !active_lines.contains(pattern),
+            "ReplicaImpl.rs should NOT contain direct call `{}` — should use generated wrapper",
+            pattern
+        );
+    }
+
+    // CExecutorExecute is the ONE exception that stays manual
+    assert!(
+        source.contains("self.executor.CExecutorExecute"),
+        "CExecutorExecute should remain as direct manual call (transpiler limitation)"
+    );
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();
