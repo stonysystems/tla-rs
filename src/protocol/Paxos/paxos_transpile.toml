@@ -1,16 +1,24 @@
 # Configuration for transpiling Single-Decree Paxos spec to exec implementation
 
-# Skip functions that contain existential quantifiers or are spec-only predicates
+# Skip functions that contain existential quantifiers, spec-only predicates,
+# or Set::len() operations that require manual dispatch
 skip_functions = [
     "LNext",
-    "LChosen",
+    "LSend2a",
+    "LLearn",
 ]
 
 # Primitive types that don't need valid() predicates
 primitive_types = []
 
 # Fields that are collection types (Set/Map) requiring clone_hashset()
-collection_fields = ["max_bal", "max_v_bal", "max_val", "acceptors"]
+collection_fields = ["promises_rcvd", "accepts_rcvd", "acceptors"]
+
+# Enum fields that need clone helpers (not Copy types)
+clone_fields = ["phase"]
+
+[clone_field_types]
+"phase" = "CPhase"
 
 [naming]
 spec_prefix = "L"
@@ -21,11 +29,17 @@ nat_type = "u64"
 [remapping]
 "LState" = "CState"
 "LConstants" = "CConstants"
-"LMsgType" = "CMsgType"
+"LPhase" = "CPhase"
 
 [clone_strategy]
 "CState" = "external_body"
 "CConstants" = "external_body"
+
+[variant_remapping]
+"Idle" = "CPhase::Idle"
+"Phase1" = "CPhase::Phase1"
+"Phase2" = "CPhase::Phase2"
+"Decided" = "CPhase::Decided"
 
 [output]
 generate_abstraction_fns = true

@@ -1,30 +1,40 @@
 use vstd::prelude::*;
 
 verus! {
-    /// Message types in the Paxos protocol
-    pub enum LMsgType {
-        Phase1a,
-        Phase1b,
-        Phase2a,
-        Phase2b,
+    /// Phase of the protocol from this node's perspective
+    pub enum LPhase {
+        Idle,
+        Phase1,
+        Phase2,
+        Decided,
     }
 
     /// Single-Decree Paxos protocol state
-    /// Uses a simplified set-based representation:
-    /// - max_bal: set of ballot numbers that have been seen (promised)
-    /// - max_v_bal: set of ballot numbers for which votes have been cast
-    /// - max_val: set of values that have been accepted
-    /// - msg_count: count of messages sent (monotonically increasing)
+    /// Models a single acceptor + proposer combined node perspective.
+    /// Ballot numbers are plain integers (higher = more recent).
     pub struct LState {
-        pub max_bal: Set<int>,
-        pub max_v_bal: Set<int>,
-        pub max_val: Set<int>,
-        pub msg_count: int,
+        // Acceptor state
+        pub promised_bal: int,            // Highest ballot number promised
+        pub accepted_bal: int,            // Ballot number of last accepted value
+        pub accepted_val: int,            // Last accepted value (valid when accepted_bal > 0)
+
+        // Proposer state
+        pub proposer_bal: int,            // This proposer's current ballot
+        pub phase: LPhase,               // Current protocol phase
+        pub promises_rcvd: Set<int>,      // Set of acceptors that sent promises
+        pub highest_accepted_bal: int,    // Highest accepted ballot seen in promises
+        pub highest_accepted_val: int,    // Value from highest accepted ballot in promises
+        pub proposed_val: int,            // Value proposed in Phase 2
+
+        // Learner state
+        pub accepts_rcvd: Set<int>,       // Set of acceptors that accepted current value
+        pub decided_val: int,             // Decided value (valid when phase is Decided)
     }
 
     /// Protocol constants
     pub struct LConstants {
-        pub acceptors: Set<int>,      // The set of all acceptors
-        pub quorum_size: int,         // Minimum quorum size for consensus
+        pub acceptors: Set<int>,          // The set of all acceptors
+        pub quorum_size: int,             // Minimum quorum size for consensus
+        pub node_id: int,                 // This node's identifier
     }
 }
