@@ -1898,6 +1898,99 @@ fn test_pbft_tla_to_exec_pipeline_with_record_literals() {
     let _ = std::fs::remove_file(&exec_output);
 }
 
+// ============================================================================
+// Phase 16.3 Integration Tests: Verus Spec → TLA+ (verus2tla) for all 7 protocols
+// ============================================================================
+
+#[test]
+fn test_verus2tla_all_tla_generated_specs() {
+    // All 7 TLA-generated Verus specs should convert back to TLA+ successfully.
+    // This tests the roundtrip: TLA+ → Verus spec → TLA+
+    let tla_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/protocol/TLA");
+
+    let transpiler_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/release/verus-transpile");
+    if !transpiler_bin.exists() {
+        eprintln!("Skipping: transpiler binary not built");
+        return;
+    }
+
+    let protocols = [
+        "SimpleCounter",
+        "DieHard",
+        "EWD840",
+        "TwoPhase",
+        "Raft",
+        "Paxos",
+        "PBFT",
+    ];
+
+    let tmp_dir = std::env::temp_dir();
+
+    for name in &protocols {
+        let tla_file = tla_dir.join(format!("{}.tla", name));
+        if !tla_file.exists() {
+            eprintln!("Skipping {}: {:?} not found", name, tla_file);
+            continue;
+        }
+
+        let spec_output = tmp_dir.join(format!("{}_v2t_test.rs", name));
+        let tla_output = tmp_dir.join(format!("{}_roundtrip_test.tla", name));
+
+        // Step 1: TLA+ → Verus spec
+        let result = std::process::Command::new(&transpiler_bin)
+            .args([
+                "translate-tla",
+                "--input",
+                tla_file.to_str().unwrap(),
+                "--output",
+                spec_output.to_str().unwrap(),
+            ])
+            .output()
+            .expect("Failed to run TLA+ translator");
+        assert!(
+            result.status.success(),
+            "{} TLA+ → spec should succeed: {}",
+            name,
+            String::from_utf8_lossy(&result.stderr)
+        );
+
+        // Step 2: Verus spec → TLA+
+        let result = std::process::Command::new(&transpiler_bin)
+            .args([
+                "verus2-tla",
+                "--input",
+                spec_output.to_str().unwrap(),
+                "--output",
+                tla_output.to_str().unwrap(),
+            ])
+            .output()
+            .expect("Failed to run verus2tla");
+        assert!(
+            result.status.success(),
+            "{} spec → TLA+ (verus2tla) should succeed: {}",
+            name,
+            String::from_utf8_lossy(&result.stderr)
+        );
+
+        // Verify output is non-empty and looks like a TLA+ module
+        let tla_content =
+            std::fs::read_to_string(&tla_output).expect("Failed to read TLA+ output");
+        assert!(
+            tla_content.contains("MODULE"),
+            "{} roundtrip TLA+ should contain MODULE header",
+            name
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_file(&spec_output);
+        let _ = std::fs::remove_file(&tla_output);
+    }
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();
