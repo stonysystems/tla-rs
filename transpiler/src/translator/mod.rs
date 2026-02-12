@@ -3786,6 +3786,10 @@ impl Translator {
         // Wrap in clone to get owned value
         let element_expr = ExecExpr::Clone(Box::new(element_with_index));
 
+        // Use the translated helper return type for the loop-local result vector.
+        // This preserves config remapping (e.g., Seq<Request> -> Vec<CRequest>).
+        let result_vec_type = self.helper_result_vec_type(func)?;
+
         // Build invariants
         let invariants = self.build_map_invariants(func, seq_param, iterated_seqs, extra_args);
 
@@ -3800,7 +3804,7 @@ impl Translator {
             // let mut result: Vec<U> = Vec::new();
             ExecExpr::Let {
                 pattern: "mut result".to_string(),
-                ty: Some(return_type_to_vec_type(&func.spec_fn.return_type)),
+                ty: Some(result_vec_type),
                 value: Box::new(ExecExpr::Call {
                     func: "Vec::new".to_string(),
                     args: vec![],
@@ -4073,7 +4077,7 @@ impl Translator {
         predicate: &Expr,
         keep_when_true: bool,
         transform: Option<&Expr>,
-        extra_args: &[String],
+        _extra_args: &[String],
         func: &AnnotatedFunction,
     ) -> TranspileResult<ExecExpr> {
         // Create a minimal context for expression transformation
@@ -4114,15 +4118,12 @@ impl Translator {
             }))
         };
 
+        // Use the translated helper return type for the loop-local result vector.
+        // This preserves config remapping (e.g., Seq<Request> -> Vec<CRequest>).
+        let result_vec_type = self.helper_result_vec_type(func)?;
+
         // Build invariants
-        let invariants = self.build_filter_invariants(
-            func,
-            seq_param,
-            predicate,
-            keep_when_true,
-            extra_args,
-            &ctx,
-        );
+        let invariants = self.build_filter_invariants(func, seq_param);
 
         // Build the loop
         let loop_body = ExecExpr::If {
@@ -4139,7 +4140,7 @@ impl Translator {
             // let mut result: Vec<T> = Vec::new();
             ExecExpr::Let {
                 pattern: "mut result".to_string(),
-                ty: Some(return_type_to_vec_type(&func.spec_fn.return_type)),
+                ty: Some(result_vec_type),
                 value: Box::new(ExecExpr::Call {
                     func: "Vec::new".to_string(),
                     args: vec![],
@@ -4172,10 +4173,6 @@ impl Translator {
         &self,
         func: &AnnotatedFunction,
         seq_param: &str,
-        predicate: &Expr,
-        keep_when_true: bool,
-        extra_args: &[String],
-        _ctx: &TransformContext,
     ) -> Vec<String> {
         let mut invariants = Vec::new();
 
@@ -4185,20 +4182,45 @@ impl Translator {
         // Invariant 2: Result length is bounded
         invariants.push("result.len() <= i".to_string());
 
-        // Invariant 3: Spec equivalence - result matches spec function on processed elements
-        // For filter: result@ == seq@.take(i).filter(|x| pred(x))
-        let pred_str = self.expr_to_spec_string(predicate, extra_args);
-        let element_type = self.get_element_type_hint(func);
-        let filter_invariant = format!(
-            "result@ == {}@.take(i as int).filter(|x: {}| {}{})",
-            seq_param,
-            element_type,
-            if keep_when_true { "" } else { "!" },
-            pred_str
-        );
+        // Invariant 3: spec equivalence via helper call over processed prefix.
+        // This avoids fragile inline closure typing and keeps invariants aligned
+        // with the source helper definition.
+        let spec_args: Vec<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .map(|p| {
+                if p.name == seq_param {
+                    format!("{}@.take(i as int)", p.name)
+                } else {
+                    format!("{}@", p.name)
+                }
+            })
+            .collect();
+        let filter_invariant = format!("result@ == {}({})", func.spec_fn.name, spec_args.join(", "));
         invariants.push(filter_invariant);
 
         invariants
+    }
+
+    /// Get the translated Vec return type for a recursive helper result local.
+    ///
+    /// Recursive map/filter helpers always return sequences; this helper keeps
+    /// loop-local result typing aligned with the configured helper return type.
+    fn helper_result_vec_type(&self, func: &AnnotatedFunction) -> TranspileResult<ExecType> {
+        if let ExecType::Vec(inner) = self.translate_type(&func.spec_fn.return_type) {
+            return Ok(ExecType::Vec(inner));
+        }
+
+        match self.build_helper_return_type(func)? {
+            ExecType::Vec(inner) => Ok(ExecType::Vec(inner)),
+            ExecType::Generic(name, mut args)
+                if (name == "Vec" || name == "CVec") && args.len() == 1 =>
+            {
+                Ok(ExecType::Vec(Box::new(args.remove(0))))
+            }
+            _ => Ok(return_type_to_vec_type(&func.spec_fn.return_type)),
+        }
     }
 
     /// Convert an AST expression to a string suitable for spec invariants
@@ -4411,57 +4433,6 @@ impl Translator {
         let substituted = self.substitute_head_with_index(transformed, seq_param);
         // Wrap in clone
         Ok(ExecExpr::Clone(Box::new(substituted)))
-    }
-
-    /// Get element type hint for invariant closures
-    fn get_element_type_hint(&self, func: &AnnotatedFunction) -> String {
-        // Extract element type from return type Seq<T> -> T
-        match &func.spec_fn.return_type {
-            Type::Seq(inner) => self.type_to_string(inner),
-            Type::Generic(path, args) if path.segments.last() == Some(&"Seq".to_string()) => {
-                if let Some(inner) = args.first() {
-                    self.type_to_string(inner)
-                } else {
-                    "_".to_string()
-                }
-            }
-            _ => "_".to_string(),
-        }
-    }
-
-    /// Convert a Type to a string representation
-    fn type_to_string(&self, ty: &Type) -> String {
-        match ty {
-            Type::Named(path) => path.segments.join("::"),
-            Type::Bool => "bool".to_string(),
-            Type::Int => "int".to_string(),
-            Type::Nat => "nat".to_string(),
-            Type::Unit => "()".to_string(),
-            Type::Seq(inner) => format!("Seq<{}>", self.type_to_string(inner)),
-            Type::Set(inner) => format!("Set<{}>", self.type_to_string(inner)),
-            Type::Map(k, v) => {
-                format!(
-                    "Map<{}, {}>",
-                    self.type_to_string(k),
-                    self.type_to_string(v)
-                )
-            }
-            Type::Generic(path, args) => {
-                let args_str: Vec<_> = args.iter().map(|a| self.type_to_string(a)).collect();
-                format!("{}<{}>", path.segments.join("::"), args_str.join(", "))
-            }
-            Type::Tuple(types) => {
-                let types_str: Vec<_> = types.iter().map(|t| self.type_to_string(t)).collect();
-                format!("({})", types_str.join(", "))
-            }
-            Type::Reference { ty, mutable } => {
-                if *mutable {
-                    format!("&mut {}", self.type_to_string(ty))
-                } else {
-                    format!("&{}", self.type_to_string(ty))
-                }
-            }
-        }
     }
 
     /// Translate a predicate (existing logic)
@@ -14948,9 +14919,11 @@ mod tests {
             invariants
         );
 
-        // Check filter spec invariant exists
+        // Check filter invariant references the helper spec function on processed prefix
         assert!(
-            invariants.iter().any(|inv| inv.contains(".filter(")),
+            invariants
+                .iter()
+                .any(|inv| inv.contains("result@ == FilterFunc(") && inv.contains(".take(i as int)")),
             "Should have filter spec invariant: {:?}",
             invariants
         );
@@ -15600,6 +15573,25 @@ mod tests {
             contains_for_loop(&exec_fn.body),
             "Should generate loop for filter pattern"
         );
+
+        let code = crate::printer::print_function(&exec_fn);
+        assert!(
+            code.contains("let mut result: Vec<CRequest> = Vec::new();"),
+            "Filter loop local should use remapped helper return type, got:\n{}",
+            code
+        );
+        assert!(
+            code.contains(
+                "result@ == RemoveAllSatisfiedRequestsInSequence(s@.take(i as int), r@)"
+            ),
+            "Filter invariant should reference helper spec call, got:\n{}",
+            code
+        );
+        assert!(
+            !code.contains("filter(|x: Request|"),
+            "Filter invariant should not emit inline typed closure, got:\n{}",
+            code
+        );
     }
 
     /// Test RSL pattern: ExtractSentPacketsFromIos (Filter)
@@ -15789,6 +15781,13 @@ mod tests {
         assert!(
             contains_for_loop(&exec_fn.body),
             "Should generate loop for map pattern"
+        );
+
+        let code = crate::printer::print_function(&exec_fn);
+        assert!(
+            code.contains("let mut result: Vec<CRslPacket> = Vec::new();"),
+            "Map loop local should use remapped helper return type, got:\n{}",
+            code
         );
     }
 

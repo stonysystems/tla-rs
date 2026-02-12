@@ -1305,6 +1305,21 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
               - fresh election generation now contains both helper definitions and call sites.
               - compile probe with fresh election no longer fails on unresolved `lemma_empty_set_map` / `lemma_empty_seq_map`; remaining failures are broader type/wrapper drift addressed by subsequent election/module leaves.
           - [ ] Sync `src/generated/RSL/election_gen.rs` to regenerated output and rerun full verification once helper parity is restored.
+            - Scope analysis [26:02:13, 06:10]: direct sync still fails with 51 compile errors spanning multiple independent generator gaps (recursive loop typing/invariants, collection operator lowering, bound/numeric type mapping, and borrow/reference normalization), so this leaf is split into bounded sub-leaves.
+            - [x] Fix recursive filter/map loop typing + invariant parity in transpiler output (result local type should respect helper return remapping, invariants should reference spec helper call instead of inline typed closure) and re-probe election sync. [26:02:13, 07:10]
+              - Updated `transpiler/src/translator/mod.rs` recursive loop generation to derive loop-local result vector types from translated spec return types (`Seq<T> -> Vec<C...>`) instead of raw spec-element fallback.
+              - Replaced filter loop invariant emission with spec-helper call form (`result@ == Helper(seq@.take(i as int), ...)`) to avoid stale inline `|x: Request| ...` closure typing drift.
+              - Added regression assertions in translator tests:
+                - `test_rsl_remove_all_satisfied_requests_filter` now checks `Vec<CRequest>` loop local typing and spec-call invariant form.
+                - `test_rsl_build_lbroadcast_map` now checks remapped map loop local typing (`Vec<CRslPacket>`).
+                - Updated `test_filter_invariants_contain_bounds_and_spec` to the new spec-call invariant contract.
+              - Validation:
+                - `cargo test --all-features` (transpiler) passes.
+                - Fresh-election compile probe (temporary swap) reduced error surface from 51 to 49 and removed prior inline-closure/spec-type mismatch errors in recursive filter helpers; remaining failures are tracked in the next sub-leaves.
+            - [ ] Fix recursive loop iterator/reference lowering for sequence index accesses (eliminate `RangeGhostIterator` incompatibility and missing borrows on indexed elements) and re-probe election sync.
+            - [ ] Fix collection expression lowering parity for generated election helpers (`Vec` append / `HashSet` union patterns) and re-probe election sync.
+            - [ ] Fix bound/numeric type mapping parity (`u64`/`int`/`CUpperBound` argument shaping in generated election helpers) and re-probe election sync.
+            - [ ] After sub-leaves pass compile probes, sync `src/generated/RSL/election_gen.rs` to fresh output and run full verification.
         - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)
         - [ ] Close `executor_gen.rs` drift (wrapper/delegate alignment)
         - [ ] Close `proposer_gen.rs` drift (wrapper/delegate alignment)
