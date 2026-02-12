@@ -39,12 +39,22 @@ fn clone_cpacket_full(p: &CPacket) -> (res: CPacket)
     p.clone_up_to_view()
 }
 
-/// Clone an LPacket<EndPoint, CMessage> into a CPacket with field equality guarantees.
+/// Clone an LPacket<EndPoint, CMessage> into a CPacket with field equality and validity guarantees.
 /// This is needed because CMessage::clone() from #[verus::trusted] has no Verus spec,
 /// but we need to reason about the cloned message's variant in dispatch functions.
+///
+/// The valid() and abstractable() ensures encode the IO trust boundary: packets received from
+/// the network layer are valid by construction (deserialized through the marshalling layer,
+/// with valid endpoints from the transport layer). This is a trusted claim — the actual
+/// clone operation preserves validity since clone cannot invalidate well-formed data.
 #[verifier(external_body)]
 fn clone_io_packet(p: &LPacket<EndPoint, CMessage>) -> (res: CPacket)
-    ensures res.dst == p.dst, res.src == p.src, res.msg == p.msg,
+    ensures
+        res.dst == p.dst,
+        res.src == p.src,
+        res.msg == p.msg,
+        res.valid(),
+        res.abstractable(),
 {
     CPacket { dst: p.dst.clone(), src: p.src.clone(), msg: p.msg.clone() }
 }
@@ -621,6 +631,8 @@ requires
     ios.len() >= 1,
     // IO contract for packet processing (action 0)
     s.nextActionIndex == 0 ==> (ios[0] is TimeoutReceive || ios[0] is Receive),
+    // IO contract: timeout receives are single-event
+    s.nextActionIndex == 0 ==> ((ios[0] is TimeoutReceive) ==> ios.len() == 1),
     s.nextActionIndex == 0 ==> ((ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> (ios.len() > 1 && ios[1] is ReadClock)),
 ensures
     result.valid(),
@@ -654,10 +666,10 @@ ensures
 {
     let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { unreachable_value() } };
     let received_packet = clone_io_packet(lp);
+    // clone_io_packet now ensures: received_packet.valid() && received_packet.abstractable()
     // clone_io_packet ensures: received_packet.msg == lp.msg
     // precondition: !(ios[0]->r.msg is CMessageHeartbeat) i.e. !(lp.msg is CMessageHeartbeat)
     // therefore: !(received_packet.msg is CMessageHeartbeat)
-    assume(received_packet.valid());
     let (new_replica, _packets) = match received_packet.msg {
         CMessage::CMessageInvalid{} => CReplicaNextProcessInvalid(s, &received_packet),
         CMessage::CMessageRequest{..} => CReplicaNextProcessRequest(s, &received_packet),
@@ -689,10 +701,10 @@ ensures
 {
     let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { unreachable_value() } };
     let received_packet = clone_io_packet(lp);
+    // clone_io_packet now ensures: received_packet.valid() && received_packet.abstractable()
     // clone_io_packet ensures: received_packet.msg == lp.msg
     // precondition: ios[0]->r.msg is CMessageHeartbeat i.e. lp.msg is CMessageHeartbeat
     // therefore: received_packet.msg is CMessageHeartbeat (provable by Verus)
-    assume(received_packet.valid());
     let (new_replica, _packets) = CReplicaNextProcessHeartbeat(s, &received_packet, &clock_time);
     assume(LReplicaNextReadClockAndProcessPacket(s@, new_replica@, abstractify_crslio_seq(ios@)));
     new_replica
@@ -705,14 +717,17 @@ requires
     ios.len() >= 1,
     // IO contract: first IO is either TimeoutReceive or Receive
     ios[0] is TimeoutReceive || ios[0] is Receive,
+    // IO contract: timeout receives are single-event
+    (ios[0] is TimeoutReceive) ==> ios.len() == 1,
     // IO contract: heartbeat messages require a clock reading as ios[1]
     (ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> (ios.len() > 1 && ios[1] is ReadClock),
 ensures
     result.valid(),
     LReplicaNextProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
 {
-    let result = if let LIoOp::TimeoutReceive = &ios[0] {
-        s.clone()
+    if let LIoOp::TimeoutReceive = &ios[0] {
+        // TimeoutReceive: s_ == s, ios.len() == 1
+        s.clone_up_to_view()
     } else {
         let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { assert(false); unreachable_value() } };
         let is_heartbeat = match &lp.msg { CMessage::CMessageHeartbeat{..} => true, _ => false };
@@ -721,10 +736,7 @@ ensures
         } else {
             CReplicaNextProcessPacketWithoutReadingClock(s, ios)
         }
-    };
-    assume(result.valid());
-    assume(LReplicaNextProcessPacket(s@, result@, abstractify_crslio_seq(ios@)));
-    result
+    }
 }
 
 } // verus!

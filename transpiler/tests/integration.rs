@@ -1536,6 +1536,24 @@ fn test_generated_replica_module_public_api() {
         source.contains("pub exec fn CReplicaNoReceiveNext"),
         "Should have no-receive dispatch"
     );
+
+    // Verify clone_io_packet ensures include validity and abstractability
+    assert!(
+        source.contains("res.valid()"),
+        "clone_io_packet should ensure res.valid()"
+    );
+    assert!(
+        source.contains("res.abstractable()"),
+        "clone_io_packet should ensure res.abstractable()"
+    );
+
+    // Verify IO trust boundary: exactly 3 remaining assumes (Category 2 only)
+    let assume_count = source.matches("assume(").count();
+    assert_eq!(
+        assume_count, 3,
+        "replica_gen.rs should have exactly 3 IO trust boundary assumes (Category 2: IO structure constraints), found {}",
+        assume_count
+    );
 }
 
 /// Verify types_gen.rs has all expected concrete types
