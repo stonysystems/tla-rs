@@ -20,7 +20,10 @@ use crate::implementation::RSL::{
 use crate::protocol::RSL::{
     acceptor::*, broadcast::*, configuration::*, constants::*, environment::*, message::*, types::*,
 };
-// CAcceptor struct, valid(), view(), abstractable(), clone_up_to_view() are in types_gen.rs
+// DEPRECATED: Use `crate::generated::RSL::acceptor_gen` for functional wrappers
+// and `crate::generated::RSL::types_gen::CAcceptor` for the type directly.
+// This module's methods are still called internally by the generated wrappers.
+#[deprecated(note = "Import CAcceptor from crate::generated::RSL::types_gen instead")]
 pub use crate::generated::RSL::types_gen::CAcceptor;
 
 verus! {

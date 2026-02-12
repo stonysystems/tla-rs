@@ -21,7 +21,10 @@ use vstd::invariant;
 use vstd::prelude::*;
 use vstd::std_specs::hash::*;
 use vstd::{hash_map::*, map::*, prelude::*, seq::*, set::*};
-// CProposer, CIncompleteBatchTimer structs and their valid(), view(), abstractable() are in types_gen.rs
+// DEPRECATED: Use `crate::generated::RSL::proposer_gen` for functional wrappers
+// and `crate::generated::RSL::types_gen::{CProposer, CIncompleteBatchTimer}` for types directly.
+// This module's methods are still called internally by the generated wrappers.
+#[deprecated(note = "Import CProposer, CIncompleteBatchTimer from crate::generated::RSL::types_gen instead")]
 pub use crate::generated::RSL::types_gen::{CProposer, CIncompleteBatchTimer};
 
 verus! {

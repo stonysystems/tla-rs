@@ -12,7 +12,10 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::RandomState;
 use vstd::std_specs::hash::*;
-// CLearner struct, valid(), view(), abstractable(), clone_up_to_view() are in types_gen.rs
+// DEPRECATED: Use `crate::generated::RSL::learner_gen` for functional wrappers
+// and `crate::generated::RSL::types_gen::CLearner` for the type directly.
+// This module's methods are still called internally by the generated wrappers.
+#[deprecated(note = "Import CLearner from crate::generated::RSL::types_gen instead")]
 pub use crate::generated::RSL::types_gen::CLearner;
 
 verus! {

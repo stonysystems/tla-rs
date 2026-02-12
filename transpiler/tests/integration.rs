@@ -1523,6 +1523,81 @@ fn test_replica_impl_no_direct_subcomponent_method_calls() {
     );
 }
 
+#[test]
+fn test_manual_impl_modules_have_deprecation_notices() {
+    let modules = [
+        (
+            "../src/implementation/RSL/acceptorimpl.rs",
+            "Import CAcceptor from crate::generated::RSL::types_gen instead",
+        ),
+        (
+            "../src/implementation/RSL/learnerimpl.rs",
+            "Import CLearner from crate::generated::RSL::types_gen instead",
+        ),
+        (
+            "../src/implementation/RSL/ExecutorImpl.rs",
+            "Import CExecutor, COutstandingOperation from crate::generated::RSL::types_gen instead",
+        ),
+        (
+            "../src/implementation/RSL/ProposerImpl.rs",
+            "Import CProposer, CIncompleteBatchTimer from crate::generated::RSL::types_gen instead",
+        ),
+    ];
+
+    for (path, expected_msg) in modules {
+        let source = std::fs::read_to_string(path)
+            .unwrap_or_else(|_| panic!("Failed to read {}", path));
+        assert!(
+            source.contains("#[deprecated"),
+            "{} should have #[deprecated] attribute",
+            path
+        );
+        assert!(
+            source.contains(expected_msg),
+            "{} should have deprecation message: {}",
+            path,
+            expected_msg
+        );
+    }
+
+    // mod.rs should have deprecation doc comments
+    let mod_rs = std::fs::read_to_string("../src/implementation/RSL/mod.rs")
+        .expect("Failed to read mod.rs");
+    for module in ["ExecutorImpl", "ProposerImpl", "acceptorimpl", "learnerimpl"] {
+        assert!(
+            mod_rs.contains(&format!("/// Deprecated: use `crate::generated::RSL::")),
+            "mod.rs should have deprecation doc comment for {}",
+            module
+        );
+    }
+}
+
+#[test]
+fn test_replicaimpl_class_imports_types_from_generated() {
+    let source = std::fs::read_to_string("../src/implementation/RSL/replicaimpl_class.rs")
+        .expect("Failed to read replicaimpl_class.rs");
+
+    // Should import types from generated types_gen, not from manual modules
+    assert!(
+        source.contains("use crate::generated::RSL::types_gen::")
+            && source.contains("CAcceptor")
+            && source.contains("CExecutor")
+            && source.contains("CProposer")
+            && source.contains("CLearner"),
+        "replicaimpl_class.rs should import types from types_gen"
+    );
+
+    // Should NOT import types from manual impl modules
+    assert!(
+        !source.contains("acceptorimpl::CAcceptor"),
+        "replicaimpl_class.rs should not import CAcceptor from acceptorimpl"
+    );
+    assert!(
+        !source.contains("ExecutorImpl::CExecutor"),
+        "replicaimpl_class.rs should not import CExecutor from ExecutorImpl"
+    );
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

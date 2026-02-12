@@ -1,8 +1,14 @@
 pub mod CStateMachine;
 pub mod ElectionImpl;
+/// Deprecated: use `crate::generated::RSL::executor_gen` for functional wrappers.
+/// Retained because generated wrappers delegate to methods in this module.
 pub mod ExecutorImpl;
+/// Deprecated: use `crate::generated::RSL::proposer_gen` for functional wrappers.
+/// Retained because generated wrappers delegate to methods in this module.
 pub mod ProposerImpl;
 pub mod ReplicaImpl;
+/// Deprecated: use `crate::generated::RSL::acceptor_gen` for functional wrappers.
+/// Retained because generated wrappers delegate to methods in this module.
 pub mod acceptorimpl;
 pub mod appinterface;
 pub mod cbroadcast;
@@ -10,6 +16,8 @@ pub mod cconfiguration;
 pub mod cconstants;
 pub mod cmessage;
 pub mod cparameters;
+/// Deprecated: use `crate::generated::RSL::learner_gen` for functional wrappers.
+/// Retained because generated wrappers delegate to methods in this module.
 pub mod learnerimpl;
 pub mod replicaimpl_class;
 // pub mod test;

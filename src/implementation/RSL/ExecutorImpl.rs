@@ -21,7 +21,10 @@ use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::{constants::*, environment::*, message::*};
 use vstd::std_specs::hash::*;
 use vstd::{prelude::*, seq::*, seq_lib::*};
-// CExecutor, COutstandingOperation structs and their valid(), view(), abstractable(), clone_up_to_view() are in types_gen.rs
+// DEPRECATED: Use `crate::generated::RSL::executor_gen` for functional wrappers
+// and `crate::generated::RSL::types_gen::{CExecutor, COutstandingOperation}` for types directly.
+// This module's methods are still called internally by the generated wrappers.
+#[deprecated(note = "Import CExecutor, COutstandingOperation from crate::generated::RSL::types_gen instead")]
 pub use crate::generated::RSL::types_gen::{CExecutor, COutstandingOperation};
 
 verus! {
