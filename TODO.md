@@ -1296,7 +1296,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Synced `src/generated/RSL/broadcast_gen.rs` to fresh regenerated output (`src/generated_fresh/RSL/broadcast_gen.rs`)
           - Drift closed by removing stale unused import/proof helper and aligning `requires`/loop invariant bound checks to current generated shape
           - Validation: `cargo test --all-features` (transpiler) and `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` both pass
-        - [ ] Close `election_gen.rs` drift (proof helper/invariant parity)
+        - [x] Close `election_gen.rs` drift (proof helper/invariant parity) ✅ [26:02:12]
           - Scope analysis [26:02:13, 04:20]: direct regeneration sync is not safe yet; replacing `src/generated/RSL/election_gen.rs` with fresh output initially produced invalid struct-field syntax and then unresolved helper lemmas during Verus compile probes. Split this leaf so each fix stays <500 LOC and fully testable.
           - [x] Fix struct-field block expression printing parity in transpiler output [26:02:13, 04:20]
             - Updated `transpiler/src/printer/mod.rs` to wrap `ExecExpr::Block` when emitted as struct field initializers (`field: { ... }`) instead of invalid `field: let ...; ...` shape.
