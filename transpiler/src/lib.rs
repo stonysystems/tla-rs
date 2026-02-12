@@ -158,6 +158,8 @@ impl Transpiler {
             let naming_config = crate::config::NamingConfig {
                 spec_prefix: self.config.translator.spec_prefix.clone(),
                 exec_prefix: self.config.translator.exec_prefix.clone(),
+                int_type: self.config.translator.int_type.clone(),
+                nat_type: self.config.translator.nat_type.clone(),
                 ..Default::default()
             };
             let type_gen = TypeGenerator::with_all_options(
@@ -354,6 +356,8 @@ impl Transpiler {
             let naming_config = crate::config::NamingConfig {
                 spec_prefix: self.config.translator.spec_prefix.clone(),
                 exec_prefix: self.config.translator.exec_prefix.clone(),
+                int_type: self.config.translator.int_type.clone(),
+                nat_type: self.config.translator.nat_type.clone(),
                 ..Default::default()
             };
             let type_gen = TypeGenerator::with_all_options(
@@ -1558,6 +1562,54 @@ mod tests {
         assert!(
             result.contains("pub exec fn CStateInit"),
             "Should generate CStateInit function: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_inline_type_generation_uses_translator_numeric_types() {
+        let config = TranspilerConfig {
+            generate_inline_types: true,
+            translator: TranslatorConfig {
+                int_type: "u64".to_string(),
+                nat_type: "u32".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                    pub slots: nat,
+                }
+
+                pub open spec fn StateInit(s: LState) -> bool {
+                    s.value == 0 && s.slots == 1
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                StateInit(-);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        assert!(
+            result.contains("pub value: u64"),
+            "Inline int field should use translator int_type: {}",
+            result
+        );
+        assert!(
+            result.contains("pub slots: u32"),
+            "Inline nat field should use translator nat_type: {}",
             result
         );
     }

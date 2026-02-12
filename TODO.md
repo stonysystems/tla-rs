@@ -1350,6 +1350,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
                 - Fresh-election compile probe (temporary swap) reduced errors from 40 to 36 and removed all `cannot add ...` failures (`cannot_add: 6 -> 0`); remaining failures are tracked in the next numeric/bounds leaf.
                 - Baseline verification build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes.
             - [ ] Fix bound/numeric type mapping parity (`u64`/`int`/`CUpperBound` argument shaping in generated election helpers) and re-probe election sync.
+              - Scope analysis [26:02:12, 15:30]: this bucket still spans independent generator gaps and is too large for a single safe <500 LOC change, so split into bounded sub-leaves.
+              - [x] Propagate configured integer-width naming (`int_type`/`nat_type`) into inline type generation (`transpile_file` + `transpile_source`) and add regression coverage. [26:02:12, 15:30]
+                - Updated inline `NamingConfig` construction in `transpiler/src/lib.rs` to pass through `self.config.translator.int_type` and `self.config.translator.nat_type` instead of defaulting to `i64`/`u64`.
+                - Added `test_inline_type_generation_uses_translator_numeric_types` to assert generated inline struct fields honor configured numeric widths.
+                - Validation:
+                  - `cargo test --all-features` (transpiler) passes with the new regression.
+                  - `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes on the baseline tracked tree.
+                  - After rebuilding release transpiler (`cargo build --release`) and regenerating (`scripts/regenerate_rsl.sh`), fresh-election compile probe (temporary swap) improves from `error_lines=36/mismatched_types=20/subrange=2` to `error_lines=30/mismatched_types=9/subrange=2`.
+              - [ ] Normalize bound helper call argument shaping in translator call lowering (`CUpperBoundedAddition`/`LtUpperBound`) and re-probe election sync.
+              - [ ] Normalize `CBoundRequestSequence` argument ownership/reference shaping (`Vec` vs `&Vec`, `u64` vs `CUpperBound`) and re-probe election sync.
             - [ ] After sub-leaves pass compile probes, sync `src/generated/RSL/election_gen.rs` to fresh output and run full verification.
         - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)
         - [ ] Close `executor_gen.rs` drift (wrapper/delegate alignment)
