@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 
 verus! {
 
@@ -42,6 +43,29 @@ pub struct CState {
     pub commit_index: u64,
     pub votes_granted: HashSet<u64>,
     pub match_index: HashMap<u64, u64>,
+    pub next_index: HashMap<u64, u64>,
+    pub msgs_request_vote: bool,
+    pub msgs_request_vote_term: u64,
+    pub msgs_request_vote_candidate: u64,
+    pub msgs_request_vote_last_log_index: u64,
+    pub msgs_request_vote_last_log_term: u64,
+    pub msgs_vote_response: bool,
+    pub msgs_vote_response_term: u64,
+    pub msgs_vote_response_granted: bool,
+    pub msgs_vote_response_voter: u64,
+    pub msgs_append_entries: bool,
+    pub msgs_append_entries_term: u64,
+    pub msgs_append_entries_leader: u64,
+    pub msgs_append_entries_prev_index: u64,
+    pub msgs_append_entries_prev_term: u64,
+    pub msgs_append_entries_value: u64,
+    pub msgs_append_entries_has_entry: bool,
+    pub msgs_append_entries_leader_commit: u64,
+    pub msgs_append_response: bool,
+    pub msgs_append_response_term: u64,
+    pub msgs_append_response_success: bool,
+    pub msgs_append_response_match_index: u64,
+    pub msgs_append_response_follower: u64,
 }
 
 impl Clone for CState {
@@ -72,6 +96,29 @@ impl View for CState {
             commit_index: self.commit_index as int,
             votes_granted: self.votes_granted@.map(|x: u64| x as int),
             match_index: self.match_index@,
+            next_index: self.next_index@,
+            msgs_request_vote: self.msgs_request_vote,
+            msgs_request_vote_term: self.msgs_request_vote_term as int,
+            msgs_request_vote_candidate: self.msgs_request_vote_candidate as int,
+            msgs_request_vote_last_log_index: self.msgs_request_vote_last_log_index as int,
+            msgs_request_vote_last_log_term: self.msgs_request_vote_last_log_term as int,
+            msgs_vote_response: self.msgs_vote_response,
+            msgs_vote_response_term: self.msgs_vote_response_term as int,
+            msgs_vote_response_granted: self.msgs_vote_response_granted,
+            msgs_vote_response_voter: self.msgs_vote_response_voter as int,
+            msgs_append_entries: self.msgs_append_entries,
+            msgs_append_entries_term: self.msgs_append_entries_term as int,
+            msgs_append_entries_leader: self.msgs_append_entries_leader as int,
+            msgs_append_entries_prev_index: self.msgs_append_entries_prev_index as int,
+            msgs_append_entries_prev_term: self.msgs_append_entries_prev_term as int,
+            msgs_append_entries_value: self.msgs_append_entries_value as int,
+            msgs_append_entries_has_entry: self.msgs_append_entries_has_entry,
+            msgs_append_entries_leader_commit: self.msgs_append_entries_leader_commit as int,
+            msgs_append_response: self.msgs_append_response,
+            msgs_append_response_term: self.msgs_append_response_term as int,
+            msgs_append_response_success: self.msgs_append_response_success,
+            msgs_append_response_match_index: self.msgs_append_response_match_index as int,
+            msgs_append_response_follower: self.msgs_append_response_follower as int,
         }
     }
 }

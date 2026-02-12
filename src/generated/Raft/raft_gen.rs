@@ -79,6 +79,29 @@ ensures
         commit_index: 0u64,
         votes_granted: HashSet::new(),
         match_index: HashMap::new(),
+        next_index: HashMap::new(),
+        msgs_request_vote: false,
+        msgs_request_vote_term: 0u64,
+        msgs_request_vote_candidate: 0u64,
+        msgs_request_vote_last_log_index: 0u64,
+        msgs_request_vote_last_log_term: 0u64,
+        msgs_vote_response: false,
+        msgs_vote_response_term: 0u64,
+        msgs_vote_response_granted: false,
+        msgs_vote_response_voter: 0u64,
+        msgs_append_entries: false,
+        msgs_append_entries_term: 0u64,
+        msgs_append_entries_leader: 0u64,
+        msgs_append_entries_prev_index: 0u64,
+        msgs_append_entries_prev_term: 0u64,
+        msgs_append_entries_value: 0u64,
+        msgs_append_entries_has_entry: false,
+        msgs_append_entries_leader_commit: 0u64,
+        msgs_append_response: false,
+        msgs_append_response_term: 0u64,
+        msgs_append_response_success: false,
+        msgs_append_response_match_index: 0u64,
+        msgs_append_response_follower: 0u64,
         role: CServerRole::Follower,
     };
     proof {
@@ -110,6 +133,29 @@ ensures
             commit_index: s.commit_index,
             votes_granted: __votes_granted,
             match_index: s.match_index.clone(),
+            next_index: s.next_index.clone(),
+            msgs_request_vote: true,
+            msgs_request_vote_term: (s.current_term + 1),
+            msgs_request_vote_candidate: c.my_id,
+            msgs_request_vote_last_log_index: 0u64,
+            msgs_request_vote_last_log_term: 0u64,
+            msgs_vote_response: false,
+            msgs_vote_response_term: 0u64,
+            msgs_vote_response_granted: false,
+            msgs_vote_response_voter: 0u64,
+            msgs_append_entries: s.msgs_append_entries,
+            msgs_append_entries_term: s.msgs_append_entries_term,
+            msgs_append_entries_leader: s.msgs_append_entries_leader,
+            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index,
+            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term,
+            msgs_append_entries_value: s.msgs_append_entries_value,
+            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry,
+            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit,
+            msgs_append_response: s.msgs_append_response,
+            msgs_append_response_term: s.msgs_append_response_term,
+            msgs_append_response_success: s.msgs_append_response_success,
+            msgs_append_response_match_index: s.msgs_append_response_match_index,
+            msgs_append_response_follower: s.msgs_append_response_follower,
             role: CServerRole::Candidate,
         }
     };
@@ -145,6 +191,29 @@ CState {
         commit_index: s.commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
+        next_index: s.next_index.clone(),
+        msgs_vote_response: true,
+        msgs_vote_response_term: *candidate_term,
+        msgs_vote_response_granted: true,
+        msgs_vote_response_voter: c.my_id,
+        msgs_request_vote: s.msgs_request_vote,
+        msgs_request_vote_term: s.msgs_request_vote_term,
+        msgs_request_vote_candidate: s.msgs_request_vote_candidate,
+        msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index,
+        msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term,
+        msgs_append_entries: s.msgs_append_entries,
+        msgs_append_entries_term: s.msgs_append_entries_term,
+        msgs_append_entries_leader: s.msgs_append_entries_leader,
+        msgs_append_entries_prev_index: s.msgs_append_entries_prev_index,
+        msgs_append_entries_prev_term: s.msgs_append_entries_prev_term,
+        msgs_append_entries_value: s.msgs_append_entries_value,
+        msgs_append_entries_has_entry: s.msgs_append_entries_has_entry,
+        msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit,
+        msgs_append_response: s.msgs_append_response,
+        msgs_append_response_term: s.msgs_append_response_term,
+        msgs_append_response_success: s.msgs_append_response_success,
+        msgs_append_response_match_index: s.msgs_append_response_match_index,
+        msgs_append_response_follower: s.msgs_append_response_follower,
         role: CServerRole::Follower,
     }
 }
@@ -154,6 +223,8 @@ requires
     s.valid(),
     c.valid(),
     s.role is Candidate,
+    s.msgs_vote_response == true,
+    s.msgs_vote_response_granted == true,
     c@.servers.contains(*voter as int),
 ensures
     result.valid(),
@@ -171,6 +242,29 @@ ensures
             commit_index: s.commit_index,
             votes_granted: __votes_granted,
             match_index: s.match_index.clone(),
+            next_index: s.next_index.clone(),
+            msgs_request_vote: s.msgs_request_vote,
+            msgs_request_vote_term: s.msgs_request_vote_term,
+            msgs_request_vote_candidate: s.msgs_request_vote_candidate,
+            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index,
+            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term,
+            msgs_vote_response: s.msgs_vote_response,
+            msgs_vote_response_term: s.msgs_vote_response_term,
+            msgs_vote_response_granted: s.msgs_vote_response_granted,
+            msgs_vote_response_voter: s.msgs_vote_response_voter,
+            msgs_append_entries: s.msgs_append_entries,
+            msgs_append_entries_term: s.msgs_append_entries_term,
+            msgs_append_entries_leader: s.msgs_append_entries_leader,
+            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index,
+            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term,
+            msgs_append_entries_value: s.msgs_append_entries_value,
+            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry,
+            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit,
+            msgs_append_response: s.msgs_append_response,
+            msgs_append_response_term: s.msgs_append_response_term,
+            msgs_append_response_success: s.msgs_append_response_success,
+            msgs_append_response_match_index: s.msgs_append_response_match_index,
+            msgs_append_response_follower: s.msgs_append_response_follower,
         }
     };
     proof {
@@ -178,28 +272,6 @@ ensures
     }
     result
 
-}
-
-pub exec fn CBecomeLeader(s: &CState, c: &CConstants) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Candidate,
-    (s@.votes_granted.len() >= c.quorum_size),
-ensures
-    result.valid(),
-    LBecomeLeader(s@, result@, c@),
-{
-CState {
-        current_term: s.current_term,
-        has_voted: s.has_voted,
-        voted_for: s.voted_for,
-        log: clone_log(&s.log),
-        commit_index: s.commit_index,
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: HashMap::new(),
-        role: CServerRole::Leader,
-    }
 }
 
 pub exec fn CClientRequest(s: &CState, c: &CConstants, value: &u64) -> (result: CState)
@@ -211,13 +283,12 @@ ensures
     result.valid(),
     LClientRequest(s@, result@, c@, *value as int),
 {
-    let entry = CLogEntry {
-        term: s.current_term,
-        value: *value,
-    };
     let result = {
         let mut __log = clone_log(&s.log);
-        __log.push(entry);
+        __log.push(CLogEntry {
+    term: s.current_term,
+    value: *value,
+});
         CState {
             current_term: s.current_term,
             role: clone_role(&s.role),
@@ -227,46 +298,81 @@ ensures
             commit_index: s.commit_index,
             votes_granted: clone_hashset(&s.votes_granted),
             match_index: s.match_index.clone(),
+            next_index: s.next_index.clone(),
+            msgs_request_vote: s.msgs_request_vote,
+            msgs_request_vote_term: s.msgs_request_vote_term,
+            msgs_request_vote_candidate: s.msgs_request_vote_candidate,
+            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index,
+            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term,
+            msgs_vote_response: s.msgs_vote_response,
+            msgs_vote_response_term: s.msgs_vote_response_term,
+            msgs_vote_response_granted: s.msgs_vote_response_granted,
+            msgs_vote_response_voter: s.msgs_vote_response_voter,
+            msgs_append_entries: s.msgs_append_entries,
+            msgs_append_entries_term: s.msgs_append_entries_term,
+            msgs_append_entries_leader: s.msgs_append_entries_leader,
+            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index,
+            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term,
+            msgs_append_entries_value: s.msgs_append_entries_value,
+            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry,
+            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit,
+            msgs_append_response: s.msgs_append_response,
+            msgs_append_response_term: s.msgs_append_response_term,
+            msgs_append_response_success: s.msgs_append_response_success,
+            msgs_append_response_match_index: s.msgs_append_response_match_index,
+            msgs_append_response_follower: s.msgs_append_response_follower,
         }
     };
     proof {
-        lemma_log_push_map_commute(s.log@, entry);
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
     }
     result
 
 }
 
-pub exec fn CHandleAppendResponse(s: &CState, c: &CConstants, follower: &u64, new_match_index: &u64) -> (result: CState)
+pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
-    (*new_match_index >= 0),
-    (*new_match_index <= s@.log.len()),
 ensures
     result.valid(),
-    LHandleAppendResponse(s@, result@, c@, *follower as int, *new_match_index as int),
+    LSendAppendEntries(s@, result@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry),
 {
-    let result = {
-        let mut __match_index = s.match_index.clone();
-        __match_index.insert(*follower, *new_match_index);
-        CState {
-            current_term: s.current_term,
-            role: clone_role(&s.role),
-            has_voted: s.has_voted,
-            voted_for: s.voted_for,
-            log: clone_log(&s.log),
-            commit_index: s.commit_index,
-            votes_granted: clone_hashset(&s.votes_granted),
-            match_index: __match_index,
-        }
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
+CState {
+        msgs_append_entries: true,
+        msgs_append_entries_term: s.current_term,
+        msgs_append_entries_leader: c.my_id,
+        msgs_append_entries_prev_index: *prev_log_index,
+        msgs_append_entries_prev_term: *prev_log_term,
+        msgs_append_entries_value: *entry_value,
+        msgs_append_entries_has_entry: has_entry.clone(),
+        msgs_append_entries_leader_commit: s.commit_index,
+        current_term: s.current_term,
+        role: clone_role(&s.role),
+        has_voted: s.has_voted,
+        voted_for: s.voted_for,
+        log: clone_log(&s.log),
+        commit_index: s.commit_index,
+        votes_granted: clone_hashset(&s.votes_granted),
+        match_index: s.match_index.clone(),
+        next_index: s.next_index.clone(),
+        msgs_request_vote: s.msgs_request_vote,
+        msgs_request_vote_term: s.msgs_request_vote_term,
+        msgs_request_vote_candidate: s.msgs_request_vote_candidate,
+        msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index,
+        msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term,
+        msgs_vote_response: s.msgs_vote_response,
+        msgs_vote_response_term: s.msgs_vote_response_term,
+        msgs_vote_response_granted: s.msgs_vote_response_granted,
+        msgs_vote_response_voter: s.msgs_vote_response_voter,
+        msgs_append_response: s.msgs_append_response,
+        msgs_append_response_term: s.msgs_append_response_term,
+        msgs_append_response_success: s.msgs_append_response_success,
+        msgs_append_response_match_index: s.msgs_append_response_match_index,
+        msgs_append_response_follower: s.msgs_append_response_follower,
     }
-    result
-
 }
 
 pub exec fn CAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u64) -> (result: CState)
@@ -290,6 +396,29 @@ CState {
         commit_index: *new_commit_index,
         votes_granted: clone_hashset(&s.votes_granted),
         match_index: s.match_index.clone(),
+        next_index: s.next_index.clone(),
+        msgs_request_vote: s.msgs_request_vote,
+        msgs_request_vote_term: s.msgs_request_vote_term,
+        msgs_request_vote_candidate: s.msgs_request_vote_candidate,
+        msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index,
+        msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term,
+        msgs_vote_response: s.msgs_vote_response,
+        msgs_vote_response_term: s.msgs_vote_response_term,
+        msgs_vote_response_granted: s.msgs_vote_response_granted,
+        msgs_vote_response_voter: s.msgs_vote_response_voter,
+        msgs_append_entries: s.msgs_append_entries,
+        msgs_append_entries_term: s.msgs_append_entries_term,
+        msgs_append_entries_leader: s.msgs_append_entries_leader,
+        msgs_append_entries_prev_index: s.msgs_append_entries_prev_index,
+        msgs_append_entries_prev_term: s.msgs_append_entries_prev_term,
+        msgs_append_entries_value: s.msgs_append_entries_value,
+        msgs_append_entries_has_entry: s.msgs_append_entries_has_entry,
+        msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit,
+        msgs_append_response: s.msgs_append_response,
+        msgs_append_response_term: s.msgs_append_response_term,
+        msgs_append_response_success: s.msgs_append_response_success,
+        msgs_append_response_match_index: s.msgs_append_response_match_index,
+        msgs_append_response_follower: s.msgs_append_response_follower,
     }
 }
 
@@ -310,6 +439,29 @@ ensures
         commit_index: s.commit_index,
         votes_granted: HashSet::new(),
         match_index: s.match_index.clone(),
+        next_index: s.next_index.clone(),
+        msgs_request_vote: false,
+        msgs_request_vote_term: 0u64,
+        msgs_request_vote_candidate: 0u64,
+        msgs_request_vote_last_log_index: 0u64,
+        msgs_request_vote_last_log_term: 0u64,
+        msgs_vote_response: false,
+        msgs_vote_response_term: 0u64,
+        msgs_vote_response_granted: false,
+        msgs_vote_response_voter: 0u64,
+        msgs_append_entries: s.msgs_append_entries,
+        msgs_append_entries_term: s.msgs_append_entries_term,
+        msgs_append_entries_leader: s.msgs_append_entries_leader,
+        msgs_append_entries_prev_index: s.msgs_append_entries_prev_index,
+        msgs_append_entries_prev_term: s.msgs_append_entries_prev_term,
+        msgs_append_entries_value: s.msgs_append_entries_value,
+        msgs_append_entries_has_entry: s.msgs_append_entries_has_entry,
+        msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit,
+        msgs_append_response: s.msgs_append_response,
+        msgs_append_response_term: s.msgs_append_response_term,
+        msgs_append_response_success: s.msgs_append_response_success,
+        msgs_append_response_match_index: s.msgs_append_response_match_index,
+        msgs_append_response_follower: s.msgs_append_response_follower,
         role: CServerRole::Follower,
     };
     proof {

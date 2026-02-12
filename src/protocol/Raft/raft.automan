@@ -2,68 +2,17 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Raft::raft {
-    // Initialize protocol state from constants
-    // s (output): initialized state
-    // c (input): protocol constants
     LInit(-, +);
-
-    // Timeout: start a new election
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
     LTimeout(+, -, +);
-
-    // Grant a vote to a candidate
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // candidate_term (input): candidate's term
-    // candidate_last_log_term (input): term of candidate's last log entry
-    // candidate_last_log_index (input): index of candidate's last log entry
-    // candidate_id (input): candidate's server ID
     LGrantVote(+, -, +, +, +, +, +);
-
-    // Receive a vote granted response
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // voter (input): server that granted the vote
     LReceiveVoteGranted(+, -, +, +);
-
-    // Become leader after receiving quorum of votes
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    LBecomeLeader(+, -, +);
-
-    // Client request: leader appends entry to log
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // value (input): client's command value
+    // LBecomeLeader not transpiled (uses Set::len() for quorum check)
     LClientRequest(+, -, +, +);
-
-    // Handle successful AppendEntries response
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // follower (input): responding server
-    // new_match_index (input): new match index for follower
-    LHandleAppendResponse(+, -, +, +, +);
-
-    // Advance commit index
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // new_commit_index (input): new commit index
+    LSendAppendEntries(+, -, +, +, +, +, +, +);
+    // LFollowerAppendEntries not transpiled (complex Seq::push in inline if/else with struct literals)
+    // LHandleAppendResponse not transpiled (uses Map::insert with as u64 casts)
+    // LHandleAppendReject not transpiled (uses Map::dom().contains with conditional update)
     LAdvanceCommitIndex(+, -, +, +);
-
-    // Step down to follower on discovering higher term
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // new_term (input): the higher term discovered
     LStepDown(+, -, +, +);
-
-    // LNext is not transpiled (contains existential quantifiers)
+    // LNext not transpiled (contains existential quantifiers)
 }

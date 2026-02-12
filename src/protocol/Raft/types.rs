@@ -32,8 +32,39 @@ verus! {
         // Candidate state
         pub votes_granted: Set<int>,    // Set of servers that granted vote to this candidate
 
-        // Leader state (uses u64 keys/values for View compatibility with HashMap<u64, u64>)
+        // Leader state (u64 keys/values match HashMap<u64, u64> View)
         pub match_index: Map<u64, u64>, // For each server, index of highest known replicated entry
+        pub next_index: Map<u64, u64>,  // For each server, index of next log entry to send
+
+        // Message flags: RequestVote
+        pub msgs_request_vote: bool,
+        pub msgs_request_vote_term: int,
+        pub msgs_request_vote_candidate: int,
+        pub msgs_request_vote_last_log_index: int,
+        pub msgs_request_vote_last_log_term: int,
+
+        // Message flags: VoteResponse
+        pub msgs_vote_response: bool,
+        pub msgs_vote_response_term: int,
+        pub msgs_vote_response_granted: bool,
+        pub msgs_vote_response_voter: int,
+
+        // Message flags: AppendEntries
+        pub msgs_append_entries: bool,
+        pub msgs_append_entries_term: int,
+        pub msgs_append_entries_leader: int,
+        pub msgs_append_entries_prev_index: int,
+        pub msgs_append_entries_prev_term: int,
+        pub msgs_append_entries_value: int,
+        pub msgs_append_entries_has_entry: bool,
+        pub msgs_append_entries_leader_commit: int,
+
+        // Message flags: AppendEntriesResponse
+        pub msgs_append_response: bool,
+        pub msgs_append_response_term: int,
+        pub msgs_append_response_success: bool,
+        pub msgs_append_response_match_index: int,
+        pub msgs_append_response_follower: int,
     }
 
     /// Protocol constants

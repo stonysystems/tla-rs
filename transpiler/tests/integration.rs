@@ -602,7 +602,13 @@ fn test_raft_function_transpilation() {
             exec_prefix: "C".to_string(),
             ..Default::default()
         },
-        skip_functions: vec!["LNext".to_string()],
+        skip_functions: vec![
+            "LNext".to_string(),
+            "LBecomeLeader".to_string(),
+            "LFollowerAppendEntries".to_string(),
+            "LHandleAppendResponse".to_string(),
+            "LHandleAppendReject".to_string(),
+        ],
         ..Default::default()
     };
 
@@ -617,19 +623,20 @@ fn test_raft_function_transpilation() {
     assert!(output.contains("pub exec fn CTimeout"), "Should generate CTimeout");
     assert!(output.contains("pub exec fn CGrantVote"), "Should generate CGrantVote");
     assert!(output.contains("pub exec fn CReceiveVoteGranted"), "Should generate CReceiveVoteGranted");
-    assert!(output.contains("pub exec fn CBecomeLeader"), "Should generate CBecomeLeader");
     assert!(output.contains("pub exec fn CClientRequest"), "Should generate CClientRequest");
-    assert!(output.contains("pub exec fn CHandleAppendResponse"), "Should generate CHandleAppendResponse");
+    assert!(output.contains("pub exec fn CSendAppendEntries"), "Should generate CSendAppendEntries");
     assert!(output.contains("pub exec fn CAdvanceCommitIndex"), "Should generate CAdvanceCommitIndex");
     assert!(output.contains("pub exec fn CStepDown"), "Should generate CStepDown");
 
-    // Verify LNext is NOT generated (it's in skip_functions)
+    // Verify skipped functions are NOT generated
     assert!(!output.contains("pub exec fn CNext"), "Should NOT generate CNext");
+    assert!(!output.contains("pub exec fn CBecomeLeader"), "Should NOT generate CBecomeLeader");
+    assert!(!output.contains("pub exec fn CHandleAppendResponse"), "Should NOT generate CHandleAppendResponse");
+    assert!(!output.contains("pub exec fn CHandleAppendReject"), "Should NOT generate CHandleAppendReject");
 
     // Check that ensures clauses reference spec functions
     assert!(output.contains("LInit("), "Should reference LInit in ensures");
     assert!(output.contains("LTimeout("), "Should reference LTimeout in ensures");
-    assert!(output.contains("LBecomeLeader("), "Should reference LBecomeLeader in ensures");
 
     // Check struct construction patterns
     assert!(output.contains("CState"), "Should construct CState in function bodies");
@@ -650,10 +657,10 @@ fn test_raft_annotation_parsing() {
 
     let funcs = &module.functions;
 
-    // Should have 8 function annotations
+    // Should have 7 function annotations (skipped functions are not in automan)
     assert!(
-        funcs.len() >= 8,
-        "Expected at least 8 function annotations but got {}",
+        funcs.len() >= 7,
+        "Expected at least 7 function annotations but got {}",
         funcs.len()
     );
 
@@ -669,8 +676,8 @@ fn test_raft_annotation_parsing() {
     let grant = funcs.get("LGrantVote").expect("Should have LGrantVote");
     assert_eq!(grant.param_modes.len(), 7, "LGrantVote should have 7 params");
 
-    let become_leader = funcs.get("LBecomeLeader").expect("Should have LBecomeLeader");
-    assert_eq!(become_leader.param_modes.len(), 3, "LBecomeLeader should have 3 params");
+    let send_ae = funcs.get("LSendAppendEntries").expect("Should have LSendAppendEntries");
+    assert_eq!(send_ae.param_modes.len(), 8, "LSendAppendEntries should have 8 params");
 }
 
 #[test]

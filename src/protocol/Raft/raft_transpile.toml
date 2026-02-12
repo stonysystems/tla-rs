@@ -1,8 +1,12 @@
 # Configuration for transpiling Raft Consensus spec to exec implementation
 
-# Skip functions that contain existential quantifiers or are spec-only predicates
+# Skip functions that contain Set::len(), complex inline if/else, Map::dom(), or existential quantifiers
 skip_functions = [
     "LNext",
+    "LBecomeLeader",
+    "LFollowerAppendEntries",
+    "LHandleAppendResponse",
+    "LHandleAppendReject",
 ]
 
 # Primitive types that don't need valid() predicates
@@ -12,7 +16,7 @@ primitive_types = []
 collection_fields = ["votes_granted", "servers"]
 
 # Fields that are Vec/HashMap types (Seq/Map) requiring .clone()
-vec_fields = ["match_index"]
+vec_fields = ["match_index", "next_index"]
 
 # Fields that are non-Copy types requiring .clone() but not @ in view
 clone_fields = ["role"]
@@ -79,6 +83,7 @@ generate_inline_types = false
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::set::*;",
+    "use vstd::set_lib::*;",
     "use std::collections::HashSet;",
     "use std::collections::HashMap;",
     "use crate::protocol::Raft::types::*;",
