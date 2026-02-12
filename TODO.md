@@ -1228,7 +1228,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Implemented `generate_wrappers()`, `is_wrapper_candidate()`, `generate_single_wrapper()`
       - Wrapper converts `fn foo(&Type, ...) -> Type` to `impl Type { fn foo(&mut self, ...) }`
       - See docs/dev/wrapper-methods-implementation.md
-    - [ ] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.) (deferred)
+    - [x] Add optimized variants (CAddVoteAndRemoveOldOnes_optimized, etc.) [26:02:12, 19:12]
+      - Added generated `CAddVoteAndRemoveOldOnes_optimized` with refinement-preserving ensures and min-vote tracking output
+      - Added generated `CAcceptorProcess2a_optimized` that preserves `LAcceptorProcess2a` refinement while updating `min_vote_opn`
+      - Added 3 verification tests covering min-vote update branches (truncation-point branch, new-opn branch, keep-current branch)
     - [ ] Add min_vote_opn optimization helper (deferred)
 - [ ] Run full system tests with generated implementation (blocked by deferred optimized variants)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
