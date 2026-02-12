@@ -137,12 +137,12 @@ ensures
         CState {
             promises_rcvd: __promises_rcvd,
             highest_accepted_bal: if (*a_accepted_bal > s.highest_accepted_bal) {
-                a_accepted_bal
+                *a_accepted_bal
             } else {
                 s.highest_accepted_bal
             },
             highest_accepted_val: if (*a_accepted_bal > s.highest_accepted_bal) {
-                a_accepted_val
+                *a_accepted_val
             } else {
                 s.highest_accepted_val
             },

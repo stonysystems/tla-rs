@@ -999,7 +999,8 @@ impl<'a> VerusBlockParser<'a> {
 
         // Check for parenthesized expression or tuple
         if self.peek() == Some('(') {
-            return self.parse_paren_or_tuple_expr();
+            let expr = self.parse_paren_or_tuple_expr()?;
+            return self.parse_postfix_ops(expr);
         }
 
         // Check for sequence literal

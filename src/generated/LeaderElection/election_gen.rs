@@ -84,7 +84,7 @@ requires
     c.valid(),
     s@.alive.contains(*node as int),
     s.has_leader == true,
-    !s@.alive.contains(s.leader),
+    !s@.alive.contains(s.leader as int),
 ensures
     result.valid(),
     LDetectFailure(s@, result@, c@, *node as int),
@@ -172,7 +172,7 @@ ensures
             electing: __electing,
             has_highest: true,
             highest_heard: if (!s.has_highest || (*node > s.highest_heard)) {
-                node
+                *node
             } else {
                 s.highest_heard
             },

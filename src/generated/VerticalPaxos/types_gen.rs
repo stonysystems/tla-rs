@@ -9,7 +9,6 @@ use vstd::set::*;
 
 verus! {
 
-#[derive(Clone)]
 pub struct CState {
     pub config_num: u64,
     pub max_bal: u64,

@@ -1399,6 +1399,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - All 8/8 RSL modules (types + 7 function modules) match between committed and fresh regeneration.
         - Deterministic: 3 consecutive regeneration passes produce identical output for all modules.
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover
+      - Scope analysis [26:02:12]: all 7 generated function modules have correct imports and compile under Verus with zero RSL errors. No external code references these modules yet, so uncommenting is safe. Dependency order: (broadcast, election, learner) → (acceptor, executor, proposer) → replica.
+      - [x] Enable generated RSL function modules in `src/generated/RSL/mod.rs` (uncomment 7 `pub mod` lines) and verify the crate compiles [26:02:12]
+        - Uncommented all 7 `pub mod` lines in `src/generated/RSL/mod.rs`
+        - Fixed 9 pre-existing Verus type errors in non-RSL protocols (EPaxos, LeaderElection, Paxos, VerticalPaxos, Raft) that were masked by earlier errors
+        - Fixed HashSet::clone() incompatibility: removed `#[derive(Clone)]` from CState in EPaxos, PBFT, VerticalPaxos; removed redundant `..s.clone()` in VerticalPaxos CSync
+        - Fixed transpiler parser: parenthesized expressions now support postfix `as` casts
+        - Result: 509 verified, 1 pre-existing proof error in ReplicaImpl.rs:906
+      - [ ] Wire `ReplicaImpl` to use generated modules instead of manual implementation modules (update imports in `src/implementation/RSL/ReplicaImpl.rs` and callers)
+      - [ ] Add integration test verifying generated modules are accessible and produce correct types
+      - [ ] Deprecate manual implementation modules (mark with `#[deprecated]` or move to `_legacy/`)
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
     - test_generated_vs_manual_equivalence() compares generated vs manual output

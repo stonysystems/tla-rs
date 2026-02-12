@@ -323,7 +323,7 @@ CState {
         has_witness: true,
         witness_val: *witness_val,
         max_val: if !s.has_voted {
-            witness_val
+            *witness_val
         } else {
             s.max_val
         },
@@ -358,7 +358,7 @@ ensures
     result.valid(),
     LSync(s@, result@, c@, *new_config as int, *val as int),
 {
-    let result = CState { config_num: *new_config, max_bal: 0u64, max_v_bal: 0u64, max_val: *val, has_voted: false, is_active: true, promises_rcvd: HashSet::new(), accepts_rcvd: HashSet::new(), committed: false, committed_val: 0u64, witness_val: 0u64, has_witness: false, msgs_prepare: false, msgs_prepare_bal: 0u64, msgs_promise: false, msgs_promise_bal: 0u64, msgs_promise_v_bal: 0u64, msgs_promise_val: 0u64, msgs_accept: false, msgs_accept_bal: 0u64, msgs_accept_val: 0u64, ..s.clone() };
+    let result = CState { config_num: *new_config, max_bal: 0u64, max_v_bal: 0u64, max_val: *val, has_voted: false, is_active: true, promises_rcvd: HashSet::new(), accepts_rcvd: HashSet::new(), committed: false, committed_val: 0u64, witness_val: 0u64, has_witness: false, msgs_prepare: false, msgs_prepare_bal: 0u64, msgs_promise: false, msgs_promise_bal: 0u64, msgs_promise_v_bal: 0u64, msgs_promise_val: 0u64, msgs_accept: false, msgs_accept_bal: 0u64, msgs_accept_val: 0u64 };
     proof {
         lemma_empty_set_map();
     }

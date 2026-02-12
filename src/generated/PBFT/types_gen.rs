@@ -9,7 +9,6 @@ use vstd::set::*;
 
 verus! {
 
-#[derive(Clone)]
 pub struct CState {
     pub view: u64,
     pub phase: CPhase,

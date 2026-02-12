@@ -2,6 +2,11 @@ use crate::protocol::Raft::types::*;
 use vstd::prelude::*;
 
 verus! {
+    /// Helper: increment a u64 by 1 in spec mode, staying in u64
+    pub open spec fn u64_inc(x: u64) -> u64 { (x + 1) as u64 }
+    /// Helper: decrement a u64 by 1 in spec mode, staying in u64
+    pub open spec fn u64_dec(x: u64) -> u64 { (x - 1) as u64 }
+
     /// Initialize the Raft protocol state
     /// Server starts as Follower with empty log, no votes, term 0
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
@@ -357,7 +362,7 @@ verus! {
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
         &&& s_.match_index == s.match_index.insert(follower, new_match_index)
-        &&& s_.next_index == s.next_index.insert(follower, new_match_index + 1)
+        &&& s_.next_index == s.next_index.insert(follower, u64_inc(new_match_index))
         // Frame messages
         &&& s_.msgs_request_vote == s.msgs_request_vote
         &&& s_.msgs_request_vote_term == s.msgs_request_vote_term
@@ -394,7 +399,7 @@ verus! {
         &&& c.servers.contains(follower as int)
         // Backtrack next_index for this follower
         &&& s_.next_index == (if s.next_index.dom().contains(follower) && s.next_index[follower] > 0 {
-            s.next_index.insert(follower, s.next_index[follower] - 1)
+            s.next_index.insert(follower, u64_dec(s.next_index[follower]))
         } else {
             s.next_index
         })

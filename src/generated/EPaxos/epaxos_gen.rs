@@ -190,7 +190,7 @@ requires
     s.phase is PreAccepted,
     s.is_leader == true,
     s.msgs_preaccept_ok == true,
-    !s@.preaccept_senders.contains(s.msgs_preaccept_ok_sender),
+    !s@.preaccept_senders.contains(s.msgs_preaccept_ok_sender as int),
     s.dep_count < u64::MAX,
 ensures
     result.valid(),
@@ -303,7 +303,7 @@ requires
     s.phase is Accepted,
     s.is_leader == true,
     s.msgs_accept_ok == true,
-    !s@.accept_senders.contains(s.msgs_accept_ok_sender),
+    !s@.accept_senders.contains(s.msgs_accept_ok_sender as int),
 ensures
     result.valid(),
     LReceiveAcceptOk(s@, result@, c@),

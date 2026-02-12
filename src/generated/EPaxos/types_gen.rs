@@ -10,7 +10,6 @@ use vstd::set_lib::*;
 
 verus! {
 
-#[derive(Clone)]
 pub struct CState {
     pub ballot: u64,
     pub phase: CInstancePhase,
