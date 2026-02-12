@@ -62,9 +62,55 @@ ensures
         alive: clone_hashset(&c.nodes),
         has_highest: false,
         highest_heard: 0u64,
+        msgs_election: false,
+        msgs_election_sender: 0u64,
+        msgs_answer: false,
+        msgs_answer_responder: 0u64,
+        msgs_coordinator: false,
+        msgs_coordinator_leader: 0u64,
+        waiting_answer: false,
+        waiting_node: 0u64,
     };
     proof {
         lemma_empty_set_map();
+    }
+    result
+
+}
+
+pub exec fn CDetectFailure(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s@.alive.contains(*node as int),
+    s.has_leader == true,
+    !s@.alive.contains(s.leader),
+ensures
+    result.valid(),
+    LDetectFailure(s@, result@, c@, *node as int),
+{
+    let result = {
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.insert(*node);
+        CState {
+            electing: __electing,
+            msgs_election: true,
+            msgs_election_sender: *node,
+            waiting_answer: true,
+            waiting_node: *node,
+            has_leader: s.has_leader,
+            leader: s.leader,
+            alive: clone_hashset(&s.alive),
+            has_highest: s.has_highest,
+            highest_heard: s.highest_heard,
+            msgs_answer: s.msgs_answer,
+            msgs_answer_responder: s.msgs_answer_responder,
+            msgs_coordinator: s.msgs_coordinator,
+            msgs_coordinator_leader: s.msgs_coordinator_leader,
+        }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
     }
     result
 
@@ -86,9 +132,17 @@ ensures
             electing: __electing,
             has_leader: false,
             leader: 0u64,
+            msgs_election: true,
+            msgs_election_sender: *node,
+            waiting_answer: true,
+            waiting_node: *node,
             alive: clone_hashset(&s.alive),
             has_highest: s.has_highest,
             highest_heard: s.highest_heard,
+            msgs_answer: s.msgs_answer,
+            msgs_answer_responder: s.msgs_answer_responder,
+            msgs_coordinator: s.msgs_coordinator,
+            msgs_coordinator_leader: s.msgs_coordinator_leader,
         }
     };
     proof {
@@ -98,35 +152,99 @@ ensures
 
 }
 
-pub exec fn CRespondHigher(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CSendAnswer(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
-    (!s.has_highest || (*node > s.highest_heard)),
+    s.msgs_election == true,
+    (*node > s.msgs_election_sender),
 ensures
     result.valid(),
-    LRespondHigher(s@, result@, c@, *node as int),
+    LSendAnswer(s@, result@, c@, *node as int),
 {
-CState {
-        has_highest: true,
-        highest_heard: *node,
-        electing: clone_hashset(&s.electing),
-        has_leader: s.has_leader,
-        leader: s.leader,
-        alive: clone_hashset(&s.alive),
+    let result = {
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.insert(*node);
+        CState {
+            msgs_answer: true,
+            msgs_answer_responder: *node,
+            electing: __electing,
+            has_highest: true,
+            highest_heard: if (!s.has_highest || (*node > s.highest_heard)) {
+                node
+            } else {
+                s.highest_heard
+            },
+            has_leader: s.has_leader,
+            leader: s.leader,
+            alive: clone_hashset(&s.alive),
+            msgs_election: s.msgs_election,
+            msgs_election_sender: s.msgs_election_sender,
+            msgs_coordinator: s.msgs_coordinator,
+            msgs_coordinator_leader: s.msgs_coordinator_leader,
+            waiting_answer: s.waiting_answer,
+            waiting_node: s.waiting_node,
+        }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
     }
+    result
+
 }
 
-pub exec fn CBecomeLeader(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CReceiveAnswer(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s@.alive.contains(*node as int),
+    s.msgs_answer == true,
+    s.waiting_answer == true,
+    s.waiting_node == *node,
+ensures
+    result.valid(),
+    LReceiveAnswer(s@, result@, c@, *node as int),
+{
+    let result = {
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.remove(node);
+        CState {
+            waiting_answer: false,
+            waiting_node: 0u64,
+            electing: __electing,
+            msgs_answer: false,
+            msgs_answer_responder: 0u64,
+            has_leader: s.has_leader,
+            leader: s.leader,
+            alive: clone_hashset(&s.alive),
+            has_highest: s.has_highest,
+            highest_heard: s.highest_heard,
+            msgs_election: s.msgs_election,
+            msgs_election_sender: s.msgs_election_sender,
+            msgs_coordinator: s.msgs_coordinator,
+            msgs_coordinator_leader: s.msgs_coordinator_leader,
+        }
+    };
+    proof {
+        lemma_set_map_remove_commute(s.electing@, *node);
+    }
+    result
+
+}
+
+pub exec fn CSendCoordinator(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
     s@.electing.contains(*node as int),
+    s.waiting_answer == true,
+    s.waiting_node == *node,
+    s.msgs_answer == false,
 ensures
     result.valid(),
-    LBecomeLeader(s@, result@, c@, *node as int),
+    LSendCoordinator(s@, result@, c@, *node as int),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
@@ -135,9 +253,54 @@ ensures
             has_leader: true,
             leader: *node,
             electing: __electing,
+            msgs_coordinator: true,
+            msgs_coordinator_leader: *node,
+            waiting_answer: false,
+            waiting_node: 0u64,
+            msgs_election: false,
+            msgs_election_sender: 0u64,
             alive: clone_hashset(&s.alive),
             has_highest: s.has_highest,
             highest_heard: s.highest_heard,
+            msgs_answer: s.msgs_answer,
+            msgs_answer_responder: s.msgs_answer_responder,
+        }
+    };
+    proof {
+        lemma_set_map_remove_commute(s.electing@, *node);
+    }
+    result
+
+}
+
+pub exec fn CReceiveCoordinator(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s@.alive.contains(*node as int),
+    s.msgs_coordinator == true,
+ensures
+    result.valid(),
+    LReceiveCoordinator(s@, result@, c@, *node as int),
+{
+    let result = {
+        let mut __electing = clone_hashset(&s.electing);
+        __electing.remove(node);
+        CState {
+            has_leader: true,
+            leader: s.msgs_coordinator_leader,
+            electing: __electing,
+            msgs_coordinator: false,
+            msgs_coordinator_leader: 0u64,
+            alive: clone_hashset(&s.alive),
+            has_highest: s.has_highest,
+            highest_heard: s.highest_heard,
+            msgs_election: s.msgs_election,
+            msgs_election_sender: s.msgs_election_sender,
+            msgs_answer: s.msgs_answer,
+            msgs_answer_responder: s.msgs_answer_responder,
+            waiting_answer: s.waiting_answer,
+            waiting_node: s.waiting_node,
         }
     };
     proof {
@@ -173,6 +336,46 @@ ensures
                 0u64
             } else {
                 s.leader
+            },
+            msgs_election: if (s.msgs_election && (s.msgs_election_sender == *node)) {
+                false
+            } else {
+                s.msgs_election
+            },
+            msgs_election_sender: if (s.msgs_election && (s.msgs_election_sender == *node)) {
+                0u64
+            } else {
+                s.msgs_election_sender
+            },
+            msgs_answer: if (s.msgs_answer && (s.msgs_answer_responder == *node)) {
+                false
+            } else {
+                s.msgs_answer
+            },
+            msgs_answer_responder: if (s.msgs_answer && (s.msgs_answer_responder == *node)) {
+                0u64
+            } else {
+                s.msgs_answer_responder
+            },
+            msgs_coordinator: if (s.msgs_coordinator && (s.msgs_coordinator_leader == *node)) {
+                false
+            } else {
+                s.msgs_coordinator
+            },
+            msgs_coordinator_leader: if (s.msgs_coordinator && (s.msgs_coordinator_leader == *node)) {
+                0u64
+            } else {
+                s.msgs_coordinator_leader
+            },
+            waiting_answer: if (s.waiting_answer && (s.waiting_node == *node)) {
+                false
+            } else {
+                s.waiting_answer
+            },
+            waiting_node: if (s.waiting_answer && (s.waiting_node == *node)) {
+                0u64
+            } else {
+                s.waiting_node
             },
             has_highest: s.has_highest,
             highest_heard: s.highest_heard,

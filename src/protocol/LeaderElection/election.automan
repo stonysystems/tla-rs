@@ -7,26 +7,47 @@ module LeaderElection::election {
     // c (input): protocol constants
     LInit(-, +);
 
-    // A node starts an election
+    // A node detects leader failure and starts an election
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): detecting node
+    LDetectFailure(+, -, +, +);
+
+    // A node starts an election (general trigger)
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
     // node (input): node starting the election
     LStartElection(+, -, +, +);
 
-    // A higher-ID node responds to an election
+    // A higher-ID node responds with an Answer message
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
     // node (input): responding node
-    LRespondHigher(+, -, +, +);
+    LSendAnswer(+, -, +, +);
 
-    // A node wins the election and becomes leader
+    // A node receives an Answer, stops its election
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
-    // node (input): node becoming leader
-    LBecomeLeader(+, -, +, +);
+    // node (input): node receiving Answer
+    LReceiveAnswer(+, -, +, +);
+
+    // A node wins election and sends Coordinator message
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): winning node
+    LSendCoordinator(+, -, +, +);
+
+    // A node receives Coordinator and accepts new leader
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // node (input): receiving node
+    LReceiveCoordinator(+, -, +, +);
 
     // A node fails (crashes)
     // s (input): current state

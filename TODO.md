@@ -4430,7 +4430,7 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 | Raft | partial | No AppendEntries RPC, no log conflict handling, no message layer, no nextIndex, broken quorum check |
 | TwoPhase | **complete** | Full 2PC with TM + RM state, message passing, 8 transitions ✅ |
 | Paxos | **complete** | Per-node state (acceptor+proposer+learner), 7 transitions, quorum-based ✅ |
-| LeaderElection | partial | No message types, no timing |
+| LeaderElection | **complete** | Bully algorithm with Election/Answer/Coordinator messages, failure detection, 7 transitions ✅ |
 | ChainReplication | partial | No topology awareness, no failure model |
 | PrimaryBackup | **complete** | Backup state, replication, ack, failover with view/epoch, 8 transitions ✅ |
 | PBFT | partial | No request tracking, no checkpoints, no Byzantine behavior |
@@ -4560,14 +4560,16 @@ Enhance `src/protocol/PrimaryBackup/types.rs` and `src/protocol/PrimaryBackup/pr
 
 Enhance `src/protocol/LeaderElection/types.rs` and `src/protocol/LeaderElection/election.rs`.
 
-- [ ] Add `LMessage` enum: `Election(sender_id)`, `Answer(responder_id)`, `Coordinator(leader_id)`
-- [ ] Add `LPacket { src, dst, msg }`
-- [ ] Add `LSendElectionMessage(s, s_, c, target)` — node sends Election to higher-ID nodes
-- [ ] Add `LReceiveAnswer(s, s_, c, from)` — node receives Answer, stops election attempt
-- [ ] Add `LSendCoordinator(s, s_, c)` — winner broadcasts Coordinator message
-- [ ] Add `LReceiveCoordinator(s, s_, c, leader_id)` — node accepts new leader
-- [ ] Add `LDetectFailure(s, s_, c, failed_node)` — node detects leader failure, triggers election
-- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+- [x] Add message flags: `msgs_election`/`msgs_election_sender`, `msgs_answer`/`msgs_answer_responder`, `msgs_coordinator`/`msgs_coordinator_leader` (boolean flags instead of enum)
+- [x] Add `waiting_answer`/`waiting_node` fields for election timeout tracking
+- [x] Add `LDetectFailure(s, s_, c, node)` — node detects leader failure, sends Election, starts waiting
+- [x] Update `LStartElection` — sends Election message and enters waiting state
+- [x] Add `LSendAnswer(s, s_, c, node)` — higher-ID node responds to Election, enters election itself
+- [x] Add `LReceiveAnswer(s, s_, c, node)` — node receives Answer, stops election attempt
+- [x] Add `LSendCoordinator(s, s_, c, node)` — winner (no Answer received) broadcasts Coordinator
+- [x] Add `LReceiveCoordinator(s, s_, c, node)` — node accepts new leader from Coordinator
+- [x] Update `LNodeFail` — clears messages involving failed node (inline if/else per field)
+- [x] Update `.automan` and `_transpile.toml`, regenerate, verify (689 tests pass)
 
 ---
 
