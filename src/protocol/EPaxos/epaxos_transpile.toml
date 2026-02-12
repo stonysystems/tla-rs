@@ -1,12 +1,15 @@
 # Configuration for transpiling EPaxos spec to exec implementation
 
-# Skip functions that contain disjunctions or existential quantifiers
+# Skip functions that contain Set::len(), disjunctions, or existential quantifiers
 skip_functions = [
     "LNext",
+    "LFastCommit",
+    "LStartAccept",
+    "LSlowCommit",
 ]
 
 # Fields that are HashSet types (Set) requiring clone_hashset()
-collection_fields = []
+collection_fields = ["preaccept_senders", "accept_senders"]
 
 # Fields that are Vec types (Seq) requiring .clone()
 vec_fields = []
@@ -49,6 +52,9 @@ generate_proofs = true
 generate_inline_types = false
 custom_imports = [
     "use vstd::prelude::*;",
+    "use vstd::set::*;",
+    "use vstd::set_lib::*;",
+    "use std::collections::HashSet;",
     "use crate::protocol::EPaxos::types::*;",
     "use crate::protocol::EPaxos::epaxos::*;",
     "use crate::generated::EPaxos::types_gen::*;",

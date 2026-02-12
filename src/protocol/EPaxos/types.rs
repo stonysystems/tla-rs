@@ -1,15 +1,15 @@
-/// Simplified EPaxos (Egalitarian Paxos) types.
+/// EPaxos (Egalitarian Paxos) types.
 ///
 /// Models the core EPaxos concepts from a single replica's perspective:
 /// - Leaderless: any replica can propose commands
 /// - Commands go through phases: PreAccepted -> Accepted -> Committed -> Executed
 /// - Fast path (1 RTT) when quorum agrees on dependencies
 /// - Slow path (2 RTT) when dependency conflict detected
-/// - Dependency tracking via sequence numbers and dependency counts
-///
-/// Simplified from the full EPaxos TLA+ spec by abstracting dependency sets
-/// to counts and sequence numbers, similar to how PBFT uses message counts.
+/// - Set-based quorum tracking for pre-accept and accept phases
+/// - Message flags for PreAccept, PreAcceptOk, Accept, AcceptOk, Commit
+/// - Dependency tracking via dep_count and sequence numbers
 use vstd::prelude::*;
+use vstd::set::*;
 
 verus! {
 
@@ -39,16 +39,42 @@ pub struct LState {
     pub seq: int,
     /// Number of dependency conflicts detected for current instance
     pub dep_count: int,
-    /// Number of pre-accept acknowledgments received (fast path)
-    pub preaccept_count: int,
-    /// Number of accept acknowledgments received (slow path)
-    pub accept_count: int,
     /// Whether this replica initiated the current proposal
     pub is_leader: bool,
     /// Total number of instances committed by this replica
     pub committed_count: int,
     /// Total number of instances executed by this replica
     pub executed_count: int,
+    /// Set of replicas that sent PreAcceptOk (fast path quorum tracking)
+    pub preaccept_senders: Set<int>,
+    /// Set of replicas that sent AcceptOk (slow path quorum tracking)
+    pub accept_senders: Set<int>,
+    /// Whether any PreAcceptOk disagreed on deps (conflict flag)
+    pub has_conflict: bool,
+    /// Maximum sequence number seen from PreAcceptOk responses
+    pub max_resp_seq: int,
+    // --- PreAccept message flags ---
+    pub msgs_preaccept: bool,
+    pub msgs_preaccept_ballot: int,
+    pub msgs_preaccept_cmd: int,
+    pub msgs_preaccept_seq: int,
+    // --- PreAcceptOk message flags ---
+    pub msgs_preaccept_ok: bool,
+    pub msgs_preaccept_ok_sender: int,
+    pub msgs_preaccept_ok_seq: int,
+    pub msgs_preaccept_ok_conflict: bool,
+    // --- Accept message flags ---
+    pub msgs_accept: bool,
+    pub msgs_accept_ballot: int,
+    pub msgs_accept_cmd: int,
+    pub msgs_accept_seq: int,
+    // --- AcceptOk message flags ---
+    pub msgs_accept_ok: bool,
+    pub msgs_accept_ok_sender: int,
+    // --- Commit message flags ---
+    pub msgs_commit: bool,
+    pub msgs_commit_cmd: int,
+    pub msgs_commit_seq: int,
 }
 
 /// Protocol constants
@@ -56,8 +82,6 @@ pub struct LConstants {
     /// Total number of replicas (must be odd, >= 3)
     pub num_replicas: int,
     /// Fast-path quorum size: floor(n/2) + floor((n/2 + 1)/2)
-    /// For n=5: floor(5/2) + floor(3/2) = 2 + 1 = 3 (fast quorum = n-1 for n=5)
-    /// Simplified: fast quorum needs n - 1 agreement for n = 2f+1
     pub fast_quorum_size: int,
     /// Slow-path quorum size: majority (n/2 + 1)
     pub quorum_size: int,
