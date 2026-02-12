@@ -1294,7 +1294,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
             - Updated `transpiler/src/printer/mod.rs` to wrap `ExecExpr::Block` when emitted as struct field initializers (`field: { ... }`) instead of invalid `field: let ...; ...` shape.
             - Added printer regression test `test_print_struct_field_block_wrapped`.
             - Validation: `cargo test --all-features` (transpiler) passes; `scripts/regenerate_rsl.sh` now emits brace-wrapped field block in fresh `election_gen.rs`.
-          - [ ] Restore proof helper emission parity for missing empty-collection lemmas (`lemma_empty_set_map`, `lemma_empty_seq_map`) so regenerated election module compiles under Verus.
+          - [x] Restore proof helper emission parity for missing empty-collection lemmas (`lemma_empty_set_map`, `lemma_empty_seq_map`) so regenerated election module compiles under Verus. [26:02:13, 05:20]
+            - Root cause: helper definition emission in `transpiler/src/lib.rs` relied on static config hints (`collection_fields`/`vec_fields`) and missed real proof helper usage inserted in translated bodies.
+            - Fix: added pre-analysis pass `collect_generated_proof_helper_needs(...)` that translates annotated functions and runs `ProofNeeds::analyze` to drive helper prelude emission; wired into both `transpile_file` and `transpile_source`.
+            - Added/strengthened regression tests:
+              - `test_generate_proofs_emits_helper_lemma` now asserts helper **definition** (`proof fn lemma_empty_set_map()`), not just call text.
+              - `test_generate_proofs_emits_empty_seq_helper_without_vec_field_config` verifies `proof fn lemma_empty_seq_map()` is emitted without explicit `vec_fields` config when proof blocks require it.
+            - Validation:
+              - `cargo test --all-features` (transpiler) passes.
+              - fresh election generation now contains both helper definitions and call sites.
+              - compile probe with fresh election no longer fails on unresolved `lemma_empty_set_map` / `lemma_empty_seq_map`; remaining failures are broader type/wrapper drift addressed by subsequent election/module leaves.
           - [ ] Sync `src/generated/RSL/election_gen.rs` to regenerated output and rerun full verification once helper parity is restored.
         - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)
         - [ ] Close `executor_gen.rs` drift (wrapper/delegate alignment)

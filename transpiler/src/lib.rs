@@ -193,9 +193,23 @@ impl Transpiler {
 
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
-            let has_vec_fields = !self.config.translator.vec_fields.is_empty();
-            let has_set_fields = self.needs_set_helpers();
-            let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body));
+            let (generated_needs_set_helpers, generated_needs_vec_helpers, generated_needs_set_remove) =
+                Self::collect_generated_proof_helper_needs(
+                    &spec_fns,
+                    &annotations,
+                    &self.config.skip_functions,
+                    &self.config.translator,
+                )?;
+            // Emit helpers either when explicitly configured, or when the spec
+            // syntax itself uses empty Seq/Set constructs that generate proof calls.
+            let has_vec_fields = !self.config.translator.vec_fields.is_empty()
+                || spec_fns.iter().any(|f| Self::spec_uses_empty_seq(&f.body))
+                || generated_needs_vec_helpers;
+            let has_set_fields = self.needs_set_helpers()
+                || spec_fns.iter().any(|f| Self::spec_uses_empty_set(&f.body))
+                || generated_needs_set_helpers;
+            let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body))
+                || generated_needs_set_remove;
             let helpers = Self::generate_proof_helper_lemmas(
                 has_vec_fields,
                 has_set_fields,
@@ -375,9 +389,23 @@ impl Transpiler {
 
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
-            let has_vec_fields = !self.config.translator.vec_fields.is_empty();
-            let has_set_fields = self.needs_set_helpers();
-            let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body));
+            let (generated_needs_set_helpers, generated_needs_vec_helpers, generated_needs_set_remove) =
+                Self::collect_generated_proof_helper_needs(
+                    &spec_fns,
+                    &annotations,
+                    &self.config.skip_functions,
+                    &self.config.translator,
+                )?;
+            // Emit helpers either when explicitly configured, or when the spec
+            // syntax itself uses empty Seq/Set constructs that generate proof calls.
+            let has_vec_fields = !self.config.translator.vec_fields.is_empty()
+                || spec_fns.iter().any(|f| Self::spec_uses_empty_seq(&f.body))
+                || generated_needs_vec_helpers;
+            let has_set_fields = self.needs_set_helpers()
+                || spec_fns.iter().any(|f| Self::spec_uses_empty_set(&f.body))
+                || generated_needs_set_helpers;
+            let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body))
+                || generated_needs_set_remove;
             let helpers = Self::generate_proof_helper_lemmas(
                 has_vec_fields,
                 has_set_fields,
@@ -1009,6 +1037,217 @@ impl Transpiler {
         }
     }
 
+    /// Pre-analyze translated exec bodies to determine which proof helper
+    /// definitions must be emitted in the file prelude.
+    fn collect_generated_proof_helper_needs(
+        spec_fns: &[SpecFunction],
+        annotations: &[ModuleAnnotations],
+        skip_functions: &[String],
+        translator_config: &TranslatorConfig,
+    ) -> TranspileResult<(bool, bool, bool)> {
+        let mut mode_analyzer = ModeAnalyzer::new();
+        let translator = Translator::new(translator_config.clone());
+
+        let mut needs_set_helpers = false;
+        let mut needs_vec_helpers = false;
+        let mut needs_set_remove = false;
+
+        for spec_fn in spec_fns {
+            if skip_functions.contains(&spec_fn.name) {
+                continue;
+            }
+
+            let annotation = annotations
+                .iter()
+                .flat_map(|m| m.functions.values())
+                .find(|a| a.name == spec_fn.name);
+
+            if let Some(annotation) = annotation {
+                let annotated = mode_analyzer.annotate(spec_fn.clone(), annotation)?;
+                if !annotated.is_functionalizable {
+                    continue;
+                }
+
+                let exec_fn = translator.translate(&annotated)?;
+                let proof_needs = crate::translator::ProofNeeds::analyze(&exec_fn.body);
+
+                if proof_needs.has_empty_set || !proof_needs.remove_sites.is_empty() {
+                    needs_set_helpers = true;
+                }
+                if proof_needs.has_empty_vec || !proof_needs.push_sites.is_empty() {
+                    needs_vec_helpers = true;
+                }
+                if !proof_needs.remove_sites.is_empty() {
+                    needs_set_remove = true;
+                }
+            }
+        }
+
+        Ok((needs_set_helpers, needs_vec_helpers, needs_set_remove))
+    }
+
+    /// Check if a spec expression tree contains an empty set constructor.
+    /// Used to determine if `lemma_empty_set_map` should be emitted even without
+    /// explicit collection field configuration.
+    fn spec_uses_empty_set(expr: &crate::ast::Expr) -> bool {
+        Self::spec_uses_empty_collection(expr, true)
+    }
+
+    /// Check if a spec expression tree contains an empty sequence constructor.
+    /// Used to determine if `lemma_empty_seq_map` should be emitted even without
+    /// explicit vec field configuration.
+    fn spec_uses_empty_seq(expr: &crate::ast::Expr) -> bool {
+        Self::spec_uses_empty_collection(expr, false)
+    }
+
+    /// Recursive helper for detecting empty collection constructs in spec AST.
+    fn spec_uses_empty_collection(expr: &crate::ast::Expr, detect_set: bool) -> bool {
+        use crate::ast::Expr;
+        let collection_name = if detect_set { "Set" } else { "Seq" };
+
+        let matches_empty = if detect_set {
+            match expr {
+                Expr::SetEmpty => true,
+                Expr::SetLit(items) => items.is_empty(),
+                Expr::Call { func, args } => {
+                    args.is_empty() && Self::path_is_empty_ctor_for(func, collection_name)
+                }
+                Expr::MethodCall { receiver, method, args } => {
+                    method == "empty"
+                        && args.is_empty()
+                        && Self::expr_mentions_collection(receiver, collection_name)
+                }
+                _ => false,
+            }
+        } else {
+            match expr {
+                Expr::SeqEmpty => true,
+                Expr::SeqLit(items) => items.is_empty(),
+                Expr::Call { func, args } => {
+                    args.is_empty() && Self::path_is_empty_ctor_for(func, collection_name)
+                }
+                Expr::MethodCall { receiver, method, args } => {
+                    method == "empty"
+                        && args.is_empty()
+                        && Self::expr_mentions_collection(receiver, collection_name)
+                }
+                _ => false,
+            }
+        };
+        if matches_empty {
+            return true;
+        }
+
+        match expr {
+            Expr::Conjunction(parts) | Expr::Disjunction(parts) => {
+                parts.iter().any(|p| Self::spec_uses_empty_collection(p, detect_set))
+            }
+            Expr::Binary(lhs, _, rhs) | Expr::Eq(lhs, rhs) | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs) | Expr::Le(lhs, rhs) | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs) | Expr::Implies(lhs, rhs) | Expr::Iff(lhs, rhs) => {
+                Self::spec_uses_empty_collection(lhs, detect_set)
+                    || Self::spec_uses_empty_collection(rhs, detect_set)
+            }
+            Expr::Not(inner) | Expr::Field(inner, _) | Expr::Arrow(inner, _)
+            | Expr::View(inner) | Expr::Unary(_, inner) | Expr::Is(inner, _) => {
+                Self::spec_uses_empty_collection(inner, detect_set)
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                Self::spec_uses_empty_collection(cond, detect_set)
+                    || Self::spec_uses_empty_collection(then_branch, detect_set)
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::spec_uses_empty_collection(e, detect_set))
+            }
+            Expr::Let { value, body, .. } => {
+                Self::spec_uses_empty_collection(value, detect_set)
+                    || Self::spec_uses_empty_collection(body, detect_set)
+            }
+            Expr::Call { args, .. } => args
+                .iter()
+                .any(|a| Self::spec_uses_empty_collection(a, detect_set)),
+            Expr::MethodCall { receiver, args, .. } => {
+                Self::spec_uses_empty_collection(receiver, detect_set)
+                    || args.iter().any(|a| Self::spec_uses_empty_collection(a, detect_set))
+            }
+            Expr::Index(base, idx) => {
+                Self::spec_uses_empty_collection(base, detect_set)
+                    || Self::spec_uses_empty_collection(idx, detect_set)
+            }
+            Expr::Forall { body, triggers, .. } => {
+                Self::spec_uses_empty_collection(body, detect_set)
+                    || triggers.iter().any(|t| {
+                        t.exprs.iter().any(|e| Self::spec_uses_empty_collection(e, detect_set))
+                    })
+            }
+            Expr::Exists { body, .. } => Self::spec_uses_empty_collection(body, detect_set),
+            Expr::Struct { fields, .. } => fields
+                .iter()
+                .any(|(_, e)| Self::spec_uses_empty_collection(e, detect_set)),
+            Expr::StructUpdate { base, fields, .. } => {
+                Self::spec_uses_empty_collection(base, detect_set)
+                    || fields
+                        .iter()
+                        .any(|(_, e)| Self::spec_uses_empty_collection(e, detect_set))
+            }
+            Expr::MapLit(items) => items.iter().any(|(k, v)| {
+                Self::spec_uses_empty_collection(k, detect_set)
+                    || Self::spec_uses_empty_collection(v, detect_set)
+            }),
+            Expr::SeqLit(items) | Expr::SetLit(items) => items
+                .iter()
+                .any(|e| Self::spec_uses_empty_collection(e, detect_set)),
+            Expr::Match { scrutinee, arms } => {
+                Self::spec_uses_empty_collection(scrutinee, detect_set)
+                    || arms.iter().any(|arm| {
+                        arm.guard
+                            .as_ref()
+                            .is_some_and(|g| Self::spec_uses_empty_collection(g, detect_set))
+                            || Self::spec_uses_empty_collection(&arm.body, detect_set)
+                    })
+            }
+            Expr::Cast(inner, _) => Self::spec_uses_empty_collection(inner, detect_set),
+            Expr::SetEmpty | Expr::SeqEmpty | Expr::MapEmpty | Expr::Ident(_) | Expr::Literal(_) => false,
+        }
+    }
+
+    /// Heuristic: returns true when path resembles `<Collection>::empty`.
+    fn path_is_empty_ctor_for(path: &crate::ast::Path, collection_name: &str) -> bool {
+        let has_empty = path
+            .segments
+            .iter()
+            .any(|s| s == "empty" || s.contains("empty"));
+        let has_collection = path
+            .segments
+            .iter()
+            .any(|s| s == collection_name || s.starts_with(collection_name) || s.contains(collection_name));
+        has_empty && has_collection
+    }
+
+    /// Heuristic: returns true when an expression node appears to refer to a collection type.
+    fn expr_mentions_collection(expr: &crate::ast::Expr, collection_name: &str) -> bool {
+        use crate::ast::Expr;
+
+        match expr {
+            Expr::Ident(name) => {
+                name == collection_name
+                    || name.starts_with(collection_name)
+                    || name.contains(collection_name)
+            }
+            Expr::Field(base, field) => {
+                field == collection_name
+                    || field.starts_with(collection_name)
+                    || field.contains(collection_name)
+                    || Self::expr_mentions_collection(base, collection_name)
+            }
+            Expr::Call { func, .. } => Self::path_is_empty_ctor_for(func, collection_name),
+            Expr::MethodCall { receiver, .. } => {
+                Self::expr_mentions_collection(receiver, collection_name)
+            }
+            _ => false,
+        }
+    }
+
     /// Generate wrapper methods for functions that take the impl type as first parameter.
     /// The wrappers convert functional-style `fn foo(&Type, ...) -> Type`
     /// to `impl Type { fn foo(&mut self, ...) }` pattern.
@@ -1508,10 +1747,45 @@ mod tests {
             .transpile_source(spec_source, annotation_source)
             .unwrap();
 
-        // Should emit the helper lemma
+        // Should emit the helper lemma definition (not only call sites)
         assert!(
-            result.contains("lemma_empty_set_map"),
-            "Should contain lemma_empty_set_map when generate_proofs=true: {}",
+            result.contains("proof fn lemma_empty_set_map()"),
+            "Should contain lemma_empty_set_map definition when generate_proofs=true: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generate_proofs_emits_empty_seq_helper_without_vec_field_config() {
+        let config = TranspilerConfig {
+            translator: TranslatorConfig {
+                generate_proofs: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn LInitSeq(s: Seq<int>) -> bool {
+                    s =~= Seq::<int>::empty()
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                LInitSeq(-);
+            }
+        "#;
+
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+
+        assert!(
+            result.contains("proof fn lemma_empty_seq_map()"),
+            "Should contain lemma_empty_seq_map definition for Seq::empty usage: {}",
             result
         );
     }

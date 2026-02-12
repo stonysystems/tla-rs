@@ -122,3 +122,25 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 - Outcome:
   - election drift closure is split into smaller leaves in `TODO.md`.
   - this iteration completed the first election sub-leaf (printer parity fix); remaining election leaf work is helper-lemma parity + final module sync.
+
+## Election Helper-Lemma Parity (05:20)
+- Targeted election sub-leaf: restore missing helper definitions for proof calls (`lemma_empty_set_map`, `lemma_empty_seq_map`).
+- Root cause:
+  - helper prelude generation in `transpiler/src/lib.rs` was gated mostly by static config hints (`collection_fields`, `vec_fields`).
+  - `election_transpile.toml` does not set those hints, but translated function bodies still inserted proof calls (via `ProofNeeds`) for empty set/seq patterns.
+  - result: generated `election_gen.rs` had helper call sites but no corresponding `proof fn` definitions.
+- Fix implemented:
+  - added `collect_generated_proof_helper_needs(...)` in `transpiler/src/lib.rs`.
+  - this pre-pass translates annotated functions and runs `ProofNeeds::analyze` on generated bodies to detect actual helper demand.
+  - wired that demand into both transpilation entry points (`transpile_file` and `transpile_source`) when deciding helper prelude emission.
+- Regression coverage:
+  - strengthened `test_generate_proofs_emits_helper_lemma` to assert helper **definition** emission.
+  - added `test_generate_proofs_emits_empty_seq_helper_without_vec_field_config`.
+  - full transpiler suite (`cargo test --all-features`) passes.
+- Regeneration/compile probe outcome:
+  - fresh `src/generated_fresh/RSL/election_gen.rs` now includes:
+    - `proof fn lemma_empty_set_map()`
+    - `proof fn lemma_empty_seq_map()`
+    - existing call sites in function proof blocks.
+  - compile probe replacing tracked `src/generated/RSL/election_gen.rs` with fresh output no longer reports unresolved helper-lemma symbols.
+  - probe still fails with broader election drift (type/width mismatches, wrapper/delegate shape and collection op gaps), which is tracked by remaining election/module drift leaves.
