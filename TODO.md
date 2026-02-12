@@ -1283,6 +1283,16 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Added regression checks in `transpiler/src/main.rs` and `transpiler/tests/integration.rs` for these helper boundary symbols
           - Re-ran full transpiler suite and Verus target build (`scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`) successfully
       - [ ] Close module generation drift next (`acceptor`/`executor`/`proposer`/`replica`/`broadcast`/`election`) by aligning transpile config + wrapper/delegate generation expectations under <500 LOC leaves
+        - Scope analysis [26:02:13, 03:10]: this parent leaf is too large as a single pass (>1700 changed lines across 6 files), so split by module to keep each leaf bounded and reviewable.
+        - [x] Close `broadcast_gen.rs` drift first (imports/proof helper/requires shape parity) [26:02:13, 03:45]
+          - Synced `src/generated/RSL/broadcast_gen.rs` to fresh regenerated output (`src/generated_fresh/RSL/broadcast_gen.rs`)
+          - Drift closed by removing stale unused import/proof helper and aligning `requires`/loop invariant bound checks to current generated shape
+          - Validation: `cargo test --all-features` (transpiler) and `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` both pass
+        - [ ] Close `election_gen.rs` drift (proof helper/invariant parity)
+        - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)
+        - [ ] Close `executor_gen.rs` drift (wrapper/delegate alignment)
+        - [ ] Close `proposer_gen.rs` drift (wrapper/delegate alignment)
+        - [ ] Close `replica_gen.rs` drift (wrapper/delegate alignment)
       - [ ] Regenerate into `src/generated/RSL/` and verify deterministic parity (second regeneration produces no diff)
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)

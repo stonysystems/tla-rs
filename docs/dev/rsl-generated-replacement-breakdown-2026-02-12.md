@@ -83,3 +83,22 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 - Verification status after fix:
   - `cargo test --all-features` in `transpiler/` passes.
   - Verus target build `liblib.so` passes (warnings only).
+
+## Module Drift Decomposition + First Leaf (03:45)
+- Re-ran `scripts/regenerate_rsl.sh` and recomputed per-module churn against `src/generated/RSL`:
+  - `broadcast_gen.rs`: `+2/-16` (smallest drift)
+  - `election_gen.rs`: `+262/-109`
+  - `acceptor_gen.rs`: `+251/-303`
+  - `executor_gen.rs`: `+173/-487`
+  - `proposer_gen.rs`: `+357/-168`
+  - `replica_gen.rs`: `+471/-434`
+- Based on this, the parent “module drift” leaf was split in `TODO.md` into one leaf per module (<500 LOC target per leaf where possible).
+- Executed first leaf: `broadcast_gen.rs`.
+  - Synced `src/generated/RSL/broadcast_gen.rs` to regenerated output.
+  - Closed drift from stale generated artifacts:
+    - removed unused `clone_hashset` import
+    - removed obsolete `lemma_empty_set_map` helper
+    - aligned bound checks from `c@.replica_ids.len()` to `c.replica_ids.len()` in exec `requires`/invariant.
+- Validation after this leaf:
+  - `cargo test --all-features` in `transpiler/`: pass
+  - `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`: pass (warnings only)
