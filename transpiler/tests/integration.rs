@@ -1751,6 +1751,153 @@ fn test_ewd840_initiate_probe_annotation() {
     let _ = std::fs::remove_file(&exec_output);
 }
 
+// ============================================================================
+// Phase 16.2 Integration Tests: Record Literal Parsing (Paxos/PBFT)
+// ============================================================================
+
+#[test]
+fn test_paxos_tla_to_exec_pipeline_with_record_literals() {
+    // Test that the Paxos protocol with record literals { type: Phase1a, bal: b }
+    // can be parsed and transpiled end-to-end
+    let tla_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/protocol/TLA");
+
+    let paxos_tla = tla_dir.join("Paxos.tla");
+    if !paxos_tla.exists() {
+        eprintln!("Skipping Paxos test: {:?} not found", paxos_tla);
+        return;
+    }
+
+    let transpiler_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/release/verus-transpile");
+    if !transpiler_bin.exists() {
+        eprintln!("Skipping: transpiler binary not built");
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let spec_output = tmp_dir.join("paxos_record_test.rs");
+    let automan_path = tmp_dir.join("paxos_record_test.automan");
+    let exec_output = tmp_dir.join("paxos_record_test_exec.rs");
+
+    // Step 1: TLA+ -> spec
+    let result = std::process::Command::new(&transpiler_bin)
+        .args([
+            "translate-tla",
+            "--input",
+            paxos_tla.to_str().unwrap(),
+            "--output",
+            spec_output.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run TLA+ translator");
+    assert!(
+        result.status.success(),
+        "Paxos TLA+ translation should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // The spec should contain record literals
+    let spec_content =
+        std::fs::read_to_string(&spec_output).expect("Failed to read spec output");
+    assert!(
+        spec_content.contains("type:") || spec_content.contains("bal:"),
+        "Paxos spec should contain record literal fields"
+    );
+
+    // Step 2: spec -> exec (this was the failing step before the fix)
+    let result = std::process::Command::new(&transpiler_bin)
+        .args([
+            "--input",
+            spec_output.to_str().unwrap(),
+            "--annotations",
+            automan_path.to_str().unwrap(),
+            "--output",
+            exec_output.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(
+        result.status.success(),
+        "Paxos spec → exec should succeed with record literal parsing: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&spec_output);
+    let _ = std::fs::remove_file(&automan_path);
+    let _ = std::fs::remove_file(&exec_output);
+}
+
+#[test]
+fn test_pbft_tla_to_exec_pipeline_with_record_literals() {
+    // Test that the PBFT protocol with record literals can be parsed and transpiled
+    let tla_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/protocol/TLA");
+
+    let pbft_tla = tla_dir.join("PBFT.tla");
+    if !pbft_tla.exists() {
+        eprintln!("Skipping PBFT test: {:?} not found", pbft_tla);
+        return;
+    }
+
+    let transpiler_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/release/verus-transpile");
+    if !transpiler_bin.exists() {
+        eprintln!("Skipping: transpiler binary not built");
+        return;
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let spec_output = tmp_dir.join("pbft_record_test.rs");
+    let automan_path = tmp_dir.join("pbft_record_test.automan");
+    let exec_output = tmp_dir.join("pbft_record_test_exec.rs");
+
+    // Step 1: TLA+ -> spec
+    let result = std::process::Command::new(&transpiler_bin)
+        .args([
+            "translate-tla",
+            "--input",
+            pbft_tla.to_str().unwrap(),
+            "--output",
+            spec_output.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run TLA+ translator");
+    assert!(
+        result.status.success(),
+        "PBFT TLA+ translation should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // Step 2: spec -> exec
+    let result = std::process::Command::new(&transpiler_bin)
+        .args([
+            "--input",
+            spec_output.to_str().unwrap(),
+            "--annotations",
+            automan_path.to_str().unwrap(),
+            "--output",
+            exec_output.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(
+        result.status.success(),
+        "PBFT spec → exec should succeed with record literal parsing: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&spec_output);
+    let _ = std::fs::remove_file(&automan_path);
+    let _ = std::fs::remove_file(&exec_output);
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

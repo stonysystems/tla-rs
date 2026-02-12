@@ -1355,11 +1355,112 @@ impl<'a> VerusBlockParser<'a> {
             return Ok(expr);
         }
 
+        // Check for record literal: { field: value, field: value, ... }
+        // Look-ahead: if we see `identifier :` (but not `::`) after `{`, it's a record
+        if self.is_record_literal_start() {
+            return self.parse_record_literal();
+        }
+
         // Otherwise parse as regular expression
         let expr = self.parse_expression()?;
         self.skip_whitespace();
         self.expect('}')?;
         Ok(expr)
+    }
+
+    /// Look-ahead to determine if current position starts a record literal.
+    /// A record literal has the form: `field_name : expr, ...}`
+    /// We check for `identifier :` (but not `::` which is a path separator).
+    fn is_record_literal_start(&self) -> bool {
+        let saved = self.pos;
+        let remaining = &self.content[saved..];
+
+        // Skip whitespace manually (non-mutating)
+        let trimmed = remaining.trim_start();
+        let _ws_len = remaining.len() - trimmed.len();
+
+        // Check for identifier followed by ':'
+        let mut chars = trimmed.chars();
+        if let Some(first) = chars.next() {
+            if !first.is_alphabetic() && first != '_' {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        // Skip rest of identifier
+        let mut ident_len = 1;
+        for c in chars {
+            if c.is_alphanumeric() || c == '_' {
+                ident_len += 1;
+            } else {
+                break;
+            }
+        }
+
+        // After identifier, skip whitespace and check for ':'
+        let after_ident = &trimmed[ident_len..].trim_start();
+        if after_ident.starts_with(':') && !after_ident.starts_with("::") {
+            return true;
+        }
+
+        false
+    }
+
+    /// Parse a record literal: `field: value, field: value, ... }`
+    /// The opening `{` has already been consumed.
+    fn parse_record_literal(&mut self) -> TranspileResult<Expr> {
+        let mut fields = Vec::new();
+
+        loop {
+            self.skip_whitespace();
+
+            // Check for closing brace
+            if self.peek() == Some('}') {
+                self.advance();
+                break;
+            }
+
+            // Parse field name
+            let field_name = self.parse_identifier()?;
+            self.skip_whitespace();
+
+            // Expect ':'
+            self.expect(':')?;
+            self.skip_whitespace();
+
+            // Parse field value
+            let field_value = self.parse_primary_expr()?;
+            let field_value = self.parse_binary_continuation(field_value)?;
+            fields.push((field_name, field_value));
+
+            self.skip_whitespace();
+
+            // Check for comma or closing brace
+            if self.peek() == Some(',') {
+                self.advance();
+            } else if self.peek() == Some('}') {
+                self.advance();
+                break;
+            } else {
+                return Err(TranspileError::Parse {
+                    message: format!(
+                        "Expected ',' or '}}' in record literal, found '{:?}'",
+                        self.peek()
+                    ),
+                    span: None,
+                });
+            }
+        }
+
+        // Represent as a Struct with empty path (anonymous record)
+        Ok(Expr::Struct {
+            name: Path {
+                segments: Vec::new(),
+            },
+            fields,
+        })
     }
 
     /// Parse an if expression
@@ -2623,6 +2724,110 @@ mod tests {
                 }
             }
             _ => panic!("Expected conjunction"),
+        }
+    }
+
+    #[test]
+    fn test_parse_record_literal() {
+        let source = r#"
+        verus! {
+            pub open spec fn LSend1a(s: LState, s_: LState, b: int) -> bool {
+                msgs_ == msgs.union(set![{ type: Phase1a, bal: b }])
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name, "LSend1a");
+    }
+
+    #[test]
+    fn test_parse_record_literal_multiple_fields() {
+        let source = r#"
+        verus! {
+            pub open spec fn LSend2b(s: LState, s_: LState, a: int, b: int, v: int) -> bool {
+                msgs_ == msgs.union(set![{ type: Phase2b, acc: a, bal: b, val: v }])
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        // Verify the record is parsed as a Struct with empty path
+        fn find_record(expr: &Expr) -> bool {
+            match expr {
+                Expr::Struct { name, fields } => {
+                    if name.segments.is_empty() && fields.len() == 4 {
+                        assert_eq!(fields[0].0, "type");
+                        assert_eq!(fields[1].0, "acc");
+                        assert_eq!(fields[2].0, "bal");
+                        assert_eq!(fields[3].0, "val");
+                        return true;
+                    }
+                    false
+                }
+                Expr::Eq(lhs, rhs) => find_record(lhs) || find_record(rhs),
+                Expr::MethodCall { receiver, args, .. } => {
+                    find_record(receiver) || args.iter().any(find_record)
+                }
+                Expr::Index(a, b) => find_record(a) || find_record(b),
+                Expr::Call { args, .. } => args.iter().any(find_record),
+                Expr::SetLit(elems) => elems.iter().any(find_record),
+                _ => false,
+            }
+        }
+        assert!(find_record(&funcs[0].body), "Expected to find record literal in parsed AST");
+    }
+
+    #[test]
+    fn test_parse_record_literal_trailing_comma() {
+        let source = r#"
+        verus! {
+            pub open spec fn LTest(s: LState) -> bool {
+                x == set![{ key: val, }]
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse with trailing comma should succeed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_conjunction_with_record_literals() {
+        // This is the full Paxos pattern: conjunction of equalities with record literals
+        let source = r#"
+        verus! {
+            pub open spec fn LSend1b(s: LState, s_: LState, a: int, b: int) -> bool {
+                &&& msgs_ == msgs.union(set![{ type: Phase1b, acc: a, bal: b }])
+                &&& maxBal_ == maxBal.union(set![b])
+                &&& maxVBal_ == maxVBal
+                &&& maxVal_ == maxVal
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Paxos-style conjunction with record should parse: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        match &funcs[0].body {
+            Expr::Conjunction(exprs) => {
+                assert_eq!(exprs.len(), 4, "Should have 4 conjuncts");
+            }
+            _ => panic!("Expected conjunction, got {:?}", funcs[0].body),
         }
     }
 }
