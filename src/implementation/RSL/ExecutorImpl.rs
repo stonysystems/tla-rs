@@ -1,24 +1,17 @@
 use crate::implementation::RSL::types_i::*;
-use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::ExecutorImpl::OutboundPackets::PacketSequence;
 use crate::protocol::RSL::state_machine::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
 use std::collections::HashMap;
 use vstd::prelude::*;
-// use crate::implementation::RSL::types_i::abstractify_crequestbatch;
-// use crate::implementation::RSL::message_i::*;
 use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::implementation::common::generic_refinement::*;
-use crate::implementation::common::generic_refinement::*;
 use crate::implementation::RSL::appinterface::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
-use crate::implementation::RSL::cconstants::*;
-use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::implementation::RSL::ElectionImpl::*;
@@ -26,104 +19,15 @@ use crate::implementation::RSL::ExecutorImpl::OutboundPackets::Broadcast;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::{constants::*, environment::*, message::*};
-use crate::services::RSL::app_state_machine::*;
 use vstd::std_specs::hash::*;
 use vstd::{prelude::*, seq::*, seq_lib::*};
+// CExecutor, COutstandingOperation structs and their valid(), view(), abstractable(), clone_up_to_view() are in types_gen.rs
+pub use crate::generated::RSL::types_gen::{CExecutor, COutstandingOperation};
 
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-#[derive(Clone)]
-pub enum COutstandingOperation {
-    COutstandingOpKnown{
-        v: CRequestBatch,
-        bal: CBallot,
-    },
-    COutstandingOpUnknown{},
-}
-
-impl COutstandingOperation{
-
-    pub open spec fn valid(&self) -> bool {
-        match self {
-            COutstandingOperation::COutstandingOpKnown{v, bal} => {
-                self.abstractable()
-                    && crequestbatch_is_valid(v)
-                    && bal.valid()
-            }
-            COutstandingOperation::COutstandingOpUnknown{} => self.abstractable()
-        }
-    }
-
-    pub open spec fn abstractable(&self) -> bool {
-        match self {
-            COutstandingOperation::COutstandingOpKnown{v, bal} => {
-                crequestbatch_is_abstractable(v) && bal.abstractable()
-            }
-            COutstandingOperation::COutstandingOpUnknown{} => true
-        }
-    }
-
-    pub open spec fn view(self) -> OutstandingOperation
-        recommends
-            self.abstractable()
-    {
-        match self {
-            COutstandingOperation::COutstandingOpKnown{v,bal} => {
-                OutstandingOperation::OutstandingOpKnown{
-                    v: abstractify_crequestbatch(&v),
-                    // v: abstractify_crequestbatch(v),
-                    bal: bal@,
-                }
-            }
-            COutstandingOperation::COutstandingOpUnknown{} => OutstandingOperation::OutstandingOpUnknown{},
-        }
-    }
-
-}
-
-#[derive(Clone)]
-pub struct CExecutor {
-    pub constants: CReplicaConstants,
-    pub app: CAppState,
-    pub ops_complete: u64,
-    pub max_bal_reflected: CBallot,
-    pub next_op_to_execute: COutstandingOperation,
-    pub reply_cache: CReplyCache,
-}
 
 impl CExecutor{
-
-    pub open spec fn valid(&self) -> bool {
-        self.abstractable()
-            && self.constants.valid()
-            && CAppStateIsValid(&self.app)
-            && self.max_bal_reflected.valid()
-            && self.next_op_to_execute.valid()
-            && creplycache_is_valid(&self.reply_cache)
-    }
-
-    pub open spec fn abstractable(&self) -> bool {
-        self.constants.abstractable()
-            && CAppStateIsAbstractable(&self.app)
-            && self.max_bal_reflected.abstractable()
-            && self.next_op_to_execute.abstractable()
-            && creplycache_is_abstractable(&self.reply_cache)
-    }
-
-    pub open spec fn view(&self) -> LExecutor
-        recommends
-            self.abstractable(){
-        let res = LExecutor {
-            constants: self.constants.view(),
-            // app: AbstractifyCAppStateToAppState(s.app),
-            app: self.app,
-            ops_complete: self.ops_complete as int,
-            max_bal_reflected: self.max_bal_reflected.view(),
-            next_op_to_execute: self.next_op_to_execute.view(),
-            reply_cache: abstractify_creplycache(&self.reply_cache),
-        };
-        res
-    }
 
     // #[verifier(external_body)]
     pub fn CExecutorInit(c: CReplicaConstants) -> (s:Self)

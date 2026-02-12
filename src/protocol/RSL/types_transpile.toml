@@ -38,8 +38,9 @@ skip_types = [
 # These are types defined via macros, with custom Hash/axiom/FFI logic,
 # or concrete-only types with no spec equivalent.
 re_exports = [
-    # Macro-defined marshalable structs in types_i.rs
-    "crate::implementation::RSL::types_i::{CBallot, CRequest, CReply, CVote}",
+    # All shared types and helper functions from types_i.rs (CBallot, CRequest, CReply, CVote,
+    # CLearnerTuple, and all spec helper fns: cvotes_is_valid, crequestbatch_is_valid, etc.)
+    "crate::implementation::RSL::types_i::*",
     # Message types (CMessage via macro, CPacket with custom axioms)
     "crate::implementation::RSL::cmessage::*",
     # Application interface (CAppState, CAppMessage via macro, CAppStateInit)
@@ -199,7 +200,7 @@ custom_imports = [
 # "external_body": generates #[verifier(external_body)] impl Clone
 # Types containing HashSet need external_body since Verus can't derive Clone for HashSet.
 [clone_strategy]
-"CLearnerTuple" = "external_body"
+# CLearnerTuple: re-exported from types_i.rs (has its own Clone impl)
 "CElectionState" = "external_body"
 "CProposer" = "external_body"
 

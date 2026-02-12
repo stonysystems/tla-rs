@@ -77,8 +77,8 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
-# Generate CReplica and CScheduler inline
-generate_inline_types = true
+# Types are defined in types_gen.rs; do not duplicate here
+generate_inline_types = false
 # Custom imports for replica module
 # Note: Still need implementation imports for shared infrastructure types.
 # Sub-module state types (CProposer, CAcceptor, CLearner, CExecutor, CElectionState)

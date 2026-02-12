@@ -8,6 +8,6 @@ pub mod PBFT;
 pub mod Paxos;
 pub mod PrimaryBackup;
 pub mod Raft;
-// pub mod RSL;  // Blocked: type conflicts between types_gen and manual modules (cconstants, cconfiguration, acceptorimpl, etc.)
+pub mod RSL;
 pub mod TwoPhase;
 pub mod VerticalPaxos;

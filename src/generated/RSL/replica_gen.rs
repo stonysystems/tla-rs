@@ -27,64 +27,6 @@ use vstd::set::*;
 
 verus! {
 
-#[derive(Clone)]
-pub struct CReplica {
-    pub constants: CReplicaConstants,
-    pub nextHeartbeatTime: u64,
-    pub proposer: CProposer,
-    pub acceptor: CAcceptor,
-    pub learner: CLearner,
-    pub executor: CExecutor,
-}
-
-impl CReplica {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.constants.valid()
-        &&& self.proposer.valid()
-        &&& self.acceptor.valid()
-        &&& self.learner.valid()
-        &&& self.executor.valid()
-    }
-}
-
-impl View for CReplica {
-    type V = LReplica;
-
-    open spec fn view(&self) -> LReplica {
-        LReplica {
-            constants: self.constants@,
-            nextHeartbeatTime: self.nextHeartbeatTime as int,
-            proposer: self.proposer@,
-            acceptor: self.acceptor@,
-            learner: self.learner@,
-            executor: self.executor@,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct CScheduler {
-    pub replica: CReplica,
-    pub nextActionIndex: u64,
-}
-
-impl CScheduler {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.replica.valid()
-    }
-}
-
-impl View for CScheduler {
-    type V = LScheduler;
-
-    open spec fn view(&self) -> LScheduler {
-        LScheduler {
-            replica: self.replica@,
-            nextActionIndex: self.nextActionIndex as int,
-        }
-    }
-}
-
 /// Helper proof: mapping over an empty Seq yields an empty Seq.
 proof fn lemma_empty_seq_map()
 ensures

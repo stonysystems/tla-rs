@@ -64,8 +64,8 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
-# Generate CExecutor inline instead of importing from ExecutorImpl.rs
-generate_inline_types = true
+# Types are defined in types_gen.rs; do not duplicate here
+generate_inline_types = false
 # Custom imports for executor module
 # Note: Still need implementation imports for shared infrastructure types.
 # CStateMachine is also needed for app state machine operations.
@@ -83,7 +83,6 @@ custom_imports = [
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};",
-    # CExecutor now generated inline with generate_inline_types = true
     "use crate::implementation::RSL::CStateMachine::*;",
     "use crate::protocol::RSL::executor::*;",
     "use crate::protocol::RSL::types::*;",

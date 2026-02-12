@@ -2,7 +2,6 @@ use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::types_i::*;
 use vstd::prelude::*;
-// use crate::implementation::lock::message_i::*;
 use crate::implementation::RSL::acceptorimpl::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
@@ -10,81 +9,24 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::learnerimpl::*;
 use crate::implementation::RSL::ExecutorImpl::*;
 use crate::implementation::RSL::ProposerImpl::*;
-use crate::implementation::RSL::{cconfiguration::*, cconstants::*, ProposerImpl::*};
+use crate::implementation::RSL::{cconfiguration::*, ProposerImpl::*};
 use crate::protocol::RSL::{environment::*, replica::*};
-// use crate::protocol::RSL::types::*;
 use crate::common::collections::vecs::*;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::{
-    acceptor::*, configuration::*, constants::*, constants::*, executor::*, learner::*, message::*,
+    acceptor::*, configuration::*, constants::*, executor::*, learner::*, message::*,
     proposer::*, types::*,
 };
 use std::collections::*;
 use vstd::std_specs::hash::*;
 use vstd::{map::*, map_lib::*, prelude::*, seq::*};
+// CReplica struct and valid(), view(), abstractable(), clone_up_to_view() are in types_gen.rs
+pub use crate::generated::RSL::types_gen::CReplica;
 
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-// #[derive(Clone)]
-pub struct CReplica {
-    pub constants: CReplicaConstants,
-    pub nextHeartbeatTime: u64,
-    pub proposer: CProposer,
-    pub acceptor: CAcceptor,
-    pub learner: CLearner,
-    pub executor: CExecutor,
-}
 
 impl CReplica{
-
-    pub open spec fn valid(self) -> bool {
-        self.abstractable()
-        &&
-        self.constants.valid()
-        &&
-        self.proposer.valid()
-        &&
-        self.acceptor.valid()
-        &&
-        self.learner.valid()
-        &&
-        self.executor.valid()
-        &&
-        self.constants@ == self.acceptor.constants@
-        &&
-        self.constants@ == self.proposer.constants@
-        &&
-        self.constants@ == self.learner.constants@
-        &&
-        self.constants@ == self.executor.constants@
-    }
-
-    pub open spec fn abstractable(self) -> bool{
-        self.constants.abstractable()
-        &&
-        self.proposer.abstractable()
-        &&
-        self.acceptor.abstractable()
-        &&
-        self.learner.abstractable()
-        &&
-        self.executor.abstractable()
-    }
-
-
-    pub open spec fn view(self) -> LReplica
-    recommends
-        self.abstractable()
-    {
-        LReplica{
-            constants:self.constants@,
-            nextHeartbeatTime:self.nextHeartbeatTime as int,
-            proposer:self.proposer@,
-            acceptor:self.acceptor@,
-            learner:self.learner@,
-            executor:self.executor@
-        }
-    }
 
     // #[verifier(external_body)]
     pub fn CReplicaInit(c: CReplicaConstants) -> (result: Self)
