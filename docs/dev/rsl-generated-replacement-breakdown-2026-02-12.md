@@ -40,3 +40,6 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 - Decomposed the remaining component section again (still >500 LOC) and completed part 1 extraction:
   - extracted `CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`, `CExecutor`, `CIncompleteBatchTimer`
   - left part 2 for the next leaf (`CProposer`, `CReplica`, `CScheduler`, IO abstractify helpers, `unreachable_value`)
+- Completed component section part 2 extraction:
+  - copied `src/generated/RSL/types_gen.rs:1287-1544` (~258 LOC, under the <500 LOC leaf target)
+  - extracted `CProposer`, `CReplica`, `CScheduler`, `abstractify_clpacket`, `abstractify_crslio`, `abstractify_crslio_seq`, and `unreachable_value`

@@ -1250,12 +1250,14 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - Added complete extension block to `src/protocol/RSL/types_manual_helpers.rs`:
           `StaticParams`, `CGetReplicaIndex`, endpoint abstraction lemmas, `InitReplicaConstants`, and related validity/view/clone methods
         - Section size stayed within the leaf target (about 460 LOC extracted in this leaf)
-      - [ ] Extract remaining component extension sections (`CAcceptor`, `CLearner`, `CElectionState`, `CExecutor`, `CProposer`, `CReplica`, `CScheduler`, IO abstractify helpers)
+      - [x] Extract remaining component extension sections (`CAcceptor`, `CLearner`, `CElectionState`, `CExecutor`, `CProposer`, `CReplica`, `CScheduler`, IO abstractify helpers) [26:02:12, 23:25]
         - Scope analysis [26:02:12, 22:45]: remaining section is still too large for one leaf (~600+ LOC), so it is split into two extraction leaves.
         - [x] Extract component section part 1 (`CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`, `CExecutor`, `CIncompleteBatchTimer`) [26:02:12, 22:55]
           - Appended the full block from `src/generated/RSL/types_gen.rs` into `src/protocol/RSL/types_manual_helpers.rs`
           - Kept this leaf under the target size (~370 LOC copied)
-        - [ ] Extract component section part 2 (`CProposer`, `CReplica`, `CScheduler`, CRslIo abstractify helpers, `unreachable_value`)
+        - [x] Extract component section part 2 (`CProposer`, `CReplica`, `CScheduler`, CRslIo abstractify helpers, `unreachable_value`) [26:02:12, 23:25]
+          - Scope/plan check: source range `src/generated/RSL/types_gen.rs:1287-1544` (~258 LOC), which fits the <500 LOC leaf target
+          - Appended block to `src/protocol/RSL/types_manual_helpers.rs` and preserved original ordering of helper sections
     - [ ] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs
     - [ ] Regenerate RSL (`scripts/regenerate_all.sh RSL`) and close type compatibility drift (generated/implementation type path alignment, helper visibility, marshalable boundaries)
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover

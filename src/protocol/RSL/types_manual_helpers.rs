@@ -1120,3 +1120,261 @@ impl View for CIncompleteBatchTimer {
     }
 }
 
+// =============================================================================
+// CProposer (generated + impl methods)
+// =============================================================================
+
+pub struct CProposer {
+    pub constants: CReplicaConstants,
+    pub current_state: u64,
+    pub request_queue: Vec<CRequest>,
+    pub max_ballot_i_sent_1a: CBallot,
+    pub next_operation_number_to_propose: u64,
+    pub received_1b_packets: HashSet<CPacket>,
+    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>,
+    pub incomplete_batch_timer: CIncompleteBatchTimer,
+    pub election_state: CElectionState,
+    pub max_log_truncation_point: COperationNumber,
+    pub max_opn_with_proposal: COperationNumber,
+}
+
+// Clone impl for CProposer is in ProposerImpl.rs (needs local helper access)
+
+impl CProposer{
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& (forall |i:int| 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].abstractable())
+        &&& self.max_ballot_i_sent_1a.abstractable()
+        &&& (forall |p:CPacket| self.received_1b_packets@.contains(p) ==> p.abstractable())
+        &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.abstractable())
+        &&& self.incomplete_batch_timer.abstractable()
+        &&& self.election_state.abstractable()
+    }
+
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& (forall |i:int| 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].valid())
+        &&& self.max_ballot_i_sent_1a.valid()
+        &&& (forall |p:CPacket| self.received_1b_packets@.contains(p) ==> p.valid())
+        &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.valid_public_key())
+        &&& self.incomplete_batch_timer.valid()
+        &&& self.election_state.valid()
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            self == result,
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+
+    pub open spec fn view(self) -> LProposer
+    recommends self.valid(),
+    {
+        LProposer{
+            constants: self.constants.view(),
+            current_state: self.current_state as int,
+            request_queue: self.request_queue@.map(|i, r:CRequest| r.view()),
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a.view(),
+            next_operation_number_to_propose: self.next_operation_number_to_propose as int,
+            received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
+            highest_seqno_requested_by_client_this_view: Map::new(
+                |ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak,
+                |ak: AbstractEndPoint| {
+                    let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
+                    self.highest_seqno_requested_by_client_this_view@[k] as int
+                }
+            ),
+            incomplete_batch_timer: self.incomplete_batch_timer.view(),
+            election_state: self.election_state.view(),
+        }
+    }
+}
+
+impl View for CProposer {
+    type V = LProposer;
+
+    open spec fn view(&self) -> LProposer {
+        LProposer{
+            constants: self.constants.view(),
+            current_state: self.current_state as int,
+            request_queue: self.request_queue@.map(|i, r:CRequest| r.view()),
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a.view(),
+            next_operation_number_to_propose: self.next_operation_number_to_propose as int,
+            received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
+            highest_seqno_requested_by_client_this_view: Map::new(
+                |ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak,
+                |ak: AbstractEndPoint| {
+                    let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
+                    self.highest_seqno_requested_by_client_this_view@[k] as int
+                }
+            ),
+            incomplete_batch_timer: self.incomplete_batch_timer.view(),
+            election_state: self.election_state.view(),
+        }
+    }
+}
+
+// =============================================================================
+// CReplica (generated)
+// =============================================================================
+
+#[derive(Clone)]
+pub struct CReplica {
+    pub constants: CReplicaConstants,
+    pub nextHeartbeatTime: u64,
+    pub proposer: CProposer,
+    pub acceptor: CAcceptor,
+    pub learner: CLearner,
+    pub executor: CExecutor,
+}
+
+impl CReplica{
+    pub open spec fn valid(self) -> bool {
+        self.abstractable()
+        &&
+        self.constants.valid()
+        &&
+        self.proposer.valid()
+        &&
+        self.acceptor.valid()
+        &&
+        self.learner.valid()
+        &&
+        self.executor.valid()
+        &&
+        self.constants@ == self.acceptor.constants@
+        &&
+        self.constants@ == self.proposer.constants@
+        &&
+        self.constants@ == self.learner.constants@
+        &&
+        self.constants@ == self.executor.constants@
+    }
+
+    pub open spec fn abstractable(self) -> bool{
+        self.constants.abstractable()
+        &&
+        self.proposer.abstractable()
+        &&
+        self.acceptor.abstractable()
+        &&
+        self.learner.abstractable()
+        &&
+        self.executor.abstractable()
+    }
+
+    pub open spec fn view(self) -> LReplica
+    recommends
+        self.abstractable()
+    {
+        LReplica{
+            constants:self.constants@,
+            nextHeartbeatTime:self.nextHeartbeatTime as int,
+            proposer:self.proposer@,
+            acceptor:self.acceptor@,
+            learner:self.learner@,
+            executor:self.executor@
+        }
+    }
+}
+
+impl CReplica {
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            self == result,
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CReplica {
+    type V = LReplica;
+
+    open spec fn view(&self) -> LReplica {
+        LReplica{
+            constants:self.constants@,
+            nextHeartbeatTime:self.nextHeartbeatTime as int,
+            proposer:self.proposer@,
+            acceptor:self.acceptor@,
+            learner:self.learner@,
+            executor:self.executor@
+        }
+    }
+}
+
+// =============================================================================
+// CScheduler (generated)
+// =============================================================================
+
+#[derive(Clone)]
+pub struct CScheduler {
+    pub replica: CReplica,
+    pub nextActionIndex: u64,
+}
+
+impl CScheduler {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.replica.valid()
+        &&& 0 <= self.nextActionIndex < 10  // LReplicaNumActions() == 10
+    }
+}
+
+impl View for CScheduler {
+    type V = LScheduler;
+
+    open spec fn view(&self) -> LScheduler {
+        LScheduler {
+            replica: self.replica@,
+            nextActionIndex: self.nextActionIndex as int,
+        }
+    }
+}
+
+// =============================================================================
+// Abstractify functions for CRslIo → RslIo conversion
+// =============================================================================
+
+/// Convert a concrete LPacket<EndPoint, CMessage> to spec RslPacket
+pub open spec fn abstractify_clpacket(p: LPacket<EndPoint, CMessage>) -> RslPacket {
+    LPacket {
+        dst: p.dst@,
+        src: p.src@,
+        msg: p.msg.view(),
+    }
+}
+
+/// Convert a concrete CRslIo to spec RslIo
+pub open spec fn abstractify_crslio(io: CRslIo) -> RslIo {
+    match io {
+        LIoOp::Send{s} => LIoOp::Send{s: abstractify_clpacket(s)},
+        LIoOp::Receive{r} => LIoOp::Receive{r: abstractify_clpacket(r)},
+        LIoOp::TimeoutReceive => LIoOp::TimeoutReceive,
+        LIoOp::ReadClock{t} => LIoOp::ReadClock{t: t},
+    }
+}
+
+/// Convert a sequence of CRslIo to Seq<RslIo>
+pub open spec fn abstractify_crslio_seq(ios: Seq<CRslIo>) -> Seq<RslIo> {
+    ios.map(|i, io: CRslIo| abstractify_crslio(io))
+}
+
+// =============================================================================
+// unreachable_value helper
+// =============================================================================
+
+/// Helper for match arms that are provably unreachable.
+/// The requires clause is `false`, so Verus verifies this can never be called.
+#[verifier(external_body)]
+pub fn unreachable_value<T>() -> (result: T)
+    requires false,
+{
+    panic!("unreachable")
+}

@@ -949,3 +949,36 @@ fn test_rsl_types_manual_helpers_component_part1_symbols_present() {
         );
     }
 }
+
+#[test]
+fn test_rsl_types_manual_helpers_component_part2_symbols_present() {
+    let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
+        .expect("Failed to read RSL types manual helpers");
+
+    let ordered_symbols = [
+        "pub struct CProposer {",
+        "pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>",
+        "pub struct CReplica {",
+        "pub nextHeartbeatTime: u64",
+        "pub struct CScheduler {",
+        "pub open spec fn abstractify_clpacket",
+        "pub open spec fn abstractify_crslio(io: CRslIo) -> RslIo",
+        "pub open spec fn abstractify_crslio_seq(ios: Seq<CRslIo>) -> Seq<RslIo>",
+        "pub fn unreachable_value<T>() -> (result: T)",
+    ];
+
+    let mut last_index = 0usize;
+    for (i, symbol) in ordered_symbols.iter().enumerate() {
+        let idx = source.find(symbol).unwrap_or_else(|| {
+            panic!("missing symbol `{}` in extracted helper file", symbol);
+        });
+        if i > 0 {
+            assert!(
+                idx > last_index,
+                "symbol `{}` appears out of expected order",
+                symbol
+            );
+        }
+        last_index = idx;
+    }
+}
