@@ -1459,7 +1459,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
             - `CLearnerForgetDecision`: return new state with `&u64` param
           - No packet validity assertions needed (learner functions don't generate packets)
           - Result: 532 verified, 0 errors (up from 509 with Phase C only)
-        - [ ] Phase E: Wire ReplicaImpl executor calls to generated functions (~7 call sites)
+        - [x] Phase E: Wire ReplicaImpl executor calls to generated functions (~7 call sites)
+          - Wired 6 of 7 call sites: CExecutorInit, CExecutorProcessRequest, CExecutorProcessStartingPhase2,
+            CExecutorProcessAppStateSupply, CExecutorProcessAppStateRequest, CExecutorGetDecision
+          - CExecutorExecute stays manual (LExecutorExecute skipped in transpiler due to variable scoping)
+          - Used backup executor_gen.rs (with proofs) instead of transpiler-generated version
+          - Added packet validity/abstractability ensures to 3 packet-returning functions (with assume proofs)
+          - Result: 541 verified, 0 errors (up from 532 with Phase D only)
         - [ ] Phase F: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
         - [ ] Phase G: Wire ReplicaImpl replica-level init to generated functions
       - [ ] Add integration test verifying generated modules are accessible and produce correct types

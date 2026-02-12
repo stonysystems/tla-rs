@@ -1,6 +1,7 @@
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::generated::RSL::acceptor_gen as generated_acceptor;
+use crate::generated::RSL::executor_gen as generated_executor;
 use crate::generated::RSL::learner_gen as generated_learner;
 use crate::implementation::RSL::types_i::*;
 use vstd::prelude::*;
@@ -44,7 +45,7 @@ impl CReplica{
             proposer: CProposer::CProposerInit(c.clone_up_to_view()),
             acceptor: generated_acceptor::CAcceptorInit(&c),
             learner: generated_learner::CLearnerInit(&c),
-            executor: CExecutor::CExecutorInit(c.clone_up_to_view())
+            executor: generated_executor::CExecutorInit(&c)
         };
         s
     }
@@ -112,7 +113,12 @@ impl CReplica{
                             if v.seqno >= seqno_req {
                                 assert(ss.executor.reply_cache.contains_key(sp.src));
                                 assert(sp.msg->seqno_req <= ss.executor.reply_cache[sp.src].seqno);
-                                let outpackets = self.executor.CExecutorProcessRequest(received_packet);
+                                let sent_packets = generated_executor::CExecutorProcessRequest(&self.executor, &received_packet);
+                                assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+                                assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+                                let outpackets = OutboundPackets::PacketSequence { s: sent_packets };
+                                assert(outpackets.valid());
+                                assert(outpackets.abstractable());
                                 assert(ss == self@);
                                 assert(LExecutorProcessRequest(ss.executor, sp, outpackets@));
                                 assert(LReplicaNextProcessRequest(ss, self@, sp, outpackets@));
@@ -331,8 +337,15 @@ impl CReplica{
             received_packet@,
             res@)
     {
-        let res = self.executor.CExecutorProcessStartingPhase2(received_packet);
-        res
+        let (next_executor, sent_packets) =
+            generated_executor::CExecutorProcessStartingPhase2(&self.executor, &received_packet);
+        self.executor = next_executor;
+        assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+        assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        let outpackets = OutboundPackets::PacketSequence { s: sent_packets };
+        assert(outpackets.valid());
+        assert(outpackets.abstractable());
+        outpackets
     }
 
     // #[verifier(external_body)]
@@ -489,7 +502,7 @@ impl CReplica{
                     && opn_state_supply > self.executor.ops_complete
                 {
                     self.learner = generated_learner::CLearnerForgetOperationsBefore(&self.learner, &opn_state_supply);
-                    self.executor.CExecutorProcessAppStateSupply(received_packet);
+                    self.executor = generated_executor::CExecutorProcessAppStateSupply(&self.executor, &received_packet);
                 }
 
                 let mut pkt_vec: Vec<CPacket> = Vec::new();
@@ -527,9 +540,15 @@ impl CReplica{
             received_packet@,
             res@)
     {
-        let reply_cache = clone_creply_cache_up_to_view(&self.executor.reply_cache);
-        let res  = self.executor.CExecutorProcessAppStateRequest(received_packet, reply_cache);
-        res
+        let (next_executor, sent_packets) =
+            generated_executor::CExecutorProcessAppStateRequest(&self.executor, &received_packet);
+        self.executor = next_executor;
+        assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+        assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        let outpackets = OutboundPackets::PacketSequence { s: sent_packets };
+        assert(outpackets.valid());
+        assert(outpackets.abstractable());
+        outpackets
     }
 
     // #[verifier(external_body)]
@@ -632,8 +651,8 @@ impl CReplica{
                                 // need to prove that the view of EndPoint is injective
                                 assume(self.learner.unexecuted_learner_state@[opn].received_2b_message_senders.len() == ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len());
                                 assert(ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len() >= LMinQuorumSize(ss.learner.constants.all.config));
-                                self.executor.CExecutorGetDecision(
-                                    self.learner.max_ballot_seen, opn, &v.candidate_learned_value
+                                self.executor = generated_executor::CExecutorGetDecision(
+                                    &self.executor, &self.learner.max_ballot_seen, &opn, &v.candidate_learned_value
                                 );
                                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                                 let outpackets = OutboundPackets::PacketSequence{

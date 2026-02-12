@@ -381,6 +381,139 @@ If Verus rejects the generated code:
 
 ---
 
+## Compile & Run Status Matrix
+
+**Last updated**: 2026-02-12
+
+### TLA+ Examples (`transpiler/tests/tla_examples/`)
+
+#### Direction 1: TLA+ → Verus Spec (`translate-tla`)
+
+| Example | Transpile | Verus Compile | Notes |
+|---------|-----------|---------------|-------|
+| SimpleCounter | ✅ | - | Generates spec + automan |
+| DieHard | ✅ | - | Generates spec + automan |
+| EWD840 | ✅ | - | Generates spec + automan |
+| TwoPhase | ✅ | - | Generates spec + automan |
+| Raft | ✅ | - | Generates spec + automan |
+| Paxos | ✅ | - | Generates spec + automan |
+| PBFT | ✅ | - | Generates spec + automan |
+
+**Command**:
+```bash
+cd transpiler
+cargo run --release -- translate-tla \
+    --input tests/tla_examples/<NAME>.tla \
+    --output /tmp/<name>.rs --gen-modes
+```
+
+#### Direction 2: Verus Spec → Verus Exec (from TLA-generated specs)
+
+| Example | Transpile | Verus Compile | Error |
+|---------|-----------|---------------|-------|
+| SimpleCounter | ✅ | untested | |
+| DieHard | ✅ | untested | |
+| EWD840 | ❌ | - | Annotation error: parameter count mismatch |
+| TwoPhase | ❌ | - | Parse error: Expected identifier, found `"` |
+| Raft | ❌ | - | Parse error: Expected identifier, found `"` |
+| Paxos | ❌ | - | Parse error: Expected identifier, found `"` |
+| PBFT | ❌ | - | Parse error: Expected identifier, found `"` |
+
+**Command** (two steps):
+```bash
+cd transpiler
+# Step 1: TLA+ → Verus Spec
+cargo run --release -- translate-tla \
+    --input tests/tla_examples/<NAME>.tla \
+    --output /tmp/<name>.rs --gen-modes
+# Step 2: Verus Spec → Verus Exec
+cargo run --release -- \
+    --input /tmp/<name>.rs \
+    --annotations /tmp/<name>.automan \
+    --output /tmp/<name>_exec.rs
+```
+
+#### Direction 3: Verus Spec → TLA+ (`verus2-tla`)
+
+| Example (from TLA-generated specs) | Transpile | Notes |
+|-------------------------------------|-----------|-------|
+| SimpleCounter | ✅ | |
+| DieHard | ✅ | |
+| EWD840 | ✅ | |
+| TwoPhase | ❌ | Parse error on generated spec |
+| Raft | ❌ | Parse error on generated spec |
+| Paxos | ❌ | Parse error on generated spec |
+| PBFT | ❌ | Parse error on generated spec |
+
+| Example (from hand-written Verus specs) | Transpile | Notes |
+|-----------------------------------------|-----------|-------|
+| RSL/election.rs | ✅ | |
+| RSL/acceptor.rs | ✅ | |
+
+**Command**:
+```bash
+cd transpiler
+cargo run --release -- verus2-tla \
+    --input /tmp/<name>.rs \
+    --output /tmp/<name>.tla
+```
+
+#### Direction 4: TLA+ → Verus Exec (pipeline)
+
+| Example | Pipeline | Verus Compile | Error |
+|---------|----------|---------------|-------|
+| SimpleCounter | ✅ | untested | |
+| DieHard | ✅ | untested | |
+| EWD840 | ❌ | - | Annotation error in exec stage |
+| TwoPhase | ❌ | - | Parse error in exec stage |
+| Raft | ❌ | - | Parse error in exec stage |
+| Paxos | ❌ | - | Parse error in exec stage |
+| PBFT | ❌ | - | Parse error in exec stage |
+
+**Command**:
+```bash
+cd transpiler
+cargo run --release -- pipeline \
+    --tla-input tests/tla_examples/<NAME>.tla \
+    --exec-output /tmp/<name>_exec.rs \
+    --keep-intermediate
+```
+
+### Verus Spec → Verus Exec (Existing Protocol Specs)
+
+Generated code in `src/generated/` with Verus build (`scons --verus-path=... liblib.so`):
+
+| Module | Errors | Primary Error Type |
+|--------|--------|--------------------|
+| RSL/replica_gen.rs | 58 | E0507: cannot move out of shared reference (missing `.clone()`) |
+| RSL/proposer_gen.rs | 24 | E0507: missing `.clone()` |
+| RSL/types_gen.rs | 10 | Clone derive warnings, type mismatches |
+| RSL/acceptor_gen.rs | 8 | E0507: missing `.clone()` |
+| RSL/election_gen.rs | 7 | E0507: missing `.clone()` |
+| RSL/executor_gen.rs | 5 | E0507: missing `.clone()` |
+| ChainReplication/types_gen.rs | 2 | Clone derive issues |
+| EPaxos/types_gen.rs | 2 | Clone derive issues |
+| Raft/types_gen.rs | 2 | Clone derive issues |
+| PBFT/types_gen.rs | 2 | Clone derive issues |
+| TwoPhase/types_gen.rs | 2 | Clone derive issues |
+| PrimaryBackup/types_gen.rs | 3 | Clone derive issues |
+| Paxos/types_gen.rs | 1 | Clone derive issues |
+| LeaderElection/types_gen.rs | 1 | Clone derive issues |
+| VerticalPaxos/types_gen.rs | 1 | Clone derive issues |
+| **Total** | **128** | |
+
+**Known bugs in generated code**:
+1. **`iter:` prefix** in loop syntax (`printer/mod.rs:487`) — invalid Rust, all generated loops broken
+2. **Missing `.clone()`** on struct fields accessed through shared references (102 E0507 errors)
+3. **Clone derive** warnings from Verus on types with non-Copy fields
+
+**Command**:
+```bash
+scons --verus-path=/home/users/zihao/verus/verus liblib.so
+```
+
+---
+
 ## See Also
 
 - `docs/tla-to-verus-guide.md` — Full TLA+ to Verus operator mapping and type annotations
