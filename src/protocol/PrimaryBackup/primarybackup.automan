@@ -1,7 +1,33 @@
+// Mode annotations for Primary-Backup protocol
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
 module PrimaryBackup::primarybackup {
+    // Initialize protocol state
     LInit(-, +);
+
+    // Primary receives client write with value val
     LPrimaryWrite(+, -, +, +);
-    LBackupAck(+, -, +);
+
+    // Primary sends replicate message to backup
+    LPrimarySendReplicate(+, -, +);
+
+    // Backup receives replicate and appends to log
+    LBackupReceiveReplicate(+, -, +);
+
+    // Backup sends ack to primary
+    LBackupSendAck(+, -, +);
+
+    // Primary receives ack from backup
+    LPrimaryReceiveAck(+, -, +);
+
+    // Primary commits pending write to log
     LPrimaryCommit(+, -, +);
-    LFailover(+, -, +);
+
+    // Primary fails, becomes inactive
+    LPrimaryFail(+, -, +);
+
+    // Backup promotes to primary after failure
+    LBackupPromote(+, -, +);
+
+    // LNext: not transpiled (existential quantifier)
 }

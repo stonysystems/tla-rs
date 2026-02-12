@@ -16,6 +16,7 @@ ensures
 {
     match r {
         CNodeRole::Backup => CNodeRole::Backup,
+        CNodeRole::Inactive => CNodeRole::Inactive,
         CNodeRole::Primary => CNodeRole::Primary,
     }
 }
@@ -34,6 +35,13 @@ CState {
         has_pending: false,
         pending_value: 0u64,
         acked: true,
+        backup_log_length: 0u64,
+        backup_last_value: 0u64,
+        backup_synced: true,
+        view: 0u64,
+        msgs_replicate: false,
+        msgs_replicate_val: 0u64,
+        msgs_ack: false,
         role: CNodeRole::Primary,
     }
 }
@@ -51,33 +59,131 @@ ensures
     LPrimaryWrite(s@, result@, c@, *val as int),
 {
 CState {
-        role: clone_role(&s.role),
-        log_length: s.log_length,
-        last_value: s.last_value,
         has_pending: true,
         pending_value: *val,
         acked: false,
+        role: clone_role(&s.role),
+        log_length: s.log_length,
+        last_value: s.last_value,
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: s.backup_synced,
+        view: s.view,
+        msgs_replicate: s.msgs_replicate,
+        msgs_replicate_val: s.msgs_replicate_val,
+        msgs_ack: s.msgs_ack,
     }
 }
 
-pub exec fn CBackupAck(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CPrimarySendReplicate(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     s.role is Primary,
-    s.acked == false,
     s.has_pending == true,
+    s.acked == false,
 ensures
     result.valid(),
-    LBackupAck(s@, result@, c@),
+    LPrimarySendReplicate(s@, result@, c@),
 {
 CState {
+        msgs_replicate: true,
+        msgs_replicate_val: s.pending_value,
         role: clone_role(&s.role),
         log_length: s.log_length,
         last_value: s.last_value,
         has_pending: s.has_pending,
         pending_value: s.pending_value,
+        acked: s.acked,
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: s.backup_synced,
+        view: s.view,
+        msgs_ack: s.msgs_ack,
+    }
+}
+
+pub exec fn CBackupReceiveReplicate(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Primary,
+    s.msgs_replicate == true,
+    s.backup_log_length < u64::MAX,
+ensures
+    result.valid(),
+    LBackupReceiveReplicate(s@, result@, c@),
+{
+CState {
+        backup_log_length: (s.backup_log_length + 1),
+        backup_last_value: s.msgs_replicate_val,
+        backup_synced: true,
+        role: clone_role(&s.role),
+        log_length: s.log_length,
+        last_value: s.last_value,
+        has_pending: s.has_pending,
+        pending_value: s.pending_value,
+        acked: s.acked,
+        view: s.view,
+        msgs_replicate: s.msgs_replicate,
+        msgs_replicate_val: s.msgs_replicate_val,
+        msgs_ack: s.msgs_ack,
+    }
+}
+
+pub exec fn CBackupSendAck(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Primary,
+    s.backup_synced == true,
+    s.msgs_replicate == true,
+ensures
+    result.valid(),
+    LBackupSendAck(s@, result@, c@),
+{
+CState {
+        msgs_ack: true,
+        role: clone_role(&s.role),
+        log_length: s.log_length,
+        last_value: s.last_value,
+        has_pending: s.has_pending,
+        pending_value: s.pending_value,
+        acked: s.acked,
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: s.backup_synced,
+        view: s.view,
+        msgs_replicate: s.msgs_replicate,
+        msgs_replicate_val: s.msgs_replicate_val,
+    }
+}
+
+pub exec fn CPrimaryReceiveAck(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Primary,
+    s.has_pending == true,
+    s.msgs_ack == true,
+ensures
+    result.valid(),
+    LPrimaryReceiveAck(s@, result@, c@),
+{
+CState {
         acked: true,
+        msgs_replicate: false,
+        msgs_replicate_val: 0u64,
+        msgs_ack: false,
+        role: clone_role(&s.role),
+        log_length: s.log_length,
+        last_value: s.last_value,
+        has_pending: s.has_pending,
+        pending_value: s.pending_value,
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: s.backup_synced,
+        view: s.view,
     }
 }
 
@@ -94,30 +200,71 @@ ensures
     LPrimaryCommit(s@, result@, c@),
 {
 CState {
-        role: clone_role(&s.role),
         log_length: (s.log_length + 1),
         last_value: s.pending_value,
         has_pending: false,
         pending_value: 0u64,
         acked: true,
+        role: clone_role(&s.role),
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: s.backup_synced,
+        view: s.view,
+        msgs_replicate: s.msgs_replicate,
+        msgs_replicate_val: s.msgs_replicate_val,
+        msgs_ack: s.msgs_ack,
     }
 }
 
-pub exec fn CFailover(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CPrimaryFail(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     s.role is Primary,
 ensures
     result.valid(),
-    LFailover(s@, result@, c@),
+    LPrimaryFail(s@, result@, c@),
 {
 CState {
-        log_length: s.log_length,
-        last_value: s.last_value,
         has_pending: false,
         pending_value: 0u64,
         acked: true,
+        log_length: s.log_length,
+        last_value: s.last_value,
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: false,
+        view: s.view,
+        msgs_replicate: false,
+        msgs_replicate_val: 0u64,
+        msgs_ack: false,
+        role: CNodeRole::Inactive,
+    }
+}
+
+pub exec fn CBackupPromote(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Inactive,
+    s.view < u64::MAX,
+ensures
+    result.valid(),
+    LBackupPromote(s@, result@, c@),
+{
+CState {
+        log_length: s.backup_log_length,
+        last_value: s.backup_last_value,
+        has_pending: false,
+        pending_value: 0u64,
+        acked: true,
+        backup_log_length: s.backup_log_length,
+        backup_last_value: s.backup_last_value,
+        backup_synced: true,
+        view: (s.view + 1),
+        msgs_replicate: false,
+        msgs_replicate_val: 0u64,
+        msgs_ack: false,
         role: CNodeRole::Primary,
     }
 }

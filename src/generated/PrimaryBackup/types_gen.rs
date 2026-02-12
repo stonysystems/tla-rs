@@ -15,6 +15,13 @@ pub struct CState {
     pub has_pending: bool,
     pub pending_value: u64,
     pub acked: bool,
+    pub backup_log_length: u64,
+    pub backup_last_value: u64,
+    pub backup_synced: bool,
+    pub view: u64,
+    pub msgs_replicate: bool,
+    pub msgs_replicate_val: u64,
+    pub msgs_ack: bool,
 }
 
 impl CState {
@@ -34,6 +41,13 @@ impl View for CState {
             has_pending: self.has_pending,
             pending_value: self.pending_value as int,
             acked: self.acked,
+            backup_log_length: self.backup_log_length as int,
+            backup_last_value: self.backup_last_value as int,
+            backup_synced: self.backup_synced,
+            view: self.view as int,
+            msgs_replicate: self.msgs_replicate,
+            msgs_replicate_val: self.msgs_replicate_val as int,
+            msgs_ack: self.msgs_ack,
         }
     }
 }
@@ -63,6 +77,7 @@ impl View for CConstants {
 pub enum CNodeRole {
     Primary,
     Backup,
+    Inactive,
 }
 
 impl CNodeRole {
@@ -70,6 +85,7 @@ impl CNodeRole {
         match self {
             CNodeRole::Primary => true,
             CNodeRole::Backup => true,
+            CNodeRole::Inactive => true,
         }
     }
 }
@@ -81,6 +97,7 @@ impl View for CNodeRole {
         match self {
             CNodeRole::Primary => LNodeRole::Primary,
             CNodeRole::Backup => LNodeRole::Backup,
+            CNodeRole::Inactive => LNodeRole::Inactive,
         }
     }
 }

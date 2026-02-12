@@ -4432,7 +4432,7 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 | Paxos | **complete** | Per-node state (acceptor+proposer+learner), 7 transitions, quorum-based ✅ |
 | LeaderElection | partial | No message types, no timing |
 | ChainReplication | partial | No topology awareness, no failure model |
-| PrimaryBackup | skeleton | Failover logic broken, no backup state |
+| PrimaryBackup | **complete** | Backup state, replication, ack, failover with view/epoch, 8 transitions ✅ |
 | PBFT | partial | No request tracking, no checkpoints, no Byzantine behavior |
 | VerticalPaxos | partial | No quorum overlap validation, no witness sets |
 | EPaxos | partial | Dependency tracking is count-based, not set-based |
@@ -4541,18 +4541,18 @@ Enhance `src/protocol/Paxos/types.rs` and `src/protocol/Paxos/paxos.rs`.
 
 Enhance `src/protocol/PrimaryBackup/types.rs` and `src/protocol/PrimaryBackup/primarybackup.rs`.
 
-- [ ] Add backup-side state: `backup_log: Seq<int>`, `backup_synced: bool`
-- [ ] Add `LMessage` enum: `ReplicateWrite(value)`, `Ack`, `PromoteToPrimary`
-- [ ] Add `LPrimarySendReplicate(s, s_, c, value)` — primary sends write to backup
-- [ ] Add `LBackupReceiveReplicate(s, s_, c, value)` — backup appends to its log
-- [ ] Add `LBackupSendAck(s, s_, c)` — backup acknowledges
-- [ ] Fix `LFailover`:
-  - Primary becomes inactive (not stays primary)
-  - Backup detects failure and promotes itself to primary
-  - Pending uncommitted writes on old primary are lost
-- [ ] Add `LBackupPromote(s, s_, c)` — backup transitions role to Primary
-- [ ] Add view/epoch number to prevent split-brain
-- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+- [x] Add backup-side state: `backup_log_length`, `backup_last_value`, `backup_synced`
+- [x] Add message flags: `msgs_replicate`, `msgs_replicate_val`, `msgs_ack` (boolean flags instead of enum)
+- [x] Add `LPrimarySendReplicate(s, s_, c)` — primary sends pending value to backup
+- [x] Add `LBackupReceiveReplicate(s, s_, c)` — backup appends replicated value
+- [x] Add `LBackupSendAck(s, s_, c)` — backup acknowledges replication
+- [x] Add `LPrimaryReceiveAck(s, s_, c)` — primary receives ack, clears messages
+- [x] Fix failover:
+  - `LPrimaryFail`: primary becomes `Inactive`, pending writes lost, messages cleared
+  - `LBackupPromote`: backup promotes to primary using backup's log state
+- [x] Add view/epoch number (`view: int`) to prevent split-brain, incremented on promotion
+- [x] Added `Inactive` variant to `LNodeRole` enum
+- [x] Update `.automan` and `_transpile.toml`, regenerate, verify (848 tests pass)
 
 ---
 

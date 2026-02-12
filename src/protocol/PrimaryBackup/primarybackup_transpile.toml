@@ -32,6 +32,7 @@ nat_type = "u64"
 [variant_remapping]
 "Primary" = "CNodeRole::Primary"
 "Backup" = "CNodeRole::Backup"
+"Inactive" = "CNodeRole::Inactive"
 
 [method_calls]
 
