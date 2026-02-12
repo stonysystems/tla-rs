@@ -32,3 +32,8 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
   - ballot comparison helpers
   - request/reply/vote clone+abstraction helpers
   - learner-state abstraction helpers
+- Completed second extraction leaf by adding struct/impl extension sections to the same helper file:
+  - `CParameters` (+ `StaticParams`)
+  - `CConfiguration` (+ replica-index helpers and endpoint abstraction lemmas)
+  - `CConstants`
+  - `CReplicaConstants` (+ `InitReplicaConstants`)

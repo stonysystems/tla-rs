@@ -894,3 +894,31 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
         );
     }
 }
+
+#[test]
+fn test_rsl_types_manual_helpers_extension_symbols_present() {
+    let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
+        .expect("Failed to read RSL types manual helpers");
+
+    let expected_symbols = [
+        "pub struct CParameters",
+        "StaticParams()",
+        "pub struct CConfiguration",
+        "CGetReplicaIndex(",
+        "lemma_AbstractifyEndpoints_properties",
+        "lemma_AbstractifyEndPointToNodeIdentity_injective_forall",
+        "CFindIndexInSeq(",
+        "pub struct CConstants",
+        "pub struct CReplicaConstants",
+        "CReplicaConstantsValid(",
+        "InitReplicaConstants(",
+    ];
+
+    for symbol in expected_symbols {
+        assert!(
+            source.contains(symbol),
+            "missing symbol `{}` in extracted helper file",
+            symbol
+        );
+    }
+}

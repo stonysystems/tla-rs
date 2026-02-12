@@ -1246,7 +1246,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - [x] Extract foundational helper-only section into `src/protocol/RSL/types_manual_helpers.rs` [26:02:12, 21:10]
         - Included: `COperationNumber` helper predicates, ballot comparison helpers, request/reply/votes abstraction+clone helpers, learner-state abstraction helpers
         - Excluded for next leaves: large impl-heavy sections (`CConfiguration`, `CConstants`, `CReplicaConstants`, `CAcceptor`, `CExecutor`, `CProposer`, etc.)
-      - [ ] Extract struct/impl extension sections (`CParameters`, `CConfiguration`, `CConstants`, `CReplicaConstants`) into the same helper file
+      - [x] Extract struct/impl extension sections (`CParameters`, `CConfiguration`, `CConstants`, `CReplicaConstants`) into the same helper file [26:02:12, 22:05]
+        - Added complete extension block to `src/protocol/RSL/types_manual_helpers.rs`:
+          `StaticParams`, `CGetReplicaIndex`, endpoint abstraction lemmas, `InitReplicaConstants`, and related validity/view/clone methods
+        - Section size stayed within the leaf target (about 460 LOC extracted in this leaf)
       - [ ] Extract remaining component extension sections (`CAcceptor`, `CLearner`, `CElectionState`, `CExecutor`, `CProposer`, `CReplica`, `CScheduler`, IO abstractify helpers)
     - [ ] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs
     - [ ] Regenerate RSL (`scripts/regenerate_all.sh RSL`) and close type compatibility drift (generated/implementation type path alignment, helper visibility, marshalable boundaries)
