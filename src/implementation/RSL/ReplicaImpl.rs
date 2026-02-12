@@ -58,6 +58,7 @@ impl CReplica{
             received_packet.valid(),
             received_packet.msg is CMessageInvalid,
         ensures
+            self.valid(),
             res.valid(),
             LReplicaNextProcessInvalid(old(self)@,
             self@,

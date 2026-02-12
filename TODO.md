@@ -1477,7 +1477,13 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Removed unnecessary CWellFormedCConfiguration precondition from CProposerInit
           - Field accesses (proposer.election_state.current_view, etc.) remain direct
           - Result: 553 verified, 0 errors (up from 541 with Phase E only)
-        - [ ] Phase G: Wire ReplicaImpl replica-level init to generated functions
+        - [x] Phase G: Wire ReplicaImpl replica-level init to generated functions
+          - Enabled backup replica_gen.rs (clone-delegate pattern wrapping manual ReplicaImpl methods)
+          - Provides 20 functional-style wrapper functions + CSchedulerInit/CSchedulerNext + dispatch functions
+          - Added packet validity/abstractability ensures to outbound_packets_to_vec and all 20 functions
+          - Removed unnecessary CWellFormedCConfiguration preconditions from CReplicaInit and CSchedulerInit
+          - Added missing self.valid() postcondition to CReplicaNextProcessInvalid in ReplicaImpl.rs
+          - Result: 581 verified, 0 errors (up from 553 with Phase F only)
       - [ ] Add integration test verifying generated modules are accessible and produce correct types
       - [ ] Deprecate manual implementation modules (mark with `#[deprecated]` or move to `_legacy/`)
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)
