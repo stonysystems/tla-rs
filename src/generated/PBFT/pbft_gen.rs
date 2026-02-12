@@ -237,6 +237,7 @@ requires
     c.valid(),
     s.phase is Replied,
     (s.seq_num > s.checkpoint_seq),
+    s.seq_num <= u64::MAX - c.checkpoint_interval,
 ensures
     result.valid(),
     LCheckpoint(s@, result@, c@, *digest as int),

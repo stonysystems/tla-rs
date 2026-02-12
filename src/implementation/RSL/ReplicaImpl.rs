@@ -1,5 +1,6 @@
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
+use crate::generated::RSL::acceptor_gen as generated_acceptor;
 use crate::implementation::RSL::types_i::*;
 use vstd::prelude::*;
 use crate::implementation::RSL::acceptorimpl::*;
@@ -40,7 +41,7 @@ impl CReplica{
             constants: c.clone_up_to_view(),
             nextHeartbeatTime: 0,
             proposer: CProposer::CProposerInit(c.clone_up_to_view()),
-            acceptor: CAcceptor::CAcceptorInit(c.clone_up_to_view()),
+            acceptor: generated_acceptor::CAcceptorInit(&c),
             learner: CLearner::CLearnerInit(c.clone_up_to_view()),
             executor: CExecutor::CExecutorInit(c.clone_up_to_view())
         };
@@ -190,8 +191,19 @@ impl CReplica{
             received_packet@,
             res@)
     {
-        let res = self.acceptor.CAcceptorProcess1a(received_packet);
-        res
+        let ghost ss = old(self)@;
+        let ghost sp = received_packet@;
+
+        let (next_acceptor, sent_packets) =
+            generated_acceptor::CAcceptorProcess1a(&self.acceptor, &received_packet);
+        self.acceptor = next_acceptor;
+        assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+        assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        let outpackets = OutboundPackets::PacketSequence { s: sent_packets };
+        assert(outpackets.valid());
+        assert(outpackets.abstractable());
+        assert(LReplicaNextProcess1a(ss, self@, sp, outpackets@));
+        outpackets
 
     }
 
@@ -261,7 +273,10 @@ impl CReplica{
                     assert(sp.msg->bal_1b == ss.proposer.max_ballot_i_sent_1a);
                     assert(ss.proposer.current_state == 1);
                     assert(forall |op:RslPacket| ss.proposer.received_1b_packets.contains(op) ==> op.src != sp.src);
-                    self.acceptor.CAcceptorTruncateLog(log_truncation_point);
+                    self.acceptor = generated_acceptor::CAcceptorTruncateLog(
+                        &self.acceptor,
+                        &log_truncation_point,
+                    );
                     self.proposer.CProposerProcess1b(received_packet);
                     let mut pkt_vec: Vec<CPacket> = Vec::new();
                     let outpackets = OutboundPackets::PacketSequence{
@@ -345,7 +360,14 @@ impl CReplica{
                     assert(ss.constants.all.config.replica_ids.contains(sp.src));
                     assert(BalLeq(ss.acceptor.max_bal, sp.msg->bal_2a));
                     assert(LeqUpperBound(sp.msg->opn_2a, ss.acceptor.constants.all.params.max_integer_val));
-                    let outpackets = self.acceptor.CAcceptorProcess2a(received_packet);
+                    let (next_acceptor, sent_packets) =
+                        generated_acceptor::CAcceptorProcess2a(&self.acceptor, &received_packet);
+                    self.acceptor = next_acceptor;
+                    assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+                    assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+                    let outpackets = OutboundPackets::PacketSequence { s: sent_packets };
+                    assert(outpackets.valid());
+                    assert(outpackets.abstractable());
                     // let outpackets = self.acceptor.CAcceptorProcess2a_optimized(received_packet);
                     assert(LReplicaNextProcess2a(ss, self@, sp, outpackets@));
                     outpackets
@@ -526,7 +548,8 @@ impl CReplica{
             res@)
     {
         self.proposer.CProposerProcessHeartbeat(received_packet.clone_up_to_view(), clock);
-        self.acceptor.CAcceptorProcessHeartbeat(received_packet);
+        self.acceptor =
+            generated_acceptor::CAcceptorProcessHeartbeat(&self.acceptor, &received_packet);
         let mut pkt_vec: Vec<CPacket> = Vec::new();
         let outpackets = OutboundPackets::PacketSequence{
             s:pkt_vec,
@@ -848,7 +871,8 @@ impl CReplica{
                 assert(exists |op:OperationNumber| ss.acceptor.last_checkpointed_operation.contains(op)
                             && IsLogTruncationPointValid(op, ss.acceptor.last_checkpointed_operation, ss.constants.all.config)
                             && op > ss.acceptor.log_truncation_point);
-                self.acceptor.CAcceptorTruncateLog(target);
+                self.acceptor =
+                    generated_acceptor::CAcceptorTruncateLog(&self.acceptor, &target);
                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                 let outpackets = OutboundPackets::PacketSequence{
                     s:pkt_vec,
@@ -923,7 +947,7 @@ impl CReplica{
         let n = self.constants.all.config.CMinQuorumSize();
         let opn = Self::CGetHighestValueAmongMajority(&self.acceptor.last_checkpointed_operation, n);
         if opn > self.acceptor.log_truncation_point{
-            self.acceptor.CAcceptorTruncateLog(opn);
+            self.acceptor = generated_acceptor::CAcceptorTruncateLog(&self.acceptor, &opn);
             let mut pkt_vec: Vec<CPacket> = Vec::new();
             let outpackets = OutboundPackets::PacketSequence{
                 s:pkt_vec,
