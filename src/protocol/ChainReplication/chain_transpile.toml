@@ -3,6 +3,7 @@
 # Skip functions that contain existential quantifiers
 skip_functions = [
     "LNext",
+    "LReconfigure",
 ]
 
 # Primitive types that don't need valid() predicates

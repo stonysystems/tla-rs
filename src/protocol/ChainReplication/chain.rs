@@ -12,33 +12,82 @@ verus! {
         &&& (c.node_id == 0 ==> s.role is Head)
         &&& (c.node_id == c.chain_len - 1 ==> s.role is Tail)
         &&& (c.node_id > 0 && c.node_id < c.chain_len - 1 ==> s.role is Middle)
+        &&& s.has_predecessor == (c.node_id > 0)
+        &&& s.predecessor == (if c.node_id > 0 { c.node_id - 1 } else { 0int })
+        &&& s.has_successor == (c.node_id < c.chain_len - 1)
+        &&& s.successor == (if c.node_id < c.chain_len - 1 { c.node_id + 1 } else { 0int })
+        &&& s.alive == true
+        &&& s.msgs_forward == false
+        &&& s.msgs_forward_value == 0int
+        &&& s.msgs_ack == false
+        &&& s.msgs_ack_value == 0int
     }
 
     /// Head receives a client write request and applies it locally
     /// The value is appended to the head's history and marked as pending
-    /// (forwarded to successor but not yet acked)
     pub open spec fn LHeadReceiveWrite(
         s: LState, s_: LState, c: LConstants, value: int,
     ) -> bool {
         &&& s.role is Head
+        &&& s.alive == true
         &&& !s.pending_sent.contains(value)
         &&& s_.role == s.role
         &&& s_.history == s.history.push(value)
         &&& s_.pending_sent == s.pending_sent.insert(value)
         &&& s_.committed_count == s.committed_count
         &&& s_.obj_value == s.obj_value
+        // Frame
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.has_successor == s.has_successor
+        &&& s_.successor == s.successor
+        &&& s_.alive == s.alive
+        &&& s_.msgs_forward == s.msgs_forward
+        &&& s_.msgs_forward_value == s.msgs_forward_value
+        &&& s_.msgs_ack == s.msgs_ack
+        &&& s_.msgs_ack_value == s.msgs_ack_value
+    }
+
+    /// Head or middle node forwards a pending value to its successor
+    /// Sends a ForwardUpdate message
+    pub open spec fn LForwardToSuccessor(
+        s: LState, s_: LState, c: LConstants, value: int,
+    ) -> bool {
+        &&& (s.role is Head || s.role is Middle)
+        &&& s.alive == true
+        &&& s.pending_sent.contains(value)
+        &&& s.has_successor == true
+        // Send forward message
+        &&& s_.msgs_forward == true
+        &&& s_.msgs_forward_value == value
+        // Frame
+        &&& s_.role == s.role
+        &&& s_.history == s.history
+        &&& s_.pending_sent == s.pending_sent
+        &&& s_.committed_count == s.committed_count
+        &&& s_.obj_value == s.obj_value
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.has_successor == s.has_successor
+        &&& s_.successor == s.successor
+        &&& s_.alive == s.alive
+        &&& s_.msgs_ack == s.msgs_ack
+        &&& s_.msgs_ack_value == s.msgs_ack_value
     }
 
     /// A middle or tail node receives an update from its predecessor
-    /// The value is appended to this node's history.
-    /// Middle nodes also add it to pending_sent (forward to successor).
+    /// The value is appended to this node's history
     pub open spec fn LReceiveUpdate(
         s: LState, s_: LState, c: LConstants, value: int,
     ) -> bool {
         &&& (s.role is Middle || s.role is Tail)
+        &&& s.alive == true
+        &&& s.msgs_forward == true
+        &&& value == s.msgs_forward_value
         &&& !s.history.contains(value)
         &&& s_.role == s.role
         &&& s_.history == s.history.push(value)
+        // Middle nodes add to pending_sent; tail does not
         &&& if s.role is Middle {
             s_.pending_sent == s.pending_sent.insert(value)
         } else {
@@ -46,20 +95,42 @@ verus! {
         }
         &&& s_.committed_count == s.committed_count
         &&& s_.obj_value == s.obj_value
+        // Clear forward message
+        &&& s_.msgs_forward == false
+        &&& s_.msgs_forward_value == 0int
+        // Frame
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.has_successor == s.has_successor
+        &&& s_.successor == s.successor
+        &&& s_.alive == s.alive
+        &&& s_.msgs_ack == s.msgs_ack
+        &&& s_.msgs_ack_value == s.msgs_ack_value
     }
 
     /// The tail commits a value: updates committed count and object value
-    /// This represents the value being fully replicated through the chain
     pub open spec fn LTailCommit(
         s: LState, s_: LState, c: LConstants, value: int,
     ) -> bool {
         &&& s.role is Tail
+        &&& s.alive == true
         &&& s.history.contains(value)
         &&& s_.role == s.role
         &&& s_.history == s.history
         &&& s_.pending_sent == s.pending_sent
         &&& s_.committed_count == s.committed_count + 1
         &&& s_.obj_value == value
+        // Send ack back up the chain
+        &&& s_.msgs_ack == true
+        &&& s_.msgs_ack_value == value
+        // Frame
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.has_successor == s.has_successor
+        &&& s_.successor == s.successor
+        &&& s_.alive == s.alive
+        &&& s_.msgs_forward == s.msgs_forward
+        &&& s_.msgs_forward_value == s.msgs_forward_value
     }
 
     /// A node receives an acknowledgment from its successor
@@ -68,29 +139,97 @@ verus! {
         s: LState, s_: LState, c: LConstants, value: int,
     ) -> bool {
         &&& (s.role is Head || s.role is Middle)
+        &&& s.alive == true
+        &&& s.msgs_ack == true
+        &&& value == s.msgs_ack_value
         &&& s.pending_sent.contains(value)
         &&& s_.role == s.role
         &&& s_.history == s.history
         &&& s_.pending_sent == s.pending_sent.remove(value)
         &&& s_.committed_count == s.committed_count
         &&& s_.obj_value == s.obj_value
+        // Clear ack message
+        &&& s_.msgs_ack == false
+        &&& s_.msgs_ack_value == 0int
+        // Frame
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.has_successor == s.has_successor
+        &&& s_.successor == s.successor
+        &&& s_.alive == s.alive
+        &&& s_.msgs_forward == s.msgs_forward
+        &&& s_.msgs_forward_value == s.msgs_forward_value
     }
 
     /// Client reads the current committed value (tail only, no state change)
-    /// Models a read returning the current object state
     pub open spec fn LClientRead(
         s: LState, s_: LState, c: LConstants,
     ) -> bool {
         &&& s.role is Tail
+        &&& s.alive == true
         &&& s_ == s
+    }
+
+    /// A node fails (crashes)
+    pub open spec fn LNodeFail(
+        s: LState, s_: LState, c: LConstants,
+    ) -> bool {
+        &&& s.alive == true
+        // Node becomes dead
+        &&& s_.alive == false
+        // Clear any pending messages from this node
+        &&& s_.msgs_forward == false
+        &&& s_.msgs_forward_value == 0int
+        &&& s_.msgs_ack == false
+        &&& s_.msgs_ack_value == 0int
+        // Frame: state preserved but node inactive
+        &&& s_.role == s.role
+        &&& s_.history == s.history
+        &&& s_.pending_sent == s.pending_sent
+        &&& s_.committed_count == s.committed_count
+        &&& s_.obj_value == s.obj_value
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.has_successor == s.has_successor
+        &&& s_.successor == s.successor
+    }
+
+    /// Reconfigure the chain after a node failure
+    /// Adjusts predecessor/successor links to skip the failed node
+    pub open spec fn LReconfigure(
+        s: LState, s_: LState, c: LConstants,
+        new_has_predecessor: bool, new_predecessor: int,
+        new_has_successor: bool, new_successor: int,
+    ) -> bool {
+        &&& s.alive == true
+        // Update chain links
+        &&& s_.has_predecessor == new_has_predecessor
+        &&& s_.predecessor == new_predecessor
+        &&& s_.has_successor == new_has_successor
+        &&& s_.successor == new_successor
+        // Role stays the same during reconfiguration
+        &&& s_.role == s.role
+        // Frame
+        &&& s_.history == s.history
+        &&& s_.pending_sent == s.pending_sent
+        &&& s_.committed_count == s.committed_count
+        &&& s_.obj_value == s.obj_value
+        &&& s_.alive == s.alive
+        &&& s_.msgs_forward == s.msgs_forward
+        &&& s_.msgs_forward_value == s.msgs_forward_value
+        &&& s_.msgs_ack == s.msgs_ack
+        &&& s_.msgs_ack_value == s.msgs_ack_value
     }
 
     /// Next-state relation: disjunction of all possible transitions
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
         ||| exists |value: int| LHeadReceiveWrite(s, s_, c, value)
+        ||| exists |value: int| LForwardToSuccessor(s, s_, c, value)
         ||| exists |value: int| LReceiveUpdate(s, s_, c, value)
         ||| exists |value: int| LTailCommit(s, s_, c, value)
         ||| exists |value: int| LReceiveAck(s, s_, c, value)
         ||| LClientRead(s, s_, c)
+        ||| LNodeFail(s, s_, c)
+        ||| exists |new_has_predecessor: bool, new_predecessor: int, new_has_successor: bool, new_successor: int| LReconfigure(s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor)
     }
 }

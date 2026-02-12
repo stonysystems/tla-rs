@@ -14,6 +14,13 @@ module ChainReplication::chain {
     // value (input): value to write
     LHeadReceiveWrite(+, -, +, +);
 
+    // Head or middle node forwards value to successor
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // value (input): value to forward
+    LForwardToSuccessor(+, -, +, +);
+
     // Node receives an update from predecessor
     // s (input): current state
     // s_ (output): new state
@@ -41,5 +48,12 @@ module ChainReplication::chain {
     // c (input): constants
     LClientRead(+, -, +);
 
+    // A node fails (crashes)
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    LNodeFail(+, -, +);
+
+    // LReconfigure is not transpiled (complex role-changing logic with is pattern)
     // LNext is not transpiled (contains existential quantifiers)
 }

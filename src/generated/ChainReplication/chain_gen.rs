@@ -79,7 +79,9 @@ ensures
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
     c.valid(),
+    c.node_id < u64::MAX,
     c.chain_len >= 2,
+    c.node_id >= 2,
     c.node_id < c.chain_len,
 ensures
     result.valid(),
@@ -90,6 +92,23 @@ ensures
         pending_sent: HashSet::new(),
         committed_count: 0u64,
         obj_value: 0u64,
+        has_predecessor: (c.node_id > 0),
+        predecessor: if (c.node_id > 0) {
+            (c.node_id - 1)
+        } else {
+            0u64
+        },
+        has_successor: (c.node_id < (c.chain_len - 1)),
+        successor: if (c.node_id < (c.chain_len - 1)) {
+            (c.node_id + 1)
+        } else {
+            0u64
+        },
+        alive: true,
+        msgs_forward: false,
+        msgs_forward_value: 0u64,
+        msgs_ack: false,
+        msgs_ack_value: 0u64,
         role: if (c.node_id == 0) {
             CNodeRole::Head
         } else {
@@ -113,6 +132,7 @@ requires
     s.valid(),
     c.valid(),
     s.role is Head,
+    s.alive == true,
     !s@.pending_sent.contains(*value as int),
 ensures
     result.valid(),
@@ -129,6 +149,15 @@ ensures
             pending_sent: __pending_sent,
             committed_count: s.committed_count,
             obj_value: s.obj_value,
+            has_predecessor: s.has_predecessor,
+            predecessor: s.predecessor,
+            has_successor: s.has_successor,
+            successor: s.successor,
+            alive: s.alive,
+            msgs_forward: s.msgs_forward,
+            msgs_forward_value: s.msgs_forward_value,
+            msgs_ack: s.msgs_ack,
+            msgs_ack_value: s.msgs_ack_value,
         }
     };
     proof {
@@ -139,11 +168,44 @@ ensures
 
 }
 
+pub exec fn CForwardToSuccessor(s: &CState, c: &CConstants, value: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    (s.role is Head || s.role is Middle),
+    s.alive == true,
+    s@.pending_sent.contains(*value as int),
+    s.has_successor == true,
+ensures
+    result.valid(),
+    LForwardToSuccessor(s@, result@, c@, *value as int),
+{
+CState {
+        msgs_forward: true,
+        msgs_forward_value: *value,
+        role: clone_role(&s.role),
+        history: s.history.clone(),
+        pending_sent: clone_hashset(&s.pending_sent),
+        committed_count: s.committed_count,
+        obj_value: s.obj_value,
+        has_predecessor: s.has_predecessor,
+        predecessor: s.predecessor,
+        has_successor: s.has_successor,
+        successor: s.successor,
+        alive: s.alive,
+        msgs_ack: s.msgs_ack,
+        msgs_ack_value: s.msgs_ack_value,
+    }
+}
+
 pub exec fn CReceiveUpdate(s: &CState, c: &CConstants, value: &u64) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     (s.role is Middle || s.role is Tail),
+    s.alive == true,
+    s.msgs_forward == true,
+    *value == s.msgs_forward_value,
     !s@.history.contains(*value as int),
 ensures
     result.valid(),
@@ -166,6 +228,15 @@ ensures
             pending_sent: __pending_sent,
             committed_count: s.committed_count,
             obj_value: s.obj_value,
+            msgs_forward: false,
+            msgs_forward_value: 0u64,
+            has_predecessor: s.has_predecessor,
+            predecessor: s.predecessor,
+            has_successor: s.has_successor,
+            successor: s.successor,
+            alive: s.alive,
+            msgs_ack: s.msgs_ack,
+            msgs_ack_value: s.msgs_ack_value,
         }
     };
     proof {
@@ -181,6 +252,7 @@ requires
     s.valid(),
     c.valid(),
     s.role is Tail,
+    s.alive == true,
     s@.history.contains(*value as int),
     s.committed_count < u64::MAX,
 ensures
@@ -193,6 +265,15 @@ CState {
         pending_sent: clone_hashset(&s.pending_sent),
         committed_count: (s.committed_count + 1),
         obj_value: *value,
+        msgs_ack: true,
+        msgs_ack_value: *value,
+        has_predecessor: s.has_predecessor,
+        predecessor: s.predecessor,
+        has_successor: s.has_successor,
+        successor: s.successor,
+        alive: s.alive,
+        msgs_forward: s.msgs_forward,
+        msgs_forward_value: s.msgs_forward_value,
     }
 }
 
@@ -201,6 +282,9 @@ requires
     s.valid(),
     c.valid(),
     (s.role is Head || s.role is Middle),
+    s.alive == true,
+    s.msgs_ack == true,
+    *value == s.msgs_ack_value,
     s@.pending_sent.contains(*value as int),
 ensures
     result.valid(),
@@ -215,6 +299,15 @@ ensures
             pending_sent: __pending_sent,
             committed_count: s.committed_count,
             obj_value: s.obj_value,
+            msgs_ack: false,
+            msgs_ack_value: 0u64,
+            has_predecessor: s.has_predecessor,
+            predecessor: s.predecessor,
+            has_successor: s.has_successor,
+            successor: s.successor,
+            alive: s.alive,
+            msgs_forward: s.msgs_forward,
+            msgs_forward_value: s.msgs_forward_value,
         }
     };
     proof {
@@ -229,11 +322,39 @@ requires
     s.valid(),
     c.valid(),
     s.role is Tail,
+    s.alive == true,
 ensures
     result.valid(),
     LClientRead(s@, result@, c@),
 {
 s.clone()
+}
+
+pub exec fn CNodeFail(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.alive == true,
+ensures
+    result.valid(),
+    LNodeFail(s@, result@, c@),
+{
+CState {
+        alive: false,
+        msgs_forward: false,
+        msgs_forward_value: 0u64,
+        msgs_ack: false,
+        msgs_ack_value: 0u64,
+        role: clone_role(&s.role),
+        history: s.history.clone(),
+        pending_sent: clone_hashset(&s.pending_sent),
+        committed_count: s.committed_count,
+        obj_value: s.obj_value,
+        has_predecessor: s.has_predecessor,
+        predecessor: s.predecessor,
+        has_successor: s.has_successor,
+        successor: s.successor,
+    }
 }
 
 } // verus!

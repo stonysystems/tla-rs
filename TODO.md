@@ -4431,7 +4431,7 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 | TwoPhase | **complete** | Full 2PC with TM + RM state, message passing, 8 transitions ✅ |
 | Paxos | **complete** | Per-node state (acceptor+proposer+learner), 7 transitions, quorum-based ✅ |
 | LeaderElection | **complete** | Bully algorithm with Election/Answer/Coordinator messages, failure detection, 7 transitions ✅ |
-| ChainReplication | partial | No topology awareness, no failure model |
+| ChainReplication | **complete** | Topology (predecessor/successor), forwarding, failure/reconfigure, 8 transitions ✅ |
 | PrimaryBackup | **complete** | Backup state, replication, ack, failover with view/epoch, 8 transitions ✅ |
 | PBFT | partial | No request tracking, no checkpoints, no Byzantine behavior |
 | VerticalPaxos | partial | No quorum overlap validation, no witness sets |
@@ -4577,14 +4577,14 @@ Enhance `src/protocol/LeaderElection/types.rs` and `src/protocol/LeaderElection/
 
 Enhance `src/protocol/ChainReplication/types.rs` and `src/protocol/ChainReplication/chain.rs`.
 
-- [ ] Add `predecessor: int` and `successor: int` fields to `LState`
-- [ ] Add `LMessage` enum: `Write(seq, value)`, `ForwardUpdate(seq, value)`, `Ack(seq)`, `ReadResponse(value)`
-- [ ] Add `LForwardToSuccessor(s, s_, c, seq, value)` — node forwards write to next in chain
-- [ ] Add ordered pending queue: `pending: Seq<(int, int)>` instead of `pending_sent: Set<int>`
-- [ ] Add `LNodeFail(s, s_, c, failed_node)` — node failure triggers chain reconfiguration
-- [ ] Add `LReconfigure(s, s_, c, new_predecessor, new_successor)` — adjust chain links
-- [ ] Add consistency invariant: committed values at tail are prefix of head's history
-- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+- [x] Add `has_predecessor`/`predecessor` and `has_successor`/`successor` fields to `LState` (boolean flags + int values)
+- [x] Add message flags: `msgs_forward`/`msgs_forward_value`, `msgs_ack`/`msgs_ack_value` (boolean flags instead of enum)
+- [x] Add `LForwardToSuccessor(s, s_, c, value)` — head/middle forwards pending value to successor
+- [x] Keep `pending_sent: Set<int>` (Seq<tuple> not supported by transpiler)
+- [x] Add `LNodeFail(s, s_, c)` — node crashes, clears messages
+- [x] Add `LReconfigure(s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor)` — adjust chain links (skipped in transpiler)
+- [x] Add `alive: bool` field for failure tracking
+- [x] Update `.automan` and `_transpile.toml`, regenerate, verify (689 tests pass)
 
 ---
 

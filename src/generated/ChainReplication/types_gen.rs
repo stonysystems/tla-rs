@@ -15,6 +15,15 @@ pub struct CState {
     pub pending_sent: HashSet<u64>,
     pub committed_count: u64,
     pub obj_value: u64,
+    pub has_predecessor: bool,
+    pub predecessor: u64,
+    pub has_successor: bool,
+    pub successor: u64,
+    pub alive: bool,
+    pub msgs_forward: bool,
+    pub msgs_forward_value: u64,
+    pub msgs_ack: bool,
+    pub msgs_ack_value: u64,
 }
 
 impl Clone for CState {
@@ -42,6 +51,15 @@ impl View for CState {
             pending_sent: self.pending_sent@.map(|x: u64| x as int),
             committed_count: self.committed_count as int,
             obj_value: self.obj_value as int,
+            has_predecessor: self.has_predecessor,
+            predecessor: self.predecessor as int,
+            has_successor: self.has_successor,
+            successor: self.successor as int,
+            alive: self.alive,
+            msgs_forward: self.msgs_forward,
+            msgs_forward_value: self.msgs_forward_value as int,
+            msgs_ack: self.msgs_ack,
+            msgs_ack_value: self.msgs_ack_value as int,
         }
     }
 }

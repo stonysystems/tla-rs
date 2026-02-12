@@ -17,6 +17,17 @@ verus! {
         pub pending_sent: Set<int>,     // Values forwarded to successor but not yet acked
         pub committed_count: int,       // Number of operations known to be committed
         pub obj_value: int,             // Last committed value (tail's view)
+        // Topology fields
+        pub has_predecessor: bool,      // Whether this node has a predecessor
+        pub predecessor: int,           // Predecessor node ID (valid when has_predecessor)
+        pub has_successor: bool,        // Whether this node has a successor
+        pub successor: int,             // Successor node ID (valid when has_successor)
+        pub alive: bool,                // Whether this node is alive
+        // Message flags for chain forwarding
+        pub msgs_forward: bool,         // A ForwardUpdate message is pending
+        pub msgs_forward_value: int,    // Value being forwarded
+        pub msgs_ack: bool,             // An Ack message is pending
+        pub msgs_ack_value: int,        // Value being acknowledged
     }
 
     /// Protocol constants
