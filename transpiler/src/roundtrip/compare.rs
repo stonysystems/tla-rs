@@ -126,9 +126,7 @@ impl ExprComparer {
                 self.compare(inner_a, inner_b).with_path("prime")
             }
 
-            (TlaExpr::Number(num_a), TlaExpr::Number(num_b)) => {
-                self.compare_numbers(num_a, num_b)
-            }
+            (TlaExpr::Number(num_a), TlaExpr::Number(num_b)) => self.compare_numbers(num_a, num_b),
 
             (TlaExpr::String(s_a), TlaExpr::String(s_b)) => {
                 if s_a == s_b {
@@ -471,7 +469,10 @@ impl ExprComparer {
 
         let mut result = CompareResult::equal();
         for (i, (elem_a, elem_b)) in a.iter().zip(b.iter()).enumerate() {
-            result = result.merge(self.compare(elem_a, elem_b).with_path(&format!("{}[{}]", name, i)));
+            result = result.merge(
+                self.compare(elem_a, elem_b)
+                    .with_path(&format!("{}[{}]", name, i)),
+            );
         }
         result
     }
@@ -494,13 +495,16 @@ impl ExprComparer {
         for (i, ((name_a, val_a), (name_b, val_b))) in a.iter().zip(b.iter()).enumerate() {
             if name_a != name_b {
                 result = result.merge(CompareResult::diff(Difference::new(
-                    &format!("field[{}]", i),
+                    format!("field[{}]", i),
                     "field name mismatch",
                     name_a,
                     name_b,
                 )));
             }
-            result = result.merge(self.compare(val_a, val_b).with_path(&format!("field[{}].value", i)));
+            result = result.merge(
+                self.compare(val_a, val_b)
+                    .with_path(&format!("field[{}].value", i)),
+            );
         }
         result
     }
@@ -519,7 +523,7 @@ impl ExprComparer {
         for (i, (bound_a, bound_b)) in a.iter().zip(b.iter()).enumerate() {
             if bound_a.var != bound_b.var {
                 result = result.merge(CompareResult::diff(Difference::new(
-                    &format!("bound[{}].var", i),
+                    format!("bound[{}].var", i),
                     "variable mismatch",
                     &bound_a.var,
                     &bound_b.var,
@@ -527,12 +531,15 @@ impl ExprComparer {
             }
             match (&bound_a.set, &bound_b.set) {
                 (Some(s_a), Some(s_b)) => {
-                    result = result.merge(self.compare(s_a, s_b).with_path(&format!("bound[{}].set", i)));
+                    result = result.merge(
+                        self.compare(s_a, s_b)
+                            .with_path(&format!("bound[{}].set", i)),
+                    );
                 }
                 (None, None) => {}
                 _ => {
                     result = result.merge(CompareResult::diff(Difference::new(
-                        &format!("bound[{}].set", i),
+                        format!("bound[{}].set", i),
                         "set presence mismatch",
                         bound_a.set.is_some().to_string(),
                         bound_b.set.is_some().to_string(),
@@ -587,7 +594,7 @@ impl ModuleComparer {
             for (i, (const_a, const_b)) in a.constants.iter().zip(b.constants.iter()).enumerate() {
                 if const_a.name != const_b.name {
                     result = result.merge(CompareResult::diff(Difference::new(
-                        &format!("constant[{}]", i),
+                        format!("constant[{}]", i),
                         "constant name mismatch",
                         &const_a.name,
                         &const_b.name,
@@ -616,7 +623,10 @@ impl ModuleComparer {
             )));
         } else {
             for (i, (op_a, op_b)) in a.operators.iter().zip(b.operators.iter()).enumerate() {
-                result = result.merge(self.compare_operators(op_a, op_b).with_path(&format!("operator[{}]", i)));
+                result = result.merge(
+                    self.compare_operators(op_a, op_b)
+                        .with_path(&format!("operator[{}]", i)),
+                );
             }
         }
 

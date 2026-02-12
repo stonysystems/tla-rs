@@ -282,16 +282,24 @@ impl Printer {
                 }
                 // Append extra fields from config that aren't already present
                 let prefix = format!("{}.", name);
-                let mut extra: Vec<(String, String)> = self.config.extra_fields.iter()
+                let mut extra: Vec<(String, String)> = self
+                    .config
+                    .extra_fields
+                    .iter()
                     .filter_map(|(key, value)| {
-                        key.strip_prefix(&prefix).map(|field_name| (field_name.to_string(), value.clone()))
+                        key.strip_prefix(&prefix)
+                            .map(|field_name| (field_name.to_string(), value.clone()))
                     })
                     .filter(|(field_name, _)| !existing_field_names.contains(field_name.as_str()))
                     .collect();
                 extra.sort_by(|(a, _), (b, _)| a.cmp(b));
                 for (field_name, value) in &extra {
                     // Parse "type = default" format — use only the default value
-                    let default_val = value.split('=').nth(1).map(|s| s.trim()).unwrap_or("Default::default()");
+                    let default_val = value
+                        .split('=')
+                        .nth(1)
+                        .map(|s| s.trim())
+                        .unwrap_or("Default::default()");
                     self.indent();
                     self.write(field_name);
                     self.write(": ");
@@ -970,7 +978,11 @@ mod tests {
         let output = printer.output;
 
         // Proof blocks use spaced format: proof { stmt; }
-        assert!(output.contains("proof {"), "Should use 'proof {{' with space, got: {}", output);
+        assert!(
+            output.contains("proof {"),
+            "Should use 'proof {{' with space, got: {}",
+            output
+        );
         assert!(output.contains("seen_keys = seen_keys.insert"));
         assert!(output.contains("}"), "Should close with }}");
     }
@@ -1034,15 +1046,24 @@ mod tests {
             "block-valued struct fields must be wrapped in braces: {}",
             output
         );
-        assert!(output.contains("let x = 1;"), "expected let binding in wrapped block");
+        assert!(
+            output.contains("let x = 1;"),
+            "expected let binding in wrapped block"
+        );
         assert!(output.contains("x"), "expected block tail expression");
     }
 
     #[test]
     fn test_print_struct_extra_fields() {
         let mut extra = HashMap::new();
-        extra.insert("CAcceptor.min_vote_opn".to_string(), "u64 = 0u64".to_string());
-        extra.insert("CAcceptor.extra_flag".to_string(), "bool = false".to_string());
+        extra.insert(
+            "CAcceptor.min_vote_opn".to_string(),
+            "u64 = 0u64".to_string(),
+        );
+        extra.insert(
+            "CAcceptor.extra_flag".to_string(),
+            "bool = false".to_string(),
+        );
         let config = PrinterConfig {
             extra_fields: extra,
             ..Default::default()
@@ -1051,22 +1072,35 @@ mod tests {
 
         let expr = ExecExpr::Struct {
             name: "CAcceptor".to_string(),
-            fields: vec![
-                ("max_bal".to_string(), ExecExpr::Literal("0".to_string())),
-            ],
+            fields: vec![("max_bal".to_string(), ExecExpr::Literal("0".to_string()))],
         };
 
         printer.print_expr(&expr);
         let output = &printer.output;
-        assert!(output.contains("max_bal: 0,"), "expected original field: {}", output);
-        assert!(output.contains("extra_flag: false,"), "expected extra_flag: {}", output);
-        assert!(output.contains("min_vote_opn: 0u64,"), "expected min_vote_opn: {}", output);
+        assert!(
+            output.contains("max_bal: 0,"),
+            "expected original field: {}",
+            output
+        );
+        assert!(
+            output.contains("extra_flag: false,"),
+            "expected extra_flag: {}",
+            output
+        );
+        assert!(
+            output.contains("min_vote_opn: 0u64,"),
+            "expected min_vote_opn: {}",
+            output
+        );
     }
 
     #[test]
     fn test_print_struct_extra_fields_not_duplicated() {
         let mut extra = HashMap::new();
-        extra.insert("CAcceptor.min_vote_opn".to_string(), "u64 = 0u64".to_string());
+        extra.insert(
+            "CAcceptor.min_vote_opn".to_string(),
+            "u64 = 0u64".to_string(),
+        );
         let config = PrinterConfig {
             extra_fields: extra,
             ..Default::default()
@@ -1078,15 +1112,27 @@ mod tests {
             name: "CAcceptor".to_string(),
             fields: vec![
                 ("max_bal".to_string(), ExecExpr::Literal("0".to_string())),
-                ("min_vote_opn".to_string(), ExecExpr::Literal("42".to_string())),
+                (
+                    "min_vote_opn".to_string(),
+                    ExecExpr::Literal("42".to_string()),
+                ),
             ],
         };
 
         printer.print_expr(&expr);
         let output = &printer.output;
-        assert!(output.contains("min_vote_opn: 42,"), "expected original min_vote_opn value: {}", output);
+        assert!(
+            output.contains("min_vote_opn: 42,"),
+            "expected original min_vote_opn value: {}",
+            output
+        );
         // Count occurrences of "min_vote_opn" — should be exactly 1
-        assert_eq!(output.matches("min_vote_opn").count(), 1, "extra field should not be duplicated: {}", output);
+        assert_eq!(
+            output.matches("min_vote_opn").count(),
+            1,
+            "extra field should not be duplicated: {}",
+            output
+        );
     }
 
     #[test]
@@ -1102,13 +1148,15 @@ mod tests {
         // Struct is CAcceptor, not CProposer, so extra_field should not appear
         let expr = ExecExpr::Struct {
             name: "CAcceptor".to_string(),
-            fields: vec![
-                ("max_bal".to_string(), ExecExpr::Literal("0".to_string())),
-            ],
+            fields: vec![("max_bal".to_string(), ExecExpr::Literal("0".to_string()))],
         };
 
         printer.print_expr(&expr);
         let output = &printer.output;
-        assert!(!output.contains("extra_field"), "extra_field should not appear for CAcceptor: {}", output);
+        assert!(
+            !output.contains("extra_field"),
+            "extra_field should not appear for CAcceptor: {}",
+            output
+        );
     }
 }

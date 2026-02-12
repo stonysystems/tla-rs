@@ -187,7 +187,11 @@ impl TlaPrinter {
         output.push_str(&operator.name);
         if !operator.params.is_empty() {
             output.push('(');
-            let params: Vec<String> = operator.params.iter().map(|p| self.print_param(p)).collect();
+            let params: Vec<String> = operator
+                .params
+                .iter()
+                .map(|p| self.print_param(p))
+                .collect();
             output.push_str(&params.join(", "));
             output.push(')');
         }
@@ -251,9 +255,7 @@ impl TlaPrinter {
                 }
             }
 
-            TlaExpr::BinOp { op, left, right } => {
-                self.print_binop(op, left, right, indent_level)
-            }
+            TlaExpr::BinOp { op, left, right } => self.print_binop(op, left, right, indent_level),
 
             TlaExpr::UnaryOp { op, operand } => {
                 let op_str = self.print_unary_op(op);
@@ -431,10 +433,8 @@ impl TlaPrinter {
             }
 
             TlaExpr::Unchanged(vars) => {
-                let vars_str: Vec<String> = vars
-                    .iter()
-                    .map(|v| self.print_expr_no_indent(v))
-                    .collect();
+                let vars_str: Vec<String> =
+                    vars.iter().map(|v| self.print_expr_no_indent(v)).collect();
                 if vars_str.len() == 1 {
                     format!("{}UNCHANGED {}", indent, vars_str[0])
                 } else {
@@ -509,10 +509,7 @@ impl TlaPrinter {
 
             if left_parts.len() + right_parts.len() > 2 {
                 // Multi-line format for many conjuncts/disjuncts
-                let all_parts: Vec<String> = left_parts
-                    .into_iter()
-                    .chain(right_parts.into_iter())
-                    .collect();
+                let all_parts: Vec<String> = left_parts.into_iter().chain(right_parts).collect();
 
                 let lines: Vec<String> = all_parts
                     .iter()
@@ -576,8 +573,7 @@ impl TlaPrinter {
         if is_arithmetic(parent_op) && is_arithmetic(child_op) && parent_op != child_op {
             // In TLA+, + and - have lower precedence than *, /, %
             // So we need parens when mixing add/sub with mul/div/mod
-            let is_add_sub =
-                |op: &TlaBinOp| matches!(op, TlaBinOp::Plus | TlaBinOp::Minus);
+            let is_add_sub = |op: &TlaBinOp| matches!(op, TlaBinOp::Plus | TlaBinOp::Minus);
             let is_mul_div_mod =
                 |op: &TlaBinOp| matches!(op, TlaBinOp::Times | TlaBinOp::Div | TlaBinOp::Mod);
 
@@ -618,7 +614,13 @@ impl TlaPrinter {
         let indent = self.config.indent.repeat(indent_level);
         let bounds: Vec<String> = vars.iter().map(|b| self.print_quant_bound(b)).collect();
         let body_str = self.print_expr_no_indent(body);
-        format!("{}{} {} : {}", indent, quantifier, bounds.join(", "), body_str)
+        format!(
+            "{}{} {} : {}",
+            indent,
+            quantifier,
+            bounds.join(", "),
+            body_str
+        )
     }
 
     /// Print a quantifier bound.
@@ -728,11 +730,7 @@ mod tests {
     fn test_print_operator_with_params() {
         let op = TlaOperator::new(
             "Add",
-            TlaExpr::binop(
-                TlaBinOp::Plus,
-                TlaExpr::ident("a"),
-                TlaExpr::ident("b"),
-            ),
+            TlaExpr::binop(TlaBinOp::Plus, TlaExpr::ident("a"), TlaExpr::ident("b")),
         )
         .with_params(vec![TlaParam::new("a"), TlaParam::new("b")]);
 

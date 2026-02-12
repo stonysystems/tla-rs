@@ -165,7 +165,8 @@ impl TranslatorConfig {
 
         // Check if the remapped exec type is in either list
         if let Some(exec_type) = self.type_remapping.get(type_name) {
-            if self.primitive_types.contains(exec_type) || self.skip_valid_types.contains(exec_type) {
+            if self.primitive_types.contains(exec_type) || self.skip_valid_types.contains(exec_type)
+            {
                 return true;
             }
         }
@@ -239,8 +240,11 @@ pub struct ProofNeeds {
 impl ProofNeeds {
     /// Returns true if any proof helpers are needed.
     pub fn needs_proof_block(&self) -> bool {
-        self.has_empty_set || self.has_set_insert || !self.remove_sites.is_empty()
-            || self.has_empty_vec || self.has_vec_push
+        self.has_empty_set
+            || self.has_set_insert
+            || !self.remove_sites.is_empty()
+            || self.has_empty_vec
+            || self.has_vec_push
             || !self.map_field_empty_sites.is_empty()
     }
 
@@ -264,7 +268,11 @@ impl ProofNeeds {
                     self.scan_expr(arg);
                 }
             }
-            ExecExpr::MethodCall { receiver, method, args } => {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
                 if method == "insert" {
                     // Check if receiver is a HashSet-typed expression
                     // Heuristic: if the method is insert and appears in a set context
@@ -305,7 +313,11 @@ impl ProofNeeds {
             ExecExpr::Let { value, .. } => {
                 self.scan_expr(value);
             }
-            ExecExpr::If { cond, then_branch, else_branch } => {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.scan_expr(cond);
                 self.scan_expr(then_branch);
                 if let Some(eb) = else_branch {
@@ -327,7 +339,12 @@ impl ProofNeeds {
                     self.scan_expr(e);
                 }
             }
-            ExecExpr::MapUpdateWithInsert { source, filter, new_key, .. } => {
+            ExecExpr::MapUpdateWithInsert {
+                source,
+                filter,
+                new_key,
+                ..
+            } => {
                 self.scan_expr(source);
                 self.scan_expr(filter);
                 self.scan_expr(new_key);
@@ -394,8 +411,12 @@ impl ProofNeeds {
                 // Vec::new() and .push() patterns that are part of the loop body.
             }
             // Leaf expressions — no recursion needed
-            ExecExpr::Var(_) | ExecExpr::Literal(_) | ExecExpr::BroadcastUse(_)
-            | ExecExpr::Break | ExecExpr::Comment(_) | ExecExpr::Matches { .. } => {}
+            ExecExpr::Var(_)
+            | ExecExpr::Literal(_)
+            | ExecExpr::BroadcastUse(_)
+            | ExecExpr::Break
+            | ExecExpr::Comment(_)
+            | ExecExpr::Matches { .. } => {}
         }
     }
 
@@ -413,15 +434,17 @@ impl ProofNeeds {
     fn scan_block_for_mutation_sites(&mut self, stmts: &[ExecExpr]) {
         // Build a map: tmp_var_name -> source field expression string
         // e.g., "__pending_sent" -> "s.pending_sent"
-        let mut tmp_to_source: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut tmp_to_source: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         for stmt in stmts {
             // Detect: let mut __X = clone_hashset(&s.field)
             if let ExecExpr::Let { pattern, value, .. } = stmt {
                 if let Some(tmp_name) = pattern.strip_prefix("mut ") {
                     match value.as_ref() {
-                        ExecExpr::Call { func, args } if args.len() == 1
-                            && (func == "clone_hashset" || func.starts_with("clone_")) =>
+                        ExecExpr::Call { func, args }
+                            if args.len() == 1
+                                && (func == "clone_hashset" || func.starts_with("clone_")) =>
                         {
                             if let Some(source) = Self::extract_field_source(&args[0]) {
                                 tmp_to_source.insert(tmp_name.to_string(), source);
@@ -439,14 +462,20 @@ impl ProofNeeds {
             }
 
             // Detect: __X.remove(element) or __X.push(element)
-            if let ExecExpr::MethodCall { receiver, method, args } = stmt {
+            if let ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } = stmt
+            {
                 if args.len() == 1 {
                     if let ExecExpr::Var(tmp_name) = receiver.as_ref() {
                         if let Some(source) = tmp_to_source.get(tmp_name) {
                             let element = Self::expr_to_proof_arg(&args[0]);
                             if method == "remove" {
                                 // Extract field name from source (e.g., "s.field" → "field")
-                                let field_name = source.split('.').last().map(|s| s.to_string());
+                                let field_name =
+                                    source.split('.').next_back().map(|s| s.to_string());
                                 self.remove_sites.push(RemoveSite {
                                     source_view: format!("{}@", source),
                                     element,
@@ -469,9 +498,7 @@ impl ProofNeeds {
     /// Given `Unary("&", Field(Var("s"), "pending_sent"))`, returns `"s.pending_sent"`.
     fn extract_field_source(expr: &ExecExpr) -> Option<String> {
         match expr {
-            ExecExpr::Unary { op, expr } if op == "&" => {
-                Self::extract_field_source(expr)
-            }
+            ExecExpr::Unary { op, expr } if op == "&" => Self::extract_field_source(expr),
             ExecExpr::Field(base, field) => {
                 if let ExecExpr::Var(name) = base.as_ref() {
                     Some(format!("{}.{}", name, field))
@@ -533,7 +560,9 @@ impl ProofNeeds {
             };
 
             // Check if this remove is on a map_field
-            let is_map_remove = site.field_name.as_ref()
+            let is_map_remove = site
+                .field_name
+                .as_ref()
                 .map(|f| map_fields.contains_key(f))
                 .unwrap_or(false);
 
@@ -552,10 +581,7 @@ impl ProofNeeds {
             } else {
                 stmts.push(ExecExpr::Call {
                     func: "lemma_set_map_remove_commute".to_string(),
-                    args: vec![
-                        ExecExpr::Var(site.source_view.clone()),
-                        element_expr,
-                    ],
+                    args: vec![ExecExpr::Var(site.source_view.clone()), element_expr],
                 });
             }
         }
@@ -587,10 +613,7 @@ impl ProofNeeds {
             };
             stmts.push(ExecExpr::Call {
                 func: func_name,
-                args: vec![
-                    ExecExpr::Var(site.source_view.clone()),
-                    element_expr,
-                ],
+                args: vec![ExecExpr::Var(site.source_view.clone()), element_expr],
             });
         }
 
@@ -599,9 +622,7 @@ impl ProofNeeds {
             if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
                 stmts.push(ExecExpr::Call {
                     func: format!("lemma_abstractify_empty_{}", prefix),
-                    args: vec![
-                        ExecExpr::Var(format!("result.{}", field_name)),
-                    ],
+                    args: vec![ExecExpr::Var(format!("result.{}", field_name))],
                 });
             }
         }
@@ -1654,18 +1675,22 @@ impl Translator {
                 self.clone_input_field_access(expr, ctx)
             }
             // If/else: recurse into both branches to clone input refs
-            ExecExpr::If { cond, then_branch, else_branch } => {
-                ExecExpr::If {
-                    cond: cond.clone(),
-                    then_branch: Box::new(self.clone_if_input_ref(*then_branch.clone(), ctx)),
-                    else_branch: else_branch.as_ref().map(|e| Box::new(self.clone_if_input_ref(*e.clone(), ctx))),
-                }
-            }
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond: cond.clone(),
+                then_branch: Box::new(self.clone_if_input_ref(*then_branch.clone(), ctx)),
+                else_branch: else_branch
+                    .as_ref()
+                    .map(|e| Box::new(self.clone_if_input_ref(*e.clone(), ctx))),
+            },
             // Vec index (.index()) on input field chain: clone the indexed result
             // e.g., s.config.ids[i] returns &EndPoint, needs .clone()
-            ExecExpr::MethodCall { receiver, method, .. }
-                if method == "index" && Self::contains_input_var(receiver, ctx) =>
-            {
+            ExecExpr::MethodCall {
+                receiver, method, ..
+            } if method == "index" && Self::contains_input_var(receiver, ctx) => {
                 ExecExpr::Clone(Box::new(expr))
             }
             _ => expr,
@@ -1688,12 +1713,13 @@ impl Translator {
     /// when compared with non-reference values (field accesses), but NOT when compared
     /// with other &u64 references (iterator variables, other input params).
     fn is_remapped_scalar_input_param(&self, name: &str, ctx: &TransformContext) -> bool {
-        if let Some(ty) = ctx.input_types.get(name) {
-            if let Type::Named(path) = ty {
-                if let Some(seg) = path.segments.last() {
-                    if let Some(remapped) = self.config.type_remapping.get(seg.as_str()) {
-                        return matches!(remapped.as_str(), "u64" | "i64" | "u32" | "i32" | "usize" | "isize");
-                    }
+        if let Some(Type::Named(path)) = ctx.input_types.get(name) {
+            if let Some(seg) = path.segments.last() {
+                if let Some(remapped) = self.config.type_remapping.get(seg.as_str()) {
+                    return matches!(
+                        remapped.as_str(),
+                        "u64" | "i64" | "u32" | "i32" | "usize" | "isize"
+                    );
                 }
             }
         }
@@ -1714,16 +1740,17 @@ impl Translator {
 
     fn is_upper_bound_typed_expr(&self, expr: &Expr, ctx: &TransformContext) -> bool {
         match expr {
-            Expr::Ident(name) => ctx
-                .input_types
-                .get(name)
-                .map(Self::is_upper_bound_type)
-                .unwrap_or(false)
-                || ctx
-                    .output_types
+            Expr::Ident(name) => {
+                ctx.input_types
                     .get(name)
                     .map(Self::is_upper_bound_type)
-                    .unwrap_or(false),
+                    .unwrap_or(false)
+                    || ctx
+                        .output_types
+                        .get(name)
+                        .map(Self::is_upper_bound_type)
+                        .unwrap_or(false)
+            }
             _ => false,
         }
     }
@@ -1856,7 +1883,7 @@ impl Translator {
 
                 pre_stmts.push(ExecExpr::MethodCall {
                     receiver: Box::new(ExecExpr::Var(tmp_name.clone())),
-                    method: method,
+                    method,
                     args: deref_args,
                 });
 
@@ -1909,11 +1936,15 @@ impl Translator {
                 // Wrap mutation in conditional
                 let mutation_stmt = ExecExpr::MethodCall {
                     receiver: Box::new(ExecExpr::Var(tmp_name.clone())),
-                    method: method,
+                    method,
                     args: deref_args,
                 };
                 // Verus doesn't support `is` in exec mode, so use match for variant checks
-                if let ExecExpr::IsVariant { expr: scrutinee, variant } = &cond {
+                if let ExecExpr::IsVariant {
+                    expr: scrutinee,
+                    variant,
+                } = &cond
+                {
                     // match &scrutinee { Variant => { mutation; }, _ => {} }
                     let variant_name = if let Some(pos) = variant.rfind("::") {
                         variant[pos + 2..].to_string()
@@ -1940,7 +1971,12 @@ impl Translator {
                             ("_".to_string(), ExecExpr::Block(vec![])),
                         ],
                     });
-                } else if let ExecExpr::Matches { expr: scrutinee, pattern, .. } = &cond {
+                } else if let ExecExpr::Matches {
+                    expr: scrutinee,
+                    pattern,
+                    ..
+                } = &cond
+                {
                     // matches!() variant check — convert to match for mutation
                     pre_stmts.push(ExecExpr::Match {
                         scrutinee: Box::new(ExecExpr::Unary {
@@ -1959,9 +1995,7 @@ impl Translator {
                     // Non-IsVariant condition: use if/else with Block for semicolon
                     pre_stmts.push(ExecExpr::If {
                         cond: Box::new(cond),
-                        then_branch: Box::new(ExecExpr::Block(vec![
-                            mutation_stmt,
-                        ])),
+                        then_branch: Box::new(ExecExpr::Block(vec![mutation_stmt])),
                         else_branch: None,
                     });
                 }
@@ -1997,7 +2031,7 @@ impl Translator {
                 Self::is_set_mutation(then_branch)
                     || else_branch
                         .as_ref()
-                        .map_or(false, |e| Self::is_set_mutation(e))
+                        .is_some_and(|e| Self::is_set_mutation(e))
             }
             _ => false,
         }
@@ -2061,9 +2095,7 @@ impl Translator {
                 }
                 match &a {
                     // &expr for insert → strip & and clone to get owned value
-                    ExecExpr::Unary { op, expr } if op == "&" => {
-                        ExecExpr::Clone(expr.clone())
-                    },
+                    ExecExpr::Unary { op, expr } if op == "&" => ExecExpr::Clone(expr.clone()),
                     ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
                         op: "*".to_string(),
                         expr: Box::new(a),
@@ -2258,7 +2290,10 @@ impl Translator {
 
     /// Get the abstractify prefix for a map_field (e.g., "clearnerstate").
     fn get_map_field_prefix(&self, field_name: &str) -> Option<&str> {
-        self.config.map_fields.get(field_name).map(|(_, prefix, _)| prefix.as_str())
+        self.config
+            .map_fields
+            .get(field_name)
+            .map(|(_, prefix, _)| prefix.as_str())
     }
 
     /// Check if a field is a non-Copy type requiring `.clone()` but NOT `@` in view.
@@ -2308,12 +2343,17 @@ impl Translator {
     /// Returns the function name (e.g., "CBalEq") if found, None otherwise.
     fn get_eq_function_for_expr(&self, expr: &Expr) -> Option<&str> {
         match expr {
-            Expr::Field(_, field) => {
-                self.config.eq_function_fields.get(field.as_str()).map(|s| s.as_str())
-            }
+            Expr::Field(_, field) => self
+                .config
+                .eq_function_fields
+                .get(field.as_str())
+                .map(|s| s.as_str()),
             Expr::Arrow(inner, field) => {
                 // For arrow access (e.g., msg->bal_heartbeat), check the field name
-                self.config.eq_function_fields.get(field.as_str()).map(|s| s.as_str())
+                self.config
+                    .eq_function_fields
+                    .get(field.as_str())
+                    .map(|s| s.as_str())
                     .or_else(|| self.get_eq_function_for_expr(inner))
             }
             _ => None,
@@ -2342,9 +2382,9 @@ impl Translator {
         match expr {
             ExecExpr::Var(name) => ctx.is_input(name),
             ExecExpr::Field(base, _) => Self::contains_input_var(base, ctx),
-            ExecExpr::MethodCall { receiver, method, .. } if method == "index" => {
-                Self::contains_input_var(receiver, ctx)
-            }
+            ExecExpr::MethodCall {
+                receiver, method, ..
+            } if method == "index" => Self::contains_input_var(receiver, ctx),
             _ => false,
         }
     }
@@ -2361,7 +2401,9 @@ impl Translator {
             Expr::Binary(lhs, BinOp::Add, rhs) => {
                 self.is_hashset_expr(lhs, ctx) || self.is_hashset_expr(rhs, ctx)
             }
-            Expr::MethodCall { receiver, method, .. } => {
+            Expr::MethodCall {
+                receiver, method, ..
+            } => {
                 matches!(
                     method.as_str(),
                     "insert" | "remove" | "union" | "intersect" | "difference"
@@ -2385,9 +2427,13 @@ impl Translator {
             Expr::Binary(lhs, BinOp::Add, rhs) => {
                 self.is_vec_expr(lhs, ctx) || self.is_vec_expr(rhs, ctx)
             }
-            Expr::MethodCall { receiver, method, .. } => {
-                matches!(method.as_str(), "subrange" | "take" | "skip" | "drop_first" | "push")
-                    && self.is_vec_expr(receiver, ctx)
+            Expr::MethodCall {
+                receiver, method, ..
+            } => {
+                matches!(
+                    method.as_str(),
+                    "subrange" | "take" | "skip" | "drop_first" | "push"
+                ) && self.is_vec_expr(receiver, ctx)
             }
             _ => false,
         }
@@ -2600,7 +2646,6 @@ impl Translator {
         }
     }
 
-
     /// Convert an ExecExpr to a string representation for use in invariants.
     /// This produces a Verus spec-level expression string.
     ///
@@ -2763,6 +2808,7 @@ impl Translator {
     /// Convert an ExecExpr to a string representation for use in invariants.
     /// This produces a Verus spec-level expression string.
     /// Assumes any variable should be dereferenced (legacy behavior).
+    #[cfg(test)]
     fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
         self.expr_to_invariant_string_skip(expr, "")
     }
@@ -2821,10 +2867,18 @@ impl Translator {
                 if op == "*" {
                     match expr.as_ref() {
                         ExecExpr::Var(name) => format!("*{}", name),
-                        _ => format!("{}{}", op, self.expr_to_invariant_string_skip(expr, skip_var)),
+                        _ => format!(
+                            "{}{}",
+                            op,
+                            self.expr_to_invariant_string_skip(expr, skip_var)
+                        ),
                     }
                 } else {
-                    format!("{}{}", op, self.expr_to_invariant_string_skip(expr, skip_var))
+                    format!(
+                        "{}{}",
+                        op,
+                        self.expr_to_invariant_string_skip(expr, skip_var)
+                    )
                 }
             }
             ExecExpr::If {
@@ -3184,11 +3238,7 @@ impl Translator {
         // 3. Per-field invariants from the struct element expression
         if let Expr::Struct { fields, .. } = element_expr {
             for (field_name, field_value) in fields {
-                let source_str = self.field_expr_to_invariant_string(
-                    field_value,
-                    index_var,
-                    ctx,
-                );
+                let source_str = self.field_expr_to_invariant_string(field_value, index_var, ctx);
                 invariants.push(format!(
                     "forall |j: int| 0 <= j < {} as int ==> (#[trigger] result@[j]).{}@ == {}",
                     index_var, field_name, source_str
@@ -3200,7 +3250,12 @@ impl Translator {
         // - Integer param indices need *param as usize
         // - Vec element results need .clone() (non-Copy from shared ref)
         // - If clone_method configured, use that instead of .clone()
-        let element = Self::fix_seq_comprehension_element(element.clone(), index_var, ctx, &self.config.clone_method);
+        let element = Self::fix_seq_comprehension_element(
+            element.clone(),
+            index_var,
+            ctx,
+            &self.config.clone_method,
+        );
 
         // Build loop body: let pkt = element; result.push(pkt); idx = idx + 1;
         let loop_body = ExecExpr::Block(vec![
@@ -3318,7 +3373,11 @@ impl Translator {
         //     (#[trigger] mapped[j]) =~= SpecStruct{field: source_expr, ...}
         // by { per-field assertions from loop invariants }
         if let Expr::Struct { name, fields } = element_expr {
-            let spec_name = name.segments.last().map(|s| s.as_str()).unwrap_or("unknown");
+            let spec_name = name
+                .segments
+                .last()
+                .map(|s| s.as_str())
+                .unwrap_or("unknown");
 
             // Build spec struct fields for the forall body
             let spec_fields: Vec<String> = fields
@@ -3329,10 +3388,7 @@ impl Translator {
                     format!("{}: {}", field_name, source_str)
                 })
                 .collect();
-            let spec_struct = format!("{}{{{}}}",
-                spec_name,
-                spec_fields.join(", ")
-            );
+            let spec_struct = format!("{}{{{}}}", spec_name, spec_fields.join(", "));
 
             // Build per-field assertions for the by-block (indented inside by { })
             let field_asserts: Vec<String> = fields
@@ -3340,10 +3396,7 @@ impl Translator {
                 .map(|(field_name, field_value)| {
                     let source_str =
                         self.field_expr_to_invariant_string(field_value, index_var, ctx);
-                    format!(
-                        "assert(result@[j].{}@ == {});",
-                        field_name, source_str
-                    )
+                    format!("assert(result@[j].{}@ == {});", field_name, source_str)
                 })
                 .collect();
 
@@ -3352,7 +3405,8 @@ impl Translator {
             // Use Literal with embedded newlines — the printer will indent the first line
             // but continuation lines start at column 0, so we include explicit indent
             let indent = "    "; // 4 spaces for each indent level
-            let by_body = field_asserts.iter()
+            let by_body = field_asserts
+                .iter()
                 .map(|a| format!("{}    {}", indent, a)) // indent inside proof + by block
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -3389,9 +3443,7 @@ impl Translator {
                 let idx_str = self.field_expr_to_invariant_string(idx, index_var, ctx);
                 format!("{}@[{}]@", base_str, idx_str)
             }
-            Expr::Ident(name) if name == index_var => {
-                "j".to_string()
-            }
+            Expr::Ident(name) if name == index_var => "j".to_string(),
             Expr::Ident(name) => {
                 if let Some(ty) = ctx.input_types.get(name) {
                     match ty {
@@ -3504,27 +3556,25 @@ impl Translator {
                             "Some(v)".to_string(),
                             // Discard the Option<V> return value from insert()
                             // using a let _ binding so both match arms return ()
-                            ExecExpr::Block(vec![
-                                ExecExpr::Let {
-                                    pattern: "_".to_string(),
-                                    ty: None,
-                                    value: Box::new(ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::Var("result".to_string())),
-                                        method: "insert".to_string(),
-                                        args: vec![
-                                            ExecExpr::Unary {
-                                                op: "*".to_string(),
-                                                expr: Box::new(ExecExpr::Var(key_var.to_string())),
-                                            },
-                                            ExecExpr::MethodCall {
-                                                receiver: Box::new(ExecExpr::Var("v".to_string())),
-                                                method: "clone".to_string(),
-                                                args: vec![],
-                                            },
-                                        ],
-                                    }),
-                                },
-                            ]),
+                            ExecExpr::Block(vec![ExecExpr::Let {
+                                pattern: "_".to_string(),
+                                ty: None,
+                                value: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var("result".to_string())),
+                                    method: "insert".to_string(),
+                                    args: vec![
+                                        ExecExpr::Unary {
+                                            op: "*".to_string(),
+                                            expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                                        },
+                                        ExecExpr::MethodCall {
+                                            receiver: Box::new(ExecExpr::Var("v".to_string())),
+                                            method: "clone".to_string(),
+                                            args: vec![],
+                                        },
+                                    ],
+                                }),
+                            }]),
                         ),
                         ("None".to_string(), ExecExpr::Block(vec![])),
                     ],
@@ -4190,7 +4240,7 @@ impl Translator {
         seq_param: &str,
         _init: &Expr,
         _combine: &Expr,
-        extra_args: &[String],
+        _extra_args: &[String],
     ) -> Vec<String> {
         let mut invariants = Vec::new();
 
@@ -4353,7 +4403,12 @@ impl Translator {
         let loop_body = if Self::is_acc_insert(&combine_with_acc) {
             // Extract the insert args and wrap: let _ = acc.insert(key.clone(), val.clone());
             // Clone is needed because Vec indexing returns references, but HashMap::insert takes owned values.
-            if let ExecExpr::MethodCall { receiver: _, method: _, args } = combine_with_acc {
+            if let ExecExpr::MethodCall {
+                receiver: _,
+                method: _,
+                args,
+            } = combine_with_acc
+            {
                 let cloned_args: Vec<ExecExpr> = args
                     .into_iter()
                     .map(|a| {
@@ -4605,11 +4660,7 @@ impl Translator {
     }
 
     /// Build invariants for filter pattern loop
-    fn build_filter_invariants(
-        &self,
-        func: &AnnotatedFunction,
-        seq_param: &str,
-    ) -> Vec<String> {
+    fn build_filter_invariants(&self, func: &AnnotatedFunction, seq_param: &str) -> Vec<String> {
         let mut invariants = Vec::new();
 
         // Invariant 1: Bounds - i is within valid range
@@ -4647,7 +4698,12 @@ impl Translator {
             .collect();
         // For result, also apply deep view mapping for Seq<StructType>
         let result_view = self.format_result_view(&func.spec_fn.return_type);
-        let filter_invariant = format!("{} == {}({})", result_view, func.spec_fn.name, spec_args.join(", "));
+        let filter_invariant = format!(
+            "{} == {}({})",
+            result_view,
+            func.spec_fn.name,
+            spec_args.join(", ")
+        );
         invariants.push(filter_invariant);
 
         invariants
@@ -5064,7 +5120,9 @@ impl Translator {
         }
 
         let needs = ProofNeeds::analyze(&body);
-        let proof_block = match needs.build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields) {
+        let proof_block = match needs
+            .build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields)
+        {
             Some(pb) => pb,
             None => return body, // No proofs needed
         };
@@ -5135,7 +5193,10 @@ impl Translator {
                         (fname, fixed)
                     })
                     .collect();
-                ExecExpr::Struct { name, fields: fixed_fields }
+                ExecExpr::Struct {
+                    name,
+                    fields: fixed_fields,
+                }
             }
             other => other,
         }
@@ -5150,9 +5211,11 @@ impl Translator {
     ) -> ExecExpr {
         match &expr {
             // v.index(idx) → v[idx].clone() — Vec element from shared ref needs clone
-            ExecExpr::MethodCall { receiver: _, method, args }
-                if method == "index" && args.len() == 1 =>
-            {
+            ExecExpr::MethodCall {
+                receiver: _,
+                method,
+                args,
+            } if method == "index" && args.len() == 1 => {
                 // Fix the index argument: int params need *param as usize
                 let fixed_idx = Self::fix_index_arg(&args[0], index_var, ctx);
                 let fixed_method_call = ExecExpr::MethodCall {
@@ -5210,11 +5273,7 @@ impl Translator {
     }
 
     /// Fix an index argument: integer params need *param as usize
-    fn fix_index_arg(
-        expr: &ExecExpr,
-        index_var: &str,
-        ctx: &TransformContext,
-    ) -> ExecExpr {
+    fn fix_index_arg(expr: &ExecExpr, index_var: &str, ctx: &TransformContext) -> ExecExpr {
         match expr {
             ExecExpr::Var(name) if name == index_var => {
                 // Loop variable (already usize), keep as-is
@@ -5262,26 +5321,58 @@ impl Translator {
 
     fn collect_var_refs_inner(expr: &ExecExpr, refs: &mut HashSet<String>) {
         match expr {
-            ExecExpr::Var(name) => { refs.insert(name.clone()); }
-            ExecExpr::Call { args, .. } => { for a in args { Self::collect_var_refs_inner(a, refs); } }
+            ExecExpr::Var(name) => {
+                refs.insert(name.clone());
+            }
+            ExecExpr::Call { args, .. } => {
+                for a in args {
+                    Self::collect_var_refs_inner(a, refs);
+                }
+            }
             ExecExpr::MethodCall { receiver, args, .. } => {
                 Self::collect_var_refs_inner(receiver, refs);
-                for a in args { Self::collect_var_refs_inner(a, refs); }
+                for a in args {
+                    Self::collect_var_refs_inner(a, refs);
+                }
             }
-            ExecExpr::Block(stmts) => { for s in stmts { Self::collect_var_refs_inner(s, refs); } }
-            ExecExpr::ProofBlock { stmts } => { for s in stmts { Self::collect_var_refs_inner(s, refs); } }
-            ExecExpr::Let { value, .. } => { Self::collect_var_refs_inner(value, refs); }
-            ExecExpr::Unary { expr, .. } => { Self::collect_var_refs_inner(expr, refs); }
+            ExecExpr::Block(stmts) => {
+                for s in stmts {
+                    Self::collect_var_refs_inner(s, refs);
+                }
+            }
+            ExecExpr::ProofBlock { stmts } => {
+                for s in stmts {
+                    Self::collect_var_refs_inner(s, refs);
+                }
+            }
+            ExecExpr::Let { value, .. } => {
+                Self::collect_var_refs_inner(value, refs);
+            }
+            ExecExpr::Unary { expr, .. } => {
+                Self::collect_var_refs_inner(expr, refs);
+            }
             ExecExpr::Binary { lhs, rhs, .. } => {
                 Self::collect_var_refs_inner(lhs, refs);
                 Self::collect_var_refs_inner(rhs, refs);
             }
-            ExecExpr::Field(base, _) => { Self::collect_var_refs_inner(base, refs); }
-            ExecExpr::Struct { fields, .. } => { for (_, e) in fields { Self::collect_var_refs_inner(e, refs); } }
-            ExecExpr::If { cond, then_branch, else_branch } => {
+            ExecExpr::Field(base, _) => {
+                Self::collect_var_refs_inner(base, refs);
+            }
+            ExecExpr::Struct { fields, .. } => {
+                for (_, e) in fields {
+                    Self::collect_var_refs_inner(e, refs);
+                }
+            }
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 Self::collect_var_refs_inner(cond, refs);
                 Self::collect_var_refs_inner(then_branch, refs);
-                if let Some(eb) = else_branch { Self::collect_var_refs_inner(eb, refs); }
+                if let Some(eb) = else_branch {
+                    Self::collect_var_refs_inner(eb, refs);
+                }
             }
             _ => {}
         }
@@ -5564,7 +5655,12 @@ impl Translator {
 
         // Check if return type has a custom view expression
         let result_view = self.format_result_view(&func.spec_fn.return_type);
-        format!("{} == {}({})", result_view, func.spec_fn.name, args.join(", "))
+        format!(
+            "{} == {}({})",
+            result_view,
+            func.spec_fn.name,
+            args.join(", ")
+        )
     }
 
     /// Format the result view expression for ensures clauses.
@@ -5643,7 +5739,11 @@ impl Translator {
                 } else if !self.config.spec_prefix.is_empty()
                     && spec_type_name.starts_with(&self.config.spec_prefix)
                 {
-                    Some(format!("{}{}", self.config.exec_prefix, &spec_type_name[self.config.spec_prefix.len()..]))
+                    Some(format!(
+                        "{}{}",
+                        self.config.exec_prefix,
+                        &spec_type_name[self.config.spec_prefix.len()..]
+                    ))
                 } else {
                     // No remapping and no spec prefix — type is same in spec/exec, no view needed
                     None
@@ -5838,9 +5938,24 @@ impl Translator {
             Type::Named(path) => {
                 let name = path.last().unwrap_or("Unknown");
                 // Primitive Rust types should not be translated
-                if matches!(name, "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-                    | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-                    | "bool" | "char" | "String" | "str") {
+                if matches!(
+                    name,
+                    "u8" | "u16"
+                        | "u32"
+                        | "u64"
+                        | "u128"
+                        | "usize"
+                        | "i8"
+                        | "i16"
+                        | "i32"
+                        | "i64"
+                        | "i128"
+                        | "isize"
+                        | "bool"
+                        | "char"
+                        | "String"
+                        | "str"
+                ) {
                     return ExecType::Named(name.to_string());
                 }
                 if let Some(remapped) = self.config.type_remapping.get(name) {
@@ -6091,13 +6206,21 @@ impl Translator {
 
         // Add explicit requires clauses from the spec function
         for req_expr in &func.spec_fn.requires {
-            requires.push(self.expr_to_view_requires_string(req_expr, &view_params, &scalar_params));
+            requires.push(self.expr_to_view_requires_string(
+                req_expr,
+                &view_params,
+                &scalar_params,
+            ));
         }
 
         // Add recommends clauses from the spec as requires
         // (recommends in spec functions become requires in exec functions)
         for recommends_expr in &func.spec_fn.recommends {
-            requires.push(self.expr_to_view_requires_string(recommends_expr, &view_params, &scalar_params));
+            requires.push(self.expr_to_view_requires_string(
+                recommends_expr,
+                &view_params,
+                &scalar_params,
+            ));
         }
 
         // Extract input-only conjuncts from the spec body as preconditions.
@@ -6213,8 +6336,11 @@ impl Translator {
         if let Expr::Conjunction(parts) = &func.spec_fn.body {
             for part in parts {
                 if Self::is_input_only_expression(part, ctx) {
-                    preconditions
-                        .push(self.expr_to_view_requires_string(part, &view_params, &scalar_params));
+                    preconditions.push(self.expr_to_view_requires_string(
+                        part,
+                        &view_params,
+                        &scalar_params,
+                    ));
                 }
             }
         }
@@ -6241,9 +6367,7 @@ impl Translator {
                         if let Expr::Ident(name) = base.as_ref() {
                             if ctx.is_output(name) {
                                 // Check if rhs contains addition with a positive literal
-                                if let Some(guard) =
-                                    self.detect_overflow_guard(rhs, ctx)
-                                {
+                                if let Some(guard) = self.detect_overflow_guard(rhs, ctx) {
                                     if !guards.contains(&guard) {
                                         guards.push(guard);
                                     }
@@ -6268,10 +6392,7 @@ impl Translator {
                     if let Expr::Literal(crate::ast::Literal::Int(n)) = rhs.as_ref() {
                         if *n > 0 {
                             let field_str = self.expr_to_simple_string(lhs);
-                            return Some(format!(
-                                "{} < {}::MAX",
-                                field_str, self.config.int_type
-                            ));
+                            return Some(format!("{} < {}::MAX", field_str, self.config.int_type));
                         }
                     }
                 }
@@ -6280,17 +6401,18 @@ impl Translator {
                     if let Expr::Literal(crate::ast::Literal::Int(n)) = lhs.as_ref() {
                         if *n > 0 {
                             let field_str = self.expr_to_simple_string(rhs);
-                            return Some(format!(
-                                "{} < {}::MAX",
-                                field_str, self.config.int_type
-                            ));
+                            return Some(format!("{} < {}::MAX", field_str, self.config.int_type));
                         }
                     }
                 }
                 None
             }
             // Recurse into if-then-else branches to find additions in conditional exprs
-            Expr::If { then_branch, else_branch, .. } => {
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 if let Some(guard) = self.detect_overflow_guard(then_branch, ctx) {
                     return Some(guard);
                 }
@@ -6371,7 +6493,11 @@ impl Translator {
             Expr::Not(inner) | Expr::Field(inner, _) => {
                 self.scan_subtraction_guards(inner, ctx, guards);
             }
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.scan_subtraction_guards(cond, ctx, guards);
                 self.scan_subtraction_guards(then_branch, ctx, guards);
                 if let Some(eb) = else_branch {
@@ -6572,27 +6698,36 @@ impl Translator {
                 // Check if this is a spec-only function (needs spec-type arguments with @)
                 let is_spec_only = self.config.spec_only_functions.contains(raw_name)
                     || (raw_name.starts_with(&self.config.spec_prefix)
-                        && self.config.spec_only_functions.contains(
-                            &raw_name[self.config.spec_prefix.len()..]));
+                        && self
+                            .config
+                            .spec_only_functions
+                            .contains(&raw_name[self.config.spec_prefix.len()..]));
                 let func_name = if func.segments.len() == 1 {
                     self.translate_name(raw_name)
                 } else {
                     func.segments.join("::")
                 };
-                let args_str: Vec<_> = args.iter().map(|a| {
-                    if is_spec_only {
-                        // For spec-only function arguments, apply @ at root of field chains
-                        if let Some(root) = Self::field_chain_root(a) {
-                            if view_params.contains(root) {
-                                return self.expr_with_view_at_root(a);
+                let args_str: Vec<_> = args
+                    .iter()
+                    .map(|a| {
+                        if is_spec_only {
+                            // For spec-only function arguments, apply @ at root of field chains
+                            if let Some(root) = Self::field_chain_root(a) {
+                                if view_params.contains(root) {
+                                    return self.expr_with_view_at_root(a);
+                                }
                             }
                         }
-                    }
-                    self.expr_to_view_requires_string(a, view_params, scalar_params)
-                }).collect();
+                        self.expr_to_view_requires_string(a, view_params, scalar_params)
+                    })
+                    .collect();
                 format!("{}({})", func_name, args_str.join(", "))
             }
-            Expr::Forall { vars, triggers: _, body } => {
+            Expr::Forall {
+                vars,
+                triggers: _,
+                body,
+            } => {
                 let vars_str = self.bindings_to_string(vars);
                 let body_str = self.expr_to_view_requires_string(body, view_params, scalar_params);
                 format!("forall |{}| {}", vars_str, body_str)
@@ -6673,14 +6808,23 @@ impl Translator {
                             self.expr_with_view_at_root(&args[0])
                         } else if scalar_params.contains(root) {
                             // Scalar param in spec Set/Seq .contains(): *name as int
-                            let s = self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
+                            let s = self.expr_to_view_simple_string(
+                                &args[0],
+                                view_params,
+                                scalar_params,
+                            );
                             format!("{} as int", s)
                         } else {
-                            let s = self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
+                            let s = self.expr_to_view_simple_string(
+                                &args[0],
+                                view_params,
+                                scalar_params,
+                            );
                             format!("{}@", s)
                         }
                     } else {
-                        let s = self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
+                        let s =
+                            self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
                         if let Expr::Ident(name) = &args[0] {
                             if scalar_params.contains(name) {
                                 // Scalar param in spec Set/Seq .contains(): *name as int
@@ -6789,7 +6933,9 @@ impl Translator {
         match expr {
             Expr::Arrow(base, _) => {
                 if let Expr::Ident(n) = base.as_ref() {
-                    if n == name { return true; }
+                    if n == name {
+                        return true;
+                    }
                 }
                 Self::expr_has_arrow_on(base, name)
             }
@@ -6797,14 +6943,25 @@ impl Translator {
             Expr::Let { value, body, .. } => {
                 Self::expr_has_arrow_on(value, name) || Self::expr_has_arrow_on(body, name)
             }
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 Self::expr_has_arrow_on(cond, name)
                     || Self::expr_has_arrow_on(then_branch, name)
-                    || else_branch.as_ref().map_or(false, |e| Self::expr_has_arrow_on(e, name))
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::expr_has_arrow_on(e, name))
             }
             Expr::Conjunction(parts) => parts.iter().any(|p| Self::expr_has_arrow_on(p, name)),
-            Expr::Binary(l, _, r) | Expr::Eq(l, r) | Expr::Ne(l, r)
-            | Expr::Lt(l, r) | Expr::Le(l, r) | Expr::Gt(l, r) | Expr::Ge(l, r) => {
+            Expr::Binary(l, _, r)
+            | Expr::Eq(l, r)
+            | Expr::Ne(l, r)
+            | Expr::Lt(l, r)
+            | Expr::Le(l, r)
+            | Expr::Gt(l, r)
+            | Expr::Ge(l, r) => {
                 Self::expr_has_arrow_on(l, name) || Self::expr_has_arrow_on(r, name)
             }
             Expr::Not(inner) | Expr::View(inner) => Self::expr_has_arrow_on(inner, name),
@@ -6823,9 +6980,7 @@ impl Translator {
             Expr::Index(base, idx) => {
                 Self::expr_has_arrow_on(base, name) || Self::expr_has_arrow_on(idx, name)
             }
-            Expr::SeqLit(elems) => {
-                elems.iter().any(|e| Self::expr_has_arrow_on(e, name))
-            }
+            Expr::SeqLit(elems) => elems.iter().any(|e| Self::expr_has_arrow_on(e, name)),
             _ => false,
         }
     }
@@ -6839,7 +6994,7 @@ impl Translator {
                 format!("{}.{}", self.expr_with_view_at_root(base), field)
             }
             Expr::Arrow(base, field) => {
-                format!("{}->{}",  self.expr_with_view_at_root(base), field)
+                format!("{}->{}", self.expr_with_view_at_root(base), field)
             }
             _ => self.expr_to_simple_string(expr),
         }
@@ -6876,7 +7031,11 @@ impl Translator {
                 if method == "index" && args.len() == 1 {
                     let key = self.expr_to_simple_string(&args[0]);
                     if self.is_map_index_base(receiver) {
-                        let key_ref = if key.starts_with('&') { key } else { format!("&{}", key) };
+                        let key_ref = if key.starts_with('&') {
+                            key
+                        } else {
+                            format!("&{}", key)
+                        };
                         return format!("{}[{}]", recv, key_ref);
                     } else {
                         // Vec — plain indexing, no as usize in spec context
@@ -6890,7 +7049,11 @@ impl Translator {
                 // since Verus doesn't support slice::contains. HashSet .contains() is fine.
                 if method == "contains" && args.len() == 1 && !self.is_map_index_base(receiver) {
                     let arg = self.expr_to_simple_string(&args[0]);
-                    let arg_ref = if arg.starts_with('&') { arg } else { format!("&{}", arg) };
+                    let arg_ref = if arg.starts_with('&') {
+                        arg
+                    } else {
+                        format!("&{}", arg)
+                    };
                     return format!("contains(&{}, {})", recv, arg_ref);
                 }
                 let args_str: Vec<_> = args
@@ -7306,14 +7469,17 @@ impl Translator {
                         // Don't cast literal integers - they infer correctly
                         ExecExpr::Literal(_) => idx_expr,
                         // Simple field access (e.g., s.my_index) — cast to usize
-                        ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
-                        // Simple variable — deref if it's an input param (&u64), then cast
-                        ExecExpr::Var(name) if ctx.is_input(name) => {
-                            ExecExpr::Cast(
-                                Box::new(ExecExpr::Unary { op: "*".to_string(), expr: Box::new(idx_expr) }),
-                                "usize".to_string(),
-                            )
+                        ExecExpr::Field(..) => {
+                            ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
                         }
+                        // Simple variable — deref if it's an input param (&u64), then cast
+                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
+                            Box::new(ExecExpr::Unary {
+                                op: "*".to_string(),
+                                expr: Box::new(idx_expr),
+                            }),
+                            "usize".to_string(),
+                        ),
                         // Local variable (e.g., sender_index: u64) — cast to usize
                         ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
                         // Other expressions — don't cast, let type inference handle it
@@ -8000,15 +8166,20 @@ impl Translator {
                         // Vec/slice indexing: vec[idx as usize]
                         let cast_idx = match &idx_expr {
                             ExecExpr::Literal(_) => idx_expr,
-                            ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
-                            ExecExpr::Var(name) if ctx.is_input(name) => {
-                                ExecExpr::Cast(
-                                    Box::new(ExecExpr::Unary { op: "*".to_string(), expr: Box::new(idx_expr) }),
-                                    "usize".to_string(),
-                                )
+                            ExecExpr::Field(..) => {
+                                ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
                             }
+                            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
+                                Box::new(ExecExpr::Unary {
+                                    op: "*".to_string(),
+                                    expr: Box::new(idx_expr),
+                                }),
+                                "usize".to_string(),
+                            ),
                             // Local variable — cast to usize
-                            ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+                            ExecExpr::Var(_) => {
+                                ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
+                            }
                             _ => idx_expr,
                         };
                         return Ok(ExecExpr::MethodCall {
@@ -8027,13 +8198,16 @@ impl Translator {
                     // Cast index to usize for Vec indexing
                     let cast_idx = match &idx_expr {
                         ExecExpr::Literal(_) => idx_expr,
-                        ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
-                        ExecExpr::Var(name) if ctx.is_input(name) => {
-                            ExecExpr::Cast(
-                                Box::new(ExecExpr::Unary { op: "*".to_string(), expr: Box::new(idx_expr) }),
-                                "usize".to_string(),
-                            )
+                        ExecExpr::Field(..) => {
+                            ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
                         }
+                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
+                            Box::new(ExecExpr::Unary {
+                                op: "*".to_string(),
+                                expr: Box::new(idx_expr),
+                            }),
+                            "usize".to_string(),
+                        ),
                         // Local variable — cast to usize
                         ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
                         _ => idx_expr,
@@ -8087,16 +8261,15 @@ impl Translator {
                     .iter()
                     .map(|a| {
                         let transformed = self.transform_expr(a, ctx)?;
-                        let needs_ref = auto_borrow && match a {
-                            Expr::Field(..)
-                            | Expr::MethodCall { .. }
-                            | Expr::Arrow(..)
-                            | Expr::Index(..) => true,
-                            Expr::Ident(name) => {
-                                !ctx.is_output(name)
-                            }
-                            _ => false,
-                        };
+                        let needs_ref = auto_borrow
+                            && match a {
+                                Expr::Field(..)
+                                | Expr::MethodCall { .. }
+                                | Expr::Arrow(..)
+                                | Expr::Index(..) => true,
+                                Expr::Ident(name) => !ctx.is_output(name),
+                                _ => false,
+                            };
                         if needs_ref {
                             Ok(ExecExpr::Unary {
                                 op: "&".to_string(),
@@ -8179,7 +8352,7 @@ impl Translator {
                 let is_pure_field_chain = Self::is_pure_field_chain(value);
                 let root = Self::field_chain_root(value);
                 let value_expr = if is_pure_field_chain
-                    && root.map_or(false, |r| ctx.input_params.contains(&r.to_string()))
+                    && root.is_some_and(|r| ctx.input_params.contains(&r.to_string()))
                 {
                     if Self::body_uses_arrow(&binding.pattern, body) {
                         // Value is used for arrow access — borrow to allow -> syntax
@@ -8194,13 +8367,11 @@ impl Translator {
                 } else {
                     value_expr
                 };
-                let mut block = vec![
-                    ExecExpr::Let {
-                        pattern: pattern_str.clone(),
-                        ty: None,
-                        value: Box::new(value_expr),
-                    },
-                ];
+                let mut block = vec![ExecExpr::Let {
+                    pattern: pattern_str.clone(),
+                    ty: None,
+                    value: Box::new(value_expr),
+                }];
                 // If destructure_index was used, add a shadow binding to cast usize → u64
                 if needs_cast_shadow {
                     // Extract the variable name from the binding pattern
@@ -8504,7 +8675,9 @@ impl Translator {
                     let translated = translated?;
                     let mut stmts: Vec<ExecExpr> = Vec::new();
                     // Broadcast use hash axioms for insert
-                    stmts.push(ExecExpr::BroadcastUse("vstd::std_specs::hash::group_hash_axioms".to_string()));
+                    stmts.push(ExecExpr::BroadcastUse(
+                        "vstd::std_specs::hash::group_hash_axioms".to_string(),
+                    ));
                     stmts.push(ExecExpr::Let {
                         pattern: "mut __hs".to_string(),
                         ty: None,
@@ -8565,13 +8738,11 @@ impl Translator {
                     });
                     for (key, val) in &translated {
                         // Wrap insert in block to discard Option return
-                        stmts.push(ExecExpr::Block(vec![
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("__hm".to_string())),
-                                method: "insert".to_string(),
-                                args: vec![key.clone(), val.clone()],
-                            },
-                        ]));
+                        stmts.push(ExecExpr::Block(vec![ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__hm".to_string())),
+                            method: "insert".to_string(),
+                            args: vec![key.clone(), val.clone()],
+                        }]));
                     }
                     stmts.push(ExecExpr::Var("__hm".to_string()));
                     Ok(ExecExpr::Block(stmts))
@@ -8779,7 +8950,8 @@ impl Translator {
 
         // Check if either side involves a field that needs a custom equality function
         // (e.g., CBallot uses CBalEq instead of derived PartialEq which is external in Verus)
-        let eq_func = self.get_eq_function_for_expr(lhs)
+        let eq_func = self
+            .get_eq_function_for_expr(lhs)
             .or_else(|| self.get_eq_function_for_expr(rhs));
 
         // Regular equality comparison — deref scalar input params (&u64 → u64)
@@ -8807,8 +8979,16 @@ impl Translator {
         // Deref remapped scalar input params only when the other side is not a variable reference
         let rhs_is_var = matches!(&rhs_expr, ExecExpr::Var(_));
         let lhs_is_var = matches!(&lhs_expr, ExecExpr::Var(_));
-        let lhs_expr = if !rhs_is_var { self.deref_remapped_scalar_input(lhs_expr, ctx) } else { lhs_expr };
-        let rhs_expr = if !lhs_is_var { self.deref_remapped_scalar_input(rhs_expr, ctx) } else { rhs_expr };
+        let lhs_expr = if !rhs_is_var {
+            self.deref_remapped_scalar_input(lhs_expr, ctx)
+        } else {
+            lhs_expr
+        };
+        let rhs_expr = if !lhs_is_var {
+            self.deref_remapped_scalar_input(rhs_expr, ctx)
+        } else {
+            rhs_expr
+        };
         // Cast .len() → u64 to prevent usize vs u64 mismatches
         let lhs_expr = Self::cast_len_to_u64(lhs_expr);
         let rhs_expr = Self::cast_len_to_u64(rhs_expr);
@@ -8963,7 +9143,9 @@ impl Translator {
                 let exec_variant = format!(
                     "{}{}",
                     self.config.exec_prefix,
-                    variant.strip_prefix(&self.config.spec_prefix).unwrap_or(variant)
+                    variant
+                        .strip_prefix(&self.config.spec_prefix)
+                        .unwrap_or(variant)
                 );
                 // Check if there's a remapping for the prefixed name
                 if let Some(remapped) = self.config.variant_remapping.get(&exec_variant) {
@@ -9506,8 +9688,7 @@ impl Translator {
                     }
                 }
                 other_exprs.push(expr.clone());
-            }
-            else {
+            } else {
                 other_exprs.push(expr.clone());
             }
         }
@@ -9538,7 +9719,7 @@ impl Translator {
             }
 
             let mut sorted_groups: Vec<_> = implication_groups.iter().collect();
-            sorted_groups.sort_by(|a, b| a.0.cmp(&b.0));
+            sorted_groups.sort_by(|a, b| a.0.cmp(b.0));
             for ((output_var, field_name), conditions) in sorted_groups {
                 if conditions.len() >= 2 {
                     let exec_expr = self.build_implication_chain(conditions, ctx)?;
@@ -9678,8 +9859,11 @@ impl Translator {
             }
 
             // Collect all output variable names (sorted for deterministic output)
-            let mut all_outputs: Vec<String> =
-                field_assignments.keys().chain(pre_translated.keys()).cloned().collect();
+            let mut all_outputs: Vec<String> = field_assignments
+                .keys()
+                .chain(pre_translated.keys())
+                .cloned()
+                .collect();
             all_outputs.sort();
             all_outputs.dedup();
 
@@ -9732,7 +9916,7 @@ impl Translator {
                 let output_base = output_name.trim_end_matches('_');
                 // Sort field_substitutions for deterministic field ordering
                 let mut sorted_substs: Vec<_> = ctx.field_substitutions.iter().collect();
-                sorted_substs.sort_by(|a, b| a.0.cmp(&b.0));
+                sorted_substs.sort_by(|a, b| a.0.cmp(b.0));
                 for ((subst_var, field_name), var_name) in sorted_substs {
                     let subst_base = subst_var.trim_end_matches('_');
                     if subst_base == output_base {
@@ -9854,7 +10038,8 @@ impl Translator {
                                                                     assigned_expr,
                                                                     ctx,
                                                                 )?;
-                                                                let e = self.clone_if_input_ref(e, ctx);
+                                                                let e =
+                                                                    self.clone_if_input_ref(e, ctx);
                                                                 return Ok((fname.clone(), e));
                                                             }
                                                         }
@@ -9876,11 +10061,8 @@ impl Translator {
                                     .any(|(_, expr)| Self::is_set_mutation(expr));
 
                                 if has_mutations {
-                                    let (pre_stmts, new_fields) =
-                                        self.extract_set_mutations_from_struct(
-                                            translated_fields,
-                                            ctx,
-                                        );
+                                    let (pre_stmts, new_fields) = self
+                                        .extract_set_mutations_from_struct(translated_fields, ctx);
                                     let struct_expr = ExecExpr::Struct {
                                         name: exec_name.clone(),
                                         fields: new_fields,
@@ -9904,10 +10086,7 @@ impl Translator {
                                         let cloned_fields: Vec<_> = translated_fields
                                             .into_iter()
                                             .map(|(fname, fexpr)| {
-                                                (
-                                                    fname,
-                                                    self.clone_input_field_access(fexpr, ctx),
-                                                )
+                                                (fname, self.clone_input_field_access(fexpr, ctx))
                                             })
                                             .collect();
                                         results.push(ExecExpr::Struct {
@@ -9979,8 +10158,16 @@ impl Translator {
         // comparisons where both sides are &u64 (e.g., opn >= log_truncation_point).
         let rhs_is_var = matches!(&rhs_expr, ExecExpr::Var(_));
         let lhs_is_var = matches!(&lhs_expr, ExecExpr::Var(_));
-        let lhs_expr = if !rhs_is_var { self.deref_remapped_scalar_input(lhs_expr, ctx) } else { lhs_expr };
-        let rhs_expr = if !lhs_is_var { self.deref_remapped_scalar_input(rhs_expr, ctx) } else { rhs_expr };
+        let lhs_expr = if !rhs_is_var {
+            self.deref_remapped_scalar_input(lhs_expr, ctx)
+        } else {
+            lhs_expr
+        };
+        let rhs_expr = if !lhs_is_var {
+            self.deref_remapped_scalar_input(rhs_expr, ctx)
+        } else {
+            rhs_expr
+        };
         // Cast .len() → u64 to prevent usize vs u64 mismatches
         let lhs_expr = Self::cast_len_to_u64(lhs_expr);
         let rhs_expr = Self::cast_len_to_u64(rhs_expr);
@@ -10136,9 +10323,7 @@ impl Translator {
                     .map(|(p, e)| (p, self.suffix_walk(e, in_struct_field)))
                     .collect(),
             },
-            ExecExpr::Return(inner) => {
-                ExecExpr::Return(Box::new(self.suffix_walk(*inner, false)))
-            }
+            ExecExpr::Return(inner) => ExecExpr::Return(Box::new(self.suffix_walk(*inner, false))),
             ExecExpr::Tuple(elems) => ExecExpr::Tuple(
                 elems
                     .into_iter()
@@ -10170,9 +10355,7 @@ impl Translator {
                     .map(|e| self.suffix_walk(e, false))
                     .collect(),
             },
-            ExecExpr::Clone(inner) => {
-                ExecExpr::Clone(Box::new(self.suffix_walk(*inner, false)))
-            }
+            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(self.suffix_walk(*inner, false))),
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
                 lhs: Box::new(self.suffix_walk(*lhs, false)),
                 op,
@@ -12133,6 +12316,7 @@ impl Default for Translator {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default, clippy::needless_update)]
 mod tests {
     use super::*;
     use crate::ast::{Literal, Path, SpecFunction};
@@ -12443,7 +12627,10 @@ mod tests {
                     stmts
                 );
             }
-            _ => panic!("Expected Block with hoisted RHS and union_sets call, got {:?}", result),
+            _ => panic!(
+                "Expected Block with hoisted RHS and union_sets call, got {:?}",
+                result
+            ),
         }
     }
 
@@ -12528,10 +12715,18 @@ mod tests {
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         match &result {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 4, "Expected 4 stmts: broadcast, let, insert, var");
+                assert_eq!(
+                    stmts.len(),
+                    4,
+                    "Expected 4 stmts: broadcast, let, insert, var"
+                );
                 assert!(matches!(&stmts[0], ExecExpr::BroadcastUse(p) if p.contains("hash")));
-                assert!(matches!(&stmts[1], ExecExpr::Let { pattern, .. } if pattern == "mut __hs"));
-                assert!(matches!(&stmts[2], ExecExpr::MethodCall { method, .. } if method == "insert"));
+                assert!(
+                    matches!(&stmts[1], ExecExpr::Let { pattern, .. } if pattern == "mut __hs")
+                );
+                assert!(
+                    matches!(&stmts[2], ExecExpr::MethodCall { method, .. } if method == "insert")
+                );
                 assert!(matches!(&stmts[3], ExecExpr::Var(v) if v == "__hs"));
             }
             _ => panic!("Expected Block, got {:?}", result),
@@ -12552,7 +12747,9 @@ mod tests {
             ExecExpr::Block(stmts) => {
                 // The insert arg should use clone_up_to_view method call
                 if let ExecExpr::MethodCall { args, .. } = &stmts[2] {
-                    assert!(matches!(&args[0], ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"));
+                    assert!(
+                        matches!(&args[0], ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view")
+                    );
                 } else {
                     panic!("Expected MethodCall for insert");
                 }
@@ -12585,14 +12782,17 @@ mod tests {
         translator.config.generate_loops_for_verification = true;
         let ctx = make_ctx();
 
-        let expr = Expr::MapLit(vec![
-            (Expr::Ident("k".to_string()), Expr::Ident("v".to_string())),
-        ]);
+        let expr = Expr::MapLit(vec![(
+            Expr::Ident("k".to_string()),
+            Expr::Ident("v".to_string()),
+        )]);
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         match &result {
             ExecExpr::Block(stmts) => {
                 assert_eq!(stmts.len(), 3, "Expected 3 stmts: let, block(insert), var");
-                assert!(matches!(&stmts[0], ExecExpr::Let { pattern, .. } if pattern == "mut __hm"));
+                assert!(
+                    matches!(&stmts[0], ExecExpr::Let { pattern, .. } if pattern == "mut __hm")
+                );
                 // Insert wrapped in a Block to discard Option<V> return
                 assert!(matches!(&stmts[1], ExecExpr::Block(_)));
                 assert!(matches!(&stmts[2], ExecExpr::Var(v) if v == "__hm"));
@@ -12607,9 +12807,10 @@ mod tests {
         let translator = Translator::default();
         let ctx = make_ctx();
 
-        let expr = Expr::MapLit(vec![
-            (Expr::Ident("k".to_string()), Expr::Ident("v".to_string())),
-        ]);
+        let expr = Expr::MapLit(vec![(
+            Expr::Ident("k".to_string()),
+            Expr::Ident("v".to_string()),
+        )]);
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         match &result {
             ExecExpr::Call { func, .. } => {
@@ -13726,7 +13927,9 @@ mod tests {
                     args[2]
                 );
                 assert!(
-                    !args.iter().any(|a| matches!(a, ExecExpr::Unary { op, .. } if op == "&")),
+                    !args
+                        .iter()
+                        .any(|a| matches!(a, ExecExpr::Unary { op, .. } if op == "&")),
                     "UpperBoundedAddition args should not be auto-borrowed: {:?}",
                     args
                 );
@@ -13738,7 +13941,9 @@ mod tests {
     #[test]
     fn test_transform_lt_upper_bound_lowers_numeric_rhs_to_binary_lt() {
         let mut config = TranslatorConfig::default();
-        config.spec_only_functions.insert("LtUpperBound".to_string());
+        config
+            .spec_only_functions
+            .insert("LtUpperBound".to_string());
         let translator = Translator::new(config);
 
         let mut input_types = HashMap::new();
@@ -13816,13 +14021,10 @@ mod tests {
     #[test]
     fn test_transform_bound_request_sequence_argument_shaping() {
         let mut config = TranslatorConfig::default();
-        config
-            .function_paths
-            .insert(
-                "BoundRequestSequence".to_string(),
-                "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"
-                    .to_string(),
-            );
+        config.function_paths.insert(
+            "BoundRequestSequence".to_string(),
+            "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence".to_string(),
+        );
         config.vec_fields = [
             "requests_received_prev_epochs".to_string(),
             "requests_received_this_epoch".to_string(),
@@ -14621,10 +14823,7 @@ mod tests {
     #[test]
     fn test_generate_proofs_config_default_false() {
         let config = TranslatorConfig::default();
-        assert!(
-            !config.generate_proofs,
-            "Default should be false"
-        );
+        assert!(!config.generate_proofs, "Default should be false");
     }
 
     #[test]
@@ -14649,7 +14848,10 @@ mod tests {
 
         // Test variable with skip_var (should NOT dereference the skipped variable)
         assert_eq!(translator.expr_to_invariant_string_skip(&var, "key"), "key");
-        assert_eq!(translator.expr_to_invariant_string_skip(&var, "other"), "*key");
+        assert_eq!(
+            translator.expr_to_invariant_string_skip(&var, "other"),
+            "*key"
+        );
 
         // Test binary expression
         let binary = ExecExpr::Binary {
@@ -16675,9 +16877,9 @@ mod tests {
 
         // Check filter invariant references the helper spec function on processed prefix
         assert!(
-            invariants
-                .iter()
-                .any(|inv| inv.contains("result@ == FilterFunc(") && inv.contains(".take(i as int)")),
+            invariants.iter().any(
+                |inv| inv.contains("result@ == FilterFunc(") && inv.contains(".take(i as int)")
+            ),
             "Should have filter spec invariant: {:?}",
             invariants
         );
@@ -17335,9 +17537,7 @@ mod tests {
             code
         );
         assert!(
-            code.contains(
-                "result@ == RemoveAllSatisfiedRequestsInSequence(s@.take(i as int), r@)"
-            ),
+            code.contains("result@ == RemoveAllSatisfiedRequestsInSequence(s@.take(i as int), r@)"),
             "Filter invariant should reference helper spec call, got:\n{}",
             code
         );
@@ -17965,10 +18165,13 @@ mod tests {
         let expr = ExecExpr::Match {
             scrutinee: Box::new(ExecExpr::Var("role".to_string())),
             arms: vec![
-                ("Head".to_string(), ExecExpr::Call {
-                    func: "HashSet::new".to_string(),
-                    args: vec![],
-                }),
+                (
+                    "Head".to_string(),
+                    ExecExpr::Call {
+                        func: "HashSet::new".to_string(),
+                        args: vec![],
+                    },
+                ),
                 ("Tail".to_string(), ExecExpr::Var("existing".to_string())),
             ],
         };
@@ -17981,7 +18184,9 @@ mod tests {
     fn test_build_proof_block_empty_set_only() {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
-        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
+        let block = needs
+            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -18001,7 +18206,9 @@ mod tests {
     fn test_build_proof_block_insert_only() {
         let mut needs = ProofNeeds::default();
         needs.has_set_insert = true;
-        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
+        let block = needs
+            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -18021,14 +18228,20 @@ mod tests {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
         needs.has_set_insert = true;
-        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
+        let block = needs
+            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 2);
                 // First: lemma_empty_set_map
-                assert!(matches!(&stmts[0], ExecExpr::Call { func, .. } if func == "lemma_empty_set_map"));
+                assert!(
+                    matches!(&stmts[0], ExecExpr::Call { func, .. } if func == "lemma_empty_set_map")
+                );
                 // Second: broadcast use
-                assert!(matches!(&stmts[1], ExecExpr::BroadcastUse(p) if p == "Set::lemma_set_map_insert_commute"));
+                assert!(
+                    matches!(&stmts[1], ExecExpr::BroadcastUse(p) if p == "Set::lemma_set_map_insert_commute")
+                );
             }
             other => panic!("Expected ProofBlock, got {:?}", other),
         }
@@ -18037,7 +18250,9 @@ mod tests {
     #[test]
     fn test_build_proof_block_none() {
         let needs = ProofNeeds::default();
-        assert!(needs.build_proof_block(&HashMap::new(), &HashMap::new()).is_none());
+        assert!(needs
+            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .is_none());
     }
 
     #[test]
@@ -18221,7 +18436,9 @@ mod tests {
             element: "*value".to_string(),
             field_name: None,
         });
-        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
+        let block = needs
+            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -18248,14 +18465,20 @@ mod tests {
             element: "*node".to_string(),
             field_name: None,
         });
-        let block = needs.build_proof_block(&HashMap::new(), &HashMap::new()).unwrap();
+        let block = needs
+            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 2);
                 // First: lemma_empty_set_map
-                assert!(matches!(&stmts[0], ExecExpr::Call { func, .. } if func == "lemma_empty_set_map"));
+                assert!(
+                    matches!(&stmts[0], ExecExpr::Call { func, .. } if func == "lemma_empty_set_map")
+                );
                 // Second: lemma_set_map_remove_commute
-                assert!(matches!(&stmts[1], ExecExpr::Call { func, .. } if func == "lemma_set_map_remove_commute"));
+                assert!(
+                    matches!(&stmts[1], ExecExpr::Call { func, .. } if func == "lemma_set_map_remove_commute")
+                );
             }
             other => panic!("Expected ProofBlock, got {:?}", other),
         }
@@ -18271,7 +18494,10 @@ mod tests {
                 "pending_sent".to_string(),
             )),
         };
-        assert_eq!(ProofNeeds::extract_field_source(&expr), Some("s.pending_sent".to_string()));
+        assert_eq!(
+            ProofNeeds::extract_field_source(&expr),
+            Some("s.pending_sent".to_string())
+        );
     }
 
     #[test]
@@ -18281,7 +18507,10 @@ mod tests {
             Box::new(ExecExpr::Var("s".to_string())),
             "alive".to_string(),
         );
-        assert_eq!(ProofNeeds::extract_field_source(&expr), Some("s.alive".to_string()));
+        assert_eq!(
+            ProofNeeds::extract_field_source(&expr),
+            Some("s.alive".to_string())
+        );
     }
 
     #[test]
@@ -18353,23 +18582,32 @@ mod tests {
             ),
         ];
 
-        let (pre_stmts, new_fields) =
-            translator.extract_set_mutations_from_struct(fields, &ctx);
+        let (pre_stmts, new_fields) = translator.extract_set_mutations_from_struct(fields, &ctx);
 
         // Should extract 2 pre-stmts: let mut __tm_prepared = clone_hashset(...); __tm_prepared.insert(...)
-        assert_eq!(pre_stmts.len(), 2, "Expected 2 pre-statements for mutation extraction");
+        assert_eq!(
+            pre_stmts.len(),
+            2,
+            "Expected 2 pre-statements for mutation extraction"
+        );
 
         // First pre-stmt: let mut __tm_prepared = clone_hashset(&s.tm_prepared)
         match &pre_stmts[0] {
             ExecExpr::Let { pattern, .. } => {
-                assert!(pattern.contains("__tm_prepared"), "Expected __tm_prepared, got {}", pattern);
+                assert!(
+                    pattern.contains("__tm_prepared"),
+                    "Expected __tm_prepared, got {}",
+                    pattern
+                );
             }
             other => panic!("Expected Let, got {:?}", other),
         }
 
         // Second pre-stmt: __tm_prepared.insert(...)
         match &pre_stmts[1] {
-            ExecExpr::MethodCall { receiver, method, .. } => {
+            ExecExpr::MethodCall {
+                receiver, method, ..
+            } => {
                 assert_eq!(method, "insert");
                 match receiver.as_ref() {
                     ExecExpr::Var(name) => assert_eq!(name, "__tm_prepared"),
@@ -18423,8 +18661,7 @@ mod tests {
             ),
         ];
 
-        let (pre_stmts, new_fields) =
-            translator.extract_set_mutations_from_struct(fields, &ctx);
+        let (pre_stmts, new_fields) = translator.extract_set_mutations_from_struct(fields, &ctx);
 
         // No mutations → no pre-stmts, fields unchanged
         assert!(pre_stmts.is_empty());
@@ -18462,8 +18699,7 @@ mod tests {
             },
         )];
 
-        let (pre_stmts, new_fields) =
-            translator.extract_set_mutations_from_struct(fields, &ctx);
+        let (pre_stmts, new_fields) = translator.extract_set_mutations_from_struct(fields, &ctx);
 
         // Should extract: let mut __electing = clone_hashset(...); __electing.remove(...)
         assert_eq!(pre_stmts.len(), 2);
@@ -18582,12 +18818,8 @@ mod tests {
     fn test_clone_input_field_with_vec_fields() {
         // Configure collection_fields and vec_fields
         let config = TranslatorConfig {
-            collection_fields: vec!["pending_sent".to_string()]
-                .into_iter()
-                .collect(),
-            vec_fields: vec!["history".to_string()]
-                .into_iter()
-                .collect(),
+            collection_fields: vec!["pending_sent".to_string()].into_iter().collect(),
+            vec_fields: vec!["history".to_string()].into_iter().collect(),
             ..TranslatorConfig::default()
         };
         let translator = Translator::new(config.clone());
@@ -18661,9 +18893,7 @@ mod tests {
 
         // With both collection_fields and vec_fields
         let config = TranslatorConfig {
-            collection_fields: vec!["pending_sent".to_string()]
-                .into_iter()
-                .collect(),
+            collection_fields: vec!["pending_sent".to_string()].into_iter().collect(),
             vec_fields: vec!["history".to_string(), "log".to_string()]
                 .into_iter()
                 .collect(),
@@ -18702,12 +18932,14 @@ mod tests {
             method: "push".to_string(),
             args: vec![],
         }));
-        assert!(!Translator::is_set_mutation(&ExecExpr::Var("x".to_string())));
+        assert!(!Translator::is_set_mutation(&ExecExpr::Var(
+            "x".to_string()
+        )));
     }
 
     #[test]
     fn test_format_spec_arg_int() {
-        use crate::ast::{Parameter, Path};
+        use crate::ast::Parameter;
         let translator = Translator::default();
         let param = Parameter {
             name: "r".to_string(),
@@ -18830,10 +19062,7 @@ mod tests {
         };
 
         let spec_call = translator.build_helper_spec_call(&annotated);
-        assert_eq!(
-            spec_call,
-            "result@ == LTMRcvPrepared(s@, c@, *r as int)"
-        );
+        assert_eq!(spec_call, "result@ == LTMRcvPrepared(s@, c@, *r as int)");
     }
 
     #[test]
@@ -19197,10 +19426,7 @@ mod tests {
             fields: vec![
                 ("count".to_string(), ExecExpr::Literal("0".to_string())),
                 ("value".to_string(), ExecExpr::Literal("42".to_string())),
-                (
-                    "name".to_string(),
-                    ExecExpr::Var("input_name".to_string()),
-                ),
+                ("name".to_string(), ExecExpr::Var("input_name".to_string())),
             ],
         };
 
@@ -19223,10 +19449,7 @@ mod tests {
 
         let expr = ExecExpr::Struct {
             name: "CState".to_string(),
-            fields: vec![(
-                "count".to_string(),
-                ExecExpr::Literal("0u64".to_string()),
-            )],
+            fields: vec![("count".to_string(), ExecExpr::Literal("0u64".to_string()))],
         };
 
         let result = translator.suffix_struct_int_literals(expr);
@@ -19248,10 +19471,7 @@ mod tests {
         let expr = ExecExpr::Struct {
             name: "CState".to_string(),
             fields: vec![
-                (
-                    "enabled".to_string(),
-                    ExecExpr::Literal("true".to_string()),
-                ),
+                ("enabled".to_string(), ExecExpr::Literal("true".to_string())),
                 (
                     "disabled".to_string(),
                     ExecExpr::Literal("false".to_string()),
@@ -19405,7 +19625,9 @@ mod tests {
                 } => {
                     // Literal in then-branch of struct field should be suffixed
                     assert!(matches!(then_branch.as_ref(), ExecExpr::Literal(s) if s == "0u64"));
-                    assert!(matches!(else_branch.as_ref().unwrap().as_ref(), ExecExpr::Var(s) if s == "x"));
+                    assert!(
+                        matches!(else_branch.as_ref().unwrap().as_ref(), ExecExpr::Var(s) if s == "x")
+                    );
                 }
                 _ => panic!("Expected If"),
             },
@@ -19482,7 +19704,7 @@ mod tests {
         modes: Vec<ParameterMode>,
         body: Expr,
     ) -> crate::moder::AnnotatedFunction {
-        use crate::ast::{Generics, Parameter, Path};
+        use crate::ast::{Generics, Parameter};
         let spec_params: Vec<Parameter> = params
             .into_iter()
             .map(|(n, ty)| Parameter {
@@ -19543,8 +19765,14 @@ mod tests {
         let func = make_annotated_func(
             "LAction",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19593,8 +19821,14 @@ mod tests {
         let func = make_annotated_func(
             "LDecrement",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19626,8 +19860,14 @@ mod tests {
         let func = make_annotated_func(
             "LInit",
             vec![
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
             ],
             vec![ParameterMode::Output, ParameterMode::Input],
             body,
@@ -19663,8 +19903,14 @@ mod tests {
         let func = make_annotated_func(
             "LIncrement",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19698,8 +19944,14 @@ mod tests {
         let func = make_annotated_func(
             "LCopy",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19751,8 +20003,14 @@ mod tests {
         let func = make_annotated_func(
             "LDouble",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19797,11 +20055,21 @@ mod tests {
         let func = make_annotated_func(
             "LConditionalInc",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
                 ("cond".to_string(), Type::Bool),
             ],
-            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Input],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+            ],
             body,
         );
 
@@ -19827,18 +20095,31 @@ mod tests {
         let func = make_annotated_func(
             "LSetFlag",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
                 ("b".to_string(), Type::Bool),
             ],
-            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Input],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+            ],
             body,
         );
 
         let (params, _) = translator.translate_params(&func).unwrap();
         // Bool param should be passed by value (not reference)
         let b_param = params.iter().find(|p| p.name == "b").unwrap();
-        assert!(!b_param.is_reference, "Bool param should not be a reference");
+        assert!(
+            !b_param.is_reference,
+            "Bool param should not be a reference"
+        );
         // s param should still be a reference
         let s_param = params.iter().find(|p| p.name == "s").unwrap();
         assert!(s_param.is_reference, "Struct param should be a reference");
@@ -19855,8 +20136,14 @@ mod tests {
         let mut func = make_annotated_func(
             "LAction",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19874,7 +20161,9 @@ mod tests {
         let requires = translator.build_requires(&func);
         // Should include: s.valid() + the explicit requires
         assert!(requires.contains(&"s.valid()".to_string()));
-        assert!(requires.iter().any(|r| r.contains("s.count") && r.contains("> 0")));
+        assert!(requires
+            .iter()
+            .any(|r| r.contains("s.count") && r.contains("> 0")));
     }
 
     #[test]
@@ -19888,8 +20177,14 @@ mod tests {
         let mut func = make_annotated_func(
             "LAction",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -19953,9 +20248,18 @@ mod tests {
         let func = make_annotated_func(
             "LCommit",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
             ],
             vec![
                 ParameterMode::Input,
@@ -19989,7 +20293,10 @@ mod tests {
             )),
             "Init".to_string(),
         );
-        assert_eq!(translator.expr_to_requires_string(&expr), "s.tm_state is CInit");
+        assert_eq!(
+            translator.expr_to_requires_string(&expr),
+            "s.tm_state is CInit"
+        );
     }
 
     #[test]
@@ -20047,8 +20354,12 @@ mod tests {
         let mut config = TranslatorConfig::default();
         config.int_type = "u64".to_string();
         config.validity_predicate_name = "valid".to_string();
-        config.variant_remapping.insert("Init".to_string(), "CTMState::Init".to_string());
-        config.variant_remapping.insert("Committed".to_string(), "CTMState::Committed".to_string());
+        config
+            .variant_remapping
+            .insert("Init".to_string(), "CTMState::Init".to_string());
+        config
+            .variant_remapping
+            .insert("Committed".to_string(), "CTMState::Committed".to_string());
         let translator = Translator::new(config);
 
         // Spec body: &&& s.tm_state is Init &&& s_.tm_state is Committed
@@ -20072,8 +20383,14 @@ mod tests {
         let func = make_annotated_func(
             "LCommit",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
             ],
             vec![ParameterMode::Input, ParameterMode::Output],
             body,
@@ -20114,7 +20431,10 @@ mod tests {
 
         let func = make_annotated_func(
             "LAction",
-            vec![("s_".to_string(), Type::Named(Path::single("LState".to_string())))],
+            vec![(
+                "s_".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+            )],
             vec![ParameterMode::Output],
             body,
         );
@@ -20423,9 +20743,7 @@ mod tests {
     fn test_view_requires_collection_aware_at() {
         // With collection_fields configured, only collection fields get @
         let mut config = TranslatorConfig::default();
-        config
-            .collection_fields
-            .insert("electing".to_string());
+        config.collection_fields.insert("electing".to_string());
         config.collection_fields.insert("alive".to_string());
         let translator = Translator {
             config,
@@ -20436,10 +20754,7 @@ mod tests {
         let scalar_params = HashSet::new();
 
         // Collection field: s@.alive
-        let expr = Expr::Field(
-            Box::new(Expr::Ident("s".to_string())),
-            "alive".to_string(),
-        );
+        let expr = Expr::Field(Box::new(Expr::Ident("s".to_string())), "alive".to_string());
         let result = translator.expr_to_view_simple_string(&expr, &view_params, &scalar_params);
         assert_eq!(result, "s@.alive");
 
@@ -20678,15 +20993,27 @@ mod tests {
         config.validity_predicate_name = "valid".to_string();
         config.extra_requires.insert(
             "CAdvance".to_string(),
-            vec!["s.role is Leader".to_string(), "(*idx > s.commit_index)".to_string()],
+            vec![
+                "s.role is Leader".to_string(),
+                "(*idx > s.commit_index)".to_string(),
+            ],
         );
         let translator = Translator::new(config);
 
         // Body has input-only conjuncts that would normally become auto-derived requires
         let body = Expr::Conjunction(vec![
-            Expr::Is(Box::new(Expr::Arrow(Box::new(Expr::Ident("s".to_string())), "role".to_string())), "Leader".to_string()),
+            Expr::Is(
+                Box::new(Expr::Arrow(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "role".to_string(),
+                )),
+                "Leader".to_string(),
+            ),
             Expr::Eq(
-                Box::new(Expr::Arrow(Box::new(Expr::Ident("s_".to_string())), "commit_index".to_string())),
+                Box::new(Expr::Arrow(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "commit_index".to_string(),
+                )),
                 Box::new(Expr::Ident("idx".to_string())),
             ),
         ]);
@@ -20694,12 +21021,29 @@ mod tests {
         let func = make_annotated_func(
             "LAdvance",
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
-                ("idx".to_string(), Type::Named(Path::single("int".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
+                (
+                    "idx".to_string(),
+                    Type::Named(Path::single("int".to_string())),
+                ),
             ],
-            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Input, ParameterMode::Input],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+                ParameterMode::Input,
+            ],
             body,
         );
 
@@ -20726,7 +21070,10 @@ mod tests {
                     func: "clone_log".to_string(),
                     args: vec![ExecExpr::Unary {
                         op: "&".to_string(),
-                        expr: Box::new(ExecExpr::Field(Box::new(ExecExpr::Var("s".to_string())), "log".to_string())),
+                        expr: Box::new(ExecExpr::Field(
+                            Box::new(ExecExpr::Var("s".to_string())),
+                            "log".to_string(),
+                        )),
                     }],
                 }),
             },
@@ -20766,8 +21113,11 @@ mod tests {
             if let ExecExpr::Call { args, .. } = &stmts[0] {
                 assert_eq!(args.len(), 2);
                 // Second arg should be Var("entry"), not Unary("*", Var("entry"))
-                assert!(matches!(&args[1], ExecExpr::Var(name) if name == "entry"),
-                    "Expected Var(\"entry\"), got: {:?}", args[1]);
+                assert!(
+                    matches!(&args[1], ExecExpr::Var(name) if name == "entry"),
+                    "Expected Var(\"entry\"), got: {:?}",
+                    args[1]
+                );
             } else {
                 panic!("Expected Call, got: {:?}", stmts[0]);
             }
@@ -20781,16 +21131,14 @@ mod tests {
         // When a proof block references a variable defined in pre-stmts,
         // the pre-stmts should NOT be wrapped inside `let result = { ... }`
         // (they need to stay in outer scope so the proof block can access them).
-        let pre_stmts = vec![
-            ExecExpr::Let {
-                pattern: "entry".to_string(),
-                ty: None,
-                value: Box::new(ExecExpr::Struct {
-                    name: "CLogEntry".to_string(),
-                    fields: vec![],
-                }),
-            },
-        ];
+        let pre_stmts = vec![ExecExpr::Let {
+            pattern: "entry".to_string(),
+            ty: None,
+            value: Box::new(ExecExpr::Struct {
+                name: "CLogEntry".to_string(),
+                fields: vec![],
+            }),
+        }];
 
         let proof_block = ExecExpr::ProofBlock {
             stmts: vec![ExecExpr::Call {
@@ -20812,16 +21160,14 @@ mod tests {
     fn test_proof_block_no_scope_conflict() {
         // When proof block only references input params (not local let bindings),
         // pre-stmts can be safely wrapped inside `let result = { ... }`.
-        let pre_stmts = vec![
-            ExecExpr::Let {
-                pattern: "mut __history".to_string(),
-                ty: None,
-                value: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Field(
-                    Box::new(ExecExpr::Var("s".to_string())),
-                    "history".to_string(),
-                )))),
-            },
-        ];
+        let pre_stmts = vec![ExecExpr::Let {
+            pattern: "mut __history".to_string(),
+            ty: None,
+            value: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("s".to_string())),
+                "history".to_string(),
+            )))),
+        }];
 
         let proof_block = ExecExpr::ProofBlock {
             stmts: vec![ExecExpr::Call {
@@ -20852,7 +21198,9 @@ mod tests {
     fn test_output_needs_view_map_seq_struct() {
         // Seq<Named("RslPacket")> with remapping to CPacket → should return Some("CPacket")
         let mut config = TranslatorConfig::default();
-        config.type_remapping.insert("RslPacket".to_string(), "CPacket".to_string());
+        config
+            .type_remapping
+            .insert("RslPacket".to_string(), "CPacket".to_string());
         let translator = Translator::new(config);
 
         let ty = crate::ast::Type::Seq(Box::new(crate::ast::Type::Named(
@@ -20875,7 +21223,9 @@ mod tests {
     fn test_output_needs_view_map_non_seq() {
         // Named("RslPacket") (not a Seq) → should return None
         let mut config = TranslatorConfig::default();
-        config.type_remapping.insert("RslPacket".to_string(), "CPacket".to_string());
+        config
+            .type_remapping
+            .insert("RslPacket".to_string(), "CPacket".to_string());
         let translator = Translator::new(config);
 
         let ty = crate::ast::Type::Named(crate::ast::Path::single("RslPacket".to_string()));
@@ -20901,9 +21251,9 @@ mod tests {
         let mut output_types = HashMap::new();
         output_types.insert(
             "sent_packets".to_string(),
-            crate::ast::Type::Seq(Box::new(crate::ast::Type::Named(
-                crate::ast::Path::single("RslPacket".to_string()),
-            ))),
+            crate::ast::Type::Seq(Box::new(crate::ast::Type::Named(crate::ast::Path::single(
+                "RslPacket".to_string(),
+            )))),
         );
 
         let ctx = TransformContext {
@@ -20943,13 +21293,16 @@ mod tests {
         let struct_expr = Expr::Struct {
             name: crate::ast::Path::single("RslPacket".to_string()),
             fields: vec![
-                ("dst".to_string(), Expr::Index(
-                    Box::new(Expr::Field(
-                        Box::new(Expr::Ident("c".to_string())),
-                        "replica_ids".to_string(),
-                    )),
-                    Box::new(Expr::Ident("idx".to_string())),
-                )),
+                (
+                    "dst".to_string(),
+                    Expr::Index(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("c".to_string())),
+                            "replica_ids".to_string(),
+                        )),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    ),
+                ),
                 ("msg".to_string(), Expr::Ident("m".to_string())),
             ],
         };
@@ -20989,12 +21342,14 @@ mod tests {
         let printed = format!("{:?}", result);
         assert!(
             printed.contains("WhileLoop"),
-            "Should generate WhileLoop, got: {}", printed
+            "Should generate WhileLoop, got: {}",
+            printed
         );
         // Should contain Vec::<CPacket>::new
         assert!(
             printed.contains("Vec::<CPacket>::new"),
-            "Should have typed Vec::new, got: {}", printed
+            "Should have typed Vec::new, got: {}",
+            printed
         );
     }
 
@@ -21050,38 +21405,44 @@ mod tests {
         let printed = format!("{:?}", result);
         assert!(
             printed.contains("clone_up_to_view"),
-            "Should use clone_up_to_view, got: {}", printed
+            "Should use clone_up_to_view, got: {}",
+            printed
         );
     }
 
     #[test]
     fn test_proof_needs_skips_while_loop_body() {
         // ProofNeeds should NOT detect Vec::new() inside WhileLoop body
-        let body = ExecExpr::Block(vec![
-            ExecExpr::WhileLoop {
-                cond: Box::new(ExecExpr::Literal("true".to_string())),
-                invariants: vec![],
-                decreases: None,
-                body: Box::new(ExecExpr::Block(vec![
-                    ExecExpr::Call {
-                        func: "Vec::new".to_string(),
-                        args: vec![],
-                    },
-                ])),
-            },
-        ]);
+        let body = ExecExpr::Block(vec![ExecExpr::WhileLoop {
+            cond: Box::new(ExecExpr::Literal("true".to_string())),
+            invariants: vec![],
+            decreases: None,
+            body: Box::new(ExecExpr::Block(vec![ExecExpr::Call {
+                func: "Vec::new".to_string(),
+                args: vec![],
+            }])),
+        }]);
         let needs = ProofNeeds::analyze(&body);
-        assert!(!needs.has_empty_vec, "Should NOT detect Vec::new inside WhileLoop");
+        assert!(
+            !needs.has_empty_vec,
+            "Should NOT detect Vec::new inside WhileLoop"
+        );
     }
 
     #[test]
     fn test_clone_input_field_with_map_fields() {
         // Configure map_fields for HashMap with deep abstraction
         let config = TranslatorConfig {
-            map_fields: vec![
-                ("unexecuted_learner_state".to_string(),
-                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
-            ].into_iter().collect(),
+            map_fields: vec![(
+                "unexecuted_learner_state".to_string(),
+                (
+                    "CLearnerState".to_string(),
+                    "clearnerstate".to_string(),
+                    "CLearnerTuple".to_string(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
             ..TranslatorConfig::default()
         };
         let translator = Translator::new(config.clone());
@@ -21124,10 +21485,16 @@ mod tests {
     #[test]
     fn test_is_map_field() {
         let config = TranslatorConfig {
-            map_fields: vec![
-                ("unexecuted_learner_state".to_string(),
-                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
-            ].into_iter().collect(),
+            map_fields: vec![(
+                "unexecuted_learner_state".to_string(),
+                (
+                    "CLearnerState".to_string(),
+                    "clearnerstate".to_string(),
+                    "CLearnerTuple".to_string(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
             ..TranslatorConfig::default()
         };
         let translator = Translator::new(config);
@@ -21140,10 +21507,16 @@ mod tests {
     fn test_map_field_is_collection_field() {
         // map_fields should be treated as collection fields (need @ in view)
         let config = TranslatorConfig {
-            map_fields: vec![
-                ("unexecuted_learner_state".to_string(),
-                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
-            ].into_iter().collect(),
+            map_fields: vec![(
+                "unexecuted_learner_state".to_string(),
+                (
+                    "CLearnerState".to_string(),
+                    "clearnerstate".to_string(),
+                    "CLearnerTuple".to_string(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
             ..TranslatorConfig::default()
         };
         let translator = Translator::new(config);
@@ -21156,14 +21529,23 @@ mod tests {
     #[test]
     fn test_get_map_field_prefix() {
         let config = TranslatorConfig {
-            map_fields: vec![
-                ("unexecuted_learner_state".to_string(),
-                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
-            ].into_iter().collect(),
+            map_fields: vec![(
+                "unexecuted_learner_state".to_string(),
+                (
+                    "CLearnerState".to_string(),
+                    "clearnerstate".to_string(),
+                    "CLearnerTuple".to_string(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
             ..TranslatorConfig::default()
         };
         let translator = Translator::new(config);
-        assert_eq!(translator.get_map_field_prefix("unexecuted_learner_state"), Some("clearnerstate"));
+        assert_eq!(
+            translator.get_map_field_prefix("unexecuted_learner_state"),
+            Some("clearnerstate")
+        );
         assert_eq!(translator.get_map_field_prefix("max_ballot_seen"), None);
     }
 
@@ -21173,10 +21555,16 @@ mod tests {
         // it should use the clone_method instead of .clone()
         let config = TranslatorConfig {
             clone_fields: vec!["constants".to_string()].into_iter().collect(),
-            map_fields: vec![
-                ("unexecuted_learner_state".to_string(),
-                 ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()))
-            ].into_iter().collect(),
+            map_fields: vec![(
+                "unexecuted_learner_state".to_string(),
+                (
+                    "CLearnerState".to_string(),
+                    "clearnerstate".to_string(),
+                    "CLearnerTuple".to_string(),
+                ),
+            )]
+            .into_iter()
+            .collect(),
             clone_method: Some("clone_up_to_view".to_string()),
             ..TranslatorConfig::default()
         };
@@ -21226,7 +21614,12 @@ mod tests {
         let mut config = TranslatorConfig::default();
         config.primitive_types.insert("OperationNumber".to_string());
         let translator = Translator::new(config);
-        let param = make_param("opn", Type::Named(Path { segments: vec!["OperationNumber".to_string()] }));
+        let param = make_param(
+            "opn",
+            Type::Named(Path {
+                segments: vec!["OperationNumber".to_string()],
+            }),
+        );
         assert_eq!(translator.format_spec_arg(&param), "*opn as int");
     }
 
@@ -21236,7 +21629,12 @@ mod tests {
         let mut config = TranslatorConfig::default();
         config.primitive_types.insert("OperationNumber".to_string());
         let translator = Translator::new(config);
-        let param = make_param("bal", Type::Named(Path { segments: vec!["Ballot".to_string()] }));
+        let param = make_param(
+            "bal",
+            Type::Named(Path {
+                segments: vec!["Ballot".to_string()],
+            }),
+        );
         assert_eq!(translator.format_spec_arg(&param), "bal@");
     }
 
@@ -21247,9 +21645,24 @@ mod tests {
         config.primitive_types.insert("OperationNumber".to_string());
         config.primitive_types.insert("Epoch".to_string());
         let translator = Translator::new(config);
-        let param1 = make_param("opn", Type::Named(Path { segments: vec!["OperationNumber".to_string()] }));
-        let param2 = make_param("e", Type::Named(Path { segments: vec!["Epoch".to_string()] }));
-        let param3 = make_param("bal", Type::Named(Path { segments: vec!["Ballot".to_string()] }));
+        let param1 = make_param(
+            "opn",
+            Type::Named(Path {
+                segments: vec!["OperationNumber".to_string()],
+            }),
+        );
+        let param2 = make_param(
+            "e",
+            Type::Named(Path {
+                segments: vec!["Epoch".to_string()],
+            }),
+        );
+        let param3 = make_param(
+            "bal",
+            Type::Named(Path {
+                segments: vec!["Ballot".to_string()],
+            }),
+        );
         assert_eq!(translator.format_spec_arg(&param1), "*opn as int");
         assert_eq!(translator.format_spec_arg(&param2), "*e as int");
         assert_eq!(translator.format_spec_arg(&param3), "bal@");
@@ -21279,7 +21692,9 @@ mod tests {
             ..TranslatorConfig::default()
         };
         let translator = Translator::new(config);
-        let ty = Type::Seq(Box::new(Type::Named(Path { segments: vec!["RslMessage".to_string()] })));
+        let ty = Type::Seq(Box::new(Type::Named(Path {
+            segments: vec!["RslMessage".to_string()],
+        })));
         let result = translator.output_needs_view_map(&ty);
         assert_eq!(result, Some("CMessage".to_string()));
     }
@@ -21295,10 +21710,13 @@ mod tests {
             name: "CResult".to_string(),
             fields: vec![
                 ("counter".to_string(), ExecExpr::Literal("0".to_string())),
-                ("cache".to_string(), ExecExpr::Call {
-                    func: "HashMap::new".to_string(),
-                    args: vec![],
-                }),
+                (
+                    "cache".to_string(),
+                    ExecExpr::Call {
+                        func: "HashMap::new".to_string(),
+                        args: vec![],
+                    },
+                ),
             ],
         };
         let needs = ProofNeeds::analyze(&expr);
@@ -21325,14 +21743,20 @@ mod tests {
         let expr = ExecExpr::Struct {
             name: "CState".to_string(),
             fields: vec![
-                ("votes".to_string(), ExecExpr::Call {
-                    func: "HashMap::new".to_string(),
-                    args: vec![],
-                }),
-                ("cache".to_string(), ExecExpr::Call {
-                    func: "HashMap::new".to_string(),
-                    args: vec![],
-                }),
+                (
+                    "votes".to_string(),
+                    ExecExpr::Call {
+                        func: "HashMap::new".to_string(),
+                        args: vec![],
+                    },
+                ),
+                (
+                    "cache".to_string(),
+                    ExecExpr::Call {
+                        func: "HashMap::new".to_string(),
+                        args: vec![],
+                    },
+                ),
             ],
         };
         let needs = ProofNeeds::analyze(&expr);
@@ -21359,10 +21783,16 @@ mod tests {
         let mut map_fields: HashMap<String, (String, String, String)> = HashMap::new();
         map_fields.insert(
             "cache".to_string(),
-            ("HashMap<u64, CReply>".to_string(), "creplycache".to_string(), "CReply".to_string()),
+            (
+                "HashMap<u64, CReply>".to_string(),
+                "creplycache".to_string(),
+                "CReply".to_string(),
+            ),
         );
 
-        let block = needs.build_proof_block(&HashMap::new(), &map_fields).unwrap();
+        let block = needs
+            .build_proof_block(&HashMap::new(), &map_fields)
+            .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
                 assert_eq!(stmts.len(), 1);
@@ -21418,22 +21848,36 @@ mod tests {
 
         // Spec struct element expression: LPacket{dst: s.src, src: s.dst}
         let element_expr = Expr::Struct {
-            name: Path { segments: vec!["LPacket".to_string()] },
+            name: Path {
+                segments: vec!["LPacket".to_string()],
+            },
             fields: vec![
-                ("dst".to_string(), Expr::Field(Box::new(Expr::Ident("s".to_string())), "src".to_string())),
-                ("src".to_string(), Expr::Field(Box::new(Expr::Ident("s".to_string())), "dst".to_string())),
+                (
+                    "dst".to_string(),
+                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "src".to_string()),
+                ),
+                (
+                    "src".to_string(),
+                    Expr::Field(Box::new(Expr::Ident("s".to_string())), "dst".to_string()),
+                ),
             ],
         };
 
-        let result = translator.generate_seq_comprehension_proof_block(
-            &element_expr, "n as int", "i", &ctx
+        let result =
+            translator.generate_seq_comprehension_proof_block(&element_expr, "n as int", "i", &ctx);
+        assert!(
+            result.is_some(),
+            "Should generate proof block for struct element"
         );
-        assert!(result.is_some(), "Should generate proof block for struct element");
 
         match result.unwrap() {
             ExecExpr::ProofBlock { stmts } => {
                 // Should have: let mapped = ..., assert(mapped.len() == ...), assert forall ...
-                assert_eq!(stmts.len(), 3, "Expected 3 proof statements: let, assert len, assert forall");
+                assert_eq!(
+                    stmts.len(),
+                    3,
+                    "Expected 3 proof statements: let, assert len, assert forall"
+                );
 
                 // First: let mapped = result@.map(...)
                 match &stmts[0] {
@@ -21488,9 +21932,8 @@ mod tests {
 
         // Non-struct expression (just a variable)
         let element_expr = Expr::Ident("x".to_string());
-        let result = translator.generate_seq_comprehension_proof_block(
-            &element_expr, "n", "i", &ctx
-        );
+        let result =
+            translator.generate_seq_comprehension_proof_block(&element_expr, "n", "i", &ctx);
         assert!(result.is_none(), "Non-struct element should return None");
     }
 
@@ -21511,14 +21954,20 @@ mod tests {
 
         // Single-field struct: LRequest{val: s.value}
         let element_expr = Expr::Struct {
-            name: Path { segments: vec!["LRequest".to_string()] },
-            fields: vec![
-                ("val".to_string(), Expr::Field(Box::new(Expr::Ident("s".to_string())), "value".to_string())),
-            ],
+            name: Path {
+                segments: vec!["LRequest".to_string()],
+            },
+            fields: vec![(
+                "val".to_string(),
+                Expr::Field(Box::new(Expr::Ident("s".to_string())), "value".to_string()),
+            )],
         };
 
         let result = translator.generate_seq_comprehension_proof_block(
-            &element_expr, "s.items@.len()", "idx", &ctx
+            &element_expr,
+            "s.items@.len()",
+            "idx",
+            &ctx,
         );
         assert!(result.is_some());
 
@@ -21578,7 +22027,11 @@ mod tests {
         assert!(needs.needs_proof_block());
 
         needs.has_vec_push = false;
-        needs.remove_sites.push(RemoveSite { source_view: "s@".to_string(), element: "k".to_string(), field_name: Some("f".to_string()) });
+        needs.remove_sites.push(RemoveSite {
+            source_view: "s@".to_string(),
+            element: "k".to_string(),
+            field_name: Some("f".to_string()),
+        });
         assert!(needs.needs_proof_block());
     }
 }

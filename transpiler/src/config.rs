@@ -180,7 +180,7 @@ pub struct TranspilerConfig {
     /// - `clone_<field>()`: external_body clone wrapper with mapped-view ensures
     /// - `lemma_empty_<field>_map()`: empty Seq proof helper
     /// - `lemma_<field>_push_map_commute()`: push commutativity proof helper
-    /// e.g., {"log" = ["CLogEntry", "LLogEntry"]}
+    ///   e.g., {"log" = ["CLogEntry", "LLogEntry"]}
     #[serde(default)]
     pub struct_vec_fields: HashMap<String, Vec<String>>,
 
@@ -194,7 +194,7 @@ pub struct TranspilerConfig {
     /// - `lemma_abstractify_{prefix}_insert()`: insert commutativity proof
     /// - `lemma_abstractify_{prefix}_remove()`: remove commutativity proof
     /// - `lemma_abstractify_singleton_{prefix}()`: singleton map proof
-    /// e.g., {"unexecuted_learner_state" = ["CLearnerState", "clearnerstate", "CLearnerTuple"]}
+    ///   e.g., {"unexecuted_learner_state" = ["CLearnerState", "clearnerstate", "CLearnerTuple"]}
     #[serde(default)]
     pub map_fields: HashMap<String, Vec<String>>,
 
@@ -833,7 +833,9 @@ mod tests {
         assert_eq!(config.collection_fields.len(), 3);
         assert!(config.collection_fields.contains(&"electing".to_string()));
         assert!(config.collection_fields.contains(&"alive".to_string()));
-        assert!(config.collection_fields.contains(&"pending_sent".to_string()));
+        assert!(config
+            .collection_fields
+            .contains(&"pending_sent".to_string()));
     }
 
     #[test]
@@ -850,7 +852,9 @@ mod tests {
         "#;
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert_eq!(config.collection_fields.len(), 1);
-        assert!(config.collection_fields.contains(&"pending_sent".to_string()));
+        assert!(config
+            .collection_fields
+            .contains(&"pending_sent".to_string()));
         assert_eq!(config.vec_fields.len(), 2);
         assert!(config.vec_fields.contains(&"history".to_string()));
         assert!(config.vec_fields.contains(&"log".to_string()));

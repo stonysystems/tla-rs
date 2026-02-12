@@ -836,8 +836,7 @@ fn test_pbft_type_inference() {
 /// Read a generated TLA+ spec from src/tla+/
 fn read_generated_spec(protocol: &str, name: &str) -> String {
     let path = format!("../src/tla+/{}/{}.tla", protocol, name);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e))
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e))
 }
 
 #[test]
@@ -846,7 +845,10 @@ fn test_generated_twophase_parsing() {
     let module = parse_module(&source).expect("Failed to parse generated TwoPhase");
     let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
     assert!(names.contains(&"Init"), "Should contain Init");
-    assert!(names.contains(&"TMRcvPrepared"), "Should contain TMRcvPrepared");
+    assert!(
+        names.contains(&"TMRcvPrepared"),
+        "Should contain TMRcvPrepared"
+    );
     assert!(names.contains(&"TMCommit"), "Should contain TMCommit");
     assert!(names.contains(&"TMAbort"), "Should contain TMAbort");
     assert!(names.contains(&"Next"), "Should contain Next");
@@ -856,8 +858,14 @@ fn test_generated_twophase_parsing() {
 fn test_generated_twophase_translation() {
     let source = read_generated_spec("TwoPhase", "Twophase");
     let (verus_code, _) = translate_example(&source);
-    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
-    assert!(verus_code.contains("spec fn LTMCommit"), "Should translate TMCommit");
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LTMCommit"),
+        "Should translate TMCommit"
+    );
 }
 
 #[test]
@@ -893,9 +901,15 @@ fn test_generated_primarybackup_parsing() {
     let module = parse_module(&source).expect("Failed to parse generated PrimaryBackup");
     let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
     assert!(names.contains(&"Init"), "Should contain Init");
-    assert!(names.contains(&"PrimaryWrite"), "Should contain PrimaryWrite");
+    assert!(
+        names.contains(&"PrimaryWrite"),
+        "Should contain PrimaryWrite"
+    );
     assert!(names.contains(&"BackupAck"), "Should contain BackupAck");
-    assert!(names.contains(&"PrimaryCommit"), "Should contain PrimaryCommit");
+    assert!(
+        names.contains(&"PrimaryCommit"),
+        "Should contain PrimaryCommit"
+    );
     assert!(names.contains(&"Failover"), "Should contain Failover");
     assert!(names.contains(&"Next"), "Should contain Next");
 }
@@ -904,9 +918,18 @@ fn test_generated_primarybackup_parsing() {
 fn test_generated_primarybackup_translation() {
     let source = read_generated_spec("PrimaryBackup", "Primarybackup");
     let (verus_code, mode_annotations) = translate_example(&source);
-    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
-    assert!(verus_code.contains("spec fn LPrimaryWrite"), "Should translate PrimaryWrite");
-    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LPrimaryWrite"),
+        "Should translate PrimaryWrite"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
 }
 
 #[test]
@@ -916,10 +939,19 @@ fn test_generated_pbft_parsing() {
     let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
     assert!(names.contains(&"Init"), "Should contain Init");
     assert!(names.contains(&"PrePrepare"), "Should contain PrePrepare");
-    assert!(names.contains(&"ReceivePrepare"), "Should contain ReceivePrepare");
+    assert!(
+        names.contains(&"ReceivePrepare"),
+        "Should contain ReceivePrepare"
+    );
     assert!(names.contains(&"EnterCommit"), "Should contain EnterCommit");
-    assert!(names.contains(&"ReceiveCommit"), "Should contain ReceiveCommit");
-    assert!(names.contains(&"ExecuteReply"), "Should contain ExecuteReply");
+    assert!(
+        names.contains(&"ReceiveCommit"),
+        "Should contain ReceiveCommit"
+    );
+    assert!(
+        names.contains(&"ExecuteReply"),
+        "Should contain ExecuteReply"
+    );
     assert!(names.contains(&"ViewChange"), "Should contain ViewChange");
     assert!(names.contains(&"NewRound"), "Should contain NewRound");
     assert!(names.contains(&"Next"), "Should contain Next");
@@ -929,11 +961,26 @@ fn test_generated_pbft_parsing() {
 fn test_generated_pbft_translation() {
     let source = read_generated_spec("PBFT", "Pbft");
     let (verus_code, mode_annotations) = translate_example(&source);
-    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
-    assert!(verus_code.contains("spec fn LPrePrepare"), "Should translate PrePrepare");
-    assert!(verus_code.contains("spec fn LEnterCommit"), "Should translate EnterCommit");
-    assert!(verus_code.contains("spec fn LViewChange"), "Should translate ViewChange");
-    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LPrePrepare"),
+        "Should translate PrePrepare"
+    );
+    assert!(
+        verus_code.contains("spec fn LEnterCommit"),
+        "Should translate EnterCommit"
+    );
+    assert!(
+        verus_code.contains("spec fn LViewChange"),
+        "Should translate ViewChange"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
 }
 
 #[test]
@@ -954,12 +1001,30 @@ fn test_generated_vpaxos_parsing() {
 fn test_generated_vpaxos_translation() {
     let source = read_generated_spec("VerticalPaxos", "Vpaxos");
     let (verus_code, mode_annotations) = translate_example(&source);
-    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
-    assert!(verus_code.contains("spec fn LPrepare"), "Should translate Prepare");
-    assert!(verus_code.contains("spec fn LReconfigure"), "Should translate Reconfigure");
-    assert!(verus_code.contains("spec fn LSync"), "Should translate Sync");
-    assert!(verus_code.contains("spec fn LDeactivate"), "Should translate Deactivate");
-    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LPrepare"),
+        "Should translate Prepare"
+    );
+    assert!(
+        verus_code.contains("spec fn LReconfigure"),
+        "Should translate Reconfigure"
+    );
+    assert!(
+        verus_code.contains("spec fn LSync"),
+        "Should translate Sync"
+    );
+    assert!(
+        verus_code.contains("spec fn LDeactivate"),
+        "Should translate Deactivate"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
 }
 
 #[test]
@@ -969,10 +1034,16 @@ fn test_generated_epaxos_parsing() {
     let names: Vec<&str> = module.operators.iter().map(|o| o.name.as_str()).collect();
     assert!(names.contains(&"Init"), "Should contain Init");
     assert!(names.contains(&"Propose"), "Should contain Propose");
-    assert!(names.contains(&"ReceivePreAccept"), "Should contain ReceivePreAccept");
+    assert!(
+        names.contains(&"ReceivePreAccept"),
+        "Should contain ReceivePreAccept"
+    );
     assert!(names.contains(&"FastCommit"), "Should contain FastCommit");
     assert!(names.contains(&"StartAccept"), "Should contain StartAccept");
-    assert!(names.contains(&"ReceiveAccept"), "Should contain ReceiveAccept");
+    assert!(
+        names.contains(&"ReceiveAccept"),
+        "Should contain ReceiveAccept"
+    );
     assert!(names.contains(&"SlowCommit"), "Should contain SlowCommit");
     assert!(names.contains(&"Execute"), "Should contain Execute");
     assert!(names.contains(&"Recover"), "Should contain Recover");
@@ -984,11 +1055,32 @@ fn test_generated_epaxos_parsing() {
 fn test_generated_epaxos_translation() {
     let source = read_generated_spec("EPaxos", "Epaxos");
     let (verus_code, mode_annotations) = translate_example(&source);
-    assert!(verus_code.contains("spec fn LInit"), "Should translate Init");
-    assert!(verus_code.contains("spec fn LPropose"), "Should translate Propose");
-    assert!(verus_code.contains("spec fn LFastCommit"), "Should translate FastCommit");
-    assert!(verus_code.contains("spec fn LSlowCommit"), "Should translate SlowCommit");
-    assert!(verus_code.contains("spec fn LRecover"), "Should translate Recover");
-    assert!(verus_code.contains("spec fn LNewInstance"), "Should translate NewInstance");
-    assert!(!mode_annotations.is_empty(), "Should generate mode annotations");
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LPropose"),
+        "Should translate Propose"
+    );
+    assert!(
+        verus_code.contains("spec fn LFastCommit"),
+        "Should translate FastCommit"
+    );
+    assert!(
+        verus_code.contains("spec fn LSlowCommit"),
+        "Should translate SlowCommit"
+    );
+    assert!(
+        verus_code.contains("spec fn LRecover"),
+        "Should translate Recover"
+    );
+    assert!(
+        verus_code.contains("spec fn LNewInstance"),
+        "Should translate NewInstance"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
 }

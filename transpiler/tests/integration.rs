@@ -549,44 +549,84 @@ fn test_raft_type_generation() {
         types.len() >= 4,
         "Expected at least 4 types but got {}: {:?}",
         types.len(),
-        types.iter().map(|t| match t {
-            TypeDef::Struct(s) => format!("struct {}", s.name),
-            TypeDef::Enum(e) => format!("enum {}", e.name),
-            TypeDef::Alias(a) => format!("alias {}", a.name),
-        }).collect::<Vec<_>>()
+        types
+            .iter()
+            .map(|t| match t {
+                TypeDef::Struct(s) => format!("struct {}", s.name),
+                TypeDef::Enum(e) => format!("enum {}", e.name),
+                TypeDef::Alias(a) => format!("alias {}", a.name),
+            })
+            .collect::<Vec<_>>()
     );
 
     // Register types
     let mut registry = TypeRegistry::new();
     for type_def in &types {
         match type_def {
-            TypeDef::Struct(s) => { registry.register_struct(s.clone()); }
-            TypeDef::Enum(e) => { registry.register_enum(e.clone()); }
+            TypeDef::Struct(s) => {
+                registry.register_struct(s.clone());
+            }
+            TypeDef::Enum(e) => {
+                registry.register_enum(e.clone());
+            }
             _ => {}
         }
     }
 
-    assert!(registry.structs.contains_key("LState"), "Should have LState");
-    assert!(registry.structs.contains_key("LConstants"), "Should have LConstants");
-    assert!(registry.structs.contains_key("LLogEntry"), "Should have LLogEntry");
-    assert!(registry.enums.contains_key("LServerRole"), "Should have LServerRole");
+    assert!(
+        registry.structs.contains_key("LState"),
+        "Should have LState"
+    );
+    assert!(
+        registry.structs.contains_key("LConstants"),
+        "Should have LConstants"
+    );
+    assert!(
+        registry.structs.contains_key("LLogEntry"),
+        "Should have LLogEntry"
+    );
+    assert!(
+        registry.enums.contains_key("LServerRole"),
+        "Should have LServerRole"
+    );
 
     // Check LState has expected fields
     let state = &registry.structs["LState"];
     let field_names: Vec<&str> = state.fields.iter().map(|f| f.name.as_str()).collect();
-    assert!(field_names.contains(&"current_term"), "LState should have current_term");
+    assert!(
+        field_names.contains(&"current_term"),
+        "LState should have current_term"
+    );
     assert!(field_names.contains(&"role"), "LState should have role");
     assert!(field_names.contains(&"log"), "LState should have log");
-    assert!(field_names.contains(&"commit_index"), "LState should have commit_index");
-    assert!(field_names.contains(&"votes_granted"), "LState should have votes_granted");
-    assert!(field_names.contains(&"match_index"), "LState should have match_index");
+    assert!(
+        field_names.contains(&"commit_index"),
+        "LState should have commit_index"
+    );
+    assert!(
+        field_names.contains(&"votes_granted"),
+        "LState should have votes_granted"
+    );
+    assert!(
+        field_names.contains(&"match_index"),
+        "LState should have match_index"
+    );
 
     // Check LServerRole has expected variants
     let role_enum = &registry.enums["LServerRole"];
     let variant_names: Vec<&str> = role_enum.variants.iter().map(|v| v.name.as_str()).collect();
-    assert!(variant_names.contains(&"Follower"), "Should have Follower variant");
-    assert!(variant_names.contains(&"Candidate"), "Should have Candidate variant");
-    assert!(variant_names.contains(&"Leader"), "Should have Leader variant");
+    assert!(
+        variant_names.contains(&"Follower"),
+        "Should have Follower variant"
+    );
+    assert!(
+        variant_names.contains(&"Candidate"),
+        "Should have Candidate variant"
+    );
+    assert!(
+        variant_names.contains(&"Leader"),
+        "Should have Leader variant"
+    );
 }
 
 #[test]
@@ -614,32 +654,81 @@ fn test_raft_function_transpilation() {
 
     let transpiler = Transpiler::new(config);
     let result = transpiler.transpile_source(&spec_source, &annotation_source);
-    assert!(result.is_ok(), "Transpilation should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Transpilation should succeed: {:?}",
+        result.err()
+    );
 
     let output = result.unwrap();
 
     // Check that all expected exec functions are generated
-    assert!(output.contains("pub exec fn CInit"), "Should generate CInit");
-    assert!(output.contains("pub exec fn CTimeout"), "Should generate CTimeout");
-    assert!(output.contains("pub exec fn CGrantVote"), "Should generate CGrantVote");
-    assert!(output.contains("pub exec fn CReceiveVoteGranted"), "Should generate CReceiveVoteGranted");
-    assert!(output.contains("pub exec fn CClientRequest"), "Should generate CClientRequest");
-    assert!(output.contains("pub exec fn CSendAppendEntries"), "Should generate CSendAppendEntries");
-    assert!(output.contains("pub exec fn CAdvanceCommitIndex"), "Should generate CAdvanceCommitIndex");
-    assert!(output.contains("pub exec fn CStepDown"), "Should generate CStepDown");
+    assert!(
+        output.contains("pub exec fn CInit"),
+        "Should generate CInit"
+    );
+    assert!(
+        output.contains("pub exec fn CTimeout"),
+        "Should generate CTimeout"
+    );
+    assert!(
+        output.contains("pub exec fn CGrantVote"),
+        "Should generate CGrantVote"
+    );
+    assert!(
+        output.contains("pub exec fn CReceiveVoteGranted"),
+        "Should generate CReceiveVoteGranted"
+    );
+    assert!(
+        output.contains("pub exec fn CClientRequest"),
+        "Should generate CClientRequest"
+    );
+    assert!(
+        output.contains("pub exec fn CSendAppendEntries"),
+        "Should generate CSendAppendEntries"
+    );
+    assert!(
+        output.contains("pub exec fn CAdvanceCommitIndex"),
+        "Should generate CAdvanceCommitIndex"
+    );
+    assert!(
+        output.contains("pub exec fn CStepDown"),
+        "Should generate CStepDown"
+    );
 
     // Verify skipped functions are NOT generated
-    assert!(!output.contains("pub exec fn CNext"), "Should NOT generate CNext");
-    assert!(!output.contains("pub exec fn CBecomeLeader"), "Should NOT generate CBecomeLeader");
-    assert!(!output.contains("pub exec fn CHandleAppendResponse"), "Should NOT generate CHandleAppendResponse");
-    assert!(!output.contains("pub exec fn CHandleAppendReject"), "Should NOT generate CHandleAppendReject");
+    assert!(
+        !output.contains("pub exec fn CNext"),
+        "Should NOT generate CNext"
+    );
+    assert!(
+        !output.contains("pub exec fn CBecomeLeader"),
+        "Should NOT generate CBecomeLeader"
+    );
+    assert!(
+        !output.contains("pub exec fn CHandleAppendResponse"),
+        "Should NOT generate CHandleAppendResponse"
+    );
+    assert!(
+        !output.contains("pub exec fn CHandleAppendReject"),
+        "Should NOT generate CHandleAppendReject"
+    );
 
     // Check that ensures clauses reference spec functions
-    assert!(output.contains("LInit("), "Should reference LInit in ensures");
-    assert!(output.contains("LTimeout("), "Should reference LTimeout in ensures");
+    assert!(
+        output.contains("LInit("),
+        "Should reference LInit in ensures"
+    );
+    assert!(
+        output.contains("LTimeout("),
+        "Should reference LTimeout in ensures"
+    );
 
     // Check struct construction patterns
-    assert!(output.contains("CState"), "Should construct CState in function bodies");
+    assert!(
+        output.contains("CState"),
+        "Should construct CState in function bodies"
+    );
 }
 
 #[test]
@@ -667,17 +756,39 @@ fn test_raft_annotation_parsing() {
     // Check specific function annotations
     let init = funcs.get("LInit").expect("Should have LInit");
     assert_eq!(init.param_modes.len(), 2, "LInit should have 2 params");
-    assert_eq!(init.param_modes[0], ParameterMode::Output, "LInit s should be output");
-    assert_eq!(init.param_modes[1], ParameterMode::Input, "LInit c should be input");
+    assert_eq!(
+        init.param_modes[0],
+        ParameterMode::Output,
+        "LInit s should be output"
+    );
+    assert_eq!(
+        init.param_modes[1],
+        ParameterMode::Input,
+        "LInit c should be input"
+    );
 
     let timeout = funcs.get("LTimeout").expect("Should have LTimeout");
-    assert_eq!(timeout.param_modes.len(), 3, "LTimeout should have 3 params");
+    assert_eq!(
+        timeout.param_modes.len(),
+        3,
+        "LTimeout should have 3 params"
+    );
 
     let grant = funcs.get("LGrantVote").expect("Should have LGrantVote");
-    assert_eq!(grant.param_modes.len(), 7, "LGrantVote should have 7 params");
+    assert_eq!(
+        grant.param_modes.len(),
+        7,
+        "LGrantVote should have 7 params"
+    );
 
-    let send_ae = funcs.get("LSendAppendEntries").expect("Should have LSendAppendEntries");
-    assert_eq!(send_ae.param_modes.len(), 8, "LSendAppendEntries should have 8 params");
+    let send_ae = funcs
+        .get("LSendAppendEntries")
+        .expect("Should have LSendAppendEntries");
+    assert_eq!(
+        send_ae.param_modes.len(),
+        8,
+        "LSendAppendEntries should have 8 params"
+    );
 }
 
 #[test]
@@ -710,7 +821,10 @@ fn test_raft_config_loading() {
     // Check output settings
     let output = &config["output"];
     assert_eq!(output["validity_predicate_name"].as_str(), Some("valid"));
-    assert_eq!(output["generate_loops_for_verification"].as_bool(), Some(true));
+    assert_eq!(
+        output["generate_loops_for_verification"].as_bool(),
+        Some(true)
+    );
 }
 
 // ============================================================================
@@ -732,40 +846,71 @@ fn test_chain_replication_type_generation() {
         types.len() >= 3,
         "Expected at least 3 types but got {}: {:?}",
         types.len(),
-        types.iter().map(|t| match t {
-            TypeDef::Struct(s) => format!("struct {}", s.name),
-            TypeDef::Enum(e) => format!("enum {}", e.name),
-            TypeDef::Alias(a) => format!("alias {}", a.name),
-        }).collect::<Vec<_>>()
+        types
+            .iter()
+            .map(|t| match t {
+                TypeDef::Struct(s) => format!("struct {}", s.name),
+                TypeDef::Enum(e) => format!("enum {}", e.name),
+                TypeDef::Alias(a) => format!("alias {}", a.name),
+            })
+            .collect::<Vec<_>>()
     );
 
     let mut registry = TypeRegistry::new();
     for type_def in &types {
         match type_def {
-            TypeDef::Struct(s) => { registry.register_struct(s.clone()); }
-            TypeDef::Enum(e) => { registry.register_enum(e.clone()); }
+            TypeDef::Struct(s) => {
+                registry.register_struct(s.clone());
+            }
+            TypeDef::Enum(e) => {
+                registry.register_enum(e.clone());
+            }
             _ => {}
         }
     }
 
-    assert!(registry.structs.contains_key("LState"), "Should have LState");
-    assert!(registry.structs.contains_key("LConstants"), "Should have LConstants");
-    assert!(registry.enums.contains_key("LNodeRole"), "Should have LNodeRole");
+    assert!(
+        registry.structs.contains_key("LState"),
+        "Should have LState"
+    );
+    assert!(
+        registry.structs.contains_key("LConstants"),
+        "Should have LConstants"
+    );
+    assert!(
+        registry.enums.contains_key("LNodeRole"),
+        "Should have LNodeRole"
+    );
 
     // Check LState has expected fields
     let state = &registry.structs["LState"];
     let field_names: Vec<&str> = state.fields.iter().map(|f| f.name.as_str()).collect();
     assert!(field_names.contains(&"role"), "LState should have role");
-    assert!(field_names.contains(&"history"), "LState should have history");
-    assert!(field_names.contains(&"pending_sent"), "LState should have pending_sent");
-    assert!(field_names.contains(&"committed_count"), "LState should have committed_count");
-    assert!(field_names.contains(&"obj_value"), "LState should have obj_value");
+    assert!(
+        field_names.contains(&"history"),
+        "LState should have history"
+    );
+    assert!(
+        field_names.contains(&"pending_sent"),
+        "LState should have pending_sent"
+    );
+    assert!(
+        field_names.contains(&"committed_count"),
+        "LState should have committed_count"
+    );
+    assert!(
+        field_names.contains(&"obj_value"),
+        "LState should have obj_value"
+    );
 
     // Check LNodeRole has expected variants
     let role_enum = &registry.enums["LNodeRole"];
     let variant_names: Vec<&str> = role_enum.variants.iter().map(|v| v.name.as_str()).collect();
     assert!(variant_names.contains(&"Head"), "Should have Head variant");
-    assert!(variant_names.contains(&"Middle"), "Should have Middle variant");
+    assert!(
+        variant_names.contains(&"Middle"),
+        "Should have Middle variant"
+    );
     assert!(variant_names.contains(&"Tail"), "Should have Tail variant");
 }
 
@@ -773,8 +918,9 @@ fn test_chain_replication_type_generation() {
 fn test_chain_replication_function_transpilation() {
     let spec_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.rs")
         .expect("Failed to read ChainReplication chain.rs");
-    let annotation_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
-        .expect("Failed to read ChainReplication chain.automan");
+    let annotation_source =
+        std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
+            .expect("Failed to read ChainReplication chain.automan");
 
     let config = TranspilerConfig {
         translator: TranslatorConfig {
@@ -788,31 +934,66 @@ fn test_chain_replication_function_transpilation() {
 
     let transpiler = Transpiler::new(config);
     let result = transpiler.transpile_source(&spec_source, &annotation_source);
-    assert!(result.is_ok(), "Transpilation should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Transpilation should succeed: {:?}",
+        result.err()
+    );
 
     let output = result.unwrap();
 
     // Check all expected exec functions are generated
-    assert!(output.contains("pub exec fn CInit"), "Should generate CInit");
-    assert!(output.contains("pub exec fn CHeadReceiveWrite"), "Should generate CHeadReceiveWrite");
-    assert!(output.contains("pub exec fn CReceiveUpdate"), "Should generate CReceiveUpdate");
-    assert!(output.contains("pub exec fn CTailCommit"), "Should generate CTailCommit");
-    assert!(output.contains("pub exec fn CReceiveAck"), "Should generate CReceiveAck");
-    assert!(output.contains("pub exec fn CClientRead"), "Should generate CClientRead");
+    assert!(
+        output.contains("pub exec fn CInit"),
+        "Should generate CInit"
+    );
+    assert!(
+        output.contains("pub exec fn CHeadReceiveWrite"),
+        "Should generate CHeadReceiveWrite"
+    );
+    assert!(
+        output.contains("pub exec fn CReceiveUpdate"),
+        "Should generate CReceiveUpdate"
+    );
+    assert!(
+        output.contains("pub exec fn CTailCommit"),
+        "Should generate CTailCommit"
+    );
+    assert!(
+        output.contains("pub exec fn CReceiveAck"),
+        "Should generate CReceiveAck"
+    );
+    assert!(
+        output.contains("pub exec fn CClientRead"),
+        "Should generate CClientRead"
+    );
 
     // Verify LNext is NOT generated
-    assert!(!output.contains("pub exec fn CNext"), "Should NOT generate CNext");
+    assert!(
+        !output.contains("pub exec fn CNext"),
+        "Should NOT generate CNext"
+    );
 
     // Check ensures clauses reference spec functions
-    assert!(output.contains("LInit("), "Should reference LInit in ensures");
-    assert!(output.contains("LHeadReceiveWrite("), "Should reference LHeadReceiveWrite in ensures");
-    assert!(output.contains("LTailCommit("), "Should reference LTailCommit in ensures");
+    assert!(
+        output.contains("LInit("),
+        "Should reference LInit in ensures"
+    );
+    assert!(
+        output.contains("LHeadReceiveWrite("),
+        "Should reference LHeadReceiveWrite in ensures"
+    );
+    assert!(
+        output.contains("LTailCommit("),
+        "Should reference LTailCommit in ensures"
+    );
 }
 
 #[test]
 fn test_chain_replication_annotation_parsing() {
-    let annotation_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
-        .expect("Failed to read ChainReplication chain.automan");
+    let annotation_source =
+        std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
+            .expect("Failed to read ChainReplication chain.automan");
 
     let parser = AnnotationParser::new(annotation_source);
     let modules = parser.parse().unwrap();
@@ -836,26 +1017,44 @@ fn test_chain_replication_annotation_parsing() {
     assert_eq!(init.param_modes[0], ParameterMode::Output);
     assert_eq!(init.param_modes[1], ParameterMode::Input);
 
-    let head_write = funcs.get("LHeadReceiveWrite").expect("Should have LHeadReceiveWrite");
-    assert_eq!(head_write.param_modes.len(), 4, "LHeadReceiveWrite should have 4 params");
+    let head_write = funcs
+        .get("LHeadReceiveWrite")
+        .expect("Should have LHeadReceiveWrite");
+    assert_eq!(
+        head_write.param_modes.len(),
+        4,
+        "LHeadReceiveWrite should have 4 params"
+    );
 
     let tail_commit = funcs.get("LTailCommit").expect("Should have LTailCommit");
-    assert_eq!(tail_commit.param_modes.len(), 4, "LTailCommit should have 4 params");
+    assert_eq!(
+        tail_commit.param_modes.len(),
+        4,
+        "LTailCommit should have 4 params"
+    );
 
     let client_read = funcs.get("LClientRead").expect("Should have LClientRead");
-    assert_eq!(client_read.param_modes.len(), 3, "LClientRead should have 3 params");
+    assert_eq!(
+        client_read.param_modes.len(),
+        3,
+        "LClientRead should have 3 params"
+    );
 }
 
 #[test]
 fn test_chain_replication_config_loading() {
-    let config_str = std::fs::read_to_string("../src/protocol/ChainReplication/chain_transpile.toml")
-        .expect("Failed to read ChainReplication config");
+    let config_str =
+        std::fs::read_to_string("../src/protocol/ChainReplication/chain_transpile.toml")
+            .expect("Failed to read ChainReplication config");
 
     let config: toml::Value = config_str.parse().expect("Failed to parse TOML");
 
     // Check skip_functions
     let skip = config["skip_functions"].as_array().unwrap();
-    assert!(skip.iter().any(|v| v.as_str() == Some("LNext")), "Should skip LNext");
+    assert!(
+        skip.iter().any(|v| v.as_str() == Some("LNext")),
+        "Should skip LNext"
+    );
 
     // Check naming
     let naming = &config["naming"];
@@ -1033,7 +1232,8 @@ fn test_transpilation_determinism_with_struct_substitutions() {
 
     for i in 1..results.len() {
         assert_eq!(
-            results[0], results[i],
+            results[0],
+            results[i],
             "Transpilation run {} produced different output than run 0. Diff:\n{}",
             i,
             diff_strings(&results[0], &results[i])
@@ -1361,11 +1561,7 @@ fn test_generated_types_module_public_api() {
     ];
 
     for ty in expected_types {
-        assert!(
-            source.contains(ty),
-            "types_gen.rs should contain `{}`",
-            ty
-        );
+        assert!(source.contains(ty), "types_gen.rs should contain `{}`", ty);
     }
 
     // Verify type aliases
@@ -1545,8 +1741,8 @@ fn test_manual_impl_modules_have_deprecation_notices() {
     ];
 
     for (path, expected_msg) in modules {
-        let source = std::fs::read_to_string(path)
-            .unwrap_or_else(|_| panic!("Failed to read {}", path));
+        let source =
+            std::fs::read_to_string(path).unwrap_or_else(|_| panic!("Failed to read {}", path));
         assert!(
             source.contains("#[deprecated"),
             "{} should have #[deprecated] attribute",
@@ -1561,11 +1757,16 @@ fn test_manual_impl_modules_have_deprecation_notices() {
     }
 
     // mod.rs should have deprecation doc comments
-    let mod_rs = std::fs::read_to_string("../src/implementation/RSL/mod.rs")
-        .expect("Failed to read mod.rs");
-    for module in ["ExecutorImpl", "ProposerImpl", "acceptorimpl", "learnerimpl"] {
+    let mod_rs =
+        std::fs::read_to_string("../src/implementation/RSL/mod.rs").expect("Failed to read mod.rs");
+    for module in [
+        "ExecutorImpl",
+        "ProposerImpl",
+        "acceptorimpl",
+        "learnerimpl",
+    ] {
         assert!(
-            mod_rs.contains(&format!("/// Deprecated: use `crate::generated::RSL::")),
+            mod_rs.contains(&"/// Deprecated: use `crate::generated::RSL::".to_string()),
             "mod.rs should have deprecation doc comment for {}",
             module
         );
@@ -1606,7 +1807,9 @@ fn test_tla_to_exec_pipeline_with_string_literals() {
 
     let transpiler = std::path::Path::new("target/release/verus-transpile");
     if !transpiler.exists() {
-        eprintln!("Skipping pipeline test: transpiler binary not found at target/release/verus-transpile");
+        eprintln!(
+            "Skipping pipeline test: transpiler binary not found at target/release/verus-transpile"
+        );
         return;
     }
 
@@ -1770,8 +1973,8 @@ fn test_paxos_tla_to_exec_pipeline_with_record_literals() {
         return;
     }
 
-    let transpiler_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target/release/verus-transpile");
+    let transpiler_bin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/verus-transpile");
     if !transpiler_bin.exists() {
         eprintln!("Skipping: transpiler binary not built");
         return;
@@ -1800,8 +2003,7 @@ fn test_paxos_tla_to_exec_pipeline_with_record_literals() {
     );
 
     // The spec should contain record literals
-    let spec_content =
-        std::fs::read_to_string(&spec_output).expect("Failed to read spec output");
+    let spec_content = std::fs::read_to_string(&spec_output).expect("Failed to read spec output");
     assert!(
         spec_content.contains("type:") || spec_content.contains("bal:"),
         "Paxos spec should contain record literal fields"
@@ -1845,8 +2047,8 @@ fn test_pbft_tla_to_exec_pipeline_with_record_literals() {
         return;
     }
 
-    let transpiler_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target/release/verus-transpile");
+    let transpiler_bin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/verus-transpile");
     if !transpiler_bin.exists() {
         eprintln!("Skipping: transpiler binary not built");
         return;
@@ -1911,8 +2113,8 @@ fn test_verus2tla_all_tla_generated_specs() {
         .unwrap()
         .join("src/protocol/TLA");
 
-    let transpiler_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target/release/verus-transpile");
+    let transpiler_bin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/verus-transpile");
     if !transpiler_bin.exists() {
         eprintln!("Skipping: transpiler binary not built");
         return;
@@ -1977,8 +2179,7 @@ fn test_verus2tla_all_tla_generated_specs() {
         );
 
         // Verify output is non-empty and looks like a TLA+ module
-        let tla_content =
-            std::fs::read_to_string(&tla_output).expect("Failed to read TLA+ output");
+        let tla_content = std::fs::read_to_string(&tla_output).expect("Failed to read TLA+ output");
         assert!(
             tla_content.contains("MODULE"),
             "{} roundtrip TLA+ should contain MODULE header",
@@ -1997,7 +2198,13 @@ fn diff_strings(a: &str, b: &str) -> String {
     let mut diff = String::new();
     for (i, (la, lb)) in a_lines.iter().zip(b_lines.iter()).enumerate() {
         if la != lb {
-            diff.push_str(&format!("line {}: -{}\nline {}: +{}\n", i + 1, la, i + 1, lb));
+            diff.push_str(&format!(
+                "line {}: -{}\nline {}: +{}\n",
+                i + 1,
+                la,
+                i + 1,
+                lb
+            ));
         }
     }
     if a_lines.len() != b_lines.len() {

@@ -796,10 +796,7 @@ impl TypeGenerator {
             // Seq<NamedType> where inner needs View: map each element with @
             Type::Seq(inner) if inner_needs_view_map(inner) => {
                 let exec_inner = self.translate_type(inner);
-                Some(format!(
-                    "{}@.map(|i: int, x: {}| x@)",
-                    accessor, exec_inner
-                ))
+                Some(format!("{}@.map(|i: int, x: {}| x@)", accessor, exec_inner))
             }
             // Set<NamedType> where inner needs View: map each element with @
             Type::Set(inner) if inner_needs_view_map(inner) => {
@@ -2640,9 +2637,7 @@ mod tests {
         let result = generator.generate_struct(&spec);
 
         assert!(
-            result
-                .code
-                .contains("self.ids@.map(|x: u64| x as int)"),
+            result.code.contains("self.ids@.map(|x: u64| x as int)"),
             "Should map Set<nat> field with .map(): {}",
             result.code
         );
@@ -2659,9 +2654,7 @@ mod tests {
             generics: Generics::default(),
             fields: vec![FieldDef {
                 name: "endpoints".to_string(),
-                ty: Type::Set(Box::new(Type::Named(Path::single(
-                    "EndPoint".to_string(),
-                )))),
+                ty: Type::Set(Box::new(Type::Named(Path::single("EndPoint".to_string())))),
                 is_public: true,
             }],
             is_spec: true,
@@ -2712,9 +2705,7 @@ mod tests {
 
         // Variant field should use .map() in View trait
         assert!(
-            result
-                .code
-                .contains("prepared_rms@.map(|x: u64| x as int)"),
+            result.code.contains("prepared_rms@.map(|x: u64| x as int)"),
             "Should map Set<int> in enum variant with .map(): {}",
             result.code
         );

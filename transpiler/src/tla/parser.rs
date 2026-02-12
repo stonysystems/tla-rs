@@ -1557,7 +1557,9 @@ mod tests {
         assert_eq!(op.name, "Init");
         // Body should be And(And(s.x = 0, s.y = 1), s.z = TRUE) — left-associative
         match &op.body {
-            TlaExpr::BinOp { op: TlaBinOp::And, .. } => {} // OK
+            TlaExpr::BinOp {
+                op: TlaBinOp::And, ..
+            } => {} // OK
             other => panic!("Expected conjunction, got {:?}", other),
         }
     }
@@ -1578,7 +1580,9 @@ mod tests {
         let op = &module.operators[0];
         assert_eq!(op.name, "Next");
         match &op.body {
-            TlaExpr::BinOp { op: TlaBinOp::Or, .. } => {} // OK
+            TlaExpr::BinOp {
+                op: TlaBinOp::Or, ..
+            } => {} // OK
             other => panic!("Expected disjunction, got {:?}", other),
         }
     }
@@ -1597,7 +1601,9 @@ mod tests {
         assert_eq!(module.operators.len(), 1);
         // Top level should be Or
         match &module.operators[0].body {
-            TlaExpr::BinOp { op: TlaBinOp::Or, .. } => {} // OK
+            TlaExpr::BinOp {
+                op: TlaBinOp::Or, ..
+            } => {} // OK
             other => panic!("Expected Or at top level, got {:?}", other),
         }
     }
@@ -1615,7 +1621,9 @@ mod tests {
         let module = parse_module(source).unwrap();
         assert_eq!(module.operators.len(), 1);
         match &module.operators[0].body {
-            TlaExpr::BinOp { op: TlaBinOp::Or, .. } => {} // OK
+            TlaExpr::BinOp {
+                op: TlaBinOp::Or, ..
+            } => {} // OK
             other => panic!("Expected Or, got {:?}", other),
         }
     }
@@ -1665,7 +1673,9 @@ mod tests {
         assert_eq!(module.operators.len(), 1);
         // Single conjunction item should just be the expression (s.x = 0)
         match &module.operators[0].body {
-            TlaExpr::BinOp { op: TlaBinOp::Eq, .. } => {} // OK - just the comparison
+            TlaExpr::BinOp {
+                op: TlaBinOp::Eq, ..
+            } => {} // OK - just the comparison
             other => panic!("Expected equality, got {:?}", other),
         }
     }

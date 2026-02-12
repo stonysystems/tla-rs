@@ -48,19 +48,31 @@ impl VerusType {
         }
 
         // Handle generic types
-        if let Some(inner) = type_str.strip_prefix("Seq<").and_then(|s| s.strip_suffix('>')) {
+        if let Some(inner) = type_str
+            .strip_prefix("Seq<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
             return VerusType::Seq(Box::new(VerusType::parse(inner)));
         }
 
-        if let Some(inner) = type_str.strip_prefix("Set<").and_then(|s| s.strip_suffix('>')) {
+        if let Some(inner) = type_str
+            .strip_prefix("Set<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
             return VerusType::Set(Box::new(VerusType::parse(inner)));
         }
 
-        if let Some(inner) = type_str.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
+        if let Some(inner) = type_str
+            .strip_prefix("Option<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
             return VerusType::Option(Box::new(VerusType::parse(inner)));
         }
 
-        if let Some(inner) = type_str.strip_prefix("Map<").and_then(|s| s.strip_suffix('>')) {
+        if let Some(inner) = type_str
+            .strip_prefix("Map<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
             // Parse Map<K, V>
             if let Some((key, value)) = Self::split_generic_args(inner) {
                 return VerusType::Map(
@@ -75,7 +87,7 @@ impl VerusType {
             let inner = &type_str[1..type_str.len() - 1];
             let parts = Self::split_tuple_parts(inner);
             if parts.len() > 1 {
-                return VerusType::Tuple(parts.into_iter().map(|p| VerusType::parse(p)).collect());
+                return VerusType::Tuple(parts.into_iter().map(VerusType::parse).collect());
             }
         }
 
@@ -420,9 +432,18 @@ mod tests {
 
     #[test]
     fn test_operator_mapping() {
-        assert!(matches!(map_operator("&&&"), OperatorMapping::Mapped("/\\")));
-        assert!(matches!(map_operator("|||"), OperatorMapping::Mapped("\\/")));
-        assert!(matches!(map_operator("len"), OperatorMapping::Function("Len")));
+        assert!(matches!(
+            map_operator("&&&"),
+            OperatorMapping::Mapped("/\\")
+        ));
+        assert!(matches!(
+            map_operator("|||"),
+            OperatorMapping::Mapped("\\/")
+        ));
+        assert!(matches!(
+            map_operator("len"),
+            OperatorMapping::Function("Len")
+        ));
         assert!(matches!(map_operator("+"), OperatorMapping::Direct));
     }
 }

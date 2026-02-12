@@ -53,20 +53,18 @@ fn contains_prime(expr: &TlaExpr) -> bool {
         TlaExpr::Prime(_) => true,
         TlaExpr::BinOp { left, right, .. } => contains_prime(left) || contains_prime(right),
         TlaExpr::UnaryOp { operand, .. } => contains_prime(operand),
-        TlaExpr::OpApply { op, args } => {
-            contains_prime(op) || args.iter().any(|a| contains_prime(a))
-        }
+        TlaExpr::OpApply { op, args } => contains_prime(op) || args.iter().any(contains_prime),
         TlaExpr::IfThenElse {
             cond,
             then_expr,
             else_expr,
         } => contains_prime(cond) || contains_prime(then_expr) || contains_prime(else_expr),
         TlaExpr::Forall { body, .. } | TlaExpr::Exists { body, .. } => contains_prime(body),
-        TlaExpr::SetEnum(elems) => elems.iter().any(|e| contains_prime(e)),
+        TlaExpr::SetEnum(elems) => elems.iter().any(contains_prime),
         TlaExpr::SetFilter { filter, .. } => contains_prime(filter),
         TlaExpr::SetMap { expr, .. } => contains_prime(expr),
         TlaExpr::Record(fields) => fields.iter().any(|(_, e)| contains_prime(e)),
-        TlaExpr::Tuple(elems) => elems.iter().any(|e| contains_prime(e)),
+        TlaExpr::Tuple(elems) => elems.iter().any(contains_prime),
         TlaExpr::Unchanged(_) => true,
         _ => false,
     }

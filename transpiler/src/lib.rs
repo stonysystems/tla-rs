@@ -39,9 +39,9 @@ pub mod error;
 pub mod moder;
 pub mod parser;
 pub mod printer;
+pub mod roundtrip;
 pub mod runtime;
 pub mod templates;
-pub mod roundtrip;
 pub mod tla;
 pub mod translator;
 pub mod types;
@@ -201,13 +201,16 @@ impl Transpiler {
 
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
-            let (generated_needs_set_helpers, generated_needs_vec_helpers, generated_needs_set_remove) =
-                Self::collect_generated_proof_helper_needs(
-                    &spec_fns,
-                    &annotations,
-                    &self.config.skip_functions,
-                    &self.config.translator,
-                )?;
+            let (
+                generated_needs_set_helpers,
+                generated_needs_vec_helpers,
+                generated_needs_set_remove,
+            ) = Self::collect_generated_proof_helper_needs(
+                &spec_fns,
+                &annotations,
+                &self.config.skip_functions,
+                &self.config.translator,
+            )?;
             // Emit helpers either when explicitly configured, or when the spec
             // syntax itself uses empty Seq/Set constructs that generate proof calls.
             let has_vec_fields = !self.config.translator.vec_fields.is_empty()
@@ -239,9 +242,8 @@ impl Transpiler {
             }
             // Generate HashMap abstractify proof lemmas for map_fields
             if self.has_map_fields() {
-                let map_helpers = Self::generate_map_proof_lemmas(
-                    &self.config.translator.map_fields,
-                );
+                let map_helpers =
+                    Self::generate_map_proof_lemmas(&self.config.translator.map_fields);
                 if !map_helpers.is_empty() {
                     output.push_str(&map_helpers);
                     output.push('\n');
@@ -405,13 +407,16 @@ impl Transpiler {
 
         // Generate proof helper lemmas if generate_proofs is enabled
         if self.config.translator.generate_proofs {
-            let (generated_needs_set_helpers, generated_needs_vec_helpers, generated_needs_set_remove) =
-                Self::collect_generated_proof_helper_needs(
-                    &spec_fns,
-                    &annotations,
-                    &self.config.skip_functions,
-                    &self.config.translator,
-                )?;
+            let (
+                generated_needs_set_helpers,
+                generated_needs_vec_helpers,
+                generated_needs_set_remove,
+            ) = Self::collect_generated_proof_helper_needs(
+                &spec_fns,
+                &annotations,
+                &self.config.skip_functions,
+                &self.config.translator,
+            )?;
             // Emit helpers either when explicitly configured, or when the spec
             // syntax itself uses empty Seq/Set constructs that generate proof calls.
             let has_vec_fields = !self.config.translator.vec_fields.is_empty()
@@ -443,9 +448,8 @@ impl Transpiler {
             }
             // Generate HashMap abstractify proof lemmas for map_fields
             if self.has_map_fields() {
-                let map_helpers = Self::generate_map_proof_lemmas(
-                    &self.config.translator.map_fields,
-                );
+                let map_helpers =
+                    Self::generate_map_proof_lemmas(&self.config.translator.map_fields);
                 if !map_helpers.is_empty() {
                     output.push_str(&map_helpers);
                     output.push('\n');
@@ -527,7 +531,9 @@ impl Transpiler {
             output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
             output.push_str("proof fn lemma_empty_set_map()\n");
             output.push_str("ensures\n");
-            output.push_str("    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n");
+            output.push_str(
+                "    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n",
+            );
             output.push_str("{\n");
             output.push_str("    let f = |x: u64| x as int;\n");
             output.push_str("    let s = Set::<u64>::empty().map(f);\n");
@@ -547,7 +553,9 @@ impl Transpiler {
             output.push_str("    let lhs = s.remove(elt).map(f);\n");
             output.push_str("    let rhs = s.map(f).remove(f(elt));\n");
             output.push_str("    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {\n");
-            output.push_str("        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;\n");
+            output.push_str(
+                "        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;\n",
+            );
             output.push_str("        assert(s.contains(x));\n");
             output.push_str("        assert(x != elt);\n");
             output.push_str("        assert(f(x) != f(elt));\n");
@@ -574,10 +582,7 @@ impl Transpiler {
                     "/// Helper proof: mapping over an empty Vec<{}> yields an empty seq.\n",
                     exec_type
                 ));
-                output.push_str(&format!(
-                    "proof fn lemma_empty_{}_map()\n",
-                    field
-                ));
+                output.push_str(&format!("proof fn lemma_empty_{}_map()\n", field));
                 output.push_str("ensures\n");
                 output.push_str(&format!(
                     "    Seq::<{}>::empty().map(|i: int, e: {}| e@) =~= Seq::<{}>::empty(),\n",
@@ -608,9 +613,7 @@ impl Transpiler {
                     "/// Helper: clone a Vec<{}> preserving both raw and mapped view.\n",
                     exec_type
                 ));
-                output.push_str(&format!(
-                    "/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.\n",
-                ));
+                output.push_str("/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.\n");
                 output.push_str("#[verifier(external_body)]\n");
                 output.push_str(&format!(
                     "fn clone_{}(v: &Vec<{}>) -> (res: Vec<{}>)\n",
@@ -632,12 +635,16 @@ impl Transpiler {
             output.push_str("/// Helper proof: mapping over an empty Seq yields an empty Seq.\n");
             output.push_str("proof fn lemma_empty_seq_map()\n");
             output.push_str("ensures\n");
-            output.push_str("    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),\n");
+            output.push_str(
+                "    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),\n",
+            );
             output.push_str("{\n");
             output.push_str("}\n\n");
 
             // lemma_seq_push_map_commute
-            output.push_str("/// Helper proof: push commutes with Seq::map for index-ignoring functions.\n");
+            output.push_str(
+                "/// Helper proof: push commutes with Seq::map for index-ignoring functions.\n",
+            );
             output.push_str("proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)\n");
             output.push_str("ensures\n");
             output.push_str("    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),\n");
@@ -682,7 +689,7 @@ impl Transpiler {
 
             // Collect variants for this enum type from variant_remapping
             let mut variants: Vec<String> = Vec::new();
-            for (_spec_variant, qualified_path) in variant_remapping {
+            for qualified_path in variant_remapping.values() {
                 if let Some(pos) = qualified_path.rfind("::") {
                     let type_prefix = &qualified_path[..pos];
                     if type_prefix == enum_type.as_str() {
@@ -755,48 +762,41 @@ impl Transpiler {
             // lemma_abstractify_empty_{prefix}
             // =========================================================
             output.push_str(&format!(
-                "/// If m@ is empty, abstractify_{} is empty.\n", prefix
+                "/// If m@ is empty, abstractify_{} is empty.\n",
+                prefix
             ));
             output.push_str(&format!(
-                "proof fn lemma_abstractify_empty_{}(m: {})\n", prefix, exec_type
+                "proof fn lemma_abstractify_empty_{}(m: {})\n",
+                prefix, exec_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!(
-                "    m@ == Map::<COperationNumber, {}>::empty(),\n", value_type
+                "    m@ == Map::<COperationNumber, {}>::empty(),\n",
+                value_type
             ));
             output.push_str("ensures\n");
             output.push_str(&format!(
                 "    abstractify_{}(m) =~= Map::<OperationNumber, {}>::empty(),\n",
                 prefix,
                 // Derive spec value type: strip C prefix from value_type
-                if value_type.starts_with("C") { &value_type[1..] } else { value_type }
+                value_type.strip_prefix('C').unwrap_or(value_type)
             ));
             output.push_str("{\n");
-            output.push_str(&format!(
-                "    let abs = abstractify_{}(m);\n", prefix
-            ));
+            output.push_str(&format!("    let abs = abstractify_{}(m);\n", prefix));
             output.push_str("    assert forall |ak: int| !abs.contains_key(ak) by { }\n");
             output.push_str("}\n\n");
 
             // Derive spec value type for reuse
-            let spec_value_type = if value_type.starts_with("C") {
-                &value_type[1..]
-            } else {
-                value_type.as_str()
-            };
+            let spec_value_type = value_type.strip_prefix('C').unwrap_or(value_type.as_str());
 
             // =========================================================
             // lemma_abstractify_{prefix}_insert
             // =========================================================
-            output.push_str(&format!(
-                "/// If m2@ =~= old@.insert(k, v) and old is abstractable and v is abstractable,\n"
-            ));
-            output.push_str(&format!(
-                "/// then abstractify on m2 = abstractify on old + insert.\n"
-            ));
-            output.push_str(&format!(
-                "proof fn lemma_abstractify_{}_insert(\n", prefix
-            ));
+            output.push_str(
+                "/// If m2@ =~= old@.insert(k, v) and old is abstractable and v is abstractable,\n",
+            );
+            output.push_str("/// then abstractify on m2 = abstractify on old + insert.\n");
+            output.push_str(&format!("proof fn lemma_abstractify_{}_insert(\n", prefix));
             output.push_str(&format!(
                 "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n    v: {1},\n)\n",
                 exec_type, value_type
@@ -807,11 +807,13 @@ impl Transpiler {
             output.push_str("    m2@ =~= old_m@.insert(k, v),\n");
             output.push_str("ensures\n");
             output.push_str(&format!(
-                "    abstractify_{0}(m2) =~= abstractify_{0}(old_m).insert(k as int, v@),\n", prefix
+                "    abstractify_{0}(m2) =~= abstractify_{0}(old_m).insert(k as int, v@),\n",
+                prefix
             ));
             output.push_str(&format!("    {}_is_abstractable(m2),\n", prefix));
             output.push_str(&format!(
-                "    {0}_is_valid(old_m) && v.valid() ==> {0}_is_valid(m2),\n", prefix
+                "    {0}_is_valid(old_m) && v.valid() ==> {0}_is_valid(m2),\n",
+                prefix
             ));
             output.push_str("{\n");
             output.push_str(&format!(
@@ -828,26 +830,40 @@ impl Transpiler {
             output.push_str("            }\n");
             output.push_str("        }\n");
             output.push_str("        if abs2.contains_key(ak) {\n");
-            output.push_str("            let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str(
+                "            let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
+            );
             output.push_str("            if kw == k { assert(ak == k as int); }\n");
-            output.push_str("            else { assert(old_m@.contains_key(kw) && kw as int == ak); }\n");
+            output.push_str(
+                "            else { assert(old_m@.contains_key(kw) && kw as int == ak); }\n",
+            );
             output.push_str("        }\n");
             output.push_str("    }\n");
             // Value equivalence
             output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
-            output.push_str("        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
-            output.push_str("        if ak == k as int { assert(kw == k); assert(m2@[kw] == v); }\n");
+            output.push_str(
+                "        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
+            );
+            output
+                .push_str("        if ak == k as int { assert(kw == k); assert(m2@[kw] == v); }\n");
             output.push_str("        else { assert(m2@[kw] == old_m@[kw]); }\n");
             output.push_str("    }\n");
             // Abstractability
-            output.push_str("    assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
+            output.push_str(
+                "    assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n",
+            );
             output.push_str("        COperationNumberIsAbstractable(i) && m2@[i].abstractable()\n");
             output.push_str("    by {\n");
             output.push_str("        if i == k { assert(m2@[i] == v); }\n");
-            output.push_str("        else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }\n");
+            output.push_str(
+                "        else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }\n",
+            );
             output.push_str("    }\n");
             // Validity (conditional)
-            output.push_str(&format!("    if {}_is_valid(old_m) && v.valid() {{\n", prefix));
+            output.push_str(&format!(
+                "    if {}_is_valid(old_m) && v.valid() {{\n",
+                prefix
+            ));
             output.push_str("        assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
             output.push_str("            COperationNumberIsValid(i) && m2@[i].valid()\n");
             output.push_str("        by {\n");
@@ -860,24 +876,25 @@ impl Transpiler {
             // =========================================================
             // lemma_abstractify_{prefix}_remove
             // =========================================================
+            output.push_str("/// If m2@ =~= old@.remove(k) and old is abstractable,\n/// then abstractify on m2 = abstractify on old - remove.\n");
+            output.push_str(&format!("proof fn lemma_abstractify_{}_remove(\n", prefix));
             output.push_str(&format!(
-                "/// If m2@ =~= old@.remove(k) and old is abstractable,\n/// then abstractify on m2 = abstractify on old - remove.\n"
-            ));
-            output.push_str(&format!(
-                "proof fn lemma_abstractify_{}_remove(\n", prefix
-            ));
-            output.push_str(&format!(
-                "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n)\n", exec_type
+                "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n)\n",
+                exec_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!("    {}_is_abstractable(old_m),\n", prefix));
             output.push_str("    m2@ =~= old_m@.remove(k),\n");
             output.push_str("ensures\n");
             output.push_str(&format!(
-                "    abstractify_{0}(m2) =~= abstractify_{0}(old_m).remove(k as int),\n", prefix
+                "    abstractify_{0}(m2) =~= abstractify_{0}(old_m).remove(k as int),\n",
+                prefix
             ));
             output.push_str(&format!("    {}_is_abstractable(m2),\n", prefix));
-            output.push_str(&format!("    {0}_is_valid(old_m) ==> {0}_is_valid(m2),\n", prefix));
+            output.push_str(&format!(
+                "    {0}_is_valid(old_m) ==> {0}_is_valid(m2),\n",
+                prefix
+            ));
             output.push_str("{\n");
             output.push_str(&format!(
                 "    let abs2 = abstractify_{0}(m2);\n    let expected = abstractify_{0}(old_m).remove(k as int);\n", prefix
@@ -889,29 +906,38 @@ impl Transpiler {
             output.push_str("            assert(m2@.contains_key(kw) && kw as int == ak);\n");
             output.push_str("        }\n");
             output.push_str("        if abs2.contains_key(ak) {\n");
-            output.push_str("            let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str(
+                "            let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
+            );
             output.push_str("            assert(kw != k);\n");
             output.push_str("            assert(old_m@.contains_key(kw) && kw as int == ak);\n");
             output.push_str("        }\n");
             output.push_str("    }\n");
             output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
-            output.push_str("        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n");
+            output.push_str(
+                "        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
+            );
             output.push_str("        let kw_orig = choose |kw2: u64| old_m@.contains_key(kw2) && kw2 as int == ak;\n");
             output.push_str("        assert(kw_orig == kw);\n");
             output.push_str("        assert(m2@[kw] == old_m@[kw]);\n");
             output.push_str("    }\n");
             // Abstractability
-            output.push_str("    assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
+            output.push_str(
+                "    assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n",
+            );
             output.push_str("        COperationNumberIsAbstractable(i) && m2@[i].abstractable()\n");
             output.push_str("    by {\n");
-            output.push_str("        assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]);\n");
+            output
+                .push_str("        assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]);\n");
             output.push_str("    }\n");
             // Validity
             output.push_str(&format!("    if {}_is_valid(old_m) {{\n", prefix));
             output.push_str("        assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies\n");
             output.push_str("            COperationNumberIsValid(i) && m2@[i].valid()\n");
             output.push_str("        by {\n");
-            output.push_str("            assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]);\n");
+            output.push_str(
+                "            assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]);\n",
+            );
             output.push_str("        }\n");
             output.push_str("    }\n");
             output.push_str("}\n\n");
@@ -919,16 +945,15 @@ impl Transpiler {
             // =========================================================
             // lemma_abstractify_singleton_{prefix}
             // =========================================================
-            output.push_str(&format!(
-                "/// Singleton: if m@ =~= Map::empty().insert(opn, tup), prove abstractify result.\n"
-            ));
+            output.push_str("/// Singleton: if m@ =~= Map::empty().insert(opn, tup), prove abstractify result.\n");
             output.push_str(&format!(
                 "proof fn lemma_abstractify_singleton_{}(m: {}, opn: COperationNumber, tup: {})\n",
                 prefix, exec_type, value_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!(
-                "    m@ =~= Map::<COperationNumber, {}>::empty().insert(opn, tup),\n", value_type
+                "    m@ =~= Map::<COperationNumber, {}>::empty().insert(opn, tup),\n",
+                value_type
             ));
             output.push_str("    tup.abstractable(),\n");
             output.push_str("ensures\n");
@@ -946,20 +971,28 @@ impl Transpiler {
             output.push_str("    assert forall |ak: int| abs.contains_key(ak) == expected.contains_key(ak) by {\n");
             output.push_str("        if expected.contains_key(ak) { assert(m@.contains_key(opn) && (opn as int) == ak); }\n");
             output.push_str("        if abs.contains_key(ak) {\n");
-            output.push_str("            let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n");
+            output.push_str(
+                "            let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n",
+            );
             output.push_str("            assert(k == opn);\n");
             output.push_str("        }\n");
             output.push_str("    }\n");
             output.push_str("    assert forall |ak: int| abs.contains_key(ak) implies abs[ak] == expected[ak] by {\n");
-            output.push_str("        let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n");
+            output.push_str(
+                "        let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n",
+            );
             output.push_str("        assert(k == opn); assert(m@[k] == tup);\n");
             output.push_str("    }\n");
             // Abstractability + validity
-            output.push_str("    assert forall |i: COperationNumber| #![auto] m@.contains_key(i) implies\n");
+            output.push_str(
+                "    assert forall |i: COperationNumber| #![auto] m@.contains_key(i) implies\n",
+            );
             output.push_str("        COperationNumberIsAbstractable(i) && m@[i].abstractable()\n");
             output.push_str("    by { assert(i == opn); assert(m@[i] == tup); }\n");
             output.push_str("    if tup.valid() {\n");
-            output.push_str("        assert forall |i: COperationNumber| #![auto] m@.contains_key(i) implies\n");
+            output.push_str(
+                "        assert forall |i: COperationNumber| #![auto] m@.contains_key(i) implies\n",
+            );
             output.push_str("            COperationNumberIsValid(i) && m@[i].valid()\n");
             output.push_str("        by { assert(i == opn); assert(m@[i] == tup); }\n");
             output.push_str("    }\n");
@@ -969,11 +1002,13 @@ impl Transpiler {
             // clone_{prefix} external_body helper
             // =========================================================
             output.push_str(&format!(
-                "/// Helper: clone a {} preserving view.\n", exec_type
+                "/// Helper: clone a {} preserving view.\n",
+                exec_type
             ));
             output.push_str("#[verifier(external_body)]\n");
             output.push_str(&format!(
-                "fn clone_{}(m: &{}) -> (res: {})\n", prefix, exec_type, exec_type
+                "fn clone_{}(m: &{}) -> (res: {})\n",
+                prefix, exec_type, exec_type
             ));
             output.push_str("ensures\n");
             output.push_str("    res@ == m@,\n");
@@ -985,7 +1020,8 @@ impl Transpiler {
             // filter_{prefix} external_body helper
             // =========================================================
             output.push_str(&format!(
-                "/// Helper: filter {} keeping only entries with key >= threshold.\n", exec_type
+                "/// Helper: filter {} keeping only entries with key >= threshold.\n",
+                exec_type
             ));
             output.push_str("#[verifier(external_body)]\n");
             output.push_str(&format!(
@@ -999,7 +1035,9 @@ impl Transpiler {
             output.push_str(&format!("    {}_is_abstractable(res),\n", prefix));
             output.push_str("    forall |k: COperationNumber| res@.contains_key(k) ==>\n");
             output.push_str("        m@.contains_key(k) && k >= threshold && (#[trigger] res@[k])@ == m@[k]@,\n");
-            output.push_str("    forall |k: COperationNumber| m@.contains_key(k) && k >= threshold ==>\n");
+            output.push_str(
+                "    forall |k: COperationNumber| m@.contains_key(k) && k >= threshold ==>\n",
+            );
             output.push_str("        res@.contains_key(k),\n");
             output.push_str("    forall |k: COperationNumber| res@.contains_key(k) ==>\n");
             output.push_str("        m@.contains_key(k),\n");
@@ -1022,31 +1060,46 @@ impl Transpiler {
     fn spec_uses_remove(expr: &crate::ast::Expr) -> bool {
         use crate::ast::Expr;
         match expr {
-            Expr::MethodCall { method, receiver, args, .. } => {
+            Expr::MethodCall {
+                method,
+                receiver,
+                args,
+                ..
+            } => {
                 if method == "remove" {
                     return true;
                 }
-                Self::spec_uses_remove(receiver) || args.iter().any(|a| Self::spec_uses_remove(a))
+                Self::spec_uses_remove(receiver) || args.iter().any(Self::spec_uses_remove)
             }
             Expr::Conjunction(parts) | Expr::Disjunction(parts) => {
-                parts.iter().any(|p| Self::spec_uses_remove(p))
+                parts.iter().any(Self::spec_uses_remove)
             }
-            Expr::Binary(lhs, _, rhs) | Expr::Eq(lhs, rhs) | Expr::Ne(lhs, rhs)
-            | Expr::Lt(lhs, rhs) | Expr::Le(lhs, rhs) | Expr::Gt(lhs, rhs)
-            | Expr::Ge(lhs, rhs) | Expr::Implies(lhs, rhs) => {
-                Self::spec_uses_remove(lhs) || Self::spec_uses_remove(rhs)
-            }
+            Expr::Binary(lhs, _, rhs)
+            | Expr::Eq(lhs, rhs)
+            | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs)
+            | Expr::Le(lhs, rhs)
+            | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs)
+            | Expr::Implies(lhs, rhs) => Self::spec_uses_remove(lhs) || Self::spec_uses_remove(rhs),
             Expr::Not(inner) | Expr::Field(inner, _) | Expr::Arrow(inner, _) => {
                 Self::spec_uses_remove(inner)
             }
-            Expr::If { cond, then_branch, else_branch } => {
-                Self::spec_uses_remove(cond) || Self::spec_uses_remove(then_branch)
-                    || else_branch.as_ref().is_some_and(|e| Self::spec_uses_remove(e))
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                Self::spec_uses_remove(cond)
+                    || Self::spec_uses_remove(then_branch)
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::spec_uses_remove(e))
             }
             Expr::Let { value, body, .. } => {
                 Self::spec_uses_remove(value) || Self::spec_uses_remove(body)
             }
-            Expr::Call { args, .. } => args.iter().any(|a| Self::spec_uses_remove(a)),
+            Expr::Call { args, .. } => args.iter().any(Self::spec_uses_remove),
             Expr::Index(base, idx) => Self::spec_uses_remove(base) || Self::spec_uses_remove(idx),
             Expr::Forall { body, .. } | Expr::Exists { body, .. } => Self::spec_uses_remove(body),
             _ => false,
@@ -1128,7 +1181,11 @@ impl Transpiler {
                 Expr::Call { func, args } => {
                     args.is_empty() && Self::path_is_empty_ctor_for(func, collection_name)
                 }
-                Expr::MethodCall { receiver, method, args } => {
+                Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                } => {
                     method == "empty"
                         && args.is_empty()
                         && Self::expr_mentions_collection(receiver, collection_name)
@@ -1142,7 +1199,11 @@ impl Transpiler {
                 Expr::Call { func, args } => {
                     args.is_empty() && Self::path_is_empty_ctor_for(func, collection_name)
                 }
-                Expr::MethodCall { receiver, method, args } => {
+                Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                } => {
                     method == "empty"
                         && args.is_empty()
                         && Self::expr_mentions_collection(receiver, collection_name)
@@ -1155,20 +1216,32 @@ impl Transpiler {
         }
 
         match expr {
-            Expr::Conjunction(parts) | Expr::Disjunction(parts) => {
-                parts.iter().any(|p| Self::spec_uses_empty_collection(p, detect_set))
-            }
-            Expr::Binary(lhs, _, rhs) | Expr::Eq(lhs, rhs) | Expr::Ne(lhs, rhs)
-            | Expr::Lt(lhs, rhs) | Expr::Le(lhs, rhs) | Expr::Gt(lhs, rhs)
-            | Expr::Ge(lhs, rhs) | Expr::Implies(lhs, rhs) | Expr::Iff(lhs, rhs) => {
+            Expr::Conjunction(parts) | Expr::Disjunction(parts) => parts
+                .iter()
+                .any(|p| Self::spec_uses_empty_collection(p, detect_set)),
+            Expr::Binary(lhs, _, rhs)
+            | Expr::Eq(lhs, rhs)
+            | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs)
+            | Expr::Le(lhs, rhs)
+            | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs)
+            | Expr::Implies(lhs, rhs)
+            | Expr::Iff(lhs, rhs) => {
                 Self::spec_uses_empty_collection(lhs, detect_set)
                     || Self::spec_uses_empty_collection(rhs, detect_set)
             }
-            Expr::Not(inner) | Expr::Field(inner, _) | Expr::Arrow(inner, _)
-            | Expr::View(inner) | Expr::Unary(_, inner) | Expr::Is(inner, _) => {
-                Self::spec_uses_empty_collection(inner, detect_set)
-            }
-            Expr::If { cond, then_branch, else_branch } => {
+            Expr::Not(inner)
+            | Expr::Field(inner, _)
+            | Expr::Arrow(inner, _)
+            | Expr::View(inner)
+            | Expr::Unary(_, inner)
+            | Expr::Is(inner, _) => Self::spec_uses_empty_collection(inner, detect_set),
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 Self::spec_uses_empty_collection(cond, detect_set)
                     || Self::spec_uses_empty_collection(then_branch, detect_set)
                     || else_branch
@@ -1184,7 +1257,9 @@ impl Transpiler {
                 .any(|a| Self::spec_uses_empty_collection(a, detect_set)),
             Expr::MethodCall { receiver, args, .. } => {
                 Self::spec_uses_empty_collection(receiver, detect_set)
-                    || args.iter().any(|a| Self::spec_uses_empty_collection(a, detect_set))
+                    || args
+                        .iter()
+                        .any(|a| Self::spec_uses_empty_collection(a, detect_set))
             }
             Expr::Index(base, idx) => {
                 Self::spec_uses_empty_collection(base, detect_set)
@@ -1193,7 +1268,9 @@ impl Transpiler {
             Expr::Forall { body, triggers, .. } => {
                 Self::spec_uses_empty_collection(body, detect_set)
                     || triggers.iter().any(|t| {
-                        t.exprs.iter().any(|e| Self::spec_uses_empty_collection(e, detect_set))
+                        t.exprs
+                            .iter()
+                            .any(|e| Self::spec_uses_empty_collection(e, detect_set))
                     })
             }
             Expr::Exists { body, .. } => Self::spec_uses_empty_collection(body, detect_set),
@@ -1223,7 +1300,11 @@ impl Transpiler {
                     })
             }
             Expr::Cast(inner, _) => Self::spec_uses_empty_collection(inner, detect_set),
-            Expr::SetEmpty | Expr::SeqEmpty | Expr::MapEmpty | Expr::Ident(_) | Expr::Literal(_) => false,
+            Expr::SetEmpty
+            | Expr::SeqEmpty
+            | Expr::MapEmpty
+            | Expr::Ident(_)
+            | Expr::Literal(_) => false,
         }
     }
 
@@ -1233,10 +1314,9 @@ impl Transpiler {
             .segments
             .iter()
             .any(|s| s == "empty" || s.contains("empty"));
-        let has_collection = path
-            .segments
-            .iter()
-            .any(|s| s == collection_name || s.starts_with(collection_name) || s.contains(collection_name));
+        let has_collection = path.segments.iter().any(|s| {
+            s == collection_name || s.starts_with(collection_name) || s.contains(collection_name)
+        });
         has_empty && has_collection
     }
 
@@ -1978,11 +2058,15 @@ mod tests {
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
-        assert!(output.contains("Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()"));
+        assert!(
+            output.contains("Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty()")
+        );
 
         // Verify lemma_set_map_remove_commute (only when has_set_remove=true)
         assert!(output.contains("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)"));
-        assert!(output.contains("s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int)"));
+        assert!(output.contains(
+            "s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int)"
+        ));
         assert!(output.contains("let lhs = s.remove(elt).map(f);"));
         assert!(output.contains("let rhs = s.map(f).remove(f(elt));"));
         // Both directions of the proof
@@ -2020,7 +2104,10 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_with_struct_vec_fields() {
         let mut svf = std::collections::HashMap::new();
-        svf.insert("log".to_string(), ("CLogEntry".to_string(), "LLogEntry".to_string()));
+        svf.insert(
+            "log".to_string(),
+            ("CLogEntry".to_string(), "LLogEntry".to_string()),
+        );
         let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf);
 
         // Set lemmas should be present when has_set_fields=true
@@ -2029,7 +2116,9 @@ mod tests {
         // Struct-typed lemmas should be present
         assert!(output.contains("proof fn lemma_empty_log_map()"));
         assert!(output.contains("Seq::<CLogEntry>::empty().map(|i: int, e: CLogEntry| e@) =~= Seq::<LLogEntry>::empty()"));
-        assert!(output.contains("proof fn lemma_log_push_map_commute(s: Seq<CLogEntry>, x: CLogEntry)"));
+        assert!(
+            output.contains("proof fn lemma_log_push_map_commute(s: Seq<CLogEntry>, x: CLogEntry)")
+        );
 
         // Clone wrapper should be present
         assert!(output.contains("#[verifier(external_body)]"));
@@ -2089,42 +2178,65 @@ mod tests {
         let mut map_fields = std::collections::HashMap::new();
         map_fields.insert(
             "unexecuted_learner_state".to_string(),
-            ("CLearnerState".to_string(), "clearnerstate".to_string(), "CLearnerTuple".to_string()),
+            (
+                "CLearnerState".to_string(),
+                "clearnerstate".to_string(),
+                "CLearnerTuple".to_string(),
+            ),
         );
         let output = Transpiler::generate_map_proof_lemmas(&map_fields);
 
         // Check all 4 proof lemmas are generated
-        assert!(output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)"),
-            "Should contain empty lemma");
-        assert!(output.contains("proof fn lemma_abstractify_clearnerstate_insert("),
-            "Should contain insert lemma");
-        assert!(output.contains("proof fn lemma_abstractify_clearnerstate_remove("),
-            "Should contain remove lemma");
-        assert!(output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: CLearnerState"),
-            "Should contain singleton lemma");
+        assert!(
+            output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)"),
+            "Should contain empty lemma"
+        );
+        assert!(
+            output.contains("proof fn lemma_abstractify_clearnerstate_insert("),
+            "Should contain insert lemma"
+        );
+        assert!(
+            output.contains("proof fn lemma_abstractify_clearnerstate_remove("),
+            "Should contain remove lemma"
+        );
+        assert!(
+            output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: CLearnerState"),
+            "Should contain singleton lemma"
+        );
 
         // Check helpers are generated
-        assert!(output.contains("fn clone_clearnerstate(m: &CLearnerState) -> (res: CLearnerState)"),
-            "Should contain clone helper");
+        assert!(
+            output.contains("fn clone_clearnerstate(m: &CLearnerState) -> (res: CLearnerState)"),
+            "Should contain clone helper"
+        );
         assert!(output.contains("fn filter_clearnerstate(m: &CLearnerState, threshold: u64) -> (res: CLearnerState)"),
             "Should contain filter helper");
 
         // Check spec value type derivation (CLearnerTuple -> LearnerTuple)
-        assert!(output.contains("Map::<OperationNumber, LearnerTuple>::empty()"),
-            "Should use derived spec value type LearnerTuple");
+        assert!(
+            output.contains("Map::<OperationNumber, LearnerTuple>::empty()"),
+            "Should use derived spec value type LearnerTuple"
+        );
 
         // Check validity/abstractability ensures
-        assert!(output.contains("clearnerstate_is_abstractable(m2)"),
-            "Should check abstractability");
-        assert!(output.contains("clearnerstate_is_valid(old_m)"),
-            "Should check validity");
+        assert!(
+            output.contains("clearnerstate_is_abstractable(m2)"),
+            "Should check abstractability"
+        );
+        assert!(
+            output.contains("clearnerstate_is_valid(old_m)"),
+            "Should check validity"
+        );
     }
 
     #[test]
     fn test_generate_map_proof_lemmas_empty() {
         let map_fields = std::collections::HashMap::new();
         let output = Transpiler::generate_map_proof_lemmas(&map_fields);
-        assert!(output.is_empty(), "Empty map_fields should generate nothing");
+        assert!(
+            output.is_empty(),
+            "Empty map_fields should generate nothing"
+        );
     }
 
     #[test]
@@ -2132,7 +2244,11 @@ mod tests {
         let mut map_fields = std::collections::HashMap::new();
         map_fields.insert(
             "votes".to_string(),
-            ("CVotes".to_string(), "cvotes".to_string(), "CVote".to_string()),
+            (
+                "CVotes".to_string(),
+                "cvotes".to_string(),
+                "CVote".to_string(),
+            ),
         );
         let output = Transpiler::generate_map_proof_lemmas(&map_fields);
 
@@ -2148,16 +2264,25 @@ mod tests {
         // When only map_fields is configured, needs_set_helpers should return false
         let config = TranspilerConfig {
             translator: TranslatorConfig {
-                map_fields: vec![
-                    ("state".to_string(),
-                     ("CState".to_string(), "cstate".to_string(), "CEntry".to_string()))
-                ].into_iter().collect(),
+                map_fields: vec![(
+                    "state".to_string(),
+                    (
+                        "CState".to_string(),
+                        "cstate".to_string(),
+                        "CEntry".to_string(),
+                    ),
+                )]
+                .into_iter()
+                .collect(),
                 ..Default::default()
             },
             ..Default::default()
         };
         let transpiler = Transpiler::new(config);
-        assert!(!transpiler.needs_set_helpers(), "map_fields only should not need set helpers");
+        assert!(
+            !transpiler.needs_set_helpers(),
+            "map_fields only should not need set helpers"
+        );
         assert!(transpiler.has_map_fields(), "should have map_fields");
     }
 
@@ -2212,13 +2337,24 @@ mod tests {
         }
         "#;
         let annotation_source = "module test { LTest(+); }";
-        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
-        assert!(result.contains("// manual code block"), "Manual code should be injected");
-        assert!(result.contains("pub exec fn ManualFunc()"), "Manual function should be present");
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+        assert!(
+            result.contains("// manual code block"),
+            "Manual code should be injected"
+        );
+        assert!(
+            result.contains("pub exec fn ManualFunc()"),
+            "Manual function should be present"
+        );
         // Manual code should appear before } // verus!
         let manual_pos = result.find("ManualFunc").unwrap();
         let end_pos = result.find("} // verus!").unwrap();
-        assert!(manual_pos < end_pos, "Manual code should appear before verus! closing");
+        assert!(
+            manual_pos < end_pos,
+            "Manual code should appear before verus! closing"
+        );
     }
 
     #[test]
@@ -2232,7 +2368,9 @@ mod tests {
         }
         "#;
         let annotation_source = "module test { LTest(+); }";
-        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
         // Should not have extra blank line before } // verus! when no manual code
         assert!(result.contains("} // verus!"));
     }
@@ -2263,11 +2401,16 @@ mod tests {
         }
         "#;
         let annotation_source = "module test { LInitState(-); }";
-        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
 
         // Should contain proof-related imports/helper for empty set when collection_fields present
-        assert!(result.contains("lemma_empty_set_map") || result.contains("HashSet::new"),
-            "Should contain proof for empty set creation:\n{}", result);
+        assert!(
+            result.contains("lemma_empty_set_map") || result.contains("HashSet::new"),
+            "Should contain proof for empty set creation:\n{}",
+            result
+        );
     }
 
     /// Test that generate_proofs=true + set insert emits proof block with broadcast use.
@@ -2294,12 +2437,17 @@ mod tests {
                 TestAddMember(+, -, +);
             }
         "#;
-        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
 
         // Should contain proof-related code for set operations
         // The proof block emits either broadcast use or the insert function call
-        assert!(result.contains("insert") || result.contains("proof"),
-            "Should contain set insert in generated code:\n{}", result);
+        assert!(
+            result.contains("insert") || result.contains("proof"),
+            "Should contain set insert in generated code:\n{}",
+            result
+        );
     }
 
     /// Test that int params use `*x as int` in ensures clauses.
@@ -2320,11 +2468,16 @@ mod tests {
                 TestIncrement(+, -);
             }
         "#;
-        let result = transpiler.transpile_source(spec_source, annotation_source).unwrap();
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
 
         // int params should appear as `*x as int` in ensures clause
-        assert!(result.contains("*x as int"),
-            "Int param should use *x as int in ensures:\n{}", result);
+        assert!(
+            result.contains("*x as int"),
+            "Int param should use *x as int in ensures:\n{}",
+            result
+        );
     }
 
     /// Test that generate_proofs with struct_vec_fields config produces
@@ -2354,10 +2507,14 @@ mod tests {
         );
 
         // Should generate clone_log helper for struct_vec_fields
-        assert!(output.contains("clone_entries"),
-            "Should generate clone helper for struct_vec_fields 'entries'");
-        assert!(output.contains("CEntry"),
-            "Clone helper should reference exec type CEntry");
+        assert!(
+            output.contains("clone_entries"),
+            "Should generate clone helper for struct_vec_fields 'entries'"
+        );
+        assert!(
+            output.contains("CEntry"),
+            "Clone helper should reference exec type CEntry"
+        );
     }
 
     /// Test that map_fields config generates abstractify lemmas.
@@ -2366,16 +2523,24 @@ mod tests {
         let mut map_fields = std::collections::HashMap::new();
         map_fields.insert(
             "cache".to_string(),
-            ("HashMap<u64, CReply>".to_string(), "creplycache".to_string(), "CReply".to_string()),
+            (
+                "HashMap<u64, CReply>".to_string(),
+                "creplycache".to_string(),
+                "CReply".to_string(),
+            ),
         );
 
         let output = Transpiler::generate_map_proof_lemmas(&map_fields);
 
         // Should generate abstractify lemmas for the map field
-        assert!(output.contains("lemma_abstractify_empty_creplycache"),
-            "Should generate empty lemma for map field");
-        assert!(output.contains("lemma_abstractify_creplycache_insert"),
-            "Should generate insert lemma for map field");
+        assert!(
+            output.contains("lemma_abstractify_empty_creplycache"),
+            "Should generate empty lemma for map field"
+        );
+        assert!(
+            output.contains("lemma_abstractify_creplycache_insert"),
+            "Should generate insert lemma for map field"
+        );
     }
 
     #[test]

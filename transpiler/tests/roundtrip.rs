@@ -217,8 +217,14 @@ fn test_canonical_normalizes_neq() {
 fn test_canonical_sorts_record_fields() {
     let config = CanonicalConfig::default();
     let expr = TlaExpr::Record(vec![
-        ("z".to_string(), TlaExpr::Number(TlaNumber::Decimal("3".to_string()))),
-        ("a".to_string(), TlaExpr::Number(TlaNumber::Decimal("1".to_string()))),
+        (
+            "z".to_string(),
+            TlaExpr::Number(TlaNumber::Decimal("3".to_string())),
+        ),
+        (
+            "a".to_string(),
+            TlaExpr::Number(TlaNumber::Decimal("1".to_string())),
+        ),
     ]);
     let canonical = canonicalize_tla_expr(&expr, &config);
 
@@ -407,7 +413,11 @@ fn test_printer_produces_parseable_tla() {
 
     // Should be parseable
     let parsed = parse_module(&tla_text);
-    assert!(parsed.is_ok(), "Printed TLA+ should be parseable: {}", tla_text);
+    assert!(
+        parsed.is_ok(),
+        "Printed TLA+ should be parseable: {}",
+        tla_text
+    );
 
     // Canonicalized versions should be equivalent
     let config = CanonicalConfig::default();
@@ -415,7 +425,11 @@ fn test_printer_produces_parseable_tla() {
     let parsed_canon = canonicalize_tla_module(&parsed.unwrap(), &config);
 
     let result = compare_tla_modules(&original_canon, &parsed_canon);
-    assert!(result.equivalent, "Round-trip should preserve semantics: {:?}", result.differences);
+    assert!(
+        result.equivalent,
+        "Round-trip should preserve semantics: {:?}",
+        result.differences
+    );
 }
 
 // =============================================================================

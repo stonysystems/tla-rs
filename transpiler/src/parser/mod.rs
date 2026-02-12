@@ -2786,7 +2786,10 @@ mod tests {
                 _ => false,
             }
         }
-        assert!(find_record(&funcs[0].body), "Expected to find record literal in parsed AST");
+        assert!(
+            find_record(&funcs[0].body),
+            "Expected to find record literal in parsed AST"
+        );
     }
 
     #[test]
@@ -2801,7 +2804,11 @@ mod tests {
 
         let parser = VerusParser::new(source.to_string());
         let result = parser.parse_spec_functions();
-        assert!(result.is_ok(), "Parse with trailing comma should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Parse with trailing comma should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -2820,7 +2827,11 @@ mod tests {
 
         let parser = VerusParser::new(source.to_string());
         let result = parser.parse_spec_functions();
-        assert!(result.is_ok(), "Paxos-style conjunction with record should parse: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Paxos-style conjunction with record should parse: {:?}",
+            result.err()
+        );
 
         let funcs = result.unwrap();
         match &funcs[0].body {

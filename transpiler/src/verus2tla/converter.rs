@@ -75,11 +75,12 @@ impl Verus2TlaConverter {
 
     /// Convert a Verus source file to a TLA+ module.
     pub fn convert_file(&mut self, path: &FilePath) -> Result<TlaModule, ConversionError> {
-        let spec_functions = parse_file(path).map_err(|e| ConversionError::ParseError(e.to_string()))?;
+        let spec_functions =
+            parse_file(path).map_err(|e| ConversionError::ParseError(e.to_string()))?;
 
         // Extract type definitions (structs, enums, type aliases) from the file
-        let type_defs = parse_types_from_file(path)
-            .map_err(|e| ConversionError::ParseError(e.to_string()))?;
+        let type_defs =
+            parse_types_from_file(path).map_err(|e| ConversionError::ParseError(e.to_string()))?;
 
         // Register extracted types in the type mapper
         self.register_types_from_defs(&type_defs);
@@ -121,11 +122,8 @@ impl Verus2TlaConverter {
                 }
                 TypeDef::Enum(enum_def) => {
                     // Convert EnumDef variants to TypeMapper format
-                    let variants: Vec<String> = enum_def
-                        .variants
-                        .iter()
-                        .map(|v| v.name.clone())
-                        .collect();
+                    let variants: Vec<String> =
+                        enum_def.variants.iter().map(|v| v.name.clone()).collect();
 
                     let name = self.strip_prefix(&enum_def.name);
                     self.type_mapper.register_enum(&name, variants);
@@ -134,7 +132,8 @@ impl Verus2TlaConverter {
                     // Type aliases become custom mappings
                     let name = self.strip_prefix(&alias.name);
                     let target_type = self.convert_ast_type_to_mapper(&alias.ty);
-                    self.type_mapper.add_mapping(&name, &target_type.to_tla_type());
+                    self.type_mapper
+                        .add_mapping(&name, &target_type.to_tla_type());
                 }
             }
         }
@@ -215,7 +214,9 @@ impl Verus2TlaConverter {
 
         // Add collected constants
         for constant in &self.constants {
-            module.constants.push(TlaConstantDecl::new(constant.clone()));
+            module
+                .constants
+                .push(TlaConstantDecl::new(constant.clone()));
         }
 
         // Generate type definitions as operators
@@ -231,15 +232,14 @@ impl Verus2TlaConverter {
     }
 
     /// Convert a single spec function to a TLA+ operator.
-    pub fn convert_function(&mut self, func: &SpecFunction) -> Result<TlaOperator, ConversionError> {
+    pub fn convert_function(
+        &mut self,
+        func: &SpecFunction,
+    ) -> Result<TlaOperator, ConversionError> {
         let name = self.strip_prefix(&func.name);
 
         // Convert parameters
-        let params: Vec<TlaParam> = func
-            .params
-            .iter()
-            .map(|p| TlaParam::new(&p.name))
-            .collect();
+        let params: Vec<TlaParam> = func.params.iter().map(|p| TlaParam::new(&p.name)).collect();
 
         // Convert function body
         let body = self.convert_expr(&func.body)?;
@@ -344,7 +344,11 @@ impl Verus2TlaConverter {
 
             VerusExpr::Match { scrutinee, arms } => self.convert_match(scrutinee, arms),
 
-            VerusExpr::Let { binding, value, body } => {
+            VerusExpr::Let {
+                binding,
+                value,
+                body,
+            } => {
                 let name = match binding.name() {
                     Some(n) if n != "_" => n.to_string(),
                     _ => {
@@ -454,28 +458,29 @@ impl Verus2TlaConverter {
             // Struct construction
             VerusExpr::Struct { name: _, fields } => {
                 // Check if all field names are numeric (tuple-like struct)
-                let all_numeric = fields.iter().all(|(fname, _)| fname.parse::<usize>().is_ok());
+                let all_numeric = fields
+                    .iter()
+                    .all(|(fname, _)| fname.parse::<usize>().is_ok());
 
                 if all_numeric && !fields.is_empty() {
                     // Convert to tuple, sorted by numeric index
                     let mut indexed_exprs: Vec<(usize, TlaExpr)> = fields
                         .iter()
                         .filter_map(|(fname, fexpr)| {
-                            fname.parse::<usize>().ok().and_then(|idx| {
-                                self.convert_expr(fexpr).ok().map(|e| (idx, e))
-                            })
+                            fname
+                                .parse::<usize>()
+                                .ok()
+                                .and_then(|idx| self.convert_expr(fexpr).ok().map(|e| (idx, e)))
                         })
                         .collect();
                     indexed_exprs.sort_by_key(|(idx, _)| *idx);
-                    let tuple_exprs: Vec<TlaExpr> = indexed_exprs.into_iter().map(|(_, e)| e).collect();
+                    let tuple_exprs: Vec<TlaExpr> =
+                        indexed_exprs.into_iter().map(|(_, e)| e).collect();
                     Ok(TlaExpr::Tuple(tuple_exprs))
                 } else {
                     let tla_fields: Result<Vec<_>, _> = fields
                         .iter()
-                        .map(|(fname, fexpr)| {
-                            self.convert_expr(fexpr)
-                                .map(|e| (fname.clone(), e))
-                        })
+                        .map(|(fname, fexpr)| self.convert_expr(fexpr).map(|e| (fname.clone(), e)))
                         .collect();
                     Ok(TlaExpr::Record(tla_fields?))
                 }
@@ -596,7 +601,10 @@ impl Verus2TlaConverter {
     }
 
     /// Convert quantifier bindings to TLA+ quantifier bounds.
-    fn convert_bindings(&self, bindings: &[Binding]) -> Result<Vec<TlaQuantBound>, ConversionError> {
+    fn convert_bindings(
+        &self,
+        bindings: &[Binding],
+    ) -> Result<Vec<TlaQuantBound>, ConversionError> {
         bindings
             .iter()
             .map(|b| {
@@ -863,7 +871,12 @@ impl Verus2TlaConverter {
     fn strip_prefix(&self, name: &str) -> String {
         if let Some(rest) = name.strip_prefix(&self.config.spec_prefix) {
             // Only strip if the next character is uppercase (indicates spec type convention)
-            if rest.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+            if rest
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false)
+            {
                 return rest.to_string();
             }
         }
@@ -976,7 +989,7 @@ impl Verus2TlaConverter {
             let field_exprs: Vec<(String, TlaExpr)> = fields
                 .iter()
                 .map(|(fname, ftype)| {
-                    let type_expr = TlaExpr::ident(&self.type_mapper.map_type(ftype));
+                    let type_expr = TlaExpr::ident(self.type_mapper.map_type(ftype));
                     (fname.clone(), type_expr)
                 })
                 .collect();
@@ -987,8 +1000,7 @@ impl Verus2TlaConverter {
 
         // Generate from registered enum types
         for (name, variants) in self.type_mapper.enum_types() {
-            let variant_exprs: Vec<TlaExpr> =
-                variants.iter().map(|v| TlaExpr::ident(v)).collect();
+            let variant_exprs: Vec<TlaExpr> = variants.iter().map(TlaExpr::ident).collect();
             let body = TlaExpr::SetEnum(variant_exprs);
             operators.push(TlaOperator::new(name, body));
         }
@@ -1211,8 +1223,10 @@ mod tests {
 
     #[test]
     fn test_register_types_from_defs() {
-        use crate::types::{EnumDef, FieldDef, StructDef, TypeAlias, TypeDef, VariantDef, VariantFields};
         use crate::ast::{Generics, Type};
+        use crate::types::{
+            EnumDef, FieldDef, StructDef, TypeAlias, TypeDef, VariantDef, VariantFields,
+        };
 
         let mut converter = Verus2TlaConverter::new();
 
@@ -1268,7 +1282,10 @@ mod tests {
 
         // Verify struct was registered
         let record_types = converter.type_mapper.record_types();
-        assert!(record_types.contains_key("Ballot"), "Should have registered Ballot struct");
+        assert!(
+            record_types.contains_key("Ballot"),
+            "Should have registered Ballot struct"
+        );
         let ballot_fields = record_types.get("Ballot").unwrap();
         assert_eq!(ballot_fields.len(), 2);
         assert_eq!(ballot_fields[0].0, "seqno");
@@ -1276,7 +1293,10 @@ mod tests {
 
         // Verify enum was registered
         let enum_types = converter.type_mapper.enum_types();
-        assert!(enum_types.contains_key("MessageType"), "Should have registered MessageType enum");
+        assert!(
+            enum_types.contains_key("MessageType"),
+            "Should have registered MessageType enum"
+        );
         let message_variants = enum_types.get("MessageType").unwrap();
         assert_eq!(message_variants.len(), 2);
         assert!(message_variants.contains(&"Msg1a".to_string()));
@@ -1284,7 +1304,10 @@ mod tests {
 
         // Verify type operator generation
         let type_ops = converter.generate_type_operators();
-        assert!(type_ops.len() >= 2, "Should generate operators for struct and enum");
+        assert!(
+            type_ops.len() >= 2,
+            "Should generate operators for struct and enum"
+        );
     }
 
     #[test]
@@ -1295,15 +1318,21 @@ mod tests {
 
         // Test primitives
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&Type::Int).to_tla_type(),
+            converter
+                .convert_ast_type_to_mapper(&Type::Int)
+                .to_tla_type(),
             "Int"
         );
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&Type::Nat).to_tla_type(),
+            converter
+                .convert_ast_type_to_mapper(&Type::Nat)
+                .to_tla_type(),
             "Nat"
         );
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&Type::Bool).to_tla_type(),
+            converter
+                .convert_ast_type_to_mapper(&Type::Bool)
+                .to_tla_type(),
             "BOOLEAN"
         );
 
@@ -1317,14 +1346,18 @@ mod tests {
         // Test Map
         let map_type = Type::Map(Box::new(Type::Int), Box::new(Type::Bool));
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&map_type).to_tla_type(),
+            converter
+                .convert_ast_type_to_mapper(&map_type)
+                .to_tla_type(),
             "[Int -> BOOLEAN]"
         );
 
         // Test Named with L prefix (spec type)
         let named_type = Type::Named(Path::single("LReplica".to_string()));
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&named_type).to_tla_type(),
+            converter
+                .convert_ast_type_to_mapper(&named_type)
+                .to_tla_type(),
             "Replica"
         );
 
@@ -1334,7 +1367,9 @@ mod tests {
             mutable: false,
         };
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&ref_type).to_tla_type(),
+            converter
+                .convert_ast_type_to_mapper(&ref_type)
+                .to_tla_type(),
             "Int"
         );
     }
@@ -1379,13 +1414,19 @@ verus! {
         assert_eq!(module.name, "Test_verus_types");
 
         // Print operators for debugging
-        println!("Generated operators: {:?}", module.operators.iter().map(|o| &o.name).collect::<Vec<_>>());
+        println!(
+            "Generated operators: {:?}",
+            module.operators.iter().map(|o| &o.name).collect::<Vec<_>>()
+        );
 
         // Verify that type operators were generated
         // Should have Ballot record type operator
         let has_ballot_op = module.operators.iter().any(|op| op.name == "Ballot");
-        assert!(has_ballot_op, "Should have generated Ballot type operator. Operators: {:?}",
-                module.operators.iter().map(|o| &o.name).collect::<Vec<_>>());
+        assert!(
+            has_ballot_op,
+            "Should have generated Ballot type operator. Operators: {:?}",
+            module.operators.iter().map(|o| &o.name).collect::<Vec<_>>()
+        );
 
         // Verify the BalLeq function was converted (Note: the parser may or may not find it
         // depending on verus! block handling - main goal is type extraction)
@@ -1404,7 +1445,10 @@ verus! {
             .join("src/protocol/RSL/types.rs");
 
         if !rsl_types_path.exists() {
-            println!("Skipping test: RSL types.rs not found at {:?}", rsl_types_path);
+            println!(
+                "Skipping test: RSL types.rs not found at {:?}",
+                rsl_types_path
+            );
             return;
         }
 
@@ -1464,14 +1508,18 @@ verus! {
         std::fs::remove_file(&temp_file).unwrap();
 
         // Module name should have capitalized first letter to match TLA+ convention
-        assert_eq!(module.name, "My_protocol",
-            "Module name should capitalize first letter for SANY compatibility");
+        assert_eq!(
+            module.name, "My_protocol",
+            "Module name should capitalize first letter for SANY compatibility"
+        );
 
         // Verify the printed output has matching MODULE header
         let printer = crate::verus2tla::printer::TlaPrinter::new();
         let output = printer.print_module(&module);
-        assert!(output.contains("---- MODULE My_protocol ----"),
-            "Printed MODULE header should match capitalized name");
+        assert!(
+            output.contains("---- MODULE My_protocol ----"),
+            "Printed MODULE header should match capitalized name"
+        );
     }
 
     #[test]
@@ -1511,10 +1559,16 @@ verus! {
         // Turbofish with complex types
         assert_eq!(strip_turbofish("Map::<K, V>::empty"), "Map::empty");
         assert_eq!(strip_turbofish("Seq::<Request>::empty"), "Seq::empty");
-        assert_eq!(strip_turbofish("Set::<AbstractEndPoint>::empty"), "Set::empty");
+        assert_eq!(
+            strip_turbofish("Set::<AbstractEndPoint>::empty"),
+            "Set::empty"
+        );
 
         // Turbofish with nested generics
-        assert_eq!(strip_turbofish("Map::<int, Seq<Request>>::empty"), "Map::empty");
+        assert_eq!(
+            strip_turbofish("Map::<int, Seq<Request>>::empty"),
+            "Map::empty"
+        );
 
         // No turbofish (function calls)
         assert_eq!(strip_turbofish("foo"), "foo");

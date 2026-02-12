@@ -8,8 +8,7 @@
 //! - Commutative operator ordering
 
 use crate::tla::ast::{
-    TlaBinOp, TlaConstantDecl, TlaExpr, TlaModule, TlaOperator, TlaParam,
-    TlaQuantBound, TlaUnaryOp,
+    TlaBinOp, TlaConstantDecl, TlaExpr, TlaModule, TlaOperator, TlaParam, TlaQuantBound, TlaUnaryOp,
 };
 
 #[cfg(test)]
@@ -71,7 +70,10 @@ impl Canonicalizer {
                 .iter()
                 .map(|c| TlaConstantDecl {
                     name: self.strip_prefix(&c.name),
-                    type_constraint: c.type_constraint.as_ref().map(|tc| self.canonicalize_expr(tc)),
+                    type_constraint: c
+                        .type_constraint
+                        .as_ref()
+                        .map(|tc| self.canonicalize_expr(tc)),
                 })
                 .collect(),
             variables: module
@@ -204,11 +206,17 @@ impl Canonicalizer {
 
             // Quantifiers
             TlaExpr::Forall { vars, body } => TlaExpr::Forall {
-                vars: vars.iter().map(|v| self.canonicalize_quant_bound(v)).collect(),
+                vars: vars
+                    .iter()
+                    .map(|v| self.canonicalize_quant_bound(v))
+                    .collect(),
                 body: Box::new(self.canonicalize_expr(body)),
             },
             TlaExpr::Exists { vars, body } => TlaExpr::Exists {
-                vars: vars.iter().map(|v| self.canonicalize_quant_bound(v)).collect(),
+                vars: vars
+                    .iter()
+                    .map(|v| self.canonicalize_quant_bound(v))
+                    .collect(),
                 body: Box::new(self.canonicalize_expr(body)),
             },
             TlaExpr::Choose { var, set, body } => TlaExpr::Choose {
@@ -243,9 +251,7 @@ impl Canonicalizer {
             TlaExpr::Unchanged(vars) => {
                 TlaExpr::Unchanged(vars.iter().map(|v| self.canonicalize_expr(v)).collect())
             }
-            TlaExpr::Enabled(action) => {
-                TlaExpr::Enabled(Box::new(self.canonicalize_expr(action)))
-            }
+            TlaExpr::Enabled(action) => TlaExpr::Enabled(Box::new(self.canonicalize_expr(action))),
 
             // Temporal operators
             TlaExpr::Always(inner) => TlaExpr::Always(Box::new(self.canonicalize_expr(inner))),
@@ -367,9 +373,18 @@ mod tests {
     fn test_canonicalize_record_sorting() {
         let config = CanonicalConfig::default();
         let expr = TlaExpr::Record(vec![
-            ("z".to_string(), TlaExpr::Number(TlaNumber::Decimal("3".to_string()))),
-            ("a".to_string(), TlaExpr::Number(TlaNumber::Decimal("1".to_string()))),
-            ("m".to_string(), TlaExpr::Number(TlaNumber::Decimal("2".to_string()))),
+            (
+                "z".to_string(),
+                TlaExpr::Number(TlaNumber::Decimal("3".to_string())),
+            ),
+            (
+                "a".to_string(),
+                TlaExpr::Number(TlaNumber::Decimal("1".to_string())),
+            ),
+            (
+                "m".to_string(),
+                TlaExpr::Number(TlaNumber::Decimal("2".to_string())),
+            ),
         ]);
         let result = canonicalize_tla_expr(&expr, &config);
 

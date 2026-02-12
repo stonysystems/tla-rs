@@ -568,11 +568,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            eprintln!(
-                                "Warning: Failed to convert {}: {}",
-                                input_path.display(),
-                                e
-                            );
+                            eprintln!("Warning: Failed to convert {}: {}", input_path.display(), e);
                         }
                     }
                 }
@@ -616,8 +612,6 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     std::fs::write(output_path, &tla_code)
                         .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
                     println!("Converted {} -> {}", input.display(), output_path.display());
-                } else if cli.stdout {
-                    println!("{}", tla_code);
                 } else {
                     println!("{}", tla_code);
                 }
@@ -938,24 +932,38 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             vec_fields: file_config.vec_fields.into_iter().collect(),
             clone_fields: file_config.clone_fields.into_iter().collect(),
             clone_field_types: file_config.clone_field_types.clone(),
-            struct_vec_fields: file_config.struct_vec_fields.iter().map(|(k, v)| {
-                let exec_type = v.first().cloned().unwrap_or_default();
-                let spec_type = v.get(1).cloned().unwrap_or_default();
-                (k.clone(), (exec_type, spec_type))
-            }).collect(),
-            map_fields: file_config.map_fields.iter().map(|(k, v)| {
-                let exec_map_type = v.first().cloned().unwrap_or_default();
-                let abstractify_prefix = v.get(1).cloned().unwrap_or_default();
-                let exec_value_type = v.get(2).cloned().unwrap_or_default();
-                (k.clone(), (exec_map_type, abstractify_prefix, exec_value_type))
-            }).collect(),
+            struct_vec_fields: file_config
+                .struct_vec_fields
+                .iter()
+                .map(|(k, v)| {
+                    let exec_type = v.first().cloned().unwrap_or_default();
+                    let spec_type = v.get(1).cloned().unwrap_or_default();
+                    (k.clone(), (exec_type, spec_type))
+                })
+                .collect(),
+            map_fields: file_config
+                .map_fields
+                .iter()
+                .map(|(k, v)| {
+                    let exec_map_type = v.first().cloned().unwrap_or_default();
+                    let abstractify_prefix = v.get(1).cloned().unwrap_or_default();
+                    let exec_value_type = v.get(2).cloned().unwrap_or_default();
+                    (
+                        k.clone(),
+                        (exec_map_type, abstractify_prefix, exec_value_type),
+                    )
+                })
+                .collect(),
             hashmap_index_fields: file_config.hashmap_index_fields.iter().cloned().collect(),
             type_view_exprs: file_config.type_view_exprs.clone(),
             extra_requires: file_config.extra_requires.clone(),
             eq_function_fields: file_config.eq_function_fields.clone(),
             arrow_variants: file_config.arrow_variants.clone(),
             clone_method: file_config.output.clone_method.clone(),
-            ..TranslatorConfig::default()
+            spec_prefix: "L".to_string(),
+            exec_prefix: "C".to_string(),
+            generate_abstraction_fns: false,
+            generate_validity_predicates: false,
         },
         custom_imports: file_config.output.custom_imports,
         generate_inline_types: file_config.output.generate_inline_types,
@@ -972,7 +980,6 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             extra_fields: file_config.extra_fields,
             ..Default::default()
         },
-        ..TranspilerConfig::default()
     })
 }
 
