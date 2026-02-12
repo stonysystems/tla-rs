@@ -1159,12 +1159,13 @@ impl ModeAnnotationGenerator {
         // Check if this is an action (uses primed variables)
         let is_action = self.operator_uses_primes(&op.body);
 
-        // Check if this looks like an Init operator
-        let is_init = op.name.to_lowercase().contains("init");
+        // Determine modes based on operator pattern.
+        // Use strict init check: operator name must be exactly "Init" (case-insensitive)
+        // to avoid false positives like "InitiateProbe" which is an action, not an init.
+        let is_strict_init = op.name.eq_ignore_ascii_case("init");
 
-        // Determine modes based on operator pattern
-        if is_init {
-            // Init operators: state is output
+        if is_strict_init {
+            // Init operators: state is output only
             modes.push(ParameterMode::Output);
             desc_parts.push("s is output (initialized state)".to_string());
         } else if is_action {
@@ -1878,5 +1879,42 @@ mod tests {
         assert!(result.contains("LOnlyXChanges"));
         // Should be an action (has primes via UNCHANGED)
         assert!(result.contains("+, -"));
+    }
+
+    #[test]
+    fn test_mode_annotation_init_name_not_confused_with_action() {
+        // Operators with "init" in name but primed variables should be treated as actions,
+        // not init operators. Only exact "Init" should be treated as init.
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x, y
+            Init == x = 0 /\ y = 0
+            InitiateProbe == x = 0 /\ x' = 1 /\ y' = y
+            InitState == x' = 0 /\ y' = 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        // Init (exact match, no primes) -> output only
+        assert!(
+            result.contains("LInit(-);"),
+            "Init should be output-only, got:\n{}",
+            result
+        );
+
+        // InitiateProbe (has primes, name contains init) -> action (input + output)
+        assert!(
+            result.contains("LInitiateProbe(+, -);"),
+            "InitiateProbe should be action (input + output), got:\n{}",
+            result
+        );
+
+        // InitState (has primes, name contains init) -> action (input + output)
+        assert!(
+            result.contains("LInitState(+, -);"),
+            "InitState should be action (input + output), got:\n{}",
+            result
+        );
     }
 }

@@ -4853,11 +4853,11 @@ cargo run --release -- translate-tla --input tests/tla_examples/<NAME>.tla --out
 
 - [x] SimpleCounter: transpiles ✅
 - [x] DieHard: transpiles ✅
-- [ ] EWD840: ❌ Annotation error — parameter count mismatch
-- [ ] TwoPhase: ❌ Parse error — Expected identifier, found `"`
-- [ ] Raft: ❌ Parse error — Expected identifier, found `"`
-- [ ] Paxos: ❌ Parse error — Expected identifier, found `"`
-- [ ] PBFT: ❌ Parse error — Expected identifier, found `"`
+- [x] EWD840: ✅ [26:02:12] Fixed annotation parameter count mismatch — `InitiateProbe` was misdetected as init operator because name contains "init"; fixed by using strict `eq_ignore_ascii_case("init")` match
+- [x] TwoPhase: ✅ [26:02:12] Fixed string literal parse error — added `parse_string_literal()` to parser
+- [x] Raft: ✅ [26:02:12] Fixed by same string literal parser fix
+- [ ] Paxos: ❌ Parse error — record literals `{ type: Phase1a, bal: b }` not supported by spec parser
+- [ ] PBFT: ❌ Parse error — record literals `{ type: PrePrepare, ... }` not supported by spec parser
 - [ ] Verify all 7 generated exec files compile with Verus
 
 **Command**:
@@ -4892,11 +4892,11 @@ Same failures as 16.2 since the pipeline chains direction 1 and 2.
 
 - [x] SimpleCounter: pipeline ✅
 - [x] DieHard: pipeline ✅
-- [ ] EWD840: ❌ (fails at exec stage)
-- [ ] TwoPhase: ❌ (fails at exec stage)
-- [ ] Raft: ❌ (fails at exec stage)
-- [ ] Paxos: ❌ (fails at exec stage)
-- [ ] PBFT: ❌ (fails at exec stage)
+- [x] EWD840: pipeline ✅ [26:02:12] Fixed by annotation + string literal parser fixes
+- [x] TwoPhase: pipeline ✅ [26:02:12] Fixed by string literal parser fix
+- [x] Raft: pipeline ✅ [26:02:12] Fixed by string literal parser fix
+- [ ] Paxos: ❌ (fails at exec stage — record literal parsing not supported)
+- [ ] PBFT: ❌ (fails at exec stage — record literal parsing not supported)
 - [ ] Verify all 7 pipeline outputs compile with Verus
 
 **Command**:

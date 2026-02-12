@@ -1598,6 +1598,159 @@ fn test_replicaimpl_class_imports_types_from_generated() {
     );
 }
 
+#[test]
+fn test_tla_to_exec_pipeline_with_string_literals() {
+    // Tests that TLA+ specs with string state constants (e.g., "init", "committed")
+    // can be transpiled through the full pipeline: TLA+ → Verus spec → Verus exec
+    use std::process::Command;
+
+    let transpiler = std::path::Path::new("target/release/verus-transpile");
+    if !transpiler.exists() {
+        eprintln!("Skipping pipeline test: transpiler binary not found at target/release/verus-transpile");
+        return;
+    }
+
+    // Test TwoPhase (uses "init", "committed", "aborted" string states)
+    let tla_input = "tests/tla_examples/TwoPhase.tla";
+    if !std::path::Path::new(tla_input).exists() {
+        eprintln!("Skipping pipeline test: {} not found", tla_input);
+        return;
+    }
+
+    // Step 1: TLA+ → Verus spec
+    let spec_output = std::env::temp_dir().join("test_twophase_spec.rs");
+    let result = Command::new(transpiler)
+        .args([
+            "translate-tla",
+            "--input",
+            tla_input,
+            "--output",
+            spec_output.to_str().unwrap(),
+            "--gen-modes",
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(
+        result.status.success(),
+        "TLA+ → spec failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // Verify spec contains string literals
+    let spec_content = std::fs::read_to_string(&spec_output).expect("Failed to read spec");
+    assert!(
+        spec_content.contains("\"init\""),
+        "Generated spec should contain string literal \"init\""
+    );
+
+    // Step 2: Verus spec → Verus exec
+    let automan_path = spec_output.with_extension("automan");
+    let exec_output = std::env::temp_dir().join("test_twophase_exec.rs");
+    let result = Command::new(transpiler)
+        .args([
+            "--input",
+            spec_output.to_str().unwrap(),
+            "--annotations",
+            automan_path.to_str().unwrap(),
+            "--output",
+            exec_output.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(
+        result.status.success(),
+        "Spec → exec failed for TwoPhase: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // Verify exec output exists and contains string literals
+    let exec_content = std::fs::read_to_string(&exec_output).expect("Failed to read exec");
+    assert!(
+        exec_content.contains("\"init\""),
+        "Generated exec should preserve string literal \"init\""
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&spec_output);
+    let _ = std::fs::remove_file(&automan_path);
+    let _ = std::fs::remove_file(&exec_output);
+}
+
+#[test]
+fn test_ewd840_initiate_probe_annotation() {
+    // Tests that operators with "init" in name (e.g., InitiateProbe) are correctly
+    // detected as actions (input + output) rather than init operators (output only)
+    use std::process::Command;
+
+    let transpiler = std::path::Path::new("target/release/verus-transpile");
+    if !transpiler.exists() {
+        eprintln!("Skipping annotation test: transpiler binary not found");
+        return;
+    }
+
+    let tla_input = "tests/tla_examples/EWD840.tla";
+    if !std::path::Path::new(tla_input).exists() {
+        eprintln!("Skipping annotation test: {} not found", tla_input);
+        return;
+    }
+
+    let spec_output = std::env::temp_dir().join("test_ewd840_spec.rs");
+    let result = Command::new(transpiler)
+        .args([
+            "translate-tla",
+            "--input",
+            tla_input,
+            "--output",
+            spec_output.to_str().unwrap(),
+            "--gen-modes",
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(result.status.success(), "EWD840 TLA+ → spec failed");
+
+    // Check annotation file
+    let automan_path = spec_output.with_extension("automan");
+    let annotations = std::fs::read_to_string(&automan_path).expect("Failed to read automan");
+
+    // Init should be output only
+    assert!(
+        annotations.contains("LInit(-);"),
+        "Init should be output-only, got:\n{}",
+        annotations
+    );
+
+    // InitiateProbe should be action (input + output), not confused with Init
+    assert!(
+        annotations.contains("LInitiateProbe(+, -);"),
+        "InitiateProbe should be action (input + output), got:\n{}",
+        annotations
+    );
+
+    // Verify spec→exec succeeds
+    let exec_output = std::env::temp_dir().join("test_ewd840_exec.rs");
+    let result = Command::new(transpiler)
+        .args([
+            "--input",
+            spec_output.to_str().unwrap(),
+            "--annotations",
+            automan_path.to_str().unwrap(),
+            "--output",
+            exec_output.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(
+        result.status.success(),
+        "EWD840 spec → exec should succeed after annotation fix: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&spec_output);
+    let _ = std::fs::remove_file(&automan_path);
+    let _ = std::fs::remove_file(&exec_output);
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

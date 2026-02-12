@@ -1033,6 +1033,11 @@ impl<'a> VerusBlockParser<'a> {
             }
         }
 
+        // Check for string literals
+        if self.peek() == Some('"') {
+            return self.parse_string_literal();
+        }
+
         // Parse identifier or path, then handle postfix operations
         let ident = self.parse_identifier()?;
         let mut expr = Expr::Ident(ident);
@@ -2004,6 +2009,28 @@ impl<'a> VerusBlockParser<'a> {
         Ok(Expr::Literal(Literal::Int(value)))
     }
 
+    /// Parse a string literal (e.g., `"init"`, `"committed"`)
+    fn parse_string_literal(&mut self) -> TranspileResult<Expr> {
+        // Consume opening quote
+        self.expect('"')?;
+        let start = self.pos;
+
+        // Read until closing quote (no escape handling needed for simple TLA+ strings)
+        while let Some(c) = self.peek() {
+            if c == '"' {
+                break;
+            }
+            self.advance();
+        }
+
+        let value = self.content[start..self.pos].to_string();
+
+        // Consume closing quote
+        self.expect('"')?;
+
+        Ok(Expr::Literal(Literal::String(value)))
+    }
+
     // Helper methods
 
     /// Skip whitespace and comments
@@ -2522,6 +2549,80 @@ mod tests {
                 _ => panic!("Expected struct on RHS, got {:?}", rhs),
             },
             _ => panic!("Expected equality, got {:?}", funcs[0].body),
+        }
+    }
+
+    #[test]
+    fn test_parse_string_literal_in_spec_fn() {
+        let source = r#"
+        verus! {
+            pub open spec fn LInit(s: LState) -> bool {
+                &&& s.status == "init"
+                &&& s.count == 0
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name, "LInit");
+
+        // Check body is conjunction with a string literal comparison
+        match &funcs[0].body {
+            Expr::Conjunction(exprs) => {
+                assert_eq!(exprs.len(), 2);
+                // First conjunct should be s.status == "init"
+                match &exprs[0] {
+                    Expr::Eq(_, rhs) => match rhs.as_ref() {
+                        Expr::Literal(Literal::String(s)) => {
+                            assert_eq!(s, "init");
+                        }
+                        _ => panic!("Expected string literal, got {:?}", rhs),
+                    },
+                    _ => panic!("Expected equality, got {:?}", exprs[0]),
+                }
+            }
+            _ => panic!("Expected conjunction, got {:?}", funcs[0].body),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_string_literals() {
+        let source = r#"
+        verus! {
+            pub open spec fn LCommit(s: LState, s_: LState) -> bool {
+                &&& s.state == "init"
+                &&& s_.state == "committed"
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(result.is_ok(), "Parse failed: {:?}", result.err());
+
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+
+        match &funcs[0].body {
+            Expr::Conjunction(exprs) => {
+                assert_eq!(exprs.len(), 2);
+                // Second conjunct should have "committed"
+                match &exprs[1] {
+                    Expr::Eq(_, rhs) => match rhs.as_ref() {
+                        Expr::Literal(Literal::String(s)) => {
+                            assert_eq!(s, "committed");
+                        }
+                        _ => panic!("Expected string literal, got {:?}", rhs),
+                    },
+                    _ => panic!("Expected equality, got {:?}", exprs[1]),
+                }
+            }
+            _ => panic!("Expected conjunction"),
         }
     }
 }
