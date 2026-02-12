@@ -34,6 +34,10 @@ spec_only_functions = [
     "LExecutorExecute",
 ]
 
+# Per-element ensures for Vec<CPacket> output parameters
+# Generates: forall |i:int| 0 <= i < result.X@.len() ==> result.X@[i].pred()
+vec_element_ensures = ["valid", "abstractable"]
+
 # Custom view expressions for types in ensures clauses
 [type_view_exprs]
 "RequestBatch" = "abstractify_crequestbatch({param})"

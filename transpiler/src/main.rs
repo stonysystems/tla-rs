@@ -960,6 +960,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             eq_function_fields: file_config.eq_function_fields.clone(),
             arrow_variants: file_config.arrow_variants.clone(),
             clone_method: file_config.output.clone_method.clone(),
+            vec_element_ensures: file_config.vec_element_ensures.clone(),
             spec_prefix: "L".to_string(),
             exec_prefix: "C".to_string(),
             generate_abstraction_fns: false,

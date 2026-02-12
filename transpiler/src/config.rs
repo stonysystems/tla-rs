@@ -224,6 +224,15 @@ pub struct TranspilerConfig {
     /// e.g., {"bal_1a" = "CMessage::CMessage1a", "bal_2a" = "CMessage::CMessage2a"}
     #[serde(default)]
     pub arrow_variants: HashMap<String, String>,
+
+    /// Per-element ensures predicates for Vec/Seq output parameters.
+    /// When an output parameter has type `Seq<T>` (mapped to `Vec<ExecT>`), the transpiler
+    /// normally skips `valid()` because Vec itself doesn't have a `valid()` method.
+    /// This field specifies predicates that should be asserted for each element.
+    /// Generates: `forall |i:int| 0 <= i < result.X@.len() ==> result.X@[i].pred()`
+    /// e.g., ["valid", "abstractable"]
+    #[serde(default)]
+    pub vec_element_ensures: Vec<String>,
 }
 
 impl TranspilerConfig {

@@ -35,6 +35,23 @@ Maps spec function calls to exec method calls on concrete types.
 "BalLt" = { receiver = "CBallot", method = "CBalLt" }
 ```
 
+### `vec_element_ensures`
+
+Per-element ensures predicates for functions returning `Vec<T>` (mapped from `Seq<T>`).
+When configured, the transpiler generates `forall` ensures for each element of Vec output parameters.
+
+```toml
+vec_element_ensures = ["valid", "abstractable"]
+```
+
+Generates for each Vec/Seq output parameter:
+```verus
+forall |i:int| 0 <= i < result.X@.len() ==> result.X@[i].valid(),
+forall |i:int| 0 <= i < result.X@.len() ==> result.X@[i].abstractable(),
+```
+
+For single-output functions, uses `result@` instead of `result.X@`.
+
 ## Output Configuration
 
 ### `[output]`

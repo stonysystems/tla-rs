@@ -116,6 +116,10 @@ pub struct TranslatorConfig {
     /// Maps enum variant field names to "EnumType::VariantName".
     /// Used to convert spec-only `->` arrow accesses into exec-level `match` destructuring.
     pub arrow_variants: HashMap<String, String>,
+    /// Per-element ensures predicates for Vec/Seq output parameters.
+    /// When non-empty, generates: forall |i:int| 0 <= i < result.X@.len() ==> result.X@[i].pred()
+    /// e.g., ["valid", "abstractable"]
+    pub vec_element_ensures: Vec<String>,
 }
 
 impl Default for TranslatorConfig {
@@ -149,6 +153,7 @@ impl Default for TranslatorConfig {
             clone_method: None,
             eq_function_fields: HashMap::new(),
             arrow_variants: HashMap::new(),
+            vec_element_ensures: Vec::new(),
         }
     }
 }
@@ -7328,11 +7333,50 @@ impl Translator {
             }
         }
 
+        // Add per-element ensures for Vec/Seq output parameters.
+        // When vec_element_ensures is configured (e.g., ["valid", "abstractable"]),
+        // generates: forall |i:int| 0 <= i < result.X@.len() ==> result.X@[i].pred()
+        if !self.config.vec_element_ensures.is_empty() {
+            for (i, name) in output_names.iter().enumerate() {
+                let is_vec_output = output_types
+                    .get(name)
+                    .map(|ty| Self::is_vec_or_seq_type(ty))
+                    .unwrap_or(false);
+
+                if is_vec_output {
+                    let accessor = if output_names.len() == 1 {
+                        "result".to_string()
+                    } else {
+                        format!("result.{}", i)
+                    };
+                    for pred in &self.config.vec_element_ensures {
+                        ensures.push(format!(
+                            "forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}()",
+                            accessor, accessor, pred
+                        ));
+                    }
+                }
+            }
+        }
+
         // Add linkage to original spec predicate
         let spec_call = self.build_spec_call(func, output_names);
         ensures.push(spec_call);
 
         ensures
+    }
+
+    /// Check if a type is Vec<T> or Seq<T>.
+    fn is_vec_or_seq_type(ty: &crate::ast::Type) -> bool {
+        use crate::ast::Type;
+        match ty {
+            Type::Seq(_) => true,
+            Type::Generic(path, _) => {
+                path.last().map(|n| n == "Vec" || n == "Seq").unwrap_or(false)
+            }
+            Type::Reference { ty, .. } => Self::is_vec_or_seq_type(ty),
+            _ => false,
+        }
     }
 
     /// Build call to spec predicate for ensures clause
@@ -12319,7 +12363,7 @@ impl Default for Translator {
 #[allow(clippy::field_reassign_with_default, clippy::needless_update)]
 mod tests {
     use super::*;
-    use crate::ast::{Literal, Path, SpecFunction};
+    use crate::ast::{Generics, Literal, Parameter, Path, SpecFunction, Type};
 
     #[test]
     fn test_translate_name() {
@@ -14638,6 +14682,272 @@ mod tests {
         assert_eq!(
             translator.config.validity_predicate_name, "valid",
             "Should use configured validity predicate name"
+        );
+    }
+
+    #[test]
+    fn test_is_vec_or_seq_type() {
+        // Type::Seq(inner) should be detected
+        assert!(Translator::is_vec_or_seq_type(&Type::Seq(Box::new(
+            Type::Named(Path::single("RslPacket".to_string()))
+        ))));
+
+        // Type::Generic(["Vec"], [inner]) should be detected
+        assert!(Translator::is_vec_or_seq_type(&Type::Generic(
+            Path::single("Vec".to_string()),
+            vec![Type::Named(Path::single("CPacket".to_string()))]
+        )));
+
+        // Type::Generic(["Seq"], [inner]) should be detected
+        assert!(Translator::is_vec_or_seq_type(&Type::Generic(
+            Path::single("Seq".to_string()),
+            vec![Type::Named(Path::single("RslPacket".to_string()))]
+        )));
+
+        // Type::Reference wrapping Seq should be detected
+        assert!(Translator::is_vec_or_seq_type(&Type::Reference {
+            ty: Box::new(Type::Seq(Box::new(Type::Named(Path::single(
+                "RslPacket".to_string()
+            ))))),
+            mutable: false,
+        }));
+
+        // Non-Vec/Seq types should NOT be detected
+        assert!(!Translator::is_vec_or_seq_type(&Type::Named(
+            Path::single("CAcceptor".to_string())
+        )));
+        assert!(!Translator::is_vec_or_seq_type(&Type::Bool));
+        assert!(!Translator::is_vec_or_seq_type(&Type::Set(Box::new(
+            Type::Named(Path::single("CPacket".to_string()))
+        ))));
+    }
+
+    #[test]
+    fn test_vec_element_ensures_generated() {
+        // When vec_element_ensures is configured, build_ensures should generate
+        // forall ensures for Vec/Seq output parameters
+
+        let config = TranslatorConfig {
+            validity_predicate_name: "valid".to_string(),
+            vec_element_ensures: vec!["valid".to_string(), "abstractable".to_string()],
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        // Create a spec function with (s: LExecutor, s_: LExecutor, inp: RslPacket, sent_packets: Seq<RslPacket>)
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LExecutorProcessAppStateRequest".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LExecutor".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "s_".to_string(),
+                    ty: Type::Named(Path::single("LExecutor".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "inp".to_string(),
+                    ty: Type::Named(Path::single("RslPacket".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "sent_packets".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("RslPacket".to_string())))),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Input,
+                ParameterMode::Output,
+            ],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let output_names = vec!["s_".to_string(), "sent_packets".to_string()];
+        let ensures = translator.build_ensures(&annotated, &output_names);
+
+        // Should contain result.0.valid() for s_ (struct output)
+        assert!(
+            ensures.iter().any(|e| e == "result.0.valid()"),
+            "Should have result.0.valid(), got: {:?}",
+            ensures
+        );
+
+        // Should contain forall ensures for sent_packets (Seq output)
+        assert!(
+            ensures
+                .iter()
+                .any(|e| e.contains("forall") && e.contains("result.1") && e.contains("valid")),
+            "Should have forall valid for result.1, got: {:?}",
+            ensures
+        );
+        assert!(
+            ensures.iter().any(
+                |e| e.contains("forall") && e.contains("result.1") && e.contains("abstractable")
+            ),
+            "Should have forall abstractable for result.1, got: {:?}",
+            ensures
+        );
+
+        // Should also contain spec linkage
+        assert!(
+            ensures
+                .iter()
+                .any(|e| e.contains("LExecutorProcessAppStateRequest")),
+            "Should have spec linkage, got: {:?}",
+            ensures
+        );
+    }
+
+    #[test]
+    fn test_vec_element_ensures_not_generated_when_unconfigured() {
+        // When vec_element_ensures is empty (default), build_ensures should NOT
+        // generate forall ensures for Vec/Seq output parameters
+
+        let config = TranslatorConfig {
+            validity_predicate_name: "valid".to_string(),
+            // vec_element_ensures is empty by default
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LTest".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "packets".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Packet".to_string())))),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let output_names = vec!["packets".to_string()];
+        let ensures = translator.build_ensures(&annotated, &output_names);
+
+        // Should NOT contain any forall ensures
+        assert!(
+            !ensures.iter().any(|e| e.contains("forall")),
+            "Should NOT have forall ensures when vec_element_ensures is empty, got: {:?}",
+            ensures
+        );
+    }
+
+    #[test]
+    fn test_vec_element_ensures_single_output() {
+        // When the only output is a Vec, the accessor should be "result" (not "result.0")
+
+        let config = TranslatorConfig {
+            validity_predicate_name: "valid".to_string(),
+            vec_element_ensures: vec!["valid".to_string()],
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LGetPackets".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LState".to_string())),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "packets".to_string(),
+                    ty: Type::Seq(Box::new(Type::Named(Path::single("Packet".to_string())))),
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let output_names = vec!["packets".to_string()];
+        let ensures = translator.build_ensures(&annotated, &output_names);
+
+        // Should use "result" not "result.0" since there's only one output
+        let forall_ensures: Vec<_> = ensures.iter().filter(|e| e.contains("forall")).collect();
+        assert_eq!(forall_ensures.len(), 1, "Should have exactly 1 forall ensures");
+        assert!(
+            forall_ensures[0].contains("result@") && !forall_ensures[0].contains("result.0"),
+            "Should use 'result' not 'result.0' for single output, got: {}",
+            forall_ensures[0]
         );
     }
 
