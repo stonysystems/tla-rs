@@ -7,6 +7,9 @@ spec_only_functions = [
     "LeqUpperBound",
 ]
 
+# Type aliases that are really Vec<T> — skip valid() since Vec doesn't have it
+skip_valid_types = ["RequestBatch"]
+
 # Manually implemented in ElectionImpl with stronger/verified exec contracts.
 skip_functions = [
     "BoundRequestSequence",
@@ -37,7 +40,7 @@ nat_type = "u64"
 # Method call mappings: spec functions that become method calls
 [method_calls]
 "LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
-"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
+"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1, destructure_index = 1 }
 
 [function_paths]
 "BoundRequestSequence" = "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"

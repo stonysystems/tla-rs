@@ -92,7 +92,7 @@ ensures
     result.0.valid(),
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if (s.executor.reply_cache.contains_key(&received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[received_packet.src].seqno)) {
+    let result = if (s.executor.reply_cache.contains_key(&received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[&received_packet.src].seqno)) {
                 let sent_packets = CExecutorProcessRequest(&s.executor, &received_packet);
         (s.clone(), sent_packets)
 
@@ -443,8 +443,8 @@ ensures
 {
     let result = {
         let opn = s.executor.ops_complete;
-        if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
-                        let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[opn].candidate_learned_value);
+        if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state[&opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
+                        let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[&opn].candidate_learned_value);
             (CReplica {
     constants: s.constants,
     nextHeartbeatTime: s.nextHeartbeatTime,

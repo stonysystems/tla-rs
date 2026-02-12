@@ -6,6 +6,9 @@ primitive_types = [
     "OperationNumber",
 ]
 
+# HashMap fields for &key indexing (no helper generation)
+hashmap_index_fields = ["reply_cache", "unexecuted_learner_state"]
+
 # Functions to skip during transpilation (require manual implementation)
 skip_functions = [
     # Complex IO dispatch patterns that cannot be auto-transpiled

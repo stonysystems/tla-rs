@@ -6,6 +6,15 @@ primitive_types = [
     "OperationNumber",
 ]
 
+# Type aliases that are really Vec<T> — skip valid() since Vec doesn't have it
+skip_valid_types = ["RequestBatch"]
+
+# Vec fields — used for concat_vecs detection on s.election_state.* fields
+vec_fields = ["requests_received_prev_epochs", "requests_received_this_epoch", "request_queue"]
+
+# HashMap fields for &key indexing (no helper generation)
+hashmap_index_fields = ["highest_seqno_requested_by_client_this_view"]
+
 # Functions to skip during transpilation (require manual implementation)
 skip_functions = [
     # Complex existential quantifier with nested index access that cannot be auto-transpiled

@@ -94,6 +94,9 @@ pub struct TranslatorConfig {
     /// Generates clone/filter helpers and abstractify proof lemmas.
     /// e.g., {"unexecuted_learner_state" => ("CLearnerState", "clearnerstate", "CLearnerTuple")}
     pub map_fields: HashMap<String, (String, String, String)>,
+    /// Fields that are HashMap-typed and need `&key` indexing, but should NOT trigger
+    /// helper code generation. Used purely for `is_map_index_base()` detection.
+    pub hashmap_index_fields: HashSet<String>,
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive.
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
@@ -128,6 +131,7 @@ impl Default for TranslatorConfig {
             clone_field_types: HashMap::new(),
             struct_vec_fields: HashMap::new(),
             map_fields: HashMap::new(),
+            hashmap_index_fields: HashSet::new(),
             extra_requires: HashMap::new(),
             clone_method: None,
         }
@@ -2151,8 +2155,10 @@ impl Translator {
     }
 
     /// Check if a field is a Vec/HashMap type requiring `.clone()`.
+    /// Also checks hashmap_index_fields since HashMap fields need `.clone()` too.
     fn is_vec_field(&self, field_name: &str) -> bool {
         self.config.vec_fields.contains(field_name)
+            || self.config.hashmap_index_fields.contains(field_name)
     }
 
     /// Check if a field is a struct-typed Vec requiring `clone_<field>()` wrapper.
@@ -2196,6 +2202,21 @@ impl Translator {
             || self.config.vec_fields.contains(field_name)
             || self.config.struct_vec_fields.contains_key(field_name)
             || self.config.map_fields.contains_key(field_name)
+    }
+
+    /// Determine if an `Expr::Index` base expression refers to a HashMap/HashSet field.
+    /// If so, index should use `&key`; otherwise it's a Vec/slice and should use `as usize`.
+    fn is_map_index_base(&self, base: &Expr) -> bool {
+        // Extract terminal field name from expressions like s.reply_cache, s.executor.reply_cache
+        match base {
+            Expr::Field(_, field) => {
+                self.config.map_fields.contains_key(field.as_str())
+                    || self.config.collection_fields.contains(field.as_str())
+                    || self.config.hashmap_index_fields.contains(field.as_str())
+            }
+            Expr::Arrow(inner, _) => self.is_map_index_base(inner),
+            _ => false,
+        }
     }
 
     /// Returns true if no field categories are configured.
@@ -4157,10 +4178,30 @@ impl Translator {
         let invariants = self.build_fold_invariants(func, seq_param, init, combine, extra_args);
 
         // Build the loop body: acc = combine(acc, seq[i])
-        let loop_body = ExecExpr::Binary {
-            lhs: Box::new(ExecExpr::Var("acc".to_string())),
-            op: "=".to_string(),
-            rhs: Box::new(combine_with_acc),
+        // Special case: if combine is acc.insert(key, val), use mutating HashMap insert
+        // instead of functional Map::insert (which returns a new Map in spec but
+        // HashMap::insert mutates in place and returns Option<V>).
+        let loop_body = if Self::is_acc_insert(&combine_with_acc) {
+            // Extract the insert args and wrap: let _ = acc.insert(key, val);
+            if let ExecExpr::MethodCall { receiver: _, method: _, args } = combine_with_acc {
+                ExecExpr::Let {
+                    pattern: "_".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("acc".to_string())),
+                        method: "insert".to_string(),
+                        args,
+                    }),
+                }
+            } else {
+                unreachable!()
+            }
+        } else {
+            ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Var("acc".to_string())),
+                op: "=".to_string(),
+                rhs: Box::new(combine_with_acc),
+            }
         };
 
         let stmts = vec![
@@ -4190,6 +4231,16 @@ impl Translator {
         ];
 
         Ok(ExecExpr::Block(stmts))
+    }
+
+    /// Check if an expression is `acc.insert(...)` — the fold combine step for Map types.
+    /// Returns true when the expression is a MethodCall with receiver "acc" and method "insert".
+    fn is_acc_insert(expr: &ExecExpr) -> bool {
+        matches!(
+            expr,
+            ExecExpr::MethodCall { receiver, method, .. }
+            if method == "insert" && matches!(receiver.as_ref(), ExecExpr::Var(name) if name == "acc")
+        )
     }
 
     /// Substitute __acc placeholder with actual acc variable
@@ -6264,11 +6315,16 @@ impl Translator {
                 args,
             } => {
                 let recv = self.expr_to_simple_string(receiver);
-                // Map.index(key) in spec → map[&key] in exec requires
+                // .index(key) → [&key] for HashMap or [key] for Vec in spec context
                 if method == "index" && args.len() == 1 {
                     let key = self.expr_to_simple_string(&args[0]);
-                    let key_ref = if key.starts_with('&') { key } else { format!("&{}", key) };
-                    return format!("{}[{}]", recv, key_ref);
+                    if self.is_map_index_base(receiver) {
+                        let key_ref = if key.starts_with('&') { key } else { format!("&{}", key) };
+                        return format!("{}[{}]", recv, key_ref);
+                    } else {
+                        // Vec — plain indexing, no as usize in spec context
+                        return format!("{}[{}]", recv, key);
+                    }
                 }
                 // For exec requires clauses, Vec::contains and HashMap::contains_key
                 // take &T arguments, not T. Add & prefix to arguments.
@@ -6424,11 +6480,16 @@ impl Translator {
                 format!("exists |{}| {}", vars_str, self.expr_to_simple_string(body))
             }
             Expr::Index(base, idx) => {
-                format!(
-                    "{}.index({})",
-                    self.expr_to_simple_string(base),
-                    self.expr_to_simple_string(idx)
-                )
+                // In spec/requires context, use plain indexing (no as usize needed)
+                let base_str = self.expr_to_simple_string(base);
+                let idx_str = self.expr_to_simple_string(idx);
+                if self.is_map_index_base(base) {
+                    // HashMap: map[&key]
+                    let key_ref = if idx_str.starts_with('&') { idx_str } else { format!("&{}", idx_str) };
+                    format!("{}[{}]", base_str, key_ref)
+                } else {
+                    format!("{}[{}]", base_str, idx_str)
+                }
             }
             _ => format!("{:?}", expr),
         }
@@ -6623,11 +6684,44 @@ impl Translator {
             Expr::Index(base, idx) => {
                 let base_expr = self.transform_expr(base, ctx)?;
                 let idx_expr = self.transform_expr(idx, ctx)?;
-                Ok(ExecExpr::MethodCall {
-                    receiver: Box::new(base_expr),
-                    method: "index".to_string(),
-                    args: vec![idx_expr],
-                })
+                // Determine if base is a HashMap/HashSet field (needs &key)
+                // or a Vec/slice field (needs idx as usize)
+                let is_map = self.is_map_index_base(base);
+                if is_map {
+                    // HashMap indexing: map[&key]
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(base_expr),
+                        method: "index".to_string(),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(idx_expr),
+                        }],
+                    })
+                } else {
+                    // Vec/slice indexing: vec[idx as usize]
+                    // Only cast simple vars/fields that are u64 — skip complex exprs
+                    // like method calls which may return (bool, usize) or other types.
+                    let cast_idx = match &idx_expr {
+                        // Don't cast literal integers - they infer correctly
+                        ExecExpr::Literal(_) => idx_expr,
+                        // Simple field access (e.g., s.my_index) — cast to usize
+                        ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+                        // Simple variable — deref if it's an input param (&u64), then cast
+                        ExecExpr::Var(name) if ctx.is_input(name) => {
+                            ExecExpr::Cast(
+                                Box::new(ExecExpr::Unary { op: "*".to_string(), expr: Box::new(idx_expr) }),
+                                "usize".to_string(),
+                            )
+                        }
+                        // Other expressions — don't cast, let type inference handle it
+                        _ => idx_expr,
+                    };
+                    Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(base_expr),
+                        method: "index".to_string(),
+                        args: vec![cast_idx],
+                    })
+                }
             }
 
             Expr::If {
@@ -7266,6 +7360,79 @@ impl Translator {
                 args,
             } => {
                 let recv_expr = self.transform_expr(receiver, ctx)?;
+
+                // Special handling for .index() — apply HashMap/Vec discrimination
+                // same as Expr::Index, since .index(key) ≡ collection[key].
+                if method == "index" && args.len() == 1 {
+                    let idx_expr = self.transform_expr(&args[0], ctx)?;
+                    let is_map = self.is_map_index_base(receiver);
+                    if is_map {
+                        // HashMap indexing: map[&key]
+                        return Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(recv_expr),
+                            method: "index".to_string(),
+                            args: vec![ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(idx_expr),
+                            }],
+                        });
+                    } else {
+                        // Vec/slice indexing: vec[idx as usize]
+                        let cast_idx = match &idx_expr {
+                            ExecExpr::Literal(_) => idx_expr,
+                            ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+                            ExecExpr::Var(name) if ctx.is_input(name) => {
+                                ExecExpr::Cast(
+                                    Box::new(ExecExpr::Unary { op: "*".to_string(), expr: Box::new(idx_expr) }),
+                                    "usize".to_string(),
+                                )
+                            }
+                            _ => idx_expr,
+                        };
+                        return Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(recv_expr),
+                            method: "index".to_string(),
+                            args: vec![cast_idx],
+                        });
+                    }
+                }
+
+                // Special handling for .update(idx, val) — Seq::update exists in spec
+                // but not on Vec in exec. Generate: { let mut __v = recv.clone(); __v[idx as usize] = val; __v }
+                if method == "update" && args.len() == 2 {
+                    let idx_expr = self.transform_expr(&args[0], ctx)?;
+                    let val_expr = self.transform_expr(&args[1], ctx)?;
+                    // Cast index to usize for Vec indexing
+                    let cast_idx = match &idx_expr {
+                        ExecExpr::Literal(_) => idx_expr,
+                        ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+                        ExecExpr::Var(name) if ctx.is_input(name) => {
+                            ExecExpr::Cast(
+                                Box::new(ExecExpr::Unary { op: "*".to_string(), expr: Box::new(idx_expr) }),
+                                "usize".to_string(),
+                            )
+                        }
+                        _ => idx_expr,
+                    };
+                    return Ok(ExecExpr::Block(vec![
+                        ExecExpr::Let {
+                            pattern: "mut __v".to_string(),
+                            ty: None,
+                            value: Box::new(ExecExpr::Clone(Box::new(recv_expr))),
+                        },
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("__v".to_string())),
+                                method: "index".to_string(),
+                                args: vec![cast_idx],
+                            }),
+                            op: "=".to_string(),
+                            rhs: Box::new(val_expr),
+                        },
+                        ExecExpr::Var("__v".to_string()),
+                    ]));
+                }
+
                 // For collection methods like "contains", auto-borrow args.
                 // Skip "index" (array indexing) and "update" (Vec::update) —
                 // these need raw values, not references.
@@ -7323,6 +7490,36 @@ impl Translator {
                 let value_expr = self.transform_expr(value, ctx)?;
                 let body_expr = self.transform_expr(body, ctx)?;
                 let pattern_str = self.format_binding_pattern(&binding.pattern);
+
+                // Check if the value is a call to a function with destructure_index config.
+                // If so, wrap the let pattern in a tuple destructuring.
+                // e.g., `let sender_index = CGetReplicaIndex(...)` becomes
+                //        `let (_found, sender_index) = CGetReplicaIndex(...)`
+                let pattern_str = if let Expr::Call { func, .. } = value.as_ref() {
+                    let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
+                    if let Some(method_config) = self.config.method_calls.get(func_name) {
+                        if let Some(idx) = method_config.destructure_index {
+                            // Build a destructuring pattern: (_unused, ..., var, ..., _unused)
+                            // where `var` is at position `idx`
+                            let mut parts = Vec::new();
+                            for i in 0..=idx {
+                                if i == idx {
+                                    parts.push(pattern_str.clone());
+                                } else {
+                                    parts.push(format!("_unused{}", i));
+                                }
+                            }
+                            format!("({})", parts.join(", "))
+                        } else {
+                            pattern_str
+                        }
+                    } else {
+                        pattern_str
+                    }
+                } else {
+                    pattern_str
+                };
+
                 Ok(ExecExpr::Block(vec![
                     ExecExpr::Let {
                         pattern: pattern_str,
@@ -9061,6 +9258,17 @@ impl Translator {
         }
 
         Ok(ExecExpr::Block(stmts))
+    }
+
+    /// If expr is a `.len()` call, wrap it in `as u64` cast.
+    /// Prevents u64 vs usize comparison mismatches.
+    fn cast_len_to_u64(expr: ExecExpr) -> ExecExpr {
+        if let ExecExpr::MethodCall { method, args, .. } = &expr {
+            if method == "len" && args.is_empty() {
+                return ExecExpr::Cast(Box::new(expr), "u64".to_string());
+            }
+        }
+        expr
     }
 
     /// Format a literal value for exec code.
@@ -12603,6 +12811,7 @@ mod tests {
             MethodCallConfig {
                 method_name: "CMinQuorumSize".to_string(),
                 receiver_arg_index: 0,
+                destructure_index: None,
             },
         );
         config.method_calls.insert(
@@ -12610,6 +12819,7 @@ mod tests {
             MethodCallConfig {
                 method_name: "CGetReplicaIndex".to_string(),
                 receiver_arg_index: 1,
+                destructure_index: None,
             },
         );
         config.method_calls.insert(
@@ -12617,6 +12827,7 @@ mod tests {
             MethodCallConfig {
                 method_name: "CReplicaConstantsValid".to_string(),
                 receiver_arg_index: 0,
+                destructure_index: None,
             },
         );
 

@@ -16,6 +16,12 @@ primitive_types = [
     "OperationNumber",
 ]
 
+# Vec fields — these use as usize indexing
+vec_fields = ["last_checkpointed_operation"]
+
+# HashMap fields for &key indexing (no helper generation)
+hashmap_index_fields = ["votes"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -42,7 +48,7 @@ nat_type = "u64"
 # Method call mappings: spec functions that become method calls
 [method_calls]
 "LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
-"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
+"GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1, destructure_index = 1 }
 
 # Function paths for cross-module calls
 [function_paths]

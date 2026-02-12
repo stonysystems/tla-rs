@@ -6,6 +6,9 @@ primitive_types = [
     "OperationNumber",
 ]
 
+# HashMap fields for &key indexing (no helper generation)
+hashmap_index_fields = ["reply_cache"]
+
 # Functions to skip during transpilation (require manual implementation)
 skip_functions = [
     # Complex map expression that cannot be auto-transpiled
@@ -73,6 +76,7 @@ custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
     "use vstd::set::*;",
+    "use vstd::std_specs::hash::HashMapAdditionalSpecFns;",
     "use std::collections::HashMap;",
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",

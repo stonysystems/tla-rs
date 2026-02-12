@@ -190,6 +190,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub map_fields: HashMap<String, Vec<String>>,
 
+    /// Fields that are HashMap-typed and need `&key` indexing, but should NOT trigger
+    /// helper code generation (unlike `map_fields` which generates abstractify/clone/filter).
+    /// Used purely for `is_map_index_base()` detection in Index expressions.
+    /// e.g., ["reply_cache", "highest_seqno_requested_by_client_this_view"]
+    #[serde(default)]
+    pub hashmap_index_fields: Vec<String>,
+
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive
     /// automatically (e.g., covering conditions for implication groups).
@@ -495,6 +502,12 @@ pub struct MethodCallConfig {
     /// The 0-based index of the argument that becomes the receiver (e.g., 0 for first arg)
     #[serde(default)]
     pub receiver_arg_index: usize,
+    /// If the exec method returns a tuple but the spec returns a single value,
+    /// this is the 0-based index of the tuple element to extract.
+    /// e.g., CGetReplicaIndex returns (bool, usize) but spec GetReplicaIndex returns int,
+    /// so destructure_index = 1 extracts the usize element.
+    #[serde(default)]
+    pub destructure_index: Option<usize>,
 }
 
 #[cfg(test)]

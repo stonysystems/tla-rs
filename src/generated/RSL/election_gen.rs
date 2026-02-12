@@ -153,7 +153,7 @@ ensures
     let result = if !es.constants.all.config.replica_ids.contains(&p.src) {
         es.clone()
     } else {
-                let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
+                let (_unused0, sender_index) = es.constants.all.config.CGetReplicaIndex(&p.src);
         if ((p.msg->bal_heartbeat == es.current_view) && p.msg->suspicious) {
             CElectionState {
                 constants: es.constants,
@@ -351,10 +351,7 @@ if {
     }
 }
 
-pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)
-requires
-    batch.valid(),
-ensures
+pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)ensures
     result@ == RemoveExecutedRequestBatch(reqs@, batch@),
 {
     let mut acc = reqs.clone();
