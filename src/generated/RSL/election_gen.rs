@@ -56,7 +56,7 @@ ensures
     result.valid(),
     result@ == ComputeSuccessorView(b@, c@),
 {
-if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
+if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
         CBallot {
             seqno: b.seqno,
             proposer_id: (b.proposer_id + 1),
@@ -222,7 +222,7 @@ ensures
     let result = if (*clock < es.epoch_end_time) {
         es.clone()
     } else {
-        if (es.requests_received_prev_epochs.len() == 0) {
+        if ((es.requests_received_prev_epochs.len() as u64) == 0) {
                         let new_epoch_length = es.constants.all.params.baseline_view_timeout_period;
             CElectionState {
                 constants: es.constants,
@@ -274,7 +274,7 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, *clock as int),
 {
-    let result = if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !(es.current_view.seqno < es.constants.all.params.max_integer_val)) {
+    let result = if (((es.current_view_suspectors.len() as u64) < es.constants.all.config.CMinQuorumSize()) || !(es.current_view.seqno < es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
                 let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);

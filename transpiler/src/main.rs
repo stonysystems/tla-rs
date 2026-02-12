@@ -930,6 +930,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             spec_only_functions: file_config.spec_only_functions.into_iter().collect(),
             method_calls: file_config.method_calls.clone(),
             primitive_types: file_config.primitive_types.into_iter().collect(),
+            skip_valid_types: file_config.skip_valid_types.into_iter().collect(),
             int_type: file_config.naming.int_type.clone(),
             nat_type: file_config.naming.nat_type.clone(),
             variant_remapping: file_config.variant_remapping.clone(),

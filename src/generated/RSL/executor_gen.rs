@@ -102,7 +102,7 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is RslMessageAppStateSupply,
-    s.constants.all.config.replica_ids.contains(inp.src),
+    s.constants.all.config.replica_ids.contains(&inp.src),
     (inp.msg->opn_state_supply > s.ops_complete),
 ensures
     result.valid(),
@@ -164,7 +164,7 @@ ensures
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
     let result = if (s.constants.all.config.replica_ids.contains(&inp.src) && (inp.msg->logTruncationPoint_2 > s.ops_complete)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageAppStateRequest {
     bal_state_req: inp.msg->bal_2,
     opn_state_req: inp.msg->logTruncationPoint_2,
 });
@@ -185,7 +185,7 @@ requires
     s.valid(),
     inp.valid(),
     inp.msg is RslMessageRequest,
-    s.reply_cache.contains_key(inp.src),
+    s.reply_cache.contains_key(&inp.src),
     s.reply_cache.index(inp.src) is Reply,
     (inp.msg->seqno_req <= s.reply_cache.index(inp.src).seqno),
 ensures

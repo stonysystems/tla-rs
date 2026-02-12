@@ -150,7 +150,7 @@ ensures
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     let result = if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage1a {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage1a {
     bal_1a: s.election_state.current_view,
 });
         (CProposer {
@@ -183,10 +183,10 @@ requires
     s.valid(),
     p.valid(),
     p.msg is RslMessage1b,
-    s.constants.all.config.replica_ids.contains(p.src),
+    s.constants.all.config.replica_ids.contains(&p.src),
     (p.msg->bal_1b == s.max_ballot_i_sent_1a),
     (s.current_state == 1),
-    forall |other_packet: CPacket| (s.received_1b_packets.contains(other_packet) ==> (other_packet.src != p.src)),
+    forall |other_packet: CPacket| (s.received_1b_packets.contains(&other_packet) ==> (other_packet.src != p.src)),
 ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
@@ -227,8 +227,8 @@ ensures
     result.0.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if ((s.received_1b_packets.len() >= s.constants.all.config.CMinQuorumSize()) && (LSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageStartingPhase2 {
+    let result = if (((s.received_1b_packets.len() as u64) >= s.constants.all.config.CMinQuorumSize()) && (LSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
     bal_2: s.max_ballot_i_sent_1a,
     logTruncationPoint_2: log_truncation_point.clone(),
 });
@@ -269,10 +269,10 @@ ensures
         if !LAllAcceptorsHadNoProposal(&s.received_1b_packets, &s.next_operation_number_to_propose) {
             LProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
-            if (LExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (*clock >= s.incomplete_batch_timer->when))))) {
+            if (LExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || (((s.request_queue.len() as u64) >= s.constants.all.params.max_batch_size) || (((s.request_queue.len() as u64) > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (*clock >= s.incomplete_batch_timer->when))))) {
                 LProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
-                if ((s.request_queue.len() > 0) && s.incomplete_batch_timer is CIncompleteBatchTimerOff) {
+                if (((s.request_queue.len() as u64) > 0) && s.incomplete_batch_timer is CIncompleteBatchTimerOff) {
                     (CProposer {
     constants: s.constants,
     current_state: s.current_state,

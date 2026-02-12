@@ -56,12 +56,19 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub method_calls: HashMap<String, MethodCallConfig>,
 
-    /// Primitive types that should NOT have valid() predicates generated.
-    /// These are types that don't have a valid() method (e.g., type aliases to u64, HashMap).
-    /// Both the spec type name and the remapped exec type name can be listed.
-    /// e.g., ["COperationNumber", "CVotes", "ClearnerState"]
+    /// Primitive types that should NOT have valid() predicates generated
+    /// AND should use `*param as int` in ensures spec arguments.
+    /// These are types that map to integer primitives (e.g., type aliases to u64).
+    /// e.g., ["OperationNumber"]
     #[serde(default)]
     pub primitive_types: Vec<String>,
+
+    /// Types that should skip valid() predicates but use `param@` in ensures
+    /// (not `*param as int`). Used for collection type aliases like Votes (= Map<int, Vote>)
+    /// that don't have valid() but DO have a View trait.
+    /// e.g., ["Votes", "CVotes"]
+    #[serde(default)]
+    pub skip_valid_types: Vec<String>,
 
     /// Functions to skip during transpilation (require manual implementation).
     /// These are functions that have patterns too complex for automatic transpilation,
@@ -256,20 +263,37 @@ impl TranspilerConfig {
     }
 
     /// Check if a type should be treated as primitive (no valid() predicate).
-    /// This checks both spec type names and remapped exec type names.
+    /// This checks both spec type names and remapped exec type names,
+    /// in both primitive_types and skip_valid_types lists.
     pub fn is_primitive_type(&self, type_name: &str) -> bool {
         // Check if directly in primitive_types list
         if self.primitive_types.contains(&type_name.to_string()) {
             return true;
         }
 
-        // Check if the remapped exec type is in primitive_types
+        // Check if directly in skip_valid_types list
+        if self.skip_valid_types.contains(&type_name.to_string()) {
+            return true;
+        }
+
+        // Check if the remapped exec type is in primitive_types or skip_valid_types
         let exec_type = self.get_exec_type(type_name);
-        if self.primitive_types.contains(&exec_type) {
+        if self.primitive_types.contains(&exec_type) || self.skip_valid_types.contains(&exec_type) {
             return true;
         }
 
         false
+    }
+
+    /// Check if a type is strictly primitive (maps to `*param as int` in ensures).
+    /// Unlike `is_primitive_type`, this does NOT include `skip_valid_types`.
+    pub fn is_strict_primitive(&self, type_name: &str) -> bool {
+        if self.primitive_types.contains(&type_name.to_string()) {
+            return true;
+        }
+
+        let exec_type = self.get_exec_type(type_name);
+        self.primitive_types.contains(&exec_type)
     }
 
     /// Check if a function should be skipped during transpilation.

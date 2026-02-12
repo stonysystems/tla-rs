@@ -443,7 +443,7 @@ ensures
 {
     let result = {
         let opn = s.executor.ops_complete;
-        if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
+        if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && ((s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() as u64) >= s.learner.constants.all.config.CMinQuorumSize()))) {
                         let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[opn].candidate_learned_value);
             (CReplica {
     constants: s.constants,
@@ -476,7 +476,7 @@ ensures
     let result = if (clock.t < s.nextHeartbeatTime) {
         (s.clone(), vec![])
     } else {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageHeartbeat {
+                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageHeartbeat {
     bal_heartbeat: s.proposer.election_state.current_view,
     suspicious: s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,

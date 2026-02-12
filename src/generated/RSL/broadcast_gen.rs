@@ -38,17 +38,17 @@ ensures
 {
     let mut result = Vec::<CPacket>::new();
     let mut idx: usize = 0;
-    while (idx < c.replica_ids.len())
+    while (idx < (c.replica_ids.len() as u64))
     invariant
         c.valid(),
         m.valid(),
         ((0 <= *myidx) && (*myidx < c.replica_ids.len())),
         result@.len() == idx as int,
-        idx <= c.replica_ids.len(),
+        idx <= (c.replica_ids.len() as u64),
         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).dst@ == c.replica_ids@[j]@,
         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).src@ == c.replica_ids@[*myidx as int]@,
         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).msg@ == m@,
-    decreases c.replica_ids.len() - idx,
+    decreases (c.replica_ids.len() as u64) - idx,
     {
         let pkt = CPacket {
             dst: c.replica_ids[idx].clone_up_to_view(),
@@ -61,7 +61,7 @@ ensures
     }
     proof {
         let mapped = result@.map(|i: int, p: CPacket| p@);
-        assert(mapped.len() == c.replica_ids.len());
+        assert(mapped.len() == (c.replica_ids.len() as u64));
         assert forall |j: int| 0 <= j < mapped.len() implies
         (#[trigger] mapped[j]) =~=
         (LPacket{dst: c.replica_ids@[j]@, src: c.replica_ids@[*myidx as int]@, msg: m@})

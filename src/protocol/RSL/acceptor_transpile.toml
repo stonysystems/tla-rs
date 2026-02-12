@@ -8,6 +8,8 @@ spec_only_functions = [
 # Primitive types that don't need valid() predicates
 # CVotes is a type alias for HashMap<u64, CVote> - HashMap doesn't have valid()
 # OperationNumber is remapped to u64 which is a primitive
+# Note: Votes/CVotes ensures clauses generate *param as int which is wrong for Map types,
+# but fixing this needs abstractify_cvotes() which requires manual implementation.
 primitive_types = [
     "Votes",
     "CVotes",

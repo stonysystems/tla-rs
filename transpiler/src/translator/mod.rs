@@ -43,9 +43,12 @@ pub struct TranslatorConfig {
     /// Maps spec function name to method call configuration.
     /// Example: "LMinQuorumSize" -> { method_name: "CMinQuorumSize", receiver_arg_index: 0 }
     pub method_calls: HashMap<String, MethodCallConfig>,
-    /// Primitive types that should NOT have valid() predicates generated.
-    /// These are types that don't have a valid() method (e.g., type aliases to u64, HashMap).
+    /// Primitive types that map to integers — use `*param as int` in ensures
+    /// and skip valid() predicates.
     pub primitive_types: HashSet<String>,
+    /// Types that skip valid() but use `param@` in ensures (collection type aliases
+    /// like Votes = HashMap<u64, CVote>).
+    pub skip_valid_types: HashSet<String>,
     /// Whether to generate abstraction functions
     pub generate_abstraction_fns: bool,
     /// Whether to generate validity predicates
@@ -110,6 +113,7 @@ impl Default for TranslatorConfig {
             spec_only_functions: HashSet::new(),
             method_calls: HashMap::new(),
             primitive_types: HashSet::new(),
+            skip_valid_types: HashSet::new(),
             generate_abstraction_fns: true,
             generate_validity_predicates: true,
             validity_predicate_name: "well_formed".to_string(),
@@ -131,15 +135,32 @@ impl Default for TranslatorConfig {
 }
 
 impl TranslatorConfig {
-    /// Check if a type should be treated as primitive (no valid() predicate).
-    /// This checks both spec type names and remapped exec type names.
+    /// Check if a type should skip valid() predicates.
+    /// Checks both primitive_types and skip_valid_types lists,
+    /// as well as remapped exec type names.
     pub fn is_primitive_type(&self, type_name: &str) -> bool {
-        // Check if directly in primitive_types list
+        // Check if directly in primitive_types or skip_valid_types list
+        if self.primitive_types.contains(type_name) || self.skip_valid_types.contains(type_name) {
+            return true;
+        }
+
+        // Check if the remapped exec type is in either list
+        if let Some(exec_type) = self.type_remapping.get(type_name) {
+            if self.primitive_types.contains(exec_type) || self.skip_valid_types.contains(exec_type) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Check if a type is strictly primitive (maps to `*param as int` in ensures).
+    /// Unlike `is_primitive_type`, this does NOT include `skip_valid_types`.
+    pub fn is_strict_primitive(&self, type_name: &str) -> bool {
         if self.primitive_types.contains(type_name) {
             return true;
         }
 
-        // Check if the remapped exec type is in primitive_types
         if let Some(exec_type) = self.type_remapping.get(type_name) {
             if self.primitive_types.contains(exec_type) {
                 return true;
@@ -2595,11 +2616,16 @@ impl Translator {
     /// This produces a Verus spec-level expression string.
     /// Assumes any variable should be dereferenced (legacy behavior).
     fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
-        // For backward compatibility, deref all Var expressions
-        // This is used by map_filter which has a different pattern
+        self.expr_to_invariant_string_skip(expr, "")
+    }
+
+    /// Convert ExecExpr to a string for use in forall invariants.
+    /// `skip_var` is the forall-bound variable that should NOT be dereferenced.
+    /// All other variables get `*` dereference (function parameters are &T).
+    fn expr_to_invariant_string_skip(&self, expr: &ExecExpr, skip_var: &str) -> String {
         match expr {
             ExecExpr::Var(name) => {
-                if name.starts_with('*') {
+                if name.starts_with('*') || name == skip_var {
                     name.clone()
                 } else {
                     format!("*{}", name)
@@ -2608,13 +2634,13 @@ impl Translator {
             ExecExpr::Binary { lhs, op, rhs } => {
                 format!(
                     "{} {} {}",
-                    self.expr_to_invariant_string(lhs),
+                    self.expr_to_invariant_string_skip(lhs, skip_var),
                     op,
-                    self.expr_to_invariant_string(rhs)
+                    self.expr_to_invariant_string_skip(rhs, skip_var)
                 )
             }
             ExecExpr::Field(base, field) => {
-                let base_str = self.expr_to_invariant_string(base);
+                let base_str = self.expr_to_invariant_string_skip(base, skip_var);
                 let base_str = base_str.trim_start_matches('*');
                 format!("{}.{}", base_str, field)
             }
@@ -2624,14 +2650,14 @@ impl Translator {
                 method,
                 args,
             } => {
-                let recv_str = self.expr_to_invariant_string(receiver);
+                let recv_str = self.expr_to_invariant_string_skip(receiver, skip_var);
                 let recv_str = recv_str.trim_start_matches('*');
                 if args.is_empty() {
                     format!("{}.{}()", recv_str, method)
                 } else {
                     let args_str: Vec<String> = args
                         .iter()
-                        .map(|a| self.expr_to_invariant_string(a))
+                        .map(|a| self.expr_to_invariant_string_skip(a, skip_var))
                         .collect();
                     format!("{}.{}({})", recv_str, method, args_str.join(", "))
                 }
@@ -2639,7 +2665,7 @@ impl Translator {
             ExecExpr::Call { func, args } => {
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| self.expr_to_invariant_string(a))
+                    .map(|a| self.expr_to_invariant_string_skip(a, skip_var))
                     .collect();
                 format!("{}({})", func, args_str.join(", "))
             }
@@ -2647,10 +2673,10 @@ impl Translator {
                 if op == "*" {
                     match expr.as_ref() {
                         ExecExpr::Var(name) => format!("*{}", name),
-                        _ => format!("{}{}", op, self.expr_to_invariant_string(expr)),
+                        _ => format!("{}{}", op, self.expr_to_invariant_string_skip(expr, skip_var)),
                     }
                 } else {
-                    format!("{}{}", op, self.expr_to_invariant_string(expr))
+                    format!("{}{}", op, self.expr_to_invariant_string_skip(expr, skip_var))
                 }
             }
             ExecExpr::If {
@@ -2658,10 +2684,10 @@ impl Translator {
                 then_branch,
                 else_branch,
             } => {
-                let cond_str = self.expr_to_invariant_string(cond);
-                let then_str = self.expr_to_invariant_string(then_branch);
+                let cond_str = self.expr_to_invariant_string_skip(cond, skip_var);
+                let then_str = self.expr_to_invariant_string_skip(then_branch, skip_var);
                 if let Some(else_expr) = else_branch {
-                    let else_str = self.expr_to_invariant_string(else_expr);
+                    let else_str = self.expr_to_invariant_string_skip(else_expr, skip_var);
                     format!("if {} {{ {} }} else {{ {} }}", cond_str, then_str, else_str)
                 } else {
                     format!("if {} {{ {} }}", cond_str, then_str)
@@ -2674,7 +2700,7 @@ impl Translator {
                         format!(
                             "{}: {}",
                             field_name,
-                            self.expr_to_invariant_string(field_val)
+                            self.expr_to_invariant_string_skip(field_val, skip_var)
                         )
                     })
                     .collect();
@@ -2683,21 +2709,21 @@ impl Translator {
             ExecExpr::Tuple(elems) => {
                 let elems_str: Vec<String> = elems
                     .iter()
-                    .map(|e| self.expr_to_invariant_string(e))
+                    .map(|e| self.expr_to_invariant_string_skip(e, skip_var))
                     .collect();
                 format!("({})", elems_str.join(", "))
             }
-            ExecExpr::Clone(inner) => self.expr_to_invariant_string(inner),
+            ExecExpr::Clone(inner) => self.expr_to_invariant_string_skip(inner, skip_var),
             ExecExpr::VecLit(elems) => {
                 let elems_str: Vec<String> = elems
                     .iter()
-                    .map(|e| self.expr_to_invariant_string(e))
+                    .map(|e| self.expr_to_invariant_string_skip(e, skip_var))
                     .collect();
                 format!("seq![{}]", elems_str.join(", "))
             }
             ExecExpr::Block(stmts) => {
                 if let Some(last) = stmts.last() {
-                    self.expr_to_invariant_string(last)
+                    self.expr_to_invariant_string_skip(last, skip_var)
                 } else {
                     "()".to_string()
                 }
@@ -2735,30 +2761,36 @@ impl Translator {
         key_var: &str,
         filter_pred: &str,
     ) -> Vec<String> {
+        // Use typed forall binding so Verus can infer the key type
+        let typed_k = format!("{}: {}", key_var, self.config.int_type);
         vec![
             // Track which keys we've processed
             format!("seen_keys.subset_of({}@.dom())", source_map),
             // All seen keys are in source
             format!(
-                "forall |{k}| seen_keys.contains({k}) ==> {src}@.contains_key({k})",
+                "forall |{tk}| seen_keys.contains({k}) ==> {src}@.contains_key({k})",
+                tk = typed_k,
                 k = key_var,
                 src = source_map
             ),
             // Result only contains keys that satisfy filter and are in source
             format!(
-                "forall |{k}| result@.contains_key({k}) ==> ({pred}) && {src}@.contains_key({k})",
+                "forall |{tk}| result@.contains_key({k}) ==> ({pred}) && {src}@.contains_key({k})",
+                tk = typed_k,
                 k = key_var,
                 pred = filter_pred,
                 src = source_map
             ),
             // Result only contains keys we've seen
             format!(
-                "forall |{k}| result@.contains_key({k}) ==> seen_keys.contains({k})",
+                "forall |{tk}| result@.contains_key({k}) ==> seen_keys.contains({k})",
+                tk = typed_k,
                 k = key_var
             ),
             // All seen keys matching filter are in result
             format!(
-                "forall |{k}| seen_keys.contains({k}) && ({pred}) ==> result@.contains_key({k})",
+                "forall |{tk}| seen_keys.contains({k}) && ({pred}) ==> result@.contains_key({k})",
+                tk = typed_k,
                 k = key_var,
                 pred = filter_pred
             ),
@@ -3272,8 +3304,9 @@ impl Translator {
     ) -> ExecExpr {
         let iter_name = format!("{}_keys", source_map.replace('.', "_"));
 
-        // Convert filter expression to string for use in invariants
-        let filter_pred = self.expr_to_invariant_string(&filter_expr);
+        // Convert filter expression to string for use in forall invariants.
+        // Skip dereferencing the key variable since it's the forall-bound variable (plain type).
+        let filter_pred = self.expr_to_invariant_string_skip(&filter_expr, key_var);
 
         // Generate the invariants for this map filter pattern
         let invariants = self.generate_map_filter_invariants(source_map, key_var, &filter_pred);
@@ -3321,21 +3354,29 @@ impl Translator {
                     arms: vec![
                         (
                             "Some(v)".to_string(),
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("result".to_string())),
-                                method: "insert".to_string(),
-                                args: vec![
-                                    ExecExpr::Unary {
-                                        op: "*".to_string(),
-                                        expr: Box::new(ExecExpr::Var(key_var.to_string())),
-                                    },
-                                    ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::Var("v".to_string())),
-                                        method: "clone".to_string(),
-                                        args: vec![],
-                                    },
-                                ],
-                            },
+                            // Discard the Option<V> return value from insert()
+                            // using a let _ binding so both match arms return ()
+                            ExecExpr::Block(vec![
+                                ExecExpr::Let {
+                                    pattern: "_".to_string(),
+                                    ty: None,
+                                    value: Box::new(ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var("result".to_string())),
+                                        method: "insert".to_string(),
+                                        args: vec![
+                                            ExecExpr::Unary {
+                                                op: "*".to_string(),
+                                                expr: Box::new(ExecExpr::Var(key_var.to_string())),
+                                            },
+                                            ExecExpr::MethodCall {
+                                                receiver: Box::new(ExecExpr::Var("v".to_string())),
+                                                method: "clone".to_string(),
+                                                args: vec![],
+                                            },
+                                        ],
+                                    }),
+                                },
+                            ]),
                         ),
                         ("None".to_string(), ExecExpr::Block(vec![])),
                     ],
@@ -5280,7 +5321,8 @@ impl Translator {
     /// Format a spec argument for ensures clauses.
     /// For int/nat params (which become &u64 in exec), generates `*param as int`.
     /// For bool params, generates just `param`.
-    /// For primitive_types (e.g., OperationNumber → u64), generates `*param as int`.
+    /// For strict primitive_types (e.g., OperationNumber → u64), generates `*param as int`.
+    /// For skip_valid_types (e.g., Votes → HashMap), generates `param@`.
     /// For struct/enum params, generates `param@`.
     fn format_spec_arg(&self, param: &crate::ast::Parameter) -> String {
         match &param.ty {
@@ -5288,7 +5330,9 @@ impl Translator {
             Type::Bool => param.name.clone(),
             Type::Named(path) => {
                 if let Some(type_name) = path.last() {
-                    if self.config.primitive_types.contains(type_name) {
+                    // Only use *param as int for strict primitives (integer type aliases),
+                    // NOT for skip_valid_types (collection type aliases like Votes)
+                    if self.config.is_strict_primitive(type_name) {
                         return format!("*{} as int", param.name);
                     }
                 }
@@ -6220,7 +6264,26 @@ impl Translator {
                 args,
             } => {
                 let recv = self.expr_to_simple_string(receiver);
-                let args_str: Vec<_> = args.iter().map(|a| self.expr_to_simple_string(a)).collect();
+                // Map.index(key) in spec → map[&key] in exec requires
+                if method == "index" && args.len() == 1 {
+                    let key = self.expr_to_simple_string(&args[0]);
+                    let key_ref = if key.starts_with('&') { key } else { format!("&{}", key) };
+                    return format!("{}[{}]", recv, key_ref);
+                }
+                // For exec requires clauses, Vec::contains and HashMap::contains_key
+                // take &T arguments, not T. Add & prefix to arguments.
+                let needs_ref = method == "contains" || method == "contains_key";
+                let args_str: Vec<_> = args
+                    .iter()
+                    .map(|a| {
+                        let s = self.expr_to_simple_string(a);
+                        if needs_ref && !s.starts_with('&') {
+                            format!("&{}", s)
+                        } else {
+                            s
+                        }
+                    })
+                    .collect();
                 format!("{}.{}({})", recv, method, args_str.join(", "))
             }
             Expr::Call { func, args } => {
@@ -7173,7 +7236,8 @@ impl Translator {
                             Expr::Field(..)
                             | Expr::MethodCall { .. }
                             | Expr::Arrow(..)
-                            | Expr::Index(..) => true,
+                            | Expr::Index(..)
+                            | Expr::Struct { .. } => true,
                             Expr::Ident(name) => {
                                 // Add & for input params and local variables (not outputs)
                                 !ctx.is_output(name)
@@ -7230,11 +7294,18 @@ impl Translator {
                         }
                     })
                     .collect();
-                Ok(ExecExpr::MethodCall {
+                let result = ExecExpr::MethodCall {
                     receiver: Box::new(recv_expr),
                     method: method.clone(),
                     args: translated_args?,
-                })
+                };
+                // Vec::len() returns usize; cast to the configured int_type (u64)
+                // so comparisons with other u64 values work correctly.
+                if method == "len" && args.is_empty() {
+                    Ok(ExecExpr::Cast(Box::new(result), self.config.int_type.clone()))
+                } else {
+                    Ok(result)
+                }
             }
 
             Expr::Let {
@@ -8036,7 +8107,8 @@ impl Translator {
                         Expr::Field(..)
                         | Expr::MethodCall { .. }
                         | Expr::Arrow(..)
-                        | Expr::Index(..) => true,
+                        | Expr::Index(..)
+                        | Expr::Struct { .. } => true,
                         Expr::Ident(name) => {
                             // Add & for input params and local variables (not outputs)
                             !ctx.is_output(name)
@@ -12478,7 +12550,7 @@ mod tests {
         };
         assert_eq!(
             translator.expr_to_simple_string(&method_call),
-            "list.contains(item)"
+            "list.contains(&item)"
         );
 
         // Test: function call with C prefix
@@ -13570,9 +13642,13 @@ mod tests {
         let config = TranslatorConfig::default();
         let translator = Translator::new(config);
 
-        // Test variable (should add dereference)
+        // Test variable (should add dereference by default)
         let var = ExecExpr::Var("key".to_string());
         assert_eq!(translator.expr_to_invariant_string(&var), "*key");
+
+        // Test variable with skip_var (should NOT dereference the skipped variable)
+        assert_eq!(translator.expr_to_invariant_string_skip(&var, "key"), "key");
+        assert_eq!(translator.expr_to_invariant_string_skip(&var, "other"), "*key");
 
         // Test binary expression
         let binary = ExecExpr::Binary {
@@ -13586,6 +13662,11 @@ mod tests {
         assert_eq!(
             translator.expr_to_invariant_string(&binary),
             "*opn >= *threshold"
+        );
+        // With skip_var, the skipped variable is not dereferenced
+        assert_eq!(
+            translator.expr_to_invariant_string_skip(&binary, "opn"),
+            "*opn >= *threshold" // opn already has explicit *, threshold gets auto-*
         );
 
         // Test literal
@@ -13612,7 +13693,7 @@ mod tests {
 
         // Check invariant content
         assert!(invariants[0].contains("seen_keys.subset_of(votes@.dom())"));
-        assert!(invariants[1].contains("forall |opn|"));
+        assert!(invariants[1].contains("forall |opn: i64|"));
         assert!(invariants[1].contains("seen_keys.contains(opn)"));
         assert!(invariants[1].contains("votes@.contains_key(opn)"));
         assert!(invariants[2].contains("*opn >= threshold"));
