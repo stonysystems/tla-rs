@@ -91,7 +91,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ens
         i <= replies.len(),
         acc@ == LClientsInReplies(replies@.take(i as int)),
     {
-        acc = acc.insert(replies[i].client, replies[i])
+        acc = acc.insert(&replies[i].client, &replies[i])
     }
     acc
 
@@ -132,7 +132,7 @@ ensures
 {
     let result = {
         let m = inp.msg;
-        if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLeq(&s.max_bal_reflected, &m->bal_state_req) && ((s.ops_complete >= m->opn_state_req) && s.constants.CReplicaConstantsValid()))) {
+        if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLeq(&s.max_bal_reflected, &m->bal_state_req) && ((s.ops_complete >= m->opn_state_req) && s.constants.CReplicaConstantsValid()))) {
             (s.clone(), vec![CPacket {
     dst: inp.src,
     src: s.constants.all.config.replica_ids[s.constants.my_index],
@@ -163,7 +163,7 @@ ensures
     result.0.valid(),
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg->logTruncationPoint_2 > s.ops_complete)) {
+    let result = if (s.constants.all.config.replica_ids.contains(&inp.src) && (inp.msg->logTruncationPoint_2 > s.ops_complete)) {
                 let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageAppStateRequest {
     bal_state_req: inp.msg->bal_2,
     opn_state_req: inp.msg->logTruncationPoint_2,

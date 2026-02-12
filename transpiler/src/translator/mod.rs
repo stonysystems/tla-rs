@@ -7202,8 +7202,34 @@ impl Translator {
                 args,
             } => {
                 let recv_expr = self.transform_expr(receiver, ctx)?;
-                let translated_args: TranspileResult<Vec<_>> =
-                    args.iter().map(|a| self.transform_expr(a, ctx)).collect();
+                // For collection methods like "contains", auto-borrow args.
+                // Skip "index" (array indexing) and "update" (Vec::update) —
+                // these need raw values, not references.
+                let auto_borrow = method != "index" && method != "update";
+                let translated_args: TranspileResult<Vec<_>> = args
+                    .iter()
+                    .map(|a| {
+                        let transformed = self.transform_expr(a, ctx)?;
+                        let needs_ref = auto_borrow && match a {
+                            Expr::Field(..)
+                            | Expr::MethodCall { .. }
+                            | Expr::Arrow(..)
+                            | Expr::Index(..) => true,
+                            Expr::Ident(name) => {
+                                !ctx.is_output(name)
+                            }
+                            _ => false,
+                        };
+                        if needs_ref {
+                            Ok(ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(transformed),
+                            })
+                        } else {
+                            Ok(transformed)
+                        }
+                    })
+                    .collect();
                 Ok(ExecExpr::MethodCall {
                     receiver: Box::new(recv_expr),
                     method: method.clone(),

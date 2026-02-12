@@ -65,6 +65,7 @@ custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
     "use vstd::set::*;",
+    "use vstd::std_specs::hash::KeysAdditionalSpecFns;",
     "use std::collections::HashMap;",
     "use crate::common::collections::sets::*;",
     "use crate::common::native::io_s::EndPoint;",

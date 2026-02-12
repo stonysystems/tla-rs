@@ -1,8 +1,8 @@
 // Auto-generated RSL types and functions module
 // DO NOT EDIT MANUALLY
 
-// Function modules are disabled due to pre-existing transpiler code generation bugs.
-// They will be re-enabled as transpiler output quality improves.
+// Function modules have 96 remaining transpiler code generation errors.
+// Re-enable as transpiler improvements fix them.
 // pub mod acceptor_gen;
 // pub mod broadcast_gen;
 // pub mod election_gen;

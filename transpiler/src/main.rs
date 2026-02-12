@@ -1368,8 +1368,8 @@ manual_code = "manual_helpers.rs"
             file_config
                 .re_exports
                 .iter()
-                .any(|r: &String| r.contains("types_i::{CBallot, CRequest, CReply, CVote}")),
-            "re_exports should include macro-defined marshalable type re-export"
+                .any(|r: &String| r.contains("types_i::")),
+            "re_exports should include types_i re-export"
         );
     }
 

@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::std_specs::hash::SetIterAdditionalSpecFns;
 
 verus! {
 
@@ -91,7 +92,7 @@ ensures
     result.0.valid(),
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if (s.executor.reply_cache.contains_key(received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[received_packet.src].seqno)) {
+    let result = if (s.executor.reply_cache.contains_key(&received_packet.src) && (received_packet.msg->seqno_req <= s.executor.reply_cache[received_packet.src].seqno)) {
                 let sent_packets = CExecutorProcessRequest(&s.executor, &received_packet);
         (s.clone(), sent_packets)
 
@@ -166,7 +167,7 @@ ensures
             };
             ((received_packet.msg->bal_1b == s.proposer.max_ballot_i_sent_1a) && __rhs_1)
         };
-        (s.proposer.constants.all.config.replica_ids.contains(received_packet.src) && __rhs_2)
+        (s.proposer.constants.all.config.replica_ids.contains(&received_packet.src) && __rhs_2)
     } {
                 let s_proposer = CProposerProcess1b(&s.proposer, &received_packet);
         let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &received_packet.msg->log_truncation_point);
@@ -221,7 +222,7 @@ ensures
 {
     let result = {
         let m = received_packet.msg;
-        if (s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m->bal_2a) && LeqUpperBound(&m->opn_2a, &s.acceptor.constants.all.params.max_integer_val))) {
+        if (s.acceptor.constants.all.config.replica_ids.contains(&received_packet.src) && (CBalLeq(&s.acceptor.max_bal, &m->bal_2a) && LeqUpperBound(&m->opn_2a, &s.acceptor.constants.all.params.max_integer_val))) {
                         let (s_acceptor, sent_packets) = CAcceptorProcess2a(&s.acceptor, &received_packet);
             (CReplica {
     constants: s.constants,
@@ -304,7 +305,7 @@ ensures
     result.0.valid(),
     LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg->opn_state_supply > s.executor.ops_complete)) {
+    let result = if (s.executor.constants.all.config.replica_ids.contains(&received_packet.src) && (received_packet.msg->opn_state_supply > s.executor.ops_complete)) {
                 let s_learner = CLearnerForgetOperationsBefore(&s.learner, &received_packet.msg->opn_state_supply);
         let s_executor = CExecutorProcessAppStateSupply(&s.executor, &received_packet);
         (CReplica {
@@ -442,7 +443,7 @@ ensures
 {
     let result = {
         let opn = s.executor.ops_complete;
-        if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(opn) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
+        if (s.executor.next_op_to_execute is COutstandingOpUnknown && (s.learner.unexecuted_learner_state.contains_key(&opn) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= s.learner.constants.all.config.CMinQuorumSize()))) {
                         let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state[opn].candidate_learned_value);
             (CReplica {
     constants: s.constants,
@@ -477,7 +478,7 @@ ensures
     } else {
                 let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessageHeartbeat {
     bal_heartbeat: s.proposer.election_state.current_view,
-    suspicious: s.proposer.election_state.current_view_suspectors.contains(s.constants.my_index),
+    suspicious: s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index),
     opn_ckpt: s.executor.ops_complete,
 });
         (CReplica {

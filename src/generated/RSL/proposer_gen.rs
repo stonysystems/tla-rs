@@ -101,9 +101,9 @@ ensures
             request: packet.msg->val,
         };
         {         let s_election_state = CElectionStateReflectReceivedRequest(&s.election_state, &val);
-        if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view[val.client]))) {
+        if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(&val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view[val.client]))) {
                         let mut __highest_seqno_requested_by_client_this_view = clone_hashset(&s.highest_seqno_requested_by_client_this_view);
-            __highest_seqno_requested_by_client_this_view.insert(val.client, val.seqno);
+            __highest_seqno_requested_by_client_this_view.insert(&val.client, &val.seqno);
             CProposer {
                 constants: s.constants,
                 current_state: s.current_state,

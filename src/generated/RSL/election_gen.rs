@@ -150,7 +150,7 @@ ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, *clock as int),
 {
-    let result = if !es.constants.all.config.replica_ids.contains(p.src) {
+    let result = if !es.constants.all.config.replica_ids.contains(&p.src) {
         es.clone()
     } else {
                 let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);

@@ -874,26 +874,23 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
         .expect("Failed to read RSL types manual helpers");
 
+    // After Phase B type unification, helper functions (CBalLt, cvotes_is_valid, etc.)
+    // are sourced from types_i.rs via `pub use types_i::*` re-export.
+    // types_manual_helpers.rs now contains struct definitions and CRslIo alias.
     let expected_symbols = [
         "pub type CRslIo = LIoOp<EndPoint, CMessage>;",
-        "AbstractifyCOperationNumberToOperationNumber",
-        "COperationNumberIsAbstractable",
-        "COperationNumberIsValid",
-        "CBalLt",
-        "CBalLeq",
-        "CBalEq",
-        "clone_request_batch_up_to_view",
-        "crequestbatch_is_valid",
-        "clone_creply_cache_up_to_view",
-        "creplycache_is_valid",
-        "clone_cvotes_up_to_view",
-        "cvotes_is_valid",
-        "abstractify_cvotes",
-        "pub struct CLearnerTuple",
-        "pub fn clone_up_to_view(&self) -> (res:CLearnerTuple)",
-        "clearnerstate_is_valid",
-        "abstractify_clearnerstate",
-        "clone_vec_coperationnumber",
+        "pub struct CParameters",
+        "pub struct CConfiguration",
+        "pub struct CConstants",
+        "pub struct CReplicaConstants",
+        "pub struct CAcceptor",
+        "pub struct CLearner",
+        "pub struct CElectionState",
+        "pub struct CExecutor",
+        "pub struct CProposer",
+        "pub struct CReplica",
+        "pub struct CScheduler",
+        "pub fn unreachable_value<T>()",
     ];
 
     for symbol in expected_symbols {

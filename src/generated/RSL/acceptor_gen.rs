@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
 
@@ -175,7 +176,7 @@ ensures
     let result = {
         let m = inp.msg;
         {         let bal = inp.msg->bal_1a;
-        if (s.constants.all.config.replica_ids.contains(inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
+        if (s.constants.all.config.replica_ids.contains(&inp.src) && (CBalLt(&s.max_bal, &bal) && s.constants.CReplicaConstantsValid())) {
             (CAcceptor {
     constants: s.constants,
     max_bal: bal,
@@ -256,7 +257,7 @@ ensures
     result.valid(),
     LAcceptorProcessHeartbeat(s@, result@, inp@),
 {
-if s.constants.all.config.replica_ids.contains(inp.src) {
+if s.constants.all.config.replica_ids.contains(&inp.src) {
                 let sender_index = s.constants.all.config.CGetReplicaIndex(&inp.src);
         if (((0 <= sender_index) && (sender_index < s.last_checkpointed_operation.len())) && (inp.msg->opn_ckpt > s.last_checkpointed_operation[sender_index])) {
             CAcceptor {
