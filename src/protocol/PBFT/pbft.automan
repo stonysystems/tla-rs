@@ -1,10 +1,13 @@
 module PBFT::pbft {
     LInit(-, +);
-    LPrePrepare(+, -, +);
-    LReceivePrepare(+, -, +);
-    LEnterCommit(+, -, +);
-    LReceiveCommit(+, -, +);
-    LExecuteReply(+, -, +);
+    LPrePrepare(+, -, +, +);
+    LReceivePrePrepare(+, -, +);
+    LReceivePrepare(+, -, +, +);
+    LReceiveCommit(+, -, +, +);
+    LCheckpoint(+, -, +, +);
     LViewChange(+, -, +);
     LNewRound(+, -, +);
+    // LEnterCommit not transpiled (uses Set::len() for quorum check)
+    // LExecuteReply not transpiled (uses Set::len() for quorum check)
+    // LNext not transpiled (contains existential quantifiers)
 }

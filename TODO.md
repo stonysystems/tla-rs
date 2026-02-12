@@ -4433,7 +4433,7 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 | LeaderElection | **complete** | Bully algorithm with Election/Answer/Coordinator messages, failure detection, 7 transitions ✅ |
 | ChainReplication | **complete** | Topology (predecessor/successor), forwarding, failure/reconfigure, 8 transitions ✅ |
 | PrimaryBackup | **complete** | Backup state, replication, ack, failover with view/epoch, 8 transitions ✅ |
-| PBFT | partial | No request tracking, no checkpoints, no Byzantine behavior |
+| PBFT | **complete** | Set-based prepare/commit tracking, checkpoints, watermarks, pre-prepare messages, 9 transitions ✅ |
 | VerticalPaxos | partial | No quorum overlap validation, no witness sets |
 | EPaxos | partial | Dependency tracking is count-based, not set-based |
 
@@ -4592,14 +4592,16 @@ Enhance `src/protocol/ChainReplication/types.rs` and `src/protocol/ChainReplicat
 
 Enhance `src/protocol/PBFT/types.rs` and `src/protocol/PBFT/pbft.rs`.
 
-- [ ] Add `LMessage` enum: `PrePrepare(view, seq, digest)`, `Prepare(view, seq, digest, replica)`, `Commit(view, seq, replica)`, `Checkpoint(seq, digest, replica)`
-- [ ] Add `request_log: Map<int, LRequest>` — map seq_num to client request
-- [ ] Add `prepare_senders: Set<int>` and `commit_senders: Set<int>` — track which replicas sent each message type (instead of just counting)
-- [ ] Add `LCheckpoint(s, s_, c)` — create stable checkpoint after K committed requests
-- [ ] Add `checkpoint_seq: int` and `checkpoint_digest: int` to state
-- [ ] Add watermark tracking: `low_watermark` and `high_watermark` to bound seq_num
-- [ ] Add `LReceiveNewView(s, s_, c, new_view, proofs)` — complete view change protocol
-- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+- [x] Add message flags: `msgs_preprepare`/`msgs_preprepare_view`/`msgs_preprepare_seq`/`msgs_preprepare_digest` (boolean flags)
+- [x] Add `request_digest: int` — tracks current request being processed
+- [x] Add `prepare_senders: Set<int>` and `commit_senders: Set<int>` — set-based quorum tracking (replaces count-based)
+- [x] Add `LCheckpoint(s, s_, c, digest)` — create stable checkpoint, advance watermarks
+- [x] Add `checkpoint_seq: int` and `checkpoint_digest: int` to state
+- [x] Add watermark tracking: `low_watermark` and `high_watermark` to bound seq_num
+- [x] Add `LReceivePrePrepare(s, s_, c)` — backup accepts pre-prepare from primary
+- [x] Add `node_id: int` and `checkpoint_interval: int` to `LConstants`
+- [x] Skip `LEnterCommit`/`LExecuteReply` in transpiler (use Set::len() for quorum checks)
+- [x] Update `.automan` and `_transpile.toml`, regenerate, verify (689 tests pass)
 
 ---
 

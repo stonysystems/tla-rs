@@ -21,14 +21,35 @@ pub struct LState {
     pub view: int,
     /// Current protocol phase
     pub phase: LPhase,
-    /// Number of prepare messages received for current request
-    pub prepare_count: int,
-    /// Number of commit messages received for current request
-    pub commit_count: int,
+    /// Set of replicas that sent prepare messages for current request
+    pub prepare_senders: Set<int>,
+    /// Set of replicas that sent commit messages for current request
+    pub commit_senders: Set<int>,
     /// Current sequence number (incremented after each committed request)
     pub seq_num: int,
     /// Whether this node is the primary for current view
     pub is_primary: bool,
+    /// Request digest for the current request being processed
+    pub request_digest: int,
+    // Checkpoint support
+    /// Sequence number of the last stable checkpoint
+    pub checkpoint_seq: int,
+    /// Digest of the last stable checkpoint
+    pub checkpoint_digest: int,
+    // Watermark tracking
+    /// Low watermark: sequence numbers below this are already committed
+    pub low_watermark: int,
+    /// High watermark: upper bound on accepted sequence numbers
+    pub high_watermark: int,
+    // Message flags
+    /// A pre-prepare message is pending
+    pub msgs_preprepare: bool,
+    /// View of the pre-prepare message
+    pub msgs_preprepare_view: int,
+    /// Sequence number of the pre-prepare message
+    pub msgs_preprepare_seq: int,
+    /// Digest of the pre-prepare message
+    pub msgs_preprepare_digest: int,
 }
 
 /// Protocol constants
@@ -37,6 +58,10 @@ pub struct LConstants {
     pub f: int,
     /// Total number of replicas (must be >= 3f+1)
     pub n: int,
+    /// This replica's ID
+    pub node_id: int,
+    /// Checkpoint interval (create checkpoint every K requests)
+    pub checkpoint_interval: int,
 }
 
 } // verus!

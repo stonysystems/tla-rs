@@ -3,7 +3,9 @@
 
 use crate::protocol::PBFT::pbft::*;
 use crate::protocol::PBFT::types::*;
+use std::collections::HashSet;
 use vstd::prelude::*;
+use vstd::set::*;
 
 verus! {
 
@@ -11,10 +13,19 @@ verus! {
 pub struct CState {
     pub view: u64,
     pub phase: CPhase,
-    pub prepare_count: u64,
-    pub commit_count: u64,
+    pub prepare_senders: HashSet<u64>,
+    pub commit_senders: HashSet<u64>,
     pub seq_num: u64,
     pub is_primary: bool,
+    pub request_digest: u64,
+    pub checkpoint_seq: u64,
+    pub checkpoint_digest: u64,
+    pub low_watermark: u64,
+    pub high_watermark: u64,
+    pub msgs_preprepare: bool,
+    pub msgs_preprepare_view: u64,
+    pub msgs_preprepare_seq: u64,
+    pub msgs_preprepare_digest: u64,
 }
 
 impl CState {
@@ -30,10 +41,19 @@ impl View for CState {
         LState {
             view: self.view as int,
             phase: self.phase@,
-            prepare_count: self.prepare_count as int,
-            commit_count: self.commit_count as int,
+            prepare_senders: self.prepare_senders@.map(|x: u64| x as int),
+            commit_senders: self.commit_senders@.map(|x: u64| x as int),
             seq_num: self.seq_num as int,
             is_primary: self.is_primary,
+            request_digest: self.request_digest as int,
+            checkpoint_seq: self.checkpoint_seq as int,
+            checkpoint_digest: self.checkpoint_digest as int,
+            low_watermark: self.low_watermark as int,
+            high_watermark: self.high_watermark as int,
+            msgs_preprepare: self.msgs_preprepare,
+            msgs_preprepare_view: self.msgs_preprepare_view as int,
+            msgs_preprepare_seq: self.msgs_preprepare_seq as int,
+            msgs_preprepare_digest: self.msgs_preprepare_digest as int,
         }
     }
 }
@@ -42,6 +62,8 @@ impl View for CState {
 pub struct CConstants {
     pub f: u64,
     pub n: u64,
+    pub node_id: u64,
+    pub checkpoint_interval: u64,
 }
 
 impl CConstants {
@@ -57,6 +79,8 @@ impl View for CConstants {
         LConstants {
             f: self.f as int,
             n: self.n as int,
+            node_id: self.node_id as int,
+            checkpoint_interval: self.checkpoint_interval as int,
         }
     }
 }

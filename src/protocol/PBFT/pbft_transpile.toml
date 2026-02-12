@@ -3,10 +3,12 @@
 # Skip functions that contain disjunctions or existential quantifiers
 skip_functions = [
     "LNext",
+    "LEnterCommit",
+    "LExecuteReply",
 ]
 
 # Fields that are HashSet types (Set) requiring clone_hashset()
-collection_fields = []
+collection_fields = ["prepare_senders", "commit_senders"]
 
 # Fields that are Vec types (Seq) requiring .clone()
 vec_fields = []
@@ -48,6 +50,8 @@ generate_proofs = true
 generate_inline_types = false
 custom_imports = [
     "use vstd::prelude::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashSet;",
     "use crate::protocol::PBFT::types::*;",
     "use crate::protocol::PBFT::pbft::*;",
     "use crate::generated::PBFT::types_gen::*;",
