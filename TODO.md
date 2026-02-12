@@ -1241,7 +1241,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Extended `TypeGenConfig` with `manual_code` and emit it inside `verus! {}` for type generation output
       - Wired CLI `generate-types` path to resolve and load `output.manual_code` from TOML
       - Added codegen regression test: `test_manual_code_injected_before_verus_close`
-    - [ ] Extract current RSL manual helper block from `src/generated/RSL/types_gen.rs` into a dedicated source file under `src/protocol/RSL/`
+    - [x] Extract current RSL manual helper block from `src/generated/RSL/types_gen.rs` into a dedicated source file under `src/protocol/RSL/` [26:02:13, 00:25]
       - Scope analysis [26:02:12, 21:00]: full helper block is ~1.1k inserted LOC vs fresh type generation output, so this extraction is split into <500 LOC leaves.
       - [x] Extract foundational helper-only section into `src/protocol/RSL/types_manual_helpers.rs` [26:02:12, 21:10]
         - Included: `COperationNumber` helper predicates, ballot comparison helpers, request/reply/votes abstraction+clone helpers, learner-state abstraction helpers
@@ -1258,11 +1258,20 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - [x] Extract component section part 2 (`CProposer`, `CReplica`, `CScheduler`, CRslIo abstractify helpers, `unreachable_value`) [26:02:12, 23:25]
           - Scope/plan check: source range `src/generated/RSL/types_gen.rs:1287-1544` (~258 LOC), which fits the <500 LOC leaf target
           - Appended block to `src/protocol/RSL/types_manual_helpers.rs` and preserved original ordering of helper sections
+      - Completion note: all extraction leaves are complete and `types_transpile.toml` now references `output.manual_code = "types_manual_helpers.rs"` (see next leaf).
     - [x] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs [26:02:12, 23:55]
       - Scope/plan check: this leaf is config + validation only (<100 LOC changes) and stays below the <500 LOC target
       - Added `output.manual_code = "types_manual_helpers.rs"` to `src/protocol/RSL/types_transpile.toml`
       - Added transpiler CLI test to validate the config loads helper contents from the dedicated source file
     - [ ] Regenerate RSL (`scripts/regenerate_all.sh RSL`) and close type compatibility drift (generated/implementation type path alignment, helper visibility, marshalable boundaries)
+      - Scope analysis [26:02:13, 00:25]: this is too large for one safe leaf; scratch regeneration currently differs in 7/8 files (`types`, `acceptor`, `executor`, `proposer`, `replica`, `broadcast`, `election`) with ~3815 lines of churn (2118 insertions, 1697 deletions).
+      - [x] Run scratch RSL regeneration baseline and document drift categories [26:02:13, 00:25]
+        - Generated into `/tmp/rsl_regen_baseline` using the same inputs/config as `scripts/regenerate_all.sh RSL` without modifying tracked generated files
+        - Diff summary: `learner_gen.rs` matches; the remaining 7 modules drift
+        - Recorded findings in `docs/dev/rsl-generated-replacement-breakdown-2026-02-12.md` for follow-up leaves
+      - [ ] Close `types_gen.rs` drift first (macro-defined type boundaries, re-export strategy, helper injection placement/order) with config/codegen updates under <500 LOC
+      - [ ] Close module generation drift next (`acceptor`/`executor`/`proposer`/`replica`/`broadcast`/`election`) by aligning transpile config + wrapper/delegate generation expectations under <500 LOC leaves
+      - [ ] Regenerate into `src/generated/RSL/` and verify deterministic parity (second regeneration produces no diff)
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]

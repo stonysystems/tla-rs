@@ -46,3 +46,15 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 - Wired RSL type generation config to externalized helper source:
   - set `output.manual_code = "types_manual_helpers.rs"` in `src/protocol/RSL/types_transpile.toml`
   - added a CLI config-loading test to ensure this file is read and injected via `generate-types`
+
+## Regeneration Parity Baseline (00:25)
+- Ran a scratch regeneration into `/tmp/rsl_regen_baseline` using the same multi-input command as `scripts/regenerate_all.sh RSL`.
+- Compared scratch output against `src/generated/RSL` using `git diff --no-index`.
+- File-level parity result:
+  - match: `learner_gen.rs`
+  - drift: `types_gen.rs`, `acceptor_gen.rs`, `executor_gen.rs`, `proposer_gen.rs`, `replica_gen.rs`, `broadcast_gen.rs`, `election_gen.rs`
+- Aggregate churn: ~3815 changed lines (`2118` insertions, `1697` deletions).
+- Key drift categories:
+  - `types_gen.rs`: generated surface no longer matches current implementation boundary strategy (macro-defined/re-exported concrete types vs auto-generated structs), plus ordering/header differences.
+  - function modules (`acceptor`/`executor`/`proposer`/`replica`): regenerated code shape diverges from wrapper/delegate style currently checked in.
+  - `broadcast`/`election`: smaller but non-zero drift, likely due import/path normalization and output-shape changes.
