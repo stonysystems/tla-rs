@@ -102,3 +102,23 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
 - Validation after this leaf:
   - `cargo test --all-features` in `transpiler/`: pass
   - `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`: pass (warnings only)
+
+## Election Drift Follow-up (04:20)
+- Targeted next module leaf: `election_gen.rs` (`+262/-109` drift).
+- Regenerated fresh output (`scripts/regenerate_rsl.sh`) and used compile probes by temporarily replacing tracked `src/generated/RSL/election_gen.rs` with fresh output.
+- First blocker found: regenerated election emitted invalid struct-field syntax:
+  - shape: `field_name: let x = ...; ...`
+  - expected: `field_name: { let x = ...; ... }`
+- Root cause and fix:
+  - printer path in `transpiler/src/printer/mod.rs` emitted `ExecExpr::Block` directly for struct field values.
+  - updated printer to wrap block-valued struct field initializers in braces.
+  - added regression test `test_print_struct_field_block_wrapped`.
+- Validation after printer fix:
+  - `cargo test --all-features` in `transpiler/`: pass.
+  - `scripts/regenerate_rsl.sh`: fresh `election_gen.rs` now contains brace-wrapped field initializer.
+  - compile probe with fresh election progressed past syntax but failed on unresolved helper lemmas:
+    - `lemma_empty_set_map`
+    - `lemma_empty_seq_map`
+- Outcome:
+  - election drift closure is split into smaller leaves in `TODO.md`.
+  - this iteration completed the first election sub-leaf (printer parity fix); remaining election leaf work is helper-lemma parity + final module sync.

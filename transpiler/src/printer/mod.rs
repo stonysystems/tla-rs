@@ -254,7 +254,19 @@ impl Printer {
                     self.indent();
                     self.write(field_name);
                     self.write(": ");
-                    self.print_expr(field_value);
+                    // A block-valued field initializer must be wrapped as an expression.
+                    // Without braces we emit invalid syntax like `field: let x = ...; x`.
+                    if matches!(field_value, ExecExpr::Block(_)) {
+                        self.write("{");
+                        self.newline();
+                        self.current_indent += 1;
+                        self.print_expr(field_value);
+                        self.current_indent -= 1;
+                        self.indent();
+                        self.write("}");
+                    } else {
+                        self.print_expr(field_value);
+                    }
                     self.write(",");
                     self.newline();
                 }
@@ -928,5 +940,34 @@ mod tests {
         assert!(printer
             .output
             .contains("broadcast use vstd::std_specs::hash::group_hash_axioms;"));
+    }
+
+    #[test]
+    fn test_print_struct_field_block_wrapped() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::Struct {
+            name: "S".to_string(),
+            fields: vec![(
+                "f".to_string(),
+                ExecExpr::Block(vec![
+                    ExecExpr::Let {
+                        pattern: "x".to_string(),
+                        ty: None,
+                        value: Box::new(ExecExpr::Literal("1".to_string())),
+                    },
+                    ExecExpr::Var("x".to_string()),
+                ]),
+            )],
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+        assert!(
+            output.contains("f: {"),
+            "block-valued struct fields must be wrapped in braces: {}",
+            output
+        );
+        assert!(output.contains("let x = 1;"), "expected let binding in wrapped block");
+        assert!(output.contains("x"), "expected block tail expression");
     }
 }
