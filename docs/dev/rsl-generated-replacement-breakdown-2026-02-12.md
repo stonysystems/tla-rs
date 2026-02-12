@@ -37,3 +37,6 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
   - `CConfiguration` (+ replica-index helpers and endpoint abstraction lemmas)
   - `CConstants`
   - `CReplicaConstants` (+ `InitReplicaConstants`)
+- Decomposed the remaining component section again (still >500 LOC) and completed part 1 extraction:
+  - extracted `CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`, `CExecutor`, `CIncompleteBatchTimer`
+  - left part 2 for the next leaf (`CProposer`, `CReplica`, `CScheduler`, IO abstractify helpers, `unreachable_value`)

@@ -745,3 +745,378 @@ pub fn InitReplicaConstants(end:&EndPoint, config:&CConfiguration) -> (rc:CRepli
     assert(rconstants.all.valid());
     rconstants
 }
+
+// =============================================================================
+// Component extension section (part 1 extraction)
+// =============================================================================
+
+// =============================================================================
+// CAcceptor (generated + impl methods)
+// =============================================================================
+
+#[derive(Clone)]
+pub struct CAcceptor {
+    pub constants: CReplicaConstants,
+    pub max_bal: CBallot,
+    pub votes: CVotes,
+    pub last_checkpointed_operation: Vec<COperationNumber>,
+    pub log_truncation_point: COperationNumber,
+    pub min_vote_opn: COperationNumber,
+}
+
+impl CAcceptor{
+    pub open spec fn abstractable(self) -> bool
+    {
+        &&& self.constants.abstractable()
+        &&& self.max_bal.abstractable()
+        &&& cvotes_is_abstractable(&self.votes)
+        &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsAbstractable(self.last_checkpointed_operation[i]))
+        &&& COperationNumberIsAbstractable(self.log_truncation_point)
+    }
+
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.max_bal.valid()
+        &&& cvotes_is_valid(&self.votes)
+        &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
+        &&& COperationNumberIsValid(self.log_truncation_point)
+        &&& self.last_checkpointed_operation.len() == self.constants.all.config.replica_ids.len()
+    }
+
+    pub open spec fn view(self) -> LAcceptor
+        recommends self.abstractable()
+    {
+        LAcceptor {
+            constants: self.constants.view(),
+            max_bal: self.max_bal.view(),
+            votes: abstractify_cvotes(&self.votes),
+            last_checkpointed_operation:self.last_checkpointed_operation@.map(|i,c:COperationNumber| AbstractifyCOperationNumberToOperationNumber(c)),
+            log_truncation_point: AbstractifyCOperationNumberToOperationNumber(self.log_truncation_point),
+        }
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CAcceptor {
+    type V = LAcceptor;
+
+    open spec fn view(&self) -> LAcceptor {
+        LAcceptor {
+            constants: self.constants.view(),
+            max_bal: self.max_bal.view(),
+            votes: abstractify_cvotes(&self.votes),
+            last_checkpointed_operation: self.last_checkpointed_operation@.map(|i, c: COperationNumber| AbstractifyCOperationNumberToOperationNumber(c)),
+            log_truncation_point: AbstractifyCOperationNumberToOperationNumber(self.log_truncation_point),
+        }
+    }
+}
+
+// =============================================================================
+// CLearner (generated + impl methods)
+// =============================================================================
+
+#[derive(Clone)]
+pub struct CLearner {
+    pub constants: CReplicaConstants,
+    pub max_ballot_seen: CBallot,
+    pub unexecuted_learner_state: CLearnerState,
+}
+
+impl CLearner {
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& self.max_ballot_seen.abstractable()
+        &&& clearnerstate_is_abstractable(self.unexecuted_learner_state)
+    }
+
+    pub open spec fn valid(&self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.max_ballot_seen.valid()
+        &&& clearnerstate_is_valid(self.unexecuted_learner_state)
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (res: CLearner)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CLearner {
+    type V = LLearner;
+
+    open spec fn view(&self) -> LLearner {
+        LLearner {
+            constants: self.constants@,
+            max_ballot_seen: self.max_ballot_seen@,
+            unexecuted_learner_state: abstractify_clearnerstate(self.unexecuted_learner_state),
+        }
+    }
+}
+
+// =============================================================================
+// CElectionState (generated + impl methods)
+// =============================================================================
+
+pub struct CElectionState {
+    pub constants: CReplicaConstants,
+    pub current_view: CBallot,
+    pub current_view_suspectors: HashSet<u64>,
+    pub epoch_end_time: u64,
+    pub epoch_length: u64,
+    pub requests_received_this_epoch: Vec<CRequest>,
+    pub requests_received_prev_epochs: Vec<CRequest>,
+    pub cur_req_set: HashSet<CRequestHeader>,
+    pub prev_req_set: HashSet<CRequestHeader>,
+}
+
+// Clone impl for CElectionState is in ElectionImpl.rs (needs clone_hashset_u64)
+
+impl CElectionState {
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& self.current_view.abstractable()
+        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].abstractable())
+        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].abstractable())
+    }
+
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.current_view.valid()
+        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].valid())
+        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].valid())
+    }
+
+    pub open spec fn view(self) -> ElectionState
+        recommends self.abstractable()
+    {
+        ElectionState{
+            constants: self.constants@,
+            current_view: self.current_view@,
+            current_view_suspectors: self.current_view_suspectors@.map(|x:u64| x as int),
+            epoch_end_time: self.epoch_end_time as int,
+            epoch_length: self.epoch_length as int,
+            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i, r:CRequest| r@),
+            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i, r:CRequest| r@)
+        }
+    }
+}
+
+impl View for CElectionState {
+    type V = ElectionState;
+
+    open spec fn view(&self) -> ElectionState {
+        ElectionState {
+            constants: self.constants@,
+            current_view: self.current_view@,
+            current_view_suspectors: self.current_view_suspectors@.map(|u:u64| u as int),
+            epoch_end_time: self.epoch_end_time as int,
+            epoch_length: self.epoch_length as int,
+            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i, r:CRequest| r.view()),
+            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i, r:CRequest| r.view()),
+        }
+    }
+}
+
+// =============================================================================
+// COutstandingOperation (generated enum)
+// =============================================================================
+
+#[derive(Clone)]
+pub enum COutstandingOperation {
+    COutstandingOpKnown {
+        v: CRequestBatch,
+        bal: CBallot,
+    },
+    COutstandingOpUnknown {
+    },
+}
+
+impl COutstandingOperation {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                self.abstractable()
+                    && crequestbatch_is_valid(v)
+                    && bal.valid()
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => self.abstractable()
+        }
+    }
+
+    pub open spec fn abstractable(&self) -> bool {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                crequestbatch_is_abstractable(v) && bal.abstractable()
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => true
+        }
+    }
+
+    pub open spec fn view(self) -> OutstandingOperation
+        recommends
+            self.abstractable()
+    {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v,bal} => {
+                OutstandingOperation::OutstandingOpKnown{
+                    v: abstractify_crequestbatch(&v),
+                    bal: bal@,
+                }
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => OutstandingOperation::OutstandingOpUnknown{},
+        }
+    }
+}
+
+impl View for COutstandingOperation {
+    type V = OutstandingOperation;
+
+    open spec fn view(&self) -> OutstandingOperation {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                OutstandingOperation::OutstandingOpKnown{
+                    v: abstractify_crequestbatch(v),
+                    bal: bal@,
+                }
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => OutstandingOperation::OutstandingOpUnknown{},
+        }
+    }
+}
+
+// =============================================================================
+// CExecutor (generated + impl methods)
+// =============================================================================
+
+#[derive(Clone)]
+pub struct CExecutor {
+    pub constants: CReplicaConstants,
+    pub app: CAppState,
+    pub ops_complete: u64,
+    pub max_bal_reflected: CBallot,
+    pub next_op_to_execute: COutstandingOperation,
+    pub reply_cache: CReplyCache,
+}
+
+impl CExecutor {
+    pub open spec fn valid(&self) -> bool {
+        self.abstractable()
+            && self.constants.valid()
+            && CAppStateIsValid(&self.app)
+            && self.max_bal_reflected.valid()
+            && self.next_op_to_execute.valid()
+            && creplycache_is_valid(&self.reply_cache)
+    }
+
+    pub open spec fn abstractable(&self) -> bool {
+        self.constants.abstractable()
+            && CAppStateIsAbstractable(&self.app)
+            && self.max_bal_reflected.abstractable()
+            && self.next_op_to_execute.abstractable()
+            && creplycache_is_abstractable(&self.reply_cache)
+    }
+
+    pub open spec fn view(&self) -> LExecutor
+        recommends
+            self.abstractable(){
+        let res = LExecutor {
+            constants: self.constants.view(),
+            app: self.app,
+            ops_complete: self.ops_complete as int,
+            max_bal_reflected: self.max_bal_reflected.view(),
+            next_op_to_execute: self.next_op_to_execute.view(),
+            reply_cache: abstractify_creplycache(&self.reply_cache),
+        };
+        res
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CExecutor {
+    type V = LExecutor;
+
+    open spec fn view(&self) -> LExecutor {
+        let res = LExecutor {
+            constants: self.constants.view(),
+            app: self.app,
+            ops_complete: self.ops_complete as int,
+            max_bal_reflected: self.max_bal_reflected.view(),
+            next_op_to_execute: self.next_op_to_execute.view(),
+            reply_cache: abstractify_creplycache(&self.reply_cache),
+        };
+        res
+    }
+}
+
+// =============================================================================
+// CIncompleteBatchTimer (generated enum)
+// =============================================================================
+
+#[derive(Clone)]
+pub enum CIncompleteBatchTimer {
+    CIncompleteBatchTimerOn {
+        when: u64,
+    },
+    CIncompleteBatchTimerOff,
+}
+
+impl CIncompleteBatchTimer{
+    pub open spec fn abstractable(self) -> bool {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => true,
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => true,
+        }
+    }
+
+    pub open spec fn valid(self) -> bool {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => self.abstractable(),
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => self.abstractable(),
+        }
+    }
+
+    pub open spec fn view(self) -> IncompleteBatchTimer
+        recommends
+        self.abstractable(),
+    {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => IncompleteBatchTimer::IncompleteBatchTimerOn {when:when as int},
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => IncompleteBatchTimer::IncompleteBatchTimerOff{},
+        }
+    }
+}
+
+impl View for CIncompleteBatchTimer {
+    type V = IncompleteBatchTimer;
+
+    open spec fn view(&self) -> IncompleteBatchTimer {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => IncompleteBatchTimer::IncompleteBatchTimerOn {when:*when as int},
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => IncompleteBatchTimer::IncompleteBatchTimerOff{},
+        }
+    }
+}
+

@@ -922,3 +922,30 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         );
     }
 }
+
+#[test]
+fn test_rsl_types_manual_helpers_component_part1_symbols_present() {
+    let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
+        .expect("Failed to read RSL types manual helpers");
+
+    let expected_symbols = [
+        "pub struct CAcceptor",
+        "pub min_vote_opn: COperationNumber",
+        "pub struct CLearner",
+        "pub struct CElectionState",
+        "pub cur_req_set: HashSet<CRequestHeader>",
+        "pub enum COutstandingOperation",
+        "COutstandingOpKnown",
+        "pub struct CExecutor",
+        "pub enum CIncompleteBatchTimer",
+        "CIncompleteBatchTimerOn",
+    ];
+
+    for symbol in expected_symbols {
+        assert!(
+            source.contains(symbol),
+            "missing symbol `{}` in extracted helper file",
+            symbol
+        );
+    }
+}
