@@ -584,25 +584,37 @@ impl Printer {
                 invariants,
                 body,
             } => {
-                // Only generate iterator initialization if iter_source is not already a Var with the same name
-                // (avoids redundant "let x = x;")
-                let skip_binding =
-                    matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
-                if !skip_binding {
-                    self.write("let ");
-                    self.write(iter_name);
-                    self.write(" = ");
+                // For range-based loops, print direct `for i in 0..n` form.
+                // `iter:iter_name` over ranges generates a RangeGhostIterator shape that
+                // does not satisfy iterator traits in current Verus.
+                let is_range_source = matches!(iter_source.as_ref(), ExecExpr::Range { .. });
+                if is_range_source {
+                    self.write("for ");
+                    self.write(var);
+                    self.write(" in ");
                     self.print_expr(iter_source);
-                    self.write(";");
                     self.newline();
-                    self.indent();
+                } else {
+                    // Only generate iterator initialization if iter_source is not already a Var with the same name
+                    // (avoids redundant "let x = x;")
+                    let skip_binding =
+                        matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
+                    if !skip_binding {
+                        self.write("let ");
+                        self.write(iter_name);
+                        self.write(" = ");
+                        self.print_expr(iter_source);
+                        self.write(";");
+                        self.newline();
+                        self.indent();
+                    }
+                    // Generate: for var in iter:iter_name
+                    self.write("for ");
+                    self.write(var);
+                    self.write(" in iter:");
+                    self.write(iter_name);
+                    self.newline();
                 }
-                // Generate: for var in iter:iter_name
-                self.write("for ");
-                self.write(var);
-                self.write(" in iter:");
-                self.write(iter_name);
-                self.newline();
                 // Generate invariants
                 if !invariants.is_empty() {
                     self.indent();
@@ -860,6 +872,32 @@ mod tests {
         assert!(output.contains("for key in iter:m_keys"));
         assert!(output.contains("invariant"));
         assert!(output.contains("seen_keys.subset_of(votes@.dom())"));
+    }
+
+    #[test]
+    fn test_print_for_in_iter_range_source() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::ForInIter {
+            var: "i".to_string(),
+            iter_name: "iter".to_string(),
+            iter_source: Box::new(ExecExpr::Range {
+                start: Box::new(ExecExpr::Literal("0".to_string())),
+                end: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("s".to_string())),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+            }),
+            invariants: vec!["i <= s.len()".to_string()],
+            body: Box::new(ExecExpr::Block(vec![])),
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+
+        assert!(output.contains("for i in (0..s.len())"));
+        assert!(!output.contains("for i in iter:iter"));
+        assert!(!output.contains("let iter ="));
     }
 
     #[test]

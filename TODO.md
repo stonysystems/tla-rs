@@ -1316,7 +1316,20 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
               - Validation:
                 - `cargo test --all-features` (transpiler) passes.
                 - Fresh-election compile probe (temporary swap) reduced error surface from 51 to 49 and removed prior inline-closure/spec-type mismatch errors in recursive filter helpers; remaining failures are tracked in the next sub-leaves.
-            - [ ] Fix recursive loop iterator/reference lowering for sequence index accesses (eliminate `RangeGhostIterator` incompatibility and missing borrows on indexed elements) and re-probe election sync.
+            - [x] Fix recursive loop iterator/reference lowering for sequence index accesses (eliminate `RangeGhostIterator` incompatibility and missing borrows on indexed elements) and re-probe election sync. [26:02:13, 09:20]
+              - Updated recursive helper generation in `transpiler/src/translator/mod.rs`:
+                - added `Expr::Index` handling to call-argument reference normalization (`&s[i]` style for helper calls),
+                - initialized fold accumulators as owned values (`clone_if_input_ref` on fold init),
+                - substituted accumulator parameter references with loop-local `acc` in fold combine bodies.
+              - Updated `transpiler/src/printer/mod.rs` for range-based `ForInIter` emission:
+                - print direct `for i in (0..len)` form for range iter sources (keeps Verus loop invariants while avoiding `iter:iter` range ghost-iterator mismatch).
+              - Added/extended regression tests:
+                - printer: `test_print_for_in_iter_range_source`,
+                - translator: `test_rsl_remove_all_satisfied_requests_filter` now asserts borrowed indexed helper call,
+                - translator: `test_rsl_remove_executed_request_batch_fold` now asserts owned accumulator + borrowed indexed argument + range loop form.
+              - Validation:
+                - `cargo test --all-features` (transpiler) passes.
+                - Fresh-election compile probe (temporary swap) reduced error surface from 49 to 41 and removed `RangeGhostIterator` loop failures from recursive helper loops; remaining failures are tracked in the next sub-leaves.
             - [ ] Fix collection expression lowering parity for generated election helpers (`Vec` append / `HashSet` union patterns) and re-probe election sync.
             - [ ] Fix bound/numeric type mapping parity (`u64`/`int`/`CUpperBound` argument shaping in generated election helpers) and re-probe election sync.
             - [ ] After sub-leaves pass compile probes, sync `src/generated/RSL/election_gen.rs` to fresh output and run full verification.

@@ -3984,14 +3984,17 @@ impl Translator {
         };
 
         // Transform init expression
-        let init_expr = self.transform_expr(init, &ctx)?;
+        let init_expr = self.clone_if_input_ref(self.transform_expr(init, &ctx)?, &ctx);
 
         // Transform combine expression, substituting seq[0] with seq[i]
         let combine_transformed = self.transform_expr(combine, &ctx)?;
         let combine_expr = self.substitute_head_with_index(combine_transformed, seq_param);
 
         // For fold, combine might reference __acc placeholder - substitute it
-        let combine_with_acc = self.substitute_acc_placeholder(combine_expr);
+        let mut combine_with_acc = self.substitute_acc_placeholder(combine_expr);
+        if let Expr::Ident(init_name) = init {
+            combine_with_acc = self.substitute_fold_acc_var(combine_with_acc, init_name);
+        }
 
         // Build invariants
         let invariants = self.build_fold_invariants(func, seq_param, init, combine, extra_args);
@@ -4064,6 +4067,49 @@ impl Translator {
                 stmts
                     .into_iter()
                     .map(|s| self.substitute_acc_placeholder(s))
+                    .collect(),
+            ),
+            other => other,
+        }
+    }
+
+    /// Substitute accumulator parameter references in fold-combine expressions
+    /// with the loop accumulator local `acc`.
+    fn substitute_fold_acc_var(&self, expr: ExecExpr, acc_param_name: &str) -> ExecExpr {
+        match expr {
+            ExecExpr::Var(name) if name == acc_param_name => ExecExpr::Var("acc".to_string()),
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => ExecExpr::MethodCall {
+                receiver: Box::new(self.substitute_fold_acc_var(*receiver, acc_param_name)),
+                method,
+                args: args
+                    .into_iter()
+                    .map(|a| self.substitute_fold_acc_var(a, acc_param_name))
+                    .collect(),
+            },
+            ExecExpr::Call { func, args } => ExecExpr::Call {
+                func,
+                args: args
+                    .into_iter()
+                    .map(|a| self.substitute_fold_acc_var(a, acc_param_name))
+                    .collect(),
+            },
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(self.substitute_fold_acc_var(*lhs, acc_param_name)),
+                op,
+                rhs: Box::new(self.substitute_fold_acc_var(*rhs, acc_param_name)),
+            },
+            ExecExpr::Unary { op, expr } => ExecExpr::Unary {
+                op,
+                expr: Box::new(self.substitute_fold_acc_var(*expr, acc_param_name)),
+            },
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts
+                    .into_iter()
+                    .map(|s| self.substitute_fold_acc_var(s, acc_param_name))
                     .collect(),
             ),
             other => other,
@@ -6920,7 +6966,8 @@ impl Translator {
                                     let needs_ref = match a {
                                         Expr::Field(..)
                                         | Expr::MethodCall { .. }
-                                        | Expr::Arrow(..) => true,
+                                        | Expr::Arrow(..)
+                                        | Expr::Index(..) => true,
                                         Expr::Ident(name) => !ctx.is_output(name),
                                         _ => false,
                                     };
@@ -6958,7 +7005,10 @@ impl Translator {
                         // - Literals (0, "string", true)
                         // - Struct construction
                         let needs_ref = match a {
-                            Expr::Field(..) | Expr::MethodCall { .. } | Expr::Arrow(..) => true,
+                            Expr::Field(..)
+                            | Expr::MethodCall { .. }
+                            | Expr::Arrow(..)
+                            | Expr::Index(..) => true,
                             Expr::Ident(name) => {
                                 // Add & for input params and local variables (not outputs)
                                 !ctx.is_output(name)
@@ -7787,7 +7837,10 @@ impl Translator {
                     // - Arrow accesses (msg->field)
                     // - Input parameters and local variables (not outputs)
                     let needs_ref = match arg {
-                        Expr::Field(..) | Expr::MethodCall { .. } | Expr::Arrow(..) => true,
+                        Expr::Field(..)
+                        | Expr::MethodCall { .. }
+                        | Expr::Arrow(..)
+                        | Expr::Index(..) => true,
                         Expr::Ident(name) => {
                             // Add & for input params and local variables (not outputs)
                             !ctx.is_output(name)
@@ -15592,6 +15645,11 @@ mod tests {
             "Filter invariant should not emit inline typed closure, got:\n{}",
             code
         );
+        assert!(
+            code.contains("if !CRequestSatisfiedBy(&s[i], &r) {"),
+            "Indexed sequence arguments should be borrowed for helper calls, got:\n{}",
+            code
+        );
     }
 
     /// Test RSL pattern: ExtractSentPacketsFromIos (Filter)
@@ -15983,6 +16041,23 @@ mod tests {
         assert!(
             contains_for_loop(&exec_fn.body),
             "Should generate loop for fold pattern"
+        );
+
+        let code = crate::printer::print_function(&exec_fn);
+        assert!(
+            code.contains("let mut acc = reqs.clone();"),
+            "Fold accumulator should be initialized as owned value, got:\n{}",
+            code
+        );
+        assert!(
+            code.contains("for i in (0..batch.len())"),
+            "Range-based recursive fold loop should print direct range form, got:\n{}",
+            code
+        );
+        assert!(
+            code.contains("acc = CRemoveAllSatisfiedRequestsInSequence(&acc, &batch[i])"),
+            "Fold combine call should use accumulator and borrowed indexed element, got:\n{}",
+            code
         );
     }
 
