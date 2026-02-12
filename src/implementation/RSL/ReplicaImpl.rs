@@ -3,6 +3,7 @@ use crate::implementation::common::upper_bound_i::*;
 use crate::generated::RSL::acceptor_gen as generated_acceptor;
 use crate::generated::RSL::executor_gen as generated_executor;
 use crate::generated::RSL::learner_gen as generated_learner;
+use crate::generated::RSL::proposer_gen as generated_proposer;
 use crate::implementation::RSL::types_i::*;
 use vstd::prelude::*;
 use crate::implementation::RSL::acceptorimpl::*;
@@ -42,7 +43,7 @@ impl CReplica{
         let s = CReplica{
             constants: c.clone_up_to_view(),
             nextHeartbeatTime: 0,
-            proposer: CProposer::CProposerInit(c.clone_up_to_view()),
+            proposer: generated_proposer::CProposerInit(&c),
             acceptor: generated_acceptor::CAcceptorInit(&c),
             learner: generated_learner::CLearnerInit(&c),
             executor: generated_executor::CExecutorInit(&c)
@@ -129,7 +130,7 @@ impl CReplica{
                                 assert(ss.executor.reply_cache.contains_key(sp.src));
                                 assert(sp.msg->seqno_req > ss.executor.reply_cache[sp.src].seqno);
 
-                                self.proposer.CProposerProcessRequest(received_packet);
+                                self.proposer = generated_proposer::CProposerProcessRequest(&self.proposer, &received_packet);
 
                                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                                 let outpackets = OutboundPackets::PacketSequence{
@@ -161,7 +162,7 @@ impl CReplica{
                 } else {
                     assume(!ss.executor.reply_cache.contains_key(sp.src)); // don't know why, maybe the key is endpoint, it should satisfy some properties.
                     // Self::print("receive request");
-                    self.proposer.CProposerProcessRequest(received_packet);
+                    self.proposer = generated_proposer::CProposerProcessRequest(&self.proposer, &received_packet);
                     let mut pkt_vec: Vec<CPacket> = Vec::new();
                     let outpackets = OutboundPackets::PacketSequence{
                         s:pkt_vec,
@@ -284,7 +285,7 @@ impl CReplica{
                         &self.acceptor,
                         &log_truncation_point,
                     );
-                    self.proposer.CProposerProcess1b(received_packet);
+                    self.proposer = generated_proposer::CProposerProcess1b(&self.proposer, &received_packet);
                     let mut pkt_vec: Vec<CPacket> = Vec::new();
                     let outpackets = OutboundPackets::PacketSequence{
                         s:pkt_vec,
@@ -567,7 +568,7 @@ impl CReplica{
             clock as int,
             res@)
     {
-        self.proposer.CProposerProcessHeartbeat(received_packet.clone_up_to_view(), clock);
+        self.proposer = generated_proposer::CProposerProcessHeartbeat(&self.proposer, &received_packet, &clock);
         self.acceptor =
             generated_acceptor::CAcceptorProcessHeartbeat(&self.acceptor, &received_packet);
         let mut pkt_vec: Vec<CPacket> = Vec::new();
@@ -591,7 +592,9 @@ impl CReplica{
             self@,
             res@)
     {
-        let res = self.proposer.CProposerMaybeEnterNewViewAndSend1a();
+        let (next_proposer, sent_packets) = generated_proposer::CProposerMaybeEnterNewViewAndSend1a(&self.proposer);
+        self.proposer = next_proposer;
+        let res = OutboundPackets::PacketSequence { s: sent_packets };
         res
     }
 
@@ -607,8 +610,9 @@ impl CReplica{
             self@,
             res@)
     {
-        let res = self.proposer.CProposerMaybeEnterPhase2(self.acceptor.log_truncation_point);
-        // let res = self.proposer.CProposerMaybeEnterPhase2_optimized(self.acceptor.log_truncation_point);
+        let (next_proposer, sent_packets) = generated_proposer::CProposerMaybeEnterPhase2(&self.proposer, &self.acceptor.log_truncation_point);
+        self.proposer = next_proposer;
+        let res = OutboundPackets::PacketSequence { s: sent_packets };
         res
     }
 
@@ -722,7 +726,7 @@ impl CReplica{
                 if self.executor.ops_complete < self.executor.constants.all.params.max_integer_val
                     && self.executor.constants.CReplicaConstantsValid()
                 {
-                    self.proposer.CProposerResetViewTimerDueToExecution(&v);
+                    self.proposer = generated_proposer::CProposerResetViewTimerDueToExecution(&self.proposer, &v);
                     self.learner = generated_learner::CLearnerForgetDecision(&self.learner, &self.executor.ops_complete);
                     self.executor.CExecutorExecute()
                 } else {
@@ -803,7 +807,7 @@ impl CReplica{
             ClockReading{t: clock as int},
             res@)
     {
-        self.proposer.CProposerCheckForViewTimeout(clock);
+        self.proposer = generated_proposer::CProposerCheckForViewTimeout(&self.proposer, &clock);
         let mut pkt_vec: Vec<CPacket> = Vec::new();
         let outpackets = OutboundPackets::PacketSequence{
             s:pkt_vec,
@@ -826,7 +830,7 @@ impl CReplica{
             ClockReading{t: clock as int},
             res@)
     {
-        self.proposer.CProposerCheckForQuorumOfViewSuspicions(clock);
+        self.proposer = generated_proposer::CProposerCheckForQuorumOfViewSuspicions(&self.proposer, &clock);
         let mut pkt_vec: Vec<CPacket> = Vec::new();
         let outpackets = OutboundPackets::PacketSequence{
             s:pkt_vec,
@@ -998,8 +1002,9 @@ impl CReplica{
     {
         let ghost ss = old(self)@;
         let ghost sclock = ClockReading{t: clock as int};
-        let res = self.proposer.CProposerMaybeNominateValueAndSend2a(clock, self.acceptor.log_truncation_point);
-        // let res = self.proposer.CProposerMaybeNominateValueAndSend2a_optimized(clock, self.acceptor.log_truncation_point);
+        let (next_proposer, sent_packets) = generated_proposer::CProposerMaybeNominateValueAndSend2a(&self.proposer, &clock, &self.acceptor.log_truncation_point);
+        self.proposer = next_proposer;
+        let res = OutboundPackets::PacketSequence { s: sent_packets };
         assert(LProposerMaybeNominateValueAndSend2a(ss.proposer, self@.proposer, clock as int, self.acceptor.log_truncation_point as int, res@));
         res
     }

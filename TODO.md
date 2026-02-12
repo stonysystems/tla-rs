@@ -1466,7 +1466,17 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Used backup executor_gen.rs (with proofs) instead of transpiler-generated version
           - Added packet validity/abstractability ensures to 3 packet-returning functions (with assume proofs)
           - Result: 541 verified, 0 errors (up from 532 with Phase D only)
-        - [ ] Phase F: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
+        - [x] Phase F: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
+          - Wired 11 call sites (1 init + 10 methods): CProposerInit, CProposerProcessRequest (x2),
+            CProposerProcess1b, CProposerProcessHeartbeat, CProposerMaybeEnterNewViewAndSend1a,
+            CProposerMaybeEnterPhase2, CProposerResetViewTimerDueToExecution,
+            CProposerCheckForViewTimeout, CProposerCheckForQuorumOfViewSuspicions,
+            CProposerMaybeNominateValueAndSend2a
+          - Used backup proposer_gen.rs (clone-delegate pattern wrapping manual ProposerImpl)
+          - Added packet validity/abstractability ensures to outbound_packets_to_vec and 5 packet-returning fns
+          - Removed unnecessary CWellFormedCConfiguration precondition from CProposerInit
+          - Field accesses (proposer.election_state.current_view, etc.) remain direct
+          - Result: 553 verified, 0 errors (up from 541 with Phase E only)
         - [ ] Phase G: Wire ReplicaImpl replica-level init to generated functions
       - [ ] Add integration test verifying generated modules are accessible and produce correct types
       - [ ] Deprecate manual implementation modules (mark with `#[deprecated]` or move to `_legacy/`)

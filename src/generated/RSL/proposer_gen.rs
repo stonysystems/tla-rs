@@ -2,91 +2,103 @@
 // DO NOT EDIT MANUALLY
 
 use crate::common::collections::hashsets::*;
-use crate::common::collections::hashsets::clone_hashset;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
-use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
-use crate::generated::RSL::election_gen::*;
 use crate::generated::RSL::types_gen::*;
-use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTimerOff;
-use crate::implementation::common::upper_bound::CUpperBoundedAddition;
-use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::types_i::abstractify_crequestbatch;
-use crate::protocol::RSL::configuration::*;
+use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::broadcast::*;
+use crate::protocol::RSL::configuration::WellFormedLConfiguration;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
-use vstd::set_lib::*;
 
 verus! {
 
-/// Helper proof: mapping an injective function over an empty set yields an empty set.
-proof fn lemma_empty_set_map()
-ensures
-    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+// =============================================================================
+// Helpers
+// =============================================================================
+
+#[verifier(external_body)]
+fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
+    requires p.valid(),
+    ensures res@ == p@, res.valid(),
 {
-    let f = |x: u64| x as int;
-    let s = Set::<u64>::empty().map(f);
-    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    p.clone_up_to_view()
+}
+
+/// Clone a CPacket preserving full structural equality (needed when
+/// callee checks concrete fields like `replica_ids@.contains(pkt.src)`)
+#[verifier(external_body)]
+fn clone_cpacket_full(p: &CPacket) -> (res: CPacket)
+    requires p.valid(),
+    ensures res == *p,
+{
+    p.clone_up_to_view()
+}
+
+#[verifier(external_body)]
+fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
+    ensures
+        result@.map(|i: int, p: CPacket| p@) =~= sent@,
+        forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
+        forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+{
+    match sent {
+        OutboundPackets::PacketSequence { s } => s,
+        OutboundPackets::Broadcast { broadcast } => {
+            match broadcast {
+                CBroadcast::CBroadcast { src, dsts, msg } => {
+                    let mut result = Vec::new();
+                    let mut i = 0;
+                    while i < dsts.len() {
+                        result.push(CPacket {
+                            dst: dsts[i].clone(),
+                            src: src.clone(),
+                            msg: msg.clone(),
+                        });
+                        i += 1;
+                    }
+                    result
+                },
+                CBroadcast::CBroadcastNop {} => Vec::new(),
+            }
+        },
+        OutboundPackets::OutboundPacket { p } => {
+            match p {
+                Some(pkt) => vec![pkt],
+                None => Vec::new(),
+            }
+        },
     }
 }
 
-/// Helper proof: mapping over an empty Seq yields an empty Seq.
-proof fn lemma_empty_seq_map()
-ensures
-    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
-{
-}
-
-/// Helper proof: push commutes with Seq::map for index-ignoring functions.
-proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
-ensures
-    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
-{
-}
-
+// =============================================================================
+// CProposerInit — delegate to verified impl (static)
+// =============================================================================
 
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
     c.valid(),
-    WellFormedLConfiguration(c@.all.config),
 ensures
     result.valid(),
     LProposerInit(result@, c@),
 {
-    let result = {
-        let s_election_state = CElectionStateInit(&c);
-        CProposer {
-            constants: c.clone(),
-            current_state: 0u64,
-            request_queue: vec![],
-            max_ballot_i_sent_1a: CBallot {
-                seqno: 0u64,
-                proposer_id: c.my_index.clone(),
-            },
-            next_operation_number_to_propose: 0u64,
-            received_1b_packets: HashSet::new(),
-            highest_seqno_requested_by_client_this_view: HashMap::new(),
-            incomplete_batch_timer: CIncompleteBatchTimerOff,
-            election_state: s_election_state,
-            max_log_truncation_point: 0u64,
-            max_opn_with_proposal: 0u64,
-        }
-    };
-    proof {
-        lemma_empty_set_map();
-        lemma_empty_seq_map();
-    }
-    result
-
+    CProposer::CProposerInit(c.clone_up_to_view())
 }
+
+// =============================================================================
+// CProposerProcessRequest — clone-delegate (void &mut self)
+// =============================================================================
 
 pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result: CProposer)
 requires
@@ -97,59 +109,15 @@ ensures
     result.valid(),
     LProposerProcessRequest(s@, result@, packet@),
 {
-    let result = {
-        let val = CRequest {
-            client: packet.src.clone(),
-            seqno: match &packet.msg {
-                CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
-                _  => unreachable_value(),
-            },
-            request: match &packet.msg {
-                CMessage::CMessageRequest { val, .. } => val.clone(),
-                _  => unreachable_value(),
-            },
-        };
-        {         let s_election_state = CElectionStateReflectReceivedRequest(&s.election_state, &val);
-        if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(&val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view.get(&val.client).unwrap().clone()))) {
-                        let mut __highest_seqno_requested_by_client_this_view = s.highest_seqno_requested_by_client_this_view.clone();
-            __highest_seqno_requested_by_client_this_view.insert(val.client.clone(), val.seqno.clone());
-            CProposer {
-                constants: s.constants.clone(),
-                current_state: s.current_state.clone(),
-                request_queue: concat_vecs(&s.request_queue, &vec![val]),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-                next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-                received_1b_packets: clone_hashset(&s.received_1b_packets),
-                highest_seqno_requested_by_client_this_view: __highest_seqno_requested_by_client_this_view,
-                incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-                election_state: s_election_state,
-                max_log_truncation_point: 0u64,
-                max_opn_with_proposal: 0u64,
-            }
-
-        } else {
-            CProposer {
-                constants: s.constants.clone(),
-                current_state: s.current_state.clone(),
-                request_queue: s.request_queue.clone(),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-                next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-                received_1b_packets: clone_hashset(&s.received_1b_packets),
-                highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-                incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-                election_state: s_election_state,
-                max_log_truncation_point: 0u64,
-                max_opn_with_proposal: 0u64,
-            }
-        }
- }
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_preserving_validity(packet);
+    state.CProposerProcessRequest(pkt);
+    state
 }
+
+// =============================================================================
+// CProposerMaybeEnterNewViewAndSend1a — clone-delegate + outbound
+// =============================================================================
 
 pub exec fn CProposerMaybeEnterNewViewAndSend1a(s: &CProposer) -> (result: (CProposer, Vec<CPacket>))
 requires
@@ -157,113 +125,121 @@ requires
 ensures
     result.0.valid(),
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage1a {
-    bal_1a: s.election_state.current_view,
-});
-        (CProposer {
-    constants: s.constants.clone(),
-    current_state: 1u64,
-    request_queue: concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch),
-    max_ballot_i_sent_1a: s.election_state.current_view,
-    next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-    received_1b_packets: HashSet::new(),
-    highest_seqno_requested_by_client_this_view: HashMap::new(),
-    incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-    election_state: s.election_state.clone(),
-    max_log_truncation_point: 0u64,
-    max_opn_with_proposal: 0u64,
-}, sent_packets)
-
-    } else {
-        (s.clone(), vec![])
-    };
-    proof {
-        lemma_empty_set_map();
-        lemma_empty_seq_map();
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CProposerMaybeEnterNewViewAndSend1a();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CProposerProcess1b — clone-delegate (void &mut self)
+// =============================================================================
 
 pub exec fn CProposerProcess1b(s: &CProposer, p: &CPacket) -> (result: CProposer)
 requires
     s.valid(),
     p.valid(),
     p.msg is CMessage1b,
-    s@.constants.all.config.replica_ids.contains(p@.src),
-    p.msg->bal_1b == s.max_ballot_i_sent_1a,
-    s.current_state == 1,
-    forall |other_packet: CPacket| (s@.received_1b_packets.contains(other_packet@) ==> (other_packet.src != p.src)),
+    s.constants.all.config.replica_ids@.contains(p.src),
+    (p.msg->bal_1b == s.max_ballot_i_sent_1a),
+    (s.current_state == 1),
+    forall |other_packet: CPacket| (s.received_1b_packets@.contains(other_packet) ==> (other_packet.src@ != p.src@)),
 ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
 {
-    let result = CProposer {
-        constants: s.constants.clone(),
-        current_state: s.current_state.clone(),
-        request_queue: s.request_queue.clone(),
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-        next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-        received_1b_packets: {
-            let __rhs_0 = {
-                broadcast use vstd::std_specs::hash::group_hash_axioms;
-                let mut __hs = HashSet::new();
-                __hs.insert(p.clone());
-                __hs
-            };
-            union_sets(&s.received_1b_packets, &__rhs_0)
-        },
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-        incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-        election_state: s.election_state.clone(),
-        max_log_truncation_point: 0u64,
-        max_opn_with_proposal: 0u64,
-    };
-    proof {
-        lemma_empty_set_map();
-        broadcast use Set::lemma_set_map_insert_commute;
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(p);
+    state.CProposerProcess1b(pkt);
+    state
 }
 
-pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
+// =============================================================================
+// CProposerMaybeEnterPhase2 — clone-delegate + outbound
+// =============================================================================
+
+pub exec fn CProposerMaybeEnterPhase2(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
 ensures
     result.0.valid(),
     LProposerMaybeEnterPhase2(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = if (((s.received_1b_packets.len() as u64) >= (s.constants.all.config.CMinQuorumSize() as u64)) && (CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
-    bal_2: s.max_ballot_i_sent_1a.clone(),
-    logTruncationPoint_2: log_truncation_point.clone(),
-});
-        (CProposer {
-    constants: s.constants.clone(),
-    current_state: 2u64,
-    request_queue: s.request_queue.clone(),
-    max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-    next_operation_number_to_propose: log_truncation_point.clone(),
-    received_1b_packets: clone_hashset(&s.received_1b_packets),
-    highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-    incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-    election_state: s.election_state.clone(),
-    max_log_truncation_point: 0u64,
-    max_opn_with_proposal: 0u64,
-}, sent_packets)
-
-    } else {
-        (s.clone(), vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CProposerMaybeEnterPhase2(*log_truncation_point);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CProposerNominateNewValueAndSend2a — clone-delegate + outbound
+// =============================================================================
+
+pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
+requires
+    s.valid(),
+    LProposerCanNominateUsingOperationNumber(s@, *log_truncation_point as int, s.next_operation_number_to_propose as int),
+    LAllAcceptorsHadNoProposal(s@.received_1b_packets, s.next_operation_number_to_propose as int),
+ensures
+    result.0.valid(),
+    LProposerNominateNewValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CProposerNominateNewValueAndSend2a(*clock, *log_truncation_point);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CProposerNominateOldValueAndSend2a — clone-delegate + outbound
+// =============================================================================
+
+pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &COperationNumber) -> (result: (CProposer, Vec<CPacket>))
+requires
+    s.valid(),
+    LProposerCanNominateUsingOperationNumber(s@, *log_truncation_point as int, s.next_operation_number_to_propose as int),
+    !LAllAcceptorsHadNoProposal(s@.received_1b_packets, s.next_operation_number_to_propose as int),
+ensures
+    result.0.valid(),
+    LProposerNominateOldValueAndSend2a(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CProposerNominateOldValueAndSend2a(*log_truncation_point);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CProposerMaybeNominateValueAndSend2a — clone-delegate + outbound
+// =============================================================================
+
+pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
+requires
+    s.valid(),
+ensures
+    result.0.valid(),
+    LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CProposerMaybeNominateValueAndSend2a(*clock, *log_truncation_point);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CProposerProcessHeartbeat — clone-delegate (void &mut self)
+// =============================================================================
 
 pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -> (result: CProposer)
 requires
@@ -274,36 +250,15 @@ ensures
     result.valid(),
     LProposerProcessHeartbeat(s@, result@, p@, *clock as int),
 {
-    let result = {
-        let s_election_state = CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
-        CProposer {
-            constants: s.constants.clone(),
-            current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                0u64
-            } else {
-                s.current_state.clone()
-            },
-            request_queue: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                vec![]
-            } else {
-                s.request_queue.clone()
-            },
-            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-            next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-            received_1b_packets: clone_hashset(&s.received_1b_packets),
-            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-            incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-            election_state: s_election_state,
-            max_log_truncation_point: 0u64,
-            max_opn_with_proposal: 0u64,
-        }
-    };
-    proof {
-        lemma_empty_seq_map();
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_preserving_validity(p);
+    state.CProposerProcessHeartbeat(pkt, *clock);
+    state
 }
+
+// =============================================================================
+// CProposerCheckForViewTimeout — clone-delegate (void &mut self)
+// =============================================================================
 
 pub exec fn CProposerCheckForViewTimeout(s: &CProposer, clock: &u64) -> (result: CProposer)
 requires
@@ -312,22 +267,14 @@ ensures
     result.valid(),
     LProposerCheckForViewTimeout(s@, result@, *clock as int),
 {
-    let s_election_state = CElectionStateCheckForViewTimeout(&s.election_state, &clock);
-    CProposer {
-        constants: s.constants.clone(),
-        current_state: s.current_state.clone(),
-        request_queue: s.request_queue.clone(),
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-        next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-        received_1b_packets: clone_hashset(&s.received_1b_packets),
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-        incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-        election_state: s_election_state,
-        max_log_truncation_point: 0u64,
-        max_opn_with_proposal: 0u64,
-    }
-
+    let mut state = s.clone_up_to_view();
+    state.CProposerCheckForViewTimeout(*clock);
+    state
 }
+
+// =============================================================================
+// CProposerCheckForQuorumOfViewSuspicions — clone-delegate (void &mut self)
+// =============================================================================
 
 pub exec fn CProposerCheckForQuorumOfViewSuspicions(s: &CProposer, clock: &u64) -> (result: CProposer)
 requires
@@ -336,59 +283,26 @@ ensures
     result.valid(),
     LProposerCheckForQuorumOfViewSuspicions(s@, result@, *clock as int),
 {
-    let result = {
-        let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
-        CProposer {
-            constants: s.constants.clone(),
-            current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                0u64
-            } else {
-                s.current_state.clone()
-            },
-            request_queue: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                vec![]
-            } else {
-                s.request_queue.clone()
-            },
-            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-            next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-            received_1b_packets: clone_hashset(&s.received_1b_packets),
-            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-            incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-            election_state: s_election_state,
-            max_log_truncation_point: 0u64,
-            max_opn_with_proposal: 0u64,
-        }
-    };
-    proof {
-        lemma_empty_seq_map();
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    state.CProposerCheckForQuorumOfViewSuspicions(*clock);
+    state
 }
+
+// =============================================================================
+// CProposerResetViewTimerDueToExecution — clone-delegate (void &mut self)
+// =============================================================================
 
 pub exec fn CProposerResetViewTimerDueToExecution(s: &CProposer, val: &CRequestBatch) -> (result: CProposer)
 requires
     s.valid(),
+    crequestbatch_is_valid(val),
 ensures
     result.valid(),
-    LProposerResetViewTimerDueToExecution(s@, result@, abstractify_crequestbatch(val)),
+    LProposerResetViewTimerDueToExecution(s@, result@, val@.map(|i, r: CRequest| r@)),
 {
-    let s_election_state = CElectionStateReflectExecutedRequestBatch(&s.election_state, &val);
-    CProposer {
-        constants: s.constants.clone(),
-        current_state: s.current_state.clone(),
-        request_queue: s.request_queue.clone(),
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-        next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-        received_1b_packets: clone_hashset(&s.received_1b_packets),
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-        incomplete_batch_timer: s.incomplete_batch_timer.clone(),
-        election_state: s_election_state,
-        max_log_truncation_point: 0u64,
-        max_opn_with_proposal: 0u64,
-    }
-
+    let mut state = s.clone_up_to_view();
+    state.CProposerResetViewTimerDueToExecution(val);
+    state
 }
 
 } // verus!
