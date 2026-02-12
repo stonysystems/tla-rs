@@ -3,10 +3,11 @@
 # Skip functions that contain existential quantifiers
 skip_functions = [
     "LNext",
+    "LCommit",
 ]
 
 # Fields that are HashSet types (Set) requiring clone_hashset()
-collection_fields = []
+collection_fields = ["promises_rcvd", "accepts_rcvd"]
 
 # Fields that are Vec types (Seq) requiring .clone()
 vec_fields = []
@@ -39,6 +40,8 @@ generate_proofs = true
 generate_inline_types = false
 custom_imports = [
     "use vstd::prelude::*;",
+    "use vstd::set::*;",
+    "use std::collections::HashSet;",
     "use crate::protocol::VerticalPaxos::types::*;",
     "use crate::protocol::VerticalPaxos::vpaxos::*;",
     "use crate::generated::VerticalPaxos::types_gen::*;",

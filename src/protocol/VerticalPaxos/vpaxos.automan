@@ -2,23 +2,16 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module VerticalPaxos::vpaxos {
-    // Initialize protocol state from constants
     LInit(-, +);
-
-    // Phase 1a: Prepare with ballot b
     LPrepare(+, -, +, +);
-
-    // Phase 2a/2b: Accept value v at ballot b
+    LSendPromise(+, -, +);
+    LReceivePromise(+, -, +, +);
     LAccept(+, -, +, +, +);
-
-    // Reconfigure: move to new configuration
+    LReceiveAccepted(+, -, +, +);
     LReconfigure(+, -, +);
-
-    // Sync: transfer state to new config member
+    LWitnessSync(+, -, +, +);
     LSync(+, -, +, +, +);
-
-    // Deactivate: leave active set
     LDeactivate(+, -, +);
-
-    // LNext: contains existential quantifiers, not transpiled
+    // LCommit not transpiled (uses Set::len() for quorum check)
+    // LNext not transpiled (contains existential quantifiers)
 }

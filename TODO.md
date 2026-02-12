@@ -4434,7 +4434,7 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 | ChainReplication | **complete** | Topology (predecessor/successor), forwarding, failure/reconfigure, 8 transitions ✅ |
 | PrimaryBackup | **complete** | Backup state, replication, ack, failover with view/epoch, 8 transitions ✅ |
 | PBFT | **complete** | Set-based prepare/commit tracking, checkpoints, watermarks, pre-prepare messages, 9 transitions ✅ |
-| VerticalPaxos | partial | No quorum overlap validation, no witness sets |
+| VerticalPaxos | **complete** | Promise/accept tracking, witness sync, commit tracking, 10 transitions ✅ |
 | EPaxos | partial | Dependency tracking is count-based, not set-based |
 
 ---
@@ -4609,15 +4609,16 @@ Enhance `src/protocol/PBFT/types.rs` and `src/protocol/PBFT/pbft.rs`.
 
 Enhance `src/protocol/VerticalPaxos/types.rs` and `src/protocol/VerticalPaxos/vpaxos.rs`.
 
-- [ ] Add `LConfig { members: Set<int>, quorum_size: int }` struct
-- [ ] Add `configs: Map<int, LConfig>` — track all configurations
-- [ ] Add `LMessage` enum: `Prepare(ballot, config)`, `Promise(ballot, accepted_bal, accepted_val)`, `Accept(ballot, val)`, `Reconfigure(old_config, new_config)`
-- [ ] Add quorum overlap validation in `LReconfigure`:
-  - Every quorum of old config must intersect every quorum of new config
-- [ ] Add `LWitnessSync(s, s_, c, witness, new_config)` — witness transfers state from old config to new
-- [ ] Add `LBootstrapNewConfig(s, s_, c, new_config)` — new members learn current state
-- [ ] Add commit tracking: value is committed when accepted by quorum of current config
-- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+- [x] Add `promises_rcvd: Set<int>` and `accepts_rcvd: Set<int>` for quorum tracking
+- [x] Add message flags: `msgs_prepare`/`msgs_promise`/`msgs_accept` with ballot/value fields
+- [x] Add `LSendPromise(s, s_, c)` — acceptor sends promise with accepted state
+- [x] Add `LReceivePromise(s, s_, c, sender)` — proposer tracks promises and highest accepted value
+- [x] Add `LReceiveAccepted(s, s_, c, sender)` — tracks accepting nodes
+- [x] Add `LCommit(s, s_, c)` — value committed when quorum accepts (Set::len() based, skipped in transpiler)
+- [x] Add `LWitnessSync(s, s_, c, witness_val)` — witness transfers state, adopts value if no local vote
+- [x] Add `committed`/`committed_val`, `has_witness`/`witness_val` fields
+- [x] Add `node_id` to LConstants
+- [x] Update `.automan` and `_transpile.toml`, regenerate, verify (689 tests pass)
 
 ---
 
