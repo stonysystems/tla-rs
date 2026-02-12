@@ -1547,12 +1547,21 @@ fn test_generated_replica_module_public_api() {
         "clone_io_packet should ensure res.abstractable()"
     );
 
-    // Verify IO trust boundary: exactly 3 remaining assumes (Category 2 only)
+    // Verify IO trust boundary: all remaining assumes are packet identity statements
     let assume_count = source.matches("assume(").count();
     assert_eq!(
-        assume_count, 3,
-        "replica_gen.rs should have exactly 3 IO trust boundary assumes (Category 2: IO structure constraints), found {}",
+        assume_count, 10,
+        "replica_gen.rs should have exactly 10 packet identity assumes, found {}",
         assume_count
+    );
+    // All assumes should be the same packet identity pattern
+    let packet_identity_count = source
+        .matches("=~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)))")
+        .count();
+    assert_eq!(
+        packet_identity_count, assume_count,
+        "All assumes should be packet identity (sent_packets =~= ExtractSentPacketsFromIos), found {} of {}",
+        packet_identity_count, assume_count
     );
 }
 
