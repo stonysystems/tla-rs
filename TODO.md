@@ -1232,7 +1232,10 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added generated `CAddVoteAndRemoveOldOnes_optimized` with refinement-preserving ensures and min-vote tracking output
       - Added generated `CAcceptorProcess2a_optimized` that preserves `LAcceptorProcess2a` refinement while updating `min_vote_opn`
       - Added 3 verification tests covering min-vote update branches (truncation-point branch, new-opn branch, keep-current branch)
-    - [ ] Add min_vote_opn optimization helper (deferred)
+    - [x] Add min_vote_opn optimization helper [26:02:12, 19:23]
+      - Added `CUpdateMinVoteOpn(log_truncation_point, new_opn, min_vote_opn)` in generated acceptor code
+      - Refactored both `CAddVoteAndRemoveOldOnes_optimized` and `CAcceptorProcess2a_optimized` to use the helper
+      - Added branch-complete tests for helper behavior and integration assertions in optimized vote-update tests
 - [ ] Run full system tests with generated implementation (blocked by deferred optimized variants)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
     - test_generated_vs_manual_equivalence() compares generated vs manual output

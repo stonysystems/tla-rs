@@ -220,6 +220,29 @@ pub exec fn CAcceptorTruncateLog(s: &CAcceptor, opn: &u64) -> (result: CAcceptor
 // Optimized Variants (Phase 5 integration)
 // =============================================================================
 
+pub exec fn CUpdateMinVoteOpn(
+    log_truncation_point: &u64,
+    new_opn: &u64,
+    min_vote_opn: &u64,
+) -> (result: u64)
+    ensures
+        result == if *log_truncation_point > *min_vote_opn {
+            *log_truncation_point
+        } else if *new_opn < *min_vote_opn {
+            *new_opn
+        } else {
+            *min_vote_opn
+        },
+{
+    if *log_truncation_point > *min_vote_opn {
+        *log_truncation_point
+    } else if *new_opn < *min_vote_opn {
+        *new_opn
+    } else {
+        *min_vote_opn
+    }
+}
+
 pub exec fn CAddVoteAndRemoveOldOnes_optimized(
     votes: &CVotes,
     new_opn: &u64,
@@ -240,13 +263,7 @@ pub exec fn CAddVoteAndRemoveOldOnes_optimized(
         },
 {
     let updated_votes = CAddVoteAndRemoveOldOnes(votes, new_opn, new_vote, log_truncation_point);
-    let updated_min_vote_opn = if *log_truncation_point > *min_vote_opn {
-        *log_truncation_point
-    } else if *new_opn < *min_vote_opn {
-        *new_opn
-    } else {
-        *min_vote_opn
-    };
+    let updated_min_vote_opn = CUpdateMinVoteOpn(log_truncation_point, new_opn, min_vote_opn);
     (updated_votes, updated_min_vote_opn)
 }
 
@@ -272,17 +289,26 @@ pub exec fn CAcceptorProcess2a_optimized(s: &CAcceptor, inp: &CPacket) -> (resul
     };
 
     if s.log_truncation_point <= opn_2a {
-        let updated_min_vote_opn = if next_state.log_truncation_point > s.min_vote_opn {
-            next_state.log_truncation_point
-        } else if opn_2a < s.min_vote_opn {
-            opn_2a
-        } else {
-            s.min_vote_opn
-        };
+        let updated_min_vote_opn = CUpdateMinVoteOpn(&next_state.log_truncation_point, &opn_2a, &s.min_vote_opn);
         next_state.min_vote_opn = updated_min_vote_opn;
     }
 
     (next_state, sent_packets)
+}
+
+pub fn test_CUpdateMinVoteOpn_prefers_truncation_point() {
+    let updated = CUpdateMinVoteOpn(&10, &7, &5);
+    assert(updated == 10);
+}
+
+pub fn test_CUpdateMinVoteOpn_prefers_new_opn() {
+    let updated = CUpdateMinVoteOpn(&2, &3, &5);
+    assert(updated == 3);
+}
+
+pub fn test_CUpdateMinVoteOpn_keeps_existing_min() {
+    let updated = CUpdateMinVoteOpn(&2, &8, &5);
+    assert(updated == 5);
 }
 
 pub fn test_CAddVoteAndRemoveOldOnes_optimized_updates_min_to_truncation() {
@@ -297,6 +323,8 @@ pub fn test_CAddVoteAndRemoveOldOnes_optimized_updates_min_to_truncation() {
     }
 
     let (_new_votes, new_min_vote_opn) = CAddVoteAndRemoveOldOnes_optimized(&votes, &7, &vote, &10, &5);
+    let expected = CUpdateMinVoteOpn(&10, &7, &5);
+    assert(new_min_vote_opn == expected);
     assert(new_min_vote_opn == 10);
 }
 
@@ -312,6 +340,8 @@ pub fn test_CAddVoteAndRemoveOldOnes_optimized_updates_min_to_new_opn() {
     }
 
     let (_new_votes, new_min_vote_opn) = CAddVoteAndRemoveOldOnes_optimized(&votes, &3, &vote, &2, &5);
+    let expected = CUpdateMinVoteOpn(&2, &3, &5);
+    assert(new_min_vote_opn == expected);
     assert(new_min_vote_opn == 3);
 }
 
@@ -327,6 +357,8 @@ pub fn test_CAddVoteAndRemoveOldOnes_optimized_keeps_min_vote_opn() {
     }
 
     let (_new_votes, new_min_vote_opn) = CAddVoteAndRemoveOldOnes_optimized(&votes, &8, &vote, &2, &5);
+    let expected = CUpdateMinVoteOpn(&2, &8, &5);
+    assert(new_min_vote_opn == expected);
     assert(new_min_vote_opn == 5);
 }
 
