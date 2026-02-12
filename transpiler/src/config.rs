@@ -409,8 +409,9 @@ pub struct OutputConfig {
 
     /// Path to a file containing manual Verus code to inject into the generated output.
     /// The file contents are inserted inside the `verus! {}` block after all auto-generated
-    /// functions. Use this for functions too complex for auto-generation (e.g., multi-branch
-    /// proofs with protocol-specific reasoning). The path is relative to the config file.
+    /// items (functions for transpile mode, types/functions for generate-types mode).
+    /// Use this for logic too complex for auto-generation (e.g., protocol-specific helpers).
+    /// The path is relative to the config file.
     #[serde(default)]
     pub manual_code: Option<String>,
 }

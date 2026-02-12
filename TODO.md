@@ -1236,13 +1236,22 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
       - Added `CUpdateMinVoteOpn(log_truncation_point, new_opn, min_vote_opn)` in generated acceptor code
       - Refactored both `CAddVoteAndRemoveOldOnes_optimized` and `CAcceptorProcess2a_optimized` to use the helper
       - Added branch-complete tests for helper behavior and integration assertions in optimized vote-update tests
-- [ ] Run full system tests with generated implementation (blocked by deferred optimized variants)
+  - **Regeneration/replacement decomposition** [26:02:12, 20:40]
+    - [x] Add `generate-types` manual helper injection support via config (`output.manual_code`)
+      - Extended `TypeGenConfig` with `manual_code` and emit it inside `verus! {}` for type generation output
+      - Wired CLI `generate-types` path to resolve and load `output.manual_code` from TOML
+      - Added codegen regression test: `test_manual_code_injected_before_verus_close`
+    - [ ] Extract current RSL manual helper block from `src/generated/RSL/types_gen.rs` into a dedicated source file under `src/protocol/RSL/`
+    - [ ] Point `src/protocol/RSL/types_transpile.toml` at that helper file (`output.manual_code`) and keep generated helper content source-controlled outside generated outputs
+    - [ ] Regenerate RSL (`scripts/regenerate_all.sh RSL`) and close type compatibility drift (generated/implementation type path alignment, helper visibility, marshalable boundaries)
+    - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover
+- [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
     - test_generated_vs_manual_equivalence() compares generated vs manual output
     - Verifies keys >= log_truncation_point preserved correctly
     - Verifies values match original
   - [x] Wrapper methods now implemented [26:01:29, 06:30]
-    - Unblocks this task once optimized variants are added
+    - Optimized variants are now added; remaining blocker is full regeneration parity
 - [x] Document any manual adjustments needed [26:01:25, 12:00]
   - Created docs/dev/generated-code-integration.md
   - Documents struct definitions, View trait, method adaptation, type mappings

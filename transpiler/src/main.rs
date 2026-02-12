@@ -363,6 +363,18 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .as_ref()
                 .map(|c| c.skip_fields.clone())
                 .unwrap_or_default();
+            let manual_code = config
+                .as_ref()
+                .and_then(|config_path| {
+                    file_config
+                        .as_ref()
+                        .and_then(|c| c.output.manual_code.as_ref())
+                        .map(|rel_path| (config_path, rel_path))
+                })
+                .and_then(|(config_path, rel_path)| {
+                    let base_dir = config_path.parent().unwrap_or(Path::new("."));
+                    std::fs::read_to_string(base_dir.join(rel_path)).ok()
+                });
 
             let mut registry = TypeRegistry::new();
 
@@ -426,6 +438,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     re_exports: &re_exports,
                     custom_derives: &custom_derives,
                     skip_fields: &skip_fields,
+                    manual_code: manual_code.as_deref(),
                 },
             );
 
@@ -1233,6 +1246,78 @@ Next == count' = count + N
             }
             _ => panic!("Expected Pipeline command"),
         }
+    }
+
+    #[test]
+    fn test_generate_types_injects_manual_code_from_config_file() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let input_path = dir.path().join("types.rs");
+        let config_path = dir.path().join("types.toml");
+        let manual_path = dir.path().join("manual_helpers.rs");
+        let output_path = dir.path().join("types_gen.rs");
+
+        std::fs::write(
+            &input_path,
+            r#"
+use vstd::prelude::*;
+
+verus! {
+pub struct LState {
+    pub counter: int,
+}
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &manual_path,
+            "pub open spec fn ManualTypesHelper() -> bool { true }",
+        )
+        .unwrap();
+
+        let mut config_file = std::fs::File::create(&config_path).unwrap();
+        writeln!(
+            config_file,
+            r#"
+[output]
+manual_code = "manual_helpers.rs"
+"#
+        )
+        .unwrap();
+
+        let command = Commands::GenerateTypes {
+            input: vec![input_path.clone()],
+            output: Some(output_path.clone()),
+            config: Some(config_path.clone()),
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+
+        let generated = std::fs::read_to_string(&output_path).unwrap();
+        let manual_pos = generated
+            .find("ManualTypesHelper")
+            .expect("manual helper should be injected");
+        let close_pos = generated
+            .find("} // verus!")
+            .expect("verus close marker missing");
+        assert!(
+            manual_pos < close_pos,
+            "manual helper must be inside verus block"
+        );
     }
 
     #[test]
