@@ -1656,6 +1656,17 @@ impl Translator {
         }
     }
 
+    fn ensure_borrowed_expr(expr: ExecExpr) -> ExecExpr {
+        if matches!(&expr, ExecExpr::Unary { op, .. } if op == "&") {
+            expr
+        } else {
+            ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(expr),
+            }
+        }
+    }
+
     /// Dereference a bare scalar input parameter reference in exec expressions.
     /// Wraps `Var("node")` → `Unary("*", Var("node"))` when `node` is a scalar input (&u64).
     /// Leaves non-scalar and non-input expressions unchanged.
@@ -7003,6 +7014,20 @@ impl Translator {
                         lhs: Box::new(lhs),
                         op: "<".to_string(),
                         rhs: Box::new(rhs),
+                    });
+                }
+
+                // Bound request sequence helper lowering:
+                // Keep first arg as borrowed Vec and second arg as owned scalar bound.
+                if matches!(func_name, "BoundRequestSequence" | "CBoundRequestSequence")
+                    && args.len() == 2
+                {
+                    let seq_expr = self.transform_expr(&args[0], ctx)?;
+                    let bound_expr =
+                        self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
+                    return Ok(ExecExpr::Call {
+                        func: self.translate_name(func_name),
+                        args: vec![Self::ensure_borrowed_expr(seq_expr), bound_expr],
                     });
                 }
 
@@ -12675,6 +12700,91 @@ mod tests {
                 );
             }
             other => panic!("Expected binary < expression, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_transform_bound_request_sequence_argument_shaping() {
+        let mut config = TranslatorConfig::default();
+        config
+            .function_paths
+            .insert(
+                "BoundRequestSequence".to_string(),
+                "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"
+                    .to_string(),
+            );
+        config.vec_fields = [
+            "requests_received_prev_epochs".to_string(),
+            "requests_received_this_epoch".to_string(),
+        ]
+        .into_iter()
+        .collect();
+        let translator = Translator::new(config);
+
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "es".to_string(),
+            Type::Named(crate::ast::Path::single("CElectionState".to_string())),
+        );
+        input_types.insert("max_len".to_string(), Type::Int);
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["es".to_string(), "max_len".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = Expr::Call {
+            func: crate::ast::Path::single("BoundRequestSequence".to_string()),
+            args: vec![
+                Expr::Binary(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("es".to_string())),
+                        "requests_received_prev_epochs".to_string(),
+                    )),
+                    BinOp::Add,
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("es".to_string())),
+                        "requests_received_this_epoch".to_string(),
+                    )),
+                ),
+                Expr::Ident("max_len".to_string()),
+            ],
+        };
+
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("BoundRequestSequence should transform");
+
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(
+                    func,
+                    "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"
+                );
+                assert_eq!(args.len(), 2);
+                assert!(
+                    matches!(
+                        &args[0],
+                        ExecExpr::Unary { op, expr }
+                        if op == "&"
+                        && matches!(expr.as_ref(), ExecExpr::Call { func, .. } if func == "concat_vecs")
+                    ),
+                    "first arg should be borrowed concat_vecs result, got {:?}",
+                    args[0]
+                );
+                assert!(
+                    matches!(&args[1], ExecExpr::Unary { op, expr } if op == "*" && matches!(expr.as_ref(), ExecExpr::Var(name) if name == "max_len")),
+                    "second arg should be owned/deref scalar bound, got {:?}",
+                    args[1]
+                );
+            }
+            other => panic!("Expected call expression, got {:?}", other),
         }
     }
 

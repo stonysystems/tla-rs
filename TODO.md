@@ -1371,7 +1371,20 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
                   - `scripts/regenerate_rsl.sh` passes.
                   - Fresh-election compile probe (temporary swap) removes all bound-helper call-shaping failures (`upper_add_mentions: 48 -> 0`, `lt_upper_mentions: 2 -> 0`) and reduces aggregate probe errors from `error_lines=30` to `error_lines=23` (`arg_incorrect: 17 -> 10`; remaining failures are concentrated in `CBoundRequestSequence` ownership/type shaping and related sequence helper signatures).
                   - Baseline verification build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes.
-              - [ ] Normalize `CBoundRequestSequence` argument ownership/reference shaping (`Vec` vs `&Vec`, `u64` vs `CUpperBound`) and re-probe election sync.
+              - [x] Normalize `CBoundRequestSequence` argument ownership/reference shaping (`Vec` vs `&Vec`, `u64` vs `CUpperBound`) and re-probe election sync. [26:02:11, 21:33]
+                - Scope/plan check: targeted this as a bounded config+translator leaf (<200 LOC net change) by delegating `BoundRequestSequence` to the verified manual helper path and normalizing call-site argument ownership.
+                - Updated `src/protocol/RSL/election_transpile.toml`:
+                  - skipped direct generation of `BoundRequestSequence`,
+                  - mapped `BoundRequestSequence` to `crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence` via `function_paths`.
+                - Updated `transpiler/src/translator/mod.rs` call lowering:
+                  - added bounded special-case shaping for `BoundRequestSequence`/`CBoundRequestSequence` calls (`&Vec` first arg, owned scalar second arg),
+                  - added regression test `test_transform_bound_request_sequence_argument_shaping`.
+                - Validation:
+                  - `cargo test --all-features` (transpiler) passes.
+                  - `cargo build --release` (transpiler) passes.
+                  - `scripts/regenerate_rsl.sh` passes.
+                  - Fresh-election compile probe (temporary swap) improves from `error_lines=23/mismatched_types=9/arg_incorrect=10/subrange=2` to `error_lines=9/mismatched_types=6/arg_incorrect=0/subrange=0`, with no remaining `CBoundRequestSequence` call-shaping failures.
+                  - Baseline verification build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes.
             - [ ] After sub-leaves pass compile probes, sync `src/generated/RSL/election_gen.rs` to fresh output and run full verification.
         - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)
         - [ ] Close `executor_gen.rs` drift (wrapper/delegate alignment)
