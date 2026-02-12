@@ -92,6 +92,14 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub view_overrides: HashMap<String, String>,
 
+    /// Custom view expressions for types used in ensures clauses of helper/action functions.
+    /// When a type appears as a parameter or return type, use this expression instead of `param@`.
+    /// Key: spec type name (e.g., "Votes")
+    /// Value: view expression template with `{param}` placeholder (e.g., "abstractify_cvotes({param})")
+    /// The `{param}` is replaced with the actual parameter name at generation time.
+    #[serde(default)]
+    pub type_view_exprs: HashMap<String, String>,
+
     /// Extra fields to add to generated exec types that don't exist in the spec.
     /// These are optimization/bookkeeping fields with default values.
     /// Key format: "TypeName.field_name" (exec type name, e.g., "CAcceptor.min_vote_opn")
@@ -203,6 +211,19 @@ pub struct TranspilerConfig {
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
     #[serde(default)]
     pub extra_requires: HashMap<String, Vec<String>>,
+
+    /// Maps field names to equality comparison functions.
+    /// When a `==` comparison involves a field in this map, the transpiler generates
+    /// a function call instead of using `==` (which may use external PartialEq).
+    /// e.g., {"bal_heartbeat" = "CBalEq", "current_view" = "CBalEq", "max_bal" = "CBalEq"}
+    #[serde(default)]
+    pub eq_function_fields: HashMap<String, String>,
+
+    /// Maps enum variant field names to their containing variant path.
+    /// Used to convert spec-only `->` arrow accesses into exec-level `match` destructuring.
+    /// e.g., {"bal_1a" = "CMessage::CMessage1a", "bal_2a" = "CMessage::CMessage2a"}
+    #[serde(default)]
+    pub arrow_variants: HashMap<String, String>,
 }
 
 impl TranspilerConfig {

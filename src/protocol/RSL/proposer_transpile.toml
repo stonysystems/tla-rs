@@ -15,12 +15,17 @@ vec_fields = ["requests_received_prev_epochs", "requests_received_this_epoch", "
 # HashMap fields for &key indexing (no helper generation)
 hashmap_index_fields = ["highest_seqno_requested_by_client_this_view"]
 
+# HashSet fields — needed to distinguish .contains() on HashSet from Vec
+collection_fields = ["received_1b_packets"]
+
 # Functions to skip during transpilation (require manual implementation)
 skip_functions = [
     # Complex existential quantifier with nested index access that cannot be auto-transpiled
     "LProposerNominateOldValueAndSend2a",
     # Variable scoping issues in generated code (opn, v, batchSize out of scope)
     "LProposerNominateNewValueAndSend2a",
+    # Calls skipped functions (OldValue/NewValue) whose manual impls have &mut self signatures
+    "LProposerMaybeNominateValueAndSend2a",
 ]
 
 # Spec-only functions that should NOT get C-prefix
@@ -31,15 +36,22 @@ spec_only_functions = [
     "LProposerCanNominateUsingOperationNumber",
     "LAllAcceptorsHadNoProposal",
     "LExistsAcceptorHasProposalLargeThanOpn",
-    # Skipped functions should not get C-prefix when referenced
+    # Skipped functions should not get C-prefix when referenced in requires/ensures
     "LProposerNominateOldValueAndSend2a",
     "LProposerNominateNewValueAndSend2a",
+    "LProposerMaybeNominateValueAndSend2a",
 ]
 
 # Method call mappings - spec functions that become method calls
 [method_calls]
 "LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
-"ElectionStateReflectExecutedRequestBatch" = { method_name = "CElectionStateReflectExecutedRequestBatch", receiver_arg_index = 0 }
+"LProposerCanNominateUsingOperationNumber" = { method_name = "CProposerCanNominateUsingOperationNumber", receiver_arg_index = 0 }
+
+# Function path remapping for associated functions on CProposer
+[function_paths]
+"SetOfMessage1bAboutBallot" = "CProposer::CSetOfMessage1bAboutBallot"
+"AllAcceptorsHadNoProposal" = "CProposer::CAllAcceptorsHadNoProposal"
+"ExistsAcceptorHasProposalLargeThanOpn" = "CProposer::CExistsAcceptorHasProposalLargeThanOpn"
 
 [naming]
 spec_prefix = "L"
@@ -65,9 +77,23 @@ nat_type = "u64"
 "RslMessageRequest" = "CMessage::CMessageRequest"
 "RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
 
+# Ballot-typed fields that need CBalEq instead of derived PartialEq (external in Verus)
+[eq_function_fields]
+"current_view" = "CBalEq"
+"max_ballot_i_sent_1a" = "CBalEq"
+"bal_1b" = "CBalEq"
+
 [extra_fields]
 "CProposer.max_log_truncation_point" = "u64 = 0u64"
 "CProposer.max_opn_with_proposal" = "u64 = 0u64"
+
+[type_view_exprs]
+"RequestBatch" = "abstractify_crequestbatch({param})"
+
+[arrow_variants]
+"seqno_req" = "CMessage::CMessageRequest"
+"val" = "CMessage::CMessageRequest"
+"bal_1b" = "CMessage::CMessage1b"
 
 [output]
 generate_abstraction_fns = true
@@ -104,4 +130,5 @@ custom_imports = [
     "use crate::protocol::RSL::proposer::*;",
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::RSL::configuration::*;",
+    "use crate::implementation::RSL::types_i::abstractify_crequestbatch;",
 ]

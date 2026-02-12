@@ -9,6 +9,10 @@ primitive_types = [
 # HashMap fields for &key indexing (no helper generation)
 hashmap_index_fields = ["reply_cache", "unexecuted_learner_state"]
 
+# HashSet fields — needed to distinguish .contains() on HashSet (supported in Verus)
+# from .contains() on Vec (not supported, needs free function)
+collection_fields = ["current_view_suspectors"]
+
 # Functions to skip during transpilation (require manual implementation)
 skip_functions = [
     # Complex IO dispatch patterns that cannot be auto-transpiled
@@ -22,6 +26,11 @@ skip_functions = [
     "ExtractSentPacketsFromIos",
     # Calls skipped CExecutorExecute from executor module
     "LReplicaNextSpontaneousMaybeExecute",
+    # Calls skipped CProposerMaybeNominateValueAndSend2a from proposer module
+    "LReplicaNextReadClockMaybeNominateValueAndSend2a",
+    # Dispatch functions calling spec-only/skipped functions with complex arg patterns
+    "LReplicaNoReceiveNext",
+    "LSchedulerNext",
 ]
 
 # Spec-only functions that should NOT get C-prefix
@@ -36,6 +45,9 @@ spec_only_functions = [
     "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
     "LReplicaNextProcessPacket",
     "LReplicaNextSpontaneousMaybeExecute",
+    "LReplicaNextReadClockMaybeNominateValueAndSend2a",
+    "LReplicaNoReceiveNext",
+    "LSchedulerNext",
 ]
 
 # Method call mappings
@@ -72,6 +84,35 @@ nat_type = "u64"
 "RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
 "RslMessageInvalid" = "CMessage::CMessageInvalid"
 
+[variant_remapping]
+"OutstandingOpUnknown" = "COutstandingOperation::COutstandingOpUnknown"
+"OutstandingOpKnown" = "COutstandingOperation::COutstandingOpKnown"
+
+[arrow_variants]
+"bal_1a" = "CMessage::CMessage1a"
+"bal_1b" = "CMessage::CMessage1b"
+"log_truncation_point" = "CMessage::CMessage1b"
+"votes" = "CMessage::CMessage1b"
+"bal_2a" = "CMessage::CMessage2a"
+"opn_2a" = "CMessage::CMessage2a"
+"val_2a" = "CMessage::CMessage2a"
+"bal_2b" = "CMessage::CMessage2b"
+"opn_2b" = "CMessage::CMessage2b"
+"val_2b" = "CMessage::CMessage2b"
+"bal_heartbeat" = "CMessage::CMessageHeartbeat"
+"suspicious" = "CMessage::CMessageHeartbeat"
+"opn_ckpt" = "CMessage::CMessageHeartbeat"
+"seqno_req" = "CMessage::CMessageRequest"
+"val" = "CMessage::CMessageRequest"
+"bal_state_req" = "CMessage::CMessageAppStateRequest"
+"opn_state_req" = "CMessage::CMessageAppStateRequest"
+"bal_state_supply" = "CMessage::CMessageAppStateSupply"
+"opn_state_supply" = "CMessage::CMessageAppStateSupply"
+"app_state" = "CMessage::CMessageAppStateSupply"
+"reply_cache" = "CMessage::CMessageAppStateSupply"
+"bal_2" = "CMessage::CMessageStartingPhase2"
+"logTruncationPoint_2" = "CMessage::CMessageStartingPhase2"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
@@ -95,6 +136,7 @@ custom_imports = [
     "use std::collections::HashMap;",
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",
+    "use crate::common::collections::vecs::*;",
     "use crate::common::collections::hashsets::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
@@ -113,3 +155,8 @@ custom_imports = [
     "use crate::protocol::RSL::configuration::*;",
     "use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};",
 ]
+
+# Ballot-typed fields that need CBalEq instead of derived PartialEq (external in Verus)
+[eq_function_fields]
+"bal_1b" = "CBalEq"
+"max_ballot_i_sent_1a" = "CBalEq"

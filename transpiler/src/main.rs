@@ -950,7 +950,10 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
                 (k.clone(), (exec_map_type, abstractify_prefix, exec_value_type))
             }).collect(),
             hashmap_index_fields: file_config.hashmap_index_fields.iter().cloned().collect(),
+            type_view_exprs: file_config.type_view_exprs.clone(),
             extra_requires: file_config.extra_requires.clone(),
+            eq_function_fields: file_config.eq_function_fields.clone(),
+            arrow_variants: file_config.arrow_variants.clone(),
             clone_method: file_config.output.clone_method.clone(),
             ..TranslatorConfig::default()
         },

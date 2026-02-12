@@ -10,6 +10,7 @@ use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cmessage::*;
+use crate::implementation::RSL::types_i::abstractify_crequestbatch;
 use crate::protocol::common::upper_bound::LtUpperBound;
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::election::*;
@@ -56,9 +57,9 @@ ensures
     result.valid(),
     result@ == ComputeSuccessorView(b@, c@),
 {
-if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
+if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
         CBallot {
-            seqno: b.seqno,
+            seqno: b.seqno.clone(),
             proposer_id: (b.proposer_id + 1),
         }
     } else {
@@ -76,7 +77,7 @@ requires
 ensures
     result@ == RequestsMatch(r1@, r2@),
 {
-(r1 is CRequest && (r2 is CRequest && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
+(true && (true && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
 }
 
 pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
@@ -86,21 +87,21 @@ requires
 ensures
     result@ == RequestSatisfiedBy(r1@, r2@),
 {
-(r1 is CRequest && (r2 is CRequest && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
+(true && (true && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
 }
 
 pub exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> (result: Vec<CRequest>)
 requires
     r.valid(),
 ensures
-    result@ == RemoveAllSatisfiedRequestsInSequence(s@, r@),
+    result@.map(|i: int, v: CRequest| v@) == RemoveAllSatisfiedRequestsInSequence(s@.map(|i: int, v: CRequest| v@), r@),
 {
     let mut result: Vec<CRequest> = Vec::new();
     for i in (0..s.len())
     invariant
         i <= s.len(),
         result.len() <= i,
-        result@ == RemoveAllSatisfiedRequestsInSequence(s@.take(i as int), r@),
+        result@.map(|i: int, v: CRequest| v@) == RemoveAllSatisfiedRequestsInSequence(s@.take(i as int).map(|i: int, v: CRequest| v@), r@),
     {
         if !CRequestSatisfiedBy(&s[i], &r) {
                         result.push(s[i].clone())
@@ -145,19 +146,26 @@ pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clo
 requires
     es.valid(),
     p.valid(),
-    p.msg is RslMessageHeartbeat,
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, *clock as int),
 {
-    let result = if !es.constants.all.config.replica_ids.contains(&p.src) {
+    let result = if !contains(&es.constants.all.config.replica_ids, &p.src) {
         es.clone()
     } else {
                 let (_unused0, sender_index) = es.constants.all.config.CGetReplicaIndex(&p.src);
-        if ((p.msg->bal_heartbeat == es.current_view) && p.msg->suspicious) {
+        let sender_index = (sender_index as u64);
+        if (CBalEq(&match &p.msg {
+    CMessage::CMessageHeartbeat { bal_heartbeat, .. } => bal_heartbeat.clone(),
+    _  => unreachable_value(),
+}, &es.current_view) && match &p.msg {
+            CMessage::CMessageHeartbeat { suspicious, .. } => suspicious.clone(),
+            _  => unreachable_value(),
+        }) {
             CElectionState {
-                constants: es.constants,
-                current_view: es.current_view,
+                constants: es.constants.clone(),
+                current_view: es.current_view.clone(),
                 current_view_suspectors: {
                     let __rhs_0 = {
                         broadcast use vstd::std_specs::hash::group_hash_axioms;
@@ -167,20 +175,29 @@ ensures
                     };
                     union_sets(&es.current_view_suspectors, &__rhs_0)
                 },
-                epoch_end_time: es.epoch_end_time,
-                epoch_length: es.epoch_length,
+                epoch_end_time: es.epoch_end_time.clone(),
+                epoch_length: es.epoch_length.clone(),
                 requests_received_this_epoch: es.requests_received_this_epoch.clone(),
                 requests_received_prev_epochs: es.requests_received_prev_epochs.clone(),
                 cur_req_set: HashSet::new(),
                 prev_req_set: HashSet::new(),
             }
         } else {
-            if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
-                                let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
+            if CBalLt(&es.current_view, &match &p.msg {
+    CMessage::CMessageHeartbeat { bal_heartbeat, .. } => bal_heartbeat.clone(),
+    _  => unreachable_value(),
+}) {
+                                let new_epoch_length = CUpperBoundedAddition(es.epoch_length.clone(), es.epoch_length.clone(), es.constants.all.params.max_integer_val);
                 CElectionState {
-                    constants: es.constants,
-                    current_view: p.msg->bal_heartbeat,
-                    current_view_suspectors: if p.msg->suspicious {
+                    constants: es.constants.clone(),
+                    current_view: match &p.msg {
+                        CMessage::CMessageHeartbeat { bal_heartbeat, .. } => bal_heartbeat.clone(),
+                        _  => unreachable_value(),
+                    },
+                    current_view_suspectors: if match &p.msg {
+                        CMessage::CMessageHeartbeat { suspicious, .. } => suspicious.clone(),
+                        _  => unreachable_value(),
+                    } {
                                                 broadcast use vstd::std_specs::hash::group_hash_axioms;
                         let mut __hs = HashSet::new();
                         __hs.insert(sender_index.clone());
@@ -222,11 +239,11 @@ ensures
     let result = if (*clock < es.epoch_end_time) {
         es.clone()
     } else {
-        if (es.requests_received_prev_epochs.len() == 0) {
-                        let new_epoch_length = es.constants.all.params.baseline_view_timeout_period;
+        if ((es.requests_received_prev_epochs.len() as u64) == 0) {
+                        let new_epoch_length = es.constants.all.params.baseline_view_timeout_period.clone();
             CElectionState {
-                constants: es.constants,
-                current_view: es.current_view,
+                constants: es.constants.clone(),
+                current_view: es.current_view.clone(),
                 current_view_suspectors: clone_hashset(&es.current_view_suspectors),
                 epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
                 epoch_length: new_epoch_length,
@@ -238,8 +255,8 @@ ensures
 
         } else {
             CElectionState {
-                constants: es.constants,
-                current_view: es.current_view,
+                constants: es.constants.clone(),
+                current_view: es.current_view.clone(),
                 current_view_suspectors: {
                     let __rhs_0 = {
                         broadcast use vstd::std_specs::hash::group_hash_axioms;
@@ -249,8 +266,8 @@ ensures
                     };
                     union_sets(&es.current_view_suspectors, &__rhs_0)
                 },
-                epoch_end_time: CUpperBoundedAddition(*clock, es.epoch_length, es.constants.all.params.max_integer_val),
-                epoch_length: es.epoch_length,
+                epoch_end_time: CUpperBoundedAddition(*clock, es.epoch_length.clone(), es.constants.all.params.max_integer_val),
+                epoch_length: es.epoch_length.clone(),
                 requests_received_this_epoch: vec![],
                 requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
                 cur_req_set: HashSet::new(),
@@ -274,12 +291,12 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, *clock as int),
 {
-    let result = if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !(es.current_view.seqno < es.constants.all.params.max_integer_val)) {
+    let result = if (((es.current_view_suspectors.len() as u64) < (es.constants.all.config.CMinQuorumSize() as u64)) || !(es.current_view.seqno < es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
-                let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
+                let new_epoch_length = CUpperBoundedAddition(es.epoch_length.clone(), es.epoch_length.clone(), es.constants.all.params.max_integer_val);
         CElectionState {
-            constants: es.constants,
+            constants: es.constants.clone(),
             current_view: CComputeSuccessorView(&es.current_view, &es.constants.all),
             current_view_suspectors: HashSet::new(),
             epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
@@ -312,7 +329,7 @@ if {
         let earlier_req_0_iter = es.requests_received_prev_epochs.iter();
         for earlier_req in iter:earlier_req_0_iter
         invariant
-            found ==> exists|i: int| 0 <= i < earlier_req_0_iter@.0 && CRequestsMatch(&earlier_req_0_iter@.1[i], &req),
+            found ==> exists|i: int| 0 <= i < earlier_req_0_iter@.0 && RequestsMatch(earlier_req_0_iter@.1[i]@, req@),
         {
             if CRequestsMatch(&earlier_req, &req) {
                                 found = true;
@@ -324,7 +341,7 @@ if {
             let earlier_req_1_iter = es.requests_received_this_epoch.iter();
             for earlier_req in iter:earlier_req_1_iter
             invariant
-                found ==> exists|i: int| 0 <= i < earlier_req_1_iter@.0 && CRequestsMatch(&earlier_req_1_iter@.1[i], &req),
+                found ==> exists|i: int| 0 <= i < earlier_req_1_iter@.0 && RequestsMatch(earlier_req_1_iter@.1[i]@, req@),
             {
                 if CRequestsMatch(&earlier_req, &req) {
                                         found = true;
@@ -338,11 +355,11 @@ if {
         es.clone()
     } else {
         CElectionState {
-            constants: es.constants,
-            current_view: es.current_view,
+            constants: es.constants.clone(),
+            current_view: es.current_view.clone(),
             current_view_suspectors: clone_hashset(&es.current_view_suspectors),
-            epoch_end_time: es.epoch_end_time,
-            epoch_length: es.epoch_length,
+            epoch_end_time: es.epoch_end_time.clone(),
+            epoch_length: es.epoch_length.clone(),
             requests_received_this_epoch: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_this_epoch, &vec![req.clone()]), es.constants.all.params.max_integer_val),
             requests_received_prev_epochs: es.requests_received_prev_epochs.clone(),
             cur_req_set: HashSet::new(),
@@ -352,18 +369,38 @@ if {
 }
 
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)ensures
-    result@ == RemoveExecutedRequestBatch(reqs@, batch@),
+    result@.map(|i: int, v: CRequest| v@) == RemoveExecutedRequestBatch(reqs@.map(|i: int, v: CRequest| v@), abstractify_crequestbatch(batch)),
 {
     let mut acc = reqs.clone();
     for i in (0..batch.len())
     invariant
         i <= batch.len(),
-        acc@ == RemoveExecutedRequestBatch(batch@.take(i as int), reqs@),
+        acc@.map(|i: int, v: CRequest| v@) == RemoveExecutedRequestBatch(reqs@.map(|i: int, v: CRequest| v@), batch@.take(i as int).map(|i: int, v: CRequest| v@)),
     {
         acc = CRemoveAllSatisfiedRequestsInSequence(&acc, &batch[i])
     }
     acc
 
+}
+
+pub exec fn CElectionStateReflectExecutedRequestBatch(es: &CElectionState, batch: &CRequestBatch) -> (result: CElectionState)
+requires
+    es.valid(),
+ensures
+    result.valid(),
+    ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)),
+{
+CElectionState {
+        constants: es.constants.clone(),
+        current_view: es.current_view.clone(),
+        current_view_suspectors: clone_hashset(&es.current_view_suspectors),
+        epoch_end_time: es.epoch_end_time.clone(),
+        epoch_length: es.epoch_length.clone(),
+        requests_received_this_epoch: CRemoveExecutedRequestBatch(&es.requests_received_this_epoch, &batch),
+        requests_received_prev_epochs: CRemoveExecutedRequestBatch(&es.requests_received_prev_epochs, &batch),
+        cur_req_set: HashSet::new(),
+        prev_req_set: HashSet::new(),
+    }
 }
 
 } // verus!

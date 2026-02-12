@@ -97,6 +97,10 @@ pub struct TranslatorConfig {
     /// Fields that are HashMap-typed and need `&key` indexing, but should NOT trigger
     /// helper code generation. Used purely for `is_map_index_base()` detection.
     pub hashmap_index_fields: HashSet<String>,
+    /// Custom view expressions for types in ensures clauses.
+    /// Maps spec type name to view expression template with `{param}` placeholder.
+    /// e.g., "Votes" -> "abstractify_cvotes({param})"
+    pub type_view_exprs: HashMap<String, String>,
     /// Extra requires clauses per exec function name.
     /// These are manually specified preconditions that the transpiler can't derive.
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
@@ -104,6 +108,14 @@ pub struct TranslatorConfig {
     /// Clone method to use in generated loops (e.g., "clone_up_to_view").
     /// When set, uses `x.clone_up_to_view()` instead of `x.clone()`.
     pub clone_method: Option<String>,
+    /// Maps field names to equality comparison function names.
+    /// When a `==` comparison involves a field in this map, the transpiler generates
+    /// a function call instead of using `==` (which may use external PartialEq).
+    /// e.g., {"bal_heartbeat" => "CBalEq", "current_view" => "CBalEq"}
+    pub eq_function_fields: HashMap<String, String>,
+    /// Maps enum variant field names to "EnumType::VariantName".
+    /// Used to convert spec-only `->` arrow accesses into exec-level `match` destructuring.
+    pub arrow_variants: HashMap<String, String>,
 }
 
 impl Default for TranslatorConfig {
@@ -132,8 +144,11 @@ impl Default for TranslatorConfig {
             struct_vec_fields: HashMap::new(),
             map_fields: HashMap::new(),
             hashmap_index_fields: HashSet::new(),
+            type_view_exprs: HashMap::new(),
             extra_requires: HashMap::new(),
             clone_method: None,
+            eq_function_fields: HashMap::new(),
+            arrow_variants: HashMap::new(),
         }
     }
 }
@@ -1638,6 +1653,21 @@ impl Translator {
             ExecExpr::Field(base, _) if Self::is_input_var(base, ctx) => {
                 self.clone_input_field_access(expr, ctx)
             }
+            // If/else: recurse into both branches to clone input refs
+            ExecExpr::If { cond, then_branch, else_branch } => {
+                ExecExpr::If {
+                    cond: cond.clone(),
+                    then_branch: Box::new(self.clone_if_input_ref(*then_branch.clone(), ctx)),
+                    else_branch: else_branch.as_ref().map(|e| Box::new(self.clone_if_input_ref(*e.clone(), ctx))),
+                }
+            }
+            // Vec index (.index()) on input field chain: clone the indexed result
+            // e.g., s.config.ids[i] returns &EndPoint, needs .clone()
+            ExecExpr::MethodCall { receiver, method, .. }
+                if method == "index" && Self::contains_input_var(receiver, ctx) =>
+            {
+                ExecExpr::Clone(Box::new(expr))
+            }
             _ => expr,
         }
     }
@@ -1651,6 +1681,23 @@ impl Translator {
         } else {
             false
         }
+    }
+
+    /// Check if a named-type input parameter is remapped to a scalar integer type
+    /// (e.g., OperationNumber → u64). These are &u64 references that need dereffing
+    /// when compared with non-reference values (field accesses), but NOT when compared
+    /// with other &u64 references (iterator variables, other input params).
+    fn is_remapped_scalar_input_param(&self, name: &str, ctx: &TransformContext) -> bool {
+        if let Some(ty) = ctx.input_types.get(name) {
+            if let Type::Named(path) = ty {
+                if let Some(seg) = path.segments.last() {
+                    if let Some(remapped) = self.config.type_remapping.get(seg.as_str()) {
+                        return matches!(remapped.as_str(), "u64" | "i64" | "u32" | "i32" | "usize" | "isize");
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn is_upper_bound_type(ty: &Type) -> bool {
@@ -1690,6 +1737,20 @@ impl Translator {
                 expr: Box::new(expr),
             }
         }
+    }
+
+    /// Dereference a remapped scalar input parameter (e.g., OperationNumber → &u64)
+    /// only when the opposite side of a comparison is a non-reference value.
+    fn deref_remapped_scalar_input(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
+        if let ExecExpr::Var(ref name) = expr {
+            if self.is_remapped_scalar_input_param(name, ctx) {
+                return ExecExpr::Unary {
+                    op: "*".to_string(),
+                    expr: Box::new(expr),
+                };
+            }
+        }
+        expr
     }
 
     /// Dereference a bare scalar input parameter reference in exec expressions.
@@ -1851,7 +1912,7 @@ impl Translator {
                     method: method,
                     args: deref_args,
                 };
-                // Verus doesn't support `is` in exec mode, so use match for IsVariant checks
+                // Verus doesn't support `is` in exec mode, so use match for variant checks
                 if let ExecExpr::IsVariant { expr: scrutinee, variant } = &cond {
                     // match &scrutinee { Variant => { mutation; }, _ => {} }
                     let variant_name = if let Some(pos) = variant.rfind("::") {
@@ -1874,6 +1935,21 @@ impl Translator {
                         arms: vec![
                             (
                                 qualified_variant,
+                                ExecExpr::Block(vec![mutation_stmt, ExecExpr::Block(vec![])]),
+                            ),
+                            ("_".to_string(), ExecExpr::Block(vec![])),
+                        ],
+                    });
+                } else if let ExecExpr::Matches { expr: scrutinee, pattern, .. } = &cond {
+                    // matches!() variant check — convert to match for mutation
+                    pre_stmts.push(ExecExpr::Match {
+                        scrutinee: Box::new(ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(*scrutinee.clone()),
+                        }),
+                        arms: vec![
+                            (
+                                pattern.clone(),
                                 ExecExpr::Block(vec![mutation_stmt, ExecExpr::Block(vec![])]),
                             ),
                             ("_".to_string(), ExecExpr::Block(vec![])),
@@ -1969,7 +2045,9 @@ impl Translator {
         None
     }
 
-    /// Dereference mutation arguments for insert/push (owned params) but not remove (ref params)
+    /// Dereference mutation arguments for insert/push (owned params) but not remove (ref params).
+    /// For insert: strips `&` wrappers from args and adds `.clone()` to produce owned values
+    /// (HashMap::insert takes owned key and value, not references).
     fn deref_mutation_args(
         &self,
         args: Vec<ExecExpr>,
@@ -1982,6 +2060,10 @@ impl Translator {
                     return a;
                 }
                 match &a {
+                    // &expr for insert → strip & and clone to get owned value
+                    ExecExpr::Unary { op, expr } if op == "&" => {
+                        ExecExpr::Clone(expr.clone())
+                    },
                     ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Unary {
                         op: "*".to_string(),
                         expr: Box::new(a),
@@ -2073,8 +2155,11 @@ impl Translator {
                         // Vec/HashMap field: use .clone()
                         ExecExpr::Clone(Box::new(expr))
                     } else {
-                        // Primitive/Copy field: access directly (s.field)
-                        expr
+                        // Default: clone the field.
+                        // This is safe for Copy types (u64, bool, CBallot) — clone is just a copy.
+                        // Required for non-Copy types (CReplicaConstants, CAcceptor, EndPoint, etc.)
+                        // that aren't in any special clone category.
+                        ExecExpr::Clone(Box::new(expr))
                     }
                 } else {
                     expr
@@ -2219,6 +2304,22 @@ impl Translator {
         }
     }
 
+    /// Check if an expression involves a field that needs a custom equality function.
+    /// Returns the function name (e.g., "CBalEq") if found, None otherwise.
+    fn get_eq_function_for_expr(&self, expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Field(_, field) => {
+                self.config.eq_function_fields.get(field.as_str()).map(|s| s.as_str())
+            }
+            Expr::Arrow(inner, field) => {
+                // For arrow access (e.g., msg->bal_heartbeat), check the field name
+                self.config.eq_function_fields.get(field.as_str()).map(|s| s.as_str())
+                    .or_else(|| self.get_eq_function_for_expr(inner))
+            }
+            _ => None,
+        }
+    }
+
     /// Returns true if no field categories are configured.
     /// Used in tests to verify field config detection.
     #[allow(dead_code)]
@@ -2233,6 +2334,19 @@ impl Translator {
     /// Check if an expression is a variable reference to an input parameter
     fn is_input_var(expr: &ExecExpr, ctx: &TransformContext) -> bool {
         matches!(expr, ExecExpr::Var(name) if ctx.is_input(name))
+    }
+
+    /// Check if an ExecExpr contains an input variable anywhere in its base chain.
+    /// Used for index/field expressions: s.config.ids has input var "s" deep in the chain.
+    fn contains_input_var(expr: &ExecExpr, ctx: &TransformContext) -> bool {
+        match expr {
+            ExecExpr::Var(name) => ctx.is_input(name),
+            ExecExpr::Field(base, _) => Self::contains_input_var(base, ctx),
+            ExecExpr::MethodCall { receiver, method, .. } if method == "index" => {
+                Self::contains_input_var(receiver, ctx)
+            }
+            _ => false,
+        }
     }
 
     /// Detect whether an AST expression denotes a Set-like collection for `+` lowering.
@@ -2550,11 +2664,21 @@ impl Translator {
                 }
             }
             ExecExpr::Call { func, args } => {
+                // Invariants are spec context — convert exec function name to spec name
+                let spec_func = self.exec_name_to_spec_name(func);
+                let needs_view = spec_func != *func; // exec name was translated, args need @
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| self.expr_to_invariant_string_with_var(a, loop_var))
+                    .map(|a| {
+                        let s = self.expr_to_invariant_string_with_var(a, loop_var);
+                        if needs_view && !s.ends_with('@') {
+                            format!("{}@", s)
+                        } else {
+                            s
+                        }
+                    })
                     .collect();
-                format!("{}({})", func, args_str.join(", "))
+                format!("{}({})", spec_func, args_str.join(", "))
             }
             ExecExpr::Unary { op, expr } => {
                 // For dereference, check if we're already dereferencing the loop var
@@ -2568,6 +2692,9 @@ impl Translator {
                             self.expr_to_invariant_string_with_var(expr, loop_var)
                         ),
                     }
+                } else if op == "&" {
+                    // Invariants are spec context — strip & references
+                    self.expr_to_invariant_string_with_var(expr, loop_var)
                 } else {
                     format!(
                         "{}{}",
@@ -4075,13 +4202,55 @@ impl Translator {
         // We express this by calling the spec function directly on the truncated sequence
         let spec_name = &func.spec_fn.name;
 
-        // Build the spec call with truncated sequence
-        // FoldFunc(seq@.take(i as int), extra_args@...)
-        let mut spec_args = vec![format!("{}@.take(i as int)", seq_param)];
-        for arg in extra_args {
-            spec_args.push(format!("{}@", arg));
-        }
-        let fold_invariant = format!("acc@ == {}({})", spec_name, spec_args.join(", "));
+        // Build the spec call with truncated sequence.
+        // For Seq<StructType> params, apply deep view mapping.
+        let spec_args: Vec<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .map(|p| {
+                if p.name == seq_param {
+                    if let Type::Seq(inner) = &p.ty {
+                        if let Some(exec_elem) = self.seq_element_exec_type(inner) {
+                            return format!(
+                                "{}@.take(i as int).map(|i: int, v: {}| v@)",
+                                p.name, exec_elem
+                            );
+                        }
+                    }
+                    // Handle named type aliases for Seq<StructType> (e.g., RequestBatch = Seq<Request>)
+                    // If the type has a type_view_exprs entry, it needs deep view mapping.
+                    if let Type::Named(path) = &p.ty {
+                        if let Some(type_name) = path.last() {
+                            if self.config.type_view_exprs.contains_key(type_name) {
+                                // Find the element exec type from remapping
+                                // e.g., RequestBatch remaps to CRequestBatch, Request remaps to CRequest
+                                if let Some(exec_type) = self.config.type_remapping.get(type_name) {
+                                    // Strip "C" prefix and "Batch"/"Cache" suffix heuristics
+                                    // to find element type, or look for element type in remapping
+                                    // e.g., CRequestBatch -> CRequest (strip "Batch")
+                                    let elem_exec = exec_type
+                                        .strip_suffix("Batch")
+                                        .or_else(|| exec_type.strip_suffix("Cache"))
+                                        .unwrap_or(exec_type);
+                                    return format!(
+                                        "{}@.take(i as int).map(|i: int, v: {}| v@)",
+                                        p.name, elem_exec
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    format!("{}@.take(i as int)", p.name)
+                } else {
+                    self.format_spec_arg(p)
+                }
+            })
+            .collect();
+        // For the accumulator result, also apply deep view mapping
+        let acc_view = self.format_result_view(&func.spec_fn.return_type);
+        let acc_view = acc_view.replace("result", "acc");
+        let fold_invariant = format!("{} == {}({})", acc_view, spec_name, spec_args.join(", "));
         invariants.push(fold_invariant);
 
         invariants
@@ -4182,15 +4351,28 @@ impl Translator {
         // instead of functional Map::insert (which returns a new Map in spec but
         // HashMap::insert mutates in place and returns Option<V>).
         let loop_body = if Self::is_acc_insert(&combine_with_acc) {
-            // Extract the insert args and wrap: let _ = acc.insert(key, val);
+            // Extract the insert args and wrap: let _ = acc.insert(key.clone(), val.clone());
+            // Clone is needed because Vec indexing returns references, but HashMap::insert takes owned values.
             if let ExecExpr::MethodCall { receiver: _, method: _, args } = combine_with_acc {
+                let cloned_args: Vec<ExecExpr> = args
+                    .into_iter()
+                    .map(|a| {
+                        // Strip & before cloning: (&x).clone() clones the reference,
+                        // but we need x.clone() to get an owned value for HashMap::insert.
+                        let inner = match a {
+                            ExecExpr::Unary { ref op, ref expr } if op == "&" => (**expr).clone(),
+                            other => other,
+                        };
+                        ExecExpr::Clone(Box::new(inner))
+                    })
+                    .collect();
                 ExecExpr::Let {
                     pattern: "_".to_string(),
                     ty: None,
                     value: Box::new(ExecExpr::MethodCall {
                         receiver: Box::new(ExecExpr::Var("acc".to_string())),
                         method: "insert".to_string(),
-                        args,
+                        args: cloned_args,
                     }),
                 }
             } else {
@@ -4439,19 +4621,33 @@ impl Translator {
         // Invariant 3: spec equivalence via helper call over processed prefix.
         // This avoids fragile inline closure typing and keeps invariants aligned
         // with the source helper definition.
+        //
+        // For Seq<StructType> params, we need deep view mapping:
+        // e.g., s@.take(i as int).map(|i: int, v: CRequest| v@) instead of s@.take(i as int)
         let spec_args: Vec<String> = func
             .spec_fn
             .params
             .iter()
             .map(|p| {
                 if p.name == seq_param {
+                    // Check if seq element type needs deep view mapping
+                    if let Type::Seq(inner) = &p.ty {
+                        if let Some(exec_elem) = self.seq_element_exec_type(inner) {
+                            return format!(
+                                "{}@.take(i as int).map(|i: int, v: {}| v@)",
+                                p.name, exec_elem
+                            );
+                        }
+                    }
                     format!("{}@.take(i as int)", p.name)
                 } else {
-                    format!("{}@", p.name)
+                    self.format_spec_arg(p)
                 }
             })
             .collect();
-        let filter_invariant = format!("result@ == {}({})", func.spec_fn.name, spec_args.join(", "));
+        // For result, also apply deep view mapping for Seq<StructType>
+        let result_view = self.format_result_view(&func.spec_fn.return_type);
+        let filter_invariant = format!("{} == {}({})", result_view, func.spec_fn.name, spec_args.join(", "));
         invariants.push(filter_invariant);
 
         invariants
@@ -5366,7 +5562,29 @@ impl Translator {
             .map(|param| self.format_spec_arg(param))
             .collect();
 
-        format!("result@ == {}({})", func.spec_fn.name, args.join(", "))
+        // Check if return type has a custom view expression
+        let result_view = self.format_result_view(&func.spec_fn.return_type);
+        format!("{} == {}({})", result_view, func.spec_fn.name, args.join(", "))
+    }
+
+    /// Format the result view expression for ensures clauses.
+    /// For types with custom view expressions (e.g., Votes → abstractify_cvotes),
+    /// uses the custom template. Otherwise uses `result@`.
+    fn format_result_view(&self, return_type: &Type) -> String {
+        if let Type::Named(path) = return_type {
+            if let Some(type_name) = path.last() {
+                if let Some(template) = self.config.type_view_exprs.get(type_name) {
+                    return template.replace("{param}", "&result");
+                }
+            }
+        }
+        // Seq<StructType> result: result@.map(|i: int, v: CType| v@)
+        if let Type::Seq(inner) = return_type {
+            if let Some(exec_elem) = self.seq_element_exec_type(inner) {
+                return format!("result@.map(|i: int, v: {}| v@)", exec_elem);
+            }
+        }
+        "result@".to_string()
     }
 
     /// Format a spec argument for ensures clauses.
@@ -5376,6 +5594,15 @@ impl Translator {
     /// For skip_valid_types (e.g., Votes → HashMap), generates `param@`.
     /// For struct/enum params, generates `param@`.
     fn format_spec_arg(&self, param: &crate::ast::Parameter) -> String {
+        // Check if type has a custom view expression (e.g., Votes → abstractify_cvotes({param}))
+        if let Type::Named(path) = &param.ty {
+            if let Some(type_name) = path.last() {
+                if let Some(template) = self.config.type_view_exprs.get(type_name) {
+                    return template.replace("{param}", &param.name);
+                }
+            }
+        }
+
         match &param.ty {
             Type::Int | Type::Nat => format!("*{} as int", param.name),
             Type::Bool => param.name.clone(),
@@ -5389,7 +5616,40 @@ impl Translator {
                 }
                 format!("{}@", param.name)
             }
+            // Seq<StructType> — need deep view mapping: param@.map(|i: int, v: CType| v@)
+            Type::Seq(inner) => {
+                if let Some(exec_elem) = self.seq_element_exec_type(inner) {
+                    format!("{}@.map(|i: int, v: {}| v@)", param.name, exec_elem)
+                } else {
+                    format!("{}@", param.name)
+                }
+            }
             _ => format!("{}@", param.name),
+        }
+    }
+
+    /// Get the exec type name for a Seq element type that needs deep view mapping.
+    /// Returns Some(exec_type_name) if the element is a non-primitive Named type.
+    fn seq_element_exec_type(&self, elem_ty: &Type) -> Option<String> {
+        match elem_ty {
+            Type::Named(path) => {
+                let spec_type_name = path.last()?;
+                if self.config.is_strict_primitive(spec_type_name) {
+                    return None;
+                }
+                // Only deep view map when we have explicit remapping or L-prefix
+                if let Some(remapped) = self.config.type_remapping.get(spec_type_name) {
+                    Some(remapped.clone())
+                } else if !self.config.spec_prefix.is_empty()
+                    && spec_type_name.starts_with(&self.config.spec_prefix)
+                {
+                    Some(format!("{}{}", self.config.exec_prefix, &spec_type_name[self.config.spec_prefix.len()..]))
+                } else {
+                    // No remapping and no spec prefix — type is same in spec/exec, no view needed
+                    None
+                }
+            }
+            _ => None,
         }
     }
 
@@ -5413,6 +5673,36 @@ impl Translator {
 
         // Otherwise, prepend exec prefix to the full name
         format!("{}{}", self.config.exec_prefix, spec_name)
+    }
+
+    /// Reverse of translate_definition_name: convert exec function name back to spec name.
+    /// Used for invariants/spec context where exec names must become spec names.
+    /// CRequestsMatch -> RequestsMatch, CBalEq -> BalEq, etc.
+    fn exec_name_to_spec_name(&self, exec_name: &str) -> String {
+        // Check reverse of type_remapping
+        for (spec, exec) in &self.config.type_remapping {
+            if exec == exec_name {
+                return spec.clone();
+            }
+        }
+
+        // Check reverse of function_paths
+        for (spec, path) in &self.config.function_paths {
+            if path == exec_name {
+                return spec.clone();
+            }
+        }
+
+        // If it starts with exec prefix (e.g., "C") followed by uppercase, strip and keep base
+        if exec_name.starts_with(&self.config.exec_prefix) {
+            let rest = &exec_name[self.config.exec_prefix.len()..];
+            if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                return rest.to_string();
+            }
+        }
+
+        // Fallback: return as-is
+        exec_name.to_string()
     }
 
     /// Translate spec name to exec name for function CALLS (L* -> C* or qualified path)
@@ -5446,6 +5736,26 @@ impl Translator {
         }
 
         // Fall back to simple name translation
+        self.translate_definition_name(spec_name)
+    }
+
+    /// Translate spec name to exec name for exec body function calls.
+    /// Unlike `translate_name`, this always applies L->C mapping even for spec_only_functions,
+    /// because exec body code must call concrete implementations, not spec functions.
+    fn translate_name_for_exec(&self, spec_name: &str) -> String {
+        // First check function_paths for qualified paths (cross-module calls)
+        if let Some(qualified_path) = self.config.function_paths.get(spec_name) {
+            return qualified_path.clone();
+        }
+        // Also check with L prefix stripped
+        if spec_name.starts_with(&self.config.spec_prefix) {
+            let base_name = &spec_name[self.config.spec_prefix.len()..];
+            if let Some(qualified_path) = self.config.function_paths.get(base_name) {
+                return qualified_path.clone();
+            }
+        }
+
+        // Always apply L->C translation for exec body calls
         self.translate_definition_name(spec_name)
     }
 
@@ -5732,7 +6042,18 @@ impl Translator {
         }
 
         // Check config-based primitive_types list
-        self.config.is_primitive_type(type_str)
+        if self.config.is_primitive_type(type_str) {
+            return true;
+        }
+
+        // Check with exec prefix stripped (e.g., CReplyCache → ReplyCache)
+        if let Some(stripped) = type_str.strip_prefix(&self.config.exec_prefix) {
+            if self.config.is_primitive_type(stripped) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Build requires clauses
@@ -5748,15 +6069,35 @@ impl Translator {
             }
         }
 
+        // Compute view_params and scalar_params for spec-level requires/recommends.
+        // Spec expressions reference spec types (LConfiguration) but exec requires
+        // clauses operate on exec types (CConfiguration), so we need `@` view.
+        let view_params: HashSet<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .zip(&func.param_modes)
+            .filter(|(p, m)| **m == ParameterMode::Input && matches!(&p.ty, Type::Named(_)))
+            .map(|(p, _)| p.name.clone())
+            .collect();
+        let scalar_params: HashSet<String> = func
+            .spec_fn
+            .params
+            .iter()
+            .zip(&func.param_modes)
+            .filter(|(p, m)| **m == ParameterMode::Input && matches!(&p.ty, Type::Int | Type::Nat))
+            .map(|(p, _)| p.name.clone())
+            .collect();
+
         // Add explicit requires clauses from the spec function
         for req_expr in &func.spec_fn.requires {
-            requires.push(self.expr_to_requires_string(req_expr));
+            requires.push(self.expr_to_view_requires_string(req_expr, &view_params, &scalar_params));
         }
 
         // Add recommends clauses from the spec as requires
         // (recommends in spec functions become requires in exec functions)
         for recommends_expr in &func.spec_fn.recommends {
-            requires.push(self.expr_to_requires_string(recommends_expr));
+            requires.push(self.expr_to_view_requires_string(recommends_expr, &view_params, &scalar_params));
         }
 
         // Extract input-only conjuncts from the spec body as preconditions.
@@ -6050,12 +6391,11 @@ impl Translator {
     fn expr_to_requires_string(&self, expr: &Expr) -> String {
         match expr {
             Expr::Is(expr, variant) => {
-                // `is` expressions in requires clauses use the bare variant name.
-                // Variant names are shared between spec and exec enum types
-                // (e.g., both LTMState and CTMState have `Init`, `Committed`).
-                // The `is` keyword resolves the variant from the concrete type.
+                // Translate the variant name using remapping (e.g., RslMessage1a -> CMessage1a)
+                let translated_variant = self.translate_name(variant);
+                let spec_variant = self.extract_variant_name(&translated_variant);
                 let base = self.expr_to_simple_string(expr);
-                format!("{} is {}", base, variant)
+                format!("{} is {}", base, spec_variant)
             }
             Expr::Conjunction(parts) => {
                 // Flatten conjunction into multiple clauses joined by &&
@@ -6144,11 +6484,12 @@ impl Translator {
     ) -> String {
         match expr {
             Expr::Is(base_expr, variant) => {
-                // `is` variant checks: use direct field access (no `@`)
-                // Verus `is` works on exec enum types in spec context
-                // e.g., s.role is Head, s.tm_state is Init
+                // `is` variant checks: translate variant name using remapping
+                // e.g., RslMessage1a -> CMessage1a
+                let translated_variant = self.translate_name(variant);
+                let spec_variant = self.extract_variant_name(&translated_variant);
                 let base = self.expr_to_view_simple_string(base_expr, view_params, scalar_params);
-                format!("{} is {}", base, variant)
+                format!("{} is {}", base, spec_variant)
             }
             Expr::Eq(lhs, rhs) => {
                 format!(
@@ -6222,6 +6563,59 @@ impl Translator {
                 };
                 format!("({} {} {})", lhs_str, op_str, rhs_str)
             }
+            Expr::Call { func, args } => {
+                let raw_name = if func.segments.len() == 1 {
+                    func.segments[0].as_str()
+                } else {
+                    ""
+                };
+                // Check if this is a spec-only function (needs spec-type arguments with @)
+                let is_spec_only = self.config.spec_only_functions.contains(raw_name)
+                    || (raw_name.starts_with(&self.config.spec_prefix)
+                        && self.config.spec_only_functions.contains(
+                            &raw_name[self.config.spec_prefix.len()..]));
+                let func_name = if func.segments.len() == 1 {
+                    self.translate_name(raw_name)
+                } else {
+                    func.segments.join("::")
+                };
+                let args_str: Vec<_> = args.iter().map(|a| {
+                    if is_spec_only {
+                        // For spec-only function arguments, apply @ at root of field chains
+                        if let Some(root) = Self::field_chain_root(a) {
+                            if view_params.contains(root) {
+                                return self.expr_with_view_at_root(a);
+                            }
+                        }
+                    }
+                    self.expr_to_view_requires_string(a, view_params, scalar_params)
+                }).collect();
+                format!("{}({})", func_name, args_str.join(", "))
+            }
+            Expr::Forall { vars, triggers: _, body } => {
+                let vars_str = self.bindings_to_string(vars);
+                let body_str = self.expr_to_view_requires_string(body, view_params, scalar_params);
+                format!("forall |{}| {}", vars_str, body_str)
+            }
+            Expr::Exists { vars, body } => {
+                let vars_str = self.bindings_to_string(vars);
+                let body_str = self.expr_to_view_requires_string(body, view_params, scalar_params);
+                format!("exists |{}| {}", vars_str, body_str)
+            }
+            Expr::Implies(lhs, rhs) => {
+                format!(
+                    "({} ==> {})",
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
+                )
+            }
+            Expr::Iff(lhs, rhs) => {
+                format!(
+                    "({} <==> {})",
+                    self.expr_to_view_requires_string(lhs, view_params, scalar_params),
+                    self.expr_to_view_requires_string(rhs, view_params, scalar_params)
+                )
+            }
             _ => self.expr_to_view_simple_string(expr, view_params, scalar_params),
         }
     }
@@ -6236,7 +6630,6 @@ impl Translator {
     ) -> String {
         match expr {
             Expr::Field(base, field) => {
-                // For struct-type params, use `@` only for collection fields
                 if let Expr::Ident(name) = base.as_ref() {
                     if view_params.contains(name) {
                         if self.is_collection_field(field) {
@@ -6260,7 +6653,75 @@ impl Translator {
                 args,
             } => {
                 let recv = self.expr_to_view_simple_string(receiver, view_params, scalar_params);
-                // For .contains() on a collection (which uses Set<int>), cast scalar args to int
+                // For Vec/HashSet .contains() in requires/ensures (spec context), use view:
+                // container@.contains(item@) instead of exec-level method.
+                // HashMap uses .contains_key() (handled separately below).
+                if method == "contains" && args.len() == 1 {
+                    // Use @ on the receiver for spec-level Seq::contains
+                    let recv_view = if let Some(root) = Self::field_chain_root(receiver) {
+                        if view_params.contains(root) {
+                            self.expr_with_view_at_root(receiver)
+                        } else {
+                            format!("{}@", recv)
+                        }
+                    } else {
+                        format!("{}@", recv)
+                    };
+                    // Apply @ to the argument for spec-level comparison
+                    let arg = if let Some(root) = Self::field_chain_root(&args[0]) {
+                        if view_params.contains(root) {
+                            self.expr_with_view_at_root(&args[0])
+                        } else if scalar_params.contains(root) {
+                            // Scalar param in spec Set/Seq .contains(): *name as int
+                            let s = self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
+                            format!("{} as int", s)
+                        } else {
+                            let s = self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
+                            format!("{}@", s)
+                        }
+                    } else {
+                        let s = self.expr_to_view_simple_string(&args[0], view_params, scalar_params);
+                        if let Expr::Ident(name) = &args[0] {
+                            if scalar_params.contains(name) {
+                                // Scalar param in spec Set/Seq .contains(): *name as int
+                                format!("{} as int", s)
+                            } else {
+                                format!("{}@", s)
+                            }
+                        } else {
+                            s
+                        }
+                    };
+                    // In spec context, use the Seq .contains() method (no & needed)
+                    return format!("{}.contains({})", recv_view, arg);
+                }
+                // For HashMap .contains_key() in requires/ensures (spec context), use view:
+                // receiver@.field.contains_key(arg@) instead of exec-level HashMap method.
+                if method == "contains_key" && args.len() == 1 && self.is_map_index_base(receiver) {
+                    // Use @ on the receiver root for spec-level Map::contains_key
+                    let recv_view = if let Some(root) = Self::field_chain_root(receiver) {
+                        if view_params.contains(root) {
+                            self.expr_with_view_at_root(receiver)
+                        } else {
+                            format!("{}@", recv)
+                        }
+                    } else {
+                        format!("{}@", recv)
+                    };
+                    // Apply @ to the argument for spec-level comparison
+                    let arg = if let Some(root) = Self::field_chain_root(&args[0]) {
+                        if view_params.contains(root) {
+                            self.expr_with_view_at_root(&args[0])
+                        } else {
+                            self.expr_to_view_simple_string(&args[0], view_params, scalar_params)
+                        }
+                    } else {
+                        self.expr_to_view_simple_string(&args[0], view_params, scalar_params)
+                    };
+                    return format!("{}.contains_key({})", recv_view, arg);
+                }
+                // For .contains() / .contains_key(), add & and cast scalar args
+                let needs_ref = method == "contains" || method == "contains_key";
                 let is_spec_set_method = method == "contains";
                 let args_str: Vec<_> = args
                     .iter()
@@ -6274,6 +6735,10 @@ impl Translator {
                                 }
                             }
                         }
+                        // Add & for exec-level contains/contains_key
+                        if needs_ref && !s.starts_with('&') {
+                            return format!("&{}", s);
+                        }
                         s
                     })
                     .collect();
@@ -6284,6 +6749,98 @@ impl Translator {
                 format!("*{}", name)
             }
             // For other expressions, delegate to expr_to_simple_string
+            _ => self.expr_to_simple_string(expr),
+        }
+    }
+
+    /// Get the root identifier of a field access chain (e.g., `c.all.config` → `"c"`).
+    /// Returns None if the expression is not a pure field chain.
+    fn field_chain_root(expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Ident(name) => Some(name),
+            Expr::Field(base, _) => Self::field_chain_root(base),
+            Expr::Arrow(base, _) => Self::field_chain_root(base),
+            _ => None,
+        }
+    }
+
+    /// Check if an expression is a pure field access chain (no Arrow accesses).
+    /// e.g., `inp.msg` is pure, `inp.msg->bal_1a` is not.
+    fn is_pure_field_chain(expr: &Expr) -> bool {
+        match expr {
+            Expr::Ident(_) => true,
+            Expr::Field(base, _) => Self::is_pure_field_chain(base),
+            _ => false,
+        }
+    }
+
+    /// Check if a body expression uses a bound variable for -> (arrow) access.
+    /// Returns true if the body contains `var->field` for the given binding pattern.
+    fn body_uses_arrow(pattern: &crate::ast::Pattern, body: &Expr) -> bool {
+        let var_name = match pattern {
+            crate::ast::Pattern::Ident(name) => name.as_str(),
+            _ => return false,
+        };
+        Self::expr_has_arrow_on(body, var_name)
+    }
+
+    /// Check if an expression contains an Arrow access whose direct base is `Ident(name)`.
+    fn expr_has_arrow_on(expr: &Expr, name: &str) -> bool {
+        match expr {
+            Expr::Arrow(base, _) => {
+                if let Expr::Ident(n) = base.as_ref() {
+                    if n == name { return true; }
+                }
+                Self::expr_has_arrow_on(base, name)
+            }
+            Expr::Field(base, _) => Self::expr_has_arrow_on(base, name),
+            Expr::Let { value, body, .. } => {
+                Self::expr_has_arrow_on(value, name) || Self::expr_has_arrow_on(body, name)
+            }
+            Expr::If { cond, then_branch, else_branch } => {
+                Self::expr_has_arrow_on(cond, name)
+                    || Self::expr_has_arrow_on(then_branch, name)
+                    || else_branch.as_ref().map_or(false, |e| Self::expr_has_arrow_on(e, name))
+            }
+            Expr::Conjunction(parts) => parts.iter().any(|p| Self::expr_has_arrow_on(p, name)),
+            Expr::Binary(l, _, r) | Expr::Eq(l, r) | Expr::Ne(l, r)
+            | Expr::Lt(l, r) | Expr::Le(l, r) | Expr::Gt(l, r) | Expr::Ge(l, r) => {
+                Self::expr_has_arrow_on(l, name) || Self::expr_has_arrow_on(r, name)
+            }
+            Expr::Not(inner) | Expr::View(inner) => Self::expr_has_arrow_on(inner, name),
+            Expr::Call { args, .. } => args.iter().any(|a| Self::expr_has_arrow_on(a, name)),
+            Expr::MethodCall { receiver, args, .. } => {
+                Self::expr_has_arrow_on(receiver, name)
+                    || args.iter().any(|a| Self::expr_has_arrow_on(a, name))
+            }
+            Expr::Struct { fields, .. } => {
+                fields.iter().any(|(_, e)| Self::expr_has_arrow_on(e, name))
+            }
+            Expr::StructUpdate { base, fields, .. } => {
+                Self::expr_has_arrow_on(base, name)
+                    || fields.iter().any(|(_, e)| Self::expr_has_arrow_on(e, name))
+            }
+            Expr::Index(base, idx) => {
+                Self::expr_has_arrow_on(base, name) || Self::expr_has_arrow_on(idx, name)
+            }
+            Expr::SeqLit(elems) => {
+                elems.iter().any(|e| Self::expr_has_arrow_on(e, name))
+            }
+            _ => false,
+        }
+    }
+
+    /// Render a field access chain with `@` applied at the root identifier.
+    /// e.g., `c.all.config` → `"c@.all.config"`
+    fn expr_with_view_at_root(&self, expr: &Expr) -> String {
+        match expr {
+            Expr::Ident(name) => format!("{}@", name),
+            Expr::Field(base, field) => {
+                format!("{}.{}", self.expr_with_view_at_root(base), field)
+            }
+            Expr::Arrow(base, field) => {
+                format!("{}->{}",  self.expr_with_view_at_root(base), field)
+            }
             _ => self.expr_to_simple_string(expr),
         }
     }
@@ -6329,6 +6886,13 @@ impl Translator {
                 // For exec requires clauses, Vec::contains and HashMap::contains_key
                 // take &T arguments, not T. Add & prefix to arguments.
                 let needs_ref = method == "contains" || method == "contains_key";
+                // For Vec .contains() in requires, use free function contains(&vec, &item)
+                // since Verus doesn't support slice::contains. HashSet .contains() is fine.
+                if method == "contains" && args.len() == 1 && !self.is_map_index_base(receiver) {
+                    let arg = self.expr_to_simple_string(&args[0]);
+                    let arg_ref = if arg.starts_with('&') { arg } else { format!("&{}", arg) };
+                    return format!("contains(&{}, {})", recv, arg_ref);
+                }
                 let args_str: Vec<_> = args
                     .iter()
                     .map(|a| {
@@ -6371,9 +6935,26 @@ impl Translator {
                     }
                 }
 
-                // Function call: translate function name using translate_name (respects spec_only_functions)
+                // Check for inline-expanded spec functions in exec body
+                // LeqUpperBound(x, bound) -> (x <= bound) since bound is always UpperBoundFinite in concrete types
+                // LtUpperBound(x, bound) -> (x < bound)
+                if func.segments.len() == 1 {
+                    let raw_name = &func.segments[0];
+                    if raw_name == "LeqUpperBound" && args.len() == 2 {
+                        let a = self.expr_to_simple_string(&args[0]);
+                        let b = self.expr_to_simple_string(&args[1]);
+                        return format!("({} <= {})", a, b);
+                    }
+                    if raw_name == "LtUpperBound" && args.len() == 2 {
+                        let a = self.expr_to_simple_string(&args[0]);
+                        let b = self.expr_to_simple_string(&args[1]);
+                        return format!("({} < {})", a, b);
+                    }
+                }
+
+                // Function call: translate function name for exec body (always L->C, even for spec_only_functions)
                 let func_name = if func.segments.len() == 1 {
-                    self.translate_name(&func.segments[0])
+                    self.translate_name_for_exec(&func.segments[0])
                 } else {
                     func.segments.join("::")
                 };
@@ -6481,15 +7062,10 @@ impl Translator {
             }
             Expr::Index(base, idx) => {
                 // In spec/requires context, use plain indexing (no as usize needed)
+                // Verus HashMap's Index trait takes the key by value (not &K)
                 let base_str = self.expr_to_simple_string(base);
                 let idx_str = self.expr_to_simple_string(idx);
-                if self.is_map_index_base(base) {
-                    // HashMap: map[&key]
-                    let key_ref = if idx_str.starts_with('&') { idx_str } else { format!("&{}", idx_str) };
-                    format!("{}[{}]", base_str, key_ref)
-                } else {
-                    format!("{}[{}]", base_str, idx_str)
-                }
+                format!("{}[{}]", base_str, idx_str)
             }
             _ => format!("{:?}", expr),
         }
@@ -6606,6 +7182,23 @@ impl Translator {
             .map(|(param, mode)| match mode {
                 ParameterMode::Input => self.format_spec_arg(param),
                 ParameterMode::Output => {
+                    // Check if output type has a custom view expression
+                    if let Type::Named(path) = &param.ty {
+                        if let Some(type_name) = path.last() {
+                            if let Some(template) = self.config.type_view_exprs.get(type_name) {
+                                let result_name = if output_names.len() == 1 {
+                                    "&result".to_string()
+                                } else {
+                                    let output_idx = output_names
+                                        .iter()
+                                        .position(|n| n == &param.name)
+                                        .unwrap_or(0);
+                                    format!("&result.{}", output_idx)
+                                };
+                                return template.replace("{param}", &result_name);
+                            }
+                        }
+                    }
                     let base = if output_names.len() == 1 {
                         "result@".to_string()
                     } else {
@@ -6688,15 +7281,23 @@ impl Translator {
                 // or a Vec/slice field (needs idx as usize)
                 let is_map = self.is_map_index_base(base);
                 if is_map {
-                    // HashMap indexing: map[&key]
-                    Ok(ExecExpr::MethodCall {
-                        receiver: Box::new(base_expr),
-                        method: "index".to_string(),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(idx_expr),
-                        }],
-                    })
+                    // HashMap indexing in exec code: map.get(&key).unwrap().clone()
+                    // Verus doesn't support [] for HashMap in exec code.
+                    // Precondition contains_key(&key) ensures .unwrap() is safe.
+                    // Clone because .get() returns &V and we need owned value.
+                    let key_arg = ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(idx_expr),
+                    };
+                    Ok(ExecExpr::Clone(Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(base_expr),
+                            method: "get".to_string(),
+                            args: vec![key_arg],
+                        }),
+                        method: "unwrap".to_string(),
+                        args: vec![],
+                    })))
                 } else {
                     // Vec/slice indexing: vec[idx as usize]
                     // Only cast simple vars/fields that are u64 — skip complex exprs
@@ -6713,6 +7314,8 @@ impl Translator {
                                 "usize".to_string(),
                             )
                         }
+                        // Local variable (e.g., sender_index: u64) — cast to usize
+                        ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
                         // Other expressions — don't cast, let type inference handle it
                         _ => idx_expr,
                     };
@@ -7174,6 +7777,23 @@ impl Translator {
                     });
                 }
 
+                // LeqUpperBound(x, max_u64) in exec context should also be a concrete comparison.
+                if func_name == "LeqUpperBound" && args.len() == 2 {
+                    let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
+                    let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
+                    if self.is_upper_bound_typed_expr(&args[1], ctx) {
+                        return Ok(ExecExpr::Call {
+                            func: self.translate_name(func_name),
+                            args: vec![lhs, rhs],
+                        });
+                    }
+                    return Ok(ExecExpr::Binary {
+                        lhs: Box::new(lhs),
+                        op: "<=".to_string(),
+                        rhs: Box::new(rhs),
+                    });
+                }
+
                 // Bound request sequence helper lowering:
                 // Keep first arg as borrowed Vec and second arg as owned scalar bound.
                 if matches!(func_name, "BoundRequestSequence" | "CBoundRequestSequence")
@@ -7263,7 +7883,7 @@ impl Translator {
 
                     // This is a helper call - use only input args (outputs are stripped)
                     return Ok(ExecExpr::Call {
-                        func: self.translate_name(&helper_info.func_name),
+                        func: self.translate_name_for_exec(&helper_info.func_name),
                         args: helper_info.input_args,
                     });
                 }
@@ -7349,7 +7969,7 @@ impl Translator {
                     })
                     .collect();
                 Ok(ExecExpr::Call {
-                    func: self.translate_name(func_name),
+                    func: self.translate_name_for_exec(func_name),
                     args: translated_args?,
                 })
             }
@@ -7387,6 +8007,8 @@ impl Translator {
                                     "usize".to_string(),
                                 )
                             }
+                            // Local variable — cast to usize
+                            ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
                             _ => idx_expr,
                         };
                         return Ok(ExecExpr::MethodCall {
@@ -7412,6 +8034,8 @@ impl Translator {
                                 "usize".to_string(),
                             )
                         }
+                        // Local variable — cast to usize
+                        ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
                         _ => idx_expr,
                     };
                     return Ok(ExecExpr::Block(vec![
@@ -7431,6 +8055,28 @@ impl Translator {
                         },
                         ExecExpr::Var("__v".to_string()),
                     ]));
+                }
+
+                // Special handling for Vec .contains() — Verus doesn't support slice::contains.
+                // Convert to free function: contains(&vec, &item) from vecs module.
+                // Only for Vec fields (not HashSet/HashMap which have their own .contains()).
+                if method == "contains" && args.len() == 1 && !self.is_map_index_base(receiver) {
+                    let arg_expr = self.transform_expr(&args[0], ctx)?;
+                    let recv_ref = ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(recv_expr),
+                    };
+                    let arg_ref = match &arg_expr {
+                        ExecExpr::Unary { op, .. } if op == "&" => arg_expr,
+                        _ => ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(arg_expr),
+                        },
+                    };
+                    return Ok(ExecExpr::Call {
+                        func: "contains".to_string(),
+                        args: vec![recv_ref, arg_ref],
+                    });
                 }
 
                 // For collection methods like "contains", auto-borrow args.
@@ -7495,6 +8141,8 @@ impl Translator {
                 // If so, wrap the let pattern in a tuple destructuring.
                 // e.g., `let sender_index = CGetReplicaIndex(...)` becomes
                 //        `let (_found, sender_index) = CGetReplicaIndex(...)`
+                //        `let sender_index = sender_index as u64;`
+                let mut needs_cast_shadow = false;
                 let pattern_str = if let Expr::Call { func, .. } = value.as_ref() {
                     let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
                     if let Some(method_config) = self.config.method_calls.get(func_name) {
@@ -7509,6 +8157,9 @@ impl Translator {
                                     parts.push(format!("_unused{}", i));
                                 }
                             }
+                            // The destructured value is usize but protocol uses u64;
+                            // add a shadow binding to cast it.
+                            needs_cast_shadow = true;
                             format!("({})", parts.join(", "))
                         } else {
                             pattern_str
@@ -7520,14 +8171,54 @@ impl Translator {
                     pattern_str
                 };
 
-                Ok(ExecExpr::Block(vec![
+                // If the let value is a pure Field access on an input parameter (reference)
+                // AND the body uses the bound variable for -> (arrow) access, generate
+                // `let m = &inp.msg` instead of `let m = inp.msg`. This avoids moving a
+                // non-Copy type (like CMessage) from a reference. For Copy types (u64 etc.),
+                // the default works fine (auto-deref + copy from reference).
+                let is_pure_field_chain = Self::is_pure_field_chain(value);
+                let root = Self::field_chain_root(value);
+                let value_expr = if is_pure_field_chain
+                    && root.map_or(false, |r| ctx.input_params.contains(&r.to_string()))
+                {
+                    if Self::body_uses_arrow(&binding.pattern, body) {
+                        // Value is used for arrow access — borrow to allow -> syntax
+                        ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(value_expr),
+                        }
+                    } else {
+                        // Value is a field from a reference — clone to avoid move
+                        ExecExpr::Clone(Box::new(value_expr))
+                    }
+                } else {
+                    value_expr
+                };
+                let mut block = vec![
                     ExecExpr::Let {
-                        pattern: pattern_str,
+                        pattern: pattern_str.clone(),
                         ty: None,
                         value: Box::new(value_expr),
                     },
-                    body_expr,
-                ]))
+                ];
+                // If destructure_index was used, add a shadow binding to cast usize → u64
+                if needs_cast_shadow {
+                    // Extract the variable name from the binding pattern
+                    let var_name = match &binding.pattern {
+                        crate::ast::Pattern::Ident(name) => name.as_str(),
+                        _ => "__destructured",
+                    };
+                    block.push(ExecExpr::Let {
+                        pattern: var_name.to_string(),
+                        ty: None,
+                        value: Box::new(ExecExpr::Cast(
+                            Box::new(ExecExpr::Var(var_name.to_string())),
+                            self.config.int_type.clone(),
+                        )),
+                    });
+                }
+                block.push(body_expr);
+                Ok(ExecExpr::Block(block))
             }
 
             Expr::Match { scrutinee, arms } => {
@@ -7552,13 +8243,40 @@ impl Translator {
 
             Expr::Arrow(base, field) => {
                 // -> operator (enum variant field access)
-                // In Verus, use the -> syntax directly for enum variant field access
-                // This is valid when the variant is known (e.g., msg->bal_1a when msg is CMessage1a)
-                let base_expr = self.transform_expr(base, ctx)?;
-                Ok(ExecExpr::ArrowAccess {
-                    base: Box::new(base_expr),
-                    field: field.clone(),
-                })
+                // In Verus, -> generates spec-mode accessor functions, which cannot be called
+                // in exec code. If the field is in arrow_variants, generate a match expression
+                // that destructures the enum variant to extract the field.
+                // We match on a reference (&base) to avoid moving, and clone the result.
+                if let Some(variant_path) = self.config.arrow_variants.get(field.as_str()) {
+                    let base_expr = self.transform_expr(base, ctx)?;
+                    // Generate: match &base { Variant { field, .. } => field.clone(), _ => unreachable_value() }
+                    Ok(ExecExpr::Match {
+                        scrutinee: Box::new(ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(base_expr),
+                        }),
+                        arms: vec![
+                            (
+                                format!("{} {{ {}, .. }}", variant_path, field),
+                                ExecExpr::Clone(Box::new(ExecExpr::Var(field.clone()))),
+                            ),
+                            (
+                                "_ ".to_string(),
+                                ExecExpr::Call {
+                                    func: "unreachable_value".to_string(),
+                                    args: vec![],
+                                },
+                            ),
+                        ],
+                    })
+                } else {
+                    // No variant mapping: keep -> syntax (for spec contexts or unmapped fields)
+                    let base_expr = self.transform_expr(base, ctx)?;
+                    Ok(ExecExpr::ArrowAccess {
+                        base: Box::new(base_expr),
+                        field: field.clone(),
+                    })
+                }
             }
 
             Expr::Struct { name, fields } => {
@@ -7673,22 +8391,31 @@ impl Translator {
             Expr::Ne(lhs, rhs) => self.transform_binary_op(lhs, rhs, "!=", ctx),
 
             // Enum variant check: expr is VariantName
-            // In exec code, this becomes `expr is Variant` (Verus native syntax)
-            // This is preferred over matches!() because it works with -> syntax
+            // In exec code, Verus `is` syntax is spec-only, so use matches!() instead.
             Expr::Is(inner, variant) => {
+                // Check if the variant name maps to a struct type (not an enum variant).
+                // If so, the `is` check is trivially true and can be elided.
+                // Struct types are in type_remapping, enum variants are in variant_remapping.
+                let is_struct_type = self.config.type_remapping.contains_key(variant.as_str())
+                    && !self.config.variant_remapping.contains_key(variant.as_str());
+                if is_struct_type {
+                    // `x is StructType` is always true for a struct — replace with true
+                    return Ok(ExecExpr::Literal("true".to_string()));
+                }
+
                 let inner_expr = self.transform_expr(inner, ctx)?;
-                // Translate the variant name, checking variant_remapping first
-                // For `is` checks, we need just the variant name (not qualified path)
-                // e.g., "Middle" → variant_remapping["Middle"] = "CNodeRole::Middle" → "Middle"
-                let translated_variant =
+                // Get the fully qualified variant path for matches!()
+                // e.g., "OutstandingOpUnknown" → "COutstandingOperation::COutstandingOpUnknown"
+                let qualified_variant =
                     if let Some(qualified) = self.config.variant_remapping.get(variant.as_str()) {
-                        self.extract_variant_name(qualified).to_string()
+                        qualified.clone()
                     } else {
                         self.translate_name(variant)
                     };
-                Ok(ExecExpr::IsVariant {
+                Ok(ExecExpr::Matches {
                     expr: Box::new(inner_expr),
-                    variant: translated_variant,
+                    pattern: qualified_variant,
+                    is_struct_variant: true,
                 })
             }
 
@@ -8050,11 +8777,41 @@ impl Translator {
             }
         }
 
+        // Check if either side involves a field that needs a custom equality function
+        // (e.g., CBallot uses CBalEq instead of derived PartialEq which is external in Verus)
+        let eq_func = self.get_eq_function_for_expr(lhs)
+            .or_else(|| self.get_eq_function_for_expr(rhs));
+
         // Regular equality comparison — deref scalar input params (&u64 → u64)
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
+
+        if let Some(func_name) = eq_func {
+            // Use custom equality function: func(&lhs, &rhs)
+            let lhs_ref = ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(lhs_expr),
+            };
+            let rhs_ref = ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(rhs_expr),
+            };
+            return Ok(ExecExpr::Call {
+                func: func_name.to_string(),
+                args: vec![lhs_ref, rhs_ref],
+            });
+        }
+
         let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
         let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
+        // Deref remapped scalar input params only when the other side is not a variable reference
+        let rhs_is_var = matches!(&rhs_expr, ExecExpr::Var(_));
+        let lhs_is_var = matches!(&lhs_expr, ExecExpr::Var(_));
+        let lhs_expr = if !rhs_is_var { self.deref_remapped_scalar_input(lhs_expr, ctx) } else { lhs_expr };
+        let rhs_expr = if !lhs_is_var { self.deref_remapped_scalar_input(rhs_expr, ctx) } else { rhs_expr };
+        // Cast .len() → u64 to prevent usize vs u64 mismatches
+        let lhs_expr = Self::cast_len_to_u64(lhs_expr);
+        let rhs_expr = Self::cast_len_to_u64(rhs_expr);
         Ok(ExecExpr::Binary {
             lhs: Box::new(lhs_expr),
             op: "==".to_string(),
@@ -8798,24 +9555,46 @@ impl Translator {
         if let Some((out_var, field_name, length_expr, element_expr)) =
             self.try_extract_seq_init_pattern(exprs, ctx)
         {
-            // Generate: (0..length).map(|_| element).collect()
+            // Generate a Verus-compatible loop to build a Vec of repeated elements.
+            // Verus doesn't support Iterator::map/collect.
+            // Output: { let mut __v = Vec::new(); let mut __i: usize = 0;
+            //           while __i < len { __v.push(elem); __i += 1; } __v }
             let length = self.transform_expr(&length_expr, ctx)?;
             let element = self.transform_expr(&element_expr, ctx)?;
-            let seq_init = ExecExpr::MethodCall {
-                receiver: Box::new(ExecExpr::MethodCall {
-                    receiver: Box::new(ExecExpr::Range {
-                        start: Box::new(ExecExpr::Literal("0".to_string())),
-                        end: Box::new(length),
+            let seq_init = ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "mut __v".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::VecLit(vec![])),
+                },
+                ExecExpr::Let {
+                    pattern: "mut __i".to_string(),
+                    ty: Some(ExecType::Named("usize".to_string())),
+                    value: Box::new(ExecExpr::Literal("0".to_string())),
+                },
+                ExecExpr::WhileLoop {
+                    cond: Box::new(ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                        op: "<".to_string(),
+                        rhs: Box::new(length),
                     }),
-                    method: "map".to_string(),
-                    args: vec![ExecExpr::Closure {
-                        params: vec!["_".to_string()],
-                        body: Box::new(element),
-                    }],
-                }),
-                method: "collect".to_string(),
-                args: vec![],
-            };
+                    invariants: vec![],
+                    decreases: None,
+                    body: Box::new(ExecExpr::Block(vec![
+                        ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__v".to_string())),
+                            method: "push".to_string(),
+                            args: vec![element.clone()],
+                        },
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                            op: "+=".to_string(),
+                            rhs: Box::new(ExecExpr::Literal("1".to_string())),
+                        },
+                    ])),
+                },
+                ExecExpr::Var("__v".to_string()),
+            ]);
 
             // Store pre-translated (don't add placeholder to field_assignments)
             pre_translated
@@ -8940,9 +9719,12 @@ impl Translator {
                     })
                     .collect::<TranspileResult<Vec<_>>>()?;
 
-                // Add pre-translated nested struct fields
+                // Add pre-translated nested struct fields (clone input refs in each)
                 if let Some(nested_fields) = pre_translated.remove(&output_name) {
-                    translated_fields.extend(nested_fields);
+                    for (fname, fexpr) in nested_fields {
+                        let fexpr = self.clone_if_input_ref(fexpr, ctx);
+                        translated_fields.push((fname, fexpr));
+                    }
                 }
 
                 // Add fields from helper call substitutions (e.g., election_state from ElectionStateInit)
@@ -9072,6 +9854,7 @@ impl Translator {
                                                                     assigned_expr,
                                                                     ctx,
                                                                 )?;
+                                                                let e = self.clone_if_input_ref(e, ctx);
                                                                 return Ok((fname.clone(), e));
                                                             }
                                                         }
@@ -9191,6 +9974,16 @@ impl Translator {
         // Deref scalar input params (&u64 → u64) in comparisons and arithmetic
         let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
         let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
+        // Deref remapped scalar input params (e.g., opn: OperationNumber → &u64)
+        // only when the other side is NOT a variable reference to avoid breaking
+        // comparisons where both sides are &u64 (e.g., opn >= log_truncation_point).
+        let rhs_is_var = matches!(&rhs_expr, ExecExpr::Var(_));
+        let lhs_is_var = matches!(&lhs_expr, ExecExpr::Var(_));
+        let lhs_expr = if !rhs_is_var { self.deref_remapped_scalar_input(lhs_expr, ctx) } else { lhs_expr };
+        let rhs_expr = if !lhs_is_var { self.deref_remapped_scalar_input(rhs_expr, ctx) } else { rhs_expr };
+        // Cast .len() → u64 to prevent usize vs u64 mismatches
+        let lhs_expr = Self::cast_len_to_u64(lhs_expr);
+        let rhs_expr = Self::cast_len_to_u64(rhs_expr);
         let collection_add_helper = if op == "+" {
             self.collection_add_helper(lhs, rhs, ctx)
         } else {
@@ -9260,11 +10053,13 @@ impl Translator {
         Ok(ExecExpr::Block(stmts))
     }
 
-    /// If expr is a `.len()` call, wrap it in `as u64` cast.
-    /// Prevents u64 vs usize comparison mismatches.
+    /// If expr is a method call returning `usize` (`.len()`, `CMinQuorumSize()`, etc.),
+    /// wrap it in `as u64` cast to prevent usize vs u64 comparison mismatches.
     fn cast_len_to_u64(expr: ExecExpr) -> ExecExpr {
         if let ExecExpr::MethodCall { method, args, .. } = &expr {
-            if method == "len" && args.is_empty() {
+            if (method == "len" && args.is_empty())
+                || (method == "CMinQuorumSize" && args.is_empty())
+            {
                 return ExecExpr::Cast(Box::new(expr), "u64".to_string());
             }
         }
@@ -12749,9 +13544,10 @@ mod tests {
             method: "contains".to_string(),
             args: vec![Expr::Ident("item".to_string())],
         };
+        // Vec .contains() uses free function form since Verus doesn't support slice::contains
         assert_eq!(
             translator.expr_to_simple_string(&method_call),
-            "list.contains(&item)"
+            "contains(&list, &item)"
         );
 
         // Test: function call with C prefix
@@ -12918,9 +13714,10 @@ mod tests {
                     "clock should be dereferenced to owned u64, got {:?}",
                     args[0]
                 );
+                // es.epoch_length is cloned by default (safe for Copy u64)
                 assert!(
-                    matches!(&args[1], ExecExpr::Field(base, field) if field == "epoch_length" && matches!(base.as_ref(), ExecExpr::Var(name) if name == "es")),
-                    "input field should stay owned field access (no &), got {:?}",
+                    matches!(&args[1], ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(base, field) if field == "epoch_length" && matches!(base.as_ref(), ExecExpr::Var(name) if name == "es"))),
+                    "input field should be cloned, got {:?}",
                     args[1]
                 );
                 assert!(
@@ -17589,11 +18386,11 @@ mod tests {
             other => panic!("Expected Var(__tm_prepared), got {:?}", other),
         }
 
-        // rm_state field: not in collection_fields, so returned unchanged (Copy field)
+        // rm_state field: not in collection_fields, cloned by default
         assert_eq!(new_fields[1].0, "rm_state");
         match &new_fields[1].1 {
-            ExecExpr::Field(_, _) => {} // unchanged (primitive/Copy field)
-            other => panic!("Expected Field (unchanged), got {:?}", other),
+            ExecExpr::Clone(_) => {} // cloned (default for unknown fields)
+            other => panic!("Expected Clone, got {:?}", other),
         }
     }
 
@@ -17691,15 +18488,16 @@ mod tests {
             requires: vec![],
         };
 
-        // Field access on input with empty config: s.rm_state -> s.rm_state (Copy)
+        // Field access on input with empty config: s.rm_state -> s.rm_state.clone()
+        // (default to clone for safety — works for both Copy and non-Copy types)
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("s".to_string())),
             "rm_state".to_string(),
         );
         let result = translator.clone_input_field_access(expr, &ctx);
         match result {
-            ExecExpr::Field(_, _) => {} // unchanged (primitive/Copy field)
-            other => panic!("Expected Field (unchanged), got {:?}", other),
+            ExecExpr::Clone(_) => {} // cloned (default for unknown fields)
+            other => panic!("Expected Clone, got {:?}", other),
         }
 
         // Non-input field access: x.field -> unchanged
@@ -17755,27 +18553,27 @@ mod tests {
             result
         );
 
-        // Primitive field: s.has_leader -> direct access (unchanged)
+        // Unknown field: s.has_leader -> s.has_leader.clone() (default to clone)
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("s".to_string())),
             "has_leader".to_string(),
         );
         let result = translator.clone_input_field_access(expr, &ctx);
         assert!(
-            matches!(&result, ExecExpr::Field(_, name) if name == "has_leader"),
-            "Primitive field should be direct access, got {:?}",
+            matches!(&result, ExecExpr::Clone(_)),
+            "Unknown field should be cloned by default, got {:?}",
             result
         );
 
-        // Another primitive field: s.highest_heard -> direct access
+        // Another unknown field: s.highest_heard -> s.highest_heard.clone()
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("s".to_string())),
             "highest_heard".to_string(),
         );
         let result = translator.clone_input_field_access(expr, &ctx);
         assert!(
-            matches!(&result, ExecExpr::Field(_, name) if name == "highest_heard"),
-            "Non-collection field should be direct access, got {:?}",
+            matches!(&result, ExecExpr::Clone(_)),
+            "Unknown field should be cloned by default, got {:?}",
             result
         );
     }
@@ -17828,15 +18626,15 @@ mod tests {
             result
         );
 
-        // Primitive field: s.obj_value -> direct access
+        // Unknown field: s.obj_value -> s.obj_value.clone() (default to clone)
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("s".to_string())),
             "obj_value".to_string(),
         );
         let result = translator.clone_input_field_access(expr, &ctx);
         assert!(
-            matches!(&result, ExecExpr::Field(_, name) if name == "obj_value"),
-            "Primitive field should be direct access, got {:?}",
+            matches!(&result, ExecExpr::Clone(_)),
+            "Unknown field should be cloned by default, got {:?}",
             result
         );
     }
@@ -18758,7 +19556,7 @@ mod tests {
         // Only s.state is Init should be extracted (input-only)
         // No collection fields configured, so field access uses direct access
         assert_eq!(preconditions.len(), 1);
-        assert_eq!(preconditions[0], "s.state is Init");
+        assert_eq!(preconditions[0], "s.state is CInit");
     }
 
     #[test]
@@ -19107,7 +19905,7 @@ mod tests {
         ));
 
         let requires = translator.build_requires(&func);
-        assert!(requires.iter().any(|r| r == "s.role is Leader"));
+        assert!(requires.iter().any(|r| r == "s.role is CLeader"));
     }
 
     #[test]
@@ -19175,7 +19973,7 @@ mod tests {
         // 3. s.count < u64::MAX (overflow guard — exec-level, no @)
         assert!(requires.contains(&"s.valid()".to_string()));
         assert!(requires.contains(&"c.valid()".to_string()));
-        assert!(requires.iter().any(|r| r == "s.state is Init"));
+        assert!(requires.iter().any(|r| r == "s.state is CInit"));
         assert!(requires.iter().any(|r| r == "s.count < u64::MAX"));
         // Should NOT include s_.state is Done (output, not precondition)
         assert!(!requires.iter().any(|r| r.contains("s_.state")));
@@ -19191,7 +19989,7 @@ mod tests {
             )),
             "Init".to_string(),
         );
-        assert_eq!(translator.expr_to_requires_string(&expr), "s.tm_state is Init");
+        assert_eq!(translator.expr_to_requires_string(&expr), "s.tm_state is CInit");
     }
 
     #[test]
@@ -19239,7 +20037,7 @@ mod tests {
         );
         assert_eq!(
             translator.expr_to_requires_string(&expr),
-            "(s.role is Follower || s.role is Candidate)"
+            "(s.role is CFollower || s.role is CCandidate)"
         );
     }
 
@@ -19398,7 +20196,7 @@ mod tests {
         let scalar_params = HashSet::new();
         let result = translator.expr_to_view_requires_string(&expr, &view_params, &scalar_params);
         // tm_state is not a configured collection field, so no @ added
-        assert_eq!(result, "s.tm_state is Init");
+        assert_eq!(result, "s.tm_state is CInit");
     }
 
     #[test]
@@ -19611,14 +20409,14 @@ mod tests {
             requires: vec![],
         };
 
-        // Field access on input param + primitive field: direct access
+        // Field access on input param + unknown field: cloned by default
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("c".to_string())),
             "num_nodes".to_string(),
         );
         let result = translator.clone_if_input_ref(expr, &ctx);
-        // Should return the original expression unchanged
-        assert!(matches!(result, ExecExpr::Field(_, name) if name == "num_nodes"));
+        // Default behavior: clone unknown fields (safe for both Copy and non-Copy)
+        assert!(matches!(result, ExecExpr::Clone(_)));
     }
 
     #[test]
@@ -20310,15 +21108,15 @@ mod tests {
             result
         );
 
-        // Primitive field: s.max_ballot_seen -> direct access (Copy type since no field config matches)
+        // Unknown field: s.max_ballot_seen -> s.max_ballot_seen.clone() (default to clone)
         let expr = ExecExpr::Field(
             Box::new(ExecExpr::Var("s".to_string())),
             "max_ballot_seen".to_string(),
         );
         let result = translator.clone_input_field_access(expr, &ctx);
         assert!(
-            matches!(&result, ExecExpr::Field(_, name) if name == "max_ballot_seen"),
-            "Non-map_field should be direct access, got {:?}",
+            matches!(&result, ExecExpr::Clone(_)),
+            "Unknown field should be cloned by default, got {:?}",
             result
         );
     }

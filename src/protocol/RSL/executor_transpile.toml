@@ -6,6 +6,9 @@ primitive_types = [
     "OperationNumber",
 ]
 
+# Type aliases that are really Vec<T> or HashMap — skip valid() since they don't have it
+skip_valid_types = ["RequestBatch", "ReplyCache"]
+
 # HashMap fields for &key indexing (no helper generation)
 hashmap_index_fields = ["reply_cache"]
 
@@ -31,6 +34,11 @@ spec_only_functions = [
     "LExecutorExecute",
 ]
 
+# Custom view expressions for types in ensures clauses
+[type_view_exprs]
+"RequestBatch" = "abstractify_crequestbatch({param})"
+"ReplyCache" = "abstractify_creplycache({param})"
+
 # Function path remapping
 [function_paths]
 "AppInitialize" = "CAppStateInit"
@@ -52,12 +60,30 @@ nat_type = "u64"
 "RslPacket" = "CPacket"
 "OperationNumber" = "u64"
 "OutstandingOperation" = "COutstandingOperation"
+"Reply" = "CReply"
+"Ballot" = "CBallot"
 "RslMessage" = "CMessage"
 "RslMessageReply" = "CMessage::CMessageReply"
 "RslMessageAppStateRequest" = "CMessage::CMessageAppStateRequest"
 "RslMessageAppStateSupply" = "CMessage::CMessageAppStateSupply"
 "RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
 "RslMessageRequest" = "CMessage::CMessageRequest"
+
+[variant_remapping]
+"OutstandingOpUnknown" = "COutstandingOperation::COutstandingOpUnknown"
+"OutstandingOpKnown" = "COutstandingOperation::COutstandingOpKnown"
+
+[arrow_variants]
+"bal_state_req" = "CMessage::CMessageAppStateRequest"
+"opn_state_req" = "CMessage::CMessageAppStateRequest"
+"bal_state_supply" = "CMessage::CMessageAppStateSupply"
+"opn_state_supply" = "CMessage::CMessageAppStateSupply"
+"app_state" = "CMessage::CMessageAppStateSupply"
+"reply_cache" = "CMessage::CMessageAppStateSupply"
+"bal_2" = "CMessage::CMessageStartingPhase2"
+"logTruncationPoint_2" = "CMessage::CMessageStartingPhase2"
+"seqno_req" = "CMessage::CMessageRequest"
+"val" = "CMessage::CMessageRequest"
 
 [output]
 generate_abstraction_fns = true
@@ -80,11 +106,13 @@ custom_imports = [
     "use std::collections::HashMap;",
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",
+    "use crate::common::collections::vecs::*;",
     "use crate::common::collections::hashsets::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
     "use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;",
     "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::types_i::{abstractify_crequestbatch, abstractify_creplycache};",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};",
     "use crate::implementation::RSL::CStateMachine::*;",

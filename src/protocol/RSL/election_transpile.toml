@@ -19,6 +19,11 @@ skip_functions = [
 collection_fields = ["current_view_suspectors"]
 vec_fields = ["requests_received_this_epoch", "requests_received_prev_epochs"]
 
+# Custom view expressions for types in ensures clauses
+# RequestBatch (= Seq<Request>) needs deep conversion from Vec<CRequest>
+[type_view_exprs]
+"RequestBatch" = "abstractify_crequestbatch({param})"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -45,9 +50,23 @@ nat_type = "u64"
 [function_paths]
 "BoundRequestSequence" = "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"
 
+# Ballot-typed fields that need CBalEq instead of derived PartialEq (external in Verus)
+[eq_function_fields]
+"bal_heartbeat" = "CBalEq"
+"current_view" = "CBalEq"
+
 [extra_fields]
 "CElectionState.cur_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
 "CElectionState.prev_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
+
+[arrow_variants]
+"bal_1a" = "CMessage::CMessage1a"
+"bal_1b" = "CMessage::CMessage1b"
+"bal_2a" = "CMessage::CMessage2a"
+"bal_2b" = "CMessage::CMessage2b"
+"bal_heartbeat" = "CMessage::CMessageHeartbeat"
+"suspicious" = "CMessage::CMessageHeartbeat"
+"opn_ckpt" = "CMessage::CMessageHeartbeat"
 
 [output]
 generate_abstraction_fns = true
@@ -70,6 +89,7 @@ custom_imports = [
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::types_i::abstractify_crequestbatch;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::*;",
     "use crate::protocol::RSL::election::*;",

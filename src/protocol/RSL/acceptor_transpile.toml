@@ -3,24 +3,30 @@
 # Spec-only functions (must be at top level before any section)
 spec_only_functions = [
     "LeqUpperBound",
+    "BalLeq",
+    "BalLt",
 ]
 
-# Primitive types that don't need valid() predicates
-# CVotes is a type alias for HashMap<u64, CVote> - HashMap doesn't have valid()
+# Primitive types that map to *param as int in ensures clauses
 # OperationNumber is remapped to u64 which is a primitive
-# Note: Votes/CVotes ensures clauses generate *param as int which is wrong for Map types,
-# but fixing this needs abstractify_cvotes() which requires manual implementation.
 primitive_types = [
-    "Votes",
-    "CVotes",
     "OperationNumber",
 ]
+
+# Type aliases for collections — skip valid() but use param@ not *param as int
+# Votes/CVotes is Map<OperationNumber, Vote> / HashMap<u64, CVote>
+skip_valid_types = ["Votes", "CVotes"]
 
 # Vec fields — these use as usize indexing
 vec_fields = ["last_checkpointed_operation"]
 
 # HashMap fields for &key indexing (no helper generation)
 hashmap_index_fields = ["votes"]
+
+# Custom view expressions for types in ensures clauses
+# Votes (= Map<int, Vote>) needs deep conversion from HashMap<u64, CVote>
+[type_view_exprs]
+"Votes" = "abstractify_cvotes({param})"
 
 [naming]
 spec_prefix = "L"
@@ -57,6 +63,34 @@ nat_type = "u64"
 [extra_fields]
 "CAcceptor.min_vote_opn" = "u64 = 0u64"
 
+# Enum variant field → variant path mappings for -> destructuring in exec code
+[arrow_variants]
+"bal_1a" = "CMessage::CMessage1a"
+"bal_1b" = "CMessage::CMessage1b"
+"log_truncation_point" = "CMessage::CMessage1b"
+"votes" = "CMessage::CMessage1b"
+"bal_2a" = "CMessage::CMessage2a"
+"opn_2a" = "CMessage::CMessage2a"
+"val_2a" = "CMessage::CMessage2a"
+"bal_2b" = "CMessage::CMessage2b"
+"opn_2b" = "CMessage::CMessage2b"
+"val_2b" = "CMessage::CMessage2b"
+"bal_heartbeat" = "CMessage::CMessageHeartbeat"
+"suspicious" = "CMessage::CMessageHeartbeat"
+"opn_ckpt" = "CMessage::CMessageHeartbeat"
+"seqno_req" = "CMessage::CMessageRequest"
+"val" = "CMessage::CMessageRequest"
+"seqno_reply" = "CMessage::CMessageReply"
+"reply" = "CMessage::CMessageReply"
+"bal_state_req" = "CMessage::CMessageAppStateRequest"
+"opn_state_req" = "CMessage::CMessageAppStateRequest"
+"bal_state_supply" = "CMessage::CMessageAppStateSupply"
+"opn_state_supply" = "CMessage::CMessageAppStateSupply"
+"app_state" = "CMessage::CMessageAppStateSupply"
+"reply_cache" = "CMessage::CMessageAppStateSupply"
+"bal_2" = "CMessage::CMessageStartingPhase2"
+"logTruncationPoint_2" = "CMessage::CMessageStartingPhase2"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
@@ -76,9 +110,11 @@ custom_imports = [
     "use vstd::std_specs::hash::KeysAdditionalSpecFns;",
     "use std::collections::HashMap;",
     "use crate::common::collections::sets::*;",
+    "use crate::common::collections::vecs::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::types_i::abstractify_cvotes;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::protocol::RSL::acceptor::*;",
