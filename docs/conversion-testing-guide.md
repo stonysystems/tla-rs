@@ -26,7 +26,7 @@ No TLA+ tooling is required — the TLA+ parser is built into the transpiler. Op
 Three commands to verify all conversions are working:
 
 ```bash
-# Run all transpiler tests (656 lib + 33 integration)
+# Run all transpiler tests (667 lib + 45 integration)
 cd transpiler && cargo test
 
 # Run only round-trip consistency tests
@@ -275,10 +275,10 @@ cd transpiler
 # Everything (recommended)
 cargo test
 
-# Library tests only (656 tests: parser, code generation, mode analysis, proofs)
+# Library tests only (667 tests: parser, code generation, mode analysis, proofs)
 cargo test --lib
 
-# Integration tests only (33 tests across 7 test files)
+# Integration tests only (45 tests across 7 test files)
 cargo test --test integration
 cargo test --test roundtrip
 cargo test --test roundtrip_test
@@ -383,7 +383,7 @@ If Verus rejects the generated code:
 
 ## Compile & Run Status Matrix
 
-**Last updated**: 2026-02-12
+**Last updated**: 2026-02-12 (Phase 16.2–16.5 complete)
 
 ### TLA+ Examples (`transpiler/tests/tla_examples/`)
 
@@ -409,15 +409,15 @@ cargo run --release -- translate-tla \
 
 #### Direction 2: Verus Spec → Verus Exec (from TLA-generated specs)
 
-| Example | Transpile | Verus Compile | Error |
+| Example | Transpile | Verus Compile | Notes |
 |---------|-----------|---------------|-------|
 | SimpleCounter | ✅ | untested | |
 | DieHard | ✅ | untested | |
-| EWD840 | ❌ | - | Annotation error: parameter count mismatch |
-| TwoPhase | ❌ | - | Parse error: Expected identifier, found `"` |
-| Raft | ❌ | - | Parse error: Expected identifier, found `"` |
-| Paxos | ❌ | - | Parse error: Expected identifier, found `"` |
-| PBFT | ❌ | - | Parse error: Expected identifier, found `"` |
+| EWD840 | ✅ | untested | Fixed: annotation `eq_ignore_ascii_case("init")` match |
+| TwoPhase | ✅ | untested | Fixed: string literal parsing |
+| Raft | ✅ | untested | Fixed: string literal parsing |
+| Paxos | ✅ | untested | Fixed: record literal parsing |
+| PBFT | ✅ | untested | Fixed: record literal parsing |
 
 **Command** (two steps):
 ```bash
@@ -440,10 +440,10 @@ cargo run --release -- \
 | SimpleCounter | ✅ | |
 | DieHard | ✅ | |
 | EWD840 | ✅ | |
-| TwoPhase | ❌ | Parse error on generated spec |
-| Raft | ❌ | Parse error on generated spec |
-| Paxos | ❌ | Parse error on generated spec |
-| PBFT | ❌ | Parse error on generated spec |
+| TwoPhase | ✅ | Fixed by string literal parser fix |
+| Raft | ✅ | Fixed by string literal parser fix |
+| Paxos | ✅ | Fixed by record literal parser fix |
+| PBFT | ✅ | Fixed by record literal parser fix |
 
 | Example (from hand-written Verus specs) | Transpile | Notes |
 |-----------------------------------------|-----------|-------|
@@ -460,15 +460,15 @@ cargo run --release -- verus2-tla \
 
 #### Direction 4: TLA+ → Verus Exec (pipeline)
 
-| Example | Pipeline | Verus Compile | Error |
+| Example | Pipeline | Verus Compile | Notes |
 |---------|----------|---------------|-------|
 | SimpleCounter | ✅ | untested | |
 | DieHard | ✅ | untested | |
-| EWD840 | ❌ | - | Annotation error in exec stage |
-| TwoPhase | ❌ | - | Parse error in exec stage |
-| Raft | ❌ | - | Parse error in exec stage |
-| Paxos | ❌ | - | Parse error in exec stage |
-| PBFT | ❌ | - | Parse error in exec stage |
+| EWD840 | ✅ | untested | Fixed by annotation + string literal parser fixes |
+| TwoPhase | ✅ | untested | Fixed by string literal parser fix |
+| Raft | ✅ | untested | Fixed by string literal parser fix |
+| Paxos | ✅ | untested | Fixed by record literal parser fix |
+| PBFT | ✅ | untested | Fixed by record literal parser fix |
 
 **Command**:
 ```bash
@@ -481,31 +481,19 @@ cargo run --release -- pipeline \
 
 ### Verus Spec → Verus Exec (Existing Protocol Specs)
 
-Generated code in `src/generated/` with Verus build (`scons --verus-path=... liblib.so`):
+Generated code in `src/generated/` compiles and verifies with Verus: **581 verified, 0 errors**.
 
-| Module | Errors | Primary Error Type |
-|--------|--------|--------------------|
-| RSL/replica_gen.rs | 58 | E0507: cannot move out of shared reference (missing `.clone()`) |
-| RSL/proposer_gen.rs | 24 | E0507: missing `.clone()` |
-| RSL/types_gen.rs | 10 | Clone derive warnings, type mismatches |
-| RSL/acceptor_gen.rs | 8 | E0507: missing `.clone()` |
-| RSL/election_gen.rs | 7 | E0507: missing `.clone()` |
-| RSL/executor_gen.rs | 5 | E0507: missing `.clone()` |
-| ChainReplication/types_gen.rs | 2 | Clone derive issues |
-| EPaxos/types_gen.rs | 2 | Clone derive issues |
-| Raft/types_gen.rs | 2 | Clone derive issues |
-| PBFT/types_gen.rs | 2 | Clone derive issues |
-| TwoPhase/types_gen.rs | 2 | Clone derive issues |
-| PrimaryBackup/types_gen.rs | 3 | Clone derive issues |
-| Paxos/types_gen.rs | 1 | Clone derive issues |
-| LeaderElection/types_gen.rs | 1 | Clone derive issues |
-| VerticalPaxos/types_gen.rs | 1 | Clone derive issues |
-| **Total** | **128** | |
-
-**Known bugs in generated code**:
-1. **`iter:` prefix** in loop syntax (`printer/mod.rs:487`) — invalid Rust, all generated loops broken
-2. **Missing `.clone()`** on struct fields accessed through shared references (102 E0507 errors)
-3. **Clone derive** warnings from Verus on types with non-Copy fields
+| Module | Status | Notes |
+|--------|--------|-------|
+| RSL/replica_gen.rs | ✅ 0 errors | 7 irreducible IO trust boundary assumes remain |
+| RSL/proposer_gen.rs | ✅ 0 errors | |
+| RSL/types_gen.rs | ✅ 0 errors | |
+| RSL/acceptor_gen.rs | ✅ 0 errors | |
+| RSL/election_gen.rs | ✅ 0 errors | |
+| RSL/executor_gen.rs | ✅ 0 errors | |
+| RSL/learner_gen.rs | ✅ 0 errors | |
+| RSL/broadcast_gen.rs | ✅ 0 errors | |
+| All protocol types_gen.rs | ✅ 0 errors | TwoPhase, Paxos, Raft, PBFT, etc. |
 
 **Command**:
 ```bash
