@@ -8,15 +8,38 @@
 # re-exported from their manual implementation modules.
 
 # Types to skip during generation (macro-defined, cannot be auto-generated)
-# Only RslMessage: defined via define_enum_and_derive_marshalable! macro
+# RslMessage + concrete types now supplied by manual helper file / macro-backed modules.
 skip_types = [
     "RslMessage",
+    # Macro-defined marshalable types in types_i.rs
+    "Ballot",
+    "Request",
+    "Reply",
+    "Vote",
+    # Types supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
+    "LParameters",
+    "LConfiguration",
+    "LConstants",
+    "LReplicaConstants",
+    "LAcceptor",
+    "LLearner",
+    "ElectionState",
+    "OutstandingOperation",
+    "LExecutor",
+    "IncompleteBatchTimer",
+    "LProposer",
+    "LReplica",
+    "LScheduler",
+    # Helper-owned type with custom clone_up_to_view/abstractable methods
+    "LearnerTuple",
 ]
 
 # Re-export statements for types that cannot be auto-generated.
 # These are types defined via macros, with custom Hash/axiom/FFI logic,
 # or concrete-only types with no spec equivalent.
 re_exports = [
+    # Macro-defined marshalable structs in types_i.rs
+    "crate::implementation::RSL::types_i::{CBallot, CRequest, CReply, CVote}",
     # Message types (CMessage via macro, CPacket with custom axioms)
     "crate::implementation::RSL::cmessage::*",
     # Application interface (CAppState, CAppMessage via macro, CAppStateInit)
@@ -91,14 +114,22 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 generate_proofs = true
+manual_code = "types_manual_helpers.rs"
 # Custom imports for RSL types
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::seq::*;",
+    "use vstd::{map::*, modes::*, seq_lib::*};",
+    "use vstd::{set::*, set_lib::*};",
     "use std::collections::{HashMap, HashSet};",
+    "use crate::common::collections::seq_is_unique_v::*;",
+    "use crate::common::collections::seqs::*;",
     "use crate::common::collections::hashsets::HashSetWellFormed;",
     "use crate::common::framework::environment_s::{LIoOp, LPacket};",
-    "use crate::common::native::io_s::EndPoint;",
+    "use crate::common::native::io_s::{AbstractEndPoint, EndPoint};",
+    "use crate::implementation::RSL::appinterface::{CAppStateIsAbstractable, CAppStateIsValid};",
+    "use crate::implementation::common::generic_refinement::*;",
+    "use crate::implementation::common::marshalling::*;",
     "use crate::protocol::RSL::environment::{RslIo, RslPacket};",
     "use crate::protocol::RSL::replica::LScheduler;",
     "use crate::protocol::RSL::types::*;",
@@ -113,6 +144,7 @@ custom_imports = [
     "use crate::protocol::RSL::proposer::*;",
     "use crate::protocol::RSL::replica::*;",
     "use crate::protocol::common::upper_bound::*;",
+    "use crate::services::RSL::app_state_machine::*;",
 ]
 
 # View overrides: per-field custom View expressions for complex type conversion.

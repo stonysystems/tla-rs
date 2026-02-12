@@ -254,7 +254,19 @@ impl Printer {
                     self.indent();
                     self.write(field_name);
                     self.write(": ");
-                    self.print_expr(field_value);
+                    // A block-valued field initializer must be wrapped as an expression.
+                    // Without braces we emit invalid syntax like `field: let x = ...; x`.
+                    if matches!(field_value, ExecExpr::Block(_)) {
+                        self.write("{");
+                        self.newline();
+                        self.current_indent += 1;
+                        self.print_expr(field_value);
+                        self.current_indent -= 1;
+                        self.indent();
+                        self.write("}");
+                    } else {
+                        self.print_expr(field_value);
+                    }
                     self.write(",");
                     self.newline();
                 }
@@ -572,25 +584,37 @@ impl Printer {
                 invariants,
                 body,
             } => {
-                // Only generate iterator initialization if iter_source is not already a Var with the same name
-                // (avoids redundant "let x = x;")
-                let skip_binding =
-                    matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
-                if !skip_binding {
-                    self.write("let ");
-                    self.write(iter_name);
-                    self.write(" = ");
+                // For range-based loops, print direct `for i in 0..n` form.
+                // `iter:iter_name` over ranges generates a RangeGhostIterator shape that
+                // does not satisfy iterator traits in current Verus.
+                let is_range_source = matches!(iter_source.as_ref(), ExecExpr::Range { .. });
+                if is_range_source {
+                    self.write("for ");
+                    self.write(var);
+                    self.write(" in ");
                     self.print_expr(iter_source);
-                    self.write(";");
                     self.newline();
-                    self.indent();
+                } else {
+                    // Only generate iterator initialization if iter_source is not already a Var with the same name
+                    // (avoids redundant "let x = x;")
+                    let skip_binding =
+                        matches!(iter_source.as_ref(), ExecExpr::Var(name) if name == iter_name);
+                    if !skip_binding {
+                        self.write("let ");
+                        self.write(iter_name);
+                        self.write(" = ");
+                        self.print_expr(iter_source);
+                        self.write(";");
+                        self.newline();
+                        self.indent();
+                    }
+                    // Generate: for var in iter:iter_name
+                    self.write("for ");
+                    self.write(var);
+                    self.write(" in iter:");
+                    self.write(iter_name);
+                    self.newline();
                 }
-                // Generate: for var in iter:iter_name
-                self.write("for ");
-                self.write(var);
-                self.write(" in iter:");
-                self.write(iter_name);
-                self.newline();
                 // Generate invariants
                 if !invariants.is_empty() {
                     self.indent();
@@ -851,6 +875,32 @@ mod tests {
     }
 
     #[test]
+    fn test_print_for_in_iter_range_source() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::ForInIter {
+            var: "i".to_string(),
+            iter_name: "iter".to_string(),
+            iter_source: Box::new(ExecExpr::Range {
+                start: Box::new(ExecExpr::Literal("0".to_string())),
+                end: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("s".to_string())),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+            }),
+            invariants: vec!["i <= s.len()".to_string()],
+            body: Box::new(ExecExpr::Block(vec![])),
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+
+        assert!(output.contains("for i in (0..s.len())"));
+        assert!(!output.contains("for i in iter:iter"));
+        assert!(!output.contains("let iter ="));
+    }
+
+    #[test]
     fn test_print_ghost_var() {
         let mut printer = Printer::default();
         let expr = ExecExpr::GhostVar {
@@ -928,5 +978,34 @@ mod tests {
         assert!(printer
             .output
             .contains("broadcast use vstd::std_specs::hash::group_hash_axioms;"));
+    }
+
+    #[test]
+    fn test_print_struct_field_block_wrapped() {
+        let mut printer = Printer::default();
+        let expr = ExecExpr::Struct {
+            name: "S".to_string(),
+            fields: vec![(
+                "f".to_string(),
+                ExecExpr::Block(vec![
+                    ExecExpr::Let {
+                        pattern: "x".to_string(),
+                        ty: None,
+                        value: Box::new(ExecExpr::Literal("1".to_string())),
+                    },
+                    ExecExpr::Var("x".to_string()),
+                ]),
+            )],
+        };
+
+        printer.print_expr(&expr);
+        let output = printer.output;
+        assert!(
+            output.contains("f: {"),
+            "block-valued struct fields must be wrapped in braces: {}",
+            output
+        );
+        assert!(output.contains("let x = 1;"), "expected let binding in wrapped block");
+        assert!(output.contains("x"), "expected block tail expression");
     }
 }

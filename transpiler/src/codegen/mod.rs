@@ -969,6 +969,7 @@ pub fn generate_all_types_with_options(
         re_exports: &[],
         custom_derives: &HashMap::new(),
         skip_fields: &HashMap::new(),
+        manual_code: None,
     })
 }
 
@@ -986,6 +987,7 @@ pub struct TypeGenConfig<'a> {
     pub re_exports: &'a [String],
     pub custom_derives: &'a HashMap<String, Vec<String>>,
     pub skip_fields: &'a HashMap<String, Vec<String>>,
+    pub manual_code: Option<&'a str>,
 }
 
 /// Generate all types from a type registry with all configuration options
@@ -1081,6 +1083,15 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
                 all_code.push('\n');
                 all_warnings.extend(generated.warnings);
             }
+        }
+    }
+
+    if let Some(manual_code) = cfg.manual_code {
+        let manual = manual_code.trim();
+        if !manual.is_empty() {
+            all_code.push('\n');
+            all_code.push_str(manual);
+            all_code.push('\n');
         }
     }
 
@@ -1960,6 +1971,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            manual_code: None,
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2000,6 +2012,7 @@ mod tests {
             re_exports: &re_exports,
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            manual_code: None,
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2416,6 +2429,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &custom_derives,
             skip_fields: &HashMap::new(),
+            manual_code: None,
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2467,6 +2481,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &HashMap::new(),
             skip_fields: &skip_fields,
+            manual_code: None,
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2479,6 +2494,43 @@ mod tests {
         assert!(
             !result.code.contains("ghost_data"),
             "Should skip ghost_data everywhere: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_manual_code_injected_before_verus_close() {
+        let registry = TypeRegistry::new();
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let manual = "pub open spec fn ManualHelper() -> bool { true }";
+
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            manual_code: Some(manual),
+        };
+
+        let result = generate_all_types_full(&cfg);
+        let manual_pos = result.code.find(manual).expect("manual snippet missing");
+        let close_pos = result
+            .code
+            .find("} // verus!")
+            .expect("verus close marker missing");
+
+        assert!(
+            manual_pos < close_pos,
+            "manual snippet should be inside verus block: {}",
             result.code
         );
     }

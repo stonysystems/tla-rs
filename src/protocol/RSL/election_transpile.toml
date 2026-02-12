@@ -7,6 +7,15 @@ spec_only_functions = [
     "LeqUpperBound",
 ]
 
+# Manually implemented in ElectionImpl with stronger/verified exec contracts.
+skip_functions = [
+    "BoundRequestSequence",
+]
+
+# ElectionState collection fields used in set/seq expression lowering.
+collection_fields = ["current_view_suspectors"]
+vec_fields = ["requests_received_this_epoch", "requests_received_prev_epochs"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -29,6 +38,9 @@ nat_type = "u64"
 [method_calls]
 "LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
 "GetReplicaIndex" = { method_name = "CGetReplicaIndex", receiver_arg_index = 1 }
+
+[function_paths]
+"BoundRequestSequence" = "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence"
 
 [output]
 generate_abstraction_fns = true
