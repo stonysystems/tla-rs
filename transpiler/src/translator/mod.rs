@@ -7294,18 +7294,11 @@ impl Translator {
                         }
                     })
                     .collect();
-                let result = ExecExpr::MethodCall {
+                Ok(ExecExpr::MethodCall {
                     receiver: Box::new(recv_expr),
                     method: method.clone(),
                     args: translated_args?,
-                };
-                // Vec::len() returns usize; cast to the configured int_type (u64)
-                // so comparisons with other u64 values work correctly.
-                if method == "len" && args.is_empty() {
-                    Ok(ExecExpr::Cast(Box::new(result), self.config.int_type.clone()))
-                } else {
-                    Ok(result)
-                }
+                })
             }
 
             Expr::Let {

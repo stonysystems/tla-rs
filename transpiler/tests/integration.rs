@@ -293,19 +293,11 @@ fn test_expression_transformation() {
         args: vec![],
     };
     let result = translator.transform_expr_public(&expr, &ctx).unwrap();
-    // .len() is wrapped in a Cast to the int_type (u64) for exec type compatibility
     match result {
-        ExecExpr::Cast(inner, ty) => {
-            // Default int_type is "i64" for the test config
-            assert_eq!(ty, "i64");
-            match *inner {
-                ExecExpr::MethodCall { method, .. } => {
-                    assert_eq!(method, "len");
-                }
-                _ => panic!("Expected MethodCall inside Cast"),
-            }
+        ExecExpr::MethodCall { method, .. } => {
+            assert_eq!(method, "len");
         }
-        _ => panic!("Expected Cast wrapping MethodCall"),
+        _ => panic!("Expected MethodCall"),
     }
 
     // Test struct construction
