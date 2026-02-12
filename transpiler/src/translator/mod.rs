@@ -1628,6 +1628,34 @@ impl Translator {
         }
     }
 
+    fn is_upper_bound_type(ty: &Type) -> bool {
+        match ty {
+            Type::Named(path) => path
+                .segments
+                .last()
+                .map(|name| name == "UpperBound" || name == "CUpperBound")
+                .unwrap_or(false),
+            Type::Reference { ty, .. } => Self::is_upper_bound_type(ty),
+            _ => false,
+        }
+    }
+
+    fn is_upper_bound_typed_expr(&self, expr: &Expr, ctx: &TransformContext) -> bool {
+        match expr {
+            Expr::Ident(name) => ctx
+                .input_types
+                .get(name)
+                .map(Self::is_upper_bound_type)
+                .unwrap_or(false)
+                || ctx
+                    .output_types
+                    .get(name)
+                    .map(Self::is_upper_bound_type)
+                    .unwrap_or(false),
+            _ => false,
+        }
+    }
+
     /// Dereference a bare scalar input parameter reference in exec expressions.
     /// Wraps `Var("node")` → `Unary("*", Var("node"))` when `node` is a scalar input (&u64).
     /// Leaves non-scalar and non-input expressions unchanged.
@@ -6941,6 +6969,41 @@ impl Translator {
                             });
                         }
                     }
+                }
+
+                // Bound helper call lowering: CUpperBoundedAddition expects owned u64 args.
+                // Avoid auto-borrowing and normalize input refs to owned values.
+                if matches!(func_name, "UpperBoundedAddition" | "CUpperBoundedAddition") {
+                    let translated_args: TranspileResult<Vec<_>> = args
+                        .iter()
+                        .map(|a| {
+                            let transformed = self.transform_expr(a, ctx)?;
+                            Ok(self.clone_if_input_ref(transformed, ctx))
+                        })
+                        .collect();
+                    return Ok(ExecExpr::Call {
+                        func: self.translate_name(func_name),
+                        args: translated_args?,
+                    });
+                }
+
+                // Bound predicate call lowering:
+                // LtUpperBound(x, max_u64) in exec context should be a concrete comparison.
+                // Keep call form only when rhs is already typed as UpperBound/CUpperBound.
+                if func_name == "LtUpperBound" && args.len() == 2 {
+                    let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
+                    let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
+                    if self.is_upper_bound_typed_expr(&args[1], ctx) {
+                        return Ok(ExecExpr::Call {
+                            func: self.translate_name(func_name),
+                            args: vec![lhs, rhs],
+                        });
+                    }
+                    return Ok(ExecExpr::Binary {
+                        lhs: Box::new(lhs),
+                        op: "<".to_string(),
+                        rhs: Box::new(rhs),
+                    });
                 }
 
                 // Check if this is a helper call with output parameters
@@ -12467,6 +12530,152 @@ mod tests {
             translator.expr_to_simple_string(&call3),
             "s.constants.CReplicaConstantsValid()"
         );
+    }
+
+    #[test]
+    fn test_transform_upper_bounded_addition_uses_owned_args() {
+        let translator = Translator::default();
+        let config = TranslatorConfig::default();
+
+        let mut input_types = HashMap::new();
+        input_types.insert("clock".to_string(), Type::Int);
+        input_types.insert(
+            "es".to_string(),
+            Type::Named(crate::ast::Path::single("CElectionState".to_string())),
+        );
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec![],
+            input_params: vec!["clock".to_string(), "es".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = Expr::Call {
+            func: crate::ast::Path::single("UpperBoundedAddition".to_string()),
+            args: vec![
+                Expr::Ident("clock".to_string()),
+                Expr::Field(
+                    Box::new(Expr::Ident("es".to_string())),
+                    "epoch_length".to_string(),
+                ),
+                Expr::Ident("new_epoch_length".to_string()),
+            ],
+        };
+
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("UpperBoundedAddition should transform");
+
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "CUpperBoundedAddition");
+                assert_eq!(args.len(), 3);
+                assert!(
+                    matches!(&args[0], ExecExpr::Unary { op, expr } if op == "*" && matches!(expr.as_ref(), ExecExpr::Var(name) if name == "clock")),
+                    "clock should be dereferenced to owned u64, got {:?}",
+                    args[0]
+                );
+                assert!(
+                    matches!(&args[1], ExecExpr::Field(base, field) if field == "epoch_length" && matches!(base.as_ref(), ExecExpr::Var(name) if name == "es")),
+                    "input field should stay owned field access (no &), got {:?}",
+                    args[1]
+                );
+                assert!(
+                    matches!(&args[2], ExecExpr::Var(name) if name == "new_epoch_length"),
+                    "local variable should remain owned, got {:?}",
+                    args[2]
+                );
+                assert!(
+                    !args.iter().any(|a| matches!(a, ExecExpr::Unary { op, .. } if op == "&")),
+                    "UpperBoundedAddition args should not be auto-borrowed: {:?}",
+                    args
+                );
+            }
+            other => panic!("Expected call expression, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_transform_lt_upper_bound_lowers_numeric_rhs_to_binary_lt() {
+        let mut config = TranslatorConfig::default();
+        config.spec_only_functions.insert("LtUpperBound".to_string());
+        let translator = Translator::new(config);
+
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "es".to_string(),
+            Type::Named(crate::ast::Path::single("CElectionState".to_string())),
+        );
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["es".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let lhs_seqno = Expr::Field(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("es".to_string())),
+                "current_view".to_string(),
+            )),
+            "seqno".to_string(),
+        );
+        let rhs_max = Expr::Field(
+            Box::new(Expr::Field(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("es".to_string())),
+                        "constants".to_string(),
+                    )),
+                    "all".to_string(),
+                )),
+                "params".to_string(),
+            )),
+            "max_integer_val".to_string(),
+        );
+
+        let expr = Expr::Call {
+            func: crate::ast::Path::single("LtUpperBound".to_string()),
+            args: vec![lhs_seqno, rhs_max],
+        };
+
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("LtUpperBound should transform");
+
+        match result {
+            ExecExpr::Binary { lhs, op, rhs } => {
+                assert_eq!(op, "<");
+                assert!(
+                    matches!(lhs.as_ref(), ExecExpr::Field(_, _)),
+                    "lhs should be the concrete seqno expression, got {:?}",
+                    lhs
+                );
+                assert!(
+                    matches!(rhs.as_ref(), ExecExpr::Field(_, _)),
+                    "rhs should be the concrete max_integer_val expression, got {:?}",
+                    rhs
+                );
+                assert!(
+                    !matches!(lhs.as_ref(), ExecExpr::Unary { op, .. } if op == "&")
+                        && !matches!(rhs.as_ref(), ExecExpr::Unary { op, .. } if op == "&"),
+                    "LtUpperBound lowering should not auto-borrow args: lhs={:?}, rhs={:?}",
+                    lhs,
+                    rhs
+                );
+            }
+            other => panic!("Expected binary < expression, got {:?}", other),
+        }
     }
 
     #[test]

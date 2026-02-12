@@ -1358,7 +1358,19 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
                   - `cargo test --all-features` (transpiler) passes with the new regression.
                   - `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes on the baseline tracked tree.
                   - After rebuilding release transpiler (`cargo build --release`) and regenerating (`scripts/regenerate_rsl.sh`), fresh-election compile probe (temporary swap) improves from `error_lines=36/mismatched_types=20/subrange=2` to `error_lines=30/mismatched_types=9/subrange=2`.
-              - [ ] Normalize bound helper call argument shaping in translator call lowering (`CUpperBoundedAddition`/`LtUpperBound`) and re-probe election sync.
+              - [x] Normalize bound helper call argument shaping in translator call lowering (`CUpperBoundedAddition`/`LtUpperBound`) and re-probe election sync. [26:02:12, 17:40]
+                - Updated `transpiler/src/translator/mod.rs` call lowering:
+                  - `UpperBoundedAddition` now emits owned-value args (`CUpperBoundedAddition(...)`) with scalar input deref (`*clock`) and without auto-borrowed `&...` wrappers.
+                  - Numeric `LtUpperBound(lhs, rhs)` in exec expressions now lowers to concrete `lhs < rhs` comparisons (owned args, no ghost `int` casts in exec context).
+                - Added translator regressions:
+                  - `test_transform_upper_bounded_addition_uses_owned_args`
+                  - `test_transform_lt_upper_bound_lowers_numeric_rhs_to_binary_lt`
+                - Validation:
+                  - `cargo test --all-features` (transpiler) passes.
+                  - `cargo build --release` (transpiler) passes.
+                  - `scripts/regenerate_rsl.sh` passes.
+                  - Fresh-election compile probe (temporary swap) removes all bound-helper call-shaping failures (`upper_add_mentions: 48 -> 0`, `lt_upper_mentions: 2 -> 0`) and reduces aggregate probe errors from `error_lines=30` to `error_lines=23` (`arg_incorrect: 17 -> 10`; remaining failures are concentrated in `CBoundRequestSequence` ownership/type shaping and related sequence helper signatures).
+                  - Baseline verification build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes.
               - [ ] Normalize `CBoundRequestSequence` argument ownership/reference shaping (`Vec` vs `&Vec`, `u64` vs `CUpperBound`) and re-probe election sync.
             - [ ] After sub-leaves pass compile probes, sync `src/generated/RSL/election_gen.rs` to fresh output and run full verification.
         - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)
