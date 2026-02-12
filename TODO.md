@@ -58,6 +58,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 13. [Phase 13: Port tla+2tlars Branch Features to Main](#phase-13-port-tla2tlars-branch-features-to-main-eliminate-branch)
 14. [Phase 9: TLA+ to TLA-rs Transpilation](#11-phase-9-tla-to-tla-rs-transpilation)
 15. [Phase 14: Regeneration Audit](#phase-14-regeneration-audit--freshly-regenerate-all-protocols-and-diff-against-current-generated-code)
+16. [Phase 15: Complete Protocol Specs and Regenerate Implementations](#phase-15-complete-protocol-specs-and-regenerate-implementations)
 
 ---
 
@@ -4409,3 +4410,262 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 - Every `*_gen.rs` file in `src/generated/` has a corresponding diff.
 - Report clearly identifies which files are fully reproducible vs. which have manual edits.
 - Actionable items are prioritized for closing the reproducibility gap.
+
+---
+
+## Phase 15: Complete Protocol Specs and Regenerate Implementations
+
+**Goal**: Enhance all non-RSL protocol specs to cover their core protocol features more comprehensively, then regenerate implementations with the transpiler and verify with Verus.
+
+**Why**: Current specs are simplified skeletons or partial models. They lack key protocol features needed for meaningful formal verification. Completing the specs and regenerating verified implementations demonstrates the transpiler's ability to handle realistic protocol specifications.
+
+**Scope**: 9 protocols (all except RSL, which is already comprehensive). For each protocol, we enhance the spec in `src/protocol/`, update transpiler configs (`.automan`, `*_transpile.toml`), regenerate into `src/generated/`, and run Verus verification.
+
+---
+
+### Current Completeness Assessment
+
+| Protocol | Rating | Key Gaps |
+|----------|--------|----------|
+| Raft | partial | No AppendEntries RPC, no log conflict handling, no message layer, no nextIndex, broken quorum check |
+| TwoPhase | skeleton | No RM state, no messaging protocol, TM-only |
+| Paxos | skeleton | No per-node state, abstract counting model |
+| LeaderElection | partial | No message types, no timing |
+| ChainReplication | partial | No topology awareness, no failure model |
+| PrimaryBackup | skeleton | Failover logic broken, no backup state |
+| PBFT | partial | No request tracking, no checkpoints, no Byzantine behavior |
+| VerticalPaxos | partial | No quorum overlap validation, no witness sets |
+| EPaxos | partial | Dependency tracking is count-based, not set-based |
+
+---
+
+### Phase 15.1: Raft — Complete Core Protocol
+
+Enhance `src/protocol/Raft/types.rs` and `src/protocol/Raft/raft.rs`.
+
+**15.1.1 Add message types and network layer** (gap #3)
+- [ ] Define `LMessage` enum in `types.rs`:
+  - `RequestVote { term, candidate_id, last_log_index, last_log_term }`
+  - `RequestVoteResponse { term, vote_granted }`
+  - `AppendEntries { term, leader_id, prev_log_index, prev_log_term, entries, leader_commit }`
+  - `AppendEntriesResponse { term, success, match_index }`
+- [ ] Define `LPacket { src, dst, msg }` for network abstraction
+- [ ] Add `sent_packets: Seq<LPacket>` output parameter to each action
+
+**15.1.2 Add AppendEntries RPC** (gap #1)
+- [ ] Add `LLeaderSendAppendEntries(s, s_, c, follower, sent_packets)`:
+  - Leader sends log entries starting from `next_index[follower]`
+  - Includes `prev_log_index`, `prev_log_term` for consistency check
+  - Includes `leader_commit` for follower commit advancement
+- [ ] Add `LFollowerHandleAppendEntries(s, s_, c, leader_term, prev_log_index, prev_log_term, entries, leader_commit)`:
+  - Reject if `leader_term < current_term`
+  - Reject if log doesn't contain entry at `prev_log_index` with `prev_log_term`
+  - On success: append entries, update `commit_index = min(leader_commit, last_new_entry_index)`
+  - Step down to follower if `leader_term >= current_term`
+
+**15.1.3 Add log conflict handling** (gap #2)
+- [ ] In `LFollowerHandleAppendEntries`:
+  - If existing entry conflicts with new entry (same index, different term): delete the existing entry and all that follow
+  - Append any new entries not already in the log
+- [ ] Add helper spec fn `LLogUpToDate(log, last_log_term, last_log_index) -> bool`
+
+**15.1.4 Add nextIndex tracking** (gap #8)
+- [ ] Add `next_index: Map<u64, u64>` to `LState`
+- [ ] Initialize `next_index[server] = log.len() + 1` for all servers in `LBecomeLeader`
+- [ ] On successful AppendEntries response: `next_index[follower] = match_index[follower] + 1`
+- [ ] On failed AppendEntries response: `next_index[follower] = next_index[follower] - 1` (backtrack)
+
+**15.1.5 Fix AdvanceCommitIndex quorum check** (gap #9)
+- [ ] `LAdvanceCommitIndex` must verify: the number of servers with `match_index[server] >= new_commit_index` is at least `quorum_size`
+- [ ] Add helper spec fn `LCountMatchingServers(match_index, threshold, servers) -> int`
+
+**15.1.6 Update transpiler config and regenerate**
+- [ ] Update `src/protocol/Raft/raft.automan` with mode annotations for new functions
+- [ ] Update `src/protocol/Raft/raft_transpile.toml` with new type remappings, function paths
+- [ ] Regenerate: `scripts/regenerate_all.sh Raft`
+- [ ] Run Verus verification
+
+---
+
+### Phase 15.2: TwoPhase — Add RM State and Messaging
+
+Enhance `src/protocol/TwoPhase/types.rs` and `src/protocol/TwoPhase/twophase.rs`.
+
+- [ ] Add `LRMState` enum: `Working`, `Prepared`, `Committed`, `Aborted`
+- [ ] Add `LMessage` enum: `Prepare`, `Prepared`, `Commit`, `Abort`, `Ack`
+- [ ] Add per-RM state to `LState`: `rm_states: Map<int, LRMState>`
+- [ ] Add `LTMSendPrepare(s, s_, c)` — TM sends Prepare to all RMs
+- [ ] Add `LRMReceivePrepare(s, s_, c, rm)` — RM transitions Working→Prepared
+- [ ] Add `LRMAbort(s, s_, c, rm)` — RM unilaterally aborts (before prepare)
+- [ ] Add `LTMSendCommit(s, s_, c)` — TM sends Commit after all RMs prepared
+- [ ] Add `LTMSendAbort(s, s_, c)` — TM sends Abort
+- [ ] Add `LRMReceiveCommit(s, s_, c, rm)` — RM transitions to Committed
+- [ ] Add `LRMReceiveAbort(s, s_, c, rm)` — RM transitions to Aborted
+- [ ] Update `LNext` with all new transitions
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.3: Paxos — Add Per-Node State
+
+Enhance `src/protocol/Paxos/types.rs` and `src/protocol/Paxos/paxos.rs`.
+
+- [ ] Add `LBallot { num: int, proposer: int }` with ordering
+- [ ] Add per-acceptor state: `promised_bal: LBallot`, `accepted_bal: LBallot`, `accepted_val: int`
+- [ ] Add per-proposer state: `ballot: LBallot`, `promises: Set<int>`, `highest_accepted_val: int`
+- [ ] Add `LMessage` enum: `Prepare(LBallot)`, `Promise(LBallot, LBallot, int)`, `Accept(LBallot, int)`, `Accepted(LBallot, int)`
+- [ ] Rewrite `LSend1a` — proposer generates unique ballot, sends Prepare
+- [ ] Rewrite `LSend1b` — acceptor checks ballot ≥ promised, sends Promise with accepted value
+- [ ] Rewrite `LSend2a` — proposer checks quorum of promises, picks highest accepted value (or own)
+- [ ] Rewrite `LSend2b` — acceptor checks ballot ≥ promised, accepts value
+- [ ] Add `LLearn` — learner detects quorum of Accept messages for same ballot+value
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.4: PrimaryBackup — Add Backup State and Fix Failover
+
+Enhance `src/protocol/PrimaryBackup/types.rs` and `src/protocol/PrimaryBackup/primarybackup.rs`.
+
+- [ ] Add backup-side state: `backup_log: Seq<int>`, `backup_synced: bool`
+- [ ] Add `LMessage` enum: `ReplicateWrite(value)`, `Ack`, `PromoteToPrimary`
+- [ ] Add `LPrimarySendReplicate(s, s_, c, value)` — primary sends write to backup
+- [ ] Add `LBackupReceiveReplicate(s, s_, c, value)` — backup appends to its log
+- [ ] Add `LBackupSendAck(s, s_, c)` — backup acknowledges
+- [ ] Fix `LFailover`:
+  - Primary becomes inactive (not stays primary)
+  - Backup detects failure and promotes itself to primary
+  - Pending uncommitted writes on old primary are lost
+- [ ] Add `LBackupPromote(s, s_, c)` — backup transitions role to Primary
+- [ ] Add view/epoch number to prevent split-brain
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.5: LeaderElection — Add Message Types
+
+Enhance `src/protocol/LeaderElection/types.rs` and `src/protocol/LeaderElection/election.rs`.
+
+- [ ] Add `LMessage` enum: `Election(sender_id)`, `Answer(responder_id)`, `Coordinator(leader_id)`
+- [ ] Add `LPacket { src, dst, msg }`
+- [ ] Add `LSendElectionMessage(s, s_, c, target)` — node sends Election to higher-ID nodes
+- [ ] Add `LReceiveAnswer(s, s_, c, from)` — node receives Answer, stops election attempt
+- [ ] Add `LSendCoordinator(s, s_, c)` — winner broadcasts Coordinator message
+- [ ] Add `LReceiveCoordinator(s, s_, c, leader_id)` — node accepts new leader
+- [ ] Add `LDetectFailure(s, s_, c, failed_node)` — node detects leader failure, triggers election
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.6: ChainReplication — Add Topology and Failure Model
+
+Enhance `src/protocol/ChainReplication/types.rs` and `src/protocol/ChainReplication/chain.rs`.
+
+- [ ] Add `predecessor: int` and `successor: int` fields to `LState`
+- [ ] Add `LMessage` enum: `Write(seq, value)`, `ForwardUpdate(seq, value)`, `Ack(seq)`, `ReadResponse(value)`
+- [ ] Add `LForwardToSuccessor(s, s_, c, seq, value)` — node forwards write to next in chain
+- [ ] Add ordered pending queue: `pending: Seq<(int, int)>` instead of `pending_sent: Set<int>`
+- [ ] Add `LNodeFail(s, s_, c, failed_node)` — node failure triggers chain reconfiguration
+- [ ] Add `LReconfigure(s, s_, c, new_predecessor, new_successor)` — adjust chain links
+- [ ] Add consistency invariant: committed values at tail are prefix of head's history
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.7: PBFT — Add Request Tracking and Checkpoints
+
+Enhance `src/protocol/PBFT/types.rs` and `src/protocol/PBFT/pbft.rs`.
+
+- [ ] Add `LMessage` enum: `PrePrepare(view, seq, digest)`, `Prepare(view, seq, digest, replica)`, `Commit(view, seq, replica)`, `Checkpoint(seq, digest, replica)`
+- [ ] Add `request_log: Map<int, LRequest>` — map seq_num to client request
+- [ ] Add `prepare_senders: Set<int>` and `commit_senders: Set<int>` — track which replicas sent each message type (instead of just counting)
+- [ ] Add `LCheckpoint(s, s_, c)` — create stable checkpoint after K committed requests
+- [ ] Add `checkpoint_seq: int` and `checkpoint_digest: int` to state
+- [ ] Add watermark tracking: `low_watermark` and `high_watermark` to bound seq_num
+- [ ] Add `LReceiveNewView(s, s_, c, new_view, proofs)` — complete view change protocol
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.8: VerticalPaxos — Add Quorum Overlap and Witnesses
+
+Enhance `src/protocol/VerticalPaxos/types.rs` and `src/protocol/VerticalPaxos/vpaxos.rs`.
+
+- [ ] Add `LConfig { members: Set<int>, quorum_size: int }` struct
+- [ ] Add `configs: Map<int, LConfig>` — track all configurations
+- [ ] Add `LMessage` enum: `Prepare(ballot, config)`, `Promise(ballot, accepted_bal, accepted_val)`, `Accept(ballot, val)`, `Reconfigure(old_config, new_config)`
+- [ ] Add quorum overlap validation in `LReconfigure`:
+  - Every quorum of old config must intersect every quorum of new config
+- [ ] Add `LWitnessSync(s, s_, c, witness, new_config)` — witness transfers state from old config to new
+- [ ] Add `LBootstrapNewConfig(s, s_, c, new_config)` — new members learn current state
+- [ ] Add commit tracking: value is committed when accepted by quorum of current config
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.9: EPaxos — Add Dependency Sets
+
+Enhance `src/protocol/EPaxos/types.rs` and `src/protocol/EPaxos/epaxos.rs`.
+
+- [ ] Replace `dep_count: int` with `deps: Set<LInstanceId>` where `LInstanceId { replica: int, slot: int }`
+- [ ] Add `LMessage` enum: `PreAccept(instance, cmd, seq, deps)`, `PreAcceptOk(instance, seq, deps)`, `Accept(instance, cmd, seq, deps)`, `AcceptOk(instance)`, `Commit(instance, cmd, seq, deps)`
+- [ ] Add per-instance tracking: `instances: Map<LInstanceId, LInstanceState>`
+- [ ] Fix `LReceivePreAccept`:
+  - Merge deps with local conflicts (not just increment counter)
+  - Track seq number as max of all conflicting instances
+- [ ] Fix `LFastCommit`:
+  - Fast path only if all PreAcceptOk responses agree on same deps + seq
+  - Fast quorum size = floor(N/2) + floor((N/2 + 1)/2)
+- [ ] Fix `LExecute`:
+  - Only execute if all dependencies are committed
+  - Execute in dependency order (topological sort)
+- [ ] Add `LRecover` with proper Paxos-Accept recovery protocol
+- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+
+---
+
+### Phase 15.10: Regenerate All and Verify
+
+After all spec enhancements are complete:
+
+- [ ] Build transpiler: `cd transpiler && cargo build --release`
+- [ ] Regenerate all protocols: `./scripts/regenerate_all.sh`
+- [ ] Run Verus verification: `scons --verus-path=/path/to/verus`
+- [ ] Record results per protocol:
+  | Protocol | Functions Verified | Errors | Assumes |
+- [ ] Fix any transpiler issues discovered during regeneration
+- [ ] Update Phase 15 status in this file
+
+---
+
+### Phase 15.11: Validation
+
+- [ ] For each enhanced protocol, verify that:
+  1. `LInit` properly initializes all new state fields
+  2. `LNext` includes all new transitions
+  3. Each action preserves frame conditions (unchanged fields are explicitly constrained)
+  4. Type mappings in `_transpile.toml` cover all new types
+  5. `.automan` annotations are complete for all new functions
+- [ ] Run full test suite: transpiler unit tests + Verus verification
+- [ ] Document final completeness assessment for each protocol
+
+---
+
+### Priority Order
+
+1. **Raft** (Phase 15.1) — most complete starting point, highest impact improvements
+2. **TwoPhase** (Phase 15.2) — simplest protocol, good for validating the workflow
+3. **Paxos** (Phase 15.3) — foundational protocol, must be correct
+4. **PrimaryBackup** (Phase 15.4) — broken failover needs fixing
+5. **LeaderElection** (Phase 15.5) — straightforward message addition
+6. **ChainReplication** (Phase 15.6) — topology + failure model
+7. **PBFT** (Phase 15.7) — complex but important
+8. **VerticalPaxos** (Phase 15.8) — niche protocol, lower priority
+9. **EPaxos** (Phase 15.9) — complex dependency tracking, highest difficulty
+
+### Success Criteria
+
+- All 9 protocols have comprehensive specs covering their core protocol features
+- All 9 protocols regenerate successfully with the transpiler
+- All generated implementations pass Verus verification (0 errors)
+- Each protocol models: state transitions, message types, and a Next relation covering all actions
