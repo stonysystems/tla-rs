@@ -58,3 +58,28 @@ This is too large for a reliable <500 LOC leaf and too risky to verify in one pa
   - `types_gen.rs`: generated surface no longer matches current implementation boundary strategy (macro-defined/re-exported concrete types vs auto-generated structs), plus ordering/header differences.
   - function modules (`acceptor`/`executor`/`proposer`/`replica`): regenerated code shape diverges from wrapper/delegate style currently checked in.
   - `broadcast`/`election`: smaller but non-zero drift, likely due import/path normalization and output-shape changes.
+
+## Types Drift Closure (01:20)
+- Closed the `types_gen.rs`-specific drift leaf by aligning type-boundary config and regenerating.
+- Config updates in `src/protocol/RSL/types_transpile.toml`:
+  - expanded `skip_types` for macro-defined types (`Ballot`, `Request`, `Reply`, `Vote`) and helper-owned component types now provided by `types_manual_helpers.rs`
+  - added `crate::implementation::RSL::types_i::{CBallot, CRequest, CReply, CVote}` to `re_exports`
+  - expanded `custom_imports` to include helper dependencies (`AbstractEndPoint`, appinterface validity predicates, marshalling/generic-refinement imports, and vstd map/set libs)
+- Regenerated `src/generated/RSL/types_gen.rs` from current spec/config and verified exact parity against scratch output (`git diff --no-index` clean).
+- Remaining drift is now isolated to function modules: `acceptor_gen.rs`, `executor_gen.rs`, `proposer_gen.rs`, `replica_gen.rs`, `broadcast_gen.rs`, `election_gen.rs`.
+
+## Types Compatibility Follow-up (02:40)
+- While running Verus target verification (`scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`), two helper-boundary regressions surfaced:
+  - `CRslIo` alias was referenced by generated modules but no longer defined in regenerated `types_gen.rs`.
+  - `CLearnerTuple` was auto-generated with incomplete project-specific method surface (`clone_up_to_view`, `abstractable`, custom `valid`), breaking `learner_gen` and `learnerimpl`.
+- Fixes applied:
+  - Added `pub type CRslIo = LIoOp<EndPoint, CMessage>;` to `src/protocol/RSL/types_manual_helpers.rs`.
+  - Added `"LearnerTuple"` to `skip_types` in `src/protocol/RSL/types_transpile.toml`.
+  - Restored manual `CLearnerTuple` struct+impl block in `src/protocol/RSL/types_manual_helpers.rs`.
+  - Regenerated `src/generated/RSL/types_gen.rs` from current multi-input type command/config.
+- Added regression checks in transpiler tests:
+  - `transpiler/src/main.rs` now asserts helper config content includes `CRslIo` alias and `LearnerTuple` remains in required `skip_types`.
+  - `transpiler/tests/integration.rs` foundational helper symbol list now includes `CRslIo` alias and `CLearnerTuple` helper method signature.
+- Verification status after fix:
+  - `cargo test --all-features` in `transpiler/` passes.
+  - Verus target build `liblib.so` passes (warnings only).

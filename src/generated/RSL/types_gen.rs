@@ -1,34 +1,14 @@
-// Auto-generated concrete types by verus-transpiler + manually appended helpers
-// DO NOT EDIT struct definitions manually — regenerate with:
-//   cd transpiler && cargo run -- generate-types \
-//       -i ../src/protocol/RSL/types.rs \
-//       -i ../src/protocol/RSL/parameters.rs \
-//       -i ../src/protocol/RSL/configuration.rs \
-//       -i ../src/protocol/RSL/constants.rs \
-//       -i ../src/protocol/RSL/acceptor.rs \
-//       -i ../src/protocol/RSL/learner.rs \
-//       -i ../src/protocol/RSL/election.rs \
-//       -i ../src/protocol/RSL/executor.rs \
-//       -i ../src/protocol/RSL/proposer.rs \
-//       -i ../src/protocol/RSL/replica.rs \
-//       -c ../src/protocol/RSL/types_transpile.toml \
-//       -o ../src/generated/RSL/types_gen.rs
+// Auto-generated concrete types by verus-transpiler
+// DO NOT EDIT MANUALLY
 
-// =============================================================================
-// Imports
-// =============================================================================
-
+use crate::common::collections::hashsets::HashSetWellFormed;
 use crate::common::collections::seq_is_unique_v::*;
 use crate::common::collections::seqs::*;
-use crate::common::collections::hashsets::HashSetWellFormed;
 use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::{AbstractEndPoint, EndPoint};
-use crate::implementation::RSL::appinterface::{CAppStateIsAbstractable, CAppStateIsValid};
-// CBallot, CRequest, CReply, CVote are defined in types_i.rs via define_struct_and_derive_marshalable!
-// Re-exported here so that code importing types_gen::* also gets these types.
-pub use crate::implementation::RSL::types_i::{CBallot, CRequest, CReply, CVote};
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::common::marshalling::*;
+use crate::implementation::RSL::appinterface::{CAppStateIsAbstractable, CAppStateIsValid};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::configuration::*;
@@ -50,29 +30,16 @@ use vstd::seq::*;
 use vstd::{map::*, modes::*, seq_lib::*};
 use vstd::{set::*, set_lib::*};
 
-// =============================================================================
-// Re-exports from implementation modules (types that cannot be auto-generated)
-// =============================================================================
-
-// Message types (CMessage, CPacket) — defined via define_enum_and_derive_marshalable! macro
+pub use crate::implementation::RSL::types_i::{CBallot, CRequest, CReply, CVote};
 pub use crate::implementation::RSL::cmessage::*;
-// Application interface — macro-defined or app-specific
 pub use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit, CAppMessage};
-// State machine — FFI integration
 pub use crate::implementation::RSL::CStateMachine::*;
-// Broadcast helpers — network I/O layer
 pub use crate::implementation::RSL::cbroadcast::*;
-// Upper bound helpers — shared across protocols
 pub use crate::implementation::common::upper_bound::*;
 pub use crate::implementation::common::upper_bound_i::*;
-// CRequestHeader — concrete-only type with no spec equivalent
 pub use crate::implementation::RSL::ElectionImpl::CRequestHeader;
 
 verus! {
-
-// =============================================================================
-// Type Aliases
-// =============================================================================
 
 pub type COperationNumber = u64;
 pub type CRequestBatch = Vec<CRequest>;
@@ -80,12 +47,42 @@ pub type CReplyCache = HashMap<EndPoint, CReply>;
 pub type CVotes = HashMap<COperationNumber, CVote>;
 pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
 
-/// Concrete RSL I/O type (maps to spec's RslIo = LIoOp<AbstractEndPoint, RslMessage>)
-pub type CRslIo = LIoOp<crate::common::native::io_s::EndPoint, CMessage>;
+#[derive(Clone, Copy)]
+pub struct CClockReading {
+    pub t: u64,
+}
+
+impl CClockReading {
+    pub open spec fn valid(&self) -> bool {
+        true
+    }
+}
+
+impl View for CClockReading {
+    type V = ClockReading;
+
+    open spec fn view(&self) -> ClockReading {
+        ClockReading {
+            t: self.t as int,
+        }
+    }
+}
+
+
+// Manual helper code for RSL concrete types generation.
+//
+// This file is intended to be injected by transpiler generate-types via
+// `output.manual_code` in `types_transpile.toml`.
+//
+// IMPORTANT: Contents here live inside an existing `verus! { ... }` block in
+// generated output. Do not add `use` statements or a nested `verus!` block.
 
 // =============================================================================
 // COperationNumber helpers
 // =============================================================================
+
+// Concrete RSL I/O alias used by generated function modules.
+pub type CRslIo = LIoOp<EndPoint, CMessage>;
 
 pub open spec fn AbstractifyCOperationNumberToOperationNumber(s:COperationNumber) -> int
     recommends
@@ -200,7 +197,6 @@ pub fn clone_creply_cache_up_to_view(cache: &CReplyCache) -> (res: CReplyCache)
 
     // Manually collect keys to avoid iterator issues
     let mut keys: Vec<EndPoint> = Vec::new();
-    let mut i = 0;
 
     for k in cache.keys() {
         keys.push(k.clone_up_to_view());
@@ -425,29 +421,8 @@ pub fn clone_vec_coperationnumber(v: &Vec<COperationNumber>) -> (res: Vec<COpera
 }
 
 // =============================================================================
-// CClockReading (generated)
+// CParameters extension section
 // =============================================================================
-
-#[derive(Clone, Copy)]
-pub struct CClockReading {
-    pub t: u64,
-}
-
-impl CClockReading {
-    pub open spec fn valid(&self) -> bool {
-        true
-    }
-}
-
-impl View for CClockReading {
-    type V = ClockReading;
-
-    open spec fn view(&self) -> ClockReading {
-        ClockReading {
-            t: self.t as int,
-        }
-    }
-}
 
 // =============================================================================
 // CParameters (generated + impl methods)
@@ -913,6 +888,10 @@ pub fn InitReplicaConstants(end:&EndPoint, config:&CConfiguration) -> (rc:CRepli
     assert(rconstants.all.valid());
     rconstants
 }
+
+// =============================================================================
+// Component extension section (part 1 extraction)
+// =============================================================================
 
 // =============================================================================
 // CAcceptor (generated + impl methods)
@@ -1542,5 +1521,4 @@ pub fn unreachable_value<T>() -> (result: T)
 {
     panic!("unreachable")
 }
-
 } // verus!

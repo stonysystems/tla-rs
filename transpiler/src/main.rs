@@ -1336,6 +1336,37 @@ manual_code = "manual_helpers.rs"
             manual.contains("pub fn unreachable_value<T>()"),
             "loaded manual helper block should include unreachable_value helper"
         );
+        assert!(
+            manual.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
+            "loaded manual helper block should define CRslIo alias expected by generated function modules"
+        );
+
+        let file_config = FileConfig::from_file(&config_path).expect("RSL file config should load");
+        let required_skips = [
+            "Ballot",
+            "Request",
+            "Reply",
+            "Vote",
+            "LAcceptor",
+            "LProposer",
+            "LReplica",
+            "LScheduler",
+            "LearnerTuple",
+        ];
+        for name in required_skips {
+            assert!(
+                file_config.skip_types.iter().any(|n| n == name),
+                "skip_types should include {}",
+                name
+            );
+        }
+        assert!(
+            file_config
+                .re_exports
+                .iter()
+                .any(|r: &String| r.contains("types_i::{CBallot, CRequest, CReply, CVote}")),
+            "re_exports should include macro-defined marshalable type re-export"
+        );
     }
 
     #[test]

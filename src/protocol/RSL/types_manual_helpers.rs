@@ -10,6 +10,9 @@
 // COperationNumber helpers
 // =============================================================================
 
+// Concrete RSL I/O alias used by generated function modules.
+pub type CRslIo = LIoOp<EndPoint, CMessage>;
+
 pub open spec fn AbstractifyCOperationNumberToOperationNumber(s:COperationNumber) -> int
     recommends
         COperationNumberIsAbstractable(s)
@@ -226,6 +229,75 @@ pub open spec fn abstractify_cvotes(m:&CVotes) -> Votes
 }
 
 pub open spec fn max_votes_len() -> int{1001}
+
+// =============================================================================
+// CLearnerTuple
+// =============================================================================
+
+pub struct CLearnerTuple {
+    pub received_2b_message_senders: HashSet<EndPoint>,
+    pub candidate_learned_value: CRequestBatch,
+}
+
+impl Clone for CLearnerTuple {
+    #[verifier::external_body]
+    fn clone(&self) -> Self {
+        CLearnerTuple {
+            received_2b_message_senders: self.received_2b_message_senders.clone(),
+            candidate_learned_value: self.candidate_learned_value.clone(),
+        }
+    }
+}
+
+impl CLearnerTuple{
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (res:CLearnerTuple)
+        ensures
+            res@ == self@,
+            (self.abstractable() ==> res.abstractable()),
+            (self.valid() ==> res.valid()),
+    {
+        let mut new_senders = HashSet::new();
+        for client in self.received_2b_message_senders.iter() {
+            new_senders.insert(client.clone_up_to_view());
+        }
+
+        CLearnerTuple{
+            received_2b_message_senders: new_senders,
+            candidate_learned_value: clone_request_batch_up_to_view(&self.candidate_learned_value),
+        }
+    }
+
+    pub open spec fn abstractable(self) -> bool{
+        &&& (forall |p| self.received_2b_message_senders@.contains(p) ==> p.abstractable())
+        &&& crequestbatch_is_abstractable(&self.candidate_learned_value)
+    }
+
+    pub open spec fn valid(self) -> bool{
+        &&& self.abstractable()
+        &&& crequestbatch_is_valid(&self.candidate_learned_value)
+    }
+
+    pub open spec fn view(self) -> LearnerTuple
+    {
+        LearnerTuple{
+            received_2b_message_senders:self.received_2b_message_senders@.map(|i:EndPoint| i@),
+            candidate_learned_value:abstractify_crequestbatch(&self.candidate_learned_value),
+        }
+    }
+}
+
+impl View for CLearnerTuple{
+    type V = LearnerTuple;
+
+    open spec fn view(&self) -> LearnerTuple
+    {
+        LearnerTuple{
+            received_2b_message_senders:self.received_2b_message_senders@.map(|i:EndPoint| i@),
+            candidate_learned_value:abstractify_crequestbatch(&self.candidate_learned_value),
+        }
+    }
+}
 
 // =============================================================================
 // CLearnerState helpers

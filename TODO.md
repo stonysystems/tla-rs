@@ -1269,7 +1269,19 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
         - Generated into `/tmp/rsl_regen_baseline` using the same inputs/config as `scripts/regenerate_all.sh RSL` without modifying tracked generated files
         - Diff summary: `learner_gen.rs` matches; the remaining 7 modules drift
         - Recorded findings in `docs/dev/rsl-generated-replacement-breakdown-2026-02-12.md` for follow-up leaves
-      - [ ] Close `types_gen.rs` drift first (macro-defined type boundaries, re-export strategy, helper injection placement/order) with config/codegen updates under <500 LOC
+      - [x] Close `types_gen.rs` drift first (macro-defined type boundaries, re-export strategy, helper injection placement/order) with config/codegen updates under <500 LOC [26:02:13, 01:20]
+        - Scope/plan check: targeted this leaf with config+codegen boundary updates and a single regenerated `types_gen.rs` update (<500 changed LOC total for the leaf)
+        - Updated `src/protocol/RSL/types_transpile.toml`:
+          - skipped macro-defined and helper-owned types (`Ballot/Request/Reply/Vote` plus helper-provided component structs/enums)
+          - added `types_i::{CBallot, CRequest, CReply, CVote}` to `re_exports`
+          - aligned `custom_imports` with helper dependencies (`AbstractEndPoint`, appinterface validity predicates, marshalling/generic refinement imports, vstd map/set libs)
+        - Added regression assertions in `transpiler/src/main.rs` ensuring RSL type config keeps these skip/re-export boundaries
+        - Regenerated `src/generated/RSL/types_gen.rs` and verified parity with a fresh scratch generation (`git diff --no-index` reports no diff)
+        - Follow-up compatibility fix during Verus verification [26:02:13, 02:40]:
+          - Restored helper-owned `CRslIo` alias in `src/protocol/RSL/types_manual_helpers.rs` so generated function modules keep compiling against `types_gen`
+          - Moved `LearnerTuple` back to helper ownership (`skip_types += "LearnerTuple"`) and restored manual `CLearnerTuple` methods (`clone_up_to_view`, `abstractable`, custom `valid`) required by `learner_gen` and `learnerimpl`
+          - Added regression checks in `transpiler/src/main.rs` and `transpiler/tests/integration.rs` for these helper boundary symbols
+          - Re-ran full transpiler suite and Verus target build (`scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`) successfully
       - [ ] Close module generation drift next (`acceptor`/`executor`/`proposer`/`replica`/`broadcast`/`election`) by aligning transpile config + wrapper/delegate generation expectations under <500 LOC leaves
       - [ ] Regenerate into `src/generated/RSL/` and verify deterministic parity (second regeneration produces no diff)
     - [ ] Replace manual RSL implementation modules with generated counterparts incrementally (acceptor -> learner -> executor -> proposer -> replica) and run full verification/tests after each cutover

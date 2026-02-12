@@ -868,6 +868,7 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
         .expect("Failed to read RSL types manual helpers");
 
     let expected_symbols = [
+        "pub type CRslIo = LIoOp<EndPoint, CMessage>;",
         "AbstractifyCOperationNumberToOperationNumber",
         "COperationNumberIsAbstractable",
         "COperationNumberIsValid",
@@ -881,6 +882,8 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
         "clone_cvotes_up_to_view",
         "cvotes_is_valid",
         "abstractify_cvotes",
+        "pub struct CLearnerTuple",
+        "pub fn clone_up_to_view(&self) -> (res:CLearnerTuple)",
         "clearnerstate_is_valid",
         "abstractify_clearnerstate",
         "clone_vec_coperationnumber",
