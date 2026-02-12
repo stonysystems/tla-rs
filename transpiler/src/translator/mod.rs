@@ -2154,6 +2154,83 @@ impl Translator {
         matches!(expr, ExecExpr::Var(name) if ctx.is_input(name))
     }
 
+    /// Detect whether an AST expression denotes a Set-like collection for `+` lowering.
+    fn is_hashset_expr(&self, expr: &Expr, ctx: &TransformContext) -> bool {
+        match expr {
+            Expr::SetLit(_) | Expr::SetEmpty => true,
+            Expr::Ident(name) => ctx
+                .input_types
+                .get(name)
+                .is_some_and(|ty| matches!(ty, Type::Set(_))),
+            Expr::Field(_, field_name) => self.is_hashset_field(field_name),
+            Expr::Binary(lhs, BinOp::Add, rhs) => {
+                self.is_hashset_expr(lhs, ctx) || self.is_hashset_expr(rhs, ctx)
+            }
+            Expr::MethodCall { receiver, method, .. } => {
+                matches!(
+                    method.as_str(),
+                    "insert" | "remove" | "union" | "intersect" | "difference"
+                ) && self.is_hashset_expr(receiver, ctx)
+            }
+            _ => false,
+        }
+    }
+
+    /// Detect whether an AST expression denotes a Seq/Vec-like collection for `+` lowering.
+    fn is_vec_expr(&self, expr: &Expr, ctx: &TransformContext) -> bool {
+        match expr {
+            Expr::SeqLit(_) | Expr::SeqEmpty => true,
+            Expr::Ident(name) => ctx
+                .input_types
+                .get(name)
+                .is_some_and(|ty| matches!(ty, Type::Seq(_))),
+            Expr::Field(_, field_name) => {
+                self.is_vec_field(field_name) || self.is_struct_vec_field(field_name)
+            }
+            Expr::Binary(lhs, BinOp::Add, rhs) => {
+                self.is_vec_expr(lhs, ctx) || self.is_vec_expr(rhs, ctx)
+            }
+            Expr::MethodCall { receiver, method, .. } => {
+                matches!(method.as_str(), "subrange" | "take" | "skip" | "drop_first" | "push")
+                    && self.is_vec_expr(receiver, ctx)
+            }
+            _ => false,
+        }
+    }
+
+    /// Pick collection helper for `+` lowering when operands represent collections.
+    fn collection_add_helper(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        ctx: &TransformContext,
+    ) -> Option<&'static str> {
+        if self.is_hashset_expr(lhs, ctx) || self.is_hashset_expr(rhs, ctx) {
+            return Some("union_sets");
+        }
+        if self.is_vec_expr(lhs, ctx) || self.is_vec_expr(rhs, ctx) {
+            return Some("concat_vecs");
+        }
+        None
+    }
+
+    /// Build helper-based collection concatenation/union call.
+    fn make_collection_add_call(&self, helper: &str, lhs: ExecExpr, rhs: ExecExpr) -> ExecExpr {
+        ExecExpr::Call {
+            func: helper.to_string(),
+            args: vec![
+                ExecExpr::Unary {
+                    op: "&".to_string(),
+                    expr: Box::new(lhs),
+                },
+                ExecExpr::Unary {
+                    op: "&".to_string(),
+                    expr: Box::new(rhs),
+                },
+            ],
+        }
+    }
+
     /// Check if an expression only references input parameters (or literals/constants).
     /// Such expressions are preconditions and should not be emitted as executable code.
     /// Returns true if the expression is a "pure input" expression that:
@@ -7414,8 +7491,13 @@ impl Translator {
             }
 
             Expr::SeqLit(elems) => {
-                let translated: TranspileResult<Vec<_>> =
-                    elems.iter().map(|e| self.transform_expr(e, ctx)).collect();
+                let translated: TranspileResult<Vec<_>> = elems
+                    .iter()
+                    .map(|e| {
+                        let expr = self.transform_expr(e, ctx)?;
+                        Ok(self.clone_if_input_ref(expr, ctx))
+                    })
+                    .collect();
                 Ok(ExecExpr::VecLit(translated?))
             }
 
@@ -8722,6 +8804,11 @@ impl Translator {
         // Deref scalar input params (&u64 → u64) in comparisons and arithmetic
         let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
         let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
+        let collection_add_helper = if op == "+" {
+            self.collection_add_helper(lhs, rhs, ctx)
+        } else {
+            None
+        };
 
         // Check if either operand is a Block that needs hoisting
         let lhs_is_block = matches!(lhs_expr, ExecExpr::Block(_));
@@ -8729,11 +8816,15 @@ impl Translator {
 
         if !lhs_is_block && !rhs_is_block {
             // Simple case: no blocks to hoist
-            return Ok(ExecExpr::Binary {
-                lhs: Box::new(lhs_expr),
-                op: op.to_string(),
-                rhs: Box::new(rhs_expr),
-            });
+            return if let Some(helper) = collection_add_helper {
+                Ok(self.make_collection_add_call(helper, lhs_expr, rhs_expr))
+            } else {
+                Ok(ExecExpr::Binary {
+                    lhs: Box::new(lhs_expr),
+                    op: op.to_string(),
+                    rhs: Box::new(rhs_expr),
+                })
+            };
         }
 
         // We need to hoist block expressions into let bindings
@@ -8768,12 +8859,16 @@ impl Translator {
 
         drop(counter); // Release the borrow
 
-        // Add the final binary expression
-        stmts.push(ExecExpr::Binary {
-            lhs: Box::new(final_lhs),
-            op: op.to_string(),
-            rhs: Box::new(final_rhs),
-        });
+        // Add the final expression using hoisted temporaries.
+        if let Some(helper) = collection_add_helper {
+            stmts.push(self.make_collection_add_call(helper, final_lhs, final_rhs));
+        } else {
+            stmts.push(ExecExpr::Binary {
+                lhs: Box::new(final_lhs),
+                op: op.to_string(),
+                rhs: Box::new(final_rhs),
+            });
+        }
 
         Ok(ExecExpr::Block(stmts))
     }
@@ -11021,6 +11116,145 @@ mod tests {
     }
 
     #[test]
+    fn test_transform_binary_add_numeric_stays_binary() {
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(1))),
+            BinOp::Add,
+            Box::new(Expr::Literal(Literal::Int(2))),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        assert!(matches!(result, ExecExpr::Binary { op, .. } if op == "+"));
+    }
+
+    #[test]
+    fn test_transform_binary_add_vec_fields_uses_concat_vecs() {
+        let mut config = TranslatorConfig::default();
+        config
+            .vec_fields
+            .insert("requests_received_prev_epochs".to_string());
+        config
+            .vec_fields
+            .insert("requests_received_this_epoch".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "es".to_string(),
+            Type::Named(Path::single("ElectionState".to_string())),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["es".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = Expr::Binary(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("es".to_string())),
+                "requests_received_prev_epochs".to_string(),
+            )),
+            BinOp::Add,
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("es".to_string())),
+                "requests_received_this_epoch".to_string(),
+            )),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "concat_vecs");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(
+                    &args[0],
+                    ExecExpr::Unary { op, expr }
+                        if op == "&"
+                            && matches!(
+                                expr.as_ref(),
+                                ExecExpr::Field(base, field)
+                                if field == "requests_received_prev_epochs"
+                                    && matches!(base.as_ref(), ExecExpr::Var(name) if name == "es")
+                            )
+                ));
+                assert!(matches!(
+                    &args[1],
+                    ExecExpr::Unary { op, expr }
+                        if op == "&"
+                            && matches!(
+                                expr.as_ref(),
+                                ExecExpr::Field(base, field)
+                                if field == "requests_received_this_epoch"
+                                    && matches!(base.as_ref(), ExecExpr::Var(name) if name == "es")
+                            )
+                ));
+            }
+            _ => panic!("Expected concat_vecs call, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_binary_add_hashset_field_uses_union_sets_with_hoist() {
+        let mut config = TranslatorConfig::default();
+        config.generate_loops_for_verification = true;
+        config
+            .collection_fields
+            .insert("current_view_suspectors".to_string());
+        let translator = Translator {
+            config,
+            ..Translator::default()
+        };
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "es".to_string(),
+            Type::Named(Path::single("ElectionState".to_string())),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["es".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = Expr::Binary(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("es".to_string())),
+                "current_view_suspectors".to_string(),
+            )),
+            BinOp::Add,
+            Box::new(Expr::SetLit(vec![Expr::Literal(Literal::Int(1))])),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match result {
+            ExecExpr::Block(stmts) => {
+                assert!(
+                    matches!(&stmts[0], ExecExpr::Let { pattern, .. } if pattern.starts_with("__rhs_")),
+                    "Expected RHS block hoist before helper call, got {:?}",
+                    stmts
+                );
+                assert!(
+                    matches!(&stmts[1], ExecExpr::Call { func, .. } if func == "union_sets"),
+                    "Expected union_sets helper call, got {:?}",
+                    stmts
+                );
+            }
+            _ => panic!("Expected Block with hoisted RHS and union_sets call, got {:?}", result),
+        }
+    }
+
+    #[test]
     fn test_transform_clone_output() {
         let translator = Translator::default();
         let ctx = make_ctx();
@@ -11042,6 +11276,35 @@ mod tests {
         let expr = Expr::SeqEmpty;
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         assert!(matches!(result, ExecExpr::VecLit(v) if v.is_empty()));
+    }
+
+    #[test]
+    fn test_transform_seq_lit_clones_input_element() {
+        let translator = Translator::default();
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "req".to_string(),
+            Type::Named(Path::single("Request".to_string())),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["req".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = Expr::SeqLit(vec![Expr::Ident("req".to_string())]);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        assert!(matches!(
+            result,
+            ExecExpr::VecLit(elems)
+                if elems.len() == 1
+                    && matches!(&elems[0], ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "req"))
+        ));
     }
 
     #[test]

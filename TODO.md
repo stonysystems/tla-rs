@@ -1330,7 +1330,25 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
               - Validation:
                 - `cargo test --all-features` (transpiler) passes.
                 - Fresh-election compile probe (temporary swap) reduced error surface from 49 to 41 and removed `RangeGhostIterator` loop failures from recursive helper loops; remaining failures are tracked in the next sub-leaves.
-            - [ ] Fix collection expression lowering parity for generated election helpers (`Vec` append / `HashSet` union patterns) and re-probe election sync.
+            - [x] Fix collection expression lowering parity for generated election helpers (`Vec` append / `HashSet` union patterns) and re-probe election sync. [26:02:11, 21:00]
+              - Updated `transpiler/src/translator/mod.rs`:
+                - lowered collection `+` to helper calls (`concat_vecs(&lhs, &rhs)` for seq/vec expressions and `union_sets(&lhs, &rhs)` for set/hashset expressions),
+                - reused existing block-hoisting path so helper args never print as `&{ ... }`,
+                - normalized `Expr::SeqLit` elements through `clone_if_input_ref` so append literals like `seq![req]` become owned `Vec<CRequest>` instead of `Vec<&CRequest>`.
+              - Updated `src/protocol/RSL/election_transpile.toml` to classify election collection fields:
+                - `collection_fields = ["current_view_suspectors"]`
+                - `vec_fields = ["requests_received_this_epoch", "requests_received_prev_epochs"]`
+              - Added translator regressions:
+                - `test_transform_binary_add_vec_fields_uses_concat_vecs`
+                - `test_transform_binary_add_hashset_field_uses_union_sets_with_hoist`
+                - `test_transform_seq_lit_clones_input_element`
+                - `test_transform_binary_add_numeric_stays_binary`
+              - Validation:
+                - `cargo test --all-features` (transpiler) passes.
+                - `cargo build --release` (transpiler) passes.
+                - `scripts/regenerate_rsl.sh` passes.
+                - Fresh-election compile probe (temporary swap) reduced errors from 40 to 36 and removed all `cannot add ...` failures (`cannot_add: 6 -> 0`); remaining failures are tracked in the next numeric/bounds leaf.
+                - Baseline verification build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` passes.
             - [ ] Fix bound/numeric type mapping parity (`u64`/`int`/`CUpperBound` argument shaping in generated election helpers) and re-probe election sync.
             - [ ] After sub-leaves pass compile probes, sync `src/generated/RSL/election_gen.rs` to fresh output and run full verification.
         - [ ] Close `acceptor_gen.rs` drift (wrapper/delegate alignment)

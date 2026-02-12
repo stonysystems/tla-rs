@@ -7,6 +7,10 @@ spec_only_functions = [
     "LeqUpperBound",
 ]
 
+# ElectionState collection fields used in set/seq expression lowering.
+collection_fields = ["current_view_suspectors"]
+vec_fields = ["requests_received_this_epoch", "requests_received_prev_epochs"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
