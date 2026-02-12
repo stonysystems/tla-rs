@@ -7,6 +7,26 @@ module TwoPhase::twophase {
     // c (input): protocol constants
     LInit(-, +);
 
+    // TM broadcasts Prepare to all RMs
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    LTMSendPrepare(+, -, +);
+
+    // RM receives Prepare and transitions Working -> Prepared
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // rm (input): resource manager identifier
+    LRMReceivePrepare(+, -, +, +);
+
+    // RM unilaterally aborts (before prepare)
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // rm (input): resource manager identifier
+    LRMAbort(+, -, +, +);
+
     // TM receives Prepared from resource manager r
     // s (input): current state
     // s_ (output): new state
@@ -14,18 +34,32 @@ module TwoPhase::twophase {
     // r (input): resource manager identifier
     LTMRcvPrepared(+, -, +, +);
 
-    // TM commits (all RMs have prepared)
+    // TM commits (all RMs prepared) and broadcasts Commit
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
-    LTMCommit(+, -, +);
+    LTMSendCommit(+, -, +);
 
-    // TM aborts
+    // TM aborts and broadcasts Abort
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
-    LTMAbort(+, -, +);
+    LTMSendAbort(+, -, +);
 
-    // Next-state relation (skip: contains existential quantifier)
+    // RM receives Commit and transitions Prepared -> Committed
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // rm (input): resource manager identifier
+    LRMReceiveCommit(+, -, +, +);
+
+    // RM receives Abort and transitions to Aborted
+    // s (input): current state
+    // s_ (output): new state
+    // c (input): constants
+    // rm (input): resource manager identifier
+    LRMReceiveAbort(+, -, +, +);
+
+    // Next-state relation (skip: contains existential quantifiers)
     // LNext is not transpiled - dispatch handled at a higher level
 }

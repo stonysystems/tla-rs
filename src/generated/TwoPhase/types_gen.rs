@@ -10,9 +10,14 @@ use vstd::set::*;
 verus! {
 
 pub struct CState {
-    pub rm_state: HashSet<u64>,
     pub tm_state: CTMState,
     pub tm_prepared: HashSet<u64>,
+    pub rm_prepared: HashSet<u64>,
+    pub rm_committed: HashSet<u64>,
+    pub rm_aborted: HashSet<u64>,
+    pub msgs_prepare: bool,
+    pub msgs_commit: bool,
+    pub msgs_abort: bool,
 }
 
 impl Clone for CState {
@@ -35,9 +40,14 @@ impl View for CState {
 
     open spec fn view(&self) -> LState {
         LState {
-            rm_state: self.rm_state@.map(|x: u64| x as int),
             tm_state: self.tm_state@,
             tm_prepared: self.tm_prepared@.map(|x: u64| x as int),
+            rm_prepared: self.rm_prepared@.map(|x: u64| x as int),
+            rm_committed: self.rm_committed@.map(|x: u64| x as int),
+            rm_aborted: self.rm_aborted@.map(|x: u64| x as int),
+            msgs_prepare: self.msgs_prepare,
+            msgs_commit: self.msgs_commit,
+            msgs_abort: self.msgs_abort,
         }
     }
 }
@@ -96,6 +106,38 @@ impl View for CTMState {
             CTMState::Init => LTMState::Init,
             CTMState::Committed => LTMState::Committed,
             CTMState::Aborted => LTMState::Aborted,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CRMState {
+    Working,
+    Prepared,
+    Committed,
+    Aborted,
+}
+
+impl CRMState {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CRMState::Working => true,
+            CRMState::Prepared => true,
+            CRMState::Committed => true,
+            CRMState::Aborted => true,
+        }
+    }
+}
+
+impl View for CRMState {
+    type V = LRMState;
+
+    open spec fn view(&self) -> LRMState {
+        match self {
+            CRMState::Working => LRMState::Working,
+            CRMState::Prepared => LRMState::Prepared,
+            CRMState::Committed => LRMState::Committed,
+            CRMState::Aborted => LRMState::Aborted,
         }
     }
 }

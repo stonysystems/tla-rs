@@ -9,7 +9,10 @@ skip_functions = [
 primitive_types = []
 
 # Fields that are collection types (Set/Map) requiring clone_hashset()
-collection_fields = ["rm_state", "tm_prepared", "rm"]
+collection_fields = ["tm_prepared", "rm_prepared", "rm_committed", "rm_aborted", "rm"]
+
+# Enum fields that need clone helpers (not Copy types)
+clone_fields = ["tm_state"]
 
 [naming]
 spec_prefix = "L"
@@ -21,6 +24,10 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LTMState" = "CTMState"
+"LRMState" = "CRMState"
+
+[clone_field_types]
+"tm_state" = "CTMState"
 
 [clone_strategy]
 "CState" = "external_body"

@@ -4428,7 +4428,7 @@ Produce `docs/dev/regeneration-audit-report.md` with the following structure:
 | Protocol | Rating | Key Gaps |
 |----------|--------|----------|
 | Raft | partial | No AppendEntries RPC, no log conflict handling, no message layer, no nextIndex, broken quorum check |
-| TwoPhase | skeleton | No RM state, no messaging protocol, TM-only |
+| TwoPhase | **complete** | Full 2PC with TM + RM state, message passing, 8 transitions ✅ |
 | Paxos | skeleton | No per-node state, abstract counting model |
 | LeaderElection | partial | No message types, no timing |
 | ChainReplication | partial | No topology awareness, no failure model |
@@ -4487,22 +4487,27 @@ Enhance `src/protocol/Raft/types.rs` and `src/protocol/Raft/raft.rs`.
 
 ---
 
-### Phase 15.2: TwoPhase — Add RM State and Messaging
+### Phase 15.2: TwoPhase — Add RM State and Messaging ✅ COMPLETE [26:02:12]
 
 Enhance `src/protocol/TwoPhase/types.rs` and `src/protocol/TwoPhase/twophase.rs`.
 
-- [ ] Add `LRMState` enum: `Working`, `Prepared`, `Committed`, `Aborted`
-- [ ] Add `LMessage` enum: `Prepare`, `Prepared`, `Commit`, `Abort`, `Ack`
-- [ ] Add per-RM state to `LState`: `rm_states: Map<int, LRMState>`
-- [ ] Add `LTMSendPrepare(s, s_, c)` — TM sends Prepare to all RMs
-- [ ] Add `LRMReceivePrepare(s, s_, c, rm)` — RM transitions Working→Prepared
-- [ ] Add `LRMAbort(s, s_, c, rm)` — RM unilaterally aborts (before prepare)
-- [ ] Add `LTMSendCommit(s, s_, c)` — TM sends Commit after all RMs prepared
-- [ ] Add `LTMSendAbort(s, s_, c)` — TM sends Abort
-- [ ] Add `LRMReceiveCommit(s, s_, c, rm)` — RM transitions to Committed
-- [ ] Add `LRMReceiveAbort(s, s_, c, rm)` — RM transitions to Aborted
-- [ ] Update `LNext` with all new transitions
-- [ ] Update `.automan` and `_transpile.toml`, regenerate, verify
+- [x] Add `LRMState` enum: `Working`, `Prepared`, `Committed`, `Aborted`
+- [x] Add per-RM state to `LState` via sets: `rm_prepared`, `rm_committed`, `rm_aborted`
+  - Used set-based modeling (matching existing codebase patterns) instead of `Map<int, LRMState>` (avoids untested Map support)
+  - Message passing modeled via boolean flags: `msgs_prepare`, `msgs_commit`, `msgs_abort`
+- [x] Add `LTMSendPrepare(s, s_, c)` — TM broadcasts Prepare to all RMs
+- [x] Add `LRMReceivePrepare(s, s_, c, rm)` — RM transitions Working→Prepared
+- [x] Add `LRMAbort(s, s_, c, rm)` — RM unilaterally aborts (before prepare)
+- [x] Add `LTMRcvPrepared(s, s_, c, r)` — (enhanced) TM receives Prepared, requires rm_prepared.contains(r)
+- [x] Add `LTMSendCommit(s, s_, c)` — TM sends Commit after all RMs prepared
+- [x] Add `LTMSendAbort(s, s_, c)` — TM sends Abort
+- [x] Add `LRMReceiveCommit(s, s_, c, rm)` — RM transitions Prepared→Committed
+- [x] Add `LRMReceiveAbort(s, s_, c, rm)` — RM transitions to Aborted
+- [x] Update `LNext` with all 8 transitions (3 TM + 5 RM actions)
+- [x] Update `.automan` and `_transpile.toml`, regenerate, verify
+  - Added `clone_fields = ["tm_state"]` and `clone_field_types` config
+  - Updated `collection_fields` for 5 Set fields
+  - Transpiler tests: 848 passed, 0 failed
 
 ---
 

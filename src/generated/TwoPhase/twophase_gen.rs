@@ -24,6 +24,20 @@ ensures
 }
 
 
+/// Helper: clone CTMState preserving view (workaround for missing derive Clone spec).
+fn clone_tm_state(r: &CTMState) -> (res: CTMState)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    match r {
+        CTMState::Aborted => CTMState::Aborted,
+        CTMState::Committed => CTMState::Committed,
+        CTMState::Init => CTMState::Init,
+    }
+}
+
+
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
     c.valid(),
@@ -32,12 +46,104 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        rm_state: HashSet::new(),
         tm_prepared: HashSet::new(),
+        rm_prepared: HashSet::new(),
+        rm_committed: HashSet::new(),
+        rm_aborted: HashSet::new(),
+        msgs_prepare: false,
+        msgs_commit: false,
+        msgs_abort: false,
         tm_state: CTMState::Init,
     };
     proof {
         lemma_empty_set_map();
+    }
+    result
+
+}
+
+pub exec fn CTMSendPrepare(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.tm_state is Init,
+ensures
+    result.valid(),
+    LTMSendPrepare(s@, result@, c@),
+{
+CState {
+        tm_state: clone_tm_state(&s.tm_state),
+        tm_prepared: clone_hashset(&s.tm_prepared),
+        rm_prepared: clone_hashset(&s.rm_prepared),
+        rm_committed: clone_hashset(&s.rm_committed),
+        rm_aborted: clone_hashset(&s.rm_aborted),
+        msgs_prepare: true,
+        msgs_commit: s.msgs_commit,
+        msgs_abort: s.msgs_abort,
+    }
+}
+
+pub exec fn CRMReceivePrepare(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    c@.rm.contains(*rm as int),
+    s.msgs_prepare == true,
+    !s@.rm_prepared.contains(*rm as int),
+    !s@.rm_aborted.contains(*rm as int),
+ensures
+    result.valid(),
+    LRMReceivePrepare(s@, result@, c@, *rm as int),
+{
+    let result = {
+        let mut __rm_prepared = clone_hashset(&s.rm_prepared);
+        __rm_prepared.insert(*rm);
+        CState {
+            tm_state: clone_tm_state(&s.tm_state),
+            tm_prepared: clone_hashset(&s.tm_prepared),
+            rm_prepared: __rm_prepared,
+            rm_committed: clone_hashset(&s.rm_committed),
+            rm_aborted: clone_hashset(&s.rm_aborted),
+            msgs_prepare: s.msgs_prepare,
+            msgs_commit: s.msgs_commit,
+            msgs_abort: s.msgs_abort,
+        }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    result
+
+}
+
+pub exec fn CRMAbort(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    c@.rm.contains(*rm as int),
+    !s@.rm_prepared.contains(*rm as int),
+    !s@.rm_aborted.contains(*rm as int),
+    !s@.rm_committed.contains(*rm as int),
+ensures
+    result.valid(),
+    LRMAbort(s@, result@, c@, *rm as int),
+{
+    let result = {
+        let mut __rm_aborted = clone_hashset(&s.rm_aborted);
+        __rm_aborted.insert(*rm);
+        CState {
+            tm_state: clone_tm_state(&s.tm_state),
+            tm_prepared: clone_hashset(&s.tm_prepared),
+            rm_prepared: clone_hashset(&s.rm_prepared),
+            rm_committed: clone_hashset(&s.rm_committed),
+            rm_aborted: __rm_aborted,
+            msgs_prepare: s.msgs_prepare,
+            msgs_commit: s.msgs_commit,
+            msgs_abort: s.msgs_abort,
+        }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
     }
     result
 
@@ -48,6 +154,7 @@ requires
     s.valid(),
     c.valid(),
     s.tm_state is Init,
+    s@.rm_prepared.contains(*r as int),
 ensures
     result.valid(),
     LTMRcvPrepared(s@, result@, c@, *r as int),
@@ -57,7 +164,12 @@ ensures
         __tm_prepared.insert(*r);
         CState {
             tm_prepared: __tm_prepared,
-            rm_state: clone_hashset(&s.rm_state),
+            rm_prepared: clone_hashset(&s.rm_prepared),
+            rm_committed: clone_hashset(&s.rm_committed),
+            rm_aborted: clone_hashset(&s.rm_aborted),
+            msgs_prepare: s.msgs_prepare,
+            msgs_commit: s.msgs_commit,
+            msgs_abort: s.msgs_abort,
             tm_state: CTMState::Init,
         }
     };
@@ -68,7 +180,7 @@ ensures
 
 }
 
-pub exec fn CTMCommit(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CTMSendCommit(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
@@ -76,29 +188,105 @@ requires
     s@.tm_prepared == c@.rm,
 ensures
     result.valid(),
-    LTMCommit(s@, result@, c@),
+    LTMSendCommit(s@, result@, c@),
 {
 CState {
-        rm_state: clone_hashset(&s.rm_state),
         tm_prepared: clone_hashset(&s.tm_prepared),
+        rm_prepared: clone_hashset(&s.rm_prepared),
+        rm_committed: clone_hashset(&s.rm_committed),
+        rm_aborted: clone_hashset(&s.rm_aborted),
+        msgs_prepare: s.msgs_prepare,
+        msgs_commit: true,
+        msgs_abort: s.msgs_abort,
         tm_state: CTMState::Committed,
     }
 }
 
-pub exec fn CTMAbort(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CTMSendAbort(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
     s.tm_state is Init,
 ensures
     result.valid(),
-    LTMAbort(s@, result@, c@),
+    LTMSendAbort(s@, result@, c@),
 {
 CState {
-        rm_state: clone_hashset(&s.rm_state),
         tm_prepared: clone_hashset(&s.tm_prepared),
+        rm_prepared: clone_hashset(&s.rm_prepared),
+        rm_committed: clone_hashset(&s.rm_committed),
+        rm_aborted: clone_hashset(&s.rm_aborted),
+        msgs_prepare: s.msgs_prepare,
+        msgs_commit: s.msgs_commit,
+        msgs_abort: true,
         tm_state: CTMState::Aborted,
     }
+}
+
+pub exec fn CRMReceiveCommit(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    c@.rm.contains(*rm as int),
+    s.msgs_commit == true,
+    s@.rm_prepared.contains(*rm as int),
+    !s@.rm_committed.contains(*rm as int),
+ensures
+    result.valid(),
+    LRMReceiveCommit(s@, result@, c@, *rm as int),
+{
+    let result = {
+        let mut __rm_committed = clone_hashset(&s.rm_committed);
+        __rm_committed.insert(*rm);
+        CState {
+            tm_state: clone_tm_state(&s.tm_state),
+            tm_prepared: clone_hashset(&s.tm_prepared),
+            rm_prepared: clone_hashset(&s.rm_prepared),
+            rm_committed: __rm_committed,
+            rm_aborted: clone_hashset(&s.rm_aborted),
+            msgs_prepare: s.msgs_prepare,
+            msgs_commit: s.msgs_commit,
+            msgs_abort: s.msgs_abort,
+        }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    result
+
+}
+
+pub exec fn CRMReceiveAbort(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    c@.rm.contains(*rm as int),
+    s.msgs_abort == true,
+    !s@.rm_committed.contains(*rm as int),
+    !s@.rm_aborted.contains(*rm as int),
+ensures
+    result.valid(),
+    LRMReceiveAbort(s@, result@, c@, *rm as int),
+{
+    let result = {
+        let mut __rm_aborted = clone_hashset(&s.rm_aborted);
+        __rm_aborted.insert(*rm);
+        CState {
+            tm_state: clone_tm_state(&s.tm_state),
+            tm_prepared: clone_hashset(&s.tm_prepared),
+            rm_prepared: clone_hashset(&s.rm_prepared),
+            rm_committed: clone_hashset(&s.rm_committed),
+            rm_aborted: __rm_aborted,
+            msgs_prepare: s.msgs_prepare,
+            msgs_commit: s.msgs_commit,
+            msgs_abort: s.msgs_abort,
+        }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    result
+
 }
 
 } // verus!
