@@ -34,11 +34,21 @@ impl PartialEq for CRequestHeader {
     }
 }
 
-impl Clone for CElectionState {
-    #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        self.clone_up_to_view()
-    }
+// #[derive(Clone)]
+pub struct CElectionState {
+    pub constants: CReplicaConstants,
+    pub current_view: CBallot,
+    pub current_view_suspectors: HashSet<u64>,
+    pub epoch_end_time: u64,
+    pub epoch_length: u64,
+    pub requests_received_this_epoch: Vec<CRequest>,
+    pub requests_received_prev_epochs: Vec<CRequest>,
+
+    /* for optimization */
+    // pub cur_req_set : Ghost<Set<CRequestHeader>>,
+    // pub prev_req_set : Ghost<Set<CRequestHeader>>,
+    pub cur_req_set: HashSet<CRequestHeader>,
+    pub prev_req_set: HashSet<CRequestHeader>,
 }
 
 
@@ -61,6 +71,39 @@ impl CElectionState
             requests_received_prev_epochs: clone_request_batch_up_to_view(&self.requests_received_prev_epochs),
             cur_req_set : self.cur_req_set.clone(),
             prev_req_set : self.prev_req_set.clone(),
+        }
+    }
+
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& self.current_view.abstractable()
+        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].abstractable())
+        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].abstractable())
+    }
+
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.current_view.valid()
+        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].valid())
+        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].valid())
+        // &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch.len() ==> self.requests_received_this_epoch[i].valid())
+        // &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs.len() ==> self.requests_received_prev_epochs[i].valid())
+        // &&& self.requests_received_this_epoch.len()  < 0x8000_0000_0000_0000
+        // &&& self.requests_received_prev_epochs.len() < 0x8000_0000_0000_0000
+    }
+
+    pub open spec fn view(self) -> ElectionState
+        recommends self.abstractable()
+    {
+        ElectionState{
+            constants: self.constants@,
+            current_view: self.current_view@,
+            current_view_suspectors: self.current_view_suspectors@.map(|x:u64| x as int),
+            epoch_end_time: self.epoch_end_time as int,
+            epoch_length: self.epoch_length as int,
+            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i, r:CRequest| r@),
+            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i, r:CRequest| r@)
         }
     }
 

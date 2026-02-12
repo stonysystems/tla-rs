@@ -14,5 +14,5 @@ pub mod replica;
 pub mod state_machine;
 pub mod types;
 
-pub mod common_proof;
-pub mod refinement_proof;
+// pub mod common_proof;
+// pub mod refinement_proof;

@@ -1,3 +1,4 @@
+use super::types_i::COperationNumber;
 use crate::common::collections::sets::*;
 use std::collections::HashMap;
 use vstd::prelude::*;
@@ -9,19 +10,66 @@ use vstd::std_specs::hash::*;
 use vstd::{map::*, prelude::*, seq::*, set_lib::set_int_range};
 
 use crate::common::collections::{count_matches::*, maps::*, vecs::*};
+use crate::implementation::RSL::types_i::CBalLt;
 
 use crate::common::{collections::maps::*, native::io_s::EndPoint};
 use crate::implementation::common::{generic_refinement::*, upper_bound::*, upper_bound_i::*};
 use crate::implementation::RSL::{
-    cbroadcast::*, cmessage::*, types_i::*,
+    cbroadcast::*, cconfiguration::*, cconstants::*, cmessage::*, types_i::*,
 };
 use crate::protocol::RSL::{
     acceptor::*, broadcast::*, configuration::*, constants::*, environment::*, message::*, types::*,
 };
 
 verus! {
+    // Datatype for CAcceptor
+    #[derive(Clone)]
+    pub struct CAcceptor {
+        pub constants: CReplicaConstants,
+        pub max_bal: CBallot,
+        pub votes: CVotes,
+        pub last_checkpointed_operation: Vec<COperationNumber>,
+        pub log_truncation_point: COperationNumber,
+
+        /* for optimization */
+        pub min_vote_opn: COperationNumber,
+    }
 
     impl CAcceptor{
+    pub open spec fn abstractable(self) -> bool
+    {
+        &&& self.constants.abstractable()
+        &&& self.max_bal.abstractable()
+        &&& cvotes_is_abstractable(&self.votes)
+        &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsAbstractable(self.last_checkpointed_operation[i]))
+        &&& COperationNumberIsAbstractable(self.log_truncation_point)
+    }
+
+    // Predicate to check if CAcceptor is valid
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.max_bal.valid()
+        &&& cvotes_is_valid(&self.votes)
+        &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
+        &&& COperationNumberIsValid(self.log_truncation_point)
+        &&& self.last_checkpointed_operation.len() == self.constants.all.config.replica_ids.len()
+
+
+    }
+
+    // Function to abstractify CAcceptor to LAcceptor
+    pub open spec fn view(self) -> LAcceptor
+        recommends self.abstractable()
+    {
+        LAcceptor {
+            constants: self.constants.view(),
+            max_bal: self.max_bal.view(),
+            votes: abstractify_cvotes(&self.votes),
+            last_checkpointed_operation:self.last_checkpointed_operation@.map(|i,c:COperationNumber| AbstractifyCOperationNumberToOperationNumber(c)),
+            log_truncation_point: AbstractifyCOperationNumberToOperationNumber(self.log_truncation_point),
+        }
+    }
 
     pub fn CRemoveVotesBeforeLogTruncationPoint(votes:&CVotes, log_truncation_point: COperationNumber) -> (cvotes: CVotes)
         requires
@@ -570,7 +618,6 @@ verus! {
 
 
 }
-
 
     pub fn CIsLogTruncationPointValid(log_truncation_point: COperationNumber,last_checkpointed_operation:&Vec<COperationNumber>,config:&CConfiguration) -> (isValid: bool)
         requires

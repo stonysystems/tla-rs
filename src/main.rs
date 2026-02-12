@@ -12,6 +12,7 @@ mod implementation;
 mod protocol;
 mod services;
 mod verus_extra;
+mod generated;
 
 use crate::common::native::io_s::EndPoint;
 use crate::common::native::io_s::NetcReceiveResult;

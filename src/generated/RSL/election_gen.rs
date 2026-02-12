@@ -6,17 +6,15 @@ use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
-use crate::protocol::common::upper_bound::*;
-use crate::protocol::RSL::acceptor::*;
-use crate::protocol::RSL::broadcast::*;
-use crate::protocol::RSL::configuration::WellFormedLConfiguration;
+use crate::implementation::common::upper_bound::*;
+use crate::implementation::common::upper_bound_i::*;
+use crate::implementation::RSL::cconfiguration::*;
+use crate::implementation::RSL::cconstants::*;
+use crate::implementation::RSL::cmessage::*;
+use crate::protocol::common::upper_bound::LtUpperBound;
+use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::election::*;
-use crate::protocol::RSL::executor::*;
-use crate::protocol::RSL::learner::*;
-use crate::protocol::RSL::proposer::*;
-use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
@@ -24,94 +22,116 @@ use vstd::set::*;
 
 verus! {
 
-// =============================================================================
-// Helper: clone CPacket preserving validity
-// =============================================================================
-
-#[verifier(external_body)]
-fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
-    requires p.valid(),
-    ensures res@ == p@, res.valid(),
-{
-    p.clone_up_to_view()
+#[derive(Clone)]
+pub struct CElectionState {
+    pub constants: CReplicaConstants,
+    pub current_view: CBallot,
+    pub current_view_suspectors: HashSet<i64>,
+    pub epoch_end_time: i64,
+    pub epoch_length: i64,
+    pub requests_received_this_epoch: Vec<CRequest>,
+    pub requests_received_prev_epochs: Vec<CRequest>,
 }
 
-// =============================================================================
-// CComputeSuccessorView — delegate to verified impl
-// =============================================================================
+impl CElectionState {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.constants.valid()
+        &&& self.current_view.valid()
+    }
+}
+
+impl View for CElectionState {
+    type V = ElectionState;
+
+    open spec fn view(&self) -> ElectionState {
+        ElectionState {
+            constants: self.constants@,
+            current_view: self.current_view@,
+            current_view_suspectors: self.current_view_suspectors@.map(|x: i64| x as int),
+            epoch_end_time: self.epoch_end_time as int,
+            epoch_length: self.epoch_length as int,
+            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i: int, x: CRequest| x@),
+            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i: int, x: CRequest| x@),
+        }
+    }
+}
 
 pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBallot)
 requires
     b.valid(),
     c.valid(),
-    b.seqno < 0xFFFF_FFFF_FFFF_FFFFu64,
 ensures
     result.valid(),
     result@ == ComputeSuccessorView(b@, c@),
 {
-    // CBallot is Copy, CConstants needs clone
-    CElectionState::CComputeSuccessorView(*b, c.clone_up_to_view())
+if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
+        CBallot {
+            seqno: b.seqno,
+            proposer_id: (b.proposer_id + 1),
+        }
+    } else {
+        CBallot {
+            seqno: (b.seqno + 1),
+            proposer_id: 0u64,
+        }
+    }
 }
 
-// =============================================================================
-// CBoundRequestSequence — delegate to verified impl
-// =============================================================================
-
-pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: u64) -> (result: Vec<CRequest>)
+pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: &CUpperBound) -> (result: Vec<CRequest>)
 requires
-    s@.len() < 0x1_0000_0000_0000_0000,
-    forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+    lengthBound.valid(),
 ensures
-    result@.map(|i, r: CRequest| r@) == BoundRequestSequence(s@.map(|i, r: CRequest| r@), UpperBound::UpperBoundFinite{n: lengthBound as int}),
+    result@ == BoundRequestSequence(s@, lengthBound@),
 {
-    CElectionState::CBoundRequestSequence(s, lengthBound)
+if (lengthBound is CUpperBoundFinite && ((0 <= lengthBound->n) && (lengthBound->n < s.len()))) {
+        s.subrange(0, lengthBound->n)
+    } else {
+        s
+    }
 }
-
-// =============================================================================
-// CRequestsMatch — delegate to verified impl
-// =============================================================================
 
 pub exec fn CRequestsMatch(r1: &CRequest, r2: &CRequest) -> (result: bool)
 requires
     r1.valid(),
     r2.valid(),
 ensures
-    result == RequestsMatch(r1@, r2@),
+    result@ == RequestsMatch(r1@, r2@),
 {
-    CElectionState::CRequestsMatch(r1, r2)
+(r1 is CRequest && (r2 is CRequest && ((r1.client == r2.client) && (r1.seqno == r2.seqno))))
 }
-
-// =============================================================================
-// CRequestSatisfiedBy — delegate to verified impl
-// =============================================================================
 
 pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
 requires
     r1.valid(),
     r2.valid(),
 ensures
-    result == RequestSatisfiedBy(r1@, r2@),
+    result@ == RequestSatisfiedBy(r1@, r2@),
 {
-    CElectionState::CRequestSatisfiedBy(r1, r2)
+(r1 is CRequest && (r2 is CRequest && ((r1.client == r2.client) && (r1.seqno <= r2.seqno))))
 }
-
-// =============================================================================
-// CRemoveAllSatisfiedRequestsInSequence — delegate to verified impl
-// =============================================================================
 
 pub exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> (result: Vec<CRequest>)
 requires
-    forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
     r.valid(),
 ensures
-    result@.map(|i, r: CRequest| r@) == RemoveAllSatisfiedRequestsInSequence(s@.map(|i, r: CRequest| r@), r@),
+    result@ == RemoveAllSatisfiedRequestsInSequence(s@, r@),
 {
-    CElectionState::CRemoveAllSatisfiedRequestsInSequence(s, r)
-}
+    let mut result: Vec<Request> = Vec::new();
+    let iter = (0..s.len());
+    for i in iter:iter
+    invariant
+        i <= s.len(),
+        result.len() <= i,
+        result@ == s@.take(i as int).filter(|x: Request| !RequestSatisfiedBy(s[0], r)),
+    {
+        if !CRequestSatisfiedBy(s[i], &r) {
+                        result.push(s[i].clone())
 
-// =============================================================================
-// CElectionStateInit — delegate to verified impl
-// =============================================================================
+        }
+    }
+    result
+
+}
 
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)
 requires
@@ -121,35 +141,91 @@ ensures
     result.valid(),
     ElectionStateInit(result@, c@),
 {
-    CElectionState::CElectionStateInit(c.clone_up_to_view())
-}
+    let result = CElectionState {
+        constants: c.clone(),
+        current_view: CBallot {
+            seqno: 1u64,
+            proposer_id: 0u64,
+        },
+        current_view_suspectors: HashSet::new(),
+        epoch_end_time: 0u64,
+        epoch_length: c.all.params.baseline_view_timeout_period,
+        requests_received_this_epoch: vec![],
+        requests_received_prev_epochs: vec![],
+    };
+    proof {
+        lemma_empty_set_map();
+        lemma_empty_seq_map();
+    }
+    result
 
-// =============================================================================
-// CElectionStateProcessHeartbeat — clone-delegate to verified impl
-// =============================================================================
+}
 
 pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clock: &u64) -> (result: CElectionState)
 requires
     es.valid(),
     p.valid(),
-    p.msg is CMessageHeartbeat,
+    p.msg is RslMessageHeartbeat,
 ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, *clock as int),
 {
-    let mut state = es.clone_up_to_view();
-    let pkt = clone_cpacket_preserving_validity(p);
+    let result = if !es.constants.all.config.replica_ids.contains(p.src) {
+        es.clone()
+    } else {
+                let sender_index = es.constants.all.config.CGetReplicaIndex(&p.src);
+        if ((p.msg->bal_heartbeat == es.current_view) && p.msg->suspicious) {
+            CElectionState {
+                constants: es.constants,
+                current_view: es.current_view,
+                current_view_suspectors:                 let __rhs_0 = {
+                    broadcast use vstd::std_specs::hash::group_hash_axioms;
+                    let mut __hs = HashSet::new();
+                    __hs.insert(sender_index.clone());
+                    __hs
+                };
+                (es.current_view_suspectors + __rhs_0)
+,
+                epoch_end_time: es.epoch_end_time,
+                epoch_length: es.epoch_length,
+                requests_received_this_epoch: es.requests_received_this_epoch,
+                requests_received_prev_epochs: es.requests_received_prev_epochs,
+            }
+        } else {
+            if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
+                                let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
+                CElectionState {
+                    constants: es.constants,
+                    current_view: p.msg->bal_heartbeat,
+                    current_view_suspectors: if p.msg->suspicious {
+                                                broadcast use vstd::std_specs::hash::group_hash_axioms;
+                        let mut __hs = HashSet::new();
+                        __hs.insert(sender_index.clone());
+                        __hs
 
-    state.CElectionStateProcessHeartbeat(pkt, *clock);
-    // ensures: state.valid(), ElectionStateProcessHeartbeat(old(state)@, state@, pkt@, clock as int)
-    // Since old(state)@ == es@ and pkt@ == p@: ElectionStateProcessHeartbeat(es@, state@, p@, *clock as int)
+                    } else {
+                        HashSet::new()
+                    },
+                    epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+                    epoch_length: new_epoch_length,
+                    requests_received_this_epoch: vec![],
+                    requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                }
 
-    state
+            } else {
+                es.clone()
+            }
+        }
+
+    };
+    proof {
+        lemma_empty_set_map();
+        broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+    }
+    result
+
 }
-
-// =============================================================================
-// CElectionStateCheckForViewTimeout — clone-delegate to verified impl
-// =============================================================================
 
 pub exec fn CElectionStateCheckForViewTimeout(es: &CElectionState, clock: &u64) -> (result: CElectionState)
 requires
@@ -158,18 +234,48 @@ ensures
     result.valid(),
     ElectionStateCheckForViewTimeout(es@, result@, *clock as int),
 {
-    let mut state = es.clone_up_to_view();
+    let result = if (*clock < es.epoch_end_time) {
+        es.clone()
+    } else {
+        if (es.requests_received_prev_epochs.len() == 0) {
+                        let new_epoch_length = es.constants.all.params.baseline_view_timeout_period;
+            CElectionState {
+                constants: es.constants,
+                current_view: es.current_view,
+                current_view_suspectors: es.current_view_suspectors,
+                epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+                epoch_length: new_epoch_length,
+                requests_received_this_epoch: vec![],
+                requests_received_prev_epochs: es.requests_received_this_epoch,
+            }
 
-    state.CElectionStateCheckForViewTimeout(*clock);
-    // ensures: state.valid(), ElectionStateCheckForViewTimeout(old(state)@, state@, clock as int)
-    // Since old(state)@ == es@: ElectionStateCheckForViewTimeout(es@, state@, *clock as int)
+        } else {
+            CElectionState {
+                constants: es.constants,
+                current_view: es.current_view,
+                current_view_suspectors:                 let __rhs_0 = {
+                    broadcast use vstd::std_specs::hash::group_hash_axioms;
+                    let mut __hs = HashSet::new();
+                    __hs.insert(es.constants.my_index.clone());
+                    __hs
+                };
+                (es.current_view_suspectors + __rhs_0)
+,
+                epoch_end_time: CUpperBoundedAddition(&clock, &es.epoch_length, &es.constants.all.params.max_integer_val),
+                epoch_length: es.epoch_length,
+                requests_received_this_epoch: vec![],
+                requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+            }
+        }
+    };
+    proof {
+        lemma_empty_set_map();
+        broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+    }
+    result
 
-    state
 }
-
-// =============================================================================
-// CElectionStateCheckForQuorumOfViewSuspicions — clone-delegate to verified impl
-// =============================================================================
 
 pub exec fn CElectionStateCheckForQuorumOfViewSuspicions(es: &CElectionState, clock: &u64) -> (result: CElectionState)
 requires
@@ -178,18 +284,28 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, *clock as int),
 {
-    let mut state = es.clone_up_to_view();
+    let result = if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
+        es.clone()
+    } else {
+                let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
+        CElectionState {
+            constants: es.constants,
+            current_view: CComputeSuccessorView(&es.current_view, &es.constants.all),
+            current_view_suspectors: HashSet::new(),
+            epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+            epoch_length: new_epoch_length,
+            requests_received_this_epoch: vec![],
+            requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+        }
 
-    state.CElectionStateCheckForQuorumOfViewSuspicions(*clock);
-    // ensures: state.valid(), ElectionStateCheckForQuorumOfViewSuspicions(old(state)@, state@, clock as int)
-    // Since old(state)@ == es@: ElectionStateCheckForQuorumOfViewSuspicions(es@, state@, *clock as int)
+    };
+    proof {
+        lemma_empty_set_map();
+        lemma_empty_seq_map();
+    }
+    result
 
-    state
 }
-
-// =============================================================================
-// CElectionStateReflectReceivedRequest — clone-delegate to verified impl
-// =============================================================================
 
 pub exec fn CElectionStateReflectReceivedRequest(es: &CElectionState, req: &CRequest) -> (result: CElectionState)
 requires
@@ -199,28 +315,65 @@ ensures
     result.valid(),
     ElectionStateReflectReceivedRequest(es@, result@, req@),
 {
-    let mut state = es.clone_up_to_view();
-    let r = req.clone_up_to_view();
+if {
+        let mut found: bool = false;
+        let earlier_req_0_iter = es.requests_received_prev_epochs.iter();
+        for earlier_req in iter:earlier_req_0_iter
+        invariant
+            found ==> exists|i: int| 0 <= i < earlier_req_0_iter@.0 && CRequestsMatch(&earlier_req_0_iter@.1[i], &req),
+        {
+            if CRequestsMatch(&earlier_req, &req) {
+                                found = true;
+                break;
 
-    state.CElectionStateReflectReceivedRequest(r);
-    // ensures: state.valid(), ElectionStateReflectReceivedRequest(old(state)@, state@, r@)
-    // Since old(state)@ == es@ and r@ == req@: ElectionStateReflectReceivedRequest(es@, state@, req@)
+            }
+        }
+        if !found {
+            let earlier_req_1_iter = es.requests_received_this_epoch.iter();
+            for earlier_req in iter:earlier_req_1_iter
+            invariant
+                found ==> exists|i: int| 0 <= i < earlier_req_1_iter@.0 && CRequestsMatch(&earlier_req_1_iter@.1[i], &req),
+            {
+                if CRequestsMatch(&earlier_req, &req) {
+                                        found = true;
+                    break;
 
-    state
+                }
+            }
+        };
+        found
+    } {
+        es.clone()
+    } else {
+        CElectionState {
+            constants: es.constants,
+            current_view: es.current_view,
+            current_view_suspectors: es.current_view_suspectors,
+            epoch_end_time: es.epoch_end_time,
+            epoch_length: es.epoch_length,
+            requests_received_this_epoch: CBoundRequestSequence((es.requests_received_this_epoch + vec![req]), &es.constants.all.params.max_integer_val),
+            requests_received_prev_epochs: es.requests_received_prev_epochs,
+        }
+    }
 }
-
-// =============================================================================
-// CRemoveExecutedRequestBatch — delegate to verified impl
-// =============================================================================
 
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)
 requires
-    forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),
-    crequestbatch_is_valid(batch),
+    batch.valid(),
 ensures
-    result@.map(|i, r: CRequest| r@) == RemoveExecutedRequestBatch(reqs@.map(|i, r: CRequest| r@), batch@.map(|i, r: CRequest| r@)),
+    result@ == RemoveExecutedRequestBatch(reqs@, batch@),
 {
-    CElectionState::CRemoveExecutedRequestBatch(reqs, batch)
+    let mut acc = reqs;
+    let iter = (0..batch.len());
+    for i in iter:iter
+    invariant
+        i <= batch.len(),
+        acc@ == RemoveExecutedRequestBatch(batch@.take(i as int), reqs@),
+    {
+        acc = CRemoveAllSatisfiedRequestsInSequence(&reqs, batch[i])
+    }
+    acc
+
 }
 
 } // verus!
