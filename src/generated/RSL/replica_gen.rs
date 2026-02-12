@@ -14,7 +14,6 @@ use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};
 use crate::protocol::RSL::configuration::*;
@@ -523,38 +522,6 @@ ensures
 
 }
 
-pub exec fn CReplicaNextSpontaneousMaybeExecute(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
-requires
-    s.valid(),
-ensures
-    result.0.valid(),
-    LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
-{
-    let result = if (s.executor.next_op_to_execute is COutstandingOpKnown && ((s.executor.ops_complete < s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
-                let v = s.executor.next_op_to_execute->v;
-        {         let s_proposer = CProposerResetViewTimerDueToExecution(&s.proposer, &v);
-        let s_learner = CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
-        let (s_executor, sent_packets) = CExecutorExecute(&s.executor);
-        (CReplica {
-    constants: s.constants,
-    nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s_proposer,
-    acceptor: s.acceptor,
-    learner: s_learner,
-    executor: s_executor,
-}, sent_packets)
- }
-
-    } else {
-        (s.clone(), vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-    }
-    result
-
-}
-
 pub exec fn CReplicaNextReadClockMaybeSendHeartbeat(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
@@ -680,7 +647,7 @@ ensures
 
                     } else {
                         if (*nextActionIndex == 6) {
-                                                        let s_ = CReplicaNextSpontaneousMaybeExecute(&s, &sent_packets);
+                                                        let s_ = LReplicaNextSpontaneousMaybeExecute(&s, &sent_packets);
                             s_
 
                         } else {

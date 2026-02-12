@@ -17,6 +17,8 @@ skip_functions = [
     "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
     # Also skip ExtractSentPacketsFromIos - filter with indexed access
     "ExtractSentPacketsFromIos",
+    # Calls skipped CExecutorExecute from executor module
+    "LReplicaNextSpontaneousMaybeExecute",
 ]
 
 # Spec-only functions that should NOT get C-prefix
@@ -30,6 +32,7 @@ spec_only_functions = [
     "SpontaneousClock",
     "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
     "LReplicaNextProcessPacket",
+    "LReplicaNextSpontaneousMaybeExecute",
 ]
 
 # Method call mappings
@@ -97,7 +100,6 @@ custom_imports = [
     "use crate::generated::RSL::learner_gen::*;",
     "use crate::generated::RSL::executor_gen::*;",
     "use crate::generated::RSL::election_gen::*;",
-    "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::common::upper_bound_i::*;",

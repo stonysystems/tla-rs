@@ -3,6 +3,7 @@
 
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
+use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::election_gen::*;
@@ -11,7 +12,6 @@ use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTim
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::proposer::*;
@@ -256,43 +256,6 @@ ensures
 
 }
 
-pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
-requires
-    s.valid(),
-    LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose),
-    LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose),
-ensures
-    result.0.valid(),
-    LProposerNominateNewValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
-{
-    let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, CMessage::CMessage2a {
-    bal_2a: s.max_ballot_i_sent_1a,
-    opn_2a: opn,
-    val_2a: v,
-});
-    (CProposer {
-    constants: s.constants,
-    current_state: s.current_state,
-    request_queue: s.request_queue.subrange(batchSize, (s.request_queue.len() as u64)),
-    max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-    next_operation_number_to_propose: (s.next_operation_number_to_propose + 1),
-    received_1b_packets: s.received_1b_packets,
-    highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
-    incomplete_batch_timer: if (s.request_queue.len() > batchSize) {
-        CIncompleteBatchTimer::CIncompleteBatchTimerOn {
-            when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
-        }
-    } else {
-        CIncompleteBatchTimer::CIncompleteBatchTimerOff {
-        }
-    },
-    election_state: s.election_state,
-    max_log_truncation_point: 0u64,
-    max_opn_with_proposal: 0u64,
-}, sent_packets)
-
-}
-
 pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
@@ -307,7 +270,7 @@ ensures
             LProposerNominateOldValueAndSend2a(&s, &log_truncation_point)
         } else {
             if (LExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, &s.next_operation_number_to_propose) || ((s.request_queue.len() >= s.constants.all.params.max_batch_size) || ((s.request_queue.len() > 0) && (s.incomplete_batch_timer is CIncompleteBatchTimerOn && (*clock >= s.incomplete_batch_timer->when))))) {
-                CProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
+                LProposerNominateNewValueAndSend2a(&s, &clock, &log_truncation_point)
             } else {
                 if ((s.request_queue.len() > 0) && s.incomplete_batch_timer is CIncompleteBatchTimerOff) {
                     (CProposer {

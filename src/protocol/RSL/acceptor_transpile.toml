@@ -69,7 +69,6 @@ custom_imports = [
     "use crate::common::collections::sets::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
-    "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::common::upper_bound_i::*;",

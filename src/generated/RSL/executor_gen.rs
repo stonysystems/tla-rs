@@ -8,7 +8,6 @@ use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};
 use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::protocol::common::upper_bound::LtUpperBound;
@@ -160,40 +159,6 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ens
         acc = acc.insert(replies[i].client, replies[i])
     }
     acc
-
-}
-
-pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CPacket>))
-requires
-    s.valid(),
-    s.next_op_to_execute is OutstandingOpKnown,
-    LtUpperBound(s.ops_complete, s.constants.all.params.max_integer_val),
-    s.constants.CReplicaConstantsValid(),
-ensures
-    result.0.valid(),
-    LExecutorExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
-{
-    let batch = s.next_op_to_execute->v;
-    {     let new_state = temp.0[(temp.0.len() - 1)];
-    {     let replies = temp.1;
-    {     let s_reply_cache = UpdateNewCache(&s.reply_cache, &replies);
-    let sent_packets = RepliesAreReplyType();
-    ((CExecutor {
-    constants: s.constants,
-    app: new_state,
-    ops_complete: (s.ops_complete + 1),
-    max_bal_reflected: if CBalLeq(&s.max_bal_reflected, &s.next_op_to_execute->bal) {
-        s.next_op_to_execute->bal
-    } else {
-        s.max_bal_reflected
-    },
-    next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-    },
-    reply_cache: s_reply_cache,
-}, GetPacketsFromReplies(&s.constants.all.config.replica_ids[s.constants.my_index], &batch, &replies)), sent_packets)
- }
- }
- }
 
 }
 

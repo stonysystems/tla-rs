@@ -4,8 +4,6 @@
 use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
-use crate::implementation::RSL::cconfiguration::*;
-use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::configuration::*;

@@ -10,6 +10,8 @@ primitive_types = [
 skip_functions = [
     # Complex existential quantifier with nested index access that cannot be auto-transpiled
     "LProposerNominateOldValueAndSend2a",
+    # Variable scoping issues in generated code (opn, v, batchSize out of scope)
+    "LProposerNominateNewValueAndSend2a",
 ]
 
 # Spec-only functions that should NOT get C-prefix
@@ -20,8 +22,9 @@ spec_only_functions = [
     "LProposerCanNominateUsingOperationNumber",
     "LAllAcceptorsHadNoProposal",
     "LExistsAcceptorHasProposalLargeThanOpn",
-    # This function is skipped so the call to it should use spec name
+    # Skipped functions should not get C-prefix when referenced
     "LProposerNominateOldValueAndSend2a",
+    "LProposerNominateNewValueAndSend2a",
 ]
 
 # Method call mappings - spec functions that become method calls
@@ -78,11 +81,11 @@ custom_imports = [
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",
     "use crate::common::collections::hashsets::*;",
+    "use crate::common::collections::vecs::*;",
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
     "use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;",
     "use crate::generated::RSL::election_gen::*;",
-    "use crate::implementation::RSL::cconstants::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
     # CIncompleteBatchTimer is defined in types_gen.rs - import the variant for convenience

@@ -1418,11 +1418,26 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Added `[extra_fields]` sections: CAcceptor.min_vote_opn, CProposer.max_log_truncation_point/max_opn_with_proposal, CElectionState.cur_req_set/prev_req_set
           - Regenerated acceptor_gen.rs, proposer_gen.rs, election_gen.rs — all use types_gen.rs definitions now
           - Verified: 509 verified, 1 pre-existing error; 852 transpiler tests pass
-        - [ ] Phase B: Wire ReplicaImpl acceptor calls to generated functions (~5 call sites)
-        - [ ] Phase C: Wire ReplicaImpl learner calls to generated functions (~4 call sites)
-        - [ ] Phase D: Wire ReplicaImpl executor calls to generated functions (~7 call sites)
-        - [ ] Phase E: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
-        - [ ] Phase F: Wire ReplicaImpl replica-level init to generated functions
+        - [x] Phase A.6: Remove duplicate cconstants/cconfiguration imports from all TOML configs [26:02:12]
+          - Removed `cconstants::*` from acceptor, broadcast, executor, election, proposer, replica configs
+          - Removed `cconfiguration::*` from broadcast, election configs
+          - All types (CConstants, CReplicaConstants, CConfiguration) now solely from types_gen
+          - Added `vecs::*` import to proposer config for `concat_vecs`
+        - [x] Phase A.7: Skip broken generated functions to enable RSL module compilation [26:02:12]
+          - Added `LProposerNominateNewValueAndSend2a` to proposer skip_functions (opn/v/batchSize scope issues)
+          - Added `LExecutorExecute` to executor skip_functions (temp variable scope issue)
+          - Added `LReplicaNextSpontaneousMaybeExecute` to replica skip_functions (calls skipped CExecutorExecute)
+          - Regenerated all 7 RSL modules with updated configs
+        - [ ] Phase B: Unify type definitions (BLOCKER for call site wiring) [26:02:12]
+          - **Problem**: Manual modules (acceptorimpl, cconstants, cconfiguration, ProposerImpl, etc.) define DUPLICATE struct types that are structurally identical to types_gen.rs but are different Rust types. `pub mod RSL` in generated/mod.rs causes E0308 type mismatch when generated functions return types_gen::CAcceptor but ReplicaImpl expects acceptorimpl::CAcceptor.
+          - **Solution**: Make manual modules import types from types_gen instead of defining their own. All `impl` blocks can stay in manual modules (Rust allows impl for same-crate types).
+          - **Scope**: Must unify CAcceptor, CProposer, CLearner, CExecutor, CElectionState, CConstants, CReplicaConstants, CConfiguration, CBallot, CVote, CRequest, etc.
+          - **Prerequisite**: Enable `pub mod RSL` in src/generated/mod.rs (currently blocked by type conflicts)
+        - [ ] Phase C: Wire ReplicaImpl acceptor calls to generated functions (~7 call sites)
+        - [ ] Phase D: Wire ReplicaImpl learner calls to generated functions (~4 call sites)
+        - [ ] Phase E: Wire ReplicaImpl executor calls to generated functions (~7 call sites)
+        - [ ] Phase F: Wire ReplicaImpl proposer calls to generated functions (~10 call sites)
+        - [ ] Phase G: Wire ReplicaImpl replica-level init to generated functions
       - [ ] Add integration test verifying generated modules are accessible and produce correct types
       - [ ] Deprecate manual implementation modules (mark with `#[deprecated]` or move to `_legacy/`)
 - [ ] Run full system tests with generated implementation (blocked by regeneration parity issues; optimized variants are now complete)
