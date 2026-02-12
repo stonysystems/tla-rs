@@ -174,8 +174,11 @@ impl Transpiler {
                     .collect(),
             );
 
-            // Generate structs
-            for struct_def in registry.structs.values() {
+            // Generate structs (sorted by name for deterministic output)
+            let mut struct_names: Vec<_> = registry.structs.keys().cloned().collect();
+            struct_names.sort();
+            for name in struct_names {
+                let struct_def = &registry.structs[&name];
                 if struct_def.is_spec {
                     let generated = type_gen.generate_struct(struct_def);
                     output.push_str(&generated.code);
@@ -183,8 +186,11 @@ impl Transpiler {
                 }
             }
 
-            // Generate enums
-            for enum_def in registry.enums.values() {
+            // Generate enums (sorted by name for deterministic output)
+            let mut enum_names: Vec<_> = registry.enums.keys().cloned().collect();
+            enum_names.sort();
+            for name in enum_names {
+                let enum_def = &registry.enums[&name];
                 if enum_def.is_spec {
                     let generated = type_gen.generate_enum(enum_def);
                     output.push_str(&generated.code);
@@ -372,8 +378,11 @@ impl Transpiler {
                     .collect(),
             );
 
-            // Generate structs
-            for struct_def in registry.structs.values() {
+            // Generate structs (sorted by name for deterministic output)
+            let mut struct_names: Vec<_> = registry.structs.keys().cloned().collect();
+            struct_names.sort();
+            for name in struct_names {
+                let struct_def = &registry.structs[&name];
                 if struct_def.is_spec {
                     let generated = type_gen.generate_struct(struct_def);
                     output.push_str(&generated.code);
@@ -381,8 +390,11 @@ impl Transpiler {
                 }
             }
 
-            // Generate enums
-            for enum_def in registry.enums.values() {
+            // Generate enums (sorted by name for deterministic output)
+            let mut enum_names: Vec<_> = registry.enums.keys().cloned().collect();
+            enum_names.sort();
+            for name in enum_names {
+                let enum_def = &registry.enums[&name];
                 if enum_def.is_spec {
                     let generated = type_gen.generate_enum(enum_def);
                     output.push_str(&generated.code);
@@ -2364,5 +2376,61 @@ mod tests {
             "Should generate empty lemma for map field");
         assert!(output.contains("lemma_abstractify_creplycache_insert"),
             "Should generate insert lemma for map field");
+    }
+
+    #[test]
+    fn test_transpile_output_is_deterministic() {
+        // Regression: struct construction field ordering and inline type ordering
+        // must be deterministic across multiple transpilations (no HashMap iteration order dependency).
+        let config = TranspilerConfig {
+            generate_inline_types: true,
+            translator: TranslatorConfig {
+                int_type: "u64".to_string(),
+                nat_type: "u64".to_string(),
+                generate_proofs: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let spec_source = r#"
+            verus! {
+                pub struct LInner {
+                    pub alpha: int,
+                    pub beta: int,
+                }
+
+                pub struct LState {
+                    pub x: int,
+                    pub y: int,
+                    pub z: int,
+                }
+
+                pub open spec fn LInit(s_: LState) -> bool {
+                    &&& s_.x == 0
+                    &&& s_.y == 1
+                    &&& s_.z == 2
+                }
+            }
+        "#;
+        let annotation_source = "module test\nLInit(-)\n";
+
+        // Transpile multiple times and verify all outputs are identical
+        let mut results = Vec::new();
+        for _ in 0..5 {
+            let transpiler = Transpiler::new(config.clone());
+            let result = transpiler
+                .transpile_source(spec_source, annotation_source)
+                .unwrap();
+            results.push(result);
+        }
+
+        for i in 1..results.len() {
+            assert_eq!(
+                results[0], results[i],
+                "Transpilation run {} produced different output than run 0",
+                i
+            );
+        }
     }
 }

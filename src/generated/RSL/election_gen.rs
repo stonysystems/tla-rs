@@ -2,6 +2,7 @@
 // DO NOT EDIT MANUALLY
 
 use crate::common::collections::hashsets::*;
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
@@ -19,6 +20,7 @@ use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 
 verus! {
 
@@ -26,9 +28,9 @@ verus! {
 pub struct CElectionState {
     pub constants: CReplicaConstants,
     pub current_view: CBallot,
-    pub current_view_suspectors: HashSet<i64>,
-    pub epoch_end_time: i64,
-    pub epoch_length: i64,
+    pub current_view_suspectors: HashSet<u64>,
+    pub epoch_end_time: u64,
+    pub epoch_length: u64,
     pub requests_received_this_epoch: Vec<CRequest>,
     pub requests_received_prev_epochs: Vec<CRequest>,
 }
@@ -47,7 +49,7 @@ impl View for CElectionState {
         ElectionState {
             constants: self.constants@,
             current_view: self.current_view@,
-            current_view_suspectors: self.current_view_suspectors@.map(|x: i64| x as int),
+            current_view_suspectors: self.current_view_suspectors@.map(|x: u64| x as int),
             epoch_end_time: self.epoch_end_time as int,
             epoch_length: self.epoch_length as int,
             requests_received_this_epoch: self.requests_received_this_epoch@.map(|i: int, x: CRequest| x@),
@@ -55,6 +57,32 @@ impl View for CElectionState {
         }
     }
 }
+
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
+}
+
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
 
 pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBallot)
 requires
@@ -74,19 +102,6 @@ if ((b.proposer_id + 1) < c.config.replica_ids.len()) {
             seqno: (b.seqno + 1),
             proposer_id: 0u64,
         }
-    }
-}
-
-pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: &CUpperBound) -> (result: Vec<CRequest>)
-requires
-    lengthBound.valid(),
-ensures
-    result@ == BoundRequestSequence(s@, lengthBound@),
-{
-if (lengthBound is CUpperBoundFinite && ((0 <= lengthBound->n) && (lengthBound->n < s.len()))) {
-        s.subrange(0, lengthBound->n)
-    } else {
-        s
     }
 }
 
@@ -116,15 +131,14 @@ requires
 ensures
     result@ == RemoveAllSatisfiedRequestsInSequence(s@, r@),
 {
-    let mut result: Vec<Request> = Vec::new();
-    let iter = (0..s.len());
-    for i in iter:iter
+    let mut result: Vec<CRequest> = Vec::new();
+    for i in (0..s.len())
     invariant
         i <= s.len(),
         result.len() <= i,
-        result@ == s@.take(i as int).filter(|x: Request| !RequestSatisfiedBy(s[0], r)),
+        result@ == RemoveAllSatisfiedRequestsInSequence(s@.take(i as int), r@),
     {
-        if !CRequestSatisfiedBy(s[i], &r) {
+        if !CRequestSatisfiedBy(&s[i], &r) {
                         result.push(s[i].clone())
 
         }
@@ -178,22 +192,23 @@ ensures
             CElectionState {
                 constants: es.constants,
                 current_view: es.current_view,
-                current_view_suspectors:                 let __rhs_0 = {
-                    broadcast use vstd::std_specs::hash::group_hash_axioms;
-                    let mut __hs = HashSet::new();
-                    __hs.insert(sender_index.clone());
-                    __hs
-                };
-                (es.current_view_suspectors + __rhs_0)
-,
+                current_view_suspectors: {
+                    let __rhs_0 = {
+                        broadcast use vstd::std_specs::hash::group_hash_axioms;
+                        let mut __hs = HashSet::new();
+                        __hs.insert(sender_index.clone());
+                        __hs
+                    };
+                    union_sets(&es.current_view_suspectors, &__rhs_0)
+                },
                 epoch_end_time: es.epoch_end_time,
                 epoch_length: es.epoch_length,
-                requests_received_this_epoch: es.requests_received_this_epoch,
-                requests_received_prev_epochs: es.requests_received_prev_epochs,
+                requests_received_this_epoch: es.requests_received_this_epoch.clone(),
+                requests_received_prev_epochs: es.requests_received_prev_epochs.clone(),
             }
         } else {
             if CBalLt(&es.current_view, &p.msg->bal_heartbeat) {
-                                let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
+                                let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
                 CElectionState {
                     constants: es.constants,
                     current_view: p.msg->bal_heartbeat,
@@ -206,10 +221,10 @@ ensures
                     } else {
                         HashSet::new()
                     },
-                    epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+                    epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
                     epoch_length: new_epoch_length,
                     requests_received_this_epoch: vec![],
-                    requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                    requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
                 }
 
             } else {
@@ -242,29 +257,30 @@ ensures
             CElectionState {
                 constants: es.constants,
                 current_view: es.current_view,
-                current_view_suspectors: es.current_view_suspectors,
-                epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+                current_view_suspectors: clone_hashset(&es.current_view_suspectors),
+                epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
                 epoch_length: new_epoch_length,
                 requests_received_this_epoch: vec![],
-                requests_received_prev_epochs: es.requests_received_this_epoch,
+                requests_received_prev_epochs: es.requests_received_this_epoch.clone(),
             }
 
         } else {
             CElectionState {
                 constants: es.constants,
                 current_view: es.current_view,
-                current_view_suspectors:                 let __rhs_0 = {
-                    broadcast use vstd::std_specs::hash::group_hash_axioms;
-                    let mut __hs = HashSet::new();
-                    __hs.insert(es.constants.my_index.clone());
-                    __hs
-                };
-                (es.current_view_suspectors + __rhs_0)
-,
-                epoch_end_time: CUpperBoundedAddition(&clock, &es.epoch_length, &es.constants.all.params.max_integer_val),
+                current_view_suspectors: {
+                    let __rhs_0 = {
+                        broadcast use vstd::std_specs::hash::group_hash_axioms;
+                        let mut __hs = HashSet::new();
+                        __hs.insert(es.constants.my_index.clone());
+                        __hs
+                    };
+                    union_sets(&es.current_view_suspectors, &__rhs_0)
+                },
+                epoch_end_time: CUpperBoundedAddition(*clock, es.epoch_length, es.constants.all.params.max_integer_val),
                 epoch_length: es.epoch_length,
                 requests_received_this_epoch: vec![],
-                requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+                requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
             }
         }
     };
@@ -284,18 +300,18 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, *clock as int),
 {
-    let result = if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !LtUpperBound(&es.current_view.seqno, &es.constants.all.params.max_integer_val)) {
+    let result = if ((es.current_view_suspectors.len() < es.constants.all.config.CMinQuorumSize()) || !(es.current_view.seqno < es.constants.all.params.max_integer_val)) {
         es.clone()
     } else {
-                let new_epoch_length = CUpperBoundedAddition(&es.epoch_length, &es.epoch_length, &es.constants.all.params.max_integer_val);
+                let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
         CElectionState {
             constants: es.constants,
             current_view: CComputeSuccessorView(&es.current_view, &es.constants.all),
             current_view_suspectors: HashSet::new(),
-            epoch_end_time: CUpperBoundedAddition(&clock, &new_epoch_length, &es.constants.all.params.max_integer_val),
+            epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
             epoch_length: new_epoch_length,
             requests_received_this_epoch: vec![],
-            requests_received_prev_epochs: CBoundRequestSequence((es.requests_received_prev_epochs + es.requests_received_this_epoch), &es.constants.all.params.max_integer_val),
+            requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
         }
 
     };
@@ -348,11 +364,11 @@ if {
         CElectionState {
             constants: es.constants,
             current_view: es.current_view,
-            current_view_suspectors: es.current_view_suspectors,
+            current_view_suspectors: clone_hashset(&es.current_view_suspectors),
             epoch_end_time: es.epoch_end_time,
             epoch_length: es.epoch_length,
-            requests_received_this_epoch: CBoundRequestSequence((es.requests_received_this_epoch + vec![req]), &es.constants.all.params.max_integer_val),
-            requests_received_prev_epochs: es.requests_received_prev_epochs,
+            requests_received_this_epoch: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_this_epoch, &vec![req.clone()]), es.constants.all.params.max_integer_val),
+            requests_received_prev_epochs: es.requests_received_prev_epochs.clone(),
         }
     }
 }
@@ -363,14 +379,13 @@ requires
 ensures
     result@ == RemoveExecutedRequestBatch(reqs@, batch@),
 {
-    let mut acc = reqs;
-    let iter = (0..batch.len());
-    for i in iter:iter
+    let mut acc = reqs.clone();
+    for i in (0..batch.len())
     invariant
         i <= batch.len(),
         acc@ == RemoveExecutedRequestBatch(batch@.take(i as int), reqs@),
     {
-        acc = CRemoveAllSatisfiedRequestsInSequence(&reqs, batch[i])
+        acc = CRemoveAllSatisfiedRequestsInSequence(&acc, &batch[i])
     }
     acc
 

@@ -32,7 +32,7 @@ verus! {
 #[derive(Clone)]
 pub struct CReplica {
     pub constants: CReplicaConstants,
-    pub nextHeartbeatTime: i64,
+    pub nextHeartbeatTime: u64,
     pub proposer: CProposer,
     pub acceptor: CAcceptor,
     pub learner: CLearner,
@@ -67,7 +67,7 @@ impl View for CReplica {
 #[derive(Clone)]
 pub struct CScheduler {
     pub replica: CReplica,
-    pub nextActionIndex: i64,
+    pub nextActionIndex: u64,
 }
 
 impl CScheduler {
@@ -87,6 +87,21 @@ impl View for CScheduler {
     }
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
+
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
     c.valid(),
@@ -102,10 +117,10 @@ ensures
     CReplica {
         constants: c.clone(),
         nextHeartbeatTime: 0u64,
-        proposer: r_proposer,
-        learner: r_learner,
-        executor: r_executor,
         acceptor: r_acceptor,
+        executor: r_executor,
+        learner: r_learner,
+        proposer: r_proposer,
     }
 
 }
@@ -516,7 +531,7 @@ ensures
     result.0.valid(),
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if (s.executor.next_op_to_execute is COutstandingOpKnown && (LtUpperBound(&s.executor.ops_complete, &s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
+    let result = if (s.executor.next_op_to_execute is COutstandingOpKnown && ((s.executor.ops_complete < s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
                 let v = s.executor.next_op_to_execute->v;
         {         let s_proposer = CProposerResetViewTimerDueToExecution(&s.proposer, &v);
         let s_learner = CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
@@ -559,7 +574,7 @@ ensures
 });
         (CReplica {
     constants: s.constants,
-    nextHeartbeatTime: CUpperBoundedAddition(&clock.t, &s.constants.all.params.heartbeat_period, &s.constants.all.params.max_integer_val),
+    nextHeartbeatTime: CUpperBoundedAddition(clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val),
     proposer: s.proposer,
     acceptor: s.acceptor,
     learner: s.learner,

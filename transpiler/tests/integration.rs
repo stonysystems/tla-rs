@@ -992,3 +992,73 @@ fn test_rsl_types_manual_helpers_component_part2_symbols_present() {
         last_index = idx;
     }
 }
+
+#[test]
+fn test_transpilation_determinism_with_struct_substitutions() {
+    // Regression: struct construction with field substitutions must produce deterministic output.
+    // Previously, HashMap iteration order caused non-deterministic field ordering.
+    let spec_source = r#"
+        verus! {
+            pub struct LReplica {
+                pub alpha: int,
+                pub beta: int,
+                pub gamma: int,
+                pub delta: int,
+            }
+
+            pub open spec fn LReplicaInit(s_: LReplica) -> bool {
+                &&& s_.alpha == 0
+                &&& s_.beta == 1
+                &&& s_.gamma == 2
+                &&& s_.delta == 3
+            }
+        }
+    "#;
+    let annotation_source = "module test\nLReplicaInit(-)\n";
+
+    let config = TranspilerConfig {
+        generate_inline_types: true,
+        translator: TranslatorConfig {
+            generate_proofs: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut results = Vec::new();
+    for _ in 0..5 {
+        let transpiler = Transpiler::new(config.clone());
+        let result = transpiler
+            .transpile_source(spec_source, annotation_source)
+            .unwrap();
+        results.push(result);
+    }
+
+    for i in 1..results.len() {
+        assert_eq!(
+            results[0], results[i],
+            "Transpilation run {} produced different output than run 0. Diff:\n{}",
+            i,
+            diff_strings(&results[0], &results[i])
+        );
+    }
+}
+
+fn diff_strings(a: &str, b: &str) -> String {
+    let a_lines: Vec<&str> = a.lines().collect();
+    let b_lines: Vec<&str> = b.lines().collect();
+    let mut diff = String::new();
+    for (i, (la, lb)) in a_lines.iter().zip(b_lines.iter()).enumerate() {
+        if la != lb {
+            diff.push_str(&format!("line {}: -{}\nline {}: +{}\n", i + 1, la, i + 1, lb));
+        }
+    }
+    if a_lines.len() != b_lines.len() {
+        diff.push_str(&format!(
+            "line count: {} vs {}\n",
+            a_lines.len(),
+            b_lines.len()
+        ));
+    }
+    diff
+}

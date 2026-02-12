@@ -27,12 +27,12 @@ verus! {
 #[derive(Clone)]
 pub struct CProposer {
     pub constants: CReplicaConstants,
-    pub current_state: i64,
+    pub current_state: u64,
     pub request_queue: Vec<CRequest>,
     pub max_ballot_i_sent_1a: CBallot,
-    pub next_operation_number_to_propose: i64,
+    pub next_operation_number_to_propose: u64,
     pub received_1b_packets: HashSet<CPacket>,
-    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, i64>,
+    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>,
     pub incomplete_batch_timer: CIncompleteBatchTimer,
     pub election_state: CElectionState,
 }
@@ -67,7 +67,7 @@ impl View for CProposer {
 #[derive(Clone)]
 pub enum CIncompleteBatchTimer {
     IncompleteBatchTimerOn {
-        when: i64,
+        when: u64,
     },
     IncompleteBatchTimerOff {
     },
@@ -92,6 +92,32 @@ impl View for CIncompleteBatchTimer {
         }
     }
 }
+
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
+}
+
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
 
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
@@ -148,7 +174,7 @@ ensures
             CProposer {
                 constants: s.constants,
                 current_state: s.current_state,
-                request_queue: (s.request_queue + vec![val]),
+                request_queue: concat_vecs(&s.request_queue, &vec![val]),
                 max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
                 next_operation_number_to_propose: s.next_operation_number_to_propose,
                 received_1b_packets: s.received_1b_packets,
@@ -232,14 +258,15 @@ ensures
         request_queue: s.request_queue,
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
         next_operation_number_to_propose: s.next_operation_number_to_propose,
-        received_1b_packets:         let __rhs_0 = {
-            broadcast use vstd::std_specs::hash::group_hash_axioms;
-            let mut __hs = HashSet::new();
-            __hs.insert(p.clone());
-            __hs
-        };
-        (s.received_1b_packets + __rhs_0)
-,
+        received_1b_packets: {
+            let __rhs_0 = {
+                broadcast use vstd::std_specs::hash::group_hash_axioms;
+                let mut __hs = HashSet::new();
+                __hs.insert(p.clone());
+                __hs
+            };
+            union_sets(&s.received_1b_packets, &__rhs_0)
+        },
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
         incomplete_batch_timer: s.incomplete_batch_timer,
         election_state: s.election_state,
@@ -310,7 +337,7 @@ ensures
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: if (s.request_queue.len() > batchSize) {
         CIncompleteBatchTimer::CIncompleteBatchTimerOn {
-            when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
+            when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
         }
     } else {
         CIncompleteBatchTimer::CIncompleteBatchTimerOff {
@@ -347,7 +374,7 @@ ensures
     received_1b_packets: s.received_1b_packets,
     highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view,
     incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOn {
-        when: CUpperBoundedAddition(&clock, &s.constants.all.params.max_batch_delay, &s.constants.all.params.max_integer_val),
+        when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
     },
     election_state: s.election_state,
 }, vec![])

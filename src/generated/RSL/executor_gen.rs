@@ -26,7 +26,7 @@ verus! {
 pub struct CExecutor {
     pub constants: CReplicaConstants,
     pub app: CAppState,
-    pub ops_complete: i64,
+    pub ops_complete: u64,
     pub max_bal_reflected: CBallot,
     pub next_op_to_execute: COutstandingOperation,
     pub reply_cache: CReplyCache,
@@ -87,6 +87,21 @@ impl View for COutstandingOperation {
     }
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
+
 pub exec fn CExecutorInit(c: &CReplicaConstants) -> (result: CExecutor)
 requires
     c.valid(),
@@ -137,8 +152,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)ens
     result@ == LClientsInReplies(replies@),
 {
     let mut acc = HashMap::new();
-    let iter = (0..replies.len());
-    for i in iter:iter
+    for i in (0..replies.len())
     invariant
         i <= replies.len(),
         acc@ == LClientsInReplies(replies@.take(i as int)),
@@ -176,7 +190,7 @@ ensures
     next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
     },
     reply_cache: s_reply_cache,
-}, GetPacketsFromReplies(s.constants.all.config.replica_ids[s.constants.my_index], &batch, &replies)), sent_packets)
+}, GetPacketsFromReplies(&s.constants.all.config.replica_ids[s.constants.my_index], &batch, &replies)), sent_packets)
  }
  }
  }

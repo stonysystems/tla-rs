@@ -15,6 +15,21 @@ use vstd::seq::*;
 
 verus! {
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
+
 pub exec fn CBroadcastToEveryone(c: &CConfiguration, myidx: &u64, m: &CMessage) -> (result: Vec<CPacket>)
 requires
     c.valid(),

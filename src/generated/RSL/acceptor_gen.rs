@@ -48,6 +48,21 @@ impl View for CAcceptor {
     }
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
+
 pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)ensures
     RemoveVotesBeforeLogTruncationPoint(*votes as int, result@, *log_truncation_point as int),
 {
@@ -308,152 +323,6 @@ if (opn <= s.log_truncation_point) {
         }
 
     }
-}
-
-// =============================================================================
-// Optimized Variants (Phase 5 integration)
-// =============================================================================
-
-pub exec fn CUpdateMinVoteOpn(
-    log_truncation_point: &u64,
-    new_opn: &u64,
-    min_vote_opn: &u64,
-) -> (result: u64)
-    ensures
-        result == if *log_truncation_point > *min_vote_opn {
-            *log_truncation_point
-        } else if *new_opn < *min_vote_opn {
-            *new_opn
-        } else {
-            *min_vote_opn
-        },
-{
-    if *log_truncation_point > *min_vote_opn {
-        *log_truncation_point
-    } else if *new_opn < *min_vote_opn {
-        *new_opn
-    } else {
-        *min_vote_opn
-    }
-}
-
-pub exec fn CAddVoteAndRemoveOldOnes_optimized(
-    votes: &CVotes,
-    new_opn: &u64,
-    new_vote: &CVote,
-    log_truncation_point: &u64,
-    min_vote_opn: &u64,
-) -> (result: (CVotes, u64))
-    requires
-        cvotes_is_valid(votes),
-        new_vote.valid(),
-    ensures
-        result.1 == if *log_truncation_point > *min_vote_opn {
-            *log_truncation_point
-        } else if *new_opn < *min_vote_opn {
-            *new_opn
-        } else {
-            *min_vote_opn
-        },
-{
-    let updated_votes = CAddVoteAndRemoveOldOnes(votes, new_opn, new_vote, log_truncation_point);
-    let updated_min_vote_opn = CUpdateMinVoteOpn(log_truncation_point, new_opn, min_vote_opn);
-    (updated_votes, updated_min_vote_opn)
-}
-
-pub exec fn CAcceptorProcess2a_optimized(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
-    requires
-        s.valid(),
-        inp.valid(),
-        inp.msg is CMessage2a,
-        s.constants.all.config.replica_ids@.contains(inp.src),
-        BalLeq(s.max_bal@, inp.msg->bal_2a@),
-        LeqUpperBound(inp.msg->opn_2a as int, UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}),
-    ensures
-        result.0.valid(),
-        LAcceptorProcess2a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
-{
-    let (mut next_state, sent_packets) = CAcceptorProcess2a(s, inp);
-    let opn_2a = match &inp.msg {
-        CMessage::CMessage2a { opn_2a, .. } => *opn_2a,
-        _ => {
-            proof { assert(false); }
-            unreachable_value()
-        }
-    };
-
-    if s.log_truncation_point <= opn_2a {
-        let updated_min_vote_opn = CUpdateMinVoteOpn(&next_state.log_truncation_point, &opn_2a, &s.min_vote_opn);
-        next_state.min_vote_opn = updated_min_vote_opn;
-    }
-
-    (next_state, sent_packets)
-}
-
-pub fn test_CUpdateMinVoteOpn_prefers_truncation_point() {
-    let updated = CUpdateMinVoteOpn(&10, &7, &5);
-    assert(updated == 10);
-}
-
-pub fn test_CUpdateMinVoteOpn_prefers_new_opn() {
-    let updated = CUpdateMinVoteOpn(&2, &3, &5);
-    assert(updated == 3);
-}
-
-pub fn test_CUpdateMinVoteOpn_keeps_existing_min() {
-    let updated = CUpdateMinVoteOpn(&2, &8, &5);
-    assert(updated == 5);
-}
-
-pub fn test_CAddVoteAndRemoveOldOnes_optimized_updates_min_to_truncation() {
-    let votes: CVotes = HashMap::new();
-    let vote = CVote {
-        max_value_bal: CBallot { seqno: 1, proposer_id: 1 },
-        max_val: Vec::new(),
-    };
-    proof {
-        assert(cvotes_is_valid(&votes));
-        assert(vote.valid());
-    }
-
-    let (_new_votes, new_min_vote_opn) = CAddVoteAndRemoveOldOnes_optimized(&votes, &7, &vote, &10, &5);
-    let expected = CUpdateMinVoteOpn(&10, &7, &5);
-    assert(new_min_vote_opn == expected);
-    assert(new_min_vote_opn == 10);
-}
-
-pub fn test_CAddVoteAndRemoveOldOnes_optimized_updates_min_to_new_opn() {
-    let votes: CVotes = HashMap::new();
-    let vote = CVote {
-        max_value_bal: CBallot { seqno: 1, proposer_id: 1 },
-        max_val: Vec::new(),
-    };
-    proof {
-        assert(cvotes_is_valid(&votes));
-        assert(vote.valid());
-    }
-
-    let (_new_votes, new_min_vote_opn) = CAddVoteAndRemoveOldOnes_optimized(&votes, &3, &vote, &2, &5);
-    let expected = CUpdateMinVoteOpn(&2, &3, &5);
-    assert(new_min_vote_opn == expected);
-    assert(new_min_vote_opn == 3);
-}
-
-pub fn test_CAddVoteAndRemoveOldOnes_optimized_keeps_min_vote_opn() {
-    let votes: CVotes = HashMap::new();
-    let vote = CVote {
-        max_value_bal: CBallot { seqno: 1, proposer_id: 1 },
-        max_val: Vec::new(),
-    };
-    proof {
-        assert(cvotes_is_valid(&votes));
-        assert(vote.valid());
-    }
-
-    let (_new_votes, new_min_vote_opn) = CAddVoteAndRemoveOldOnes_optimized(&votes, &8, &vote, &2, &5);
-    let expected = CUpdateMinVoteOpn(&2, &8, &5);
-    assert(new_min_vote_opn == expected);
-    assert(new_min_vote_opn == 5);
 }
 
 } // verus!

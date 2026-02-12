@@ -8492,7 +8492,9 @@ impl Translator {
                 }
             }
 
-            for ((output_var, field_name), conditions) in &implication_groups {
+            let mut sorted_groups: Vec<_> = implication_groups.iter().collect();
+            sorted_groups.sort_by(|a, b| a.0.cmp(&b.0));
+            for ((output_var, field_name), conditions) in sorted_groups {
                 if conditions.len() >= 2 {
                     let exec_expr = self.build_implication_chain(conditions, ctx)?;
                     pre_translated
@@ -8556,8 +8558,13 @@ impl Translator {
         }
 
         // Convert nested assignments to pre-translated struct constructions
-        for (output_name, nested_map) in nested_assignments {
-            for (outer_field, inner_fields) in nested_map {
+        // Sort for deterministic output ordering
+        let mut nested_vec: Vec<_> = nested_assignments.into_iter().collect();
+        nested_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        for (output_name, nested_map) in nested_vec {
+            let mut field_vec: Vec<_> = nested_map.into_iter().collect();
+            field_vec.sort_by(|a, b| a.0.cmp(&b.0));
+            for (outer_field, inner_fields) in field_vec {
                 // Build a nested struct construction for this outer field
                 let struct_name = self.derive_nested_struct_name(&outer_field);
                 let translated_inner: TranspileResult<Vec<_>> = inner_fields
@@ -8603,10 +8610,11 @@ impl Translator {
                 }
             }
 
-            // Collect all output variable names
-            let mut all_outputs: std::collections::HashSet<String> =
-                field_assignments.keys().cloned().collect();
-            all_outputs.extend(pre_translated.keys().cloned());
+            // Collect all output variable names (sorted for deterministic output)
+            let mut all_outputs: Vec<String> =
+                field_assignments.keys().chain(pre_translated.keys()).cloned().collect();
+            all_outputs.sort();
+            all_outputs.dedup();
 
             for output_name in all_outputs {
                 // Skip outputs that have a corresponding struct literal in other_exprs
@@ -8652,7 +8660,10 @@ impl Translator {
                 // Add fields from helper call substitutions (e.g., election_state from ElectionStateInit)
                 // Look for substitutions where the output variable matches (with trailing _ removed)
                 let output_base = output_name.trim_end_matches('_');
-                for ((subst_var, field_name), var_name) in &ctx.field_substitutions {
+                // Sort field_substitutions for deterministic field ordering
+                let mut sorted_substs: Vec<_> = ctx.field_substitutions.iter().collect();
+                sorted_substs.sort_by(|a, b| a.0.cmp(&b.0));
+                for ((subst_var, field_name), var_name) in sorted_substs {
                     let subst_base = subst_var.trim_end_matches('_');
                     if subst_base == output_base {
                         // Check if this field is already in translated_fields
