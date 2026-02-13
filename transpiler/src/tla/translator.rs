@@ -11,6 +11,23 @@ pub struct TranslatorConfig {
     pub is_spec: bool,
     /// Map TLA+ identifiers to Verus identifiers
     pub rename_map: std::collections::HashMap<String, String>,
+    /// Module variable names (for qualifying as `s.field` / `s_.field`)
+    pub variable_names: std::collections::HashSet<String>,
+    /// Module constant names (for qualifying as `c.field`)
+    pub constant_names: std::collections::HashSet<String>,
+    /// Module operator names mapped to whether they are actions (use primed vars)
+    pub operator_info: std::collections::HashMap<String, OperatorKind>,
+    /// Prefix for spec function names (e.g. "L")
+    pub spec_prefix: String,
+}
+
+/// Classification of a TLA+ operator for code generation
+#[derive(Debug, Clone, PartialEq)]
+pub enum OperatorKind {
+    /// Predicate on current state only (e.g., Init, TypeOK)
+    Predicate,
+    /// Action that relates current and next state (uses primed variables)
+    Action,
 }
 
 impl Default for TranslatorConfig {
@@ -18,6 +35,10 @@ impl Default for TranslatorConfig {
         Self {
             is_spec: true,
             rename_map: std::collections::HashMap::new(),
+            variable_names: std::collections::HashSet::new(),
+            constant_names: std::collections::HashSet::new(),
+            operator_info: std::collections::HashMap::new(),
+            spec_prefix: String::new(),
         }
     }
 }
@@ -139,14 +160,45 @@ impl<'a> ExprTranslator<'a> {
             "BOOLEAN" => "bool".to_string(),
             "TRUE" => "true".to_string(),
             "FALSE" => "false".to_string(),
-            _ => name.to_string(),
+            _ => {
+                // Qualify module variables with s.
+                if self.config.variable_names.contains(name) {
+                    return format!("s.{}", name);
+                }
+                // Qualify module constants with c.
+                if self.config.constant_names.contains(name) {
+                    return format!("c.{}", name);
+                }
+                // Reference to a module operator: add prefix and pass state args
+                if let Some(kind) = self.config.operator_info.get(name) {
+                    let prefixed = format!("{}{}", self.config.spec_prefix, name);
+                    let has_constants = !self.config.constant_names.is_empty();
+                    return match kind {
+                        OperatorKind::Action if has_constants => {
+                            format!("{}(s, s_, c)", prefixed)
+                        }
+                        OperatorKind::Action => format!("{}(s, s_)", prefixed),
+                        OperatorKind::Predicate if has_constants => {
+                            format!("{}(s, c)", prefixed)
+                        }
+                        OperatorKind::Predicate => format!("{}(s)", prefixed),
+                    };
+                }
+                name.to_string()
+            }
         }
     }
 
     fn translate_prime(&self, inner: &TlaExpr) -> String {
-        // Primed variables are output parameters, translated as `name_`
+        // Primed variables reference the next-state struct field
         match inner {
-            TlaExpr::Ident(name) => format!("{}_", name),
+            TlaExpr::Ident(name) => {
+                if self.config.variable_names.contains(name.as_str()) {
+                    format!("s_.{}", name)
+                } else {
+                    format!("{}_", name)
+                }
+            }
             _ => {
                 // Nested primed expression (unusual)
                 format!("({})_", self.translate(inner))
@@ -191,8 +243,33 @@ impl<'a> ExprTranslator<'a> {
             TlaBinOp::Iff => format!("({} <==> {})", left_str, right_str),
 
             // Set operations (T5.1)
-            TlaBinOp::In => format!("{}.contains({})", right_str, left_str),
-            TlaBinOp::NotIn => format!("!{}.contains({})", right_str, left_str),
+            TlaBinOp::In => {
+                // x \in Nat → x >= 0, x \in Int → true, x \in BOOLEAN → true
+                match right {
+                    TlaExpr::Ident(name)
+                        if name == "Nat" || name == "Int" || name == "BOOLEAN" =>
+                    {
+                        match name.as_str() {
+                            "Nat" => format!("({} >= 0)", left_str),
+                            _ => "true".to_string(),
+                        }
+                    }
+                    _ => format!("{}.contains({})", right_str, left_str),
+                }
+            }
+            TlaBinOp::NotIn => {
+                match right {
+                    TlaExpr::Ident(name)
+                        if name == "Nat" || name == "Int" || name == "BOOLEAN" =>
+                    {
+                        match name.as_str() {
+                            "Nat" => format!("({} < 0)", left_str),
+                            _ => "false".to_string(),
+                        }
+                    }
+                    _ => format!("!{}.contains({})", right_str, left_str),
+                }
+            }
             TlaBinOp::Subseteq => format!("{}.subset_of({})", left_str, right_str),
             TlaBinOp::Cup => format!("{}.union({})", left_str, right_str),
             TlaBinOp::Cap => format!("{}.intersect({})", left_str, right_str),
@@ -573,12 +650,19 @@ impl<'a> ExprTranslator<'a> {
     // =========================================================================
 
     fn translate_unchanged(&self, vars: &[TlaExpr]) -> String {
-        // UNCHANGED <<x, y>> → x_ == x && y_ == y
+        // UNCHANGED <<x, y>> → s_.x == s.x && s_.y == s.y
         let conditions: Vec<_> = vars
             .iter()
             .map(|v| {
-                let v_str = self.translate(v);
-                format!("{}_ == {}", v_str, v_str)
+                match v {
+                    TlaExpr::Ident(name) if self.config.variable_names.contains(name.as_str()) => {
+                        format!("s_.{} == s.{}", name, name)
+                    }
+                    _ => {
+                        let v_str = self.translate(v);
+                        format!("{}_ == {}", v_str, v_str)
+                    }
+                }
             })
             .collect();
 
@@ -837,10 +921,52 @@ impl ModuleTranslator {
     fn generate_spec_functions(&self, module: &TlaModule) -> String {
         let mut output = String::new();
         let state_name = self.config.spec_state_name();
-        let expr_translator = ExprTranslator::new(&self.expr_config);
+
+        // Build module-aware expression translator config
+        let mut config = self.expr_config.clone();
+        config.variable_names = module.variables.iter().cloned().collect();
+        config.constant_names = module
+            .constants
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
+        config.spec_prefix = self.config.spec_prefix.clone();
+        // Classify operators as actions vs predicates (two-pass for transitive closure)
+        // Pass 1: direct prime usage
+        for op in &module.operators {
+            let kind = if self.operator_uses_primes(&op.body) {
+                OperatorKind::Action
+            } else {
+                OperatorKind::Predicate
+            };
+            config.operator_info.insert(op.name.clone(), kind);
+        }
+        // Pass 2: propagate action status through operator references
+        // If operator A references operator B which is Action, then A is also Action
+        let op_names: Vec<String> = module.operators.iter().map(|o| o.name.clone()).collect();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for op in &module.operators {
+                if config.operator_info.get(&op.name) == Some(&OperatorKind::Predicate) {
+                    if self.expr_refs_action_operators(&op.body, &config.operator_info, &op_names) {
+                        config
+                            .operator_info
+                            .insert(op.name.clone(), OperatorKind::Action);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        let expr_translator = ExprTranslator::new(&config);
 
         for op in &module.operators {
-            output.push_str(&self.generate_spec_function(op, &state_name, &expr_translator));
+            output.push_str(&self.generate_spec_function(
+                op,
+                &state_name,
+                &expr_translator,
+                module,
+            ));
             output.push('\n');
         }
 
@@ -856,12 +982,14 @@ impl ModuleTranslator {
         op: &TlaOperator,
         state_name: &str,
         expr_translator: &ExprTranslator,
+        module: &TlaModule,
     ) -> String {
         let mut output = String::new();
         let fn_name = self.config.spec_fn_name(&op.name);
 
-        // Detect if this is an action (uses primed variables)
-        let is_action = self.operator_uses_primes(&op.body);
+        // Detect if this is an action (uses primed variables, directly or transitively)
+        let is_action = expr_translator.config.operator_info.get(&op.name)
+            == Some(&OperatorKind::Action);
 
         // Build parameter list
         let mut params = Vec::new();
@@ -873,6 +1001,13 @@ impl ModuleTranslator {
             if is_action {
                 params.push(format!("s_: {}", state_name));
             }
+        }
+
+        // Add constants parameter if module has constants
+        // (simpler than per-function tracking; all functions get c to allow operator cross-references)
+        if !module.constants.is_empty() {
+            let const_struct = format!("{}Constants", self.config.spec_prefix);
+            params.push(format!("c: {}", const_struct));
         }
 
         // Add operator parameters
@@ -969,6 +1104,34 @@ impl ModuleTranslator {
             }
             TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => {
                 self.operator_uses_primes(action)
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if an expression references any operator classified as Action
+    fn expr_refs_action_operators(
+        &self,
+        expr: &TlaExpr,
+        operator_info: &std::collections::HashMap<String, OperatorKind>,
+        _op_names: &[String],
+    ) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => {
+                operator_info.get(name) == Some(&OperatorKind::Action)
+            }
+            TlaExpr::BinOp { left, right, .. } => {
+                self.expr_refs_action_operators(left, operator_info, _op_names)
+                    || self.expr_refs_action_operators(right, operator_info, _op_names)
+            }
+            TlaExpr::UnaryOp { operand, .. } => {
+                self.expr_refs_action_operators(operand, operator_info, _op_names)
+            }
+            TlaExpr::OpApply { op, args } => {
+                self.expr_refs_action_operators(op, operator_info, _op_names)
+                    || args
+                        .iter()
+                        .any(|a| self.expr_refs_action_operators(a, operator_info, _op_names))
             }
             _ => false,
         }
@@ -1130,6 +1293,31 @@ impl ModeAnnotationGenerator {
         let mut output = String::new();
         let module_name = &module.name;
 
+        // Pre-compute transitive action classification (same logic as ModuleTranslator)
+        let mut operator_info: std::collections::HashMap<String, OperatorKind> =
+            std::collections::HashMap::new();
+        for op in &module.operators {
+            let kind = if self.operator_uses_primes(&op.body) {
+                OperatorKind::Action
+            } else {
+                OperatorKind::Predicate
+            };
+            operator_info.insert(op.name.clone(), kind);
+        }
+        // Propagate action status through operator references
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for op in &module.operators {
+                if operator_info.get(&op.name) == Some(&OperatorKind::Predicate) {
+                    if Self::expr_refs_action_ops(&op.body, &operator_info) {
+                        operator_info.insert(op.name.clone(), OperatorKind::Action);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
         // Header
         output.push_str(&format!("// Mode annotations for {}.rs\n", module_name));
         output
@@ -1140,7 +1328,7 @@ impl ModeAnnotationGenerator {
 
         // Generate annotations for each operator
         for op in &module.operators {
-            let annotation = self.analyze_operator(op, module);
+            let annotation = self.analyze_operator(op, module, &operator_info);
             output.push_str(&annotation.to_automan_line());
             output.push('\n');
         }
@@ -1150,14 +1338,41 @@ impl ModeAnnotationGenerator {
         output
     }
 
+    /// Check if an expression references any action operator (static helper)
+    fn expr_refs_action_ops(
+        expr: &TlaExpr,
+        operator_info: &std::collections::HashMap<String, OperatorKind>,
+    ) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => operator_info.get(name) == Some(&OperatorKind::Action),
+            TlaExpr::BinOp { left, right, .. } => {
+                Self::expr_refs_action_ops(left, operator_info)
+                    || Self::expr_refs_action_ops(right, operator_info)
+            }
+            TlaExpr::UnaryOp { operand, .. } => Self::expr_refs_action_ops(operand, operator_info),
+            TlaExpr::OpApply { op, args } => {
+                Self::expr_refs_action_ops(op, operator_info)
+                    || args
+                        .iter()
+                        .any(|a| Self::expr_refs_action_ops(a, operator_info))
+            }
+            _ => false,
+        }
+    }
+
     /// Analyze an operator to determine parameter modes
-    fn analyze_operator(&self, op: &TlaOperator, _module: &TlaModule) -> OperatorModes {
+    fn analyze_operator(
+        &self,
+        op: &TlaOperator,
+        module: &TlaModule,
+        operator_info: &std::collections::HashMap<String, OperatorKind>,
+    ) -> OperatorModes {
         let fn_name = self.config.spec_fn_name(&op.name);
         let mut modes = Vec::new();
         let mut desc_parts: Vec<String> = Vec::new();
 
-        // Check if this is an action (uses primed variables)
-        let is_action = self.operator_uses_primes(&op.body);
+        // Check if this is an action (uses primed variables, directly or transitively)
+        let is_action = operator_info.get(&op.name) == Some(&OperatorKind::Action);
 
         // Determine modes based on operator pattern.
         // Use strict init check: operator name must be exactly "Init" (case-insensitive)
@@ -1178,6 +1393,12 @@ impl ModeAnnotationGenerator {
             // Pure predicates: state is input
             modes.push(ParameterMode::Input);
             desc_parts.push("s is input (state to check)".to_string());
+        }
+
+        // Add constants parameter if module has constants
+        if !module.constants.is_empty() {
+            modes.push(ParameterMode::Input);
+            desc_parts.push("c is input (constants)".to_string());
         }
 
         // Add modes for explicit parameters - typically inputs
@@ -1559,7 +1780,7 @@ mod tests {
         let translator = ExprTranslator::new(&config);
         let result = translator.translate(&init_op.body);
 
-        assert!(result.contains("nat.contains(x)"));
+        assert!(result.contains("(x >= 0)"));
         assert!(result.contains("(x == 0)"));
     }
 
@@ -1683,8 +1904,12 @@ mod tests {
 
         // Increment should have s and s_ parameters (uses primes)
         assert!(result.contains("pub open spec fn LIncrement"));
-        // The function should reference primed variables
-        assert!(result.contains("count_"));
+        // The function body should reference s_.count (qualified primed variable)
+        assert!(
+            result.contains("s_.count"),
+            "Expected s_.count in output, got:\n{}",
+            result
+        );
     }
 
     #[test]
@@ -1914,6 +2139,195 @@ mod tests {
         assert!(
             result.contains("LInitState(+, -);"),
             "InitState should be action (input + output), got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_variable_qualification() {
+        // Variables should be qualified with s. and primed with s_.
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Init == x = 0
+            Inc == x' = x + 1
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("s.x == 0"),
+            "Variable x should be qualified as s.x, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("s_.x == (s.x + 1)"),
+            "Primed x' should be s_.x and x should be s.x, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_constant_qualification() {
+        // Constants should be qualified with c. and a constants parameter added
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Init == x = N
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("c: LConstants"),
+            "Functions should have c: LConstants parameter, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("s.x == c.N"),
+            "Constant N should be qualified as c.N, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_operator_cross_reference() {
+        // Operator references should add L prefix and pass state args
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Inc == x' = x + 1
+            Dec == x' = x - 1
+            Next == Inc \/ Dec
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        // Next references Inc and Dec, which are actions
+        assert!(
+            result.contains("LInc(s, s_)"),
+            "Next body should reference LInc(s, s_), got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("LDec(s, s_)"),
+            "Next body should reference LDec(s, s_), got:\n{}",
+            result
+        );
+        // Next should also be classified as an action (transitive)
+        assert!(
+            result.contains("fn LNext(s: LState, s_: LState)"),
+            "Next should have s_ parameter (transitive action), got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_in_nat_translation() {
+        // x \in Nat should become (x >= 0), not nat.contains(x)
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::binop(TlaBinOp::In, TlaExpr::ident("x"), TlaExpr::ident("Nat"));
+        assert_eq!(translator.translate(&expr), "(x >= 0)");
+
+        // x \in Int should become true
+        let expr = TlaExpr::binop(TlaBinOp::In, TlaExpr::ident("x"), TlaExpr::ident("Int"));
+        assert_eq!(translator.translate(&expr), "true");
+
+        // x \notin Nat should become (x < 0)
+        let expr = TlaExpr::binop(TlaBinOp::NotIn, TlaExpr::ident("x"), TlaExpr::ident("Nat"));
+        assert_eq!(translator.translate(&expr), "(x < 0)");
+    }
+
+    #[test]
+    fn test_unchanged_with_module_context() {
+        // UNCHANGED <<x, y>> should produce s_.x == s.x && s_.y == s.y
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x, y
+            NoChange == UNCHANGED <<x, y>>
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("s_.x == s.x"),
+            "UNCHANGED x should produce s_.x == s.x, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("s_.y == s.y"),
+            "UNCHANGED y should produce s_.y == s.y, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_type_var_fallback_to_int() {
+        // Unresolved TypeVars should render as int, not T0/T1
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Init == x = N
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut inference = TypeInference::new();
+        let env = inference.infer_types(&module);
+        let resolved = inference.resolve_with_fallback(&env);
+
+        let translator = ModuleTranslator::new().with_types(resolved);
+        let result = translator.translate(&module);
+
+        // Should not contain T0, T1, etc.
+        assert!(
+            !result.contains("T0") && !result.contains("T1"),
+            "Output should not contain unresolved type variables, got:\n{}",
+            result
+        );
+        // Constants should have concrete types
+        assert!(
+            result.contains("pub N: int") || result.contains("pub N: nat"),
+            "Constant N should have concrete type, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_mode_annotation_with_constants() {
+        // Mode annotations should include c parameter when module has constants
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Init == x = 0
+            Inc == x' = x + 1
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        // Init should have output + constants
+        assert!(
+            result.contains("LInit(-, +);"),
+            "Init with constants should be (-, +), got:\n{}",
+            result
+        );
+        // Inc should have input + output + constants
+        assert!(
+            result.contains("LInc(+, -, +);"),
+            "Action with constants should be (+, -, +), got:\n{}",
             result
         );
     }

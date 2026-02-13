@@ -690,11 +690,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     env.operators.insert(op_name.clone(), tla_type.clone());
                 }
 
-                env
+                // Resolve any remaining type variables to concrete types
+                inference.resolve_with_fallback(&env)
             } else {
                 // Use automatic type inference only
                 let mut inference = TypeInference::new();
-                inference.infer_types(&module)
+                let env = inference.infer_types(&module);
+                // Resolve any remaining type variables to concrete types
+                inference.resolve_with_fallback(&env)
             };
 
             // Translate module with type information

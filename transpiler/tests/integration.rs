@@ -1942,17 +1942,17 @@ fn test_ewd840_initiate_probe_annotation() {
     let automan_path = spec_output.with_extension("automan");
     let annotations = std::fs::read_to_string(&automan_path).expect("Failed to read automan");
 
-    // Init should be output only
+    // Init should be output + constants input
     assert!(
-        annotations.contains("LInit(-);"),
-        "Init should be output-only, got:\n{}",
+        annotations.contains("LInit(-, +);"),
+        "Init should be output + constants input, got:\n{}",
         annotations
     );
 
-    // InitiateProbe should be action (input + output), not confused with Init
+    // InitiateProbe should be action (input + output + constants), not confused with Init
     assert!(
-        annotations.contains("LInitiateProbe(+, -);"),
-        "InitiateProbe should be action (input + output), got:\n{}",
+        annotations.contains("LInitiateProbe(+, -, +);"),
+        "InitiateProbe should be action (input + output + constants), got:\n{}",
         annotations
     );
 

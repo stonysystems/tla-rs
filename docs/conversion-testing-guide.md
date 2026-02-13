@@ -435,20 +435,34 @@ cargo run --release -- \
 
 #### Direction 3: Verus Spec → TLA+ (`verus2-tla`)
 
-| Example (from TLA-generated specs) | Transpile | Notes |
-|-------------------------------------|-----------|-------|
-| SimpleCounter | ✅ | |
-| DieHard | ✅ | |
-| EWD840 | ✅ | |
-| TwoPhase | ✅ | Fixed by string literal parser fix |
-| Raft | ✅ | Fixed by string literal parser fix |
-| Paxos | ✅ | Fixed by record literal parser fix |
-| PBFT | ✅ | Fixed by record literal parser fix |
+| Example (from TLA-generated specs) | Transpile | SANY Valid | Notes |
+|-------------------------------------|-----------|------------|-------|
+| SimpleCounter | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
+| DieHard | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
+| EWD840 | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
+| TwoPhase | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
+| Raft | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
+| Paxos | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
+| PBFT | ✅ | N/A | Intermediate spec; not persisted to src/tla+ |
 
-| Example (from hand-written Verus specs) | Transpile | Notes |
-|-----------------------------------------|-----------|-------|
-| RSL/election.rs | ✅ | |
-| RSL/acceptor.rs | ✅ | |
+| Example (from hand-written Verus specs) | Transpile | SANY Valid | Notes |
+|-----------------------------------------|-----------|------------|-------|
+| RSL/election.rs | ✅ | ✅ | |
+| RSL/acceptor.rs | ✅ | ✅ | |
+
+| Protocol (all `src/tla+/` specs) | Files | SANY Valid | Notes |
+|----------------------------------|-------|------------|-------|
+| TwoPhase | 2 | ✅ | |
+| Paxos | 2 | ✅ | |
+| LeaderElection | 2 | ✅ | |
+| Raft | 2 | ✅ | |
+| ChainReplication | 2 | ✅ | |
+| PrimaryBackup | 2 | ✅ | |
+| PBFT | 2 | ✅ | |
+| VerticalPaxos | 2 | ✅ | |
+| EPaxos | 2 | ✅ | |
+| RSL | 15 | ✅ | All 15 component specs pass |
+| **Total** | **33** | **33/33** | `scripts/validate_tla_specs.sh` validates all |
 
 **Command**:
 ```bash
@@ -481,7 +495,7 @@ cargo run --release -- pipeline \
 
 ### Verus Spec → Verus Exec (Existing Protocol Specs)
 
-Generated code in `src/generated/` compiles and verifies with Verus: **581 verified, 0 errors**.
+Generated code in `src/generated/` compiles and verifies with Verus: **627 verified, 0 errors**.
 
 | Module | Status | Notes |
 |--------|--------|-------|
@@ -493,7 +507,15 @@ Generated code in `src/generated/` compiles and verifies with Verus: **581 verif
 | RSL/executor_gen.rs | ✅ 0 errors | |
 | RSL/learner_gen.rs | ✅ 0 errors | |
 | RSL/broadcast_gen.rs | ✅ 0 errors | |
-| All protocol types_gen.rs | ✅ 0 errors | TwoPhase, Paxos, Raft, PBFT, etc. |
+| TwoPhase/*_gen.rs | ✅ 0 errors | |
+| Paxos/*_gen.rs | ✅ 0 errors | |
+| LeaderElection/*_gen.rs | ✅ 0 errors | |
+| Raft/*_gen.rs | ✅ 0 errors | |
+| ChainReplication/*_gen.rs | ✅ 0 errors | |
+| PrimaryBackup/*_gen.rs | ✅ 0 errors | |
+| PBFT/*_gen.rs | ✅ 0 errors | |
+| VerticalPaxos/*_gen.rs | ✅ 0 errors | |
+| EPaxos/*_gen.rs | ✅ 0 errors | |
 
 **Command**:
 ```bash

@@ -121,8 +121,8 @@ impl TlaType {
     /// Convert to Verus type string representation
     pub fn to_verus_type(&self) -> String {
         match self {
-            TlaType::Unknown => "/* unknown */".to_string(),
-            TlaType::TypeVar(n) => format!("T{}", n),
+            TlaType::Unknown => "int".to_string(),
+            TlaType::TypeVar(_) => "int".to_string(),
             TlaType::Int => "int".to_string(),
             TlaType::Nat => "nat".to_string(),
             TlaType::Bool => "bool".to_string(),
@@ -147,7 +147,7 @@ impl TlaType {
             }
             TlaType::Action => "bool".to_string(),
             TlaType::Temporal => "bool".to_string(),
-            TlaType::Any => "/* any */".to_string(),
+            TlaType::Any => "int".to_string(),
         }
     }
 }

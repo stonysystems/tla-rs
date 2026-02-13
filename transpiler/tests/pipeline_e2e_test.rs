@@ -403,9 +403,10 @@ fn test_action_operators_have_state_params() {
         "Action operator Increment should have s and s_ parameters"
     );
 
-    // Init only sets initial state, typically just s_
+    // Init has state param + constants (SimpleCounter has CONSTANT MaxCount)
     assert!(
-        verus_spec.contains("fn LInit(s: LState)") || verus_spec.contains("fn LInit(s_: LState)"),
+        verus_spec.contains("fn LInit(s: LState")
+            || verus_spec.contains("fn LInit(s_: LState"),
         "Init should have state parameter"
     );
 }
