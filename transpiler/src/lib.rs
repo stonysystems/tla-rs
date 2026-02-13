@@ -117,7 +117,51 @@ impl Transpiler {
 
         // Process each function
         let mut mode_analyzer = ModeAnalyzer::new();
-        let translator = Translator::new(self.config.translator.clone());
+        let mut translator_config = self.config.translator.clone();
+
+        // Auto-populate set_fields, hashset_element_types, and clone strategies from struct defs
+        let mut hashset_element_types: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut auto_clone_strategy: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        if self.config.generate_inline_types {
+            let type_defs_for_fields = types::parse_types_from_file(spec_path)?;
+            let registry_for_fields = types::build_registry(type_defs_for_fields);
+            let naming = crate::config::NamingConfig {
+                spec_prefix: self.config.translator.spec_prefix.clone(),
+                exec_prefix: self.config.translator.exec_prefix.clone(),
+                ..Default::default()
+            };
+            for struct_def in registry_for_fields.structs.values() {
+                if struct_def.is_spec {
+                    let mut has_set_field = false;
+                    for field in &struct_def.fields {
+                        if let crate::ast::Type::Set(inner) = &field.ty {
+                            has_set_field = true;
+                            translator_config.set_fields.insert(field.name.clone());
+                            // If the element type is a named struct, track it as a HashSet element type
+                            if let crate::ast::Type::Named(path) = inner.as_ref() {
+                                let spec_name = path.segments.last().cloned().unwrap_or_default();
+                                if spec_name.starts_with(&naming.spec_prefix) {
+                                    let base = &spec_name[naming.spec_prefix.len()..];
+                                    let exec_name =
+                                        format!("{}{}", naming.exec_prefix, base);
+                                    hashset_element_types.insert(exec_name);
+                                }
+                            }
+                        }
+                    }
+                    // Structs with HashSet fields need external_body Clone (Verus doesn't support HashSet::clone)
+                    if has_set_field {
+                        let exec_name = naming.get_exec_type(&struct_def.name);
+                        auto_clone_strategy.insert(exec_name, "external_body".to_string());
+                    }
+                }
+            }
+        }
+
+        let has_auto_set_fields = !translator_config.set_fields.is_empty();
+        let translator = Translator::new(translator_config);
         let mut printer = Printer::new(self.config.printer.clone());
 
         let mut output = String::new();
@@ -162,7 +206,7 @@ impl Transpiler {
                 nat_type: self.config.translator.nat_type.clone(),
                 ..Default::default()
             };
-            let type_gen = TypeGenerator::with_all_options(
+            let mut type_gen = TypeGenerator::with_all_options(
                 naming_config.clone(),
                 self.config.type_remapping.clone(),
                 self.config.translator.validity_predicate_name.clone(),
@@ -173,6 +217,10 @@ impl Transpiler {
                     .cloned()
                     .collect(),
             );
+            type_gen.set_hashset_element_types(hashset_element_types);
+            if !auto_clone_strategy.is_empty() {
+                type_gen.set_clone_strategy(auto_clone_strategy);
+            }
 
             // Generate structs (sorted by name for deterministic output)
             let mut struct_names: Vec<_> = registry.structs.keys().cloned().collect();
@@ -217,6 +265,7 @@ impl Transpiler {
                 || spec_fns.iter().any(|f| Self::spec_uses_empty_seq(&f.body))
                 || generated_needs_vec_helpers;
             let has_set_fields = self.needs_set_helpers()
+                || has_auto_set_fields
                 || spec_fns.iter().any(|f| Self::spec_uses_empty_set(&f.body))
                 || generated_needs_set_helpers;
             let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body))
@@ -226,6 +275,7 @@ impl Transpiler {
                 has_set_fields,
                 has_set_remove,
                 &self.config.translator.struct_vec_fields,
+                &self.config.translator.int_type,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -248,6 +298,22 @@ impl Transpiler {
                     output.push_str(&map_helpers);
                     output.push('\n');
                 }
+            }
+        }
+
+        // Generate clone_hashset helper when auto-detected set fields need it,
+        // even if generate_proofs is disabled (needed for correct compilation)
+        if has_auto_set_fields && !self.config.translator.generate_proofs {
+            let helpers = Self::generate_proof_helper_lemmas(
+                false,
+                true,
+                false,
+                &std::collections::HashMap::new(),
+                &self.config.translator.int_type,
+            );
+            if !helpers.is_empty() {
+                output.push_str(&helpers);
+                output.push('\n');
             }
         }
 
@@ -324,6 +390,7 @@ impl Transpiler {
         let annotations = ann_parser.parse()?;
 
         let mut mode_analyzer = ModeAnalyzer::new();
+        let has_auto_set_fields = false;
         let translator = Translator::new(self.config.translator.clone());
         let mut printer = Printer::new(self.config.printer.clone());
 
@@ -423,6 +490,7 @@ impl Transpiler {
                 || spec_fns.iter().any(|f| Self::spec_uses_empty_seq(&f.body))
                 || generated_needs_vec_helpers;
             let has_set_fields = self.needs_set_helpers()
+                || has_auto_set_fields
                 || spec_fns.iter().any(|f| Self::spec_uses_empty_set(&f.body))
                 || generated_needs_set_helpers;
             let has_set_remove = spec_fns.iter().any(|f| Self::spec_uses_remove(&f.body))
@@ -432,6 +500,7 @@ impl Transpiler {
                 has_set_fields,
                 has_set_remove,
                 &self.config.translator.struct_vec_fields,
+                &self.config.translator.int_type,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -523,46 +592,70 @@ impl Transpiler {
         has_set_fields: bool,
         has_set_remove: bool,
         struct_vec_fields: &std::collections::HashMap<String, (String, String)>,
+        int_type: &str,
     ) -> String {
         let mut output = String::new();
 
         // lemma_empty_set_map — only when HashSet fields are present
         if has_set_fields {
             output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
-            output.push_str("proof fn lemma_empty_set_map()\n");
+            output.push_str(&format!("proof fn lemma_empty_set_map()\n"));
             output.push_str("ensures\n");
-            output.push_str(
-                "    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),\n",
-            );
+            output.push_str(&format!(
+                "    Set::<{}>::empty().map(|x: {}| x as int) =~= Set::<int>::empty(),\n",
+                int_type, int_type
+            ));
             output.push_str("{\n");
-            output.push_str("    let f = |x: u64| x as int;\n");
-            output.push_str("    let s = Set::<u64>::empty().map(f);\n");
+            output.push_str(&format!("    let f = |x: {}| x as int;\n", int_type));
+            output.push_str(&format!(
+                "    let s = Set::<{}>::empty().map(f);\n",
+                int_type
+            ));
             output.push_str("    assert forall|y: int| !(#[trigger] s.contains(y)) by {\n");
             output.push_str("    }\n");
+            output.push_str("}\n\n");
+
+            // clone_hashset — external_body helper for cloning HashSet fields
+            output.push_str("/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).\n");
+            output.push_str("#[verifier(external_body)]\n");
+            output.push_str(&format!(
+                "fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)\n"
+            ));
+            output.push_str("ensures\n");
+            output.push_str("    res@ == s@,\n");
+            output.push_str("{\n");
+            output.push_str("    s.clone()\n");
             output.push_str("}\n\n");
         }
 
         // lemma_set_map_remove_commute — only when spec uses .remove() and has set fields
         if has_set_fields && has_set_remove {
             output.push_str("/// Helper proof: removing an element commutes with mapping for injective functions.\n");
-            output.push_str("proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)\n");
+            output.push_str(&format!("proof fn lemma_set_map_remove_commute(s: Set<{}>, elt: {})\n", int_type, int_type));
             output.push_str("ensures\n");
-            output.push_str("    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),\n");
+            output.push_str(&format!(
+                "    s.remove(elt).map(|x: {}| x as int) =~= s.map(|x: {}| x as int).remove(elt as int),\n",
+                int_type, int_type
+            ));
             output.push_str("{\n");
-            output.push_str("    let f = |x: u64| x as int;\n");
+            output.push_str(&format!("    let f = |x: {}| x as int;\n", int_type));
             output.push_str("    let lhs = s.remove(elt).map(f);\n");
             output.push_str("    let rhs = s.map(f).remove(f(elt));\n");
             output.push_str("    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {\n");
-            output.push_str(
-                "        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;\n",
-            );
+            output.push_str(&format!(
+                "        let x = choose|x: {}| s.remove(elt).contains(x) && f(x) == y;\n",
+                int_type
+            ));
             output.push_str("        assert(s.contains(x));\n");
             output.push_str("        assert(x != elt);\n");
             output.push_str("        assert(f(x) != f(elt));\n");
             output.push_str("        assert(s.map(f).contains(y));\n");
             output.push_str("    }\n");
             output.push_str("    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {\n");
-            output.push_str("        let x = choose|x: u64| s.contains(x) && f(x) == y;\n");
+            output.push_str(&format!(
+                "        let x = choose|x: {}| s.contains(x) && f(x) == y;\n",
+                int_type
+            ));
             output.push_str("        assert(y != f(elt));\n");
             output.push_str("        assert(f(x) != f(elt));\n");
             output.push_str("        assert(x != elt);\n");
@@ -733,6 +826,7 @@ impl Transpiler {
     /// are configured at all (backward-compatible mode where all fields are treated as collections).
     fn needs_set_helpers(&self) -> bool {
         !self.config.translator.collection_fields.is_empty()
+            || !self.config.translator.set_fields.is_empty()
     }
 
     /// Check if this transpiler config uses HashMap fields with deep abstraction (map_fields).
@@ -2054,7 +2148,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty);
+        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64");
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2077,20 +2171,45 @@ mod tests {
         assert!(!output.contains("lemma_empty_seq_map"));
         assert!(!output.contains("lemma_seq_push_map_commute"));
 
+        // Verify clone_hashset helper is generated
+        assert!(
+            output.contains("fn clone_hashset"),
+            "clone_hashset helper should be generated when has_set_fields=true"
+        );
+        assert!(output.contains("#[verifier(external_body)]"));
+        assert!(output.contains("res@ == s@"));
+
         // When has_set_remove=false, remove_commute should NOT be present
-        let output_no_remove = Transpiler::generate_proof_helper_lemmas(false, true, false, &empty);
+        let output_no_remove = Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64");
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
 
         // When has_set_fields=false, set lemmas should NOT be present
-        let output_no_sets = Transpiler::generate_proof_helper_lemmas(false, false, false, &empty);
+        let output_no_sets = Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64");
         assert!(!output_no_sets.contains("lemma_empty_set_map"));
         assert!(!output_no_sets.contains("lemma_set_map_remove_commute"));
+        assert!(!output_no_sets.contains("clone_hashset"));
+    }
+
+    #[test]
+    fn test_generate_proof_helper_lemmas_int_type_parameterization() {
+        let empty = std::collections::HashMap::new();
+
+        // With i64 int_type (TLA+ pipeline default)
+        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64");
+        assert!(output_i64.contains("Set::<i64>::empty()"));
+        assert!(output_i64.contains("|x: i64| x as int"));
+        assert!(output_i64.contains("lemma_set_map_remove_commute(s: Set<i64>, elt: i64)"));
+
+        // With u64 int_type (RSL protocol default)
+        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64");
+        assert!(output_u64.contains("Set::<u64>::empty()"));
+        assert!(output_u64.contains("|x: u64| x as int"));
     }
 
     #[test]
     fn test_generate_proof_helper_lemmas_with_vec_fields() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64");
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2108,7 +2227,7 @@ mod tests {
             "log".to_string(),
             ("CLogEntry".to_string(), "LLogEntry".to_string()),
         );
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64");
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2504,6 +2623,7 @@ mod tests {
             config.translator.generate_loops_for_verification,
             true,
             &config.translator.struct_vec_fields,
+            "u64",
         );
 
         // Should generate clone_log helper for struct_vec_fields

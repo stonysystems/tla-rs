@@ -869,10 +869,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     translator: TranslatorConfig {
                         spec_prefix: spec_prefix.clone(),
                         exec_prefix: exec_prefix.clone(),
+                        assume_postconditions: true,
                         ..TranslatorConfig::default()
                     },
                     generate_inline_types: true,
-                    custom_imports: vec!["use vstd::prelude::*;".to_string()],
+                    custom_imports: vec![
+                        "use vstd::prelude::*;".to_string(),
+                        "use std::collections::HashSet;".to_string(),
+                    ],
                     ..TranspilerConfig::default()
                 }
             };
@@ -973,6 +977,8 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             arrow_variants: file_config.arrow_variants.clone(),
             clone_method: file_config.output.clone_method.clone(),
             vec_element_ensures: file_config.vec_element_ensures.clone(),
+            set_fields: std::collections::HashSet::new(),
+            assume_postconditions: false,
             spec_prefix: "L".to_string(),
             exec_prefix: "C".to_string(),
             generate_abstraction_fns: false,

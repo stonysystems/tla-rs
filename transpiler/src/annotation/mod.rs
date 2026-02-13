@@ -194,7 +194,7 @@ impl AnnotationParser {
             }
         }
 
-        // Parse return type for helper functions
+        // Parse return type for helper functions (optional — falls back to spec fn return type)
         let return_type = if kind == FunctionKind::Helper {
             let after_paren = &line[paren_end + 1..];
             if let Some(arrow_pos) = after_paren.find("->") {
@@ -210,10 +210,8 @@ impl AnnotationParser {
                 }
                 Some(type_str.to_string())
             } else {
-                return Err(TranspileError::Annotation {
-                    message: "Helper function requires return type (-> Type)".to_string(),
-                    span: None,
-                });
+                // No explicit return type — will fall back to spec function's return type
+                None
             }
         } else {
             None
@@ -311,9 +309,14 @@ mod tests {
 
     #[test]
     fn test_parse_helper_missing_return_type() {
+        // Return type is optional — falls back to spec function's return type
         let parser = AnnotationParser::new(String::new());
         let result = parser.parse_function_line("helper MissingReturn(+, +);");
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let annotation = result.unwrap();
+        assert_eq!(annotation.name, "MissingReturn");
+        assert_eq!(annotation.kind, FunctionKind::Helper);
+        assert_eq!(annotation.return_type, None);
     }
 
     #[test]

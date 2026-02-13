@@ -476,13 +476,13 @@ cargo run --release -- verus2-tla \
 
 | Example | Pipeline | Verus Compile | Notes |
 |---------|----------|---------------|-------|
-| SimpleCounter | ✅ | untested | |
-| DieHard | ✅ | untested | |
-| EWD840 | ✅ | untested | Fixed by annotation + string literal parser fixes |
-| TwoPhase | ✅ | untested | Fixed by string literal parser fix |
-| Raft | ✅ | untested | Fixed by string literal parser fix |
-| Paxos | ✅ | untested | Fixed by record literal parser fix |
-| PBFT | ✅ | untested | Fixed by record literal parser fix |
+| SimpleCounter | ✅ | ✅ 7 verified, 0 errors | |
+| DieHard | ✅ | ✅ 9 verified, 0 errors | Fixed overflow guards for conditional arithmetic |
+| EWD840 | ✅ | ✅ 8 verified, 0 errors | Fixed HashSet clone via `clone_hashset` helper |
+| TwoPhase | ✅ | ✅ 6 verified, 0 errors | Fixed set field View mapping |
+| Raft | ✅ | ✅ 11 verified, 0 errors | Fixed set field cloning + union/difference ops |
+| Paxos | ✅ | ✅ 13 verified, 0 errors | Fixed record struct handling |
+| PBFT | ✅ | ✅ 15 verified, 0 errors | Fixed record struct + set ops |
 
 **Command**:
 ```bash

@@ -11,7 +11,7 @@ pub mod template_codegen;
 
 pub use template_codegen::TemplateCodeGenerator;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::Type;
 use crate::config::NamingConfig;
@@ -48,6 +48,10 @@ pub struct TypeGenerator {
     custom_derives: HashMap<String, Vec<String>>,
     /// Fields to skip per exec type during generation
     skip_fields: HashMap<String, Vec<String>>,
+    /// Exec type names that are stored inside HashSet<T> and need Hash+Eq impls.
+    /// These get `#[verifier(external_body)]` Hash/PartialEq/Eq impls since
+    /// Verus doesn't verify these trait implementations.
+    hashset_element_types: HashSet<String>,
 }
 
 impl TypeGenerator {
@@ -64,6 +68,7 @@ impl TypeGenerator {
             clone_strategy: HashMap::new(),
             custom_derives: HashMap::new(),
             skip_fields: HashMap::new(),
+            hashset_element_types: HashSet::new(),
         }
     }
 
@@ -80,6 +85,7 @@ impl TypeGenerator {
             clone_strategy: HashMap::new(),
             custom_derives: HashMap::new(),
             skip_fields: HashMap::new(),
+            hashset_element_types: HashSet::new(),
         }
     }
 
@@ -100,6 +106,7 @@ impl TypeGenerator {
             clone_strategy: HashMap::new(),
             custom_derives: HashMap::new(),
             skip_fields: HashMap::new(),
+            hashset_element_types: HashSet::new(),
         }
     }
 
@@ -121,6 +128,7 @@ impl TypeGenerator {
             clone_strategy: HashMap::new(),
             custom_derives: HashMap::new(),
             skip_fields: HashMap::new(),
+            hashset_element_types: HashSet::new(),
         }
     }
 
@@ -147,6 +155,11 @@ impl TypeGenerator {
     /// Set fields to skip per exec type
     pub fn set_skip_fields(&mut self, fields: HashMap<String, Vec<String>>) {
         self.skip_fields = fields;
+    }
+
+    /// Set types that are stored inside HashSet<T> and need Hash+Eq impls
+    pub fn set_hashset_element_types(&mut self, types: HashSet<String>) {
+        self.hashset_element_types = types;
     }
 
     /// Generate an exec struct from a spec struct
@@ -222,6 +235,25 @@ impl TypeGenerator {
                 self.indent
             ));
             code.push_str("}\n\n");
+        }
+
+        // Generate Hash+PartialEq+Eq impls for types stored in HashSet
+        if self.hashset_element_types.contains(&exec_name) {
+            code.push_str(&format!("impl std::hash::Hash for {} {{\n", exec_name));
+            code.push_str(&format!(
+                "{}#[verifier(external_body)]\n{}fn hash<H: std::hash::Hasher>(&self, state: &mut H) {{ unimplemented!() }}\n",
+                self.indent, self.indent
+            ));
+            code.push_str("}\n\n");
+
+            code.push_str(&format!("impl PartialEq for {} {{\n", exec_name));
+            code.push_str(&format!(
+                "{}#[verifier(external_body)]\n{}fn eq(&self, other: &Self) -> bool {{ unimplemented!() }}\n",
+                self.indent, self.indent
+            ));
+            code.push_str("}\n\n");
+
+            code.push_str(&format!("impl Eq for {} {{}}\n\n", exec_name));
         }
 
         // Generate well_formed predicate
@@ -859,6 +891,7 @@ fn is_rust_primitive_type(name: &str) -> bool {
             | "i64"
             | "i128"
             | "isize"
+            | "char"
             | "String"
     )
 }

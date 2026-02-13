@@ -49,6 +49,8 @@ pub enum OperatorKind {
     Predicate,
     /// Action that relates current and next state (uses primed variables)
     Action,
+    /// Constant operator — does not reference state variables (e.g., Follower == "follower")
+    ConstantOp,
 }
 
 impl Default for TranslatorConfig {
@@ -207,6 +209,10 @@ impl<'a> ExprTranslator<'a> {
                             format!("{}(s, c)", prefixed)
                         }
                         OperatorKind::Predicate => format!("{}(s)", prefixed),
+                        OperatorKind::ConstantOp if has_constants => {
+                            format!("{}(c)", prefixed)
+                        }
+                        OperatorKind::ConstantOp => format!("{}()", prefixed),
                     };
                 }
                 name.to_string()
@@ -1221,30 +1227,63 @@ impl ModuleTranslator {
             .map(|c| c.name.clone())
             .collect();
         config.spec_prefix = self.config.spec_prefix.clone();
-        // Classify operators as actions vs predicates (two-pass for transitive closure)
-        // Pass 1: direct prime usage
+        // Classify operators as actions vs predicates vs constants (multi-pass)
+        // Pass 1: direct prime usage + variable reference check
         for op in &module.operators {
             let kind = if self.operator_uses_primes(&op.body) {
                 OperatorKind::Action
+            } else if !self.operator_refs_variables(&op.body, &[]) {
+                OperatorKind::ConstantOp
             } else {
                 OperatorKind::Predicate
             };
             config.operator_info.insert(op.name.clone(), kind);
         }
-        // Pass 2: propagate action status through operator references
+        // Pass 2: propagate operator kinds through references
         // If operator A references operator B which is Action, then A is also Action
+        // If a ConstantOp references a Predicate or Action, promote it accordingly
         let op_names: Vec<String> = module.operators.iter().map(|o| o.name.clone()).collect();
         let mut changed = true;
         while changed {
             changed = false;
             for op in &module.operators {
-                if config.operator_info.get(&op.name) == Some(&OperatorKind::Predicate) {
-                    if self.expr_refs_action_operators(&op.body, &config.operator_info, &op_names) {
-                        config
-                            .operator_info
-                            .insert(op.name.clone(), OperatorKind::Action);
-                        changed = true;
+                let current = config.operator_info.get(&op.name).cloned();
+                match current {
+                    Some(OperatorKind::Predicate) => {
+                        if self.expr_refs_action_operators(
+                            &op.body,
+                            &config.operator_info,
+                            &op_names,
+                        ) {
+                            config
+                                .operator_info
+                                .insert(op.name.clone(), OperatorKind::Action);
+                            changed = true;
+                        }
                     }
+                    Some(OperatorKind::ConstantOp) => {
+                        // Promote ConstantOp to Action if it references Action operators
+                        if self.expr_refs_action_operators(
+                            &op.body,
+                            &config.operator_info,
+                            &op_names,
+                        ) {
+                            config
+                                .operator_info
+                                .insert(op.name.clone(), OperatorKind::Action);
+                            changed = true;
+                        } else if self.expr_refs_predicate_operators(
+                            &op.body,
+                            &config.operator_info,
+                            &op_names,
+                        ) {
+                            config
+                                .operator_info
+                                .insert(op.name.clone(), OperatorKind::Predicate);
+                            changed = true;
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1284,9 +1323,10 @@ impl ModuleTranslator {
         // Build parameter list
         let mut params = Vec::new();
 
-        // Add state parameter if operator references variables
+        // Add state parameter if operator references variables (directly or transitively)
         let refs_vars = self.operator_refs_variables(&op.body, &[]);
-        if refs_vars {
+        // Actions always get s and s_ params (they transitively reference state through sub-operators)
+        if refs_vars || is_action {
             params.push(format!("s: {}", state_name));
             if is_action {
                 params.push(format!("s_: {}", state_name));
@@ -1427,11 +1467,142 @@ impl ModuleTranslator {
         }
     }
 
+    /// Check if an expression references Predicate or Action operators (needs state params)
+    fn expr_refs_predicate_operators(
+        &self,
+        expr: &TlaExpr,
+        operator_info: &std::collections::HashMap<String, OperatorKind>,
+        _op_names: &[String],
+    ) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => matches!(
+                operator_info.get(name),
+                Some(&OperatorKind::Predicate) | Some(&OperatorKind::Action)
+            ),
+            TlaExpr::BinOp { left, right, .. } => {
+                self.expr_refs_predicate_operators(left, operator_info, _op_names)
+                    || self.expr_refs_predicate_operators(right, operator_info, _op_names)
+            }
+            TlaExpr::UnaryOp { operand, .. } => {
+                self.expr_refs_predicate_operators(operand, operator_info, _op_names)
+            }
+            TlaExpr::OpApply { op, args } => {
+                self.expr_refs_predicate_operators(op, operator_info, _op_names)
+                    || args
+                        .iter()
+                        .any(|a| self.expr_refs_predicate_operators(a, operator_info, _op_names))
+            }
+            _ => false,
+        }
+    }
+
     /// Check if an expression references module variables (simplified check)
-    fn operator_refs_variables(&self, _expr: &TlaExpr, _local_vars: &[String]) -> bool {
-        // For now, assume operators that are not pure constant expressions reference state
-        // A more sophisticated check would track variable references
-        true
+    fn operator_refs_variables(&self, expr: &TlaExpr, local_vars: &[String]) -> bool {
+        use crate::tla::ast::TlaExpr;
+        match expr {
+            TlaExpr::Ident(name) => {
+                // Check if this identifier is a local binding (not a state variable)
+                if local_vars.contains(name) {
+                    return false;
+                }
+                // Check against module variables if type_env is available
+                if let Some(env) = &self.type_env {
+                    return env.variables.contains_key(name);
+                }
+                // Without type info, conservatively assume non-local idents might be variables
+                true
+            }
+            TlaExpr::Prime(_) => true, // Primed variables always reference state
+            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
+            TlaExpr::BinOp { left, right, .. } => {
+                self.operator_refs_variables(left, local_vars)
+                    || self.operator_refs_variables(right, local_vars)
+            }
+            TlaExpr::UnaryOp { operand, .. } => self.operator_refs_variables(operand, local_vars),
+            TlaExpr::OpApply { op, args } => {
+                self.operator_refs_variables(op, local_vars)
+                    || args.iter().any(|a| self.operator_refs_variables(a, local_vars))
+            }
+            TlaExpr::FnApply { func, arg } => {
+                self.operator_refs_variables(func, local_vars)
+                    || self.operator_refs_variables(arg, local_vars)
+            }
+            TlaExpr::SetEnum(elems) => {
+                elems.iter().any(|e| self.operator_refs_variables(e, local_vars))
+            }
+            TlaExpr::SetFilter { var, set, filter } => {
+                let mut locals = local_vars.to_vec();
+                locals.push(var.clone());
+                self.operator_refs_variables(set, local_vars)
+                    || self.operator_refs_variables(filter, &locals)
+            }
+            TlaExpr::SetMap { expr: e, var, set } => {
+                let mut locals = local_vars.to_vec();
+                locals.push(var.clone());
+                self.operator_refs_variables(set, local_vars)
+                    || self.operator_refs_variables(e, &locals)
+            }
+            TlaExpr::FnConstruct { var, domain, body } => {
+                let mut locals = local_vars.to_vec();
+                locals.push(var.clone());
+                self.operator_refs_variables(domain, local_vars)
+                    || self.operator_refs_variables(body, &locals)
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                self.operator_refs_variables(func, local_vars)
+                    || updates.iter().any(|u| {
+                        self.operator_refs_variables(&u.value, local_vars)
+                    })
+            }
+            TlaExpr::Record(fields) => {
+                fields.iter().any(|(_, v)| self.operator_refs_variables(v, local_vars))
+            }
+            TlaExpr::RecordAccess { record, .. } => {
+                self.operator_refs_variables(record, local_vars)
+            }
+            TlaExpr::Tuple(elems) => {
+                elems.iter().any(|e| self.operator_refs_variables(e, local_vars))
+            }
+            TlaExpr::IfThenElse { cond, then_expr, else_expr } => {
+                self.operator_refs_variables(cond, local_vars)
+                    || self.operator_refs_variables(then_expr, local_vars)
+                    || self.operator_refs_variables(else_expr, local_vars)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter().any(|(cond, body)| {
+                    self.operator_refs_variables(cond, local_vars)
+                        || self.operator_refs_variables(body, local_vars)
+                })
+                || other.as_ref().map_or(false, |e| self.operator_refs_variables(e, local_vars))
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                let mut locals = local_vars.to_vec();
+                for qb in vars {
+                    locals.push(qb.var.clone());
+                }
+                vars.iter().any(|qb| {
+                    qb.set.as_ref().map_or(false, |s| self.operator_refs_variables(s, local_vars))
+                }) || self.operator_refs_variables(body, &locals)
+            }
+            TlaExpr::Choose { var, set, body } => {
+                let mut locals = local_vars.to_vec();
+                locals.push(var.clone());
+                set.as_ref().map_or(false, |s| self.operator_refs_variables(s, local_vars))
+                    || self.operator_refs_variables(body, &locals)
+            }
+            TlaExpr::LetIn { defs, body } => {
+                let mut locals = local_vars.to_vec();
+                for def in defs {
+                    locals.push(def.name.clone());
+                }
+                defs.iter().any(|d| self.operator_refs_variables(&d.body, local_vars))
+                    || self.operator_refs_variables(body, &locals)
+            }
+            _ => {
+                // Conservatively assume unknown expressions might reference variables
+                true
+            }
+        }
     }
 
     /// Get the Verus type for a variable
@@ -1524,6 +1695,8 @@ pub struct OperatorModes {
     pub modes: Vec<ParameterMode>,
     /// Optional description
     pub description: Option<String>,
+    /// Whether this is a helper function (non-bool return type)
+    pub is_helper: bool,
 }
 
 impl OperatorModes {
@@ -1533,7 +1706,14 @@ impl OperatorModes {
             name: name.into(),
             modes,
             description: None,
+            is_helper: false,
         }
+    }
+
+    /// Mark as helper function
+    pub fn as_helper(mut self) -> Self {
+        self.is_helper = true;
+        self
     }
 
     /// Add a description
@@ -1545,10 +1725,11 @@ impl OperatorModes {
     /// Format as automan annotation line
     pub fn to_automan_line(&self) -> String {
         let modes_str: Vec<_> = self.modes.iter().map(|m| m.to_string()).collect();
+        let prefix = if self.is_helper { "    helper " } else { "    " };
         if let Some(desc) = &self.description {
-            format!("    {}({});  // {}", self.name, modes_str.join(", "), desc)
+            format!("{}{}({});  // {}", prefix, self.name, modes_str.join(", "), desc)
         } else {
-            format!("    {}({});", self.name, modes_str.join(", "))
+            format!("{}{}({});", prefix, self.name, modes_str.join(", "))
         }
     }
 }
@@ -1589,21 +1770,36 @@ impl ModeAnnotationGenerator {
         for op in &module.operators {
             let kind = if self.operator_uses_primes(&op.body) {
                 OperatorKind::Action
+            } else if !Self::body_refs_variables(&op.body, &module.variables) {
+                OperatorKind::ConstantOp
             } else {
                 OperatorKind::Predicate
             };
             operator_info.insert(op.name.clone(), kind);
         }
-        // Propagate action status through operator references
+        // Propagate operator kinds through references
         let mut changed = true;
         while changed {
             changed = false;
             for op in &module.operators {
-                if operator_info.get(&op.name) == Some(&OperatorKind::Predicate) {
-                    if Self::expr_refs_action_ops(&op.body, &operator_info) {
-                        operator_info.insert(op.name.clone(), OperatorKind::Action);
-                        changed = true;
+                let current = operator_info.get(&op.name).cloned();
+                match current {
+                    Some(OperatorKind::Predicate) => {
+                        if Self::expr_refs_action_ops(&op.body, &operator_info) {
+                            operator_info.insert(op.name.clone(), OperatorKind::Action);
+                            changed = true;
+                        }
                     }
+                    Some(OperatorKind::ConstantOp) => {
+                        if Self::expr_refs_action_ops(&op.body, &operator_info) {
+                            operator_info.insert(op.name.clone(), OperatorKind::Action);
+                            changed = true;
+                        } else if Self::expr_refs_predicate_ops(&op.body, &operator_info) {
+                            operator_info.insert(op.name.clone(), OperatorKind::Predicate);
+                            changed = true;
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1650,6 +1846,32 @@ impl ModeAnnotationGenerator {
         }
     }
 
+    fn expr_refs_predicate_ops(
+        expr: &TlaExpr,
+        operator_info: &std::collections::HashMap<String, OperatorKind>,
+    ) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => matches!(
+                operator_info.get(name),
+                Some(&OperatorKind::Predicate) | Some(&OperatorKind::Action)
+            ),
+            TlaExpr::BinOp { left, right, .. } => {
+                Self::expr_refs_predicate_ops(left, operator_info)
+                    || Self::expr_refs_predicate_ops(right, operator_info)
+            }
+            TlaExpr::UnaryOp { operand, .. } => {
+                Self::expr_refs_predicate_ops(operand, operator_info)
+            }
+            TlaExpr::OpApply { op, args } => {
+                Self::expr_refs_predicate_ops(op, operator_info)
+                    || args
+                        .iter()
+                        .any(|a| Self::expr_refs_predicate_ops(a, operator_info))
+            }
+            _ => false,
+        }
+    }
+
     /// Analyze an operator to determine parameter modes
     fn analyze_operator(
         &self,
@@ -1669,6 +1891,9 @@ impl ModeAnnotationGenerator {
         // to avoid false positives like "InitiateProbe" which is an action, not an init.
         let is_strict_init = op.name.eq_ignore_ascii_case("init");
 
+        // Check if operator body references any module variables (constant operators skip s param)
+        let refs_vars = Self::body_refs_variables(&op.body, &module.variables);
+
         if is_strict_init {
             // Init operators: state is output only
             modes.push(ParameterMode::Output);
@@ -1679,11 +1904,12 @@ impl ModeAnnotationGenerator {
             desc_parts.push("s is input (current state)".to_string());
             modes.push(ParameterMode::Output);
             desc_parts.push("s_ is output (next state)".to_string());
-        } else {
+        } else if refs_vars {
             // Pure predicates: state is input
             modes.push(ParameterMode::Input);
             desc_parts.push("s is input (state to check)".to_string());
         }
+        // else: constant operator — no state parameter
 
         // Add constants parameter if module has constants
         if !module.constants.is_empty() {
@@ -1699,7 +1925,56 @@ impl ModeAnnotationGenerator {
             desc_parts.push(format!("{} is input", param.name));
         }
 
-        OperatorModes::new(fn_name, modes).with_description(desc_parts.join(", "))
+        // Detect helper functions: operators that return non-boolean values
+        // (e.g., Follower == "follower", Phase1a == "Phase1a")
+        let is_helper = !is_action && !is_strict_init && Self::body_returns_non_bool(&op.body);
+
+        let result = OperatorModes::new(fn_name, modes).with_description(desc_parts.join(", "));
+        if is_helper { result.as_helper() } else { result }
+    }
+
+    /// Check if an expression body references any module state variables
+    fn body_refs_variables(expr: &TlaExpr, variables: &[String]) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => variables.contains(name),
+            TlaExpr::Prime(_) => true,
+            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
+            TlaExpr::BinOp { left, right, .. } => {
+                Self::body_refs_variables(left, variables)
+                    || Self::body_refs_variables(right, variables)
+            }
+            TlaExpr::UnaryOp { operand, .. } => Self::body_refs_variables(operand, variables),
+            TlaExpr::OpApply { op, args } => {
+                Self::body_refs_variables(op, variables)
+                    || args.iter().any(|a| Self::body_refs_variables(a, variables))
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::body_refs_variables(func, variables)
+                    || Self::body_refs_variables(arg, variables)
+            }
+            TlaExpr::SetEnum(elems) => elems.iter().any(|e| Self::body_refs_variables(e, variables)),
+            TlaExpr::Record(fields) => {
+                fields.iter().any(|(_, v)| Self::body_refs_variables(v, variables))
+            }
+            TlaExpr::RecordAccess { record, .. } => Self::body_refs_variables(record, variables),
+            TlaExpr::Tuple(elems) => elems.iter().any(|e| Self::body_refs_variables(e, variables)),
+            _ => {
+                // Conservative: assume unknown expressions might reference variables
+                true
+            }
+        }
+    }
+
+    /// Check if an expression body returns a non-boolean value (string, number, etc.)
+    fn body_returns_non_bool(expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::String(_) | TlaExpr::Number(_) => true,
+            TlaExpr::SetEnum(_) | TlaExpr::Record(_) | TlaExpr::Tuple(_) => true,
+            TlaExpr::IfThenElse { then_expr, else_expr, .. } => {
+                Self::body_returns_non_bool(then_expr) || Self::body_returns_non_bool(else_expr)
+            }
+            _ => false,
+        }
     }
 
     /// Check if an expression uses primed variables (same as ModuleTranslator)
