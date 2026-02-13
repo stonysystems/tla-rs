@@ -785,6 +785,13 @@ impl<'a> TypeParser<'a> {
         self.skip_whitespace();
         let start = self.pos;
 
+        // Handle raw identifier prefix: r#keyword
+        let has_raw_prefix = self.pos + 2 <= self.content.len()
+            && &self.content[self.pos..self.pos + 2] == "r#";
+        if has_raw_prefix {
+            self.pos += 2; // skip "r#"
+        }
+
         if let Some(c) = self.peek() {
             if !c.is_alphabetic() && c != '_' {
                 return Err(TranspileError::Parse {

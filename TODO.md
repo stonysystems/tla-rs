@@ -4992,6 +4992,7 @@ All 7 TLA+ examples pass the full TLA+ → spec → exec pipeline transpilation.
 - [x] PBFT: pipeline ✅
 
 **Compile & Verify** (pipeline output must compile with Verus):
+**Blocker**: D2 exec body generation produces invalid Rust for TLA-generated specs (returns bool conjunctions where struct construction needed). The spec→exec translator was designed for hand-written protocol specs, not TLA-generated ones. Fixing requires teaching the translator to convert TLA-style state-transition conjunctions into struct construction.
 - [ ] **SimpleCounter.tla** → pipeline, compile, verify → fix until passes
 - [ ] **DieHard.tla** → pipeline, compile, verify → fix until passes
 - [ ] **EWD840.tla** → pipeline, compile, verify → fix until passes

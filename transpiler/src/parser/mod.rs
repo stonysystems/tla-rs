@@ -327,6 +327,13 @@ impl<'a> VerusBlockParser<'a> {
         self.skip_whitespace();
         let start = self.pos;
 
+        // Handle raw identifier prefix: r#keyword
+        let has_raw_prefix = self.pos + 2 <= self.content.len()
+            && &self.content[self.pos..self.pos + 2] == "r#";
+        if has_raw_prefix {
+            self.pos += 2; // skip "r#"
+        }
+
         // First char must be letter or underscore
         if let Some(c) = self.peek() {
             if !c.is_alphabetic() && c != '_' {
@@ -2129,7 +2136,9 @@ impl<'a> VerusBlockParser<'a> {
         // Consume closing quote
         self.expect('"')?;
 
-        Ok(Expr::Literal(Literal::String(value)))
+        let expr = Expr::Literal(Literal::String(value));
+        // Handle postfix operators like @ (view) on string literals
+        self.parse_postfix_ops(expr)
     }
 
     // Helper methods

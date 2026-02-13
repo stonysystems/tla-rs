@@ -872,6 +872,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         ..TranslatorConfig::default()
                     },
                     generate_inline_types: true,
+                    custom_imports: vec!["use vstd::prelude::*;".to_string()],
                     ..TranspilerConfig::default()
                 }
             };
@@ -881,8 +882,16 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .transpile_file(&spec_path, &automan_path)
                 .map_err(|e| miette::miette!("Failed to transpile spec to exec: {}", e))?;
 
+            // Build self-contained output: spec definitions + exec code
+            // The exec code references spec types (LState, LConstants) and spec functions,
+            // so we embed the spec code before the exec code for standalone compilation.
+            let mut full_output = String::new();
+            full_output.push_str(&verus_spec_code);
+            full_output.push('\n');
+            full_output.push_str(&exec_code);
+
             // Write exec output
-            std::fs::write(exec_output, &exec_code)
+            std::fs::write(exec_output, &full_output)
                 .map_err(|e| miette::miette!("Failed to write exec output: {}", e))?;
 
             if cli.verbose {
