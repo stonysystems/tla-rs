@@ -5065,5 +5065,5 @@ Workflow for each failure:
 3. [x] **All D3 examples**: 10/10 Verus Spec → TLA+ syntax valid ✅ (33/33 SANY validated)
 4. [ ] **All D4 examples**: 7/7 TLA+ → Verus Exec full pipeline compile and verify
 5. [ ] `docs/conversion-testing-guide.md` has complete status matrix with all ✅
-6. [ ] Regression tests added for each fix
-7. [ ] `cd transpiler && cargo test`: all tests pass
+6. [x] Regression tests added for each fix ✅ (7 D1 regression tests in tla_examples_test.rs)
+7. [x] `cd transpiler && cargo test`: all tests pass ✅ (894 tests)

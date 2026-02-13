@@ -828,6 +828,120 @@ fn test_pbft_type_inference() {
 }
 
 // =============================================================================
+// D1 Compile Regression Tests
+// Verify that generated Verus code has correct syntax for compilation.
+// =============================================================================
+
+#[test]
+fn test_d1_string_literals_have_view_suffix() {
+    // Regression: string literals must have @ suffix for Verus Seq<char> conversion
+    let source = read_example("Raft");
+    let (verus_code, _) = translate_example(&source);
+
+    assert!(
+        verus_code.contains("\"follower\"@"),
+        "String literals must have @ suffix for Verus Seq<char>"
+    );
+    assert!(
+        verus_code.contains("\"candidate\"@"),
+        "String literals must have @ suffix for Verus Seq<char>"
+    );
+    assert!(
+        verus_code.contains("\"leader\"@"),
+        "String literals must have @ suffix for Verus Seq<char>"
+    );
+}
+
+#[test]
+fn test_d1_empty_sets_have_type_annotation() {
+    // Regression: empty sets must have explicit type annotation for Verus
+    let source = read_example("EWD840");
+    let (verus_code, _) = translate_example(&source);
+
+    assert!(
+        verus_code.contains("Set::<int>::empty()"),
+        "Empty sets must have type annotation: Set::<int>::empty()"
+    );
+}
+
+#[test]
+fn test_d1_record_set_empty_has_record_type() {
+    // Regression: empty sets assigned to record-typed vars must use Set::<LRecord>::empty()
+    let source = read_example("Paxos");
+    let (verus_code, _) = translate_example(&source);
+
+    assert!(
+        verus_code.contains("Set::<LRecord>::empty()"),
+        "Record-typed empty sets must use Set::<LRecord>::empty()"
+    );
+}
+
+#[test]
+fn test_d1_record_struct_generated() {
+    // Regression: modules with record literals must generate a merged record struct
+    let source = read_example("Paxos");
+    let (verus_code, _) = translate_example(&source);
+
+    assert!(
+        verus_code.contains("pub struct LRecord"),
+        "Must generate LRecord struct for record types"
+    );
+    assert!(
+        verus_code.contains("pub r#type: Seq<char>"),
+        "Record 'type' field must be escaped as r#type with Seq<char> type"
+    );
+    assert!(
+        verus_code.contains("pub bal: int"),
+        "Record 'bal' field must be int type"
+    );
+}
+
+#[test]
+fn test_d1_record_struct_keyword_escaping() {
+    // Regression: Rust keywords in record field names must be escaped with r#
+    let source = read_example("PBFT");
+    let (verus_code, _) = translate_example(&source);
+
+    assert!(
+        verus_code.contains("pub r#type:"),
+        "Keyword 'type' must be escaped as r#type in struct definition"
+    );
+    assert!(
+        verus_code.contains("r#type:"),
+        "Keyword 'type' must be escaped as r#type in struct construction"
+    );
+}
+
+#[test]
+fn test_d1_nat_renders_as_int() {
+    // Regression: TLA+ Nat type must render as int (not nat) to avoid type mismatches
+    let source = read_example("SimpleCounter");
+    let (verus_code, _) = translate_example(&source);
+
+    // Should not contain 'nat' type (only 'int')
+    assert!(
+        !verus_code.contains(": nat"),
+        "Nat type must render as int, not nat"
+    );
+}
+
+#[test]
+fn test_d1_set_type_inference() {
+    // Regression: variables used in set operations must be inferred as Set<int>
+    let source = read_example("TwoPhase");
+    let (verus_code, _) = translate_example(&source);
+
+    assert!(
+        verus_code.contains("pub rmState: Set<int>"),
+        "rmState should be Set<int>"
+    );
+    assert!(
+        verus_code.contains("pub tmPrepared: Set<int>"),
+        "tmPrepared should be Set<int>"
+    );
+}
+
+// =============================================================================
 // Bullet-list (vertical) conjunction/disjunction parsing tests
 // Tests that verus2tla-generated TLA+ specs (which use vertical /\ and \/ style)
 // can be parsed back by the TLA+ parser.
