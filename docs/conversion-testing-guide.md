@@ -26,7 +26,7 @@ No TLA+ tooling is required — the TLA+ parser is built into the transpiler. Op
 Three commands to verify all conversions are working:
 
 ```bash
-# Run all transpiler tests (667 lib + 45 integration)
+# Run all transpiler tests (681 lib + 226 integration = 907 total)
 cd transpiler && cargo test
 
 # Run only round-trip consistency tests
@@ -275,10 +275,10 @@ cd transpiler
 # Everything (recommended)
 cargo test
 
-# Library tests only (667 tests: parser, code generation, mode analysis, proofs)
+# Library tests only (681 tests: parser, code generation, mode analysis, proofs)
 cargo test --lib
 
-# Integration tests only (45 tests across 7 test files)
+# Integration tests only (226 tests across 7 test files + main binary tests)
 cargo test --test integration
 cargo test --test roundtrip
 cargo test --test roundtrip_test
@@ -383,7 +383,17 @@ If Verus rejects the generated code:
 
 ## Compile & Run Status Matrix
 
-**Last updated**: 2026-02-12 (Phase 16.2–16.5 complete)
+**Last updated**: 2026-02-13 (Phase 16 complete — all 4 directions × all examples pass)
+
+### Summary
+
+| Direction | Description | Examples | Status |
+|-----------|-------------|----------|--------|
+| D1: TLA+ → Verus Spec | `translate-tla` | 7/7 | ✅ All compile & verify |
+| D2: Verus Spec → Verus Exec | default mode (TLA-generated) | 7/7 | ✅ All compile & verify |
+| D2: Verus Spec → Verus Exec | default mode (hand-written) | 10/10 | ✅ 581+ verified, 0 errors |
+| D3: Verus Spec → TLA+ | `verus2-tla` | 33/33 | ✅ All SANY validated |
+| D4: TLA+ → Verus Exec | `pipeline` (D1+D2) | 7/7 | ✅ 69 total verified, 0 errors |
 
 ### TLA+ Examples (`transpiler/tests/tla_examples/`)
 
@@ -411,13 +421,13 @@ cargo run --release -- translate-tla \
 
 | Example | Transpile | Verus Compile | Notes |
 |---------|-----------|---------------|-------|
-| SimpleCounter | ✅ | untested | |
-| DieHard | ✅ | untested | |
-| EWD840 | ✅ | untested | Fixed: annotation `eq_ignore_ascii_case("init")` match |
-| TwoPhase | ✅ | untested | Fixed: string literal parsing |
-| Raft | ✅ | untested | Fixed: string literal parsing |
-| Paxos | ✅ | untested | Fixed: record literal parsing |
-| PBFT | ✅ | untested | Fixed: record literal parsing |
+| SimpleCounter | ✅ | ✅ | Verified via D4 pipeline |
+| DieHard | ✅ | ✅ | Verified via D4 pipeline; overflow guards for conditional arithmetic |
+| EWD840 | ✅ | ✅ | Fixed: annotation match, HashSet clone via `clone_hashset` helper |
+| TwoPhase | ✅ | ✅ | Fixed: string literal parsing, set field View mapping |
+| Raft | ✅ | ✅ | Fixed: string literal parsing, set field cloning + union/difference ops |
+| Paxos | ✅ | ✅ | Fixed: record literal parsing, record struct handling |
+| PBFT | ✅ | ✅ | Fixed: record literal parsing, record struct + set ops |
 
 **Command** (two steps):
 ```bash
@@ -495,7 +505,7 @@ cargo run --release -- pipeline \
 
 ### Verus Spec → Verus Exec (Existing Protocol Specs)
 
-Generated code in `src/generated/` compiles and verifies with Verus: **627 verified, 0 errors**.
+Generated code in `src/generated/` compiles and verifies with Verus: **581+ verified, 0 errors** (10 uniform packet-identity assumes remain in replica_gen.rs — irreducible IO trust boundary).
 
 | Module | Status | Notes |
 |--------|--------|-------|
@@ -519,7 +529,7 @@ Generated code in `src/generated/` compiles and verifies with Verus: **627 verif
 
 **Command**:
 ```bash
-scons --verus-path=/home/users/zihao/verus/verus liblib.so
+scons --verus-path=/home/shuai/tools/verus-x86-linux
 ```
 
 ---
