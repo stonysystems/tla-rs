@@ -8978,10 +8978,17 @@ impl Translator {
                             ),
                             (
                                 "_ ".to_string(),
-                                ExecExpr::Call {
-                                    func: "unreachable_value".to_string(),
-                                    args: vec![],
-                                },
+                                ExecExpr::Block(vec![
+                                    ExecExpr::ProofBlock {
+                                        stmts: vec![ExecExpr::Assert(Box::new(
+                                            ExecExpr::Literal("false".to_string()),
+                                        ))],
+                                    },
+                                    ExecExpr::Call {
+                                        func: "unreachable_value".to_string(),
+                                        args: vec![],
+                                    },
+                                ]),
                             ),
                         ],
                     })
@@ -22916,6 +22923,80 @@ mod tests {
         config.set_fields.insert("color".to_string());
         let translator = Translator::new(config);
         assert!(translator.is_hashset_field("color"));
+    }
+
+    #[test]
+    fn test_arrow_unreachable_arm_has_proof_assert_false() {
+        // Arrow variant access generates a match with a wildcard arm.
+        // The wildcard arm should contain `proof { assert(false); }` before `unreachable_value()`.
+        let mut config = TranslatorConfig::default();
+        config.arrow_variants.insert("bal".to_string(), "CMessage::CMessage1a".to_string());
+
+        let translator = Translator::new(config);
+        let ctx = TransformContext {
+            config: &translator.config,
+            input_params: vec![],
+            output_params: vec![],
+            output_types: std::collections::HashMap::new(),
+            input_types: std::collections::HashMap::new(),
+            field_substitutions: std::collections::HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let arrow_expr = Expr::Arrow(
+            Box::new(Expr::Ident("msg".to_string())),
+            "bal".to_string(),
+        );
+
+        let result = translator.transform_expr(&arrow_expr, &ctx).unwrap();
+
+        // Should be a Match expression
+        match &result {
+            ExecExpr::Match { arms, .. } => {
+                assert_eq!(arms.len(), 2, "Should have 2 arms (variant + wildcard)");
+
+                // First arm: the variant destructuring
+                let (pattern, _) = &arms[0];
+                assert!(pattern.contains("CMessage::CMessage1a"), "First arm should destructure the variant");
+
+                // Second arm: wildcard with proof block + unreachable_value
+                let (wildcard_pattern, wildcard_body) = &arms[1];
+                assert_eq!(wildcard_pattern, "_ ", "Second arm should be wildcard");
+
+                match wildcard_body {
+                    ExecExpr::Block(stmts) => {
+                        assert_eq!(stmts.len(), 2, "Wildcard body should have 2 statements");
+                        // First: ProofBlock with assert(false)
+                        match &stmts[0] {
+                            ExecExpr::ProofBlock { stmts: proof_stmts } => {
+                                assert_eq!(proof_stmts.len(), 1);
+                                match &proof_stmts[0] {
+                                    ExecExpr::Assert(inner) => {
+                                        match inner.as_ref() {
+                                            ExecExpr::Literal(s) => assert_eq!(s, "false"),
+                                            other => panic!("Expected Literal(\"false\"), got {:?}", other),
+                                        }
+                                    }
+                                    other => panic!("Expected Assert, got {:?}", other),
+                                }
+                            }
+                            other => panic!("Expected ProofBlock, got {:?}", other),
+                        }
+                        // Second: unreachable_value() call
+                        match &stmts[1] {
+                            ExecExpr::Call { func, args } => {
+                                assert_eq!(func, "unreachable_value");
+                                assert!(args.is_empty());
+                            }
+                            other => panic!("Expected Call(unreachable_value), got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected Block, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Match, got {:?}", other),
+        }
     }
 
     #[test]
