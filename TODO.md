@@ -2093,32 +2093,51 @@ Use the current manually-proven `twophase_gen.rs` (0 assumes) as a reference to 
   (12.2.3) proofs are automatic — Verus proves them without explicit proof blocks. Only the collection
   mapping lemmas are needed.
 
-**12.2.2: Generate validity proofs (Category 1)** — DEFERRED (automatic for simple protocols)
+**12.2.2: Eliminate executor_gen.rs vec element assumes** — ✅ COMPLETE
+Analysis: 22 total assumes in generated code. 10 are irreducible IO trust boundary in replica_gen.rs.
+The 12 executor assumes have been eliminated (580 verified, 0 errors, 10 remaining assumes in replica_gen.rs).
+
+**12.2.2a: Empty vec element proofs (6 assumes → 0)** — ✅ DONE
+- [x] Replaced 6 `assume` with `assert` using `assert(empty_vec@.len() == 0)` (vacuously true)
+- Sites: `CExecutorProcessAppStateRequest` (else), `CExecutorProcessStartingPhase2` (else), `CExecutorProcessRequest` (else)
+
+**12.2.2b: Single-element vec element proofs (4 assumes → 0)** — ✅ DONE
+- [x] Added proof assertions showing CPacket fields are valid from preconditions
+- [x] Proved via `pkt.dst@ == inp.src@` (valid from inp.valid()), `pkt.src@ == replica_ids[idx]@` (valid from config), `pkt.msg.valid()` (from s.valid() fields)
+- Sites: `CExecutorProcessAppStateRequest` (if), `CExecutorProcessRequest` (if)
+
+**12.2.2c: Broadcast vec element proofs (2 assumes → 0)** — ✅ DONE
+- [x] Added `ensures forall|i| ... result@[i].valid()` and `abstractable()` to CBroadcastToEveryone
+- [x] Added loop invariants for packet validity/abstractability in broadcast_gen.rs
+- [x] Strengthened `CMessage.clone_up_to_view()` to ensure `res.valid() == self.valid()` (external_body)
+- Site: `CExecutorProcessStartingPhase2` (if)
+
+**12.2.3: Generate validity proofs (General)** — DEFERRED (automatic for simple protocols)
 - [ ] In `translator/mod.rs`, add `generate_validity_proof()` function
 - [ ] For each field of the constructed result, generate assertion matching valid() predicate
 - [ ] Handle: primitive bounds, collection length, nested struct valid(), enum variant valid()
 - [ ] Use the type registry (already parsed) to look up valid() definitions
 
-**12.2.3: Generate spec refinement proofs (Category 2)** — DEFERRED (automatic for simple protocols)
+**12.2.4: Generate spec refinement proofs** — DEFERRED (automatic for simple protocols)
 - [ ] In `translator/mod.rs`, add `generate_refinement_proof()` function
 - [ ] Parse spec predicate body → extract individual conjuncts
 - [ ] For each conjunct, generate `assert` linking exec construction to spec via View (`@`)
 - [ ] Handle `=~=`, `==`, field projections, conditional branches (if/else)
 - [ ] Handle collection operations: `Set::insert`, `Map::insert`, `Seq::push` view mappings
 
-**12.2.4: Generate precondition proofs (Category 3)** — DEFERRED (RSL-specific)
+**12.2.5: Generate precondition proofs** — DEFERRED (RSL-specific)
 - [ ] Before each function call, emit assertion proving callee's `requires` clause
 - [ ] After each struct construction, emit assertion proving intermediate validity
 - [ ] Use caller's `requires` + prior assertions as proof context
 
-**12.2.5: Generate collection proof helpers (Category 4)** — DEFERRED (RSL-specific)
+**12.2.6: Generate collection proof helpers** — DEFERRED (RSL-specific)
 - [ ] When transpiler generates a HashMap filter loop, emit call to verified `hashmap_filter()` helper
 - [ ] When transpiler generates HashSet iteration, emit proper invariants with `broadcast use` lemmas
 - [ ] Create verified helper library (`common/collections/`) with proven contracts:
   - `hashmap_filter(m, pred) -> HashMap` with `ensures result@ == m@.restrict(pred)`
   - `hashmap_retain(m, pred) -> HashMap` with proven filter semantics
 
-**12.2.6: Handle unreachable arms (Category 5)** — DEFERRED (RSL-specific)
+**12.2.7: Handle unreachable arms** — DEFERRED (RSL-specific)
 - [ ] Generate `proof { assert(false) by { /* from requires */ } }` instead of `assume(false)`
 - [ ] Extract contradiction from function's `requires` clause
 

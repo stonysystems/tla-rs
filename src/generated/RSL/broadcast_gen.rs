@@ -35,6 +35,8 @@ requires
     ((0 <= *myidx) && (*myidx < c.replica_ids.len())),
 ensures
     LBroadcastToEveryone(c@, *myidx as int, m@, result@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
 {
     let mut result = Vec::<CPacket>::new();
     let mut idx: usize = 0;
@@ -48,6 +50,8 @@ ensures
         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).dst@ == c.replica_ids@[j]@,
         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).src@ == c.replica_ids@[*myidx as int]@,
         forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).msg@ == m@,
+        forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).valid(),
+        forall |j: int| 0 <= j < idx as int ==> (#[trigger] result@[j]).abstractable(),
     decreases c.replica_ids.len() - idx,
     {
         let pkt = CPacket {
@@ -55,6 +59,23 @@ ensures
             src: c.replica_ids[(*myidx as usize)].clone_up_to_view(),
             msg: m.clone_up_to_view(),
         };
+        proof {
+            // Each constructed pkt is valid and abstractable:
+            // dst: clone_up_to_view preserves @, c.valid() ⇒ replica_ids[idx] valid
+            assert(pkt.dst@ == c.replica_ids@[idx as int]@);
+            assert(pkt.dst.valid_public_key());
+            assert(pkt.dst.abstractable());
+            // src: same reasoning for replica_ids[myidx]
+            assert(pkt.src@ == c.replica_ids@[*myidx as int]@);
+            assert(pkt.src.valid_public_key());
+            assert(pkt.src.abstractable());
+            // msg: clone_up_to_view preserves @, m.valid()
+            assert(pkt.msg@ == m@);
+            assert(pkt.msg.valid());
+            assert(pkt.msg.abstractable());
+            assert(pkt.valid());
+            assert(pkt.abstractable());
+        }
         result.push(pkt);
         idx = idx + 1;
 

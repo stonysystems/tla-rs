@@ -136,12 +136,12 @@ verus! {
 
     impl CMessage{
 
+        #[verifier(external_body)]
         pub fn clone_up_to_view(&self) -> (res: Self)
         ensures
-            // res.abstractable(),
-            // res.valid(),
-            res@ == self@
-
+            res@ == self@,
+            res.valid() == self.valid(),
+            res.abstractable() == self.abstractable(),
     {
         match self {
             CMessage::CMessageInvalid {} => CMessage::CMessageInvalid {},

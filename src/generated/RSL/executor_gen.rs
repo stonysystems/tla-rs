@@ -457,8 +457,43 @@ ensures
             assert(s_clone@ == ss);
             assert(pkt_vec@.map(|i, p: CPacket| p@) =~= seq![spkt]);
             assert(LExecutorProcessAppStateRequest(ss, s_clone@, sp, seq![spkt]));
-            assume(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].valid());
-            assume(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].abstractable());
+            // Single-element vec: prove pkt is valid and abstractable
+            // pkt.dst = inp.src.clone() — inp.valid() ⇒ inp.src.valid_public_key()
+            // pkt.src = replica_ids[my_index].clone() — s.valid() ⇒ config.valid() ⇒ replica_ids valid
+            // pkt.msg = CMessageAppStateSupply{...} — fields from s which is valid
+            assert(pkt_vec@.len() == 1);
+            assert(pkt_vec@[0] == pkt);
+
+            // msg validity: all fields from valid s
+            assert(s.max_bal_reflected.valid());
+            assert(s.max_bal_reflected.abstractable());
+            // reply_cache cloned from s.reply_cache: clone_creply_cache_up_to_view ensures res@ == cache@
+            // creplycache_is_valid is defined over @, so same @ ⇒ same validity
+            assert(creplycache_is_valid(&s.reply_cache));
+            assert(msg.valid());
+            assert(msg.abstractable());
+
+            // pkt.dst = inp.src.clone() — clone ensures res@ == self@
+            // valid_public_key() defined as self@.valid_physical_address()
+            // So pkt.dst@ == inp.src@, and inp.valid() ⇒ inp.src.valid_public_key()
+            assert(pkt.dst@ == inp.src@);
+            assert(pkt.dst.valid_public_key());
+            assert(pkt.dst.abstractable());
+
+            // pkt.src = replica_ids[my_index].clone()
+            // s.valid() ⇒ config.valid() ⇒ all replica_ids valid
+            assert(s.constants.valid());
+            assert(s.constants.all.config.valid());
+            assert(LReplicaConstantsValid(s.constants@));
+            assert(pkt.src@ == s.constants.all.config.replica_ids[s.constants.my_index as int]@);
+            assert(pkt.src.valid_public_key());
+            assert(pkt.src.abstractable());
+
+            assert(pkt.valid());
+            assert(pkt.abstractable());
+
+            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].valid());
+            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].abstractable());
         }
 
         (s_clone, pkt_vec)
@@ -469,8 +504,12 @@ ensures
             assert(s_clone@ == ss);
             assert(empty_vec@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
             assert(LExecutorProcessAppStateRequest(ss, s_clone@, sp, Seq::<RslPacket>::empty()));
-            assume(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid());
-            assume(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable());
+            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid()) by {
+                assert(empty_vec@.len() == 0);
+            }
+            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable()) by {
+                assert(empty_vec@.len() == 0);
+            }
         }
         (s_clone, empty_vec)
     }
@@ -519,8 +558,9 @@ ensures
             //       RslMessageAppStateRequest{bal_state_req: inp.msg->bal_2, opn_state_req: inp.msg->logTruncationPoint_2},
             //       sent_packets)
             assert(LExecutorProcessStartingPhase2(ss, s_clone@, sp, sent_packets@.map(|i, p: CPacket| p@)));
-            assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
-            assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+            // CBroadcastToEveryone now ensures valid() and abstractable() for all packets
+            assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+            assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
         }
 
         (s_clone, sent_packets)
@@ -531,8 +571,12 @@ ensures
             assert(s_clone@ == ss);
             assert(empty_vec@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
             assert(LExecutorProcessStartingPhase2(ss, s_clone@, sp, Seq::<RslPacket>::empty()));
-            assume(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid());
-            assume(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable());
+            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid()) by {
+                assert(empty_vec@.len() == 0);
+            }
+            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable()) by {
+                assert(empty_vec@.len() == 0);
+            }
         }
         (s_clone, empty_vec)
     }
@@ -613,8 +657,46 @@ ensures
             assert(pkt@ == spkt);
             assert(pkt_vec@.map(|i, p: CPacket| p@) =~= seq![spkt]);
             assert(LExecutorProcessRequest(ss, sp, seq![spkt]));
-            assume(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].valid());
-            assume(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].abstractable());
+            // Single-element vec: prove pkt is valid and abstractable
+            assert(pkt_vec@.len() == 1);
+            assert(pkt_vec@[0] == pkt);
+
+            // r is valid: s.valid() ⇒ creplycache_is_valid ⇒ all entries valid
+            // r == s.reply_cache@[inp.src] from HashMap.get
+            assert(creplycache_is_valid(&s.reply_cache));
+            assert(s.reply_cache@.dom().contains(inp.src));
+            assert(s.reply_cache@[inp.src].valid());
+            assert(r.valid());
+            assert(r.abstractable());
+
+            // pkt.msg = CMessageReply{seqno_reply: r.seqno, reply: r.reply.clone_up_to_view()}
+            // CMessageReply.valid() = reply.valid()
+            // r.valid() ⇒ r.reply.valid(), and clone_up_to_view ensures res@ == self@
+            assert(r.reply.valid());
+            assert(pkt.msg->reply@ == r.reply@);
+            assert(pkt.msg.valid());
+            assert(pkt.msg.abstractable());
+
+            // pkt.dst = r.client.clone_up_to_view()
+            // r.valid() ⇒ r.client.valid_public_key()
+            assert(r.client.valid_public_key());
+            assert(pkt.dst@ == r.client@);
+            assert(pkt.dst.valid_public_key());
+            assert(pkt.dst.abstractable());
+
+            // pkt.src = replica_ids[my_index].clone_up_to_view()
+            assert(s.constants.valid());
+            assert(s.constants.all.config.valid());
+            assert(LReplicaConstantsValid(s.constants@));
+            assert(pkt.src@ == s.constants.all.config.replica_ids[s.constants.my_index as int]@);
+            assert(pkt.src.valid_public_key());
+            assert(pkt.src.abstractable());
+
+            assert(pkt.valid());
+            assert(pkt.abstractable());
+
+            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].valid());
+            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].abstractable());
         }
 
         pkt_vec
@@ -623,9 +705,13 @@ ensures
         proof {
             assert(empty_vec@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
             assert(LExecutorProcessRequest(ss, sp, Seq::<RslPacket>::empty()));
-            // Empty vec: forall is vacuously true, but add assume for uniformity
-            assume(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid());
-            assume(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable());
+            // Empty vec: forall is vacuously true (len == 0)
+            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid()) by {
+                assert(empty_vec@.len() == 0);
+            }
+            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable()) by {
+                assert(empty_vec@.len() == 0);
+            }
         }
         empty_vec
     }
