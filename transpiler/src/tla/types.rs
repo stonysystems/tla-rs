@@ -124,7 +124,7 @@ impl TlaType {
             TlaType::Unknown => "int".to_string(),
             TlaType::TypeVar(_) => "int".to_string(),
             TlaType::Int => "int".to_string(),
-            TlaType::Nat => "nat".to_string(),
+            TlaType::Nat => "int".to_string(), // Use int for nat to avoid type mismatches in Verus
             TlaType::Bool => "bool".to_string(),
             TlaType::String => "Seq<char>".to_string(),
             TlaType::Set(elem) => format!("Set<{}>", elem.to_verus_type()),
@@ -148,6 +148,58 @@ impl TlaType {
             TlaType::Action => "bool".to_string(),
             TlaType::Temporal => "bool".to_string(),
             TlaType::Any => "int".to_string(),
+        }
+    }
+
+    /// Convert to Verus type string, using named structs for record types.
+    /// `record_structs` maps sorted comma-joined field names to struct names.
+    pub fn to_verus_type_with_records(
+        &self,
+        record_structs: &HashMap<String, String>,
+    ) -> String {
+        match self {
+            TlaType::Set(elem) => {
+                format!("Set<{}>", elem.to_verus_type_with_records(record_structs))
+            }
+            TlaType::Seq(elem) => {
+                format!("Seq<{}>", elem.to_verus_type_with_records(record_structs))
+            }
+            TlaType::Function { domain, range } => {
+                format!(
+                    "spec_fn({}) -> {}",
+                    domain.to_verus_type_with_records(record_structs),
+                    range.to_verus_type_with_records(record_structs)
+                )
+            }
+            TlaType::Map { key, value } => {
+                format!(
+                    "Map<{}, {}>",
+                    key.to_verus_type_with_records(record_structs),
+                    value.to_verus_type_with_records(record_structs)
+                )
+            }
+            TlaType::Record(rec) => {
+                // Look up the struct name from the field names
+                let mut field_names: Vec<_> = rec.fields.keys().cloned().collect();
+                field_names.sort();
+                let key = field_names.join(",");
+                if let Some(struct_name) = record_structs.get(&key) {
+                    struct_name.clone()
+                } else if let Some(name) = &rec.name {
+                    name.clone()
+                } else {
+                    rec.to_verus_type()
+                }
+            }
+            TlaType::Tuple(elems) => {
+                let types: Vec<_> = elems
+                    .iter()
+                    .map(|t| t.to_verus_type_with_records(record_structs))
+                    .collect();
+                format!("({})", types.join(", "))
+            }
+            // All other cases delegate to the simple version
+            _ => self.to_verus_type(),
         }
     }
 }
@@ -455,6 +507,10 @@ pub struct ConstraintCollector {
     pub constraints: Vec<TypeConstraint>,
     /// Next type variable ID for generating fresh type variables
     next_type_var: usize,
+    /// Mapping from known names (variables, constants, parameters) to their type variables.
+    /// This ensures that when an identifier is referenced in expressions, we reuse the same
+    /// type variable that was assigned during declaration, enabling proper unification.
+    name_types: HashMap<String, TlaType>,
 }
 
 impl ConstraintCollector {
@@ -480,6 +536,7 @@ impl ConstraintCollector {
         // Variables are state - they could be any type initially
         for var in &module.variables {
             let ty = self.fresh_type_var();
+            self.name_types.insert(var.clone(), ty.clone());
             self.add(TypeConstraint::HasType {
                 name: var.clone(),
                 ty,
@@ -489,6 +546,7 @@ impl ConstraintCollector {
         // Constants could be any type initially
         for constant in &module.constants {
             let ty = self.fresh_type_var();
+            self.name_types.insert(constant.name.clone(), ty.clone());
             self.add(TypeConstraint::HasType {
                 name: constant.name.clone(),
                 ty,
@@ -514,6 +572,7 @@ impl ConstraintCollector {
             .iter()
             .map(|p| {
                 let ty = self.fresh_type_var();
+                self.name_types.insert(p.name.clone(), ty.clone());
                 self.add(TypeConstraint::HasType {
                     name: p.name.clone(),
                     ty: ty.clone(),
@@ -524,6 +583,9 @@ impl ConstraintCollector {
 
         // Collect constraints from body
         let return_type = self.collect_from_expr(&op.body);
+
+        // Store operator return type so OpApply can look it up
+        self.name_types.insert(op.name.clone(), return_type.clone());
 
         // Add operator type constraint
         self.add(TypeConstraint::OperatorType {
@@ -536,13 +598,17 @@ impl ConstraintCollector {
     /// Collect constraints from an expression, returning its inferred type
     pub fn collect_from_expr(&mut self, expr: &TlaExpr) -> TlaType {
         match expr {
-            // Identifiers - lookup or create type variable
+            // Identifiers - lookup existing type or create type variable
             TlaExpr::Ident(name) => {
                 // Check for standard library types
                 if let Some(ty) = StandardLibrary::get_global_type(name) {
                     return ty;
                 }
-                // Otherwise return a type variable (will be resolved later)
+                // Look up existing type variable for known names (variables, constants, parameters)
+                if let Some(ty) = self.name_types.get(name) {
+                    return ty.clone();
+                }
+                // Otherwise return a fresh type variable (will be resolved later)
                 self.fresh_type_var()
             }
 
@@ -579,9 +645,11 @@ impl ConstraintCollector {
             TlaExpr::SetFilter { var, set, filter } => {
                 let set_type = self.collect_from_expr(set);
                 if let TlaType::Set(elem_type) = &set_type {
+                    let elem = (**elem_type).clone();
+                    self.name_types.insert(var.clone(), elem.clone());
                     self.add(TypeConstraint::HasType {
                         name: var.clone(),
-                        ty: (**elem_type).clone(),
+                        ty: elem,
                     });
                 }
                 let filter_type = self.collect_from_expr(filter);
@@ -593,9 +661,11 @@ impl ConstraintCollector {
             TlaExpr::SetMap { expr, var, set } => {
                 let set_type = self.collect_from_expr(set);
                 if let TlaType::Set(elem_type) = &set_type {
+                    let elem = (**elem_type).clone();
+                    self.name_types.insert(var.clone(), elem.clone());
                     self.add(TypeConstraint::HasType {
                         name: var.clone(),
-                        ty: (**elem_type).clone(),
+                        ty: elem,
                     });
                 }
                 let result_type = self.collect_from_expr(expr);
@@ -652,6 +722,7 @@ impl ConstraintCollector {
                     self.fresh_type_var()
                 };
 
+                self.name_types.insert(var.clone(), elem_type.clone());
                 self.add(TypeConstraint::HasType {
                     name: var.clone(),
                     ty: elem_type.clone(),
@@ -686,11 +757,18 @@ impl ConstraintCollector {
 
             // Operator application: Op(a, b)
             TlaExpr::OpApply { op, args } => {
-                self.collect_from_expr(op);
+                let op_type = self.collect_from_expr(op);
                 for arg in args {
                     self.collect_from_expr(arg);
                 }
-                self.fresh_type_var()
+                // If we know the operator's type from name_types, use it
+                // (operators are stored there with their return type)
+                if let TlaExpr::Ident(name) = op.as_ref() {
+                    if let Some(ret_ty) = self.name_types.get(name) {
+                        return ret_ty.clone();
+                    }
+                }
+                op_type
             }
 
             // Quantifiers
@@ -699,6 +777,7 @@ impl ConstraintCollector {
                     if let Some(set_expr) = &bound.set {
                         let set_type = self.collect_from_expr(set_expr);
                         if let TlaType::Set(elem) = set_type {
+                            self.name_types.insert(bound.var.clone(), *elem.clone());
                             self.add(TypeConstraint::HasType {
                                 name: bound.var.clone(),
                                 ty: *elem,
@@ -724,6 +803,7 @@ impl ConstraintCollector {
                     self.fresh_type_var()
                 };
 
+                self.name_types.insert(var.clone(), elem_type.clone());
                 self.add(TypeConstraint::HasType {
                     name: var.clone(),
                     ty: elem_type.clone(),
@@ -2066,9 +2146,9 @@ mod tests {
     #[test]
     fn test_verus_type_conversion() {
         assert_eq!(TlaType::Int.to_verus_type(), "int");
-        assert_eq!(TlaType::Nat.to_verus_type(), "nat");
+        assert_eq!(TlaType::Nat.to_verus_type(), "int");
         assert_eq!(TlaType::set(TlaType::Int).to_verus_type(), "Set<int>");
-        assert_eq!(TlaType::seq(TlaType::Nat).to_verus_type(), "Seq<nat>");
+        assert_eq!(TlaType::seq(TlaType::Nat).to_verus_type(), "Seq<int>");
         assert_eq!(
             TlaType::map(TlaType::String, TlaType::Int).to_verus_type(),
             "Map<Seq<char>, int>"

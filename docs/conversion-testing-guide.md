@@ -391,13 +391,13 @@ If Verus rejects the generated code:
 
 | Example | Transpile | Verus Compile | Notes |
 |---------|-----------|---------------|-------|
-| SimpleCounter | ✅ | - | Generates spec + automan |
-| DieHard | ✅ | - | Generates spec + automan |
-| EWD840 | ✅ | - | Generates spec + automan |
-| TwoPhase | ✅ | - | Generates spec + automan |
-| Raft | ✅ | - | Generates spec + automan |
-| Paxos | ✅ | - | Generates spec + automan |
-| PBFT | ✅ | - | Generates spec + automan |
+| SimpleCounter | ✅ | ✅ | Generates spec + automan |
+| DieHard | ✅ | ✅ | Generates spec + automan |
+| EWD840 | ✅ | ✅ | Fixed: Set type inference, empty set annotation |
+| TwoPhase | ✅ | ✅ | Fixed: Set type inference, empty set annotation |
+| Raft | ✅ | ✅ | Fixed: string literal `@` suffix, Set type inference |
+| Paxos | ✅ | ✅ | Fixed: record struct field types, keyword escaping |
+| PBFT | ✅ | ✅ | Fixed: record struct field types, keyword escaping |
 
 **Command**:
 ```bash

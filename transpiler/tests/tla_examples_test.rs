@@ -23,7 +23,7 @@ fn translate_example(source: &str) -> (String, String) {
 
     // Translate to Verus spec
     let config = ModuleConfig::default();
-    let translator = ModuleTranslator::with_config(config).with_types(type_env);
+    let mut translator = ModuleTranslator::with_config(config).with_types(type_env);
     let verus_code = translator.translate(&module);
 
     // Generate mode annotations

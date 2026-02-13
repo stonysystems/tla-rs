@@ -701,7 +701,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             };
 
             // Translate module with type information
-            let translator = ModuleTranslator::with_config(config).with_types(type_env);
+            let mut translator = ModuleTranslator::with_config(config).with_types(type_env);
             let verus_code = translator.translate(&module);
 
             // Output Verus code
@@ -830,7 +830,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 state_name: state_name.clone(),
                 ..ModuleConfig::default()
             };
-            let tla_translator =
+            let mut tla_translator =
                 ModuleTranslator::with_config(module_config.clone()).with_types(type_env);
             let verus_spec_code = tla_translator.translate(&tla_module);
 
@@ -1108,7 +1108,7 @@ Next == x' = x + 1
         };
         let mut inference = TypeInference::new();
         let type_env = inference.infer_types(&module);
-        let translator = ModuleTranslator::with_config(config).with_types(type_env);
+        let mut translator = ModuleTranslator::with_config(config).with_types(type_env);
         let verus_code = translator.translate(&module);
 
         // Verify output contains expected elements
@@ -1168,7 +1168,7 @@ Next == count' = count + N
         let config = ModuleConfig::default();
         let mut inference = TypeInference::new();
         let type_env = inference.infer_types(&module);
-        let translator = ModuleTranslator::with_config(config).with_types(type_env);
+        let mut translator = ModuleTranslator::with_config(config).with_types(type_env);
         let verus_code = translator.translate(&module);
 
         // Should contain constants struct

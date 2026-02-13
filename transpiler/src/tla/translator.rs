@@ -3,6 +3,18 @@
 //! This module translates TLA+ AST expressions to Verus code.
 
 use crate::tla::ast::{TlaBinOp, TlaExceptPath, TlaExpr, TlaNumber, TlaQuantBound, TlaUnaryOp};
+/// Make a field name safe for Rust (handle keywords like `type`)
+fn safe_field_name(name: &str) -> String {
+    match name {
+        "type" | "fn" | "let" | "mut" | "ref" | "self" | "super" | "crate" | "mod" | "use"
+        | "pub" | "struct" | "enum" | "trait" | "impl" | "where" | "async" | "await"
+        | "match" | "if" | "else" | "for" | "while" | "loop" | "return" | "break"
+        | "continue" | "move" | "box" | "in" | "as" | "const" | "static" | "extern"
+        | "unsafe" | "dyn" | "abstract" | "become" | "do" | "final" | "macro" | "override"
+        | "priv" | "typeof" | "unsized" | "virtual" | "yield" => format!("r#{}", name),
+        _ => name.to_string(),
+    }
+}
 
 /// Configuration for the expression translator
 #[derive(Debug, Clone)]
@@ -19,6 +31,15 @@ pub struct TranslatorConfig {
     pub operator_info: std::collections::HashMap<String, OperatorKind>,
     /// Prefix for spec function names (e.g. "L")
     pub spec_prefix: String,
+    /// Mapping from sorted field names to generated struct name for record types.
+    /// Key: sorted, comma-joined field names; Value: struct name (e.g. "LMessage")
+    pub record_structs: std::collections::HashMap<String, String>,
+    /// All field names in the merged record struct (sorted), empty if no records
+    pub record_all_fields: Vec<String>,
+    /// Variable names whose type is Set<Record> (need record-typed empty set)
+    pub record_set_vars: std::collections::HashSet<String>,
+    /// Field name → Verus type for record struct fields (inferred from AST)
+    pub record_field_types: std::collections::HashMap<String, String>,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -39,6 +60,10 @@ impl Default for TranslatorConfig {
             constant_names: std::collections::HashSet::new(),
             operator_info: std::collections::HashMap::new(),
             spec_prefix: String::new(),
+            record_structs: std::collections::HashMap::new(),
+            record_all_fields: Vec::new(),
+            record_set_vars: std::collections::HashSet::new(),
+            record_field_types: std::collections::HashMap::new(),
         }
     }
 }
@@ -216,7 +241,14 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn translate_string(&self, s: &str) -> String {
-        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        // In Verus spec mode, "str" is &str but we need Seq<char>.
+        // Use "str"@ to convert &str to Seq<char>.
+        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+        if self.config.is_spec {
+            format!("\"{}\"@", escaped)
+        } else {
+            format!("\"{}\"", escaped)
+        }
     }
 
     fn translate_bool(&self, b: bool) -> String {
@@ -232,6 +264,32 @@ impl<'a> ExprTranslator<'a> {
     // =========================================================================
 
     fn translate_binop(&self, op: TlaBinOp, left: &TlaExpr, right: &TlaExpr) -> String {
+        // Special handling for Eq/Neq with empty sets and record struct types
+        if matches!(op, TlaBinOp::Eq | TlaBinOp::Neq) && !self.config.record_set_vars.is_empty() {
+            let is_empty_set = |e: &TlaExpr| matches!(e, TlaExpr::SetEnum(elems) if elems.is_empty());
+            let is_record_set_var = |e: &TlaExpr| {
+                // Check if expression references a variable with Set<Record> type
+                matches!(e, TlaExpr::Ident(n) if self.config.record_set_vars.contains(n))
+                    || matches!(e, TlaExpr::Prime(inner) if matches!(inner.as_ref(), TlaExpr::Ident(n) if self.config.record_set_vars.contains(n)))
+            };
+
+            if is_empty_set(right) && is_record_set_var(left) {
+                // Get the struct name to determine the empty set type
+                if let Some(struct_name) = self.config.record_structs.values().next() {
+                    let left_str = self.translate(left);
+                    let op_str = if matches!(op, TlaBinOp::Eq) { "==" } else { "!=" };
+                    return format!("({} {} Set::<{}>::empty())", left_str, op_str, struct_name);
+                }
+            }
+            if is_empty_set(left) && is_record_set_var(right) {
+                if let Some(struct_name) = self.config.record_structs.values().next() {
+                    let right_str = self.translate(right);
+                    let op_str = if matches!(op, TlaBinOp::Eq) { "==" } else { "!=" };
+                    return format!("(Set::<{}>::empty() {} {})", struct_name, op_str, right_str);
+                }
+            }
+        }
+
         let left_str = self.translate(left);
         let right_str = self.translate(right);
 
@@ -339,7 +397,9 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_set_enum(&self, elements: &[TlaExpr]) -> String {
         if elements.is_empty() {
-            return "Set::empty()".to_string();
+            // Verus cannot infer the type parameter for Set::empty().
+            // Default to int since TLA+ sets are untyped and int is the common element type.
+            return "Set::<int>::empty()".to_string();
         }
 
         let elem_strs: Vec<_> = elements.iter().map(|e| self.translate(e)).collect();
@@ -415,16 +475,46 @@ impl<'a> ExprTranslator<'a> {
     // =========================================================================
 
     fn translate_record(&self, fields: &[(String, TlaExpr)]) -> String {
-        let field_strs: Vec<_> = fields
-            .iter()
-            .map(|(name, value)| format!("{}: {}", name, self.translate(value)))
-            .collect();
-        format!("{{ {} }}", field_strs.join(", "))
+        // Check if we have a named struct for this record shape
+        let mut sorted_names: Vec<_> = fields.iter().map(|(n, _)| n.as_str()).collect();
+        sorted_names.sort();
+        let key = sorted_names.join(",");
+
+        if let Some(struct_name) = self.config.record_structs.get(&key) {
+            // Build field assignments, filling in defaults for missing fields
+            let present: std::collections::HashSet<&str> =
+                fields.iter().map(|(n, _)| n.as_str()).collect();
+            let mut all_field_strs: Vec<String> = Vec::new();
+
+            for all_field in &self.config.record_all_fields {
+                let safe_name = safe_field_name(all_field);
+                if let Some((_, value)) = fields.iter().find(|(n, _)| n == all_field) {
+                    all_field_strs.push(format!("{}: {}", safe_name, self.translate(value)));
+                } else if !present.contains(all_field.as_str()) {
+                    // Default value for missing fields (type-aware)
+                    let default_val = match self.config.record_field_types.get(all_field).map(|s| s.as_str()) {
+                        Some("Seq<char>") => "\"\"@",
+                        _ => "0int",
+                    };
+                    all_field_strs.push(format!("{}: {}", safe_name, default_val));
+                }
+            }
+
+            format!("{} {{ {} }}", struct_name, all_field_strs.join(", "))
+        } else {
+            let field_strs: Vec<_> = fields
+                .iter()
+                .map(|(name, value)| {
+                    format!("{}: {}", safe_field_name(name), self.translate(value))
+                })
+                .collect();
+            format!("{{ {} }}", field_strs.join(", "))
+        }
     }
 
     fn translate_record_access(&self, record: &TlaExpr, field: &str) -> String {
         let record_str = self.translate(record);
-        format!("{}.{}", record_str, field)
+        format!("{}.{}", record_str, safe_field_name(field))
     }
 
     fn translate_tuple(&self, elements: &[TlaExpr]) -> String {
@@ -818,7 +908,10 @@ impl ModuleTranslator {
     }
 
     /// Translate a TLA+ module to Verus code
-    pub fn translate(&self, module: &TlaModule) -> String {
+    pub fn translate(&mut self, module: &TlaModule) -> String {
+        // Pre-pass: collect record shapes and set up struct mappings
+        self.collect_record_shapes(module);
+
         let mut output = String::new();
 
         // Module header
@@ -829,7 +922,7 @@ impl ModuleTranslator {
         output.push_str(&self.generate_imports(module));
         output.push('\n');
 
-        // State struct
+        // State struct (includes record struct definitions)
         output.push_str(&self.generate_state_struct(module));
         output.push('\n');
 
@@ -837,6 +930,163 @@ impl ModuleTranslator {
         output.push_str(&self.generate_spec_functions(module));
 
         output
+    }
+
+    /// Collect all record shapes from the module and assign struct names.
+    /// All record shapes are merged into a single struct (union of all fields)
+    /// since TLA+ records with different field sets can go into the same collection.
+    fn collect_record_shapes(&mut self, module: &TlaModule) {
+        let mut all_field_names: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut per_record_keys: Vec<String> = Vec::new();
+        let mut string_fields: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // Build set of operators that return string values (body is a TlaExpr::String)
+        let mut string_ops: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for op in &module.operators {
+            if matches!(&op.body, TlaExpr::String(_)) {
+                string_ops.insert(op.name.clone());
+            }
+        }
+
+        // Walk all operator bodies to find Record expressions
+        for op in &module.operators {
+            self.collect_records_from_expr_fields(&op.body, &mut all_field_names, &mut per_record_keys, &mut string_fields, &string_ops);
+        }
+
+        if all_field_names.is_empty() {
+            return;
+        }
+
+        // Create a single struct name for all record shapes
+        let prefix = &self.config.spec_prefix;
+        let struct_name = format!("{}Record", prefix);
+
+        // Map every unique record key to the same struct name
+        for key in &per_record_keys {
+            self.expr_config
+                .record_structs
+                .insert(key.clone(), struct_name.clone());
+        }
+        // Also map the full set of all fields (for the variable type)
+        let all_fields_vec: Vec<String> = all_field_names.iter().cloned().collect();
+        let all_key: String = all_fields_vec.join(",");
+        self.expr_config
+            .record_structs
+            .insert(all_key, struct_name.clone());
+        self.expr_config.record_all_fields = all_fields_vec;
+
+        // Store inferred field types (string fields → Seq<char>, rest → int)
+        for field_name in &all_field_names {
+            if string_fields.contains(field_name) {
+                self.expr_config.record_field_types.insert(field_name.clone(), "Seq<char>".to_string());
+            } else {
+                self.expr_config.record_field_types.insert(field_name.clone(), "int".to_string());
+            }
+        }
+
+        // Identify variables with Set<Record> type
+        if let Some(env) = &self.type_env {
+            for (var_name, ty) in &env.variables {
+                if Self::type_contains_record(ty) {
+                    self.expr_config.record_set_vars.insert(var_name.clone());
+                }
+            }
+        }
+    }
+
+    /// Check if a type contains a Record type (used to detect Set<Record> variables)
+    fn type_contains_record(ty: &TlaType) -> bool {
+        match ty {
+            TlaType::Record(_) => true,
+            TlaType::Set(elem) => Self::type_contains_record(elem),
+            TlaType::Seq(elem) => Self::type_contains_record(elem),
+            TlaType::Map { key, value } => {
+                Self::type_contains_record(key) || Self::type_contains_record(value)
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if an expression produces a string type (directly, via operator call, or via ident ref)
+    fn expr_is_string(expr: &TlaExpr, string_ops: &std::collections::HashSet<String>) -> bool {
+        match expr {
+            TlaExpr::String(_) => true,
+            TlaExpr::Ident(name) => string_ops.contains(name),
+            TlaExpr::OpApply { op, .. } => {
+                if let TlaExpr::Ident(name) = op.as_ref() {
+                    string_ops.contains(name)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Walk an expression tree to collect record field names, per-record keys, and field types
+    fn collect_records_from_expr_fields(
+        &self,
+        expr: &TlaExpr,
+        all_fields: &mut std::collections::BTreeSet<String>,
+        keys: &mut Vec<String>,
+        string_fields: &mut std::collections::HashSet<String>,
+        string_ops: &std::collections::HashSet<String>,
+    ) {
+        match expr {
+            TlaExpr::Record(fields) => {
+                let mut sorted_names: Vec<_> = fields.iter().map(|(n, _)| n.clone()).collect();
+                sorted_names.sort();
+                let key = sorted_names.join(",");
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+                for name in &sorted_names {
+                    all_fields.insert(name.clone());
+                }
+                // Check field value types and recurse
+                for (name, value) in fields {
+                    if Self::expr_is_string(value, string_ops) {
+                        string_fields.insert(name.clone());
+                    }
+                    self.collect_records_from_expr_fields(value, all_fields, keys, string_fields, string_ops);
+                }
+            }
+            TlaExpr::BinOp { left, right, .. } => {
+                self.collect_records_from_expr_fields(left, all_fields, keys, string_fields, string_ops);
+                self.collect_records_from_expr_fields(right, all_fields, keys, string_fields, string_ops);
+            }
+            TlaExpr::UnaryOp { operand, .. } => {
+                self.collect_records_from_expr_fields(operand, all_fields, keys, string_fields, string_ops);
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.collect_records_from_expr_fields(cond, all_fields, keys, string_fields, string_ops);
+                self.collect_records_from_expr_fields(then_expr, all_fields, keys, string_fields, string_ops);
+                self.collect_records_from_expr_fields(else_expr, all_fields, keys, string_fields, string_ops);
+            }
+            TlaExpr::SetEnum(elements) => {
+                for e in elements {
+                    self.collect_records_from_expr_fields(e, all_fields, keys, string_fields, string_ops);
+                }
+            }
+            TlaExpr::Prime(inner) => {
+                self.collect_records_from_expr_fields(inner, all_fields, keys, string_fields, string_ops);
+            }
+            TlaExpr::OpApply { op, args } => {
+                self.collect_records_from_expr_fields(op, all_fields, keys, string_fields, string_ops);
+                for arg in args {
+                    self.collect_records_from_expr_fields(arg, all_fields, keys, string_fields, string_ops);
+                }
+            }
+            TlaExpr::Forall { body, .. } | TlaExpr::Exists { body, .. } => {
+                self.collect_records_from_expr_fields(body, all_fields, keys, string_fields, string_ops);
+            }
+            _ => {}
+        }
     }
 
     /// Generate module header comment
@@ -888,9 +1138,13 @@ impl ModuleTranslator {
         // Open verus block
         output.push_str("verus! {\n\n");
 
-        // State struct
+        // Generate record struct definitions (for TLA+ record/message types)
+        if !self.expr_config.record_structs.is_empty() {
+            self.generate_record_structs(module, &mut output);
+        }
+
+        // State struct (spec-only, no derive Clone — Verus doesn't support it for nat/int fields)
         output.push_str(&format!("/// State for {} module\n", module.name));
-        output.push_str("#[derive(Clone)]\n");
         output.push_str(&format!("pub struct {} {{\n", state_name));
 
         for var in &module.variables {
@@ -915,6 +1169,42 @@ impl ModuleTranslator {
         }
 
         output
+    }
+
+    /// Generate struct definitions for TLA+ record types.
+    /// Since all record shapes map to a single merged struct, we generate one struct
+    /// with the union of all fields. Field types default to `int`.
+    fn generate_record_structs(&self, module: &TlaModule, output: &mut String) {
+        // Collect all unique struct names (should be just one since we merge)
+        let mut struct_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for name in self.expr_config.record_structs.values() {
+            struct_names.insert(name.clone());
+        }
+
+        // Merge all field names from all record shapes
+        let mut all_field_names: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for key in self.expr_config.record_structs.keys() {
+            for field_name in key.split(',') {
+                all_field_names.insert(field_name.to_string());
+            }
+        }
+
+        for struct_name in &struct_names {
+            output.push_str(&format!("/// Record type for {} module\n", module.name));
+            output.push_str(&format!("pub struct {} {{\n", struct_name));
+
+            for field_name in &all_field_names {
+                let safe_name = safe_field_name(field_name);
+                let field_type = self.expr_config.record_field_types
+                    .get(field_name)
+                    .map(|s| s.as_str())
+                    .unwrap_or("int");
+                output.push_str(&format!("    pub {}: {},\n", safe_name, field_type));
+            }
+
+            output.push_str("}\n\n");
+        }
     }
 
     /// Generate spec functions for operators
@@ -1148,7 +1438,7 @@ impl ModuleTranslator {
     fn get_variable_type(&self, var_name: &str) -> String {
         if let Some(env) = &self.type_env {
             if let Some(ty) = env.variables.get(var_name) {
-                return ty.to_verus_type();
+                return ty.to_verus_type_with_records(&self.expr_config.record_structs);
             }
         }
         // Default to spec type comment
@@ -1159,7 +1449,7 @@ impl ModuleTranslator {
     fn get_constant_type(&self, const_name: &str) -> String {
         if let Some(env) = &self.type_env {
             if let Some(ty) = env.constants.get(const_name) {
-                return ty.to_verus_type();
+                return ty.to_verus_type_with_records(&self.expr_config.record_structs);
             }
         }
         // Default to spec type comment
@@ -1190,7 +1480,7 @@ impl ModuleTranslator {
 
 /// Translate a TLA+ module to Verus code
 pub fn translate_module(module: &TlaModule) -> String {
-    let translator = ModuleTranslator::new();
+    let mut translator = ModuleTranslator::new();
     translator.translate(module)
 }
 
@@ -1199,7 +1489,7 @@ pub fn translate_module_with_types(module: &TlaModule) -> String {
     let mut inference = TypeInference::new();
     let type_env = inference.infer_types(module);
 
-    let translator = ModuleTranslator::new().with_types(type_env);
+    let mut translator = ModuleTranslator::new().with_types(type_env);
     translator.translate(module)
 }
 
@@ -1512,7 +1802,7 @@ mod tests {
         assert_eq!(translator.translate(&TlaExpr::number(42)), "42");
         assert_eq!(translator.translate(&TlaExpr::bool(true)), "true");
         assert_eq!(translator.translate(&TlaExpr::bool(false)), "false");
-        assert_eq!(translator.translate(&TlaExpr::string("hello")), "\"hello\"");
+        assert_eq!(translator.translate(&TlaExpr::string("hello")), "\"hello\"@");
     }
 
     #[test]
@@ -1556,9 +1846,9 @@ mod tests {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
 
-        // {} → Set::empty()
+        // {} → Set::<int>::empty()
         let expr = TlaExpr::SetEnum(vec![]);
-        assert_eq!(translator.translate(&expr), "Set::empty()");
+        assert_eq!(translator.translate(&expr), "Set::<int>::empty()");
 
         // {1, 2, 3} → set![1, 2, 3]
         let expr = TlaExpr::SetEnum(vec![
@@ -1817,7 +2107,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         // Should generate module header
@@ -1844,7 +2134,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         // Should generate imports
@@ -1862,7 +2152,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         // Should generate constants struct
@@ -1896,7 +2186,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         // Init should have single state parameter (no primes)
@@ -1922,7 +2212,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         // Should generate Max function with parameters
@@ -1947,7 +2237,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::with_config(config);
+        let mut translator = ModuleTranslator::with_config(config);
         let result = translator.translate(&module);
 
         // Should use custom prefix
@@ -1957,7 +2247,7 @@ mod tests {
 
     #[test]
     fn test_operator_uses_primes() {
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
 
         // Expression without primes
         let expr1 = TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("x"), TlaExpr::number(0));
@@ -2154,7 +2444,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         assert!(
@@ -2180,7 +2470,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         assert!(
@@ -2207,7 +2497,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         // Next references Inc and Dec, which are actions
@@ -2257,7 +2547,7 @@ mod tests {
             ====
         ";
         let module = parse_module(source).unwrap();
-        let translator = ModuleTranslator::new();
+        let mut translator = ModuleTranslator::new();
         let result = translator.translate(&module);
 
         assert!(
@@ -2287,7 +2577,7 @@ mod tests {
         let env = inference.infer_types(&module);
         let resolved = inference.resolve_with_fallback(&env);
 
-        let translator = ModuleTranslator::new().with_types(resolved);
+        let mut translator = ModuleTranslator::new().with_types(resolved);
         let result = translator.translate(&module);
 
         // Should not contain T0, T1, etc.

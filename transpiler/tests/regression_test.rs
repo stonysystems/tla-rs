@@ -25,7 +25,7 @@ fn tla_to_verus_spec(source: &str) -> (String, String) {
     let type_env = inference.infer_types(&module);
 
     let config = ModuleConfig::default();
-    let translator = ModuleTranslator::with_config(config).with_types(type_env);
+    let mut translator = ModuleTranslator::with_config(config).with_types(type_env);
     let verus_code = translator.translate(&module);
 
     let mode_annotations = generate_mode_annotations(&module);
