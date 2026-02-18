@@ -87,6 +87,14 @@ for entry in "${PROTOCOLS[@]}"; do
         echo "  ERROR: Module generation failed for $PROTOCOL"
     }
 
+    # Generate message.rs (protocol message serialization)
+    echo "  Generating message.rs..."
+    $TRANSPILER generate-messages \
+        --config "$SPEC_DIR/${MODULE}_transpile.toml" \
+        --output "src/implementation/$PROTOCOL/message.rs" || {
+        echo "  ERROR: Message generation failed for $PROTOCOL"
+    }
+
     # Generate mod.rs
     echo "  Generating mod.rs..."
     cat > "$OUT_DIR/mod.rs" <<MOD_EOF

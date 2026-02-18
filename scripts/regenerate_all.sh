@@ -48,6 +48,12 @@ regenerate_simple() {
         --config "$spec_dir/${module}_transpile.toml" \
         --output "$out_dir/${module}_gen.rs"
 
+    # Messages
+    echo "  Generating message.rs..."
+    $TRANSPILER generate-messages \
+        -c "$spec_dir/${module}_transpile.toml" \
+        -o "$PROJECT_ROOT/src/implementation/$name/message.rs"
+
     echo "  Done."
 }
 
