@@ -507,3 +507,39 @@ fn test_primarybackup_roundtrip() {
     let tla = include_str!("../../src/tla+/PrimaryBackup/Primarybackup.tla");
     assert!(check_rsl_roundtrip(tla, "PrimaryBackup/Primarybackup.tla"));
 }
+
+#[test]
+fn test_pbft_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/PBFT/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "PBFT/Types.tla"));
+}
+
+#[test]
+fn test_pbft_roundtrip() {
+    let tla = include_str!("../../src/tla+/PBFT/Pbft.tla");
+    assert!(check_rsl_roundtrip(tla, "PBFT/Pbft.tla"));
+}
+
+#[test]
+fn test_vertical_paxos_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/VerticalPaxos/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "VerticalPaxos/Types.tla"));
+}
+
+#[test]
+fn test_vertical_paxos_roundtrip() {
+    let tla = include_str!("../../src/tla+/VerticalPaxos/Vpaxos.tla");
+    assert!(check_rsl_roundtrip(tla, "VerticalPaxos/Vpaxos.tla"));
+}
+
+#[test]
+fn test_epaxos_types_roundtrip() {
+    let tla = include_str!("../../src/tla+/EPaxos/Types.tla");
+    assert!(check_rsl_roundtrip(tla, "EPaxos/Types.tla"));
+}
+
+#[test]
+fn test_epaxos_roundtrip() {
+    let tla = include_str!("../../src/tla+/EPaxos/Epaxos.tla");
+    assert!(check_rsl_roundtrip(tla, "EPaxos/Epaxos.tla"));
+}
