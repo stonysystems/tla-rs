@@ -392,6 +392,25 @@ pub struct SchedulerActionConfig {
     /// ```
     #[serde(default)]
     pub flag_injections: Vec<Vec<String>>,
+
+    /// Guard checks: list of Rust boolean conditions to emit as early-return guards.
+    /// Each string is a condition that must be true for the action to proceed.
+    /// The scaffold generator emits `if !({condition}) { return StepResult::noop() }`.
+    ///
+    /// Conditions should use `self.state.*` for state fields and `config.constants.*`
+    /// for constants. Use `matches!(...)` for enum variant checks.
+    ///
+    /// Default: empty (backwards compatible — only TODO comment emitted).
+    ///
+    /// Example TOML:
+    /// ```toml
+    /// guard_checks = [
+    ///     "matches!(self.state.phase, CPhase::Phase1)",
+    ///     "ballot >= self.state.promised_bal",
+    /// ]
+    /// ```
+    #[serde(default)]
+    pub guard_checks: Vec<String>,
 }
 
 impl SchedulerActionConfig {
@@ -406,6 +425,11 @@ impl SchedulerActionConfig {
     /// Returns true if this action has any flag injections configured.
     pub fn has_flag_injections(&self) -> bool {
         !self.flag_injections.is_empty()
+    }
+
+    /// Returns true if this action has any guard checks configured.
+    pub fn has_guard_checks(&self) -> bool {
+        !self.guard_checks.is_empty()
     }
 }
 

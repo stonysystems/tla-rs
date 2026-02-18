@@ -5276,7 +5276,7 @@ The LNext spec function is a disjunction of all protocol actions — it's the sc
 - [x] 9 integration tests (scaffold generation from real protocol TOMLs)
 - [x] 1030 total tests passing
 
-**17.4.4: Protocol-specific refinements** (partially done)
+**17.4.4: Protocol-specific refinements** (COMPLETE)
 - [x] **17.4.4a**: Add role-based dispatch support for TwoPhase/ChainReplication/PrimaryBackup
   - Added `RoleDispatchConfig` + `RoleConfig` structs to config.rs
   - Two dispatch styles: `config_index` (if-else on config field) and `state_field` (match on state enum)
@@ -5288,7 +5288,12 @@ The LNext spec function is a disjunction of all protocol actions — it's the sc
   - Scaffold generator emits `self.state.{field} = {value};` in handler body before TODO stubs
   - Parameters referenced in flag_injections drop `_` prefix (usable in assignments)
   - 8 new unit tests (1034 total = 923 unit + 111 integration)
-- [ ] Add guard check generation from spec preconditions
+- [x] **17.4.4c**: Add guard check generation from spec preconditions
+  - Added `guard_checks: Vec<String>` field to `SchedulerActionConfig` (serde default, backwards compatible)
+  - Scaffold generator emits `if !({condition}) { return StepResult::noop() }` per guard
+  - When guard_checks is empty, falls back to TODO comment (backwards compatible)
+  - Works with flag_injections (guards emitted after flag injections, before C* call)
+  - 7 new unit tests (1041 total = 930 unit + 111 integration)
 
 ### Phase 17.5: Per-Protocol Wiring (protocol-specific glue)
 
