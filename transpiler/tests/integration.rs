@@ -2805,6 +2805,87 @@ fn test_analyze_lnext_toml_output() {
     assert!(toml.contains("existential_params = [[\"rm\", \"int\"]]"));
 }
 
+// --- Classification integration tests ---
+
+#[test]
+fn test_classify_twophase_integration() {
+    let mut config = analyze_lnext("../src/protocol/TwoPhase/twophase.rs");
+    let variants = vec!["Prepare".to_string(), "PreparedVote".to_string(),
+                        "Commit".to_string(), "Abort".to_string()];
+    verus_transpiler::classify_actions(&mut config, &variants);
+
+    let msg_count = config.actions.iter()
+        .filter(|a| a.kind == verus_transpiler::ActionKind::MessageDriven)
+        .count();
+    let timer_count = config.actions.len() - msg_count;
+    // TwoPhase: 4 message-driven (RMReceivePrepare, TMRcvPrepared, RMReceiveCommit, RMReceiveAbort)
+    //           + 1 timer with "Receive" keyword = actually RMAbort is timer, so 4 msg
+    assert!(msg_count >= 4, "TwoPhase should have at least 4 message-driven actions, got {}", msg_count);
+    assert!(timer_count >= 3, "TwoPhase should have at least 3 timer-driven actions, got {}", timer_count);
+
+    // TOML output includes kind field
+    let toml = verus_transpiler::scheduler_config_to_toml(&config);
+    assert!(toml.contains("kind = \"message_driven\""));
+    assert!(toml.contains("kind = \"timer_driven\""));
+    assert!(toml.contains("message_variant = \"Prepare\""));
+}
+
+#[test]
+fn test_classify_all_protocols_have_both_kinds() {
+    let protocols = [
+        ("../src/protocol/TwoPhase/twophase.rs",
+         vec!["Prepare", "PreparedVote", "Commit", "Abort"]),
+        ("../src/protocol/Paxos/paxos.rs",
+         vec!["Prepare", "Promise", "Accept", "Accepted"]),
+        ("../src/protocol/LeaderElection/election.rs",
+         vec!["Election", "Answer", "Coordinator"]),
+        ("../src/protocol/PrimaryBackup/primarybackup.rs",
+         vec!["Replicate", "Ack", "ClientRequest"]),
+        ("../src/protocol/ChainReplication/chain.rs",
+         vec!["Forward", "Ack", "ClientWrite", "ClientRead"]),
+        ("../src/protocol/Raft/raft.rs",
+         vec!["RequestVote", "VoteResponse", "AppendEntries", "AppendResponse"]),
+        ("../src/protocol/PBFT/pbft.rs",
+         vec!["PrePrepare", "Prepare", "Commit", "ClientRequest"]),
+        ("../src/protocol/VerticalPaxos/vpaxos.rs",
+         vec!["Prepare", "Promise", "Accept", "AcceptOk", "Commit", "Sync"]),
+        ("../src/protocol/EPaxos/epaxos.rs",
+         vec!["PreAccept", "PreAcceptOk", "Accept", "AcceptOk", "CommitMsg"]),
+    ];
+
+    for (spec_path, variant_strs) in &protocols {
+        let mut config = analyze_lnext(spec_path);
+        let variants: Vec<String> = variant_strs.iter().map(|s| s.to_string()).collect();
+        verus_transpiler::classify_actions(&mut config, &variants);
+
+        let msg_count = config.actions.iter()
+            .filter(|a| a.kind == verus_transpiler::ActionKind::MessageDriven)
+            .count();
+        let timer_count = config.actions.len() - msg_count;
+
+        assert!(msg_count > 0,
+            "{}: should have at least 1 message-driven action", spec_path);
+        assert!(timer_count > 0,
+            "{}: should have at least 1 timer-driven action", spec_path);
+    }
+}
+
+#[test]
+fn test_classify_toml_output_has_variants() {
+    let mut config = analyze_lnext("../src/protocol/Paxos/paxos.rs");
+    let variants = vec!["Prepare".to_string(), "Promise".to_string(),
+                        "Accept".to_string(), "Accepted".to_string()];
+    verus_transpiler::classify_actions(&mut config, &variants);
+
+    let toml = verus_transpiler::scheduler_config_to_toml(&config);
+    // RecvPromise should have message_variant = "Promise"
+    assert!(toml.contains("message_variant = \"Promise\""),
+        "Paxos TOML should contain message_variant for RecvPromise");
+    // RecvAccepted should have message_variant = "Accepted"
+    assert!(toml.contains("message_variant = \"Accepted\""),
+        "Paxos TOML should contain message_variant for RecvAccepted");
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

@@ -213,6 +213,10 @@ enum Commands {
         #[arg(short, long)]
         input: PathBuf,
 
+        /// Optional TOML config with [messages] section for action classification
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
         /// Name of the Next function (default: "LNext")
         #[arg(long, default_value = "LNext")]
         next_fn: String,
@@ -991,6 +995,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
         Commands::AnalyzeLnext {
             input,
+            config: config_path,
             next_fn,
             spec_prefix,
             exec_prefix,
@@ -999,7 +1004,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let spec_fns = verus_transpiler::parse_file(input)
                 .map_err(|e| miette::miette!("Failed to parse spec file: {}", e))?;
 
-            let config = verus_transpiler::find_and_analyze_lnext(
+            let mut sched_config = verus_transpiler::find_and_analyze_lnext(
                 &spec_fns,
                 &next_fn,
                 &spec_prefix,
@@ -1012,15 +1017,39 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 )
             })?;
 
-            let toml = verus_transpiler::scheduler_config_to_toml(&config);
+            // Load message variants from TOML config if provided
+            let message_variants: Vec<String> = if let Some(cfg_path) = config_path {
+                let file_config = FileConfig::from_file(cfg_path)
+                    .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+                file_config
+                    .messages
+                    .map(|m| m.variants.iter().map(|v| v.name.clone()).collect())
+                    .unwrap_or_default()
+            } else {
+                vec![]
+            };
+
+            // Classify actions as message_driven or timer_driven
+            verus_transpiler::classify_actions(&mut sched_config, &message_variants);
+
+            let msg_count = sched_config
+                .actions
+                .iter()
+                .filter(|a| a.kind == verus_transpiler::ActionKind::MessageDriven)
+                .count();
+            let timer_count = sched_config.actions.len() - msg_count;
+
+            let toml = verus_transpiler::scheduler_config_to_toml(&sched_config);
 
             if let Some(output_path) = output {
                 std::fs::write(output_path, &toml)
                     .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
                 println!(
-                    "Extracted {} actions from {} -> {}",
-                    config.actions.len(),
-                    config.next_fn_name,
+                    "Extracted {} actions ({} message_driven, {} timer_driven) from {} -> {}",
+                    sched_config.actions.len(),
+                    msg_count,
+                    timer_count,
+                    sched_config.next_fn_name,
                     output_path.display()
                 );
             } else {

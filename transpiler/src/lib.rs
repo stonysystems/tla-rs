@@ -52,9 +52,9 @@ pub use annotation::{AnnotationParser, FunctionAnnotation, ModuleAnnotations};
 pub use ast::{Expr, Parameter, ParameterMode, SpecFunction, Type};
 pub use checker::{validate_function, HarmonyChecker, ObligationChecker, SaturationChecker};
 pub use codegen::{
-    extract_lnext_actions, find_and_analyze_lnext, generate_all_types, generate_message_code,
-    scheduler_config_to_toml, GeneratedCode, SchedulerAction, SchedulerConfig,
-    TemplateCodeGenerator, TypeGenerator,
+    classify_actions, extract_lnext_actions, find_and_analyze_lnext, generate_all_types,
+    generate_message_code, scheduler_config_to_toml, ActionKind, GeneratedCode, SchedulerAction,
+    SchedulerConfig, TemplateCodeGenerator, TypeGenerator,
 };
 pub use config::{
     MessageConfig, MessageVariant, ModuleConfig, NamingConfig, OutputConfig,
