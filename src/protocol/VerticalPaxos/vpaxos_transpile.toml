@@ -3,7 +3,6 @@
 # Skip functions that contain existential quantifiers
 skip_functions = [
     "LNext",
-    "LCommit",
 ]
 
 # Fields that are HashSet types (Set) requiring clone_hashset()

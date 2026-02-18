@@ -365,4 +365,31 @@ CState {
     }
 }
 
+pub exec fn CReconfigure(s: &CState, c: &CConstants, new_has_predecessor: bool, new_predecessor: &u64, new_has_successor: bool, new_successor: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.alive == true,
+ensures
+    result.valid(),
+    LReconfigure(s@, result@, c@, new_has_predecessor, *new_predecessor as int, new_has_successor, *new_successor as int),
+{
+CState {
+        has_predecessor: new_has_predecessor.clone(),
+        predecessor: *new_predecessor,
+        has_successor: new_has_successor.clone(),
+        successor: *new_successor,
+        role: clone_role(&s.role),
+        history: s.history.clone(),
+        pending_sent: clone_hashset(&s.pending_sent),
+        committed_count: s.committed_count.clone(),
+        obj_value: s.obj_value.clone(),
+        alive: s.alive.clone(),
+        msgs_forward: s.msgs_forward.clone(),
+        msgs_forward_value: s.msgs_forward_value.clone(),
+        msgs_ack: s.msgs_ack.clone(),
+        msgs_ack_value: s.msgs_ack_value.clone(),
+    }
+}
+
 } // verus!

@@ -12,6 +12,6 @@ module VerticalPaxos::vpaxos {
     LWitnessSync(+, -, +, +);
     LSync(+, -, +, +, +);
     LDeactivate(+, -, +);
-    // LCommit not transpiled (uses Set::len() for quorum check)
+    LCommit(+, -, +);
     // LNext not transpiled (contains existential quantifiers)
 }

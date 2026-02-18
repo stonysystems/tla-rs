@@ -54,6 +54,6 @@ module ChainReplication::chain {
     // c (input): constants
     LNodeFail(+, -, +);
 
-    // LReconfigure is not transpiled (complex role-changing logic with is pattern)
+    LReconfigure(+, -, +, +, +, +, +);
     // LNext is not transpiled (contains existential quantifiers)
 }

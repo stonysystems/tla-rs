@@ -278,6 +278,42 @@ ensures
 
 }
 
+pub exec fn CCommit(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.is_active == true,
+    s.committed == false,
+    (s@.accepts_rcvd.len() >= c.quorum_size),
+ensures
+    result.valid(),
+    LCommit(s@, result@, c@),
+{
+CState {
+        committed: true,
+        committed_val: s.max_val.clone(),
+        max_bal: s.max_bal.clone(),
+        max_v_bal: s.max_v_bal.clone(),
+        max_val: s.max_val.clone(),
+        has_voted: s.has_voted.clone(),
+        config_num: s.config_num.clone(),
+        is_active: s.is_active.clone(),
+        promises_rcvd: clone_hashset(&s.promises_rcvd),
+        accepts_rcvd: clone_hashset(&s.accepts_rcvd),
+        witness_val: s.witness_val.clone(),
+        has_witness: s.has_witness.clone(),
+        msgs_prepare: s.msgs_prepare.clone(),
+        msgs_prepare_bal: s.msgs_prepare_bal.clone(),
+        msgs_promise: s.msgs_promise.clone(),
+        msgs_promise_bal: s.msgs_promise_bal.clone(),
+        msgs_promise_v_bal: s.msgs_promise_v_bal.clone(),
+        msgs_promise_val: s.msgs_promise_val.clone(),
+        msgs_accept: s.msgs_accept.clone(),
+        msgs_accept_bal: s.msgs_accept_bal.clone(),
+        msgs_accept_val: s.msgs_accept_val.clone(),
+    }
+}
+
 pub exec fn CReconfigure(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
