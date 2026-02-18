@@ -44,3 +44,22 @@ custom_imports = [
     "use crate::protocol::LeaderElection::election::*;",
     "use crate::generated::LeaderElection::types_gen::*;",
 ]
+
+[messages]
+enum_name = "LeaderElectionMessage"
+doc_comment = "Bully Leader Election protocol network messages."
+
+[[messages.variants]]
+name = "Election"
+doc = "Node announces candidacy to higher-ID nodes."
+fields = [["sender", "u64"]]
+
+[[messages.variants]]
+name = "Answer"
+doc = "Higher-ID node responds, suppressing the election."
+fields = [["responder", "u64"]]
+
+[[messages.variants]]
+name = "Coordinator"
+doc = "Elected leader announces itself."
+fields = [["leader", "u64"]]

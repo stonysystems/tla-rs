@@ -93,3 +93,27 @@ custom_imports = [
     "use crate::protocol::Raft::raft::*;",
     "use crate::generated::Raft::types_gen::*;",
 ]
+
+[messages]
+enum_name = "RaftMessage"
+doc_comment = "Raft Consensus protocol network messages."
+
+[[messages.variants]]
+name = "RequestVote"
+doc = "Candidate requests votes from peers during an election."
+fields = [["term", "u64"], ["candidate_id", "u64"], ["last_log_index", "u64"], ["last_log_term", "u64"]]
+
+[[messages.variants]]
+name = "VoteResponse"
+doc = "Follower responds to a vote request."
+fields = [["term", "u64"], ["granted", "bool"], ["voter", "u64"]]
+
+[[messages.variants]]
+name = "AppendEntries"
+doc = "Leader sends log entries (or heartbeats) to followers."
+fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["prev_log_term", "u64"], ["value", "u64"], ["has_entry", "bool"], ["leader_commit", "u64"]]
+
+[[messages.variants]]
+name = "AppendResponse"
+doc = "Follower responds to an append entries request."
+fields = [["term", "u64"], ["success", "bool"], ["match_index", "u64"], ["follower", "u64"]]

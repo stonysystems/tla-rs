@@ -55,3 +55,24 @@ custom_imports = [
     "use crate::protocol::TwoPhase::twophase::*;",
     "use crate::generated::TwoPhase::types_gen::*;",
 ]
+
+[messages]
+enum_name = "TwoPhaseMessage"
+doc_comment = "Two-Phase Commit protocol network messages."
+
+[[messages.variants]]
+name = "Prepare"
+doc = "TM sends prepare to all RMs."
+
+[[messages.variants]]
+name = "PreparedVote"
+doc = "RM votes that it is prepared."
+fields = [["rm_id", "u64"]]
+
+[[messages.variants]]
+name = "Commit"
+doc = "TM broadcasts commit decision."
+
+[[messages.variants]]
+name = "Abort"
+doc = "TM broadcasts abort decision."

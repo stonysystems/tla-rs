@@ -51,3 +51,21 @@ custom_imports = [
     "use crate::protocol::PrimaryBackup::primarybackup::*;",
     "use crate::generated::PrimaryBackup::types_gen::*;",
 ]
+
+[messages]
+enum_name = "PrimaryBackupMessage"
+doc_comment = "Primary-Backup protocol network messages."
+
+[[messages.variants]]
+name = "Replicate"
+doc = "Primary sends replicate to backup."
+fields = [["value", "u64"]]
+
+[[messages.variants]]
+name = "Ack"
+doc = "Backup acknowledges replication."
+
+[[messages.variants]]
+name = "ClientRequest"
+doc = "Client sends write request."
+fields = [["value", "u64"]]

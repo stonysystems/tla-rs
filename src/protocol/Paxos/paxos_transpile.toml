@@ -55,3 +55,27 @@ custom_imports = [
     "use crate::protocol::Paxos::paxos::*;",
     "use crate::generated::Paxos::types_gen::*;",
 ]
+
+[messages]
+enum_name = "PaxosMessage"
+doc_comment = "Single-Decree Paxos protocol network messages."
+
+[[messages.variants]]
+name = "Prepare"
+doc = "Phase 1a: Proposer sends Prepare with a ballot number."
+fields = [["ballot", "u64"]]
+
+[[messages.variants]]
+name = "Promise"
+doc = "Phase 1b: Acceptor promises not to accept lower ballots."
+fields = [["ballot", "u64"], ["accepted_bal", "u64"], ["accepted_val", "u64"]]
+
+[[messages.variants]]
+name = "Accept"
+doc = "Phase 2a: Proposer sends Accept with ballot and chosen value."
+fields = [["ballot", "u64"], ["value", "u64"]]
+
+[[messages.variants]]
+name = "Accepted"
+doc = "Phase 2b: Acceptor confirms it has accepted the ballot/value."
+fields = [["ballot", "u64"], ["value", "u64"]]

@@ -195,6 +195,17 @@ enum Commands {
         #[arg(short, long)]
         config: Option<PathBuf>,
     },
+
+    /// Generate ProtocolMessage impl from config
+    GenerateMessages {
+        /// Configuration file (TOML) with [messages] section
+        #[arg(short, long)]
+        config: PathBuf,
+
+        /// Output file (message.rs)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -918,6 +929,39 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 tla_input.display(),
                 exec_output.display()
             );
+
+            Ok(())
+        }
+
+        Commands::GenerateMessages { config, output } => {
+            let file_config = FileConfig::from_file(config)
+                .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+
+            let msg_config = file_config
+                .messages
+                .ok_or_else(|| miette::miette!("Config file has no [messages] section"))?;
+
+            if msg_config.enum_name.is_empty() {
+                return Err(miette::miette!("[messages] enum_name is required"));
+            }
+            if msg_config.variants.is_empty() {
+                return Err(miette::miette!("[messages] must have at least one variant"));
+            }
+
+            let code = verus_transpiler::generate_message_code(&msg_config);
+
+            if let Some(output_path) = output {
+                std::fs::write(output_path, &code)
+                    .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                println!(
+                    "Generated {} message with {} variants -> {}",
+                    msg_config.enum_name,
+                    msg_config.variants.len(),
+                    output_path.display()
+                );
+            } else {
+                println!("{}", code);
+            }
 
             Ok(())
         }

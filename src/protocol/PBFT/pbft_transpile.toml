@@ -57,3 +57,27 @@ custom_imports = [
     "use crate::protocol::PBFT::pbft::*;",
     "use crate::generated::PBFT::types_gen::*;",
 ]
+
+[messages]
+enum_name = "PBFTMessage"
+doc_comment = "PBFT consensus protocol network messages."
+
+[[messages.variants]]
+name = "PrePrepare"
+doc = "Primary broadcasts a pre-prepare for a client request."
+fields = [["view", "u64"], ["seq", "u64"], ["digest", "u64"]]
+
+[[messages.variants]]
+name = "Prepare"
+doc = "Replica sends a prepare message to all peers."
+fields = [["view", "u64"], ["seq", "u64"], ["digest", "u64"], ["sender", "u64"]]
+
+[[messages.variants]]
+name = "Commit"
+doc = "Replica sends a commit message to all peers."
+fields = [["view", "u64"], ["seq", "u64"], ["sender", "u64"]]
+
+[[messages.variants]]
+name = "ClientRequest"
+doc = "Client sends a request to the primary."
+fields = [["digest", "u64"]]

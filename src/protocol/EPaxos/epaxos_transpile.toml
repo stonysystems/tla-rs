@@ -59,3 +59,32 @@ custom_imports = [
     "use crate::protocol::EPaxos::epaxos::*;",
     "use crate::generated::EPaxos::types_gen::*;",
 ]
+
+[messages]
+enum_name = "EPaxosMessage"
+doc_comment = "Egalitarian Paxos protocol network messages."
+
+[[messages.variants]]
+name = "PreAccept"
+doc = "Fast-path: leader sends PreAccept with ballot, command, and sequence number."
+fields = [["ballot", "u64"], ["cmd", "u64"], ["seq", "u64"]]
+
+[[messages.variants]]
+name = "PreAcceptOk"
+doc = "Fast-path response: replica reports its local sequence and conflict status."
+fields = [["sender", "u64"], ["seq", "u64"], ["conflict", "bool"]]
+
+[[messages.variants]]
+name = "Accept"
+doc = "Slow-path: leader sends Accept after conflict detected."
+fields = [["ballot", "u64"], ["cmd", "u64"], ["seq", "u64"]]
+
+[[messages.variants]]
+name = "AcceptOk"
+doc = "Slow-path acknowledgment from replica."
+fields = [["sender", "u64"]]
+
+[[messages.variants]]
+name = "CommitMsg"
+doc = "Commit notification broadcast to all replicas."
+fields = [["cmd", "u64"], ["seq", "u64"]]

@@ -7,8 +7,10 @@
 //! - Clone implementations
 //! - Executable code from quantifier templates
 
+pub mod messages;
 pub mod template_codegen;
 
+pub use messages::generate_message_code;
 pub use template_codegen::TemplateCodeGenerator;
 
 use std::collections::{HashMap, HashSet};

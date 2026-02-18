@@ -48,3 +48,37 @@ custom_imports = [
     "use crate::protocol::VerticalPaxos::vpaxos::*;",
     "use crate::generated::VerticalPaxos::types_gen::*;",
 ]
+
+[messages]
+enum_name = "VerticalPaxosMessage"
+doc_comment = "Vertical Paxos protocol network messages."
+
+[[messages.variants]]
+name = "Prepare"
+doc = "Phase 1a: Proposer sends Prepare."
+fields = [["ballot", "u64"]]
+
+[[messages.variants]]
+name = "Promise"
+doc = "Phase 1b: Acceptor promises with accepted ballot/value."
+fields = [["ballot", "u64"], ["v_bal", "u64"], ["val", "u64"], ["sender", "u64"]]
+
+[[messages.variants]]
+name = "Accept"
+doc = "Phase 2a: Proposer sends Accept."
+fields = [["ballot", "u64"], ["value", "u64"]]
+
+[[messages.variants]]
+name = "AcceptOk"
+doc = "Phase 2b: Acceptor confirms acceptance."
+fields = [["sender", "u64"]]
+
+[[messages.variants]]
+name = "Commit"
+doc = "Commit notification."
+fields = [["value", "u64"]]
+
+[[messages.variants]]
+name = "Sync"
+doc = "Reconfiguration sync message."
+fields = [["config", "u64"], ["value", "u64"]]

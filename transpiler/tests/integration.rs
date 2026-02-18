@@ -2219,6 +2219,126 @@ fn test_verus2tla_all_tla_generated_specs() {
     }
 }
 
+// ============================================================
+// Phase 17.3: Message generation tests
+// ============================================================
+
+#[test]
+fn test_generate_messages_paxos() {
+    let config = verus_transpiler::MessageConfig {
+        enum_name: "PaxosMessage".to_string(),
+        import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+        doc_comment: String::new(),
+        variants: vec![
+            verus_transpiler::MessageVariant {
+                name: "Prepare".to_string(),
+                fields: vec![vec!["ballot".to_string(), "u64".to_string()]],
+                doc: String::new(),
+            },
+            verus_transpiler::MessageVariant {
+                name: "Promise".to_string(),
+                fields: vec![
+                    vec!["ballot".to_string(), "u64".to_string()],
+                    vec!["accepted_bal".to_string(), "u64".to_string()],
+                    vec!["accepted_val".to_string(), "u64".to_string()],
+                ],
+                doc: String::new(),
+            },
+            verus_transpiler::MessageVariant {
+                name: "Accept".to_string(),
+                fields: vec![
+                    vec!["ballot".to_string(), "u64".to_string()],
+                    vec!["value".to_string(), "u64".to_string()],
+                ],
+                doc: String::new(),
+            },
+            verus_transpiler::MessageVariant {
+                name: "Accepted".to_string(),
+                fields: vec![
+                    vec!["ballot".to_string(), "u64".to_string()],
+                    vec!["value".to_string(), "u64".to_string()],
+                ],
+                doc: String::new(),
+            },
+        ],
+    };
+
+    let code = verus_transpiler::generate_message_code(&config);
+    // Verify the generated code has the right structure
+    assert!(code.contains("pub enum PaxosMessage"));
+    assert!(code.contains("impl ProtocolMessage for PaxosMessage"));
+    assert!(code.contains("const TAG_PREPARE: u64 = 1;"));
+    assert!(code.contains("const TAG_PROMISE: u64 = 2;"));
+    assert!(code.contains("const TAG_ACCEPT: u64 = 3;"));
+    assert!(code.contains("const TAG_ACCEPTED: u64 = 4;"));
+    // Serialize includes tag + field writes
+    assert!(code.contains("PaxosMessage::Prepare { ballot }"));
+    assert!(code.contains("buf.extend_from_slice(&TAG_PREPARE.to_le_bytes())"));
+    // Deserialize includes length checks
+    assert!(code.contains("if data.len() < 16")); // Prepare: 8+8
+    assert!(code.contains("if data.len() < 32")); // Promise: 8+24
+    assert!(code.contains("if data.len() < 24")); // Accept/Accepted: 8+16
+}
+
+#[test]
+fn test_generate_messages_from_toml() {
+    let toml_content = r#"
+        [messages]
+        enum_name = "TestMessage"
+
+        [[messages.variants]]
+        name = "Ping"
+        fields = [["id", "u64"]]
+
+        [[messages.variants]]
+        name = "Pong"
+        fields = [["id", "u64"], ["ok", "bool"]]
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let msg_config = config.messages.unwrap();
+    let code = verus_transpiler::generate_message_code(&msg_config);
+
+    assert!(code.contains("pub enum TestMessage"));
+    assert!(code.contains("ok: bool,"));
+    // Bool serialize
+    assert!(code.contains("let ok_val: u64 = if *ok { 1 } else { 0 };"));
+    // Bool deserialize
+    assert!(code.contains("let ok = read_u64(data, 16) != 0;"));
+}
+
+#[test]
+fn test_generate_messages_unit_variants() {
+    let toml_content = r#"
+        [messages]
+        enum_name = "TwoPhaseMessage"
+
+        [[messages.variants]]
+        name = "Prepare"
+
+        [[messages.variants]]
+        name = "PreparedVote"
+        fields = [["rm_id", "u64"]]
+
+        [[messages.variants]]
+        name = "Commit"
+
+        [[messages.variants]]
+        name = "Abort"
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let msg_config = config.messages.unwrap();
+    let code = verus_transpiler::generate_message_code(&msg_config);
+
+    // Unit variants serialize only a tag
+    assert!(code.contains("TwoPhaseMessage::Prepare =>"));
+    assert!(code.contains("TwoPhaseMessage::Commit =>"));
+    assert!(code.contains("TwoPhaseMessage::Abort =>"));
+    // Struct variant serializes tag + fields
+    assert!(code.contains("TwoPhaseMessage::PreparedVote { rm_id }"));
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

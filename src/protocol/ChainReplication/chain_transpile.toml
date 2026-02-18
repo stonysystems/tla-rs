@@ -61,3 +61,26 @@ custom_imports = [
     "use crate::protocol::ChainReplication::chain::*;",
     "use crate::generated::ChainReplication::types_gen::*;",
 ]
+
+[messages]
+enum_name = "ChainMessage"
+doc_comment = "Chain Replication protocol network messages."
+
+[[messages.variants]]
+name = "Forward"
+doc = "Forward a write to the next node in the chain."
+fields = [["value", "u64"]]
+
+[[messages.variants]]
+name = "Ack"
+doc = "Acknowledge a committed write back up the chain."
+fields = [["value", "u64"]]
+
+[[messages.variants]]
+name = "ClientWrite"
+doc = "Client sends a write request to the head."
+fields = [["value", "u64"]]
+
+[[messages.variants]]
+name = "ClientRead"
+doc = "Client sends a read request to the tail."

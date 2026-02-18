@@ -51,8 +51,13 @@ pub mod verus2tla;
 pub use annotation::{AnnotationParser, FunctionAnnotation, ModuleAnnotations};
 pub use ast::{Expr, Parameter, ParameterMode, SpecFunction, Type};
 pub use checker::{validate_function, HarmonyChecker, ObligationChecker, SaturationChecker};
-pub use codegen::{generate_all_types, GeneratedCode, TemplateCodeGenerator, TypeGenerator};
-pub use config::{ModuleConfig, NamingConfig, OutputConfig, TranspilerConfig as FileConfig};
+pub use codegen::{
+    generate_all_types, generate_message_code, GeneratedCode, TemplateCodeGenerator, TypeGenerator,
+};
+pub use config::{
+    MessageConfig, MessageVariant, ModuleConfig, NamingConfig, OutputConfig,
+    TranspilerConfig as FileConfig,
+};
 pub use error::{DiagnosticAccumulator, TranspileError, TranspileResult, TranspileWarning};
 pub use moder::{AnnotatedFunction, AssignmentTracker, ModeAnalyzer, PredicateKind};
 pub use parser::{parse_file, VerusParser};

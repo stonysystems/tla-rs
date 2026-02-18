@@ -233,6 +233,70 @@ pub struct TranspilerConfig {
     /// e.g., ["valid", "abstractable"]
     #[serde(default)]
     pub vec_element_ensures: Vec<String>,
+
+    /// Optional message generation configuration.
+    /// When present, `generate-messages` subcommand can generate ProtocolMessage impl.
+    #[serde(default)]
+    pub messages: Option<MessageConfig>,
+}
+
+/// Configuration for generating ProtocolMessage implementations.
+///
+/// Describes the message enum and its variants for a protocol.
+/// Each variant has named fields with `u64` or `bool` types.
+///
+/// Example TOML:
+/// ```toml
+/// [messages]
+/// enum_name = "PaxosMessage"
+/// import_path = "crate::common::framework::protocol_trait::ProtocolMessage"
+///
+/// [[messages.variants]]
+/// name = "Prepare"
+/// fields = [["ballot", "u64"]]
+///
+/// [[messages.variants]]
+/// name = "Promise"
+/// fields = [["ballot", "u64"], ["accepted_bal", "u64"], ["accepted_val", "u64"]]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MessageConfig {
+    /// The name of the generated enum (e.g., "PaxosMessage")
+    #[serde(default)]
+    pub enum_name: String,
+
+    /// Import path for the ProtocolMessage trait
+    #[serde(default = "MessageConfig::default_import_path")]
+    pub import_path: String,
+
+    /// Module doc comment (optional)
+    #[serde(default)]
+    pub doc_comment: String,
+
+    /// Variant definitions
+    #[serde(default)]
+    pub variants: Vec<MessageVariant>,
+}
+
+impl MessageConfig {
+    fn default_import_path() -> String {
+        "crate::common::framework::protocol_trait::ProtocolMessage".to_string()
+    }
+}
+
+/// A single message variant with named fields.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MessageVariant {
+    /// Variant name (e.g., "Prepare")
+    pub name: String,
+
+    /// Named fields as [name, type] pairs. Types: "u64", "bool"
+    #[serde(default)]
+    pub fields: Vec<Vec<String>>,
+
+    /// Optional doc comment for the variant
+    #[serde(default)]
+    pub doc: String,
 }
 
 impl TranspilerConfig {
@@ -945,5 +1009,55 @@ mod tests {
     fn test_map_fields_default_empty() {
         let config = TranspilerConfig::default();
         assert!(config.map_fields.is_empty());
+    }
+
+    #[test]
+    fn test_messages_config() {
+        let toml = r#"
+            [messages]
+            enum_name = "PaxosMessage"
+            doc_comment = "Paxos messages."
+
+            [[messages.variants]]
+            name = "Prepare"
+            fields = [["ballot", "u64"]]
+            doc = "Phase 1a"
+
+            [[messages.variants]]
+            name = "Promise"
+            fields = [["ballot", "u64"], ["accepted_bal", "u64"], ["accepted_val", "u64"]]
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        let msg = config.messages.unwrap();
+        assert_eq!(msg.enum_name, "PaxosMessage");
+        assert_eq!(msg.doc_comment, "Paxos messages.");
+        assert_eq!(msg.variants.len(), 2);
+        assert_eq!(msg.variants[0].name, "Prepare");
+        assert_eq!(msg.variants[0].doc, "Phase 1a");
+        assert_eq!(msg.variants[0].fields.len(), 1);
+        assert_eq!(msg.variants[0].fields[0], vec!["ballot", "u64"]);
+        assert_eq!(msg.variants[1].name, "Promise");
+        assert_eq!(msg.variants[1].fields.len(), 3);
+    }
+
+    #[test]
+    fn test_messages_config_default_none() {
+        let config = TranspilerConfig::default();
+        assert!(config.messages.is_none());
+    }
+
+    #[test]
+    fn test_messages_config_with_bool_fields() {
+        let toml = r#"
+            [messages]
+            enum_name = "RaftMessage"
+
+            [[messages.variants]]
+            name = "VoteResponse"
+            fields = [["term", "u64"], ["granted", "bool"], ["voter", "u64"]]
+        "#;
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        let msg = config.messages.unwrap();
+        assert_eq!(msg.variants[0].fields[1], vec!["granted", "bool"]);
     }
 }
