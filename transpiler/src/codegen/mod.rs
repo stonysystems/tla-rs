@@ -8,9 +8,14 @@
 //! - Executable code from quantifier templates
 
 pub mod messages;
+pub mod scheduler;
 pub mod template_codegen;
 
 pub use messages::generate_message_code;
+pub use scheduler::{
+    extract_lnext_actions, find_and_analyze_lnext, scheduler_config_to_toml, SchedulerAction,
+    SchedulerConfig,
+};
 pub use template_codegen::TemplateCodeGenerator;
 
 use std::collections::{HashMap, HashSet};

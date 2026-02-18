@@ -2681,6 +2681,130 @@ fn test_roundtrip_epaxos() {
     run_roundtrip_test("../src/protocol/EPaxos/epaxos_transpile.toml");
 }
 
+// ============================================================
+// Phase 17.4.1: LNext scheduler analysis tests
+// ============================================================
+
+/// Helper: parse spec file and analyze LNext
+fn analyze_lnext(spec_path: &str) -> verus_transpiler::SchedulerConfig {
+    let spec_fns = verus_transpiler::parse_file(std::path::Path::new(spec_path))
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", spec_path, e));
+    verus_transpiler::find_and_analyze_lnext(&spec_fns, "LNext", "L", "C")
+        .unwrap_or_else(|| panic!("LNext not found or not a disjunction in {}", spec_path))
+}
+
+#[test]
+fn test_analyze_lnext_twophase() {
+    let config = analyze_lnext("../src/protocol/TwoPhase/twophase.rs");
+    assert_eq!(config.actions.len(), 8, "TwoPhase has 8 actions");
+    assert_eq!(config.params, vec!["s", "s_", "c"]);
+    // 3 direct + 5 quantified
+    let direct: Vec<_> = config.actions.iter().filter(|a| a.existential_params.is_empty()).collect();
+    let quantified: Vec<_> = config.actions.iter().filter(|a| !a.existential_params.is_empty()).collect();
+    assert_eq!(direct.len(), 3, "3 direct actions");
+    assert_eq!(quantified.len(), 5, "5 quantified actions");
+}
+
+#[test]
+fn test_analyze_lnext_paxos() {
+    let config = analyze_lnext("../src/protocol/Paxos/paxos.rs");
+    assert_eq!(config.actions.len(), 7, "Paxos has 7 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LSend1a"));
+    assert!(names.contains(&"LSend1b"));
+    assert!(names.contains(&"LSend2a"));
+    assert!(names.contains(&"LSend2b"));
+    assert!(names.contains(&"LLearn"));
+}
+
+#[test]
+fn test_analyze_lnext_leader_election() {
+    let config = analyze_lnext("../src/protocol/LeaderElection/election.rs");
+    assert_eq!(config.actions.len(), 7, "LeaderElection has 7 actions");
+    // All branches have existential |node: int|
+    assert!(config.actions.iter().all(|a| !a.existential_params.is_empty()),
+        "All LeaderElection actions have existential params");
+}
+
+#[test]
+fn test_analyze_lnext_raft() {
+    let config = analyze_lnext("../src/protocol/Raft/raft.rs");
+    assert_eq!(config.actions.len(), 11, "Raft has 11 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LTimeout"));
+    assert!(names.contains(&"LBecomeLeader"));
+    assert!(names.contains(&"LGrantVote"));
+    assert!(names.contains(&"LClientRequest"));
+    assert!(names.contains(&"LAdvanceCommitIndex"));
+    assert!(names.contains(&"LStepDown"));
+}
+
+#[test]
+fn test_analyze_lnext_chain_replication() {
+    let config = analyze_lnext("../src/protocol/ChainReplication/chain.rs");
+    assert_eq!(config.actions.len(), 8, "ChainReplication has 8 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LHeadReceiveWrite"));
+    assert!(names.contains(&"LTailCommit"));
+    assert!(names.contains(&"LClientRead"));
+    assert!(names.contains(&"LReconfigure"));
+}
+
+#[test]
+fn test_analyze_lnext_primarybackup() {
+    let config = analyze_lnext("../src/protocol/PrimaryBackup/primarybackup.rs");
+    assert_eq!(config.actions.len(), 8, "PrimaryBackup has 8 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LPrimaryWrite"));
+    assert!(names.contains(&"LPrimaryCommit"));
+    assert!(names.contains(&"LBackupPromote"));
+}
+
+#[test]
+fn test_analyze_lnext_pbft() {
+    let config = analyze_lnext("../src/protocol/PBFT/pbft.rs");
+    assert_eq!(config.actions.len(), 9, "PBFT has 9 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LPrePrepare"));
+    assert!(names.contains(&"LReceivePrepare"));
+    assert!(names.contains(&"LReceiveCommit"));
+    assert!(names.contains(&"LExecuteReply"));
+}
+
+#[test]
+fn test_analyze_lnext_vertical_paxos() {
+    let config = analyze_lnext("../src/protocol/VerticalPaxos/vpaxos.rs");
+    assert_eq!(config.actions.len(), 10, "VerticalPaxos has 10 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LPrepare"));
+    assert!(names.contains(&"LReceivePromise"));
+    assert!(names.contains(&"LCommit"));
+    assert!(names.contains(&"LReconfigure"));
+}
+
+#[test]
+fn test_analyze_lnext_epaxos() {
+    let config = analyze_lnext("../src/protocol/EPaxos/epaxos.rs");
+    assert_eq!(config.actions.len(), 11, "EPaxos has 11 actions");
+    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    assert!(names.contains(&"LPropose"));
+    assert!(names.contains(&"LSendPreAcceptOk"));
+    assert!(names.contains(&"LFastCommit"));
+    assert!(names.contains(&"LSlowCommit"));
+    assert!(names.contains(&"LExecute"));
+}
+
+#[test]
+fn test_analyze_lnext_toml_output() {
+    let config = analyze_lnext("../src/protocol/TwoPhase/twophase.rs");
+    let toml = verus_transpiler::scheduler_config_to_toml(&config);
+    assert!(toml.contains("[scheduler]"));
+    assert!(toml.contains("action_count = 8"));
+    assert!(toml.contains("spec_name = \"LTMSendPrepare\""));
+    assert!(toml.contains("exec_name = \"CTMSendPrepare\""));
+    assert!(toml.contains("existential_params = [[\"rm\", \"int\"]]"));
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

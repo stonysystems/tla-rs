@@ -206,6 +206,29 @@ enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// Analyze LNext function to extract scheduler action structure
+    AnalyzeLnext {
+        /// Spec file containing LNext function (e.g., src/protocol/Paxos/paxos.rs)
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Name of the Next function (default: "LNext")
+        #[arg(long, default_value = "LNext")]
+        next_fn: String,
+
+        /// Spec function name prefix (default: "L")
+        #[arg(long, default_value = "L")]
+        spec_prefix: String,
+
+        /// Exec function name prefix (default: "C")
+        #[arg(long, default_value = "C")]
+        exec_prefix: String,
+
+        /// Output file for TOML config (prints to stdout if not specified)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -961,6 +984,47 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 );
             } else {
                 println!("{}", code);
+            }
+
+            Ok(())
+        }
+
+        Commands::AnalyzeLnext {
+            input,
+            next_fn,
+            spec_prefix,
+            exec_prefix,
+            output,
+        } => {
+            let spec_fns = verus_transpiler::parse_file(input)
+                .map_err(|e| miette::miette!("Failed to parse spec file: {}", e))?;
+
+            let config = verus_transpiler::find_and_analyze_lnext(
+                &spec_fns,
+                &next_fn,
+                &spec_prefix,
+                &exec_prefix,
+            )
+            .ok_or_else(|| {
+                miette::miette!(
+                    "Function '{}' not found or body is not a disjunction",
+                    next_fn
+                )
+            })?;
+
+            let toml = verus_transpiler::scheduler_config_to_toml(&config);
+
+            if let Some(output_path) = output {
+                std::fs::write(output_path, &toml)
+                    .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                println!(
+                    "Extracted {} actions from {} -> {}",
+                    config.actions.len(),
+                    config.next_fn_name,
+                    output_path.display()
+                );
+            } else {
+                println!("{}", toml);
             }
 
             Ok(())
