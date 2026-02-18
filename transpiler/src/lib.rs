@@ -171,11 +171,10 @@ impl Transpiler {
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
         // Auto-add proof-related imports when generate_proofs is enabled
-        // Only add set_lib and clone_hashset when HashSet fields are present
+        // Only add set_lib when HashSet fields are present (clone_hashset is generated locally)
         if self.config.translator.generate_proofs && self.needs_set_helpers() {
             let proof_imports = [
                 "use vstd::set_lib::*;",
-                "use crate::common::collections::hashsets::clone_hashset;",
             ];
             for imp in &proof_imports {
                 let imp_str = imp.to_string();
@@ -399,11 +398,10 @@ impl Transpiler {
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
         // Auto-add proof-related imports when generate_proofs is enabled
-        // Only add set_lib and clone_hashset when HashSet fields are present
+        // Only add set_lib when HashSet fields are present (clone_hashset is generated locally)
         if self.config.translator.generate_proofs && self.needs_set_helpers() {
             let proof_imports = [
                 "use vstd::set_lib::*;",
-                "use crate::common::collections::hashsets::clone_hashset;",
             ];
             for imp in &proof_imports {
                 let imp_str = imp.to_string();
@@ -2100,8 +2098,8 @@ mod tests {
             result
         );
         assert!(
-            result.contains("use crate::common::collections::hashsets::clone_hashset;"),
-            "Should auto-import clone_hashset when collection_fields present: {}",
+            result.contains("fn clone_hashset"),
+            "Should generate local clone_hashset when collection_fields present: {}",
             result
         );
     }

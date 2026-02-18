@@ -1,11 +1,9 @@
 # Configuration for transpiling Raft Consensus spec to exec implementation
 
-# Skip functions that contain complex inline if/else, Map::dom(), or existential quantifiers
+# Skip functions that contain complex inline if/else or existential quantifiers
 skip_functions = [
     "LNext",
     "LFollowerAppendEntries",
-    "LHandleAppendResponse",
-    "LHandleAppendReject",
 ]
 
 # Primitive types that don't need valid() predicates
@@ -16,6 +14,9 @@ collection_fields = ["votes_granted", "servers"]
 
 # Fields that are Vec/HashMap types (Seq/Map) requiring .clone()
 vec_fields = ["match_index", "next_index"]
+
+# Fields that are HashMap-typed and need &key indexing (not abstractify helpers)
+hashmap_index_fields = ["match_index", "next_index"]
 
 # Fields that are non-Copy types requiring .clone() but not @ in view
 clone_fields = ["role"]
@@ -71,6 +72,7 @@ nat_type = "u64"
 "Leader" = "CServerRole::Leader"
 
 [output]
+manual_code = "manual_helpers.rs"
 generate_abstraction_fns = true
 generate_validity_predicates = true
 validity_predicate_name = "valid"

@@ -530,11 +530,47 @@ impl ProofNeeds {
     fn expr_to_proof_arg(expr: &ExecExpr) -> String {
         match expr {
             ExecExpr::Unary { op, expr } => {
+                // Strip exec-level & borrows in proof context (proof uses owned values)
+                if op == "&" {
+                    return Self::expr_to_proof_arg(expr);
+                }
                 format!("{}{}", op, Self::expr_to_proof_arg(expr))
             }
             ExecExpr::Var(name) => name.clone(),
             ExecExpr::Field(base, field) => {
                 format!("{}.{}", Self::expr_to_proof_arg(base), field)
+            }
+            ExecExpr::Clone(inner) => {
+                // Clone on an input ref (e.g., value.clone() where value: &u64)
+                // becomes *value in proof context to get the owned value
+                match inner.as_ref() {
+                    ExecExpr::Var(name) => format!("*{}", name),
+                    _ => Self::expr_to_proof_arg(inner),
+                }
+            }
+            ExecExpr::Literal(lit) => lit.clone(),
+            ExecExpr::Struct { name, fields } => {
+                let fields_str: Vec<String> = fields
+                    .iter()
+                    .map(|(fname, fval)| format!("{}: {}", fname, Self::expr_to_proof_arg(fval)))
+                    .collect();
+                format!("{} {{ {} }}", name, fields_str.join(", "))
+            }
+            ExecExpr::MethodCall { receiver, method, args } => {
+                let recv = Self::expr_to_proof_arg(receiver);
+                let args_str: Vec<String> = args.iter().map(Self::expr_to_proof_arg).collect();
+                if args_str.is_empty() {
+                    format!("{}.{}()", recv, method)
+                } else {
+                    format!("{}.{}({})", recv, method, args_str.join(", "))
+                }
+            }
+            ExecExpr::Call { func, args } => {
+                let args_str: Vec<String> = args.iter().map(Self::expr_to_proof_arg).collect();
+                format!("{}({})", func, args_str.join(", "))
+            }
+            ExecExpr::Cast(inner, ty) => {
+                format!("{} as {}", Self::expr_to_proof_arg(inner), ty)
             }
             _ => format!("{:?}", expr), // fallback for unexpected cases
         }
@@ -2008,9 +2044,14 @@ impl Translator {
                     });
                 } else {
                     // Non-IsVariant condition: use if/else with Block for semicolon
+                    // mutation_stmt may return a value (e.g., HashMap::insert returns Option<V>),
+                    // so add empty block to discard it (equivalent to `{ mutation_stmt; }`)
                     pre_stmts.push(ExecExpr::If {
                         cond: Box::new(cond),
-                        then_branch: Box::new(ExecExpr::Block(vec![mutation_stmt])),
+                        then_branch: Box::new(ExecExpr::Block(vec![
+                            mutation_stmt,
+                            ExecExpr::Block(vec![]),
+                        ])),
                         else_branch: None,
                     });
                 }
@@ -4828,6 +4869,36 @@ impl Translator {
                 let r_str = self.expr_to_spec_string(r, _extra_args);
                 format!("({} <= {})", l_str, r_str)
             }
+            Expr::Lt(l, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                format!("({} < {})", l_str, r_str)
+            }
+            Expr::Ge(l, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                format!("({} >= {})", l_str, r_str)
+            }
+            Expr::Gt(l, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                format!("({} > {})", l_str, r_str)
+            }
+            Expr::Ne(l, r) => {
+                let l_str = self.expr_to_spec_string(l, _extra_args);
+                let r_str = self.expr_to_spec_string(r, _extra_args);
+                format!("({} != {})", l_str, r_str)
+            }
+            Expr::Cast(inner, ty) => {
+                let inner_str = self.expr_to_spec_string(inner, _extra_args);
+                let ty_str = match ty {
+                    Type::Int => "int",
+                    Type::Nat => "nat",
+                    Type::Bool => "bool",
+                    _ => "/* type */",
+                };
+                format!("{} as {}", inner_str, ty_str)
+            }
             _ => "/* expr */".to_string(),
         }
     }
@@ -6370,12 +6441,29 @@ impl Translator {
             .map(|p| p.name.clone())
             .collect();
 
-        // Identify scalar input params (int/nat → &u64) that need dereferencing in requires.
+        // Identify scalar input params (int/nat/u64/i64/... → &u64) that need dereferencing in requires.
         let scalar_params: HashSet<String> = func
             .spec_fn
             .params
             .iter()
-            .filter(|p| ctx.is_input(&p.name) && matches!(&p.ty, Type::Int | Type::Nat))
+            .filter(|p| {
+                ctx.is_input(&p.name)
+                    && match &p.ty {
+                        Type::Int | Type::Nat => true,
+                        Type::Named(path) => {
+                            if let Some(name) = path.last() {
+                                matches!(
+                                    name.as_ref(),
+                                    "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+                                        | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+                                )
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    }
+            })
             .map(|p| p.name.clone())
             .collect();
 
@@ -6884,6 +6972,22 @@ impl Translator {
                     self.expr_to_view_requires_string(rhs, view_params, scalar_params)
                 )
             }
+            Expr::Cast(inner, ty) => {
+                let ty_str = match ty {
+                    Type::Int => "int",
+                    Type::Nat => "nat",
+                    Type::Bool => "bool",
+                    _ => "/* type */",
+                };
+                if let Expr::Ident(name) = inner.as_ref() {
+                    if scalar_params.contains(name) {
+                        return format!("*{} as {}", name, ty_str);
+                    }
+                }
+                let inner_str =
+                    self.expr_to_view_requires_string(inner, view_params, scalar_params);
+                format!("{} as {}", inner_str, ty_str)
+            }
             _ => self.expr_to_view_simple_string(expr, view_params, scalar_params),
         }
     }
@@ -7114,6 +7218,23 @@ impl Translator {
                     })
                     .collect();
                 format!("{}.{}({})", recv, method, args_str.join(", "))
+            }
+            Expr::Cast(inner, ty) => {
+                let ty_str = match ty {
+                    Type::Int => "int",
+                    Type::Nat => "nat",
+                    Type::Bool => "bool",
+                    _ => "/* type */",
+                };
+                // For scalar params (int/nat → &u64), dereference: *name as int
+                if let Expr::Ident(name) = inner.as_ref() {
+                    if scalar_params.contains(name) {
+                        return format!("*{} as {}", name, ty_str);
+                    }
+                }
+                let inner_str =
+                    self.expr_to_view_simple_string(inner, view_params, scalar_params);
+                format!("{} as {}", inner_str, ty_str)
             }
             Expr::Ident(name) if scalar_params.contains(name) => {
                 // Scalar input param (int/nat → &u64): dereference
@@ -7486,6 +7607,16 @@ impl Translator {
                     self.expr_to_simple_string(rhs)
                 )
             }
+            Expr::Cast(inner, ty) => {
+                let inner_str = self.expr_to_simple_string(inner);
+                let ty_str = match ty {
+                    Type::Int => "int",
+                    Type::Nat => "nat",
+                    Type::Bool => "bool",
+                    _ => "/* type */",
+                };
+                format!("{} as {}", inner_str, ty_str)
+            }
             _ => format!("{:?}", expr),
         }
     }
@@ -7755,6 +7886,21 @@ impl Translator {
         }
     }
 
+    /// Transform a boolean condition expression without Conjunction/Disjunction flattening.
+    /// Used for `if` conditions where `a && b` should stay as `a && b`,
+    /// not be flattened to a Conjunction (which triggers struct-extraction logic).
+    fn transform_bool_expr(&self, expr: &Expr, ctx: &TransformContext) -> TranspileResult<ExecExpr> {
+        match expr {
+            Expr::Binary(lhs, crate::ast::BinOp::And, rhs) => {
+                self.transform_binary_op(lhs, rhs, "&&", ctx)
+            }
+            Expr::Binary(lhs, crate::ast::BinOp::Or, rhs) => {
+                self.transform_binary_op(lhs, rhs, "||", ctx)
+            }
+            _ => self.transform_expr(expr, ctx),
+        }
+    }
+
     /// Transform a spec expression to an exec expression
     fn transform_expr(&self, expr: &Expr, ctx: &TransformContext) -> TranspileResult<ExecExpr> {
         // Normalize Binary(And) chains to Conjunction and Binary(Or) chains to Disjunction.
@@ -7854,7 +8000,7 @@ impl Translator {
                             self.extract_simple_copy_source(else_expr, &helper_info, ctx)
                         {
                             // Generate: if cond { CHelper(&input, ...) } else { source_value }
-                            let cond_expr = self.transform_expr(cond, ctx)?;
+                            let cond_expr = self.transform_bool_expr(cond, ctx)?;
                             let helper_call = ExecExpr::Call {
                                 func: self.translate_name(&helper_info.func_name),
                                 args: helper_info.input_args.clone(),
@@ -7869,7 +8015,7 @@ impl Translator {
                     }
                 }
 
-                let cond_expr = self.transform_expr(cond, ctx)?;
+                let cond_expr = self.transform_bool_expr(cond, ctx)?;
                 let then_expr = self.transform_expr(then_branch, ctx)?;
                 let else_expr = else_branch
                     .as_ref()
@@ -8576,6 +8722,32 @@ impl Translator {
                         },
                         ExecExpr::Var("__v".to_string()),
                     ]));
+                }
+
+                // Spec pattern: map.dom().contains(key) → exec: map.contains_key(&key)
+                // Must be checked BEFORE the Vec .contains() handler below, because
+                // is_map_index_base() doesn't recognize .dom() method call chains.
+                if method == "contains" && args.len() == 1 {
+                    if let Expr::MethodCall {
+                        receiver: dom_receiver,
+                        method: dom_method,
+                        args: dom_args,
+                    } = receiver.as_ref()
+                    {
+                        if dom_method == "dom" && dom_args.is_empty() {
+                            let map_expr = self.transform_expr(dom_receiver, ctx)?;
+                            let key_expr = self.transform_expr(&args[0], ctx)?;
+                            let key_ref = ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(key_expr),
+                            };
+                            return Ok(ExecExpr::MethodCall {
+                                receiver: Box::new(map_expr),
+                                method: "contains_key".to_string(),
+                                args: vec![key_ref],
+                            });
+                        }
+                    }
                 }
 
                 // Special handling for Vec .contains() — Verus doesn't support slice::contains.
@@ -13073,6 +13245,94 @@ mod tests {
         };
         let result = translator.transform_expr(&expr, &ctx).unwrap();
         assert!(matches!(result, ExecExpr::If { .. }));
+    }
+
+    #[test]
+    fn test_transform_if_with_and_condition_not_flattened() {
+        // Regression test: Binary(And) inside If condition should NOT be flattened
+        // to Conjunction (which triggers struct-extraction and filters out input-only exprs).
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        // Build: if (s.field.dom().contains(x) && s.field[x] > 0) { 1 } else { 2 }
+        let expr = Expr::If {
+            cond: Box::new(Expr::Binary(
+                Box::new(Expr::Ident("a".to_string())),
+                BinOp::And,
+                Box::new(Expr::Ident("b".to_string())),
+            )),
+            then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+            else_branch: Some(Box::new(Expr::Literal(Literal::Int(2)))),
+        };
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::If { cond, .. } => {
+                // The condition should be a Binary { op: "&&" }, NOT an empty Block
+                match cond.as_ref() {
+                    ExecExpr::Binary { op, .. } => assert_eq!(op, "&&"),
+                    other => panic!("Expected Binary(&&) condition, got {:?}", other),
+                }
+            }
+            _ => panic!("Expected If, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_dom_contains_to_contains_key() {
+        // Test: map.dom().contains(key) → map.contains_key(&key)
+        let mut config = TranslatorConfig::default();
+        config.hashmap_index_fields = ["next_index".to_string()].into_iter().collect();
+        let translator = Translator::new(config);
+        let ctx = make_ctx();
+
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "next_index".to_string(),
+                )),
+                method: "dom".to_string(),
+                args: vec![],
+            }),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("key".to_string())],
+        };
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        match &result {
+            ExecExpr::MethodCall { method, receiver, args } => {
+                assert_eq!(method, "contains_key");
+                // Receiver should be s.next_index (not s.next_index.dom())
+                match receiver.as_ref() {
+                    ExecExpr::Field(_, field) => assert_eq!(field, "next_index"),
+                    other => panic!("Expected field access, got {:?}", other),
+                }
+                // Arg should be &key
+                assert_eq!(args.len(), 1);
+                assert!(matches!(&args[0], ExecExpr::Unary { op, .. } if op == "&"));
+            }
+            _ => panic!("Expected MethodCall contains_key, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_transform_cast_expr() {
+        // Test: Cast(ident, Int) → "ident as int" in expr_to_spec_string
+        let translator = Translator::default();
+
+        let expr = Expr::Cast(
+            Box::new(Expr::Ident("follower".to_string())),
+            Type::Int,
+        );
+        let empty_args: Vec<String> = vec![];
+        let result = translator.expr_to_spec_string(&expr, &empty_args);
+        assert_eq!(result, "follower as int");
+
+        let expr_nat = Expr::Cast(
+            Box::new(Expr::Ident("x".to_string())),
+            Type::Nat,
+        );
+        let result_nat = translator.expr_to_spec_string(&expr_nat, &empty_args);
+        assert_eq!(result_nat, "x as nat");
     }
 
     #[test]

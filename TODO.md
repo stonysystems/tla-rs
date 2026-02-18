@@ -5144,12 +5144,15 @@ Fix transpiler to handle language features that currently cause functions to be 
 - [x] Remove 8 functions from skip_functions across 4 protocols (Paxos, Raft, EPaxos, PBFT)
 - [x] Regenerate all 4 protocol gen files successfully
 
-**17.1.2: Support `Map::insert` / `Map::dom().contains()` in struct construction** — Unblocks: Raft/LHandleAppendResponse, Raft/LHandleAppendReject
-- [ ] Parse `s_.field == s.field.insert(key, val)` pattern in spec predicates
-- [ ] Generate `let mut __field = s.field.clone(); __field.insert(key, val);` in exec code
-- [ ] Parse `s.field.dom().contains(key)` as `s.field.contains_key(&key)` in exec requires/conditions
-- [ ] Handle `if s.field.dom().contains(k) { s.field[k] } else { default }` conditional Map access
-- [ ] Add transpiler tests for Map operations codegen
+**17.1.2: Support `Map::insert` / `Map::dom().contains()` in struct construction** — ✅ COMPLETE (2 Raft functions unblocked; 594 verified, 0 errors)
+- [x] Parse `s_.field == s.field.insert(key, val)` pattern in spec predicates — handled by `categorize_output_assignments` with HashMap mutation extraction
+- [x] Generate `let mut __field = s.field.clone(); __field.insert(key, val);` in exec code — `hashmap_index_fields` TOML config distinguishes HashMap vs Vec indexing
+- [x] Parse `s.field.dom().contains(key)` as `s.field.contains_key(&key)` in exec requires/conditions — `transform_bool_expr` prevents condition flattening; `dom().contains()` handler placed before Vec `.contains()` handler
+- [x] Handle `if s.field.dom().contains(k) { s.field[k] } else { default }` conditional Map access — `extract_conditional_mutation_info` handles conditional HashMap::insert with empty block for return type
+- [x] Add transpiler tests for Map operations codegen — 3 tests added (688 total)
+- [x] Fix pre-existing variant naming bugs in 5 protocols (EPaxos, PBFT, Paxos, PrimaryBackup, TwoPhase): `is CVariant` → `is Variant`
+- [x] Fix pre-existing `clone_hashset` duplicate definition in 4 protocols
+- [x] Fix pre-existing `#[derive(Clone)]` on HashSet-containing structs in EPaxos, PBFT
 
 **17.1.3: Support complex conditional `Seq::push` in struct construction** — Unblocks: Raft/LFollowerAppendEntries
 - [ ] Parse `s_.log == if cond { s.log.push(entry) } else { s.log }` pattern
@@ -5353,7 +5356,7 @@ Extend the C# entry point to support launching any protocol (not just RSL).
 
 **17.7.1: Add tests for each new transpiler feature**
 - [x] Tests for Set::len() codegen (17.1.1) — 3 tests: cast_len_to_u64_wraps_len_method, cast_len_to_u64_ignores_other_methods, set_len_ge_threshold_in_binary_comparison
-- [ ] Tests for Map::insert / Map::dom().contains() (17.1.2)
+- [x] Tests for Map::insert / Map::dom().contains() (17.1.2) — 3 tests: test_transform_if_with_and_condition_not_flattened, test_transform_dom_contains_to_contains_key, test_transform_cast_expr
 - [ ] Tests for conditional Seq::push (17.1.3)
 - [ ] Tests for existential quorum codegen (17.1.4)
 - [ ] Tests for marshalling generation (17.3)

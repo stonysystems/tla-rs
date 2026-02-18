@@ -10,8 +10,8 @@ module Raft::raft {
     LClientRequest(+, -, +, +);
     LSendAppendEntries(+, -, +, +, +, +, +, +);
     // LFollowerAppendEntries not transpiled (complex Seq::push in inline if/else with struct literals)
-    // LHandleAppendResponse not transpiled (uses Map::insert with as u64 casts)
-    // LHandleAppendReject not transpiled (uses Map::dom().contains with conditional update)
+    LHandleAppendResponse(+, -, +, +, +);
+    LHandleAppendReject(+, -, +, +);
     LAdvanceCommitIndex(+, -, +, +);
     LStepDown(+, -, +, +);
     // LNext not transpiled (contains existential quantifiers)
