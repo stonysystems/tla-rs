@@ -1,9 +1,8 @@
 # Configuration for transpiling Raft Consensus spec to exec implementation
 
-# Skip functions that contain Set::len(), complex inline if/else, Map::dom(), or existential quantifiers
+# Skip functions that contain complex inline if/else, Map::dom(), or existential quantifiers
 skip_functions = [
     "LNext",
-    "LBecomeLeader",
     "LFollowerAppendEntries",
     "LHandleAppendResponse",
     "LHandleAppendReject",

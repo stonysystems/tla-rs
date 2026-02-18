@@ -23,6 +23,15 @@ ensures
     }
 }
 
+/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
+#[verifier(external_body)]
+fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
+ensures
+    res@ == s@,
+{
+    s.clone()
+}
+
 
 /// Helper: clone CInstancePhase preserving view (workaround for missing derive Clone spec).
 fn clone_phase(r: &CInstancePhase) -> (res: CInstancePhase)
@@ -92,7 +101,7 @@ pub exec fn CPropose(s: &CState, c: &CConstants, value: &u64) -> (result: CState
 requires
     s.valid(),
     c.valid(),
-    s.phase is Empty,
+    s.phase is CEmpty,
     s.committed_count < u64::MAX,
 ensures
     result.valid(),
@@ -100,21 +109,21 @@ ensures
 {
     let result = {
         let mut __preaccept_senders = clone_hashset(&HashSet::new());
-        __preaccept_senders.insert(c.my_id);
+        __preaccept_senders.insert(c.my_id.clone());
         CState {
-            ballot: s.ballot,
+            ballot: s.ballot.clone(),
             cmd: *value,
             seq: (s.committed_count + 1),
             dep_count: 0u64,
             is_leader: true,
-            committed_count: s.committed_count,
-            executed_count: s.executed_count,
+            committed_count: s.committed_count.clone(),
+            executed_count: s.executed_count.clone(),
             preaccept_senders: __preaccept_senders,
             accept_senders: HashSet::new(),
             has_conflict: false,
             max_resp_seq: 0u64,
             msgs_preaccept: true,
-            msgs_preaccept_ballot: s.ballot,
+            msgs_preaccept_ballot: s.ballot.clone(),
             msgs_preaccept_cmd: *value,
             msgs_preaccept_seq: (s.committed_count + 1),
             msgs_preaccept_ok: false,
@@ -152,34 +161,34 @@ ensures
 {
 CState {
         msgs_preaccept_ok: true,
-        msgs_preaccept_ok_sender: c.my_id,
+        msgs_preaccept_ok_sender: c.my_id.clone(),
         msgs_preaccept_ok_seq: *local_seq,
         msgs_preaccept_ok_conflict: local_conflict.clone(),
-        ballot: s.ballot,
+        ballot: s.ballot.clone(),
         phase: clone_phase(&s.phase),
-        cmd: s.cmd,
-        seq: s.seq,
-        dep_count: s.dep_count,
-        is_leader: s.is_leader,
-        committed_count: s.committed_count,
-        executed_count: s.executed_count,
+        cmd: s.cmd.clone(),
+        seq: s.seq.clone(),
+        dep_count: s.dep_count.clone(),
+        is_leader: s.is_leader.clone(),
+        committed_count: s.committed_count.clone(),
+        executed_count: s.executed_count.clone(),
         preaccept_senders: clone_hashset(&s.preaccept_senders),
         accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict,
-        max_resp_seq: s.max_resp_seq,
-        msgs_preaccept: s.msgs_preaccept,
-        msgs_preaccept_ballot: s.msgs_preaccept_ballot,
-        msgs_preaccept_cmd: s.msgs_preaccept_cmd,
-        msgs_preaccept_seq: s.msgs_preaccept_seq,
-        msgs_accept: s.msgs_accept,
-        msgs_accept_ballot: s.msgs_accept_ballot,
-        msgs_accept_cmd: s.msgs_accept_cmd,
-        msgs_accept_seq: s.msgs_accept_seq,
-        msgs_accept_ok: s.msgs_accept_ok,
-        msgs_accept_ok_sender: s.msgs_accept_ok_sender,
-        msgs_commit: s.msgs_commit,
-        msgs_commit_cmd: s.msgs_commit_cmd,
-        msgs_commit_seq: s.msgs_commit_seq,
+        has_conflict: s.has_conflict.clone(),
+        max_resp_seq: s.max_resp_seq.clone(),
+        msgs_preaccept: s.msgs_preaccept.clone(),
+        msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
+        msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
+        msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
+        msgs_accept: s.msgs_accept.clone(),
+        msgs_accept_ballot: s.msgs_accept_ballot.clone(),
+        msgs_accept_cmd: s.msgs_accept_cmd.clone(),
+        msgs_accept_seq: s.msgs_accept_seq.clone(),
+        msgs_accept_ok: s.msgs_accept_ok.clone(),
+        msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
+        msgs_commit: s.msgs_commit.clone(),
+        msgs_commit_cmd: s.msgs_commit_cmd.clone(),
+        msgs_commit_seq: s.msgs_commit_seq.clone(),
     }
 }
 
@@ -187,10 +196,10 @@ pub exec fn CReceivePreAcceptOk(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.phase is PreAccepted,
+    s.phase is CPreAccepted,
     s.is_leader == true,
     s.msgs_preaccept_ok == true,
-    !s@.preaccept_senders.contains(s.msgs_preaccept_ok_sender as int),
+    !s@.preaccept_senders.contains(s@.msgs_preaccept_ok_sender),
     s.dep_count < u64::MAX,
 ensures
     result.valid(),
@@ -198,56 +207,157 @@ ensures
 {
     let result = {
         let mut __preaccept_senders = clone_hashset(&s.preaccept_senders);
-        __preaccept_senders.insert(s.msgs_preaccept_ok_sender);
+        __preaccept_senders.insert(s.msgs_preaccept_ok_sender.clone());
         CState {
             preaccept_senders: __preaccept_senders,
             has_conflict: if s.msgs_preaccept_ok_conflict {
                 true
             } else {
-                s.has_conflict
+                s.has_conflict.clone()
             },
             dep_count: if s.msgs_preaccept_ok_conflict {
                 (s.dep_count + 1)
             } else {
-                s.dep_count
+                s.dep_count.clone()
             },
             max_resp_seq: if (s.msgs_preaccept_ok_seq > s.max_resp_seq) {
-                s.msgs_preaccept_ok_seq
+                s.msgs_preaccept_ok_seq.clone()
             } else {
-                s.max_resp_seq
+                s.max_resp_seq.clone()
             },
             seq: if (s.msgs_preaccept_ok_seq > s.seq) {
-                s.msgs_preaccept_ok_seq
+                s.msgs_preaccept_ok_seq.clone()
             } else {
-                s.seq
+                s.seq.clone()
             },
-            ballot: s.ballot,
+            ballot: s.ballot.clone(),
             phase: clone_phase(&s.phase),
-            cmd: s.cmd,
-            is_leader: s.is_leader,
-            committed_count: s.committed_count,
-            executed_count: s.executed_count,
+            cmd: s.cmd.clone(),
+            is_leader: s.is_leader.clone(),
+            committed_count: s.committed_count.clone(),
+            executed_count: s.executed_count.clone(),
             accept_senders: clone_hashset(&s.accept_senders),
-            msgs_preaccept: s.msgs_preaccept,
-            msgs_preaccept_ballot: s.msgs_preaccept_ballot,
-            msgs_preaccept_cmd: s.msgs_preaccept_cmd,
-            msgs_preaccept_seq: s.msgs_preaccept_seq,
-            msgs_preaccept_ok: s.msgs_preaccept_ok,
-            msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender,
-            msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq,
-            msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict,
-            msgs_accept: s.msgs_accept,
-            msgs_accept_ballot: s.msgs_accept_ballot,
-            msgs_accept_cmd: s.msgs_accept_cmd,
-            msgs_accept_seq: s.msgs_accept_seq,
-            msgs_accept_ok: s.msgs_accept_ok,
-            msgs_accept_ok_sender: s.msgs_accept_ok_sender,
-            msgs_commit: s.msgs_commit,
-            msgs_commit_cmd: s.msgs_commit_cmd,
-            msgs_commit_seq: s.msgs_commit_seq,
+            msgs_preaccept: s.msgs_preaccept.clone(),
+            msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
+            msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
+            msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
+            msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
+            msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
+            msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
+            msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
+            msgs_accept: s.msgs_accept.clone(),
+            msgs_accept_ballot: s.msgs_accept_ballot.clone(),
+            msgs_accept_cmd: s.msgs_accept_cmd.clone(),
+            msgs_accept_seq: s.msgs_accept_seq.clone(),
+            msgs_accept_ok: s.msgs_accept_ok.clone(),
+            msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
+            msgs_commit: s.msgs_commit.clone(),
+            msgs_commit_cmd: s.msgs_commit_cmd.clone(),
+            msgs_commit_seq: s.msgs_commit_seq.clone(),
         }
     };
     proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    result
+
+}
+
+pub exec fn CFastCommit(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is CPreAccepted,
+    s.is_leader == true,
+    (s@.preaccept_senders.len() >= c.fast_quorum_size),
+    s.has_conflict == false,
+    s.committed_count < u64::MAX,
+ensures
+    result.valid(),
+    LFastCommit(s@, result@, c@),
+{
+CState {
+        ballot: s.ballot.clone(),
+        cmd: s.cmd.clone(),
+        seq: s.seq.clone(),
+        dep_count: s.dep_count.clone(),
+        is_leader: s.is_leader.clone(),
+        committed_count: (s.committed_count + 1),
+        executed_count: s.executed_count.clone(),
+        preaccept_senders: clone_hashset(&s.preaccept_senders),
+        accept_senders: clone_hashset(&s.accept_senders),
+        has_conflict: s.has_conflict.clone(),
+        max_resp_seq: s.max_resp_seq.clone(),
+        msgs_commit: true,
+        msgs_commit_cmd: s.cmd.clone(),
+        msgs_commit_seq: s.seq.clone(),
+        msgs_preaccept: false,
+        msgs_preaccept_ballot: 0u64,
+        msgs_preaccept_cmd: 0u64,
+        msgs_preaccept_seq: 0u64,
+        msgs_preaccept_ok: false,
+        msgs_preaccept_ok_sender: 0u64,
+        msgs_preaccept_ok_seq: 0u64,
+        msgs_preaccept_ok_conflict: false,
+        msgs_accept: false,
+        msgs_accept_ballot: 0u64,
+        msgs_accept_cmd: 0u64,
+        msgs_accept_seq: 0u64,
+        msgs_accept_ok: false,
+        msgs_accept_ok_sender: 0u64,
+        phase: CInstancePhase::Committed,
+    }
+}
+
+pub exec fn CStartAccept(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is CPreAccepted,
+    s.is_leader == true,
+    (s@.preaccept_senders.len() >= c.quorum_size),
+    s.has_conflict == true,
+ensures
+    result.valid(),
+    LStartAccept(s@, result@, c@),
+{
+    let result = {
+        let mut __accept_senders = clone_hashset(&HashSet::new());
+        __accept_senders.insert(c.my_id.clone());
+        CState {
+            ballot: s.ballot.clone(),
+            cmd: s.cmd.clone(),
+            seq: s.seq.clone(),
+            dep_count: s.dep_count.clone(),
+            is_leader: s.is_leader.clone(),
+            committed_count: s.committed_count.clone(),
+            executed_count: s.executed_count.clone(),
+            preaccept_senders: clone_hashset(&s.preaccept_senders),
+            accept_senders: __accept_senders,
+            has_conflict: s.has_conflict.clone(),
+            max_resp_seq: s.max_resp_seq.clone(),
+            msgs_accept: true,
+            msgs_accept_ballot: s.ballot.clone(),
+            msgs_accept_cmd: s.cmd.clone(),
+            msgs_accept_seq: s.seq.clone(),
+            msgs_preaccept: false,
+            msgs_preaccept_ballot: 0u64,
+            msgs_preaccept_cmd: 0u64,
+            msgs_preaccept_seq: 0u64,
+            msgs_preaccept_ok: false,
+            msgs_preaccept_ok_sender: 0u64,
+            msgs_preaccept_ok_seq: 0u64,
+            msgs_preaccept_ok_conflict: false,
+            msgs_accept_ok: false,
+            msgs_accept_ok_sender: 0u64,
+            msgs_commit: false,
+            msgs_commit_cmd: 0u64,
+            msgs_commit_seq: 0u64,
+            phase: CInstancePhase::Accepted,
+        }
+    };
+    proof {
+        lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
     }
     result
@@ -265,34 +375,34 @@ ensures
 {
 CState {
         msgs_accept_ok: true,
-        msgs_accept_ok_sender: c.my_id,
-        ballot: s.ballot,
+        msgs_accept_ok_sender: c.my_id.clone(),
+        ballot: s.ballot.clone(),
         phase: clone_phase(&s.phase),
-        cmd: s.cmd,
-        seq: s.seq,
-        dep_count: s.dep_count,
-        is_leader: s.is_leader,
-        committed_count: s.committed_count,
-        executed_count: s.executed_count,
+        cmd: s.cmd.clone(),
+        seq: s.seq.clone(),
+        dep_count: s.dep_count.clone(),
+        is_leader: s.is_leader.clone(),
+        committed_count: s.committed_count.clone(),
+        executed_count: s.executed_count.clone(),
         preaccept_senders: clone_hashset(&s.preaccept_senders),
         accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict,
-        max_resp_seq: s.max_resp_seq,
-        msgs_preaccept: s.msgs_preaccept,
-        msgs_preaccept_ballot: s.msgs_preaccept_ballot,
-        msgs_preaccept_cmd: s.msgs_preaccept_cmd,
-        msgs_preaccept_seq: s.msgs_preaccept_seq,
-        msgs_preaccept_ok: s.msgs_preaccept_ok,
-        msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender,
-        msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq,
-        msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict,
-        msgs_accept: s.msgs_accept,
-        msgs_accept_ballot: s.msgs_accept_ballot,
-        msgs_accept_cmd: s.msgs_accept_cmd,
-        msgs_accept_seq: s.msgs_accept_seq,
-        msgs_commit: s.msgs_commit,
-        msgs_commit_cmd: s.msgs_commit_cmd,
-        msgs_commit_seq: s.msgs_commit_seq,
+        has_conflict: s.has_conflict.clone(),
+        max_resp_seq: s.max_resp_seq.clone(),
+        msgs_preaccept: s.msgs_preaccept.clone(),
+        msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
+        msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
+        msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
+        msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
+        msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
+        msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
+        msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
+        msgs_accept: s.msgs_accept.clone(),
+        msgs_accept_ballot: s.msgs_accept_ballot.clone(),
+        msgs_accept_cmd: s.msgs_accept_cmd.clone(),
+        msgs_accept_seq: s.msgs_accept_seq.clone(),
+        msgs_commit: s.msgs_commit.clone(),
+        msgs_commit_cmd: s.msgs_commit_cmd.clone(),
+        msgs_commit_seq: s.msgs_commit_seq.clone(),
     }
 }
 
@@ -300,47 +410,47 @@ pub exec fn CReceiveAcceptOk(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.phase is Accepted,
+    s.phase is CAccepted,
     s.is_leader == true,
     s.msgs_accept_ok == true,
-    !s@.accept_senders.contains(s.msgs_accept_ok_sender as int),
+    !s@.accept_senders.contains(s@.msgs_accept_ok_sender),
 ensures
     result.valid(),
     LReceiveAcceptOk(s@, result@, c@),
 {
     let result = {
         let mut __accept_senders = clone_hashset(&s.accept_senders);
-        __accept_senders.insert(s.msgs_accept_ok_sender);
+        __accept_senders.insert(s.msgs_accept_ok_sender.clone());
         CState {
             accept_senders: __accept_senders,
-            ballot: s.ballot,
+            ballot: s.ballot.clone(),
             phase: clone_phase(&s.phase),
-            cmd: s.cmd,
-            seq: s.seq,
-            dep_count: s.dep_count,
-            is_leader: s.is_leader,
-            committed_count: s.committed_count,
-            executed_count: s.executed_count,
+            cmd: s.cmd.clone(),
+            seq: s.seq.clone(),
+            dep_count: s.dep_count.clone(),
+            is_leader: s.is_leader.clone(),
+            committed_count: s.committed_count.clone(),
+            executed_count: s.executed_count.clone(),
             preaccept_senders: clone_hashset(&s.preaccept_senders),
-            has_conflict: s.has_conflict,
-            max_resp_seq: s.max_resp_seq,
-            msgs_preaccept: s.msgs_preaccept,
-            msgs_preaccept_ballot: s.msgs_preaccept_ballot,
-            msgs_preaccept_cmd: s.msgs_preaccept_cmd,
-            msgs_preaccept_seq: s.msgs_preaccept_seq,
-            msgs_preaccept_ok: s.msgs_preaccept_ok,
-            msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender,
-            msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq,
-            msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict,
-            msgs_accept: s.msgs_accept,
-            msgs_accept_ballot: s.msgs_accept_ballot,
-            msgs_accept_cmd: s.msgs_accept_cmd,
-            msgs_accept_seq: s.msgs_accept_seq,
-            msgs_accept_ok: s.msgs_accept_ok,
-            msgs_accept_ok_sender: s.msgs_accept_ok_sender,
-            msgs_commit: s.msgs_commit,
-            msgs_commit_cmd: s.msgs_commit_cmd,
-            msgs_commit_seq: s.msgs_commit_seq,
+            has_conflict: s.has_conflict.clone(),
+            max_resp_seq: s.max_resp_seq.clone(),
+            msgs_preaccept: s.msgs_preaccept.clone(),
+            msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
+            msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
+            msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
+            msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
+            msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
+            msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
+            msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
+            msgs_accept: s.msgs_accept.clone(),
+            msgs_accept_ballot: s.msgs_accept_ballot.clone(),
+            msgs_accept_cmd: s.msgs_accept_cmd.clone(),
+            msgs_accept_seq: s.msgs_accept_seq.clone(),
+            msgs_accept_ok: s.msgs_accept_ok.clone(),
+            msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
+            msgs_commit: s.msgs_commit.clone(),
+            msgs_commit_cmd: s.msgs_commit_cmd.clone(),
+            msgs_commit_seq: s.msgs_commit_seq.clone(),
         }
     };
     proof {
@@ -350,45 +460,90 @@ ensures
 
 }
 
+pub exec fn CSlowCommit(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is CAccepted,
+    s.is_leader == true,
+    (s@.accept_senders.len() >= c.quorum_size),
+    s.committed_count < u64::MAX,
+ensures
+    result.valid(),
+    LSlowCommit(s@, result@, c@),
+{
+CState {
+        ballot: s.ballot.clone(),
+        cmd: s.cmd.clone(),
+        seq: s.seq.clone(),
+        dep_count: s.dep_count.clone(),
+        is_leader: s.is_leader.clone(),
+        committed_count: (s.committed_count + 1),
+        executed_count: s.executed_count.clone(),
+        preaccept_senders: clone_hashset(&s.preaccept_senders),
+        accept_senders: clone_hashset(&s.accept_senders),
+        has_conflict: s.has_conflict.clone(),
+        max_resp_seq: s.max_resp_seq.clone(),
+        msgs_commit: true,
+        msgs_commit_cmd: s.cmd.clone(),
+        msgs_commit_seq: s.seq.clone(),
+        msgs_preaccept: false,
+        msgs_preaccept_ballot: 0u64,
+        msgs_preaccept_cmd: 0u64,
+        msgs_preaccept_seq: 0u64,
+        msgs_preaccept_ok: false,
+        msgs_preaccept_ok_sender: 0u64,
+        msgs_preaccept_ok_seq: 0u64,
+        msgs_preaccept_ok_conflict: false,
+        msgs_accept: false,
+        msgs_accept_ballot: 0u64,
+        msgs_accept_cmd: 0u64,
+        msgs_accept_seq: 0u64,
+        msgs_accept_ok: false,
+        msgs_accept_ok_sender: 0u64,
+        phase: CInstancePhase::Committed,
+    }
+}
+
 pub exec fn CExecute(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.phase is Committed,
+    s.phase is CCommitted,
     s.executed_count < u64::MAX,
 ensures
     result.valid(),
     LExecute(s@, result@, c@),
 {
 CState {
-        ballot: s.ballot,
-        cmd: s.cmd,
-        seq: s.seq,
-        dep_count: s.dep_count,
-        is_leader: s.is_leader,
-        committed_count: s.committed_count,
+        ballot: s.ballot.clone(),
+        cmd: s.cmd.clone(),
+        seq: s.seq.clone(),
+        dep_count: s.dep_count.clone(),
+        is_leader: s.is_leader.clone(),
+        committed_count: s.committed_count.clone(),
         executed_count: (s.executed_count + 1),
         preaccept_senders: clone_hashset(&s.preaccept_senders),
         accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict,
-        max_resp_seq: s.max_resp_seq,
-        msgs_preaccept: s.msgs_preaccept,
-        msgs_preaccept_ballot: s.msgs_preaccept_ballot,
-        msgs_preaccept_cmd: s.msgs_preaccept_cmd,
-        msgs_preaccept_seq: s.msgs_preaccept_seq,
-        msgs_preaccept_ok: s.msgs_preaccept_ok,
-        msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender,
-        msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq,
-        msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict,
-        msgs_accept: s.msgs_accept,
-        msgs_accept_ballot: s.msgs_accept_ballot,
-        msgs_accept_cmd: s.msgs_accept_cmd,
-        msgs_accept_seq: s.msgs_accept_seq,
-        msgs_accept_ok: s.msgs_accept_ok,
-        msgs_accept_ok_sender: s.msgs_accept_ok_sender,
-        msgs_commit: s.msgs_commit,
-        msgs_commit_cmd: s.msgs_commit_cmd,
-        msgs_commit_seq: s.msgs_commit_seq,
+        has_conflict: s.has_conflict.clone(),
+        max_resp_seq: s.max_resp_seq.clone(),
+        msgs_preaccept: s.msgs_preaccept.clone(),
+        msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
+        msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
+        msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
+        msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
+        msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
+        msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
+        msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
+        msgs_accept: s.msgs_accept.clone(),
+        msgs_accept_ballot: s.msgs_accept_ballot.clone(),
+        msgs_accept_cmd: s.msgs_accept_cmd.clone(),
+        msgs_accept_seq: s.msgs_accept_seq.clone(),
+        msgs_accept_ok: s.msgs_accept_ok.clone(),
+        msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
+        msgs_commit: s.msgs_commit.clone(),
+        msgs_commit_cmd: s.msgs_commit_cmd.clone(),
+        msgs_commit_seq: s.msgs_commit_seq.clone(),
         phase: CInstancePhase::Executed,
     }
 }
@@ -397,7 +552,7 @@ pub exec fn CRecover(s: &CState, c: &CConstants, new_ballot: &u64) -> (result: C
 requires
     s.valid(),
     c.valid(),
-    (s.phase is PreAccepted || s.phase is Accepted),
+    (s.phase is CPreAccepted || s.phase is CAccepted),
     (*new_ballot > s.ballot),
 ensures
     result.valid(),
@@ -405,23 +560,23 @@ ensures
 {
     let result = {
         let mut __preaccept_senders = clone_hashset(&HashSet::new());
-        __preaccept_senders.insert(c.my_id);
+        __preaccept_senders.insert(c.my_id.clone());
         CState {
             ballot: *new_ballot,
-            cmd: s.cmd,
-            seq: s.seq,
+            cmd: s.cmd.clone(),
+            seq: s.seq.clone(),
             dep_count: 0u64,
             is_leader: true,
-            committed_count: s.committed_count,
-            executed_count: s.executed_count,
+            committed_count: s.committed_count.clone(),
+            executed_count: s.executed_count.clone(),
             preaccept_senders: __preaccept_senders,
             accept_senders: HashSet::new(),
             has_conflict: false,
             max_resp_seq: 0u64,
             msgs_preaccept: true,
             msgs_preaccept_ballot: *new_ballot,
-            msgs_preaccept_cmd: s.cmd,
-            msgs_preaccept_seq: s.seq,
+            msgs_preaccept_cmd: s.cmd.clone(),
+            msgs_preaccept_seq: s.seq.clone(),
             msgs_preaccept_ok: false,
             msgs_preaccept_ok_sender: 0u64,
             msgs_preaccept_ok_seq: 0u64,
@@ -450,19 +605,19 @@ pub exec fn CNewInstance(s: &CState, c: &CConstants) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.phase is Executed,
+    s.phase is CExecuted,
 ensures
     result.valid(),
     LNewInstance(s@, result@, c@),
 {
     let result = CState {
-        ballot: s.ballot,
+        ballot: s.ballot.clone(),
         cmd: 0u64,
         seq: 0u64,
         dep_count: 0u64,
         is_leader: false,
-        committed_count: s.committed_count,
-        executed_count: s.executed_count,
+        committed_count: s.committed_count.clone(),
+        executed_count: s.executed_count.clone(),
         preaccept_senders: HashSet::new(),
         accept_senders: HashSet::new(),
         has_conflict: false,

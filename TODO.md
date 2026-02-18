@@ -5136,11 +5136,13 @@ Shared infrastructure (TO BUILD):
 
 Fix transpiler to handle language features that currently cause functions to be skipped. Each sub-task addresses one transpiler limitation.
 
-**17.1.1: Support `Set::len()` in exec codegen** — Unblocks: Paxos/LSend2a, Raft/LBecomeLeader, EPaxos quorum checks
-- [ ] Parse `Set::len()` / `s.len()` on HashSet fields in spec predicates
-- [ ] Generate `s.votes_granted.len() as u64` (or equivalent `HashSet::len()` call) in exec code
-- [ ] Handle comparison patterns: `set.len() >= threshold`, `set.len() * 2 > total`
-- [ ] Add transpiler tests for Set::len() codegen
+**17.1.1: Support `Set::len()` in exec codegen** — ✅ COMPLETE (transpiler already had `cast_len_to_u64`; functions were preemptively skipped)
+- [x] Parse `Set::len()` / `s.len()` on HashSet fields in spec predicates — already handled by generic MethodCall handler
+- [x] Generate `s.votes_granted.len() as u64` (or equivalent `HashSet::len()` call) in exec code — `cast_len_to_u64()` wraps `.len()` with `as u64`
+- [x] Handle comparison patterns: `set.len() >= threshold`, `set.len() * 2 > total` — `transform_binary_op` calls `cast_len_to_u64` on both sides
+- [x] Add transpiler tests for Set::len() codegen — 3 tests added (685 total)
+- [x] Remove 8 functions from skip_functions across 4 protocols (Paxos, Raft, EPaxos, PBFT)
+- [x] Regenerate all 4 protocol gen files successfully
 
 **17.1.2: Support `Map::insert` / `Map::dom().contains()` in struct construction** — Unblocks: Raft/LHandleAppendResponse, Raft/LHandleAppendReject
 - [ ] Parse `s_.field == s.field.insert(key, val)` pattern in spec predicates
@@ -5155,7 +5157,7 @@ Fix transpiler to handle language features that currently cause functions to be 
 - [ ] Handle nested conditionals with multiple field updates in branches
 - [ ] Add transpiler tests for conditional Seq mutation
 
-**17.1.4: Support existential-based set filtering / quorum patterns** — Unblocks: Paxos/LLearn, PBFT/LEnterCommit, PBFT/LExecuteReply, EPaxos/LFastCommit, EPaxos/LSlowCommit, EPaxos/LStartAccept
+**17.1.4: Support existential-based set filtering / quorum patterns** — Note: Paxos/LLearn, PBFT/LEnterCommit, PBFT/LExecuteReply, EPaxos/LFastCommit, EPaxos/LSlowCommit, EPaxos/LStartAccept were already unblocked by 17.1.1 (they only needed Set::len(), not existential patterns)
 - [ ] Identify pattern: `exists |quorum: Set<int>| quorum.subset_of(senders) && quorum.len() >= threshold`
 - [ ] Generate quorum check as: `senders.len() >= threshold` (simplified — sufficient for exec)
 - [ ] For LLearn-style "exists accepted value": generate iteration over accepted values
@@ -5350,7 +5352,7 @@ Extend the C# entry point to support launching any protocol (not just RSL).
 ### Phase 17.7: Transpiler Regression Tests
 
 **17.7.1: Add tests for each new transpiler feature**
-- [ ] Tests for Set::len() codegen (17.1.1)
+- [x] Tests for Set::len() codegen (17.1.1) — 3 tests: cast_len_to_u64_wraps_len_method, cast_len_to_u64_ignores_other_methods, set_len_ge_threshold_in_binary_comparison
 - [ ] Tests for Map::insert / Map::dom().contains() (17.1.2)
 - [ ] Tests for conditional Seq::push (17.1.3)
 - [ ] Tests for existential quorum codegen (17.1.4)

@@ -1,10 +1,8 @@
 # Configuration for transpiling PBFT spec to exec implementation
 
-# Skip functions that contain disjunctions or existential quantifiers
+# Skip functions that contain existential quantifiers
 skip_functions = [
     "LNext",
-    "LEnterCommit",
-    "LExecuteReply",
 ]
 
 # Fields that are HashSet types (Set) requiring clone_hashset()

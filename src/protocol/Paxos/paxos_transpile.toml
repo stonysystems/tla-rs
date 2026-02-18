@@ -1,11 +1,8 @@
 # Configuration for transpiling Single-Decree Paxos spec to exec implementation
 
-# Skip functions that contain existential quantifiers, spec-only predicates,
-# or Set::len() operations that require manual dispatch
+# Skip functions that contain existential quantifiers
 skip_functions = [
     "LNext",
-    "LSend2a",
-    "LLearn",
 ]
 
 # Primitive types that don't need valid() predicates

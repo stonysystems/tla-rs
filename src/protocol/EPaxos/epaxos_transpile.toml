@@ -1,11 +1,8 @@
 # Configuration for transpiling EPaxos spec to exec implementation
 
-# Skip functions that contain Set::len(), disjunctions, or existential quantifiers
+# Skip functions that contain existential quantifiers
 skip_functions = [
     "LNext",
-    "LFastCommit",
-    "LStartAccept",
-    "LSlowCommit",
 ]
 
 # Fields that are HashSet types (Set) requiring clone_hashset()

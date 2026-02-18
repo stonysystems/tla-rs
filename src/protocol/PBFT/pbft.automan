@@ -7,7 +7,7 @@ module PBFT::pbft {
     LCheckpoint(+, -, +, +);
     LViewChange(+, -, +);
     LNewRound(+, -, +);
-    // LEnterCommit not transpiled (uses Set::len() for quorum check)
-    // LExecuteReply not transpiled (uses Set::len() for quorum check)
+    LEnterCommit(+, -, +);
+    LExecuteReply(+, -, +);
     // LNext not transpiled (contains existential quantifiers)
 }

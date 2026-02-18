@@ -23,6 +23,15 @@ ensures
     }
 }
 
+/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
+#[verifier(external_body)]
+fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
+ensures
+    res@ == s@,
+{
+    s.clone()
+}
+
 
 /// Helper: clone CPhase preserving view (workaround for missing derive Clone spec).
 fn clone_phase(r: &CPhase) -> (res: CPhase)
@@ -70,7 +79,7 @@ pub exec fn CSend1a(s: &CState, c: &CConstants, b: &u64) -> (result: CState)
 requires
     s.valid(),
     c.valid(),
-    s.phase is Idle,
+    s.phase is CIdle,
     (*b > s.proposer_bal),
 ensures
     result.valid(),
@@ -81,12 +90,12 @@ ensures
         promises_rcvd: HashSet::new(),
         highest_accepted_bal: 0u64,
         highest_accepted_val: 0u64,
-        proposed_val: s.proposed_val,
-        promised_bal: s.promised_bal,
-        accepted_bal: s.accepted_bal,
-        accepted_val: s.accepted_val,
+        proposed_val: s.proposed_val.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
         accepts_rcvd: clone_hashset(&s.accepts_rcvd),
-        decided_val: s.decided_val,
+        decided_val: s.decided_val.clone(),
         phase: CPhase::Phase1,
     };
     proof {
@@ -107,16 +116,16 @@ ensures
 {
 CState {
         promised_bal: *b,
-        accepted_bal: s.accepted_bal,
-        accepted_val: s.accepted_val,
-        proposer_bal: s.proposer_bal,
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        proposer_bal: s.proposer_bal.clone(),
         phase: clone_phase(&s.phase),
         promises_rcvd: clone_hashset(&s.promises_rcvd),
-        highest_accepted_bal: s.highest_accepted_bal,
-        highest_accepted_val: s.highest_accepted_val,
-        proposed_val: s.proposed_val,
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
         accepts_rcvd: clone_hashset(&s.accepts_rcvd),
-        decided_val: s.decided_val,
+        decided_val: s.decided_val.clone(),
     }
 }
 
@@ -124,7 +133,7 @@ pub exec fn CRecvPromise(s: &CState, c: &CConstants, a: &u64, a_accepted_bal: &u
 requires
     s.valid(),
     c.valid(),
-    s.phase is Phase1,
+    s.phase is CPhase1,
     c@.acceptors.contains(*a as int),
     !s@.promises_rcvd.contains(*a as int),
 ensures
@@ -133,31 +142,65 @@ ensures
 {
     let result = {
         let mut __promises_rcvd = clone_hashset(&s.promises_rcvd);
-        __promises_rcvd.insert(*a);
+        __promises_rcvd.insert(a.clone());
         CState {
             promises_rcvd: __promises_rcvd,
             highest_accepted_bal: if (*a_accepted_bal > s.highest_accepted_bal) {
                 *a_accepted_bal
             } else {
-                s.highest_accepted_bal
+                s.highest_accepted_bal.clone()
             },
             highest_accepted_val: if (*a_accepted_bal > s.highest_accepted_bal) {
                 *a_accepted_val
             } else {
-                s.highest_accepted_val
+                s.highest_accepted_val.clone()
             },
-            proposer_bal: s.proposer_bal,
-            proposed_val: s.proposed_val,
-            promised_bal: s.promised_bal,
-            accepted_bal: s.accepted_bal,
-            accepted_val: s.accepted_val,
+            proposer_bal: s.proposer_bal.clone(),
+            proposed_val: s.proposed_val.clone(),
+            promised_bal: s.promised_bal.clone(),
+            accepted_bal: s.accepted_bal.clone(),
+            accepted_val: s.accepted_val.clone(),
             accepts_rcvd: clone_hashset(&s.accepts_rcvd),
-            decided_val: s.decided_val,
+            decided_val: s.decided_val.clone(),
             phase: CPhase::Phase1,
         }
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+    }
+    result
+
+}
+
+pub exec fn CSend2a(s: &CState, c: &CConstants, v: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is CPhase1,
+    (s@.promises_rcvd.len() >= c.quorum_size),
+ensures
+    result.valid(),
+    LSend2a(s@, result@, c@, *v as int),
+{
+    let result = CState {
+        proposed_val: if (s.highest_accepted_bal > 0) {
+            s.highest_accepted_val.clone()
+        } else {
+            *v
+        },
+        accepts_rcvd: HashSet::new(),
+        proposer_bal: s.proposer_bal.clone(),
+        promises_rcvd: clone_hashset(&s.promises_rcvd),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        decided_val: s.decided_val.clone(),
+        phase: CPhase::Phase2,
+    };
+    proof {
+        lemma_empty_set_map();
     }
     result
 
@@ -176,14 +219,14 @@ CState {
         promised_bal: *b,
         accepted_bal: *b,
         accepted_val: *v,
-        proposer_bal: s.proposer_bal,
+        proposer_bal: s.proposer_bal.clone(),
         phase: clone_phase(&s.phase),
         promises_rcvd: clone_hashset(&s.promises_rcvd),
-        highest_accepted_bal: s.highest_accepted_bal,
-        highest_accepted_val: s.highest_accepted_val,
-        proposed_val: s.proposed_val,
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
         accepts_rcvd: clone_hashset(&s.accepts_rcvd),
-        decided_val: s.decided_val,
+        decided_val: s.decided_val.clone(),
     }
 }
 
@@ -191,7 +234,7 @@ pub exec fn CRecvAccepted(s: &CState, c: &CConstants, a: &u64) -> (result: CStat
 requires
     s.valid(),
     c.valid(),
-    s.phase is Phase2,
+    s.phase is CPhase2,
     c@.acceptors.contains(*a as int),
     !s@.accepts_rcvd.contains(*a as int),
 ensures
@@ -200,18 +243,18 @@ ensures
 {
     let result = {
         let mut __accepts_rcvd = clone_hashset(&s.accepts_rcvd);
-        __accepts_rcvd.insert(*a);
+        __accepts_rcvd.insert(a.clone());
         CState {
             accepts_rcvd: __accepts_rcvd,
-            proposer_bal: s.proposer_bal,
+            proposer_bal: s.proposer_bal.clone(),
             promises_rcvd: clone_hashset(&s.promises_rcvd),
-            highest_accepted_bal: s.highest_accepted_bal,
-            highest_accepted_val: s.highest_accepted_val,
-            proposed_val: s.proposed_val,
-            promised_bal: s.promised_bal,
-            accepted_bal: s.accepted_bal,
-            accepted_val: s.accepted_val,
-            decided_val: s.decided_val,
+            highest_accepted_bal: s.highest_accepted_bal.clone(),
+            highest_accepted_val: s.highest_accepted_val.clone(),
+            proposed_val: s.proposed_val.clone(),
+            promised_bal: s.promised_bal.clone(),
+            accepted_bal: s.accepted_bal.clone(),
+            accepted_val: s.accepted_val.clone(),
+            decided_val: s.decided_val.clone(),
             phase: CPhase::Phase2,
         }
     };
@@ -220,6 +263,31 @@ ensures
     }
     result
 
+}
+
+pub exec fn CLearn(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is CPhase2,
+    (s@.accepts_rcvd.len() >= c.quorum_size),
+ensures
+    result.valid(),
+    LLearn(s@, result@, c@),
+{
+CState {
+        decided_val: s.proposed_val.clone(),
+        proposer_bal: s.proposer_bal.clone(),
+        promises_rcvd: clone_hashset(&s.promises_rcvd),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
+        accepts_rcvd: clone_hashset(&s.accepts_rcvd),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        phase: CPhase::Decided,
+    }
 }
 
 } // verus!

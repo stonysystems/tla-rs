@@ -23000,6 +23000,80 @@ mod tests {
     }
 
     #[test]
+    fn test_cast_len_to_u64_wraps_len_method() {
+        // .len() method call should be wrapped in `as u64`
+        let len_call = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("s".to_string())),
+            method: "len".to_string(),
+            args: vec![],
+        };
+        let result = Translator::cast_len_to_u64(len_call);
+        match &result {
+            ExecExpr::Cast(inner, ty) => {
+                assert_eq!(ty, "u64");
+                assert!(matches!(inner.as_ref(), ExecExpr::MethodCall { method, args, .. }
+                    if method == "len" && args.is_empty()));
+            }
+            _ => panic!("Expected Cast, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_cast_len_to_u64_ignores_other_methods() {
+        // Non-len method calls should pass through unchanged
+        let other_call = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("s".to_string())),
+            method: "contains".to_string(),
+            args: vec![ExecExpr::Var("x".to_string())],
+        };
+        let result = Translator::cast_len_to_u64(other_call);
+        assert!(matches!(&result, ExecExpr::MethodCall { method, .. } if method == "contains"));
+    }
+
+    #[test]
+    fn test_set_len_ge_threshold_in_binary_comparison() {
+        // Test that s.promises_rcvd.len() >= c.quorum_size generates
+        // (s.promises_rcvd.len() as u64) >= c.quorum_size
+        let translator = Translator::default();
+        let ctx = make_ctx();
+
+        // Build: s.promises_rcvd.len() >= c.quorum_size
+        // s.promises_rcvd is Field access, .len() is MethodCall
+        let field_access = Expr::Field(
+            Box::new(Expr::Ident("s".to_string())),
+            "promises_rcvd".to_string(),
+        );
+        let lhs = Expr::MethodCall {
+            receiver: Box::new(field_access),
+            method: "len".to_string(),
+            args: vec![],
+        };
+        let rhs = Expr::Field(
+            Box::new(Expr::Ident("c".to_string())),
+            "quorum_size".to_string(),
+        );
+        let expr = Expr::Ge(
+            Box::new(lhs),
+            Box::new(rhs),
+        );
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        // The result should be a Binary with op ">=" where lhs is Cast(.len(), u64)
+        match &result {
+            ExecExpr::Binary { op, lhs, .. } => {
+                assert_eq!(op, ">=");
+                match lhs.as_ref() {
+                    ExecExpr::Cast(inner, ty) => {
+                        assert_eq!(ty, "u64");
+                        assert!(matches!(inner.as_ref(), ExecExpr::MethodCall { method, .. } if method == "len"));
+                    }
+                    _ => panic!("Expected Cast on lhs, got {:?}", lhs),
+                }
+            }
+            _ => panic!("Expected Binary, got {:?}", result),
+        }
+    }
+
+    #[test]
     fn test_assume_postconditions_default_false() {
         let config = TranslatorConfig::default();
         assert!(!config.assume_postconditions, "assume_postconditions should default to false");

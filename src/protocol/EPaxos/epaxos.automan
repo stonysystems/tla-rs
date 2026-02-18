@@ -3,11 +3,11 @@ module EPaxos::epaxos {
     LPropose(+, -, +, +);
     LSendPreAcceptOk(+, -, +, +, +);
     LReceivePreAcceptOk(+, -, +);
-    // LFastCommit not transpiled (uses Set::len() for quorum check)
-    // LStartAccept not transpiled (uses Set::len() for quorum check)
+    LFastCommit(+, -, +);
+    LStartAccept(+, -, +);
     LSendAcceptOk(+, -, +);
     LReceiveAcceptOk(+, -, +);
-    // LSlowCommit not transpiled (uses Set::len() for quorum check)
+    LSlowCommit(+, -, +);
     LExecute(+, -, +);
     LRecover(+, -, +, +);
     LNewInstance(+, -, +);
