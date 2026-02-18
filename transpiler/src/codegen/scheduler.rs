@@ -8,7 +8,9 @@
 //! using name-based heuristics and optional message variant mapping.
 
 use crate::ast::{Binding, Expr, Path, SpecFunction, Type};
-use crate::config::{MessageVariant, RoleConfig, RoleDispatchConfig, SchedulerActionConfig};
+use crate::config::{MessageVariant, RoleDispatchConfig, SchedulerActionConfig};
+#[cfg(test)]
+use crate::config::RoleConfig;
 
 /// How an action is triggered at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

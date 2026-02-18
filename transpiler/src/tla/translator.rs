@@ -2522,7 +2522,7 @@ mod tests {
 
     #[test]
     fn test_operator_uses_primes() {
-        let mut translator = ModuleTranslator::new();
+        let translator = ModuleTranslator::new();
 
         // Expression without primes
         let expr1 = TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("x"), TlaExpr::number(0));
