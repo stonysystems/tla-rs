@@ -1159,4 +1159,281 @@ mod tests {
             output
         );
     }
+
+    #[test]
+    fn test_print_var() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Var("x".to_string()));
+        assert_eq!(printer.output, "x");
+    }
+
+    #[test]
+    fn test_print_literal() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Literal("42".to_string()));
+        assert_eq!(printer.output, "42");
+    }
+
+    #[test]
+    fn test_print_clone() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string()))));
+        assert_eq!(printer.output, "s.clone()");
+    }
+
+    #[test]
+    fn test_print_field() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "bal".to_string(),
+        ));
+        assert_eq!(printer.output, "s.bal");
+    }
+
+    #[test]
+    fn test_print_call() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Call {
+            func: "foo".to_string(),
+            args: vec![
+                ExecExpr::Var("x".to_string()),
+                ExecExpr::Literal("1".to_string()),
+            ],
+        });
+        assert_eq!(printer.output, "foo(x, 1)");
+    }
+
+    #[test]
+    fn test_print_method_call() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("v".to_string())),
+            method: "push".to_string(),
+            args: vec![ExecExpr::Literal("1".to_string())],
+        });
+        assert_eq!(printer.output, "v.push(1)");
+    }
+
+    #[test]
+    fn test_print_method_call_index() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("v".to_string())),
+            method: "index".to_string(),
+            args: vec![ExecExpr::Literal("0".to_string())],
+        });
+        assert_eq!(printer.output, "v[0]");
+    }
+
+    #[test]
+    fn test_print_vec_lit() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::VecLit(vec![
+            ExecExpr::Literal("1".to_string()),
+            ExecExpr::Literal("2".to_string()),
+        ]));
+        assert_eq!(printer.output, "vec![1, 2]");
+    }
+
+    #[test]
+    fn test_print_tuple() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Tuple(vec![
+            ExecExpr::Var("x".to_string()),
+            ExecExpr::Var("y".to_string()),
+        ]));
+        assert_eq!(printer.output, "(x, y)");
+    }
+
+    #[test]
+    fn test_print_return() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Return(Box::new(ExecExpr::Var(
+            "result".to_string(),
+        ))));
+        assert_eq!(printer.output, "return result");
+    }
+
+    #[test]
+    fn test_print_match_simple() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Match {
+            scrutinee: Box::new(ExecExpr::Var("x".to_string())),
+            arms: vec![
+                ("A".to_string(), ExecExpr::Literal("1".to_string())),
+                ("B".to_string(), ExecExpr::Literal("2".to_string())),
+            ],
+        });
+        let output = &printer.output;
+        assert!(output.contains("match x {"), "expected match header: {}", output);
+        assert!(output.contains("A => 1,"), "expected arm A: {}", output);
+        assert!(output.contains("B => 2,"), "expected arm B: {}", output);
+    }
+
+    #[test]
+    fn test_print_struct_update() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::StructUpdate {
+            name: "Name".to_string(),
+            base: Box::new(ExecExpr::Var("base".to_string())),
+            fields: vec![("field".to_string(), ExecExpr::Var("val".to_string()))],
+        });
+        let output = &printer.output;
+        assert!(
+            output.contains("Name {"),
+            "expected struct name: {}",
+            output
+        );
+        assert!(
+            output.contains("field: val"),
+            "expected field assignment: {}",
+            output
+        );
+        assert!(
+            output.contains("..base"),
+            "expected base update syntax: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_print_binary_assignment() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: "=".to_string(),
+            rhs: Box::new(ExecExpr::Var("y".to_string())),
+        });
+        assert_eq!(printer.output, "x = y");
+    }
+
+    #[test]
+    fn test_print_binary_comparison() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: ">".to_string(),
+            rhs: Box::new(ExecExpr::Var("y".to_string())),
+        });
+        assert_eq!(printer.output, "(x > y)");
+    }
+
+    #[test]
+    fn test_print_unary() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Unary {
+            op: "!".to_string(),
+            expr: Box::new(ExecExpr::Var("x".to_string())),
+        });
+        assert_eq!(printer.output, "!x");
+    }
+
+    #[test]
+    fn test_print_range() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Range {
+            start: Box::new(ExecExpr::Literal("0".to_string())),
+            end: Box::new(ExecExpr::Var("n".to_string())),
+        });
+        assert_eq!(printer.output, "(0..n)");
+    }
+
+    #[test]
+    fn test_print_closure() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Closure {
+            params: vec!["x".to_string()],
+            body: Box::new(ExecExpr::Var("x".to_string())),
+        });
+        assert_eq!(printer.output, "|x| x");
+    }
+
+    #[test]
+    fn test_print_comment() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Comment("hello".to_string()));
+        assert_eq!(printer.output, "// hello");
+    }
+
+    #[test]
+    fn test_print_cast() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Cast(
+            Box::new(ExecExpr::Var("x".to_string())),
+            "u64".to_string(),
+        ));
+        assert_eq!(printer.output, "(x as u64)");
+    }
+
+    #[test]
+    fn test_print_break() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Break);
+        assert_eq!(printer.output, "break;");
+    }
+
+    #[test]
+    fn test_print_matches_variant() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Matches {
+            expr: Box::new(ExecExpr::Var("expr".to_string())),
+            pattern: "Pat".to_string(),
+            is_struct_variant: true,
+        });
+        assert_eq!(printer.output, "matches!(expr, Pat { .. })");
+    }
+
+    #[test]
+    fn test_print_is_variant() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::IsVariant {
+            expr: Box::new(ExecExpr::Var("expr".to_string())),
+            variant: "CEnum::Var1".to_string(),
+        });
+        assert_eq!(printer.output, "expr is Var1");
+    }
+
+    #[test]
+    fn test_print_arrow_access() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::ArrowAccess {
+            base: Box::new(ExecExpr::Var("base".to_string())),
+            field: "field".to_string(),
+        });
+        assert_eq!(printer.output, "base->field");
+    }
+
+    #[test]
+    fn test_print_while_loop_empty_invariants() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::WhileLoop {
+            cond: Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Var("i".to_string())),
+                op: "<".to_string(),
+                rhs: Box::new(ExecExpr::Var("n".to_string())),
+            }),
+            invariants: vec![],
+            decreases: None,
+            body: Box::new(ExecExpr::Block(vec![])),
+        });
+        let output = &printer.output;
+        assert!(output.contains("while (i < n)"), "expected while header: {}", output);
+        assert!(
+            !output.contains("invariant"),
+            "empty invariants should produce no invariant line: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_print_let_with_type() {
+        let mut printer = Printer::default();
+        printer.print_expr(&ExecExpr::Let {
+            pattern: "x".to_string(),
+            ty: Some(ExecType::Named("u64".to_string())),
+            value: Box::new(ExecExpr::Literal("42".to_string())),
+        });
+        assert_eq!(printer.output, "let x: u64 = 42;");
+    }
 }

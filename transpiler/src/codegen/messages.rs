@@ -504,4 +504,225 @@ mod tests {
         assert!(code.contains("//! Test protocol.\n//! Line 2."));
         assert!(code.contains("/// A ping message"));
     }
+
+    // --- variant_to_tag_name edge cases ---
+
+    #[test]
+    fn test_variant_to_tag_single_char() {
+        assert_eq!(variant_to_tag_name("A"), "TAG_A");
+    }
+
+    #[test]
+    fn test_variant_to_tag_with_numbers() {
+        assert_eq!(variant_to_tag_name("Msg2"), "TAG_MSG2");
+    }
+
+    #[test]
+    fn test_variant_to_tag_all_caps() {
+        assert_eq!(variant_to_tag_name("PREPARE"), "TAG_PREPARE");
+    }
+
+    #[test]
+    fn test_variant_to_tag_consecutive_caps() {
+        assert_eq!(variant_to_tag_name("PrepareOK"), "TAG_PREPARE_OK");
+    }
+
+    // --- generate_message_code scenarios ---
+
+    #[test]
+    fn test_generate_single_variant_enum() {
+        let config = MessageConfig {
+            enum_name: "SingleMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Foo".to_string(),
+                fields: vec![vec!["x".to_string(), "u64".to_string()]],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        assert!(code.contains("pub enum SingleMsg"));
+        assert!(code.contains("const TAG_FOO: u64 = 1;"));
+        assert!(code.contains("SingleMsg::Foo { x }"));
+    }
+
+    #[test]
+    fn test_generate_many_fields_offsets() {
+        let fields: Vec<Vec<String>> = (0..6)
+            .map(|i| vec![format!("f{}", i), "u64".to_string()])
+            .collect();
+        let config = MessageConfig {
+            enum_name: "BigMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Wide".to_string(),
+                fields,
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        // Total: tag(8) + 6*8 = 56
+        assert!(code.contains("if data.len() < 56"), "Should check length 56: {}", code);
+        // Check individual offsets
+        assert!(code.contains("read_u64(data, 8)"), "f0 at offset 8");
+        assert!(code.contains("read_u64(data, 16)"), "f1 at offset 16");
+        assert!(code.contains("read_u64(data, 40)"), "f4 at offset 40");
+        assert!(code.contains("read_u64(data, 48)"), "f5 at offset 48");
+    }
+
+    #[test]
+    fn test_generate_multiple_bool_fields() {
+        let config = MessageConfig {
+            enum_name: "BoolMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Flags".to_string(),
+                fields: vec![
+                    vec!["a".to_string(), "bool".to_string()],
+                    vec!["b".to_string(), "bool".to_string()],
+                    vec!["c".to_string(), "bool".to_string()],
+                ],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        assert!(code.contains("let a_val: u64 = if *a { 1 } else { 0 };"));
+        assert!(code.contains("let b_val: u64 = if *b { 1 } else { 0 };"));
+        assert!(code.contains("let c_val: u64 = if *c { 1 } else { 0 };"));
+        assert!(code.contains("let a = read_u64(data, 8) != 0;"));
+        assert!(code.contains("let b = read_u64(data, 16) != 0;"));
+        assert!(code.contains("let c = read_u64(data, 24) != 0;"));
+    }
+
+    #[test]
+    fn test_generate_mixed_u64_bool_interleaved() {
+        let config = MessageConfig {
+            enum_name: "MixMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Mix".to_string(),
+                fields: vec![
+                    vec!["a".to_string(), "u64".to_string()],
+                    vec!["b".to_string(), "bool".to_string()],
+                    vec!["c".to_string(), "u64".to_string()],
+                    vec!["d".to_string(), "bool".to_string()],
+                ],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        // a: u64 at offset 8, b: bool at offset 16, c: u64 at offset 24, d: bool at offset 32
+        assert!(code.contains("let a = read_u64(data, 8);"), "a at 8: {}", code);
+        assert!(code.contains("let b = read_u64(data, 16) != 0;"), "b bool at 16");
+        assert!(code.contains("let c = read_u64(data, 24);"), "c at 24: {}", code);
+        assert!(code.contains("let d = read_u64(data, 32) != 0;"), "d bool at 32");
+        // Total: tag(8) + 4*8 = 40
+        assert!(code.contains("if data.len() < 40"));
+    }
+
+    #[test]
+    fn test_generate_empty_doc_comment() {
+        let config = MessageConfig {
+            enum_name: "NoDocMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Ping".to_string(),
+                fields: vec![],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        assert!(!code.contains("//!"), "Empty doc_comment should produce no //! lines");
+    }
+
+    #[test]
+    fn test_generate_multiline_doc_comment() {
+        let config = MessageConfig {
+            enum_name: "DocMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: "Line one.\nLine two.\nLine three.".to_string(),
+            variants: vec![MessageVariant {
+                name: "Ping".to_string(),
+                fields: vec![],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        assert!(code.contains("//! Line one.\n//! Line two.\n//! Line three."));
+    }
+
+    #[test]
+    fn test_generate_sequential_tags() {
+        let variants: Vec<MessageVariant> = (1..=5)
+            .map(|i| MessageVariant {
+                name: format!("V{}", i),
+                fields: vec![],
+                doc: String::new(),
+            })
+            .collect();
+        let config = MessageConfig {
+            enum_name: "SeqMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants,
+        };
+        let code = generate_message_code(&config);
+        for i in 1..=5 {
+            assert!(code.contains(&format!("const TAG_V{}: u64 = {};", i, i)));
+        }
+    }
+
+    #[test]
+    fn test_generate_custom_import_path() {
+        let config = MessageConfig {
+            enum_name: "CustomMsg".to_string(),
+            import_path: "my_crate::custom::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Ping".to_string(),
+                fields: vec![],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        assert!(code.contains("use my_crate::custom::ProtocolMessage;"));
+    }
+
+    #[test]
+    fn test_generate_deser_dispatch() {
+        let config = MessageConfig {
+            enum_name: "DispMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![
+                MessageVariant { name: "A".to_string(), fields: vec![], doc: String::new() },
+                MessageVariant { name: "B".to_string(), fields: vec![], doc: String::new() },
+            ],
+        };
+        let code = generate_message_code(&config);
+        assert!(code.contains("match tag {"), "Should have match tag dispatch");
+        assert!(code.contains("_ => None"), "Should have fallback None arm");
+    }
+
+    #[test]
+    fn test_generate_read_u64_helper() {
+        let config = MessageConfig {
+            enum_name: "HelpMsg".to_string(),
+            import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
+            doc_comment: String::new(),
+            variants: vec![MessageVariant {
+                name: "Ping".to_string(),
+                fields: vec![vec!["id".to_string(), "u64".to_string()]],
+                doc: String::new(),
+            }],
+        };
+        let code = generate_message_code(&config);
+        assert!(code.contains("fn read_u64"));
+        assert!(code.contains("u64::from_le_bytes"));
+    }
 }

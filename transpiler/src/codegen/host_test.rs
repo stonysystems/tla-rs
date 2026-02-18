@@ -1015,4 +1015,281 @@ ensures
         // Should have our clone_hashset stub
         assert!(result.contains("fn clone_hashset"), "Should have clone_hashset stub: {}", result);
     }
+
+    // --- skip_requires_ensures tests ---
+
+    #[test]
+    fn test_skip_requires_ensures_simple() {
+        let lines = vec!["requires", "    c.valid(),", "ensures", "    result.valid(),", "{"];
+        assert_eq!(skip_requires_ensures(&lines, 0), 4);
+    }
+
+    #[test]
+    fn test_skip_requires_ensures_brace_at_start() {
+        let lines = vec!["{", "    x", "}"];
+        assert_eq!(skip_requires_ensures(&lines, 0), 0);
+    }
+
+    #[test]
+    fn test_skip_requires_ensures_struct_body() {
+        let lines = vec!["requires", "    s.valid(),", "CState {"];
+        assert_eq!(skip_requires_ensures(&lines, 0), 2);
+    }
+
+    // --- emit_function_body tests ---
+
+    #[test]
+    fn test_emit_function_body_simple() {
+        let lines = vec!["{", "    return 42;", "}"];
+        let mut result = String::new();
+        let end = emit_function_body(&lines, 0, &mut result);
+        assert_eq!(end, 3);
+        assert!(result.contains("return 42;"));
+    }
+
+    #[test]
+    fn test_emit_function_body_strips_proof() {
+        let lines = vec!["{", "    let x = 1;", "    proof {", "        lemma();", "    }", "    x", "}"];
+        let mut result = String::new();
+        let end = emit_function_body(&lines, 0, &mut result);
+        assert_eq!(end, 7);
+        assert!(result.contains("let x = 1;"));
+        assert!(!result.contains("lemma()"));
+    }
+
+    #[test]
+    fn test_emit_function_body_nested_braces() {
+        let lines = vec!["{", "    if true {", "        42", "    }", "}"];
+        let mut result = String::new();
+        let end = emit_function_body(&lines, 0, &mut result);
+        assert_eq!(end, 5);
+        assert!(result.contains("if true {"));
+    }
+
+    #[test]
+    fn test_emit_function_body_empty() {
+        let lines: Vec<&str> = vec![];
+        let mut result = String::new();
+        let end = emit_function_body(&lines, 0, &mut result);
+        assert_eq!(end, 0);
+    }
+
+    // --- collect_function_names tests ---
+
+    #[test]
+    fn test_collect_function_names_multiple() {
+        let code = "pub fn CInit(c: &CConstants) -> CState {\n}\nfn helper(x: u64) -> u64 {\n}";
+        let names = collect_function_names(code);
+        assert_eq!(names, vec!["CInit", "helper"]);
+    }
+
+    #[test]
+    fn test_collect_function_names_generic() {
+        let code = "fn clone_hashset<K: Hash + Eq + Clone>(s: &HashSet<K>) -> HashSet<K> { s.clone() }";
+        let names = collect_function_names(code);
+        assert_eq!(names, vec!["clone_hashset"]);
+    }
+
+    #[test]
+    fn test_collect_function_names_no_fns() {
+        let code = "let x = 5;\nstruct Foo {}";
+        let names = collect_function_names(code);
+        assert!(names.is_empty());
+    }
+
+    // --- extract_type_name tests ---
+
+    #[test]
+    fn test_extract_type_name_with_generics() {
+        assert_eq!(
+            extract_type_name("pub struct State<T> {"),
+            Some("State<T>".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_type_name_not_a_type() {
+        assert_eq!(extract_type_name("let x = 5;"), None);
+    }
+
+    // --- extract_struct_name_from_clone_impl tests ---
+
+    #[test]
+    fn test_extract_clone_name_with_generic() {
+        assert_eq!(
+            extract_struct_name_from_clone_impl("impl Clone for Vec<T> {"),
+            Some("Vec<T>".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_clone_name_no_match() {
+        assert_eq!(extract_struct_name_from_clone_impl("impl Display for Foo {"), None);
+    }
+
+    // --- skip_brace_block tests ---
+
+    #[test]
+    fn test_skip_brace_block_simple() {
+        let lines = vec!["{", "  x", "}"];
+        assert_eq!(skip_brace_block(&lines, 0), 3);
+    }
+
+    #[test]
+    fn test_skip_brace_block_nested() {
+        let lines = vec!["{", "  {", "    x", "  }", "}"];
+        assert_eq!(skip_brace_block(&lines, 0), 5);
+    }
+
+    #[test]
+    fn test_skip_brace_block_brace_on_later_line() {
+        let lines = vec!["fn foo()", "-> u64", "{", "    42", "}"];
+        assert_eq!(skip_brace_block(&lines, 0), 5);
+    }
+
+    // --- impl_block_is_spec_only tests ---
+
+    #[test]
+    fn test_impl_block_is_spec_only_true() {
+        let lines = vec!["impl CState {", "    pub open spec fn view(&self) -> LState { }", "}"];
+        assert!(impl_block_is_spec_only(&lines, 0));
+    }
+
+    #[test]
+    fn test_impl_block_is_spec_only_false() {
+        let lines = vec!["impl CState {", "    pub fn helper(&self) -> u64 { 42 }", "}"];
+        assert!(!impl_block_is_spec_only(&lines, 0));
+    }
+
+    // --- is_external_body_helper tests ---
+
+    #[test]
+    fn test_is_external_body_helper_clone_hashset() {
+        let lines = vec!["#[verifier(external_body)]", "fn clone_hashset<K>(s: &HashSet<K>) -> HashSet<K>"];
+        assert!(is_external_body_helper(&lines, 0));
+    }
+
+    #[test]
+    fn test_is_external_body_helper_clone_log() {
+        let lines = vec!["#[verifier(external_body)]", "fn clone_log(v: &Vec<CLogEntry>) -> Vec<CLogEntry>"];
+        assert!(is_external_body_helper(&lines, 0));
+    }
+
+    #[test]
+    fn test_is_external_body_helper_other_fn() {
+        let lines = vec!["#[verifier(external_body)]", "fn other_fn() -> u64"];
+        assert!(!is_external_body_helper(&lines, 0));
+    }
+
+    #[test]
+    fn test_is_external_body_helper_not_annotation() {
+        let lines = vec!["fn clone_hashset<K>(s: &HashSet<K>) -> HashSet<K>"];
+        assert!(!is_external_body_helper(&lines, 0));
+    }
+
+    // --- strip_verus_gen with skip_fns ---
+
+    #[test]
+    fn test_strip_verus_gen_skips_duplicate_fns() {
+        let input = "verus! {\n\npub exec fn Cu64_inc(x: u64) -> (result: u64)\nrequires\n    x < u64::MAX,\nensures\n    result == x + 1,\n{\n    x + 1\n}\n\n} // verus!\n";
+        let skip = vec!["Cu64_inc".to_string()];
+        let result = strip_verus_gen(input, &skip);
+        assert!(!result.contains("pub fn Cu64_inc"), "Should skip Cu64_inc: {}", result);
+    }
+
+    #[test]
+    fn test_strip_verus_gen_keeps_non_skipped() {
+        let input = "verus! {\n\npub exec fn CInit(c: &CConstants) -> (result: CState)\n{\n    CState {}\n}\n\npub exec fn CDoThing(s: &CState) -> (result: CState)\n{\n    CState {}\n}\n\n} // verus!\n";
+        let skip = vec!["CDoThing".to_string()];
+        let result = strip_verus_gen(input, &skip);
+        assert!(result.contains("pub fn CInit"), "Should keep CInit");
+        assert!(!result.contains("pub fn CDoThing"), "Should skip CDoThing");
+    }
+
+    #[test]
+    fn test_strip_verus_gen_clone_log_only_when_used() {
+        let input = "verus! {\n\npub exec fn CInit(c: &CConstants) -> (result: CState)\n{\n    CState {}\n}\n\n} // verus!\n";
+        let result = strip_verus_gen(input, &[]);
+        assert!(result.contains("fn clone_hashset"), "Always has clone_hashset stub");
+        assert!(!result.contains("fn clone_log"), "Should not have clone_log when not used");
+    }
+
+    #[test]
+    fn test_strip_verus_gen_clone_log_when_used() {
+        let input = "verus! {\n\npub exec fn CInit(c: &CConstants) -> (result: CState)\n{\n    let log = clone_log(&old_log);\n    CState { log }\n}\n\n} // verus!\n";
+        let result = strip_verus_gen(input, &[]);
+        assert!(result.contains("fn clone_log"), "Should have clone_log when used");
+    }
+
+    // --- strip_verus_types additional tests ---
+
+    #[test]
+    fn test_strip_verus_types_removes_spec_fn() {
+        let input = "verus! {\n\npub struct CState {\n    pub x: u64,\n}\n\npub open spec fn valid_state(s: CState) -> bool {\n    s.x < 100\n}\n\n} // verus!\n";
+        let result = strip_verus_types(input);
+        assert!(result.contains("pub struct CState"));
+        assert!(!result.contains("valid_state"));
+    }
+
+    // --- fixup_host_imports tests ---
+
+    #[test]
+    fn test_fixup_host_imports_strips_crate_imports() {
+        let code = "use crate::generated::Foo::types_gen::*;\nuse std::collections::HashMap;\npub struct FooHost {}";
+        let result = fixup_host_imports(code, "foo_gen", "Foo");
+        assert!(!result.contains("use crate::"));
+        assert!(!result.contains("use std::collections::"));
+        assert!(result.contains("pub struct FooHost"));
+    }
+
+    #[test]
+    fn test_fixup_host_imports_strips_qualified_prefix() {
+        let code = "use foo_gen::CInit;\nlet x = foo_gen::CDoThing(&s);";
+        let result = fixup_host_imports(code, "foo_gen", "Foo");
+        assert!(result.contains("CDoThing(&s)"));
+        assert!(!result.contains("foo_gen::CDoThing"));
+    }
+
+    #[test]
+    fn test_fixup_host_imports_converts_inner_doc() {
+        let code = "//! This is a host module.\npub struct Host {}";
+        let result = fixup_host_imports(code, "gen", "Proto");
+        assert!(result.contains("// This is a host module."));
+        assert!(!result.contains("//!"));
+    }
+
+    // --- host_type_name / config_type_name tests ---
+
+    #[test]
+    fn test_host_type_name_chain_replication() {
+        assert_eq!(host_type_name("ChainReplication"), "ChainHost");
+    }
+
+    #[test]
+    fn test_host_type_name_default() {
+        assert_eq!(host_type_name("Paxos"), "PaxosHost");
+        assert_eq!(host_type_name("Raft"), "RaftHost");
+    }
+
+    #[test]
+    fn test_config_type_name_chain_replication() {
+        assert_eq!(config_type_name("ChainReplication"), "ChainConfig");
+    }
+
+    #[test]
+    fn test_config_type_name_default() {
+        assert_eq!(config_type_name("Paxos"), "PaxosConfig");
+        assert_eq!(config_type_name("Raft"), "RaftConfig");
+    }
+
+    // --- strip_message_imports tests ---
+
+    #[test]
+    fn test_strip_message_imports_basic() {
+        let code = "use crate::common::framework::protocol_trait::ProtocolMessage;\n//! Module doc.\npub enum TestMsg {}";
+        let result = strip_message_imports(code);
+        assert!(!result.contains("use crate::"));
+        assert!(!result.contains("//!"));
+        assert!(result.contains("pub enum TestMsg {}"));
+    }
 }

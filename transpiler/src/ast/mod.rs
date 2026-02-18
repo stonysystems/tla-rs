@@ -424,4 +424,202 @@ mod tests {
         };
         assert_eq!(ghost_param.variable_mode, VariableMode::Ghost);
     }
+
+    // --- Binding tests ---
+
+    #[test]
+    fn test_binding_name_ident() {
+        let binding = Binding {
+            pattern: Pattern::Ident("x".to_string()),
+            ty: None,
+            variable_mode: VariableMode::Exec,
+        };
+        assert_eq!(binding.name(), Some("x"));
+    }
+
+    #[test]
+    fn test_binding_name_wildcard() {
+        let binding = Binding {
+            pattern: Pattern::Wildcard,
+            ty: None,
+            variable_mode: VariableMode::Exec,
+        };
+        assert_eq!(binding.name(), None);
+    }
+
+    #[test]
+    fn test_binding_name_string() {
+        let binding = Binding {
+            pattern: Pattern::Ident("foo".to_string()),
+            ty: None,
+            variable_mode: VariableMode::Exec,
+        };
+        assert_eq!(binding.name_string(), "foo");
+    }
+
+    // --- Type construction tests ---
+
+    #[test]
+    fn test_type_reference() {
+        let immut = Type::Reference { ty: Box::new(Type::Bool), mutable: false };
+        let mutable = Type::Reference { ty: Box::new(Type::Int), mutable: true };
+        assert!(matches!(immut, Type::Reference { mutable: false, .. }));
+        assert!(matches!(mutable, Type::Reference { mutable: true, .. }));
+    }
+
+    #[test]
+    fn test_type_generic_multiple_args() {
+        let generic = Type::Generic(
+            Path::single("HashMap".to_string()),
+            vec![Type::Int, Type::Bool],
+        );
+        if let Type::Generic(path, args) = &generic {
+            assert_eq!(path.last(), Some("HashMap"));
+            assert_eq!(args.len(), 2);
+        } else {
+            panic!("Expected Type::Generic");
+        }
+    }
+
+    #[test]
+    fn test_type_seq_set_map() {
+        let seq = Type::Seq(Box::new(Type::Int));
+        let set = Type::Set(Box::new(Type::Bool));
+        let map = Type::Map(Box::new(Type::Int), Box::new(Type::Bool));
+        assert!(matches!(seq, Type::Seq(_)));
+        assert!(matches!(set, Type::Set(_)));
+        assert!(matches!(map, Type::Map(_, _)));
+    }
+
+    // --- Path tests ---
+
+    #[test]
+    fn test_path_single_and_last() {
+        let p = Path::single("Foo".to_string());
+        assert_eq!(p.segments.len(), 1);
+        assert_eq!(p.last(), Some("Foo"));
+    }
+
+    #[test]
+    fn test_path_multiple_segments() {
+        let p = Path::new(vec!["A".into(), "B".into(), "C".into()]);
+        assert_eq!(p.segments.len(), 3);
+        assert_eq!(p.last(), Some("C"));
+    }
+
+    // --- Expr tests ---
+
+    #[test]
+    fn test_expr_struct_fields() {
+        let expr = Expr::Struct {
+            name: Path::single("MyStruct".into()),
+            fields: vec![
+                ("a".into(), Expr::Literal(Literal::Int(1))),
+                ("b".into(), Expr::Literal(Literal::Bool(true))),
+                ("c".into(), Expr::Ident("x".into())),
+            ],
+        };
+        if let Expr::Struct { name, fields } = &expr {
+            assert_eq!(name.last(), Some("MyStruct"));
+            assert_eq!(fields.len(), 3);
+            assert_eq!(fields[0].0, "a");
+            assert_eq!(fields[1].0, "b");
+            assert_eq!(fields[2].0, "c");
+        } else {
+            panic!("Expected Expr::Struct");
+        }
+    }
+
+    #[test]
+    fn test_expr_match_with_arms() {
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Ident("x".into())),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Literal(Literal::Int(1)),
+                    guard: None,
+                    body: Expr::Literal(Literal::Bool(true)),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: Expr::Literal(Literal::Bool(false)),
+                },
+            ],
+        };
+        if let Expr::Match { arms, .. } = &expr {
+            assert_eq!(arms.len(), 2);
+        }
+    }
+
+    // --- SpecFunction test ---
+
+    #[test]
+    fn test_spec_function_clauses() {
+        let func = SpecFunction {
+            name: "my_pred".into(),
+            generics: Generics::default(),
+            params: vec![],
+            return_type: Type::Bool,
+            requires: vec![Expr::Literal(Literal::Bool(true))],
+            ensures: vec![Expr::Literal(Literal::Bool(true))],
+            recommends: vec![],
+            decreases: vec![Expr::Ident("n".into())],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+        assert_eq!(func.requires.len(), 1);
+        assert_eq!(func.ensures.len(), 1);
+        assert_eq!(func.decreases.len(), 1);
+        assert_eq!(func.name, "my_pred");
+    }
+
+    // --- BinOp / UnaryOp tests ---
+
+    #[test]
+    fn test_binop_variants_distinct() {
+        assert_ne!(BinOp::Add, BinOp::Sub);
+        assert_ne!(BinOp::Sub, BinOp::Mul);
+        assert_ne!(BinOp::Mul, BinOp::Div);
+        assert_ne!(BinOp::Div, BinOp::Mod);
+        assert_ne!(BinOp::And, BinOp::Or);
+        assert_ne!(BinOp::BitAnd, BinOp::BitOr);
+        assert_ne!(BinOp::Shl, BinOp::Shr);
+    }
+
+    #[test]
+    fn test_unaryop_variants_distinct() {
+        assert_ne!(UnaryOp::Not, UnaryOp::Neg);
+        assert_ne!(UnaryOp::Neg, UnaryOp::Deref);
+        assert_ne!(UnaryOp::Not, UnaryOp::Deref);
+    }
+
+    // --- Literal / Pattern / VariableMode tests ---
+
+    #[test]
+    fn test_literal_variants() {
+        let int_lit = Literal::Int(42);
+        let bool_lit = Literal::Bool(true);
+        let str_lit = Literal::String("hello".into());
+        assert!(matches!(int_lit, Literal::Int(42)));
+        assert!(matches!(bool_lit, Literal::Bool(true)));
+        assert!(matches!(str_lit, Literal::String(s) if s == "hello"));
+    }
+
+    #[test]
+    fn test_pattern_variants() {
+        let w = Pattern::Wildcard;
+        let i = Pattern::Ident("x".into());
+        let t = Pattern::Tuple(vec![Pattern::Wildcard, Pattern::Ident("y".into())]);
+        assert!(matches!(w, Pattern::Wildcard));
+        assert!(matches!(i, Pattern::Ident(ref s) if s == "x"));
+        assert!(matches!(t, Pattern::Tuple(ref pats) if pats.len() == 2));
+    }
+
+    #[test]
+    fn test_variable_mode_distinct() {
+        assert_ne!(VariableMode::Ghost, VariableMode::Tracked);
+        assert_ne!(VariableMode::Tracked, VariableMode::Exec);
+        assert_ne!(VariableMode::Ghost, VariableMode::Exec);
+    }
 }

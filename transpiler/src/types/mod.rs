@@ -1398,4 +1398,208 @@ verus! {
             _ => panic!("Expected struct Request"),
         }
     }
+
+    #[test]
+    fn test_register_type_alias() {
+        let mut registry = TypeRegistry::new();
+
+        let alias = TypeAlias {
+            name: "Votes".to_string(),
+            generics: Generics::default(),
+            ty: Type::Map(
+                Box::new(Type::Named(Path::single("Ballot".to_string()))),
+                Box::new(Type::Named(Path::single("Vote".to_string()))),
+            ),
+        };
+
+        registry.register_alias(alias);
+
+        let retrieved = registry.get_alias("Votes");
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.name, "Votes");
+        assert!(matches!(retrieved.ty, Type::Map(_, _)));
+        assert!(registry.alias_order.contains(&"Votes".to_string()));
+    }
+
+    #[test]
+    fn test_register_function_sig() {
+        let mut registry = TypeRegistry::new();
+
+        let sig = FunctionSig {
+            name: "LAcceptorInit".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                ParamSig {
+                    name: "s".to_string(),
+                    ty: Type::Named(Path::single("LAcceptor".to_string())),
+                },
+            ],
+            return_type: Type::Bool,
+            is_spec: true,
+        };
+
+        registry.register_function(sig);
+
+        let retrieved = registry.get_function("LAcceptorInit");
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.name, "LAcceptorInit");
+        assert_eq!(retrieved.params.len(), 1);
+        assert_eq!(retrieved.params[0].name, "s");
+        assert!(retrieved.is_spec);
+    }
+
+    #[test]
+    fn test_is_type_checks() {
+        let mut registry = TypeRegistry::new();
+
+        registry.register_struct(StructDef {
+            name: "LAcceptor".to_string(),
+            generics: Generics::default(),
+            fields: vec![],
+            is_spec: true,
+        });
+
+        registry.register_enum(EnumDef {
+            name: "LMessage".to_string(),
+            generics: Generics::default(),
+            variants: vec![],
+            is_spec: true,
+        });
+
+        // Correct lookups
+        assert!(registry.is_struct("LAcceptor"));
+        assert!(registry.is_enum("LMessage"));
+
+        // Wrong type lookups should return false
+        assert!(!registry.is_struct("LMessage"));
+        assert!(!registry.is_enum("LAcceptor"));
+
+        // Non-existent names
+        assert!(!registry.is_struct("DoesNotExist"));
+        assert!(!registry.is_enum("DoesNotExist"));
+    }
+
+    #[test]
+    fn test_struct_order_preserved() {
+        let mut registry = TypeRegistry::new();
+
+        for name in &["Alpha", "Beta", "Gamma"] {
+            registry.register_struct(StructDef {
+                name: name.to_string(),
+                generics: Generics::default(),
+                fields: vec![],
+                is_spec: true,
+            });
+        }
+
+        assert_eq!(registry.struct_order.len(), 3);
+        assert_eq!(registry.struct_order[0], "Alpha");
+        assert_eq!(registry.struct_order[1], "Beta");
+        assert_eq!(registry.struct_order[2], "Gamma");
+    }
+
+    #[test]
+    fn test_parse_empty_struct() {
+        let source = r#"
+            pub struct Empty {}
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "Empty");
+                assert_eq!(s.fields.len(), 0);
+            }
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_bool_field() {
+        let source = r#"
+            pub struct S {
+                pub flag: bool,
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "S");
+                assert_eq!(s.fields.len(), 1);
+                assert_eq!(s.fields[0].name, "flag");
+                assert!(matches!(s.fields[0].ty, Type::Bool));
+            }
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_int_field() {
+        let source = r#"
+            pub struct S {
+                pub n: int,
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "S");
+                assert_eq!(s.fields.len(), 1);
+                assert_eq!(s.fields[0].name, "n");
+                assert!(matches!(s.fields[0].ty, Type::Int));
+            }
+            _ => panic!("Expected struct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_generic_type() {
+        let source = r#"
+            pub struct S {
+                pub m: Map<int, Seq<T>>,
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(types.len(), 1);
+        match &types[0] {
+            TypeDef::Struct(s) => {
+                assert_eq!(s.name, "S");
+                assert_eq!(s.fields.len(), 1);
+                assert_eq!(s.fields[0].name, "m");
+                // Should be Map<Int, Seq<Named("T")>>
+                match &s.fields[0].ty {
+                    Type::Map(key_ty, val_ty) => {
+                        assert!(matches!(key_ty.as_ref(), Type::Int));
+                        match val_ty.as_ref() {
+                            Type::Seq(inner) => {
+                                match inner.as_ref() {
+                                    Type::Named(path) => assert_eq!(path.segments[0], "T"),
+                                    other => panic!("Expected Named type inside Seq, got {:?}", other),
+                                }
+                            }
+                            other => panic!("Expected Seq type for value, got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected Map type, got {:?}", other),
+                }
+            }
+            _ => panic!("Expected struct"),
+        }
+    }
 }

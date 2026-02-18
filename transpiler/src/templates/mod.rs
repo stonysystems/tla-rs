@@ -727,4 +727,318 @@ mod tests {
 
         assert!(result.confidence >= 0.9);
     }
+
+    // --- Copy / SimpleAssignment distinction ---
+
+    #[test]
+    fn test_copy_template_fields() {
+        let matcher = TemplateMatcher::new(vec!["result".to_string()]);
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("result".to_string())),
+            Box::new(Expr::Ident("src".to_string())),
+        );
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::Copy { output_var, input_var } => {
+                assert_eq!(output_var, "result");
+                assert_eq!(input_var, "src");
+            }
+            other => panic!("Expected Copy, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_simple_assignment_non_ident() {
+        let matcher = TemplateMatcher::new(vec!["output".to_string()]);
+        // output == 42 — value is a literal, not an ident, so it's SimpleAssignment
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("output".to_string())),
+            Box::new(Expr::Literal(Literal::Int(42))),
+        );
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::SimpleAssignment { output_var, .. } => {
+                assert_eq!(output_var, "output");
+            }
+            other => panic!("Expected SimpleAssignment, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_copy_reversed() {
+        // input == output (reversed order)
+        let matcher = TemplateMatcher::new(vec!["output".to_string()]);
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("input".to_string())),
+            Box::new(Expr::Ident("output".to_string())),
+        );
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::Copy { output_var, input_var } => {
+                assert_eq!(output_var, "output");
+                assert_eq!(input_var, "input");
+            }
+            other => panic!("Expected Copy (reversed), got {:?}", other),
+        }
+    }
+
+    // --- StructConstruction tests ---
+
+    #[test]
+    fn test_struct_construction_three_fields() {
+        let matcher = TemplateMatcher::new(vec!["s_".to_string()]);
+        let expr = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Field(Box::new(Expr::Ident("s_".into())), "a".into())),
+                Box::new(Expr::Literal(Literal::Int(1))),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Field(Box::new(Expr::Ident("s_".into())), "b".into())),
+                Box::new(Expr::Literal(Literal::Int(2))),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Field(Box::new(Expr::Ident("s_".into())), "c".into())),
+                Box::new(Expr::Literal(Literal::Int(3))),
+            ),
+        ]);
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::StructConstruction { output_var, fields } => {
+                assert_eq!(output_var, "s_");
+                assert_eq!(fields.len(), 3);
+                assert_eq!(fields[0].0, "a");
+                assert_eq!(fields[1].0, "b");
+                assert_eq!(fields[2].0, "c");
+            }
+            other => panic!("Expected StructConstruction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_struct_construction_mixed_outputs_returns_none() {
+        // s_.a == 1 &&& t_.b == 2 — different output vars → None
+        let matcher = TemplateMatcher::new(vec!["s_".to_string(), "t_".to_string()]);
+        let expr = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Field(Box::new(Expr::Ident("s_".into())), "a".into())),
+                Box::new(Expr::Literal(Literal::Int(1))),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Field(Box::new(Expr::Ident("t_".into())), "b".into())),
+                Box::new(Expr::Literal(Literal::Int(2))),
+            ),
+        ]);
+        // This should return Unrecognized because mixed output vars
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::Unrecognized { .. } => {}
+            other => panic!("Expected Unrecognized for mixed outputs, got {:?}", other),
+        }
+    }
+
+    // --- SeqComprehension with conjunction range ---
+
+    #[test]
+    fn test_seq_comprehension_conjunction_range() {
+        let matcher = TemplateMatcher::new(vec!["seq".to_string()]);
+        // forall |i| (0 <= i &&& i < n) ==> seq[i] == i
+        let expr = Expr::Forall {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("i".into()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Conjunction(vec![
+                    Expr::Le(
+                        Box::new(Expr::Literal(Literal::Int(0))),
+                        Box::new(Expr::Ident("i".into())),
+                    ),
+                    Expr::Lt(
+                        Box::new(Expr::Ident("i".into())),
+                        Box::new(Expr::Ident("n".into())),
+                    ),
+                ])),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Ident("seq".into())),
+                        Box::new(Expr::Ident("i".into())),
+                    )),
+                    Box::new(Expr::Ident("i".into())),
+                )),
+            )),
+        };
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::SeqComprehension { index_var, seq_var, .. } => {
+                assert_eq!(index_var, "i");
+                assert_eq!(seq_var, "seq");
+            }
+            other => panic!("Expected SeqComprehension, got {:?}", other),
+        }
+    }
+
+    // --- MapDomain / MapValue / SetComprehension ---
+
+    #[test]
+    fn test_map_domain_match() {
+        let matcher = TemplateMatcher::new(vec!["m".to_string()]);
+        // forall |k| m.contains(k) == pred(k)
+        let expr = Expr::Forall {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("k".into()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("m".into())),
+                    method: "contains".into(),
+                    args: vec![Expr::Ident("k".into())],
+                }),
+                Box::new(Expr::Call {
+                    func: Path::single("pred".into()),
+                    args: vec![Expr::Ident("k".into())],
+                }),
+            )),
+        };
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::MapDomain { key_var, map_var, .. } => {
+                assert_eq!(key_var, "k");
+                assert_eq!(map_var, "m");
+            }
+            other => panic!("Expected MapDomain, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_value_match() {
+        let matcher = TemplateMatcher::new(vec!["m".to_string()]);
+        // forall |k| m.contains(k) ==> m[k] == f(k)
+        let expr = Expr::Forall {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("k".into()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("m".into())),
+                    method: "contains".into(),
+                    args: vec![Expr::Ident("k".into())],
+                }),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Ident("m".into())),
+                        Box::new(Expr::Ident("k".into())),
+                    )),
+                    Box::new(Expr::Call {
+                        func: Path::single("f".into()),
+                        args: vec![Expr::Ident("k".into())],
+                    }),
+                )),
+            )),
+        };
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::MapValue { key_var, map_var, .. } => {
+                assert_eq!(key_var, "k");
+                assert_eq!(map_var, "m");
+            }
+            other => panic!("Expected MapValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_set_comprehension_matched_as_map_domain() {
+        // MapDomain and SetComprehension patterns are structurally identical
+        // (both use extract_membership_equiv). Since try_match_map_comprehension
+        // runs first in match_template(), this pattern matches as MapDomain.
+        let matcher = TemplateMatcher::new(vec!["s".to_string()]);
+        // forall |x| s.contains(x) == true
+        let expr = Expr::Forall {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("x".into()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("s".into())),
+                    method: "contains".into(),
+                    args: vec![Expr::Ident("x".into())],
+                }),
+                Box::new(Expr::Literal(Literal::Bool(true))),
+            )),
+        };
+        match matcher.match_template(&expr) {
+            QuantifierTemplate::MapDomain { key_var, map_var, .. } => {
+                assert_eq!(key_var, "x");
+                assert_eq!(map_var, "s");
+            }
+            other => panic!("Expected MapDomain (higher priority than SetComprehension), got {:?}", other),
+        }
+    }
+
+    // --- Confidence levels ---
+
+    #[test]
+    fn test_confidence_copy_is_1() {
+        let result = match_expression(
+            &Expr::Eq(
+                Box::new(Expr::Ident("out".into())),
+                Box::new(Expr::Ident("inp".into())),
+            ),
+            &["out".to_string()],
+        );
+        assert_eq!(result.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_confidence_unrecognized_is_0() {
+        let result = match_expression(
+            &Expr::Exists {
+                vars: vec![Binding {
+                    pattern: Pattern::Ident("x".into()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                }],
+                body: Box::new(Expr::Literal(Literal::Bool(true))),
+            },
+            &["out".to_string()],
+        );
+        assert_eq!(result.confidence, 0.0);
+    }
+
+    // --- Hint generation ---
+
+    #[test]
+    fn test_hint_for_forall() {
+        let matcher = TemplateMatcher::new(vec!["out".to_string()]);
+        let expr = Expr::Forall {
+            vars: vec![
+                Binding { pattern: Pattern::Ident("a".into()), ty: None, variable_mode: crate::ast::VariableMode::Exec },
+                Binding { pattern: Pattern::Ident("b".into()), ty: None, variable_mode: crate::ast::VariableMode::Exec },
+            ],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        let hint = matcher.generate_hint(&expr);
+        assert!(hint.contains("forall"), "Hint should mention forall: {}", hint);
+    }
+
+    #[test]
+    fn test_hint_for_exists() {
+        let matcher = TemplateMatcher::new(vec![]);
+        let expr = Expr::Exists {
+            vars: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        let hint = matcher.generate_hint(&expr);
+        assert!(hint.contains("Exists"), "Hint should mention Exists: {}", hint);
+    }
+
+    #[test]
+    fn test_hint_for_other() {
+        let matcher = TemplateMatcher::new(vec![]);
+        let hint = matcher.generate_hint(&Expr::Literal(Literal::Int(42)));
+        assert!(hint.contains("manual"), "Hint should suggest manual impl: {}", hint);
+    }
 }

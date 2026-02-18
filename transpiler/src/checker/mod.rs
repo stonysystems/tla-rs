@@ -1621,4 +1621,226 @@ mod tests {
             panic!("Expected CollectionCheck template, got {:?}", result);
         }
     }
+
+    // ============ Additional Saturation / Assignment Tests ============
+
+    /// Test saturation check with two output params, both assigned
+    #[test]
+    fn test_saturation_multiple_outputs() {
+        let func = AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "TwoOutputs".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "s_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "t_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body: Expr::Literal(Literal::Bool(true)),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+        tracker.record_assignment("t_", MemberPath::Root);
+
+        let result = SaturationChecker::check(&func, &tracker);
+        assert!(result.is_ok());
+    }
+
+    /// Test harmony checker with double assignment to the same field
+    /// (HarmonyChecker is currently a stub that always returns Ok)
+    #[test]
+    fn test_harmony_double_assignment() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+        // Record the same path again
+        tracker.record_assignment("s_", MemberPath::Root);
+
+        // HarmonyChecker is currently a TODO stub that always passes
+        let result = HarmonyChecker::check(&func, &tracker);
+        assert!(result.is_ok());
+    }
+
+    /// Test that a new AssignmentTracker starts empty
+    #[test]
+    fn test_assignment_tracker_new_is_empty() {
+        let tracker = AssignmentTracker::new();
+        assert!(tracker.assignments.is_empty());
+        assert!(!tracker.is_assigned("s_", &MemberPath::Root));
+    }
+
+    /// Test recording and retrieving assignments
+    #[test]
+    fn test_assignment_tracker_record_and_get() {
+        let mut tracker = AssignmentTracker::new();
+
+        assert!(!tracker.is_assigned("s_", &MemberPath::Root));
+
+        tracker.record_assignment("s_", MemberPath::Root);
+
+        assert!(tracker.is_assigned("s_", &MemberPath::Root));
+        assert!(!tracker.is_assigned("t_", &MemberPath::Root));
+
+        let paths = tracker.assignments.get("s_").unwrap();
+        assert!(paths.contains(&MemberPath::Root));
+    }
+
+    // ============ Additional Template Matching Tests ============
+
+    /// Test that an Exists expression (not Forall) returns None
+    #[test]
+    fn test_template_match_exists_returns_none() {
+        let exists = Expr::Exists {
+            vars: vec![make_binding("x")],
+            body: Box::new(Expr::Gt(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+        };
+
+        let result = TemplateMatcher::match_template(&exists);
+        assert!(result.is_none());
+
+        // Also verify detailed gives NotForall
+        let detailed = TemplateMatcher::match_template_detailed(&exists);
+        assert!(matches!(
+            detailed,
+            TemplateMatchResult::NotMatched(TemplateMatchFailure::NotForall)
+        ));
+    }
+
+    /// Test forall with trivial body (just `true`) yields UnrecognizedPattern
+    #[test]
+    fn test_template_match_empty_body() {
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        assert!(result.is_none());
+
+        let detailed = TemplateMatcher::match_template_detailed(&forall);
+        assert!(matches!(
+            detailed,
+            TemplateMatchResult::NotMatched(TemplateMatchFailure::UnrecognizedPattern { .. })
+        ));
+    }
+
+    /// Test reversed implication: forall |k| map'[k] == f(k) ==> map'.contains(k)
+    /// The value assignment is in the premise, membership in conclusion -- this is
+    /// MapInclusion (contains_key in conclusion), NOT MapComprehension.
+    #[test]
+    fn test_map_value_pattern_wrong_direction() {
+        // Build: map_[k] == f(k)  (this is the premise, not conclusion)
+        let value_eq = Expr::Eq(
+            Box::new(Expr::Index(
+                Box::new(Expr::Ident("map_".to_string())),
+                Box::new(Expr::Ident("k".to_string())),
+            )),
+            Box::new(Expr::Call {
+                func: Path::single("f".to_string()),
+                args: vec![Expr::Ident("k".to_string())],
+            }),
+        );
+
+        // Build: map_.contains_key(k)  (this is the conclusion)
+        let membership = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("map_".to_string())),
+            method: "contains_key".to_string(),
+            args: vec![Expr::Ident("k".to_string())],
+        };
+
+        // Build: value_eq ==> membership  (reversed direction)
+        let body = Expr::Implies(Box::new(value_eq), Box::new(membership));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("k")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        // This should NOT be MapComprehension since the value assignment is in the premise
+        assert!(!matches!(
+            result,
+            Some(QuantifierTemplate::MapComprehension { .. })
+        ));
+    }
+
+    /// Test forall |i| body that assigns a field (s_.field == expr), not seq[i] pattern
+    #[test]
+    fn test_template_match_field_assignment() {
+        // Build: 0 <= i && i < n
+        let bounds = Expr::Binary(
+            Box::new(Expr::Le(
+                Box::new(Expr::Literal(Literal::Int(0))),
+                Box::new(Expr::Ident("i".to_string())),
+            )),
+            BinOp::And,
+            Box::new(Expr::Lt(
+                Box::new(Expr::Ident("i".to_string())),
+                Box::new(Expr::Ident("n".to_string())),
+            )),
+        );
+
+        // Build: s_.field == some_value  (field access, not index)
+        let assignment = Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "field".to_string(),
+            )),
+            Box::new(Expr::Ident("some_value".to_string())),
+        );
+
+        // Build: bounds ==> assignment
+        let body = Expr::Implies(Box::new(bounds), Box::new(assignment));
+
+        let forall = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(body),
+        };
+
+        let result = TemplateMatcher::match_template(&forall);
+        // The RHS is s_.field == some_value, not seq[i] == expr,
+        // so it should NOT match SeqComprehension
+        assert!(!matches!(
+            result,
+            Some(QuantifierTemplate::SeqComprehension { .. })
+        ));
+    }
 }

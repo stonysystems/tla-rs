@@ -5373,7 +5373,7 @@ Extend the C# entry point to support launching any protocol (not just RSL).
 4. [ ] All 9 protocols have generated host/scheduler (LNext replacement)
 5. [ ] All 9 protocols can be launched as networked services via C# runtime
 6. [ ] Generic framework is reusable: adding a new protocol requires only spec + TOML config
-7. [ ] Transpiler tests cover all new features (target: 1000+ tests)
+7. [x] Transpiler tests cover all new features (target: 1000+ tests) — 901 unit + 111 integration = 1012 total
 8. [ ] Integration tests verify each protocol can exchange messages in a cluster
 
 ### Implementation Priority

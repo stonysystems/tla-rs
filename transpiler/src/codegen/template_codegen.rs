@@ -349,4 +349,391 @@ mod tests {
         let result = generator.generate(&template, &ctx).unwrap();
         assert!(matches!(result, ExecExpr::Literal(_)));
     }
+
+    // --- Helper for struct construction with update syntax ---
+    // When the base name (output_var trimmed of trailing '_') is in input_params,
+    // generate_struct_construction produces StructUpdate instead of Struct.
+    fn make_ctx_with_result_as_input() -> TransformContext<'static> {
+        use std::collections::HashMap;
+        static CONFIG: std::sync::OnceLock<TranslatorConfig> = std::sync::OnceLock::new();
+        let mut output_types = HashMap::new();
+        output_types.insert(
+            "result_".to_string(),
+            crate::ast::Type::Named(crate::ast::Path::single("LResult".to_string())),
+        );
+        TransformContext {
+            config: CONFIG.get_or_init(TranslatorConfig::default),
+            output_params: vec!["result_".to_string()],
+            input_params: vec!["result".to_string()],
+            output_types,
+            input_types: std::collections::HashMap::new(),
+            field_substitutions: std::collections::HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        }
+    }
+
+    #[test]
+    fn test_generate_unrecognized_returns_error() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::Unrecognized {
+            expr: Box::new(Expr::Literal(Literal::Bool(true))),
+            reason: "cannot match".to_string(),
+            hint: Some("try something else".to_string()),
+        };
+
+        let result = generator.generate(&template, &ctx);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::error::TranspileError::UnsupportedPattern { message, help, .. } => {
+                assert_eq!(message, "cannot match");
+                assert_eq!(help, Some("try something else".to_string()));
+            }
+            other => panic!("Expected UnsupportedPattern, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_seq_comprehension() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::SeqComprehension {
+            index_var: "i".to_string(),
+            length_expr: Box::new(Expr::Literal(Literal::Int(10))),
+            element_expr: Box::new(Expr::Ident("i".to_string())),
+            seq_var: "result".to_string(),
+        };
+
+        let result = generator.generate(&template, &ctx).unwrap();
+        // Should produce: (0..10).map(|i| i).collect()
+        // Top-level is MethodCall { method: "collect", receiver: MethodCall { method: "map", ... } }
+        match &result {
+            ExecExpr::MethodCall {
+                method,
+                receiver,
+                args,
+            } => {
+                assert_eq!(method, "collect");
+                assert!(args.is_empty());
+                // Inner should be a "map" call
+                match receiver.as_ref() {
+                    ExecExpr::MethodCall {
+                        method: inner_method,
+                        receiver: inner_receiver,
+                        args: inner_args,
+                    } => {
+                        assert_eq!(inner_method, "map");
+                        assert_eq!(inner_args.len(), 1);
+                        // The closure param should be "i"
+                        match &inner_args[0] {
+                            ExecExpr::Closure { params, .. } => {
+                                assert_eq!(params, &["i".to_string()]);
+                            }
+                            other => panic!("Expected Closure in map args, got {:?}", other),
+                        }
+                        // Innermost should be a Range
+                        assert!(matches!(inner_receiver.as_ref(), ExecExpr::Range { .. }));
+                    }
+                    other => panic!("Expected MethodCall(map) inside collect, got {:?}", other),
+                }
+            }
+            other => panic!("Expected MethodCall(collect), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_set_comprehension_returns_error() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::SetComprehension {
+            elem_var: "x".to_string(),
+            domain_predicate: Box::new(Expr::Literal(Literal::Bool(true))),
+            set_var: "result".to_string(),
+        };
+
+        let result = generator.generate(&template, &ctx);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::error::TranspileError::UnsupportedPattern { message, .. } => {
+                assert!(message.contains("Set comprehension"));
+            }
+            other => panic!("Expected UnsupportedPattern, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_map_domain_returns_error() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::MapDomain {
+            key_var: "k".to_string(),
+            domain_predicate: Box::new(Expr::Literal(Literal::Bool(true))),
+            map_var: "result".to_string(),
+        };
+
+        let result = generator.generate(&template, &ctx);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::error::TranspileError::UnsupportedPattern { message, .. } => {
+                assert!(message.contains("Map domain"));
+            }
+            other => panic!("Expected UnsupportedPattern, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_map_value() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::MapValue {
+            key_var: "k".to_string(),
+            value_expr: Box::new(Expr::Literal(Literal::Int(99))),
+            map_var: "src".to_string(),
+        };
+
+        let result = generator.generate(&template, &ctx).unwrap();
+        // Should produce: src.iter().map(|(k, _v)| (k.clone(), 99)).collect()
+        match &result {
+            ExecExpr::MethodCall {
+                method,
+                receiver,
+                args,
+            } => {
+                assert_eq!(method, "collect");
+                assert!(args.is_empty());
+                // Inner chain: .map(...)
+                match receiver.as_ref() {
+                    ExecExpr::MethodCall {
+                        method: map_method,
+                        receiver: iter_call,
+                        args: map_args,
+                    } => {
+                        assert_eq!(map_method, "map");
+                        assert_eq!(map_args.len(), 1);
+                        // Closure param should contain the key_var pattern
+                        match &map_args[0] {
+                            ExecExpr::Closure { params, body } => {
+                                assert_eq!(params[0], "(k, _v)");
+                                // Body should be a Tuple with (Clone(k), literal)
+                                match body.as_ref() {
+                                    ExecExpr::Tuple(elems) => {
+                                        assert_eq!(elems.len(), 2);
+                                        assert!(matches!(&elems[0], ExecExpr::Clone(_)));
+                                    }
+                                    other => panic!("Expected Tuple body, got {:?}", other),
+                                }
+                            }
+                            other => panic!("Expected Closure, got {:?}", other),
+                        }
+                        // Inner should be .iter()
+                        match iter_call.as_ref() {
+                            ExecExpr::MethodCall {
+                                method: iter_method,
+                                receiver: source,
+                                ..
+                            } => {
+                                assert_eq!(iter_method, "iter");
+                                assert!(matches!(source.as_ref(), ExecExpr::Var(v) if v == "src"));
+                            }
+                            other => panic!("Expected MethodCall(iter), got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected MethodCall(map), got {:?}", other),
+                }
+            }
+            other => panic!("Expected MethodCall(collect), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_map_comprehension() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::MapComprehension {
+            key_var: "k".to_string(),
+            domain_predicate: Box::new(Expr::Literal(Literal::Bool(true))),
+            value_expr: Box::new(Expr::Literal(Literal::Int(0))),
+            map_var: "src".to_string(),
+        };
+
+        let result = generator.generate(&template, &ctx).unwrap();
+        // Should produce: src.iter().filter(...).map(...).collect()
+        match &result {
+            ExecExpr::MethodCall {
+                method,
+                receiver,
+                args,
+            } => {
+                assert_eq!(method, "collect");
+                assert!(args.is_empty());
+                // Next level: .map(...)
+                match receiver.as_ref() {
+                    ExecExpr::MethodCall {
+                        method: map_method,
+                        receiver: filter_call,
+                        ..
+                    } => {
+                        assert_eq!(map_method, "map");
+                        // Next level: .filter(...)
+                        match filter_call.as_ref() {
+                            ExecExpr::MethodCall {
+                                method: filter_method,
+                                receiver: iter_call,
+                                args: filter_args,
+                            } => {
+                                assert_eq!(filter_method, "filter");
+                                assert_eq!(filter_args.len(), 1);
+                                // filter closure param should contain key_var
+                                match &filter_args[0] {
+                                    ExecExpr::Closure { params, .. } => {
+                                        assert_eq!(params[0], "(k, _)");
+                                    }
+                                    other => {
+                                        panic!("Expected Closure in filter, got {:?}", other)
+                                    }
+                                }
+                                // Innermost: .iter()
+                                match iter_call.as_ref() {
+                                    ExecExpr::MethodCall {
+                                        method: iter_method,
+                                        ..
+                                    } => {
+                                        assert_eq!(iter_method, "iter");
+                                    }
+                                    other => {
+                                        panic!("Expected MethodCall(iter), got {:?}", other)
+                                    }
+                                }
+                            }
+                            other => panic!("Expected MethodCall(filter), got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected MethodCall(map), got {:?}", other),
+                }
+            }
+            other => panic!("Expected MethodCall(collect), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_struct_construction_update() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx_with_result_as_input();
+
+        // output_var = "result_", base_name = "result" which IS in input_params
+        // So this should produce StructUpdate syntax
+        let template = QuantifierTemplate::StructConstruction {
+            output_var: "result_".to_string(),
+            fields: vec![
+                (
+                    "field_a".to_string(),
+                    Expr::Literal(Literal::Int(1)),
+                ),
+                (
+                    "field_b".to_string(),
+                    Expr::Literal(Literal::Int(2)),
+                ),
+            ],
+        };
+
+        let result = generator.generate(&template, &ctx).unwrap();
+        match &result {
+            ExecExpr::StructUpdate {
+                name,
+                base,
+                fields,
+            } => {
+                // Type is LResult -> translate_name -> CResult
+                assert_eq!(name, "CResult");
+                // Base should be Clone(Var("result"))
+                match base.as_ref() {
+                    ExecExpr::Clone(inner) => {
+                        assert!(matches!(inner.as_ref(), ExecExpr::Var(v) if v == "result"));
+                    }
+                    other => panic!("Expected Clone(Var(result)), got {:?}", other),
+                }
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].0, "field_a");
+                assert_eq!(fields[1].0, "field_b");
+            }
+            other => panic!("Expected StructUpdate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_struct_construction_new() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        // output_var = "result", base_name = "result" which is NOT in input_params (only "src" is)
+        // So this should produce full Struct construction
+        let template = QuantifierTemplate::StructConstruction {
+            output_var: "result".to_string(),
+            fields: vec![(
+                "value".to_string(),
+                Expr::Literal(Literal::Int(42)),
+            )],
+        };
+
+        let result = generator.generate(&template, &ctx).unwrap();
+        match &result {
+            ExecExpr::Struct { name, fields } => {
+                // output_types has "result" -> LResult, translate_name("LResult") -> "CResult"
+                assert_eq!(name, "CResult");
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].0, "value");
+            }
+            other => panic!("Expected Struct, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_translate_name_l_to_c() {
+        let generator = TemplateCodeGenerator::default();
+        // Default config: spec_prefix = "L", exec_prefix = "C"
+        assert_eq!(generator.translate_name("LAcceptor"), "CAcceptor");
+    }
+
+    #[test]
+    fn test_translate_name_no_prefix() {
+        let generator = TemplateCodeGenerator::default();
+        // "Ballot" does not start with "L", so exec_prefix is prepended: "CBallot"
+        assert_eq!(generator.translate_name("Ballot"), "CBallot");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let generator = TemplateCodeGenerator::default();
+        // Verify it works and has the expected default config
+        assert_eq!(generator.config.spec_prefix, "L");
+        assert_eq!(generator.config.exec_prefix, "C");
+    }
+
+    #[test]
+    fn test_generate_copy_var_name() {
+        let generator = TemplateCodeGenerator::default();
+        let ctx = make_ctx();
+
+        let template = QuantifierTemplate::Copy {
+            output_var: "result".to_string(),
+            input_var: "my_input".to_string(),
+        };
+
+        let result = generator.generate(&template, &ctx).unwrap();
+        // Should produce Clone(Var("my_input"))
+        match &result {
+            ExecExpr::Clone(inner) => match inner.as_ref() {
+                ExecExpr::Var(name) => assert_eq!(name, "my_input"),
+                other => panic!("Expected Var(my_input), got {:?}", other),
+            },
+            other => panic!("Expected Clone, got {:?}", other),
+        }
+    }
 }
