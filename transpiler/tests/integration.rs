@@ -2339,6 +2339,142 @@ fn test_generate_messages_unit_variants() {
     assert!(code.contains("TwoPhaseMessage::PreparedVote { rm_id }"));
 }
 
+// ============================================================
+// Phase 17.3: Per-protocol message generation from real TOMLs
+// ============================================================
+
+/// Helper: load messages config from a real protocol TOML file
+fn load_and_generate_messages(toml_path: &str) -> String {
+    let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+        .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+    let msg_config = config
+        .messages
+        .unwrap_or_else(|| panic!("No [messages] in {}", toml_path));
+    verus_transpiler::generate_message_code(&msg_config)
+}
+
+#[test]
+fn test_generate_messages_twophase_toml() {
+    let code = load_and_generate_messages("../src/protocol/TwoPhase/twophase_transpile.toml");
+    assert!(code.contains("pub enum TwoPhaseMessage"));
+    assert!(code.contains("Prepare,"));
+    assert!(code.contains("PreparedVote {"));
+    assert!(code.contains("Commit,"));
+    assert!(code.contains("Abort,"));
+    assert!(code.contains("const TAG_PREPARE: u64 = 1;"));
+    assert!(code.contains("const TAG_COMMIT: u64 = 3;"));
+    assert!(code.contains("impl ProtocolMessage for TwoPhaseMessage"));
+}
+
+#[test]
+fn test_generate_messages_paxos_toml() {
+    let code = load_and_generate_messages("../src/protocol/Paxos/paxos_transpile.toml");
+    assert!(code.contains("pub enum PaxosMessage"));
+    assert!(code.contains("Prepare {"));
+    assert!(code.contains("Promise {"));
+    assert!(code.contains("Accept {"));
+    assert!(code.contains("Accepted {"));
+    assert!(code.contains("ballot: u64,"));
+    assert!(code.contains("accepted_bal: u64,"));
+    assert!(code.contains("const TAG_PROMISE: u64 = 2;"));
+}
+
+#[test]
+fn test_generate_messages_leader_election_toml() {
+    let code =
+        load_and_generate_messages("../src/protocol/LeaderElection/election_transpile.toml");
+    assert!(code.contains("pub enum LeaderElectionMessage"));
+    assert!(code.contains("Election {"));
+    assert!(code.contains("Answer {"));
+    assert!(code.contains("Coordinator {"));
+    assert!(code.contains("const TAG_ELECTION: u64 = 1;"));
+    assert!(code.contains("const TAG_COORDINATOR: u64 = 3;"));
+}
+
+#[test]
+fn test_generate_messages_primarybackup_toml() {
+    let code = load_and_generate_messages(
+        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+    );
+    assert!(code.contains("pub enum PrimaryBackupMessage"));
+    assert!(code.contains("Replicate {"));
+    assert!(code.contains("Ack,"));
+    assert!(code.contains("ClientRequest {"));
+    assert!(code.contains("const TAG_REPLICATE: u64 = 1;"));
+}
+
+#[test]
+fn test_generate_messages_chain_replication_toml() {
+    let code =
+        load_and_generate_messages("../src/protocol/ChainReplication/chain_transpile.toml");
+    assert!(code.contains("pub enum ChainMessage"));
+    assert!(code.contains("Forward {"));
+    assert!(code.contains("Ack {"));
+    assert!(code.contains("ClientWrite {"));
+    assert!(code.contains("ClientRead,"));
+    assert!(code.contains("const TAG_CLIENT_READ: u64 = 4;"));
+}
+
+#[test]
+fn test_generate_messages_vertical_paxos_toml() {
+    let code =
+        load_and_generate_messages("../src/protocol/VerticalPaxos/vpaxos_transpile.toml");
+    assert!(code.contains("pub enum VerticalPaxosMessage"));
+    assert!(code.contains("Prepare {"));
+    assert!(code.contains("Promise {"));
+    assert!(code.contains("Accept {"));
+    assert!(code.contains("AcceptOk {"));
+    assert!(code.contains("Commit {"));
+    assert!(code.contains("Sync {"));
+    assert!(code.contains("v_bal: u64,"));
+    assert!(code.contains("const TAG_SYNC: u64 = 6;"));
+}
+
+#[test]
+fn test_generate_messages_raft_toml() {
+    let code = load_and_generate_messages("../src/protocol/Raft/raft_transpile.toml");
+    assert!(code.contains("pub enum RaftMessage"));
+    assert!(code.contains("RequestVote {"));
+    assert!(code.contains("VoteResponse {"));
+    assert!(code.contains("AppendEntries {"));
+    assert!(code.contains("AppendResponse {"));
+    // Bool fields
+    assert!(code.contains("granted: bool,"));
+    assert!(code.contains("has_entry: bool,"));
+    assert!(code.contains("success: bool,"));
+    // Bool serialization
+    assert!(code.contains("let granted_val: u64 = if *granted { 1 } else { 0 };"));
+    // Bool deserialization
+    assert!(code.contains("let granted = read_u64(data,"));
+}
+
+#[test]
+fn test_generate_messages_pbft_toml() {
+    let code = load_and_generate_messages("../src/protocol/PBFT/pbft_transpile.toml");
+    assert!(code.contains("pub enum PBFTMessage"));
+    assert!(code.contains("PrePrepare {"));
+    assert!(code.contains("Prepare {"));
+    assert!(code.contains("Commit {"));
+    assert!(code.contains("ClientRequest {"));
+    assert!(code.contains("const TAG_PRE_PREPARE: u64 = 1;"));
+    assert!(code.contains("const TAG_CLIENT_REQUEST: u64 = 4;"));
+}
+
+#[test]
+fn test_generate_messages_epaxos_toml() {
+    let code = load_and_generate_messages("../src/protocol/EPaxos/epaxos_transpile.toml");
+    assert!(code.contains("pub enum EPaxosMessage"));
+    assert!(code.contains("PreAccept {"));
+    assert!(code.contains("PreAcceptOk {"));
+    assert!(code.contains("Accept {"));
+    assert!(code.contains("AcceptOk {"));
+    assert!(code.contains("CommitMsg {"));
+    assert!(code.contains("conflict: bool,"));
+    assert!(code.contains("const TAG_PRE_ACCEPT: u64 = 1;"));
+    assert!(code.contains("const TAG_PRE_ACCEPT_OK: u64 = 2;"));
+    assert!(code.contains("const TAG_COMMIT_MSG: u64 = 5;"));
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

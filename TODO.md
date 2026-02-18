@@ -5328,12 +5328,13 @@ Extend the C# entry point to support launching any protocol (not just RSL).
 - [x] Tests for Map::insert / Map::dom().contains() (17.1.2) — 3 tests: test_transform_if_with_and_condition_not_flattened, test_transform_dom_contains_to_contains_key, test_transform_cast_expr
 - [x] Tests for conditional Seq::push (17.1.3) — 9 tests: variant remapping (4), cast_len_recursive_if_else, scan_block_conditional_push, push_proof_no_spurious_deref, extra_requires (2)
 - [x] Tests for quorum codegen (17.1.4) — covered by Set::len() tests from 17.1.1 (same code path; 17.1.4 only removed skip_functions entries)
-- [ ] Tests for marshalling generation (17.3)
+- [x] Tests for marshalling generation (17.3) — 18 tests: 6 unit (variant_to_tag_name, Paxos/Raft/unit/bool/doc), 3 config (parsing, default, bool), 3 integration (Paxos, TOML, unit variants), 6 codegen assertions
 - [ ] Tests for scheduler generation (17.4)
 
 **17.7.2: Per-protocol integration tests**
 - [x] For each protocol: TLA+ → Verus spec parsing + translation tests — Paxos, LeaderElection, ChainReplication translation tests added; Raft skipped (EXCEPT syntax not supported by TLA+ parser)
 - [x] All protocols: transpile → compile → verify → 0 errors — verified by Verus (597 verified, 0 errors)
+- [x] For each protocol: message generation from TOML (9 per-protocol tests verify enum/tags/fields/bool handling)
 - [ ] For each protocol: marshalling round-trip test (serialize → deserialize == original)
 - [ ] For each protocol: host init → single step → valid state
 
