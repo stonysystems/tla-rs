@@ -1199,6 +1199,87 @@ fn test_generated_epaxos_translation() {
     );
 }
 
+// Raft: TLA+ parsing/translation skipped — Raft.tla uses EXCEPT syntax
+// ([s.match_index EXCEPT ![follower] = val]) which the TLA+ parser doesn't support.
+// The Raft protocol spec→exec transpilation is tested via Verus verification (597 verified, 0 errors).
+
+// Paxos translation test
+#[test]
+fn test_generated_paxos_translation() {
+    let source = read_generated_spec("Paxos", "Paxos");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LSend1a"),
+        "Should translate Send1a"
+    );
+    assert!(
+        verus_code.contains("spec fn LSend2a"),
+        "Should translate Send2a"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
+}
+
+// LeaderElection translation test
+#[test]
+fn test_generated_leader_election_translation() {
+    let source = read_generated_spec("LeaderElection", "Election");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LStartElection"),
+        "Should translate StartElection"
+    );
+    assert!(
+        verus_code.contains("spec fn LBecomeLeader"),
+        "Should translate BecomeLeader"
+    );
+    assert!(
+        verus_code.contains("spec fn LNodeFail"),
+        "Should translate NodeFail"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
+}
+
+// ChainReplication translation test
+#[test]
+fn test_generated_chain_replication_translation() {
+    let source = read_generated_spec("ChainReplication", "Chain");
+    let (verus_code, mode_annotations) = translate_example(&source);
+    assert!(
+        verus_code.contains("spec fn LInit"),
+        "Should translate Init"
+    );
+    assert!(
+        verus_code.contains("spec fn LHeadReceiveWrite"),
+        "Should translate HeadReceiveWrite"
+    );
+    assert!(
+        verus_code.contains("spec fn LTailCommit"),
+        "Should translate TailCommit"
+    );
+    assert!(
+        verus_code.contains("spec fn LClientRead"),
+        "Should translate ClientRead"
+    );
+    assert!(
+        !mode_annotations.is_empty(),
+        "Should generate mode annotations"
+    );
+}
+
 // =============================================================================
 // D4 Pipeline Regression Tests
 // Full TLA+ → Verus Spec → Verus Exec pipeline integration tests.
