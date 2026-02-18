@@ -772,15 +772,44 @@ fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
     out.push_str("            return match pkt.msg {\n");
 
     // Match arms for each message variant
+    // Reserved names that conflict with scaffold variables
+    let reserved_names = ["config", "self", "pkt", "sender_id", "result"];
+
     for variant in &params.message_variants {
-        let field_names: Vec<&str> = variant
+        let raw_field_names: Vec<&str> = variant
             .fields
             .iter()
             .filter_map(|f| f.first().map(|s| s.as_str()))
             .collect();
 
+        // Rename fields that conflict with scaffold variables
+        let field_names: Vec<String> = raw_field_names
+            .iter()
+            .map(|name| {
+                if reserved_names.contains(name) {
+                    format!("msg_{}", name)
+                } else {
+                    name.to_string()
+                }
+            })
+            .collect();
+
         let fields_pattern = if field_names.is_empty() {
             String::new()
+        } else if raw_field_names.iter().any(|n| reserved_names.contains(n)) {
+            // Use rename syntax: OrigName: msg_origname
+            let bindings: Vec<String> = raw_field_names
+                .iter()
+                .zip(field_names.iter())
+                .map(|(raw, renamed)| {
+                    if *raw != renamed.as_str() {
+                        format!("{}: {}", raw, renamed)
+                    } else {
+                        renamed.clone()
+                    }
+                })
+                .collect();
+            format!(" {{ {} }}", bindings.join(", "))
         } else {
             format!(" {{ {} }}", field_names.join(", "))
         };

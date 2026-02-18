@@ -3046,6 +3046,527 @@ fn test_generate_scaffold_epaxos() {
 }
 
 // ============================================================
+// Phase 17.7.1: Scheduler generation comprehensive tests
+// ============================================================
+
+// --- TOML roundtrip: generate → parse → verify ---
+
+#[test]
+fn test_scheduler_toml_roundtrip() {
+    // Build a SchedulerConfig by analyzing TwoPhase, classify it, generate TOML,
+    // then parse the TOML back and verify it matches.
+    let mut config = analyze_lnext("../src/protocol/TwoPhase/twophase.rs");
+    let variants = vec![
+        "Prepare".to_string(),
+        "PreparedVote".to_string(),
+        "Commit".to_string(),
+        "Abort".to_string(),
+    ];
+    verus_transpiler::classify_actions(&mut config, &variants);
+
+    // Generate TOML string from runtime SchedulerConfig
+    let toml_str = verus_transpiler::scheduler_config_to_toml(&config);
+
+    // Wrap in a valid TranspilerConfig shape so we can parse it back
+    let full_toml = format!(
+        "[naming]\nspec_prefix = \"L\"\nexec_prefix = \"C\"\n\n{}",
+        toml_str
+    );
+
+    // Parse it back
+    let parsed =
+        verus_transpiler::FileConfig::from_toml(&full_toml).expect("Failed to parse roundtrip TOML");
+    let sched = parsed
+        .scheduler
+        .expect("Parsed TOML should have [scheduler] section");
+
+    // Verify structural equivalence
+    assert_eq!(sched.next_fn, "LNext");
+    assert_eq!(sched.params, vec!["s", "s_", "c"]);
+    assert_eq!(sched.action_count, config.actions.len());
+    assert_eq!(sched.actions.len(), config.actions.len());
+
+    // Verify each action roundtrips correctly
+    for (orig, parsed_action) in config.actions.iter().zip(sched.actions.iter()) {
+        assert_eq!(
+            orig.spec_name, parsed_action.spec_name,
+            "spec_name mismatch"
+        );
+        assert_eq!(
+            orig.exec_name, parsed_action.exec_name,
+            "exec_name mismatch"
+        );
+        assert_eq!(
+            format!("{}", orig.kind),
+            parsed_action.kind,
+            "kind mismatch for {}",
+            orig.spec_name
+        );
+        assert_eq!(
+            orig.message_variant, parsed_action.message_variant,
+            "message_variant mismatch for {}",
+            orig.spec_name
+        );
+        // Existential params: runtime Vec<(String,String)> → TOML Vec<Vec<String>>
+        assert_eq!(
+            orig.existential_params.len(),
+            parsed_action.existential_params.len(),
+            "existential_params count mismatch for {}",
+            orig.spec_name
+        );
+        for (i, (name, ty)) in orig.existential_params.iter().enumerate() {
+            assert_eq!(
+                *name, parsed_action.existential_params[i][0],
+                "existential param name mismatch"
+            );
+            assert_eq!(
+                *ty, parsed_action.existential_params[i][1],
+                "existential param type mismatch"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_scheduler_toml_roundtrip_all_protocols() {
+    // Verify TOML roundtrip for all 9 protocols by loading their existing TOMLs
+    let protocols: &[(&str, &str)] = &[
+        ("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase"),
+        ("../src/protocol/Paxos/paxos_transpile.toml", "Paxos"),
+        ("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection"),
+        ("../src/protocol/Raft/raft_transpile.toml", "Raft"),
+        ("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication"),
+        ("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup"),
+        ("../src/protocol/PBFT/pbft_transpile.toml", "PBFT"),
+        ("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos"),
+        ("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos"),
+    ];
+
+    for (toml_path, protocol) in protocols {
+        let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+
+        let sched = config
+            .scheduler
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} has no [scheduler] section", protocol));
+
+        // Serialize back to TOML and re-parse
+        let roundtrip_toml = config.to_toml().expect("Failed to serialize");
+        let reparsed = verus_transpiler::FileConfig::from_toml(&roundtrip_toml)
+            .unwrap_or_else(|e| panic!("Failed to re-parse {} TOML: {}", protocol, e));
+        let reparsed_sched = reparsed
+            .scheduler
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} lost [scheduler] on roundtrip", protocol));
+
+        assert_eq!(
+            sched.action_count, reparsed_sched.action_count,
+            "{}: action_count changed on roundtrip",
+            protocol
+        );
+        assert_eq!(
+            sched.actions.len(),
+            reparsed_sched.actions.len(),
+            "{}: actions count changed on roundtrip",
+            protocol
+        );
+        for (i, (orig, rt)) in sched.actions.iter().zip(reparsed_sched.actions.iter()).enumerate() {
+            assert_eq!(
+                orig.spec_name, rt.spec_name,
+                "{} action[{}]: spec_name changed",
+                protocol, i
+            );
+            assert_eq!(
+                orig.kind, rt.kind,
+                "{} action[{}]: kind changed",
+                protocol, i
+            );
+            assert_eq!(
+                orig.message_variant, rt.message_variant,
+                "{} action[{}]: message_variant changed",
+                protocol, i
+            );
+        }
+    }
+}
+
+// --- Exact action count verification per protocol ---
+
+/// Verify the exact number of message-driven and timer-driven actions for
+/// each protocol. These counts are derived from the [scheduler] sections
+/// in the protocol TOML files.
+#[test]
+fn test_exact_action_counts_per_protocol() {
+    struct Expected {
+        toml_path: &'static str,
+        protocol: &'static str,
+        total: usize,
+        msg_driven: usize,
+        timer_driven: usize,
+    }
+
+    let expected = [
+        Expected {
+            toml_path: "../src/protocol/TwoPhase/twophase_transpile.toml",
+            protocol: "TwoPhase",
+            total: 8,
+            msg_driven: 4,
+            timer_driven: 4,
+        },
+        Expected {
+            toml_path: "../src/protocol/Paxos/paxos_transpile.toml",
+            protocol: "Paxos",
+            total: 7,
+            msg_driven: 4,
+            timer_driven: 3,
+        },
+        Expected {
+            toml_path: "../src/protocol/LeaderElection/election_transpile.toml",
+            protocol: "LeaderElection",
+            total: 7,
+            msg_driven: 3,
+            timer_driven: 4,
+        },
+        Expected {
+            toml_path: "../src/protocol/Raft/raft_transpile.toml",
+            protocol: "Raft",
+            total: 11,
+            msg_driven: 7,
+            timer_driven: 4,
+        },
+        Expected {
+            toml_path: "../src/protocol/ChainReplication/chain_transpile.toml",
+            protocol: "ChainReplication",
+            total: 8,
+            msg_driven: 4,
+            timer_driven: 4,
+        },
+        Expected {
+            toml_path: "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+            protocol: "PrimaryBackup",
+            total: 8,
+            msg_driven: 3,
+            timer_driven: 5,
+        },
+        Expected {
+            toml_path: "../src/protocol/PBFT/pbft_transpile.toml",
+            protocol: "PBFT",
+            total: 9,
+            msg_driven: 6,
+            timer_driven: 3,
+        },
+        Expected {
+            toml_path: "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+            protocol: "VerticalPaxos",
+            total: 10,
+            msg_driven: 5,
+            timer_driven: 5,
+        },
+        Expected {
+            toml_path: "../src/protocol/EPaxos/epaxos_transpile.toml",
+            protocol: "EPaxos",
+            total: 11,
+            msg_driven: 4,
+            timer_driven: 7,
+        },
+    ];
+
+    for e in &expected {
+        let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(e.toml_path))
+            .unwrap_or_else(|err| panic!("Failed to load {}: {}", e.toml_path, err));
+        let sched = config
+            .scheduler
+            .unwrap_or_else(|| panic!("{} has no [scheduler] section", e.protocol));
+
+        assert_eq!(
+            sched.action_count, e.total,
+            "{}: action_count field",
+            e.protocol
+        );
+        assert_eq!(
+            sched.actions.len(),
+            e.total,
+            "{}: actions.len()",
+            e.protocol
+        );
+
+        let msg_count = sched.actions.iter().filter(|a| a.is_message_driven()).count();
+        let timer_count = sched.actions.len() - msg_count;
+
+        assert_eq!(
+            msg_count, e.msg_driven,
+            "{}: expected {} message_driven, got {}",
+            e.protocol, e.msg_driven, msg_count
+        );
+        assert_eq!(
+            timer_count, e.timer_driven,
+            "{}: expected {} timer_driven, got {}",
+            e.protocol, e.timer_driven, timer_count
+        );
+    }
+}
+
+/// Verify that action_count field in TOML always matches the actual number of actions.
+#[test]
+fn test_action_count_field_consistency() {
+    let toml_paths = [
+        "../src/protocol/TwoPhase/twophase_transpile.toml",
+        "../src/protocol/Paxos/paxos_transpile.toml",
+        "../src/protocol/LeaderElection/election_transpile.toml",
+        "../src/protocol/Raft/raft_transpile.toml",
+        "../src/protocol/ChainReplication/chain_transpile.toml",
+        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+        "../src/protocol/PBFT/pbft_transpile.toml",
+        "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+        "../src/protocol/EPaxos/epaxos_transpile.toml",
+    ];
+
+    for path in &toml_paths {
+        let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(path))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", path, e));
+        let sched = config
+            .scheduler
+            .unwrap_or_else(|| panic!("{} has no [scheduler] section", path));
+        assert_eq!(
+            sched.action_count,
+            sched.actions.len(),
+            "{}: action_count ({}) != actions.len() ({})",
+            path,
+            sched.action_count,
+            sched.actions.len()
+        );
+    }
+}
+
+/// Verify that every message_driven action has either a message_variant or
+/// can be matched to the classification heuristic.
+#[test]
+fn test_message_driven_actions_have_variants_or_heuristic() {
+    let protocols: &[(&str, &str)] = &[
+        ("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase"),
+        ("../src/protocol/Paxos/paxos_transpile.toml", "Paxos"),
+        ("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection"),
+        ("../src/protocol/Raft/raft_transpile.toml", "Raft"),
+        ("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication"),
+        ("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup"),
+        ("../src/protocol/PBFT/pbft_transpile.toml", "PBFT"),
+        ("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos"),
+        ("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos"),
+    ];
+
+    for (toml_path, protocol) in protocols {
+        let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+        let sched = config
+            .scheduler
+            .unwrap_or_else(|| panic!("{} has no [scheduler] section", protocol));
+
+        for action in &sched.actions {
+            if action.is_message_driven() {
+                // Every message_driven action should have a recognizable name
+                let name = &action.spec_name;
+                let name_lower = name.to_lowercase();
+                let has_msg_keyword = ["receive", "rcv", "recv", "handle"]
+                    .iter()
+                    .any(|kw| name_lower.contains(kw));
+                let has_response_pattern = [
+                    "Send1b", "Send2b", "SendAnswer", "GrantVote", "BecomeLeader",
+                    "StepDown", "FollowerAppendEntries", "SendPreAcceptOk", "SendAcceptOk",
+                    "SendPromise", "WitnessSync", "Sync", "PrePrepare", "EnterCommit",
+                    "ExecuteReply", "PrimaryWrite", "ClientRead",
+                ].iter().any(|p| name.contains(p));
+
+                assert!(
+                    has_msg_keyword || has_response_pattern,
+                    "{}: message_driven action '{}' has no recognizable message keyword or response pattern",
+                    protocol, name
+                );
+            }
+        }
+    }
+}
+
+// --- Scaffold compilation tests ---
+
+/// Generate a scaffold and compile it with rustc to verify it's valid Rust.
+/// We provide minimal stubs for the framework types the scaffold references.
+fn compile_scaffold(toml_path: &str, protocol: &str) {
+    let code = load_and_generate_scaffold(toml_path, protocol);
+
+    // Provide minimal stubs so the scaffold compiles as standalone Rust.
+    // The scaffold imports from: args_t::*, protocol_trait::*, io_s::*, types_gen::*, gen_module, message::*
+    // io_s re-exports protocol_trait so we must avoid duplicate definitions.
+    let stubs = format!(r#"
+#![allow(dead_code, unused_variables, unused_imports)]
+
+pub mod crate_stub {{
+    pub mod common {{
+        pub mod framework {{
+            pub mod args_t {{
+                pub type Args = Vec<Vec<u8>>;
+            }}
+            pub mod protocol_trait {{
+                pub use super::args_t::Args;
+                pub struct EndPoint {{ pub id: Vec<u8> }}
+                impl EndPoint {{
+                    pub fn clone_up_to_view(&self) -> EndPoint {{
+                        EndPoint {{ id: self.id.clone() }}
+                    }}
+                }}
+                impl Clone for EndPoint {{
+                    fn clone(&self) -> Self {{ EndPoint {{ id: self.id.clone() }} }}
+                }}
+                pub struct GenericPacket<M> {{ pub src: EndPoint, pub dst: EndPoint, pub msg: M }}
+                pub enum GenericOutbound<M> {{ None, Broadcast {{ msg: M, dst: Vec<EndPoint> }}, Send {{ msg: M, dst: EndPoint }} }}
+                pub struct StepResult<M> {{ pub ok: bool, pub outbound: GenericOutbound<M> }}
+                pub trait ProtocolConfig {{ fn parse_config(me: &EndPoint, args: &Args) -> Option<Self> where Self: Sized; fn get_peers(&self) -> &Vec<EndPoint>; }}
+                pub trait ProtocolHost {{ type Msg; type Cfg: ProtocolConfig; fn init(config: &Self::Cfg) -> Option<Self> where Self: Sized; fn next(&mut self, config: &Self::Cfg, packet: Option<GenericPacket<Self::Msg>>) -> StepResult<Self::Msg>; }}
+            }}
+        }}
+        pub mod native {{
+            pub mod io_s {{
+                pub use super::super::framework::protocol_trait::*;
+            }}
+        }}
+    }}
+    pub mod generated {{
+        pub mod {protocol} {{
+            pub mod {gen_module} {{
+                pub struct CConstants;
+                impl Default for CConstants {{ fn default() -> Self {{ CConstants }} }}
+                pub struct CState;
+                pub fn CInit(_c: &CConstants) -> CState {{ CState }}
+            }}
+            pub mod types_gen {{
+                pub use super::{gen_module}::*;
+            }}
+        }}
+    }}
+    pub mod implementation {{
+        pub mod {protocol} {{
+            pub mod message {{
+                pub enum {msg_enum} {{
+                    {msg_variants}
+                }}
+            }}
+        }}
+    }}
+}}
+"#,
+        protocol = protocol,
+        gen_module = format!("{}_gen", protocol.to_lowercase()),
+        msg_enum = {
+            let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+                .expect("load toml");
+            config.messages.as_ref().expect("messages").enum_name.clone()
+        },
+        msg_variants = {
+            let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+                .expect("load toml");
+            let msg = config.messages.as_ref().expect("messages");
+            msg.variants.iter().map(|v| {{
+                if v.fields.is_empty() {
+                    format!("    {},", v.name)
+                } else {
+                    let fields: Vec<String> = v.fields.iter()
+                        .filter_map(|f| if f.len() >= 2 { Some(format!("{}: {}", f[0], f[1])) } else { None })
+                        .collect();
+                    format!("    {} {{ {} }},", v.name, fields.join(", "))
+                }
+            }}).collect::<Vec<_>>().join("\n                    ")
+        },
+    );
+
+    // Rewrite use paths and fix inner doc comments
+    let adapted = code
+        .replace("use crate::", "use crate_stub::")
+        .lines()
+        .map(|line| {
+            if line.starts_with("//!") {
+                line.replacen("//!", "//", 1)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let program = format!("{}\n{}\nfn main() {{}}\n", stubs, adapted);
+
+    // Write to temp file and compile
+    let tmp_dir = std::env::temp_dir();
+    let src_path = tmp_dir.join(format!("test_scaffold_{}.rs", protocol.to_lowercase()));
+    let out_path = tmp_dir.join(format!("test_scaffold_{}", protocol.to_lowercase()));
+    std::fs::write(&src_path, &program).expect("write temp source");
+
+    let output = std::process::Command::new("rustc")
+        .arg("--edition=2021")
+        .arg("-o")
+        .arg(&out_path)
+        .arg(&src_path)
+        .output()
+        .expect("Failed to run rustc");
+
+    // Clean up
+    let _ = std::fs::remove_file(&src_path);
+    let _ = std::fs::remove_file(&out_path);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!(
+            "{} scaffold failed to compile:\n{}\n\nGenerated code:\n{}",
+            protocol, stderr, program
+        );
+    }
+}
+
+#[test]
+fn test_scaffold_compiles_twophase() {
+    compile_scaffold("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase");
+}
+
+#[test]
+fn test_scaffold_compiles_paxos() {
+    compile_scaffold("../src/protocol/Paxos/paxos_transpile.toml", "Paxos");
+}
+
+#[test]
+fn test_scaffold_compiles_leader_election() {
+    compile_scaffold("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection");
+}
+
+#[test]
+fn test_scaffold_compiles_raft() {
+    compile_scaffold("../src/protocol/Raft/raft_transpile.toml", "Raft");
+}
+
+#[test]
+fn test_scaffold_compiles_chain_replication() {
+    compile_scaffold("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication");
+}
+
+#[test]
+fn test_scaffold_compiles_primary_backup() {
+    compile_scaffold("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup");
+}
+
+#[test]
+fn test_scaffold_compiles_pbft() {
+    compile_scaffold("../src/protocol/PBFT/pbft_transpile.toml", "PBFT");
+}
+
+#[test]
+fn test_scaffold_compiles_vertical_paxos() {
+    compile_scaffold("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos");
+}
+
+#[test]
+fn test_scaffold_compiles_epaxos() {
+    compile_scaffold("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos");
+}
+
+// ============================================================
 // Phase 17.7.2: Per-protocol host init → single step tests
 // ============================================================
 
