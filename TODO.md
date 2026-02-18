@@ -5283,7 +5283,11 @@ The LNext spec function is a disjunction of all protocol actions — it's the sc
   - Per-role step methods with filtered message dispatch + timer round-robin
   - 14 new unit tests (1026 total = 915 unit + 111 integration)
   - Backwards compatible: no TOML change = same flat dispatch output
-- [ ] Add message flag simulation for LeaderElection/VerticalPaxos/EPaxos
+- [x] **17.4.4b**: Add message flag simulation for LeaderElection/VerticalPaxos/EPaxos
+  - Added `flag_injections: Vec<Vec<String>>` field to `SchedulerActionConfig` (serde default, backwards compatible)
+  - Scaffold generator emits `self.state.{field} = {value};` in handler body before TODO stubs
+  - Parameters referenced in flag_injections drop `_` prefix (usable in assignments)
+  - 8 new unit tests (1034 total = 923 unit + 111 integration)
 - [ ] Add guard check generation from spec preconditions
 
 ### Phase 17.5: Per-Protocol Wiring (protocol-specific glue)

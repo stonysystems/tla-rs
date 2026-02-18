@@ -683,15 +683,35 @@ fn emit_handler_methods(out: &mut String, params: &HostScaffoldParams) {
         if let Some(variant) = variant_fields {
             for field in &variant.fields {
                 if field.len() >= 2 {
+                    // If this field is referenced in flag_injections, emit without _ prefix
+                    let is_used = action.flag_injections.iter().any(|inj| {
+                        inj.len() >= 2 && inj[1] == field[0]
+                    });
+                    let prefix = if is_used { "" } else { "_" };
                     out.push_str(&format!(
-                        "        _{}: {},\n",
-                        field[0], field[1]
+                        "        {}{}: {},\n",
+                        prefix, field[0], field[1]
                     ));
                 }
             }
         }
 
         out.push_str(&format!("    ) -> StepResult<{}> {{\n", msg_type));
+
+        // Emit flag injections before the TODO stubs
+        if action.has_flag_injections() {
+            out.push_str("        // Flag injection: simulate receiving the message\n");
+            for inj in &action.flag_injections {
+                if inj.len() >= 2 {
+                    out.push_str(&format!(
+                        "        self.state.{} = {};\n",
+                        inj[0], inj[1]
+                    ));
+                }
+            }
+            out.push('\n');
+        }
+
         out.push_str("        // TODO: Add guard checks (spec preconditions)\n");
         out.push_str(&format!(
             "        // TODO: Call {}::{}(&self.state, &config.constants, ...)\n",
@@ -1904,6 +1924,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![vec!["b".to_string(), "int".to_string()]],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LSend1b".to_string(),
@@ -1911,6 +1932,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![vec!["b".to_string(), "int".to_string()]],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LRecvPromise".to_string(),
@@ -1922,6 +1944,7 @@ mod tests {
                         vec!["ab".to_string(), "int".to_string()],
                         vec!["av".to_string(), "int".to_string()],
                     ],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LSend2a".to_string(),
@@ -1929,6 +1952,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![vec!["v".to_string(), "int".to_string()]],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LSend2b".to_string(),
@@ -1939,6 +1963,7 @@ mod tests {
                         vec!["b".to_string(), "int".to_string()],
                         vec!["v".to_string(), "int".to_string()],
                     ],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LRecvAccepted".to_string(),
@@ -1946,6 +1971,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Accepted".to_string()),
                     existential_params: vec![vec!["a".to_string(), "int".to_string()]],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LLearn".to_string(),
@@ -1953,6 +1979,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
             ],
             role_dispatch: None,
@@ -2124,6 +2151,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LAction2".to_string(),
@@ -2131,6 +2159,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
             ],
             role_dispatch: None,
@@ -2162,6 +2191,7 @@ mod tests {
                 kind: "message_driven".to_string(),
                 message_variant: Some("Ping".to_string()),
                 existential_params: vec![],
+                flag_injections: vec![],
             }],
             role_dispatch: None,
         };
@@ -2215,6 +2245,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LTMSendCommit".to_string(),
@@ -2222,6 +2253,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LTMSendAbort".to_string(),
@@ -2229,6 +2261,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LTMRecvPrepared".to_string(),
@@ -2236,6 +2269,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("PreparedVote".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LRMRecvPrepare".to_string(),
@@ -2243,6 +2277,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Prepare".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LRMRecvCommit".to_string(),
@@ -2250,6 +2285,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Commit".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LRMRecvAbort".to_string(),
@@ -2257,6 +2293,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Abort".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
             ],
             role_dispatch: Some(RoleDispatchConfig {
@@ -2318,6 +2355,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("ClientWrite".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LHeadForward".to_string(),
@@ -2325,6 +2363,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LMiddleRecvFwd".to_string(),
@@ -2332,6 +2371,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Forward".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LMiddleRecvAck".to_string(),
@@ -2339,6 +2379,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Ack".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LTailRecvFwd".to_string(),
@@ -2346,6 +2387,7 @@ mod tests {
                     kind: "message_driven".to_string(),
                     message_variant: Some("Forward".to_string()),
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
                 SchedulerActionConfig {
                     spec_name: "LTailCommit".to_string(),
@@ -2353,6 +2395,7 @@ mod tests {
                     kind: "timer_driven".to_string(),
                     message_variant: None,
                     existential_params: vec![],
+                    flag_injections: vec![],
                 },
             ],
             role_dispatch: Some(RoleDispatchConfig {
@@ -2609,5 +2652,310 @@ actions = ["CAction2"]
         // next() body should have if/else dispatch, not direct match pkt.msg
         assert!(next_body.contains("if config.my_index == 0"));
         assert!(!next_body.contains("return match pkt.msg"));
+    }
+
+    // ---------------------------------------------------------------
+    // Phase 17.4.4b: Flag injection tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_flag_injection_basic() {
+        let params = HostScaffoldParams {
+            protocol_name: "FlagTest".to_string(),
+            module_name: "flagtest".to_string(),
+            gen_module: "flagtest_gen".to_string(),
+            message_enum: "FlagMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Election".to_string(),
+                doc: String::new(),
+                fields: vec![vec!["sender".to_string(), "u64".to_string()]],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LSendAnswer".to_string(),
+                exec_name: "CSendAnswer".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Election".to_string()),
+                existential_params: vec![],
+                flag_injections: vec![
+                    vec!["msgs_election".to_string(), "true".to_string()],
+                    vec!["msgs_election_sender".to_string(), "sender".to_string()],
+                ],
+            }],
+            role_dispatch: None,
+        };
+        let code = generate_host_scaffold(&params);
+        // Flag injection comment
+        assert!(
+            code.contains("// Flag injection: simulate receiving the message"),
+            "Missing flag injection comment"
+        );
+        // Literal boolean assignment
+        assert!(
+            code.contains("self.state.msgs_election = true;"),
+            "Missing boolean flag injection"
+        );
+        // Parameter reference assignment
+        assert!(
+            code.contains("self.state.msgs_election_sender = sender;"),
+            "Missing parameter flag injection"
+        );
+    }
+
+    #[test]
+    fn test_flag_injection_param_prefix_removed() {
+        let params = HostScaffoldParams {
+            protocol_name: "FlagTest".to_string(),
+            module_name: "flagtest".to_string(),
+            gen_module: "flagtest_gen".to_string(),
+            message_enum: "FlagMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Election".to_string(),
+                doc: String::new(),
+                fields: vec![vec!["sender".to_string(), "u64".to_string()]],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LSendAnswer".to_string(),
+                exec_name: "CSendAnswer".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Election".to_string()),
+                existential_params: vec![],
+                flag_injections: vec![
+                    vec!["msgs_election".to_string(), "true".to_string()],
+                    vec!["msgs_election_sender".to_string(), "sender".to_string()],
+                ],
+            }],
+            role_dispatch: None,
+        };
+        let code = generate_host_scaffold(&params);
+        // Parameter used in flag injection should NOT have _ prefix
+        assert!(
+            code.contains("        sender: u64,"),
+            "Used param should not have _ prefix"
+        );
+        assert!(
+            !code.contains("        _sender: u64,"),
+            "Used param should not have _ prefix"
+        );
+    }
+
+    #[test]
+    fn test_flag_injection_empty_backwards_compat() {
+        // When flag_injections is empty, no injection code should appear
+        let params = HostScaffoldParams {
+            protocol_name: "NoFlag".to_string(),
+            module_name: "noflag".to_string(),
+            gen_module: "noflag_gen".to_string(),
+            message_enum: "NoFlagMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Ping".to_string(),
+                doc: String::new(),
+                fields: vec![vec!["id".to_string(), "u64".to_string()]],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LHandlePing".to_string(),
+                exec_name: "CHandlePing".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Ping".to_string()),
+                existential_params: vec![],
+                flag_injections: vec![],
+            }],
+            role_dispatch: None,
+        };
+        let code = generate_host_scaffold(&params);
+        // No flag injection comment or self.state assignments
+        assert!(
+            !code.contains("// Flag injection:"),
+            "Empty injections should produce no comment"
+        );
+        assert!(
+            !code.contains("self.state."),
+            "Empty injections should produce no state assignments"
+        );
+        // Unused parameter should still have _ prefix
+        assert!(
+            code.contains("_id: u64,"),
+            "Unused param should have _ prefix"
+        );
+    }
+
+    #[test]
+    fn test_flag_injection_mixed_used_unused_params() {
+        // Test with multiple fields: some used in injections, some not
+        let params = HostScaffoldParams {
+            protocol_name: "MixFlag".to_string(),
+            module_name: "mixflag".to_string(),
+            gen_module: "mixflag_gen".to_string(),
+            message_enum: "MixMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Promise".to_string(),
+                doc: String::new(),
+                fields: vec![
+                    vec!["ballot".to_string(), "u64".to_string()],
+                    vec!["v_bal".to_string(), "u64".to_string()],
+                    vec!["val".to_string(), "u64".to_string()],
+                ],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LRecvPromise".to_string(),
+                exec_name: "CRecvPromise".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Promise".to_string()),
+                existential_params: vec![],
+                flag_injections: vec![
+                    vec!["msgs_promise".to_string(), "true".to_string()],
+                    vec!["msgs_promise_bal".to_string(), "ballot".to_string()],
+                    // v_bal and val are NOT used in injections
+                ],
+            }],
+            role_dispatch: None,
+        };
+        let code = generate_host_scaffold(&params);
+        // ballot is used → no _ prefix
+        assert!(
+            code.contains("        ballot: u64,"),
+            "Used ballot should not have _ prefix"
+        );
+        // v_bal and val are unused → _ prefix
+        assert!(
+            code.contains("        _v_bal: u64,"),
+            "Unused v_bal should have _ prefix"
+        );
+        assert!(
+            code.contains("        _val: u64,"),
+            "Unused val should have _ prefix"
+        );
+        // Injections present
+        assert!(code.contains("self.state.msgs_promise = true;"));
+        assert!(code.contains("self.state.msgs_promise_bal = ballot;"));
+    }
+
+    #[test]
+    fn test_flag_injection_false_literal() {
+        let params = HostScaffoldParams {
+            protocol_name: "FalseFlag".to_string(),
+            module_name: "falseflag".to_string(),
+            gen_module: "falseflag_gen".to_string(),
+            message_enum: "FalseMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Reset".to_string(),
+                doc: String::new(),
+                fields: vec![],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LReset".to_string(),
+                exec_name: "CReset".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Reset".to_string()),
+                existential_params: vec![],
+                flag_injections: vec![
+                    vec!["msgs_active".to_string(), "false".to_string()],
+                ],
+            }],
+            role_dispatch: None,
+        };
+        let code = generate_host_scaffold(&params);
+        assert!(
+            code.contains("self.state.msgs_active = false;"),
+            "False literal should be emitted"
+        );
+    }
+
+    #[test]
+    fn test_flag_injection_toml_deserialization() {
+        let toml_str = r#"
+[scheduler]
+next_fn = "LNext"
+action_count = 1
+
+[[scheduler.actions]]
+spec_name = "LSendAnswer"
+exec_name = "CSendAnswer"
+kind = "message_driven"
+message_variant = "Election"
+flag_injections = [["msgs_election", "true"], ["msgs_election_sender", "sender"]]
+"#;
+        let config: crate::config::SchedulerTomlConfig =
+            toml::from_str::<toml::Value>(toml_str)
+                .unwrap()
+                .get("scheduler")
+                .unwrap()
+                .clone()
+                .try_into()
+                .unwrap();
+
+        assert_eq!(config.actions.len(), 1);
+        let action = &config.actions[0];
+        assert!(action.has_flag_injections());
+        assert_eq!(action.flag_injections.len(), 2);
+        assert_eq!(action.flag_injections[0], vec!["msgs_election", "true"]);
+        assert_eq!(action.flag_injections[1], vec!["msgs_election_sender", "sender"]);
+    }
+
+    #[test]
+    fn test_flag_injection_toml_default_empty() {
+        let toml_str = r#"
+[scheduler]
+next_fn = "LNext"
+action_count = 1
+
+[[scheduler.actions]]
+spec_name = "LSend1a"
+exec_name = "CSend1a"
+kind = "timer_driven"
+"#;
+        let config: crate::config::SchedulerTomlConfig =
+            toml::from_str::<toml::Value>(toml_str)
+                .unwrap()
+                .get("scheduler")
+                .unwrap()
+                .clone()
+                .try_into()
+                .unwrap();
+
+        let action = &config.actions[0];
+        assert!(!action.has_flag_injections());
+        assert!(action.flag_injections.is_empty());
+    }
+
+    #[test]
+    fn test_flag_injection_with_role_dispatch() {
+        // Flag injections work when combined with role dispatch
+        let params = HostScaffoldParams {
+            protocol_name: "RoleFlag".to_string(),
+            module_name: "roleflag".to_string(),
+            gen_module: "roleflag_gen".to_string(),
+            message_enum: "RoleFlagMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Election".to_string(),
+                doc: String::new(),
+                fields: vec![vec!["sender".to_string(), "u64".to_string()]],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LSendAnswer".to_string(),
+                exec_name: "CSendAnswer".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Election".to_string()),
+                existential_params: vec![],
+                flag_injections: vec![
+                    vec!["msgs_election".to_string(), "true".to_string()],
+                    vec!["msgs_election_sender".to_string(), "sender".to_string()],
+                ],
+            }],
+            role_dispatch: Some(RoleDispatchConfig {
+                dispatch_style: "config_index".to_string(),
+                dispatch_field: "config.my_index".to_string(),
+                roles: vec![RoleConfig {
+                    name: "node".to_string(),
+                    condition: String::new(),
+                    actions: vec!["CSendAnswer".to_string()],
+                }],
+            }),
+        };
+        let code = generate_host_scaffold(&params);
+        // Handler still has flag injections
+        assert!(code.contains("self.state.msgs_election = true;"));
+        assert!(code.contains("self.state.msgs_election_sender = sender;"));
+        // Role step method exists
+        assert!(code.contains("fn node_step("));
     }
 }

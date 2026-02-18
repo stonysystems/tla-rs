@@ -377,6 +377,21 @@ pub struct SchedulerActionConfig {
     /// Existential parameters as [name, type] pairs
     #[serde(default)]
     pub existential_params: Vec<Vec<String>>,
+
+    /// Flag injections: list of [state_field, value] pairs to emit before calling C* function.
+    /// Protocols that model messages as shared-state boolean fields (e.g., `msgs_election: bool`)
+    /// need the host to inject received packet fields into `self.state.msgs_*` before the
+    /// generated function can check guards.
+    ///
+    /// `value` is either "true"/"false" (literal) or a message parameter name (passed through).
+    /// Default: empty (backwards compatible — no injections generated).
+    ///
+    /// Example TOML:
+    /// ```toml
+    /// flag_injections = [["msgs_election", "true"], ["msgs_election_sender", "sender"]]
+    /// ```
+    #[serde(default)]
+    pub flag_injections: Vec<Vec<String>>,
 }
 
 impl SchedulerActionConfig {
@@ -386,6 +401,11 @@ impl SchedulerActionConfig {
 
     pub fn is_message_driven(&self) -> bool {
         self.kind == "message_driven"
+    }
+
+    /// Returns true if this action has any flag injections configured.
+    pub fn has_flag_injections(&self) -> bool {
+        !self.flag_injections.is_empty()
     }
 }
 
