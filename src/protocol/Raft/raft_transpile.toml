@@ -117,3 +117,75 @@ fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["pr
 name = "AppendResponse"
 doc = "Follower responds to an append entries request."
 fields = [["term", "u64"], ["success", "bool"], ["match_index", "u64"], ["follower", "u64"]]
+# Auto-generated from LNext — 11 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 11
+
+[[scheduler.actions]]
+spec_name = "LTimeout"
+exec_name = "CTimeout"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LGrantVote"
+exec_name = "CGrantVote"
+kind = "message_driven"
+existential_params = [["candidate_term", "int"], ["candidate_last_log_term", "int"], ["candidate_last_log_index", "int"], ["candidate_id", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceiveVoteGranted"
+exec_name = "CReceiveVoteGranted"
+kind = "message_driven"
+existential_params = [["voter", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LBecomeLeader"
+exec_name = "CBecomeLeader"
+kind = "message_driven"
+
+[[scheduler.actions]]
+spec_name = "LClientRequest"
+exec_name = "CClientRequest"
+kind = "timer_driven"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSendAppendEntries"
+exec_name = "CSendAppendEntries"
+kind = "timer_driven"
+existential_params = [["follower", "int"], ["entry_value", "int"], ["prev_log_index", "int"], ["prev_log_term", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LFollowerAppendEntries"
+exec_name = "CFollowerAppendEntries"
+kind = "message_driven"
+message_variant = "AppendEntries"
+existential_params = [["entry_value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LHandleAppendResponse"
+exec_name = "CHandleAppendResponse"
+kind = "message_driven"
+message_variant = "AppendResponse"
+existential_params = [["follower", "u64"], ["new_match_index", "u64"]]
+
+[[scheduler.actions]]
+spec_name = "LHandleAppendReject"
+exec_name = "CHandleAppendReject"
+kind = "message_driven"
+existential_params = [["follower", "u64"]]
+
+[[scheduler.actions]]
+spec_name = "LAdvanceCommitIndex"
+exec_name = "CAdvanceCommitIndex"
+kind = "timer_driven"
+existential_params = [["new_commit_index", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LStepDown"
+exec_name = "CStepDown"
+kind = "message_driven"
+existential_params = [["new_term", "int"]]
+

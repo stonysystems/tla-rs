@@ -53,12 +53,13 @@ pub use ast::{Expr, Parameter, ParameterMode, SpecFunction, Type};
 pub use checker::{validate_function, HarmonyChecker, ObligationChecker, SaturationChecker};
 pub use codegen::{
     classify_actions, extract_lnext_actions, find_and_analyze_lnext, generate_all_types,
-    generate_message_code, scheduler_config_to_toml, ActionKind, GeneratedCode, SchedulerAction,
-    SchedulerConfig, TemplateCodeGenerator, TypeGenerator,
+    generate_host_scaffold, generate_message_code, scheduler_config_to_toml, ActionKind,
+    GeneratedCode, HostScaffoldParams, SchedulerAction, SchedulerConfig, TemplateCodeGenerator,
+    TypeGenerator,
 };
 pub use config::{
     MessageConfig, MessageVariant, ModuleConfig, NamingConfig, OutputConfig,
-    TranspilerConfig as FileConfig,
+    SchedulerActionConfig, SchedulerTomlConfig, TranspilerConfig as FileConfig,
 };
 pub use error::{DiagnosticAccumulator, TranspileError, TranspileResult, TranspileWarning};
 pub use moder::{AnnotatedFunction, AssignmentTracker, ModeAnalyzer, PredicateKind};

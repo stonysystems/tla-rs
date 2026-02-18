@@ -13,8 +13,8 @@ pub mod template_codegen;
 
 pub use messages::generate_message_code;
 pub use scheduler::{
-    classify_actions, extract_lnext_actions, find_and_analyze_lnext, scheduler_config_to_toml,
-    ActionKind, SchedulerAction, SchedulerConfig,
+    classify_actions, extract_lnext_actions, find_and_analyze_lnext, generate_host_scaffold,
+    scheduler_config_to_toml, ActionKind, HostScaffoldParams, SchedulerAction, SchedulerConfig,
 };
 pub use template_codegen::TemplateCodeGenerator;
 

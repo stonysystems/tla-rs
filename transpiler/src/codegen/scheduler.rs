@@ -8,6 +8,7 @@
 //! using name-based heuristics and optional message variant mapping.
 
 use crate::ast::{Binding, Expr, Path, SpecFunction, Type};
+use crate::config::{MessageVariant, SchedulerActionConfig};
 
 /// How an action is triggered at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -438,6 +439,459 @@ pub fn find_and_analyze_lnext(
         .iter()
         .find(|f| f.name == next_fn_name)
         .and_then(|f| extract_lnext_actions(f, spec_prefix, exec_prefix))
+}
+
+/// Parameters for generating a host.rs scaffold.
+pub struct HostScaffoldParams {
+    /// Protocol name in PascalCase (e.g., "Paxos", "TwoPhase")
+    pub protocol_name: String,
+    /// Module name in snake_case (e.g., "paxos", "twophase")
+    pub module_name: String,
+    /// Generated module name (e.g., "paxos_gen")
+    pub gen_module: String,
+    /// Message enum name (e.g., "PaxosMessage")
+    pub message_enum: String,
+    /// Message variants with their fields
+    pub message_variants: Vec<MessageVariant>,
+    /// Scheduler actions from the TOML config
+    pub actions: Vec<SchedulerActionConfig>,
+}
+
+/// Generate a host.rs scaffold from a scheduler config and message config.
+///
+/// The scaffold includes:
+/// - Config struct with `ProtocolConfig` trait impl
+/// - Host struct with `ProtocolHost` trait impl
+/// - Message dispatch in `next()` method
+/// - Round-robin timer dispatch
+/// - Stub handler methods with TODO comments
+///
+/// The generated code compiles but handler stubs return `GenericOutbound::None`.
+/// Protocol-specific guard logic and outbound message construction must be
+/// hand-edited.
+pub fn generate_host_scaffold(params: &HostScaffoldParams) -> String {
+    let mut out = String::new();
+
+    // Module doc comment
+    emit_header(&mut out, params);
+
+    // Imports
+    emit_imports(&mut out, params);
+
+    // Config struct + ProtocolConfig impl
+    emit_config(&mut out, params);
+
+    // Host struct
+    emit_host_struct(&mut out, params);
+
+    // Handler methods (message-driven + timer-driven stubs)
+    emit_handler_methods(&mut out, params);
+
+    // ProtocolHost trait impl (init + next)
+    emit_protocol_host_impl(&mut out, params);
+
+    out
+}
+
+fn emit_header(out: &mut String, params: &HostScaffoldParams) {
+    out.push_str(&format!(
+        "//! {} protocol host implementation.\n",
+        params.protocol_name
+    ));
+    out.push_str("//!\n");
+    out.push_str("//! Auto-generated scaffold by the transpiler.\n");
+    out.push_str("//! TODO: Add protocol-specific guard logic and outbound message construction.\n");
+    out.push('\n');
+}
+
+fn emit_imports(out: &mut String, params: &HostScaffoldParams) {
+    out.push_str("use crate::common::framework::args_t::*;\n");
+    out.push_str("use crate::common::framework::protocol_trait::*;\n");
+    out.push_str("use crate::common::native::io_s::*;\n");
+    out.push_str(&format!(
+        "use crate::generated::{}::{};\n",
+        params.protocol_name, params.gen_module
+    ));
+    out.push_str(&format!(
+        "use crate::generated::{}::types_gen::*;\n",
+        params.protocol_name
+    ));
+    out.push_str(&format!(
+        "use crate::implementation::{}::message::*;\n",
+        params.protocol_name
+    ));
+    out.push_str("use std::collections::HashSet;\n");
+    out.push('\n');
+}
+
+fn emit_config(out: &mut String, params: &HostScaffoldParams) {
+    // Config struct
+    out.push_str(&format!(
+        "/// {} protocol configuration.\n",
+        params.protocol_name
+    ));
+    out.push_str(&format!("pub struct {}Config {{\n", params.protocol_name));
+    out.push_str("    /// All peer endpoints (ordered by node index).\n");
+    out.push_str("    pub peers: Vec<EndPoint>,\n");
+    out.push_str("    /// This node's index in the peers list.\n");
+    out.push_str("    pub my_index: u64,\n");
+    out.push_str("    /// Protocol constants.\n");
+    out.push_str("    pub constants: CConstants,\n");
+    out.push_str("}\n\n");
+
+    // ProtocolConfig impl
+    out.push_str(&format!(
+        "impl ProtocolConfig for {}Config {{\n",
+        params.protocol_name
+    ));
+    out.push_str("    fn parse_config(me: &EndPoint, args: &Args) -> Option<Self> {\n");
+    out.push_str("        if args.len() < 2 {\n");
+    out.push_str(&format!(
+        "            eprintln!(\"{}: need at least 2 args (self + peers)\");\n",
+        params.protocol_name
+    ));
+    out.push_str("            return None;\n");
+    out.push_str("        }\n\n");
+    out.push_str("        let mut peers: Vec<EndPoint> = Vec::new();\n");
+    out.push_str("        let mut my_index: Option<u64> = None;\n\n");
+    out.push_str("        for i in 0..args.len() {\n");
+    out.push_str("            let ep = EndPoint { id: args[i].clone() };\n");
+    out.push_str("            if ep.id == me.id {\n");
+    out.push_str("                my_index = Some(i as u64);\n");
+    out.push_str("            }\n");
+    out.push_str("            peers.push(ep);\n");
+    out.push_str("        }\n\n");
+    out.push_str("        let my_index = match my_index {\n");
+    out.push_str("            Some(idx) => idx,\n");
+    out.push_str("            None => {\n");
+    out.push_str(&format!(
+        "                eprintln!(\"{}: own endpoint not found in args\");\n",
+        params.protocol_name
+    ));
+    out.push_str("                return None;\n");
+    out.push_str("            },\n");
+    out.push_str("        };\n\n");
+    out.push_str("        // TODO: Build protocol-specific constants from peers\n");
+    out.push_str("        let constants = CConstants::default(); // FIXME: initialize properly\n\n");
+    out.push_str(&format!(
+        "        Some({}Config {{\n",
+        params.protocol_name
+    ));
+    out.push_str("            peers,\n");
+    out.push_str("            my_index,\n");
+    out.push_str("            constants,\n");
+    out.push_str("        })\n");
+    out.push_str("    }\n\n");
+    out.push_str("    fn get_peers(&self) -> &Vec<EndPoint> {\n");
+    out.push_str("        &self.peers\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+}
+
+fn emit_host_struct(out: &mut String, params: &HostScaffoldParams) {
+    out.push_str(&format!(
+        "/// The {} host wrapping protocol state.\n",
+        params.protocol_name
+    ));
+    out.push_str(&format!("pub struct {}Host {{\n", params.protocol_name));
+    out.push_str("    /// The verified protocol state.\n");
+    out.push_str("    pub state: CState,\n");
+    out.push_str("    /// Round-robin action index for timer-driven actions.\n");
+    out.push_str("    pub action_index: u64,\n");
+    out.push_str("}\n\n");
+}
+
+fn emit_handler_methods(out: &mut String, params: &HostScaffoldParams) {
+    let config_type = format!("{}Config", params.protocol_name);
+    let msg_type = &params.message_enum;
+
+    out.push_str(&format!("impl {}Host {{\n", params.protocol_name));
+
+    // Helper: resolve_sender_index
+    out.push_str("    /// Resolve the sender's node index from their endpoint.\n");
+    out.push_str(&format!(
+        "    fn resolve_sender_index(config: &{}, src: &EndPoint) -> Option<u64> {{\n",
+        config_type
+    ));
+    out.push_str("        for i in 0..config.peers.len() {\n");
+    out.push_str("            if config.peers[i].id == src.id {\n");
+    out.push_str("                return Some(i as u64);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        None\n");
+    out.push_str("    }\n\n");
+
+    // Helper: other_peers
+    out.push_str("    /// Collect all peer endpoints except self for broadcasting.\n");
+    out.push_str(&format!(
+        "    fn other_peers(config: &{}) -> Vec<EndPoint> {{\n",
+        config_type
+    ));
+    out.push_str("        let mut others = Vec::new();\n");
+    out.push_str("        for i in 0..config.peers.len() {\n");
+    out.push_str("            if i as u64 != config.my_index {\n");
+    out.push_str("                others.push(config.peers[i].clone_up_to_view());\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        others\n");
+    out.push_str("    }\n");
+
+    // Message-driven handler stubs
+    let msg_actions: Vec<&SchedulerActionConfig> = params
+        .actions
+        .iter()
+        .filter(|a| a.is_message_driven())
+        .collect();
+
+    if !msg_actions.is_empty() {
+        out.push_str("\n    // ---------------------------------------------------------------\n");
+        out.push_str("    // Message-driven actions (called when a packet arrives)\n");
+        out.push_str("    // ---------------------------------------------------------------\n");
+    }
+
+    for action in &msg_actions {
+        let handler_name = to_snake_case(&action.exec_name);
+        let variant_name = action
+            .message_variant
+            .as_deref()
+            .unwrap_or("Unknown");
+
+        // Find the message variant to get its fields
+        let variant_fields = params
+            .message_variants
+            .iter()
+            .find(|v| v.name == variant_name);
+
+        out.push_str(&format!(
+            "\n    /// Handle incoming {} message → {}.\n",
+            variant_name, action.exec_name
+        ));
+        out.push_str(&format!(
+            "    fn handle_{}(\n        &mut self,\n        config: &{},\n        _src: &EndPoint,\n        _sender_id: u64,\n",
+            handler_name, config_type
+        ));
+
+        // Add message fields as parameters
+        if let Some(variant) = variant_fields {
+            for field in &variant.fields {
+                if field.len() >= 2 {
+                    out.push_str(&format!(
+                        "        _{}: {},\n",
+                        field[0], field[1]
+                    ));
+                }
+            }
+        }
+
+        out.push_str(&format!("    ) -> StepResult<{}> {{\n", msg_type));
+        out.push_str("        // TODO: Add guard checks (spec preconditions)\n");
+        out.push_str(&format!(
+            "        // TODO: Call {}::{}(&self.state, &config.constants, ...)\n",
+            params.gen_module, action.exec_name
+        ));
+        out.push_str("        // TODO: Construct outbound message\n");
+        out.push_str("        StepResult { ok: true, outbound: GenericOutbound::None }\n");
+        out.push_str("    }\n");
+    }
+
+    // Timer-driven handler stubs
+    let timer_actions: Vec<&SchedulerActionConfig> = params
+        .actions
+        .iter()
+        .filter(|a| !a.is_message_driven())
+        .collect();
+
+    if !timer_actions.is_empty() {
+        out.push_str("\n    // ---------------------------------------------------------------\n");
+        out.push_str("    // Timer-driven actions (called on timeout, round-robin)\n");
+        out.push_str("    // ---------------------------------------------------------------\n");
+    }
+
+    for action in &timer_actions {
+        let handler_name = to_snake_case(&action.exec_name);
+
+        out.push_str(&format!(
+            "\n    /// Timer action: {} (round-robin scheduled).\n",
+            action.exec_name
+        ));
+        out.push_str(&format!(
+            "    fn try_{}(\n        &mut self,\n        config: &{},\n    ) -> StepResult<{}> {{\n",
+            handler_name, config_type, msg_type
+        ));
+        out.push_str("        // TODO: Add guard checks (spec preconditions)\n");
+        out.push_str(&format!(
+            "        // TODO: Call {}::{}(&self.state, &config.constants, ...)\n",
+            params.gen_module, action.exec_name
+        ));
+        out.push_str("        // TODO: Construct outbound message if needed\n");
+        out.push_str("        StepResult { ok: true, outbound: GenericOutbound::None }\n");
+        out.push_str("    }\n");
+    }
+
+    out.push_str("}\n\n");
+}
+
+fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
+    let config_type = format!("{}Config", params.protocol_name);
+    let host_type = format!("{}Host", params.protocol_name);
+    let msg_type = &params.message_enum;
+
+    out.push_str(&format!("impl ProtocolHost for {} {{\n", host_type));
+    out.push_str(&format!("    type Msg = {};\n", msg_type));
+    out.push_str(&format!("    type Cfg = {};\n\n", config_type));
+
+    // init()
+    out.push_str("    fn init(config: &Self::Cfg) -> Option<Self> {\n");
+    out.push_str(&format!(
+        "        let state = {}::CInit(&config.constants);\n",
+        params.gen_module
+    ));
+    out.push_str(&format!("        Some({} {{\n", host_type));
+    out.push_str("            state,\n");
+    out.push_str("            action_index: 0,\n");
+    out.push_str("        })\n");
+    out.push_str("    }\n\n");
+
+    // next()
+    out.push_str("    fn next(\n");
+    out.push_str("        &mut self,\n");
+    out.push_str("        config: &Self::Cfg,\n");
+    out.push_str("        packet: Option<GenericPacket<Self::Msg>>,\n");
+    out.push_str("    ) -> StepResult<Self::Msg> {\n");
+
+    // Message dispatch
+    out.push_str("        // Handle incoming message\n");
+    out.push_str("        if let Some(pkt) = packet {\n");
+    out.push_str("            let sender_id = Self::resolve_sender_index(config, &pkt.src);\n");
+    out.push_str("            let sender_id = match sender_id {\n");
+    out.push_str("                Some(id) => id,\n");
+    out.push_str("                None => {\n");
+    out.push_str("                    return StepResult { ok: true, outbound: GenericOutbound::None };\n");
+    out.push_str("                },\n");
+    out.push_str("            };\n\n");
+    out.push_str("            return match pkt.msg {\n");
+
+    // Match arms for each message variant
+    for variant in &params.message_variants {
+        let field_names: Vec<&str> = variant
+            .fields
+            .iter()
+            .filter_map(|f| f.first().map(|s| s.as_str()))
+            .collect();
+
+        let fields_pattern = if field_names.is_empty() {
+            String::new()
+        } else {
+            format!(" {{ {} }}", field_names.join(", "))
+        };
+
+        // Find the message-driven action that maps to this variant
+        let handler = params.actions.iter().find(|a| {
+            a.is_message_driven()
+                && a.message_variant.as_deref() == Some(&variant.name)
+        });
+
+        if let Some(action) = handler {
+            let handler_name = to_snake_case(&action.exec_name);
+            let field_args = if field_names.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", field_names.join(", "))
+            };
+            out.push_str(&format!(
+                "                {}::{}{} => {{\n",
+                msg_type, variant.name, fields_pattern
+            ));
+            out.push_str(&format!(
+                "                    self.handle_{}(config, &pkt.src, sender_id{})\n",
+                handler_name, field_args
+            ));
+            out.push_str("                },\n");
+        } else {
+            // No handler for this variant — no-op
+            out.push_str(&format!(
+                "                {}::{}{} => {{\n",
+                msg_type, variant.name, fields_pattern
+            ));
+            out.push_str("                    // TODO: No handler mapped for this variant\n");
+            out.push_str("                    StepResult { ok: true, outbound: GenericOutbound::None }\n");
+            out.push_str("                },\n");
+        }
+    }
+
+    out.push_str("            };\n");
+    out.push_str("        }\n\n");
+
+    // Timer dispatch (round-robin)
+    let timer_actions: Vec<&SchedulerActionConfig> = params
+        .actions
+        .iter()
+        .filter(|a| !a.is_message_driven())
+        .collect();
+
+    let timer_count = timer_actions.len();
+
+    out.push_str("        // No message -- run timer-driven actions round-robin\n");
+    if timer_count > 0 {
+        out.push_str(&format!(
+            "        let result = match self.action_index % {} {{\n",
+            timer_count
+        ));
+        for (i, action) in timer_actions.iter().enumerate() {
+            let handler_name = to_snake_case(&action.exec_name);
+            if i == timer_count - 1 {
+                out.push_str(&format!(
+                    "            _ => self.try_{}(config),\n",
+                    handler_name
+                ));
+            } else {
+                out.push_str(&format!(
+                    "            {} => self.try_{}(config),\n",
+                    i, handler_name
+                ));
+            }
+        }
+        out.push_str("        };\n");
+        out.push_str("        self.action_index = self.action_index.wrapping_add(1);\n");
+        out.push_str("        result\n");
+    } else {
+        out.push_str("        StepResult { ok: true, outbound: GenericOutbound::None }\n");
+    }
+
+    out.push_str("    }\n");
+    out.push_str("}\n");
+}
+
+/// Convert a CamelCase exec name to snake_case for method names.
+/// E.g., "CSend1a" → "c_send1a", "CRecvPromise" → "c_recv_promise"
+fn to_snake_case(name: &str) -> String {
+    let mut result = String::new();
+    let mut prev_was_upper = false;
+    let mut prev_was_digit = false;
+
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 && !prev_was_upper {
+                result.push('_');
+            }
+            result.push(ch.to_lowercase().next().unwrap());
+            prev_was_upper = true;
+            prev_was_digit = false;
+        } else if ch.is_ascii_digit() {
+            if i > 0 && !prev_was_digit && !prev_was_upper {
+                // Don't add underscore before digit if preceding was uppercase
+            }
+            result.push(ch);
+            prev_was_upper = false;
+            prev_was_digit = true;
+        } else {
+            prev_was_upper = false;
+            prev_was_digit = false;
+            result.push(ch);
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -1062,5 +1516,366 @@ mod tests {
         let (kind, variant) = classify_single_action("LReceivePrepare", &[]);
         assert_eq!(kind, ActionKind::MessageDriven);
         assert!(variant.is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // Phase 17.4.3: to_snake_case tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_to_snake_case_basic() {
+        // Consecutive uppercase letters (CS, CR) are treated as one run
+        assert_eq!(to_snake_case("CSend1a"), "csend1a");
+        assert_eq!(to_snake_case("CRecvPromise"), "crecv_promise");
+        assert_eq!(to_snake_case("CSend2a"), "csend2a");
+        assert_eq!(to_snake_case("CSend2b"), "csend2b");
+    }
+
+    #[test]
+    fn test_to_snake_case_multi_word() {
+        assert_eq!(to_snake_case("CRecvAccepted"), "crecv_accepted");
+        assert_eq!(to_snake_case("CLearn"), "clearn");
+        assert_eq!(to_snake_case("CInit"), "cinit");
+    }
+
+    #[test]
+    fn test_to_snake_case_all_lower() {
+        assert_eq!(to_snake_case("hello"), "hello");
+        assert_eq!(to_snake_case("world"), "world");
+    }
+
+    #[test]
+    fn test_to_snake_case_consecutive_upper() {
+        // Consecutive uppercase letters don't add extra underscores
+        assert_eq!(to_snake_case("CRMPrepare"), "crmprepare");
+        assert_eq!(to_snake_case("CTMSendPrepare"), "ctmsend_prepare");
+    }
+
+    #[test]
+    fn test_to_snake_case_complex_names() {
+        assert_eq!(
+            to_snake_case("CFollowerAppendEntries"),
+            "cfollower_append_entries"
+        );
+        assert_eq!(
+            to_snake_case("CGrantVoteForCandidate"),
+            "cgrant_vote_for_candidate"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Phase 17.4.3: generate_host_scaffold tests
+    // ---------------------------------------------------------------
+
+    fn make_paxos_params() -> HostScaffoldParams {
+        HostScaffoldParams {
+            protocol_name: "Paxos".to_string(),
+            module_name: "paxos".to_string(),
+            gen_module: "paxos_gen".to_string(),
+            message_enum: "PaxosMessage".to_string(),
+            message_variants: vec![
+                MessageVariant {
+                    name: "Prepare".to_string(),
+                    doc: "Phase 1a".to_string(),
+                    fields: vec![vec!["ballot".to_string(), "u64".to_string()]],
+                },
+                MessageVariant {
+                    name: "Promise".to_string(),
+                    doc: "Phase 1b".to_string(),
+                    fields: vec![
+                        vec!["ballot".to_string(), "u64".to_string()],
+                        vec!["accepted_bal".to_string(), "u64".to_string()],
+                        vec!["accepted_val".to_string(), "u64".to_string()],
+                    ],
+                },
+                MessageVariant {
+                    name: "Accept".to_string(),
+                    doc: "Phase 2a".to_string(),
+                    fields: vec![
+                        vec!["ballot".to_string(), "u64".to_string()],
+                        vec!["value".to_string(), "u64".to_string()],
+                    ],
+                },
+                MessageVariant {
+                    name: "Accepted".to_string(),
+                    doc: "Phase 2b".to_string(),
+                    fields: vec![
+                        vec!["ballot".to_string(), "u64".to_string()],
+                        vec!["value".to_string(), "u64".to_string()],
+                    ],
+                },
+            ],
+            actions: vec![
+                SchedulerActionConfig {
+                    spec_name: "LSend1a".to_string(),
+                    exec_name: "CSend1a".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![vec!["b".to_string(), "int".to_string()]],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LSend1b".to_string(),
+                    exec_name: "CSend1b".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![vec!["b".to_string(), "int".to_string()]],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LRecvPromise".to_string(),
+                    exec_name: "CRecvPromise".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Promise".to_string()),
+                    existential_params: vec![
+                        vec!["a".to_string(), "int".to_string()],
+                        vec!["ab".to_string(), "int".to_string()],
+                        vec!["av".to_string(), "int".to_string()],
+                    ],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LSend2a".to_string(),
+                    exec_name: "CSend2a".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![vec!["v".to_string(), "int".to_string()]],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LSend2b".to_string(),
+                    exec_name: "CSend2b".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![
+                        vec!["b".to_string(), "int".to_string()],
+                        vec!["v".to_string(), "int".to_string()],
+                    ],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LRecvAccepted".to_string(),
+                    exec_name: "CRecvAccepted".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Accepted".to_string()),
+                    existential_params: vec![vec!["a".to_string(), "int".to_string()]],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LLearn".to_string(),
+                    exec_name: "CLearn".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_scaffold_contains_header() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("//! Paxos protocol host implementation."));
+        assert!(code.contains("Auto-generated scaffold"));
+    }
+
+    #[test]
+    fn test_scaffold_contains_imports() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("use crate::common::framework::protocol_trait::*;"));
+        assert!(code.contains("use crate::generated::Paxos::paxos_gen;"));
+        assert!(code.contains("use crate::generated::Paxos::types_gen::*;"));
+        assert!(code.contains("use crate::implementation::Paxos::message::*;"));
+    }
+
+    #[test]
+    fn test_scaffold_contains_config_struct() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("pub struct PaxosConfig {"));
+        assert!(code.contains("pub peers: Vec<EndPoint>"));
+        assert!(code.contains("pub my_index: u64"));
+        assert!(code.contains("pub constants: CConstants"));
+        assert!(code.contains("impl ProtocolConfig for PaxosConfig {"));
+        assert!(code.contains("fn parse_config(me: &EndPoint, args: &Args) -> Option<Self>"));
+        assert!(code.contains("fn get_peers(&self) -> &Vec<EndPoint>"));
+    }
+
+    #[test]
+    fn test_scaffold_contains_host_struct() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("pub struct PaxosHost {"));
+        assert!(code.contains("pub state: CState"));
+        assert!(code.contains("pub action_index: u64"));
+    }
+
+    #[test]
+    fn test_scaffold_message_driven_handlers() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        // Message-driven handlers should be generated (CSend1b → csend1b, etc.)
+        assert!(code.contains("fn handle_csend1b("));
+        assert!(code.contains("fn handle_crecv_promise("));
+        assert!(code.contains("fn handle_csend2b("));
+        assert!(code.contains("fn handle_crecv_accepted("));
+        // They should reference the message variant
+        assert!(code.contains("Handle incoming Promise message"));
+        assert!(code.contains("Handle incoming Accepted message"));
+    }
+
+    #[test]
+    fn test_scaffold_timer_driven_handlers() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        // Timer-driven handlers use try_ prefix (CSend1a → csend1a, etc.)
+        assert!(code.contains("fn try_csend1a("));
+        assert!(code.contains("fn try_csend2a("));
+        assert!(code.contains("fn try_clearn("));
+        // Timer section marker
+        assert!(code.contains("Timer-driven actions (called on timeout, round-robin)"));
+    }
+
+    #[test]
+    fn test_scaffold_protocol_host_impl() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("impl ProtocolHost for PaxosHost {"));
+        assert!(code.contains("type Msg = PaxosMessage;"));
+        assert!(code.contains("type Cfg = PaxosConfig;"));
+        assert!(code.contains("fn init(config: &Self::Cfg) -> Option<Self>"));
+        assert!(code.contains("fn next("));
+    }
+
+    #[test]
+    fn test_scaffold_init_fn() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("paxos_gen::CInit(&config.constants)"));
+        assert!(code.contains("Some(PaxosHost {"));
+        assert!(code.contains("action_index: 0"));
+    }
+
+    #[test]
+    fn test_scaffold_message_dispatch() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        // Match arms for message variants with mapped handlers
+        assert!(code.contains("PaxosMessage::Promise { ballot, accepted_bal, accepted_val }"));
+        assert!(code.contains("self.handle_crecv_promise(config, &pkt.src, sender_id, ballot, accepted_bal, accepted_val)"));
+        assert!(code.contains("PaxosMessage::Accepted { ballot, value }"));
+        assert!(code.contains("self.handle_crecv_accepted(config, &pkt.src, sender_id, ballot, value)"));
+    }
+
+    #[test]
+    fn test_scaffold_timer_dispatch() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        // Timer round-robin with 3 timer actions (CSend1a, CSend2a, CLearn)
+        assert!(code.contains("self.action_index % 3"));
+        assert!(code.contains("0 => self.try_csend1a(config)"));
+        assert!(code.contains("1 => self.try_csend2a(config)"));
+        assert!(code.contains("_ => self.try_clearn(config)"));
+        assert!(code.contains("self.action_index = self.action_index.wrapping_add(1)"));
+    }
+
+    #[test]
+    fn test_scaffold_unmapped_variant_noop() {
+        // Prepare and Accept message variants have no mapped handler actions
+        // (Send1b is message_driven but has no message_variant set,
+        //  and Send2b is similar — they don't map to Prepare/Accept by variant)
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        // Prepare variant should have a no-op arm
+        assert!(code.contains("PaxosMessage::Prepare { ballot }"));
+        // Accept variant should have a no-op arm
+        assert!(code.contains("PaxosMessage::Accept { ballot, value }"));
+    }
+
+    #[test]
+    fn test_scaffold_resolve_sender() {
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("fn resolve_sender_index(config: &PaxosConfig, src: &EndPoint)"));
+        assert!(code.contains("fn other_peers(config: &PaxosConfig)"));
+    }
+
+    #[test]
+    fn test_scaffold_empty_actions() {
+        let params = HostScaffoldParams {
+            protocol_name: "Empty".to_string(),
+            module_name: "empty".to_string(),
+            gen_module: "empty_gen".to_string(),
+            message_enum: "EmptyMessage".to_string(),
+            message_variants: vec![],
+            actions: vec![],
+        };
+        let code = generate_host_scaffold(&params);
+        // Should still generate valid structure
+        assert!(code.contains("pub struct EmptyConfig {"));
+        assert!(code.contains("pub struct EmptyHost {"));
+        assert!(code.contains("impl ProtocolHost for EmptyHost {"));
+        // No timer actions — should emit GenericOutbound::None
+        assert!(code.contains("StepResult { ok: true, outbound: GenericOutbound::None }"));
+    }
+
+    #[test]
+    fn test_scaffold_all_timer_driven() {
+        let params = HostScaffoldParams {
+            protocol_name: "AllTimer".to_string(),
+            module_name: "all_timer".to_string(),
+            gen_module: "all_timer_gen".to_string(),
+            message_enum: "AllTimerMessage".to_string(),
+            message_variants: vec![],
+            actions: vec![
+                SchedulerActionConfig {
+                    spec_name: "LAction1".to_string(),
+                    exec_name: "CAction1".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LAction2".to_string(),
+                    exec_name: "CAction2".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+            ],
+        };
+        let code = generate_host_scaffold(&params);
+        // Both timer actions (CAction1 → caction1, etc.)
+        assert!(code.contains("fn try_caction1("));
+        assert!(code.contains("fn try_caction2("));
+        assert!(code.contains("self.action_index % 2"));
+        // No message-driven section
+        assert!(!code.contains("Message-driven actions"));
+    }
+
+    #[test]
+    fn test_scaffold_all_message_driven() {
+        let params = HostScaffoldParams {
+            protocol_name: "AllMsg".to_string(),
+            module_name: "all_msg".to_string(),
+            gen_module: "all_msg_gen".to_string(),
+            message_enum: "AllMsgMessage".to_string(),
+            message_variants: vec![MessageVariant {
+                name: "Ping".to_string(),
+                doc: String::new(),
+                fields: vec![vec!["id".to_string(), "u64".to_string()]],
+            }],
+            actions: vec![SchedulerActionConfig {
+                spec_name: "LHandlePing".to_string(),
+                exec_name: "CHandlePing".to_string(),
+                kind: "message_driven".to_string(),
+                message_variant: Some("Ping".to_string()),
+                existential_params: vec![],
+            }],
+        };
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("fn handle_chandle_ping("));
+        assert!(code.contains("AllMsgMessage::Ping { id }"));
+        assert!(code.contains("self.handle_chandle_ping(config, &pkt.src, sender_id, id)"));
+        // No timer section
+        assert!(!code.contains("Timer-driven actions"));
+        // Timer dispatch still generates the no-op fallback
+        assert!(code.contains("StepResult { ok: true, outbound: GenericOutbound::None }"));
     }
 }

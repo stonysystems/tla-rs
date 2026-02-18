@@ -69,3 +69,52 @@ doc = "Backup acknowledges replication."
 name = "ClientRequest"
 doc = "Client sends write request."
 fields = [["value", "u64"]]
+# Auto-generated from LNext — 8 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 8
+
+[[scheduler.actions]]
+spec_name = "LPrimaryWrite"
+exec_name = "CPrimaryWrite"
+kind = "message_driven"
+existential_params = [["val", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LPrimarySendReplicate"
+exec_name = "CPrimarySendReplicate"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LBackupReceiveReplicate"
+exec_name = "CBackupReceiveReplicate"
+kind = "message_driven"
+message_variant = "Replicate"
+
+[[scheduler.actions]]
+spec_name = "LBackupSendAck"
+exec_name = "CBackupSendAck"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LPrimaryReceiveAck"
+exec_name = "CPrimaryReceiveAck"
+kind = "message_driven"
+message_variant = "Ack"
+
+[[scheduler.actions]]
+spec_name = "LPrimaryCommit"
+exec_name = "CPrimaryCommit"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LPrimaryFail"
+exec_name = "CPrimaryFail"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LBackupPromote"
+exec_name = "CBackupPromote"
+kind = "timer_driven"
+

@@ -76,3 +76,58 @@ doc = "TM broadcasts commit decision."
 [[messages.variants]]
 name = "Abort"
 doc = "TM broadcasts abort decision."
+# Auto-generated from LNext — 8 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 8
+
+[[scheduler.actions]]
+spec_name = "LTMSendPrepare"
+exec_name = "CTMSendPrepare"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LRMReceivePrepare"
+exec_name = "CRMReceivePrepare"
+kind = "message_driven"
+message_variant = "Prepare"
+existential_params = [["rm", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LRMAbort"
+exec_name = "CRMAbort"
+kind = "timer_driven"
+existential_params = [["rm", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LTMRcvPrepared"
+exec_name = "CTMRcvPrepared"
+kind = "message_driven"
+message_variant = "PreparedVote"
+existential_params = [["r", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LTMSendCommit"
+exec_name = "CTMSendCommit"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LTMSendAbort"
+exec_name = "CTMSendAbort"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LRMReceiveCommit"
+exec_name = "CRMReceiveCommit"
+kind = "message_driven"
+message_variant = "Commit"
+existential_params = [["rm", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LRMReceiveAbort"
+exec_name = "CRMReceiveAbort"
+kind = "message_driven"
+message_variant = "Abort"
+existential_params = [["rm", "int"]]
+

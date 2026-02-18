@@ -233,6 +233,25 @@ enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// Generate host.rs scaffold from protocol config
+    GenerateHost {
+        /// Configuration file (TOML) with [messages] and [scheduler] sections
+        #[arg(short, long)]
+        config: PathBuf,
+
+        /// Protocol name in PascalCase (e.g., "Paxos")
+        #[arg(short, long)]
+        protocol: String,
+
+        /// Generated module name (e.g., "paxos_gen"). Defaults to "<module>_gen"
+        #[arg(long)]
+        gen_module: Option<String>,
+
+        /// Output file (host.rs). Prints to stdout if not specified
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -1054,6 +1073,54 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 );
             } else {
                 println!("{}", toml);
+            }
+
+            Ok(())
+        }
+
+        Commands::GenerateHost {
+            config,
+            protocol,
+            gen_module,
+            output,
+        } => {
+            let file_config = FileConfig::from_file(config)
+                .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+
+            let msg_config = file_config
+                .messages
+                .ok_or_else(|| miette::miette!("Config file has no [messages] section"))?;
+
+            let sched_config = file_config
+                .scheduler
+                .ok_or_else(|| miette::miette!("Config file has no [scheduler] section"))?;
+
+            // Derive module name from protocol name
+            let module_name = protocol.to_lowercase();
+            let gen_mod = gen_module.clone().unwrap_or_else(|| format!("{}_gen", module_name));
+
+            let params = verus_transpiler::codegen::scheduler::HostScaffoldParams {
+                protocol_name: protocol.clone(),
+                module_name: module_name.clone(),
+                gen_module: gen_mod,
+                message_enum: msg_config.enum_name.clone(),
+                message_variants: msg_config.variants,
+                actions: sched_config.actions,
+            };
+
+            let code = verus_transpiler::generate_host_scaffold(&params);
+
+            if let Some(output_path) = output {
+                std::fs::write(output_path, &code)
+                    .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                println!(
+                    "Generated {} host scaffold ({} actions) -> {}",
+                    protocol,
+                    params.actions.len(),
+                    output_path.display()
+                );
+            } else {
+                println!("{}", code);
             }
 
             Ok(())

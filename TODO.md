@@ -5263,11 +5263,18 @@ The LNext spec function is a disjunction of all protocol actions — it's the sc
 - [x] 37 unit tests: 10 extraction + 15 classification keyword + 3 variant matching + 9 full-protocol classification (all 9 protocols)
 - [x] 13 integration tests (3 new: TwoPhase classification, all-protocols-have-both-kinds, variant TOML output)
 
-**17.4.3: Generate scheduler scaffold from `[scheduler]` config** (~300 LOC)
-- [ ] Generate `ProtocolHost` trait implementation scaffold (init + next)
-- [ ] Generate message dispatch: match incoming message variant → call C-function
-- [ ] Generate round-robin timer dispatch with `action_index % N`
-- [ ] Output minimal host.rs that compiles but may need hand-editing for protocol-specific logic
+**17.4.3: Generate scheduler scaffold from `[scheduler]` config** (~300 LOC) ✅ DONE
+- [x] Generate `ProtocolHost` trait implementation scaffold (init + next)
+- [x] Generate message dispatch: match incoming message variant → call C-function
+- [x] Generate round-robin timer dispatch with `action_index % N`
+- [x] Output minimal host.rs that compiles but may need hand-editing for protocol-specific logic
+- [x] `HostScaffoldParams` struct + `generate_host_scaffold()` in `scheduler.rs`
+- [x] `SchedulerTomlConfig`/`SchedulerActionConfig` serde structs in `config.rs`
+- [x] `GenerateHost` CLI subcommand in `main.rs`
+- [x] Added `[scheduler]` sections to all 9 protocol TOML files
+- [x] 18 unit tests (to_snake_case, scaffold structure, dispatch, edge cases)
+- [x] 9 integration tests (scaffold generation from real protocol TOMLs)
+- [x] 1030 total tests passing
 
 **17.4.4: Protocol-specific refinements** (deferred — requires per-protocol testing)
 - [ ] Add role-based dispatch support for TwoPhase/ChainReplication/PrimaryBackup

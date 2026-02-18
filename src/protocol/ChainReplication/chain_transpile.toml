@@ -84,3 +84,58 @@ fields = [["value", "u64"]]
 [[messages.variants]]
 name = "ClientRead"
 doc = "Client sends a read request to the tail."
+# Auto-generated from LNext — 8 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 8
+
+[[scheduler.actions]]
+spec_name = "LHeadReceiveWrite"
+exec_name = "CHeadReceiveWrite"
+kind = "message_driven"
+message_variant = "ClientWrite"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LForwardToSuccessor"
+exec_name = "CForwardToSuccessor"
+kind = "timer_driven"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceiveUpdate"
+exec_name = "CReceiveUpdate"
+kind = "message_driven"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LTailCommit"
+exec_name = "CTailCommit"
+kind = "timer_driven"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceiveAck"
+exec_name = "CReceiveAck"
+kind = "message_driven"
+message_variant = "Ack"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LClientRead"
+exec_name = "CClientRead"
+kind = "message_driven"
+message_variant = "ClientRead"
+
+[[scheduler.actions]]
+spec_name = "LNodeFail"
+exec_name = "CNodeFail"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LReconfigure"
+exec_name = "CReconfigure"
+kind = "timer_driven"
+existential_params = [["new_has_predecessor", "bool"], ["new_predecessor", "int"], ["new_has_successor", "bool"], ["new_successor", "int"]]
+

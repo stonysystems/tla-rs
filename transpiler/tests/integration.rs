@@ -2886,6 +2886,165 @@ fn test_classify_toml_output_has_variants() {
         "Paxos TOML should contain message_variant for RecvAccepted");
 }
 
+// ---------------------------------------------------------------
+// Phase 17.4.3: Host scaffold generation integration tests
+// ---------------------------------------------------------------
+
+/// Load a protocol TOML and generate a host scaffold.
+fn load_and_generate_scaffold(toml_path: &str, protocol: &str) -> String {
+    let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+        .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+
+    let msg_config = config
+        .messages
+        .unwrap_or_else(|| panic!("{} has no [messages] section", toml_path));
+
+    let sched_config = config
+        .scheduler
+        .unwrap_or_else(|| panic!("{} has no [scheduler] section", toml_path));
+
+    let module_name = protocol.to_lowercase();
+    let gen_module = format!("{}_gen", module_name);
+
+    let params = verus_transpiler::HostScaffoldParams {
+        protocol_name: protocol.to_string(),
+        module_name,
+        gen_module,
+        message_enum: msg_config.enum_name.clone(),
+        message_variants: msg_config.variants,
+        actions: sched_config.actions,
+    };
+
+    verus_transpiler::generate_host_scaffold(&params)
+}
+
+fn assert_scaffold_structure(code: &str, protocol: &str, msg_enum: &str) {
+    // Every scaffold must have these elements
+    assert!(
+        code.contains(&format!("pub struct {}Config {{", protocol)),
+        "{} scaffold missing Config struct",
+        protocol
+    );
+    assert!(
+        code.contains(&format!("pub struct {}Host {{", protocol)),
+        "{} scaffold missing Host struct",
+        protocol
+    );
+    assert!(
+        code.contains(&format!(
+            "impl ProtocolHost for {}Host {{",
+            protocol
+        )),
+        "{} scaffold missing ProtocolHost impl",
+        protocol
+    );
+    assert!(
+        code.contains(&format!("type Msg = {};", msg_enum)),
+        "{} scaffold missing Msg type alias",
+        protocol
+    );
+    assert!(
+        code.contains("fn init(config: &Self::Cfg)"),
+        "{} scaffold missing init()",
+        protocol
+    );
+    assert!(
+        code.contains("fn next("),
+        "{} scaffold missing next()",
+        protocol
+    );
+}
+
+#[test]
+fn test_generate_scaffold_paxos() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/Paxos/paxos_transpile.toml",
+        "Paxos",
+    );
+    assert_scaffold_structure(&code, "Paxos", "PaxosMessage");
+    // Paxos has 4 message-driven and 3 timer-driven actions
+    assert!(code.contains("fn handle_"), "Paxos should have message handlers");
+    assert!(code.contains("fn try_"), "Paxos should have timer handlers");
+    assert!(code.contains("PaxosMessage::Promise"), "should dispatch Promise");
+    assert!(code.contains("PaxosMessage::Accepted"), "should dispatch Accepted");
+}
+
+#[test]
+fn test_generate_scaffold_twophase() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/TwoPhase/twophase_transpile.toml",
+        "TwoPhase",
+    );
+    assert_scaffold_structure(&code, "TwoPhase", "TwoPhaseMessage");
+    assert!(code.contains("fn handle_"), "TwoPhase should have message handlers");
+    assert!(code.contains("fn try_"), "TwoPhase should have timer handlers");
+}
+
+#[test]
+fn test_generate_scaffold_leader_election() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/LeaderElection/election_transpile.toml",
+        "LeaderElection",
+    );
+    assert_scaffold_structure(&code, "LeaderElection", "LeaderElectionMessage");
+}
+
+#[test]
+fn test_generate_scaffold_raft() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/Raft/raft_transpile.toml",
+        "Raft",
+    );
+    assert_scaffold_structure(&code, "Raft", "RaftMessage");
+    assert!(code.contains("fn handle_"), "Raft should have message handlers");
+    assert!(code.contains("fn try_"), "Raft should have timer handlers");
+}
+
+#[test]
+fn test_generate_scaffold_chain_replication() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/ChainReplication/chain_transpile.toml",
+        "ChainReplication",
+    );
+    assert_scaffold_structure(&code, "ChainReplication", "ChainMessage");
+}
+
+#[test]
+fn test_generate_scaffold_primary_backup() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+        "PrimaryBackup",
+    );
+    assert_scaffold_structure(&code, "PrimaryBackup", "PrimaryBackupMessage");
+}
+
+#[test]
+fn test_generate_scaffold_pbft() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/PBFT/pbft_transpile.toml",
+        "PBFT",
+    );
+    assert_scaffold_structure(&code, "PBFT", "PBFTMessage");
+}
+
+#[test]
+fn test_generate_scaffold_vertical_paxos() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+        "VerticalPaxos",
+    );
+    assert_scaffold_structure(&code, "VerticalPaxos", "VerticalPaxosMessage");
+}
+
+#[test]
+fn test_generate_scaffold_epaxos() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/EPaxos/epaxos_transpile.toml",
+        "EPaxos",
+    );
+    assert_scaffold_structure(&code, "EPaxos", "EPaxosMessage");
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();

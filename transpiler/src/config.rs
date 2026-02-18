@@ -238,6 +238,11 @@ pub struct TranspilerConfig {
     /// When present, `generate-messages` subcommand can generate ProtocolMessage impl.
     #[serde(default)]
     pub messages: Option<MessageConfig>,
+
+    /// Optional scheduler configuration for host code generation.
+    /// When present, `generate-host` subcommand can generate a host.rs scaffold.
+    #[serde(default)]
+    pub scheduler: Option<SchedulerTomlConfig>,
 }
 
 /// Configuration for generating ProtocolMessage implementations.
@@ -297,6 +302,86 @@ pub struct MessageVariant {
     /// Optional doc comment for the variant
     #[serde(default)]
     pub doc: String,
+}
+
+/// Configuration for scheduler/host code generation.
+///
+/// Describes the protocol actions extracted from LNext, their classification
+/// (message_driven vs timer_driven), and optional message variant mapping.
+///
+/// Example TOML:
+/// ```toml
+/// [scheduler]
+/// next_fn = "LNext"
+/// params = ["s", "s_", "c"]
+/// action_count = 7
+///
+/// [[scheduler.actions]]
+/// spec_name = "LSend1a"
+/// exec_name = "CSend1a"
+/// kind = "timer_driven"
+///
+/// [[scheduler.actions]]
+/// spec_name = "LSend1b"
+/// exec_name = "CSend1b"
+/// kind = "message_driven"
+/// message_variant = "Prepare"
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SchedulerTomlConfig {
+    /// The LNext function name (usually "LNext")
+    #[serde(default = "SchedulerTomlConfig::default_next_fn")]
+    pub next_fn: String,
+
+    /// Parameter names of LNext (e.g., ["s", "s_", "c"])
+    #[serde(default)]
+    pub params: Vec<String>,
+
+    /// Number of actions (informational, derived from actions.len())
+    #[serde(default)]
+    pub action_count: usize,
+
+    /// The protocol actions
+    #[serde(default)]
+    pub actions: Vec<SchedulerActionConfig>,
+}
+
+impl SchedulerTomlConfig {
+    fn default_next_fn() -> String {
+        "LNext".to_string()
+    }
+}
+
+/// A single action entry in the scheduler TOML config.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SchedulerActionConfig {
+    /// Spec function name (e.g., "LSend1a")
+    pub spec_name: String,
+
+    /// Exec function name (e.g., "CSend1a")
+    pub exec_name: String,
+
+    /// "message_driven" or "timer_driven"
+    #[serde(default = "SchedulerActionConfig::default_kind")]
+    pub kind: String,
+
+    /// For message_driven actions, the triggering message variant name
+    #[serde(default)]
+    pub message_variant: Option<String>,
+
+    /// Existential parameters as [name, type] pairs
+    #[serde(default)]
+    pub existential_params: Vec<Vec<String>>,
+}
+
+impl SchedulerActionConfig {
+    fn default_kind() -> String {
+        "timer_driven".to_string()
+    }
+
+    pub fn is_message_driven(&self) -> bool {
+        self.kind == "message_driven"
+    }
 }
 
 impl TranspilerConfig {

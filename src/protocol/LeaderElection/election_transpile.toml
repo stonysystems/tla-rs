@@ -63,3 +63,54 @@ fields = [["responder", "u64"]]
 name = "Coordinator"
 doc = "Elected leader announces itself."
 fields = [["leader", "u64"]]
+# Auto-generated from LNext — 7 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 7
+
+[[scheduler.actions]]
+spec_name = "LDetectFailure"
+exec_name = "CDetectFailure"
+kind = "timer_driven"
+existential_params = [["node", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LStartElection"
+exec_name = "CStartElection"
+kind = "timer_driven"
+existential_params = [["node", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSendAnswer"
+exec_name = "CSendAnswer"
+kind = "message_driven"
+message_variant = "Answer"
+existential_params = [["node", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceiveAnswer"
+exec_name = "CReceiveAnswer"
+kind = "message_driven"
+message_variant = "Answer"
+existential_params = [["node", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSendCoordinator"
+exec_name = "CSendCoordinator"
+kind = "timer_driven"
+existential_params = [["node", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceiveCoordinator"
+exec_name = "CReceiveCoordinator"
+kind = "message_driven"
+message_variant = "Coordinator"
+existential_params = [["node", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LNodeFail"
+exec_name = "CNodeFail"
+kind = "timer_driven"
+existential_params = [["node", "int"]]
+

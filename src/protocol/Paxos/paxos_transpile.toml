@@ -79,3 +79,52 @@ fields = [["ballot", "u64"], ["value", "u64"]]
 name = "Accepted"
 doc = "Phase 2b: Acceptor confirms it has accepted the ballot/value."
 fields = [["ballot", "u64"], ["value", "u64"]]
+# Auto-generated from LNext — 7 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 7
+
+[[scheduler.actions]]
+spec_name = "LSend1a"
+exec_name = "CSend1a"
+kind = "timer_driven"
+existential_params = [["b", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSend1b"
+exec_name = "CSend1b"
+kind = "message_driven"
+existential_params = [["b", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LRecvPromise"
+exec_name = "CRecvPromise"
+kind = "message_driven"
+message_variant = "Promise"
+existential_params = [["a", "int"], ["ab", "int"], ["av", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSend2a"
+exec_name = "CSend2a"
+kind = "timer_driven"
+existential_params = [["v", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSend2b"
+exec_name = "CSend2b"
+kind = "message_driven"
+existential_params = [["b", "int"], ["v", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LRecvAccepted"
+exec_name = "CRecvAccepted"
+kind = "message_driven"
+message_variant = "Accepted"
+existential_params = [["a", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LLearn"
+exec_name = "CLearn"
+kind = "timer_driven"
+

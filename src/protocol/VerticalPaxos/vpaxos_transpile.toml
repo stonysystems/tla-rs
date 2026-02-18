@@ -82,3 +82,70 @@ fields = [["value", "u64"]]
 name = "Sync"
 doc = "Reconfiguration sync message."
 fields = [["config", "u64"], ["value", "u64"]]
+# Auto-generated from LNext — 10 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 10
+
+[[scheduler.actions]]
+spec_name = "LPrepare"
+exec_name = "CPrepare"
+kind = "timer_driven"
+existential_params = [["b", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSendPromise"
+exec_name = "CSendPromise"
+kind = "message_driven"
+message_variant = "Promise"
+
+[[scheduler.actions]]
+spec_name = "LReceivePromise"
+exec_name = "CReceivePromise"
+kind = "message_driven"
+message_variant = "Promise"
+existential_params = [["sender", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LAccept"
+exec_name = "CAccept"
+kind = "timer_driven"
+existential_params = [["b", "int"], ["v", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceiveAccepted"
+exec_name = "CReceiveAccepted"
+kind = "message_driven"
+message_variant = "Accept"
+existential_params = [["sender", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LCommit"
+exec_name = "CCommit"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LReconfigure"
+exec_name = "CReconfigure"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LWitnessSync"
+exec_name = "CWitnessSync"
+kind = "message_driven"
+message_variant = "Sync"
+existential_params = [["witness_val", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSync"
+exec_name = "CSync"
+kind = "message_driven"
+message_variant = "Sync"
+existential_params = [["new_config", "int"], ["val", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LDeactivate"
+exec_name = "CDeactivate"
+kind = "timer_driven"
+

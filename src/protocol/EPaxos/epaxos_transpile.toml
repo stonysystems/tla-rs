@@ -88,3 +88,71 @@ fields = [["sender", "u64"]]
 name = "CommitMsg"
 doc = "Commit notification broadcast to all replicas."
 fields = [["cmd", "u64"], ["seq", "u64"]]
+# Auto-generated from LNext — 11 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 11
+
+[[scheduler.actions]]
+spec_name = "LPropose"
+exec_name = "CPropose"
+kind = "timer_driven"
+existential_params = [["value", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LSendPreAcceptOk"
+exec_name = "CSendPreAcceptOk"
+kind = "message_driven"
+message_variant = "PreAcceptOk"
+existential_params = [["local_conflict", "bool"], ["local_seq", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceivePreAcceptOk"
+exec_name = "CReceivePreAcceptOk"
+kind = "message_driven"
+message_variant = "PreAcceptOk"
+
+[[scheduler.actions]]
+spec_name = "LFastCommit"
+exec_name = "CFastCommit"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LStartAccept"
+exec_name = "CStartAccept"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LSendAcceptOk"
+exec_name = "CSendAcceptOk"
+kind = "message_driven"
+message_variant = "AcceptOk"
+
+[[scheduler.actions]]
+spec_name = "LReceiveAcceptOk"
+exec_name = "CReceiveAcceptOk"
+kind = "message_driven"
+message_variant = "AcceptOk"
+
+[[scheduler.actions]]
+spec_name = "LSlowCommit"
+exec_name = "CSlowCommit"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LExecute"
+exec_name = "CExecute"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LRecover"
+exec_name = "CRecover"
+kind = "timer_driven"
+existential_params = [["new_ballot", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LNewInstance"
+exec_name = "CNewInstance"
+kind = "timer_driven"
+

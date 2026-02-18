@@ -81,3 +81,63 @@ fields = [["view", "u64"], ["seq", "u64"], ["sender", "u64"]]
 name = "ClientRequest"
 doc = "Client sends a request to the primary."
 fields = [["digest", "u64"]]
+# Auto-generated from LNext — 9 actions
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_", "c"]
+action_count = 9
+
+[[scheduler.actions]]
+spec_name = "LPrePrepare"
+exec_name = "CPrePrepare"
+kind = "message_driven"
+message_variant = "PrePrepare"
+existential_params = [["digest", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LReceivePrePrepare"
+exec_name = "CReceivePrePrepare"
+kind = "message_driven"
+message_variant = "PrePrepare"
+
+[[scheduler.actions]]
+spec_name = "LReceivePrepare"
+exec_name = "CReceivePrepare"
+kind = "message_driven"
+message_variant = "Prepare"
+existential_params = [["sender", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LEnterCommit"
+exec_name = "CEnterCommit"
+kind = "message_driven"
+message_variant = "Commit"
+
+[[scheduler.actions]]
+spec_name = "LReceiveCommit"
+exec_name = "CReceiveCommit"
+kind = "message_driven"
+message_variant = "Commit"
+existential_params = [["sender", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LExecuteReply"
+exec_name = "CExecuteReply"
+kind = "message_driven"
+
+[[scheduler.actions]]
+spec_name = "LCheckpoint"
+exec_name = "CCheckpoint"
+kind = "timer_driven"
+existential_params = [["digest", "int"]]
+
+[[scheduler.actions]]
+spec_name = "LViewChange"
+exec_name = "CViewChange"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LNewRound"
+exec_name = "CNewRound"
+kind = "timer_driven"
+
