@@ -8,7 +8,7 @@
 //! using name-based heuristics and optional message variant mapping.
 
 use crate::ast::{Binding, Expr, Path, SpecFunction, Type};
-use crate::config::{MessageVariant, SchedulerActionConfig};
+use crate::config::{MessageVariant, RoleConfig, RoleDispatchConfig, SchedulerActionConfig};
 
 /// How an action is triggered at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -455,6 +455,8 @@ pub struct HostScaffoldParams {
     pub message_variants: Vec<MessageVariant>,
     /// Scheduler actions from the TOML config
     pub actions: Vec<SchedulerActionConfig>,
+    /// Optional role-based dispatch configuration
+    pub role_dispatch: Option<RoleDispatchConfig>,
 }
 
 /// Generate a host.rs scaffold from a scheduler config and message config.
@@ -487,8 +489,14 @@ pub fn generate_host_scaffold(params: &HostScaffoldParams) -> String {
     // Handler methods (message-driven + timer-driven stubs)
     emit_handler_methods(&mut out, params);
 
-    // ProtocolHost trait impl (init + next)
-    emit_protocol_host_impl(&mut out, params);
+    if params.role_dispatch.is_some() {
+        // Per-role step methods + role-dispatching ProtocolHost impl
+        emit_role_step_methods(&mut out, params);
+        emit_role_dispatch_host_impl(&mut out, params);
+    } else {
+        // Flat ProtocolHost trait impl (init + next)
+        emit_protocol_host_impl(&mut out, params);
+    }
 
     out
 }
@@ -729,6 +737,261 @@ fn emit_handler_methods(out: &mut String, params: &HostScaffoldParams) {
     }
 
     out.push_str("}\n\n");
+}
+
+/// Emit per-role step methods when role_dispatch is configured.
+///
+/// Each role gets a `{role}_step()` method that handles message dispatch
+/// (filtered to that role's message-driven actions) and timer round-robin
+/// (filtered to that role's timer-driven actions).
+fn emit_role_step_methods(out: &mut String, params: &HostScaffoldParams) {
+    let rd = match &params.role_dispatch {
+        Some(rd) => rd,
+        None => return,
+    };
+
+    let config_type = format!("{}Config", params.protocol_name);
+    let host_type = format!("{}Host", params.protocol_name);
+    let msg_type = &params.message_enum;
+
+    out.push_str(&format!("impl {} {{\n", host_type));
+
+    for role in &rd.roles {
+        // Collect this role's actions from the full action list
+        let role_actions: Vec<&SchedulerActionConfig> = params
+            .actions
+            .iter()
+            .filter(|a| role.actions.contains(&a.exec_name))
+            .collect();
+
+        let role_msg_actions: Vec<&&SchedulerActionConfig> = role_actions
+            .iter()
+            .filter(|a| a.is_message_driven())
+            .collect();
+
+        let role_timer_actions: Vec<&&SchedulerActionConfig> = role_actions
+            .iter()
+            .filter(|a| !a.is_message_driven())
+            .collect();
+
+        out.push_str(&format!(
+            "    /// Step function for the {} role.\n",
+            role.name
+        ));
+        out.push_str(&format!(
+            "    fn {}_step(\n        &mut self,\n        config: &{},\n        packet: Option<GenericPacket<{}>>,\n    ) -> StepResult<{}> {{\n",
+            role.name, config_type, msg_type, msg_type
+        ));
+
+        // Message dispatch for this role
+        if !role_msg_actions.is_empty() || !params.message_variants.is_empty() {
+            out.push_str("        if let Some(pkt) = packet {\n");
+            out.push_str("            let sender_id = Self::resolve_sender_index(config, &pkt.src);\n");
+            out.push_str("            let sender_id = match sender_id {\n");
+            out.push_str("                Some(id) => id,\n");
+            out.push_str("                None => {\n");
+            out.push_str("                    return StepResult { ok: true, outbound: GenericOutbound::None };\n");
+            out.push_str("                },\n");
+            out.push_str("            };\n\n");
+            out.push_str("            return match pkt.msg {\n");
+
+            // Reserved names
+            let reserved_names = ["config", "self", "pkt", "sender_id", "result"];
+
+            for variant in &params.message_variants {
+                let raw_field_names: Vec<&str> = variant
+                    .fields
+                    .iter()
+                    .filter_map(|f| f.first().map(|s| s.as_str()))
+                    .collect();
+
+                let field_names: Vec<String> = raw_field_names
+                    .iter()
+                    .map(|name| {
+                        if reserved_names.contains(name) {
+                            format!("msg_{}", name)
+                        } else {
+                            name.to_string()
+                        }
+                    })
+                    .collect();
+
+                let fields_pattern = if field_names.is_empty() {
+                    String::new()
+                } else if raw_field_names.iter().any(|n| reserved_names.contains(n)) {
+                    let bindings: Vec<String> = raw_field_names
+                        .iter()
+                        .zip(field_names.iter())
+                        .map(|(raw, renamed)| {
+                            if *raw != renamed.as_str() {
+                                format!("{}: {}", raw, renamed)
+                            } else {
+                                renamed.clone()
+                            }
+                        })
+                        .collect();
+                    format!(" {{ {} }}", bindings.join(", "))
+                } else {
+                    format!(" {{ {} }}", field_names.join(", "))
+                };
+
+                // Find handler for this variant that belongs to this role
+                let handler = params.actions.iter().find(|a| {
+                    a.is_message_driven()
+                        && a.message_variant.as_deref() == Some(&variant.name)
+                        && role.actions.contains(&a.exec_name)
+                });
+
+                if let Some(action) = handler {
+                    let handler_name = to_snake_case(&action.exec_name);
+                    let field_args = if field_names.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", field_names.join(", "))
+                    };
+                    out.push_str(&format!(
+                        "                {}::{}{} => {{\n",
+                        msg_type, variant.name, fields_pattern
+                    ));
+                    out.push_str(&format!(
+                        "                    self.handle_{}(config, &pkt.src, sender_id{})\n",
+                        handler_name, field_args
+                    ));
+                    out.push_str("                },\n");
+                } else {
+                    // Not handled by this role — no-op
+                    out.push_str(&format!(
+                        "                {}::{}{} => {{\n",
+                        msg_type, variant.name, fields_pattern
+                    ));
+                    out.push_str("                    StepResult { ok: true, outbound: GenericOutbound::None }\n");
+                    out.push_str("                },\n");
+                }
+            }
+
+            out.push_str("            };\n");
+            out.push_str("        }\n\n");
+        }
+
+        // Timer dispatch for this role
+        let timer_count = role_timer_actions.len();
+        out.push_str("        // Timer-driven actions for this role\n");
+        if timer_count > 0 {
+            out.push_str(&format!(
+                "        let result = match self.action_index % {} {{\n",
+                timer_count
+            ));
+            for (i, action) in role_timer_actions.iter().enumerate() {
+                let handler_name = to_snake_case(&action.exec_name);
+                if i == timer_count - 1 {
+                    out.push_str(&format!(
+                        "            _ => self.try_{}(config),\n",
+                        handler_name
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "            {} => self.try_{}(config),\n",
+                        i, handler_name
+                    ));
+                }
+            }
+            out.push_str("        };\n");
+            out.push_str("        self.action_index = self.action_index.wrapping_add(1);\n");
+            out.push_str("        result\n");
+        } else {
+            out.push_str("        StepResult { ok: true, outbound: GenericOutbound::None }\n");
+        }
+
+        out.push_str("    }\n\n");
+    }
+
+    out.push_str("}\n\n");
+}
+
+/// Emit the ProtocolHost impl with role-based dispatch in `next()`.
+fn emit_role_dispatch_host_impl(out: &mut String, params: &HostScaffoldParams) {
+    let rd = match &params.role_dispatch {
+        Some(rd) => rd,
+        None => return,
+    };
+
+    let config_type = format!("{}Config", params.protocol_name);
+    let host_type = format!("{}Host", params.protocol_name);
+    let msg_type = &params.message_enum;
+
+    out.push_str(&format!("impl ProtocolHost for {} {{\n", host_type));
+    out.push_str(&format!("    type Msg = {};\n", msg_type));
+    out.push_str(&format!("    type Cfg = {};\n\n", config_type));
+
+    // init() — same as flat dispatch
+    out.push_str("    fn init(config: &Self::Cfg) -> Option<Self> {\n");
+    out.push_str(&format!(
+        "        let state = {}::CInit(&config.constants);\n",
+        params.gen_module
+    ));
+    out.push_str(&format!("        Some({} {{\n", host_type));
+    out.push_str("            state,\n");
+    out.push_str("            action_index: 0,\n");
+    out.push_str("        })\n");
+    out.push_str("    }\n\n");
+
+    // next() — role-dispatching
+    out.push_str("    fn next(\n");
+    out.push_str("        &mut self,\n");
+    out.push_str("        config: &Self::Cfg,\n");
+    out.push_str("        packet: Option<GenericPacket<Self::Msg>>,\n");
+    out.push_str("    ) -> StepResult<Self::Msg> {\n");
+
+    match rd.dispatch_style.as_str() {
+        "config_index" => {
+            // Cascading if-else
+            for (i, role) in rd.roles.iter().enumerate() {
+                if i == 0 {
+                    out.push_str(&format!(
+                        "        if {} {{\n",
+                        role.condition
+                    ));
+                } else if role.condition.is_empty() || i == rd.roles.len() - 1 {
+                    // Last role or empty condition = else
+                    out.push_str("        } else {\n");
+                } else {
+                    out.push_str(&format!(
+                        "        }} else if {} {{\n",
+                        role.condition
+                    ));
+                }
+                out.push_str(&format!(
+                    "            self.{}_step(config, packet)\n",
+                    role.name
+                ));
+            }
+            out.push_str("        }\n");
+        }
+        "state_field" | _ => {
+            // Match on the dispatch field
+            out.push_str(&format!(
+                "        match {} {{\n",
+                rd.dispatch_field
+            ));
+            for (i, role) in rd.roles.iter().enumerate() {
+                if i == rd.roles.len() - 1 {
+                    out.push_str(&format!(
+                        "            _ => self.{}_step(config, packet),\n",
+                        role.name
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "            {} => self.{}_step(config, packet),\n",
+                        role.condition, role.name
+                    ));
+                }
+            }
+            out.push_str("        }\n");
+        }
+    }
+
+    out.push_str("    }\n");
+    out.push_str("}\n");
 }
 
 fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
@@ -1692,6 +1955,7 @@ mod tests {
                     existential_params: vec![],
                 },
             ],
+            role_dispatch: None,
         }
     }
 
@@ -1834,6 +2098,7 @@ mod tests {
             message_enum: "EmptyMessage".to_string(),
             message_variants: vec![],
             actions: vec![],
+            role_dispatch: None,
         };
         let code = generate_host_scaffold(&params);
         // Should still generate valid structure
@@ -1868,6 +2133,7 @@ mod tests {
                     existential_params: vec![],
                 },
             ],
+            role_dispatch: None,
         };
         let code = generate_host_scaffold(&params);
         // Both timer actions (CAction1 → caction1, etc.)
@@ -1897,6 +2163,7 @@ mod tests {
                 message_variant: Some("Ping".to_string()),
                 existential_params: vec![],
             }],
+            role_dispatch: None,
         };
         let code = generate_host_scaffold(&params);
         assert!(code.contains("fn handle_chandle_ping("));
@@ -1906,5 +2173,441 @@ mod tests {
         assert!(!code.contains("Timer-driven actions"));
         // Timer dispatch still generates the no-op fallback
         assert!(code.contains("StepResult { ok: true, outbound: GenericOutbound::None }"));
+    }
+
+    // ---------------------------------------------------------------
+    // Phase 17.4.4a: Role-based dispatch tests
+    // ---------------------------------------------------------------
+
+    /// Helper: TwoPhase-like params with config_index dispatch (TM vs RM).
+    fn make_twophase_role_params() -> HostScaffoldParams {
+        HostScaffoldParams {
+            protocol_name: "TwoPhase".to_string(),
+            module_name: "twophase".to_string(),
+            gen_module: "twophase_gen".to_string(),
+            message_enum: "TwoPhaseMessage".to_string(),
+            message_variants: vec![
+                MessageVariant {
+                    name: "Prepare".to_string(),
+                    doc: String::new(),
+                    fields: vec![],
+                },
+                MessageVariant {
+                    name: "PreparedVote".to_string(),
+                    doc: String::new(),
+                    fields: vec![vec!["sender".to_string(), "u64".to_string()]],
+                },
+                MessageVariant {
+                    name: "Commit".to_string(),
+                    doc: String::new(),
+                    fields: vec![],
+                },
+                MessageVariant {
+                    name: "Abort".to_string(),
+                    doc: String::new(),
+                    fields: vec![],
+                },
+            ],
+            actions: vec![
+                SchedulerActionConfig {
+                    spec_name: "LTMSendPrepare".to_string(),
+                    exec_name: "CTMSendPrepare".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LTMSendCommit".to_string(),
+                    exec_name: "CTMSendCommit".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LTMSendAbort".to_string(),
+                    exec_name: "CTMSendAbort".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LTMRecvPrepared".to_string(),
+                    exec_name: "CTMRecvPrepared".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("PreparedVote".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LRMRecvPrepare".to_string(),
+                    exec_name: "CRMRecvPrepare".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Prepare".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LRMRecvCommit".to_string(),
+                    exec_name: "CRMRecvCommit".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Commit".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LRMRecvAbort".to_string(),
+                    exec_name: "CRMRecvAbort".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Abort".to_string()),
+                    existential_params: vec![],
+                },
+            ],
+            role_dispatch: Some(RoleDispatchConfig {
+                dispatch_style: "config_index".to_string(),
+                dispatch_field: "config.my_index".to_string(),
+                roles: vec![
+                    RoleConfig {
+                        name: "tm".to_string(),
+                        condition: "config.my_index == 0".to_string(),
+                        actions: vec![
+                            "CTMSendPrepare".to_string(),
+                            "CTMSendCommit".to_string(),
+                            "CTMSendAbort".to_string(),
+                            "CTMRecvPrepared".to_string(),
+                        ],
+                    },
+                    RoleConfig {
+                        name: "rm".to_string(),
+                        condition: String::new(),
+                        actions: vec![
+                            "CRMRecvPrepare".to_string(),
+                            "CRMRecvCommit".to_string(),
+                            "CRMRecvAbort".to_string(),
+                        ],
+                    },
+                ],
+            }),
+        }
+    }
+
+    /// Helper: ChainReplication-like params with state_field dispatch (3 roles).
+    fn make_chain_role_params() -> HostScaffoldParams {
+        HostScaffoldParams {
+            protocol_name: "Chain".to_string(),
+            module_name: "chain".to_string(),
+            gen_module: "chain_gen".to_string(),
+            message_enum: "ChainMessage".to_string(),
+            message_variants: vec![
+                MessageVariant {
+                    name: "ClientWrite".to_string(),
+                    doc: String::new(),
+                    fields: vec![vec!["value".to_string(), "u64".to_string()]],
+                },
+                MessageVariant {
+                    name: "Forward".to_string(),
+                    doc: String::new(),
+                    fields: vec![vec!["value".to_string(), "u64".to_string()]],
+                },
+                MessageVariant {
+                    name: "Ack".to_string(),
+                    doc: String::new(),
+                    fields: vec![vec!["seq".to_string(), "u64".to_string()]],
+                },
+            ],
+            actions: vec![
+                SchedulerActionConfig {
+                    spec_name: "LHeadRecvWrite".to_string(),
+                    exec_name: "CHeadRecvWrite".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("ClientWrite".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LHeadForward".to_string(),
+                    exec_name: "CHeadForward".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LMiddleRecvFwd".to_string(),
+                    exec_name: "CMiddleRecvFwd".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Forward".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LMiddleRecvAck".to_string(),
+                    exec_name: "CMiddleRecvAck".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Ack".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LTailRecvFwd".to_string(),
+                    exec_name: "CTailRecvFwd".to_string(),
+                    kind: "message_driven".to_string(),
+                    message_variant: Some("Forward".to_string()),
+                    existential_params: vec![],
+                },
+                SchedulerActionConfig {
+                    spec_name: "LTailCommit".to_string(),
+                    exec_name: "CTailCommit".to_string(),
+                    kind: "timer_driven".to_string(),
+                    message_variant: None,
+                    existential_params: vec![],
+                },
+            ],
+            role_dispatch: Some(RoleDispatchConfig {
+                dispatch_style: "state_field".to_string(),
+                dispatch_field: "self.state.role".to_string(),
+                roles: vec![
+                    RoleConfig {
+                        name: "head".to_string(),
+                        condition: "CNodeRole::Head".to_string(),
+                        actions: vec![
+                            "CHeadRecvWrite".to_string(),
+                            "CHeadForward".to_string(),
+                        ],
+                    },
+                    RoleConfig {
+                        name: "middle".to_string(),
+                        condition: "CNodeRole::Middle".to_string(),
+                        actions: vec![
+                            "CMiddleRecvFwd".to_string(),
+                            "CMiddleRecvAck".to_string(),
+                        ],
+                    },
+                    RoleConfig {
+                        name: "tail".to_string(),
+                        condition: "CNodeRole::Tail".to_string(),
+                        actions: vec![
+                            "CTailRecvFwd".to_string(),
+                            "CTailCommit".to_string(),
+                        ],
+                    },
+                ],
+            }),
+        }
+    }
+
+    #[test]
+    fn test_role_dispatch_config_index_generates_step_methods() {
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // Both role step methods should be generated
+        assert!(code.contains("fn tm_step("), "Missing tm_step method");
+        assert!(code.contains("fn rm_step("), "Missing rm_step method");
+    }
+
+    #[test]
+    fn test_role_dispatch_config_index_next_uses_if_else() {
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // next() should dispatch via if-else on config.my_index
+        assert!(
+            code.contains("if config.my_index == 0 {"),
+            "Missing config_index condition"
+        );
+        assert!(
+            code.contains("self.tm_step(config, packet)"),
+            "Missing tm_step call in next()"
+        );
+        assert!(
+            code.contains("self.rm_step(config, packet)"),
+            "Missing rm_step call in next()"
+        );
+        // The else branch (last role with empty condition)
+        assert!(code.contains("} else {"), "Missing else branch");
+    }
+
+    #[test]
+    fn test_role_dispatch_config_index_tm_timers() {
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // TM has 3 timer-driven actions → round-robin % 3
+        assert!(
+            code.contains("self.action_index % 3"),
+            "TM should have 3 timer actions"
+        );
+        // to_snake_case("CTMSendPrepare") = "ctmsend_prepare" (consecutive uppercase collapsed)
+        assert!(code.contains("self.try_ctmsend_prepare(config)"));
+        assert!(code.contains("self.try_ctmsend_commit(config)"));
+        assert!(code.contains("self.try_ctmsend_abort(config)"));
+    }
+
+    #[test]
+    fn test_role_dispatch_config_index_tm_messages() {
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // TM step handles PreparedVote, not Prepare/Commit/Abort
+        // to_snake_case("CTMRecvPrepared") = "ctmrecv_prepared"
+        assert!(code.contains("self.handle_ctmrecv_prepared(config, &pkt.src, sender_id, sender)"));
+    }
+
+    #[test]
+    fn test_role_dispatch_config_index_rm_messages() {
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // RM step handles Prepare, Commit, Abort, not PreparedVote
+        // to_snake_case("CRMRecvPrepare") = "crmrecv_prepare"
+        assert!(code.contains("self.handle_crmrecv_prepare(config, &pkt.src, sender_id)"));
+        assert!(code.contains("self.handle_crmrecv_commit(config, &pkt.src, sender_id)"));
+        assert!(code.contains("self.handle_crmrecv_abort(config, &pkt.src, sender_id)"));
+    }
+
+    #[test]
+    fn test_role_dispatch_state_field_generates_step_methods() {
+        let params = make_chain_role_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("fn head_step("), "Missing head_step method");
+        assert!(code.contains("fn middle_step("), "Missing middle_step method");
+        assert!(code.contains("fn tail_step("), "Missing tail_step method");
+    }
+
+    #[test]
+    fn test_role_dispatch_state_field_next_uses_match() {
+        let params = make_chain_role_params();
+        let code = generate_host_scaffold(&params);
+        // next() should dispatch via match on self.state.role
+        assert!(
+            code.contains("match self.state.role {"),
+            "Missing match on dispatch_field"
+        );
+        assert!(code.contains("CNodeRole::Head => self.head_step(config, packet)"));
+        assert!(code.contains("CNodeRole::Middle => self.middle_step(config, packet)"));
+        // Last role uses wildcard
+        assert!(code.contains("_ => self.tail_step(config, packet)"));
+    }
+
+    #[test]
+    fn test_role_dispatch_state_field_per_role_message_filtering() {
+        let params = make_chain_role_params();
+        let code = generate_host_scaffold(&params);
+
+        // Head should handle ClientWrite, not Forward or Ack
+        // Middle should handle Forward and Ack, not ClientWrite
+        // Tail should handle Forward, not Ack or ClientWrite
+
+        // Count occurrences of handler calls — each role's step method
+        // calls different handlers for the same message variant
+        let head_write = code.contains("self.handle_chead_recv_write(config, &pkt.src, sender_id, value)");
+        assert!(head_write, "Head should handle ClientWrite");
+    }
+
+    #[test]
+    fn test_role_dispatch_state_field_per_role_timers() {
+        let params = make_chain_role_params();
+        let code = generate_host_scaffold(&params);
+        // Head has 1 timer (CHeadForward) → no modulo needed (just _ =>)
+        // Tail has 1 timer (CTailCommit) → no modulo needed
+        assert!(code.contains("self.try_chead_forward(config)"));
+        assert!(code.contains("self.try_ctail_commit(config)"));
+    }
+
+    #[test]
+    fn test_role_dispatch_none_falls_back_to_flat() {
+        // When role_dispatch is None, should produce flat dispatch (backwards compat)
+        let params = make_paxos_params();
+        let code = generate_host_scaffold(&params);
+        // Should NOT have any role step methods
+        assert!(!code.contains("_step("), "Flat dispatch should not have role step methods");
+        // Should have flat ProtocolHost impl
+        assert!(code.contains("impl ProtocolHost for PaxosHost {"));
+        assert!(code.contains("return match pkt.msg {"));
+    }
+
+    #[test]
+    fn test_role_dispatch_handler_stubs_still_generated() {
+        // Even with role dispatch, the flat handler stubs are generated
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // Message-driven handler stubs (consecutive uppercase collapsed by to_snake_case)
+        assert!(code.contains("fn handle_ctmrecv_prepared("));
+        assert!(code.contains("fn handle_crmrecv_prepare("));
+        assert!(code.contains("fn handle_crmrecv_commit("));
+        assert!(code.contains("fn handle_crmrecv_abort("));
+        // Timer-driven handler stubs
+        assert!(code.contains("fn try_ctmsend_prepare("));
+        assert!(code.contains("fn try_ctmsend_commit("));
+        assert!(code.contains("fn try_ctmsend_abort("));
+    }
+
+    #[test]
+    fn test_role_dispatch_config_deserialize() {
+        let toml_str = r#"
+[scheduler]
+next_fn = "LNext"
+action_count = 2
+
+[[scheduler.actions]]
+spec_name = "LAction1"
+exec_name = "CAction1"
+kind = "timer_driven"
+
+[[scheduler.actions]]
+spec_name = "LAction2"
+exec_name = "CAction2"
+kind = "message_driven"
+message_variant = "Ping"
+
+[scheduler.role_dispatch]
+dispatch_style = "config_index"
+dispatch_field = "config.my_index"
+
+[[scheduler.role_dispatch.roles]]
+name = "leader"
+condition = "config.my_index == 0"
+actions = ["CAction1"]
+
+[[scheduler.role_dispatch.roles]]
+name = "follower"
+condition = ""
+actions = ["CAction2"]
+"#;
+        let config: crate::config::SchedulerTomlConfig =
+            toml::from_str::<toml::Value>(toml_str)
+                .unwrap()
+                .get("scheduler")
+                .unwrap()
+                .clone()
+                .try_into()
+                .unwrap();
+
+        let rd = config.role_dispatch.unwrap();
+        assert_eq!(rd.dispatch_style, "config_index");
+        assert_eq!(rd.dispatch_field, "config.my_index");
+        assert_eq!(rd.roles.len(), 2);
+        assert_eq!(rd.roles[0].name, "leader");
+        assert_eq!(rd.roles[0].condition, "config.my_index == 0");
+        assert_eq!(rd.roles[0].actions, vec!["CAction1"]);
+        assert_eq!(rd.roles[1].name, "follower");
+        assert_eq!(rd.roles[1].condition, "");
+        assert_eq!(rd.roles[1].actions, vec!["CAction2"]);
+    }
+
+    #[test]
+    fn test_role_dispatch_init_same_as_flat() {
+        // init() should be the same whether role_dispatch is present or not
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        assert!(code.contains("twophase_gen::CInit(&config.constants)"));
+        assert!(code.contains("Some(TwoPhaseHost {"));
+        assert!(code.contains("action_index: 0"));
+    }
+
+    #[test]
+    fn test_role_dispatch_no_flat_next_when_roles_present() {
+        // When role_dispatch is present, the flat message dispatch in next() should NOT appear
+        let params = make_twophase_role_params();
+        let code = generate_host_scaffold(&params);
+        // The flat "return match pkt.msg" should NOT be in next()
+        // (it should only be in per-role step methods)
+        // Count occurrences: should not appear outside role step methods
+        // The ProtocolHost next() should only have the if-else dispatch
+        let next_impl_start = code.find("fn next(").unwrap();
+        let next_body = &code[next_impl_start..];
+        let next_end = next_body.find("}\n}").unwrap();
+        let next_body = &next_body[..next_end];
+        // next() body should have if/else dispatch, not direct match pkt.msg
+        assert!(next_body.contains("if config.my_index == 0"));
+        assert!(!next_body.contains("return match pkt.msg"));
     }
 }

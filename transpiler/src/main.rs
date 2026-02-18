@@ -1106,6 +1106,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 message_enum: msg_config.enum_name.clone(),
                 message_variants: msg_config.variants,
                 actions: sched_config.actions,
+                role_dispatch: sched_config.role_dispatch,
             };
 
             let code = verus_transpiler::generate_host_scaffold(&params);

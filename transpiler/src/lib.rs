@@ -58,8 +58,9 @@ pub use codegen::{
     SchedulerAction, SchedulerConfig, TemplateCodeGenerator, TypeGenerator,
 };
 pub use config::{
-    MessageConfig, MessageVariant, ModuleConfig, NamingConfig, OutputConfig,
-    SchedulerActionConfig, SchedulerTomlConfig, TranspilerConfig as FileConfig,
+    MessageConfig, MessageVariant, ModuleConfig, NamingConfig, OutputConfig, RoleConfig,
+    RoleDispatchConfig, SchedulerActionConfig, SchedulerTomlConfig,
+    TranspilerConfig as FileConfig,
 };
 pub use error::{DiagnosticAccumulator, TranspileError, TranspileResult, TranspileWarning};
 pub use moder::{AnnotatedFunction, AssignmentTracker, ModeAnalyzer, PredicateKind};

@@ -2913,6 +2913,7 @@ fn load_and_generate_scaffold(toml_path: &str, protocol: &str) -> String {
         message_enum: msg_config.enum_name.clone(),
         message_variants: msg_config.variants,
         actions: sched_config.actions,
+        role_dispatch: sched_config.role_dispatch,
     };
 
     verus_transpiler::generate_host_scaffold(&params)

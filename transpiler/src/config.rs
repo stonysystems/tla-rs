@@ -344,6 +344,11 @@ pub struct SchedulerTomlConfig {
     /// The protocol actions
     #[serde(default)]
     pub actions: Vec<SchedulerActionConfig>,
+
+    /// Optional role-based dispatch configuration.
+    /// When present, the generated host scaffold dispatches to per-role step methods.
+    #[serde(default)]
+    pub role_dispatch: Option<RoleDispatchConfig>,
 }
 
 impl SchedulerTomlConfig {
@@ -382,6 +387,64 @@ impl SchedulerActionConfig {
     pub fn is_message_driven(&self) -> bool {
         self.kind == "message_driven"
     }
+}
+
+/// Configuration for role-based dispatch in the host scaffold.
+///
+/// When present, the generated `next()` method dispatches to per-role step
+/// methods instead of a flat message/timer dispatch.
+///
+/// Two dispatch styles are supported:
+/// - `"config_index"`: Role determined by `config.my_index` (static, e.g., TwoPhase TM vs RM)
+/// - `"state_field"`: Role determined by matching on a state enum field (e.g., ChainReplication Head/Middle/Tail)
+///
+/// Example TOML:
+/// ```toml
+/// [scheduler.role_dispatch]
+/// dispatch_style = "config_index"
+/// dispatch_field = "config.my_index"
+///
+/// [[scheduler.role_dispatch.roles]]
+/// name = "tm"
+/// condition = "config.my_index == 0"
+/// actions = ["CTMSendPrepare", "CTMSendCommit", "CTMSendAbort", "CTMReceivePrepared"]
+///
+/// [[scheduler.role_dispatch.roles]]
+/// name = "rm"
+/// condition = ""
+/// actions = ["CRMReceivePrepare", "CRMReceiveCommit", "CRMReceiveAbort"]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RoleDispatchConfig {
+    /// Dispatch style: "config_index" or "state_field"
+    pub dispatch_style: String,
+
+    /// For state_field: the field path to match on (e.g., "self.state.role").
+    /// For config_index: informational (e.g., "config.my_index").
+    #[serde(default)]
+    pub dispatch_field: String,
+
+    /// The roles with their conditions and assigned actions.
+    pub roles: Vec<RoleConfig>,
+}
+
+/// A single role in a role-based dispatch configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RoleConfig {
+    /// Role name in snake_case (e.g., "tm", "head", "primary").
+    /// Used to generate `{name}_step()` method names.
+    pub name: String,
+
+    /// Dispatch condition:
+    /// - For config_index: e.g., "config.my_index == 0" (last role can be "" for else)
+    /// - For state_field: enum variant e.g., "CNodeRole::Head"
+    #[serde(default)]
+    pub condition: String,
+
+    /// Exec function names that belong to this role (e.g., ["CTMSendPrepare", "CTMSendCommit"]).
+    /// These must match `exec_name` values in `[[scheduler.actions]]`.
+    #[serde(default)]
+    pub actions: Vec<String>,
 }
 
 impl TranspilerConfig {
