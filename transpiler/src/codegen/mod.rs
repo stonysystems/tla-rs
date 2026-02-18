@@ -7,10 +7,12 @@
 //! - Clone implementations
 //! - Executable code from quantifier templates
 
+pub mod host_test;
 pub mod messages;
 pub mod scheduler;
 pub mod template_codegen;
 
+pub use host_test::{generate_host_init_test_program, HostTestParams};
 pub use messages::generate_message_code;
 pub use scheduler::{
     classify_actions, extract_lnext_actions, find_and_analyze_lnext, generate_host_scaffold,

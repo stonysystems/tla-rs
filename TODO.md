@@ -5363,7 +5363,7 @@ Extend the C# entry point to support launching any protocol (not just RSL).
 - [x] All protocols: transpile → compile → verify → 0 errors — verified by Verus (597 verified, 0 errors)
 - [x] For each protocol: message generation from TOML (9 per-protocol tests verify enum/tags/fields/bool handling)
 - [x] For each protocol: marshalling round-trip test (serialize → deserialize == original) — 9 tests compile+run generated code, verify byte-level round-trip for all variants + edge cases (empty, short, invalid tag)
-- [ ] For each protocol: host init → single step → valid state
+- [x] For each protocol: host init → single step → valid state — 9 tests strip Verus syntax from types_gen.rs + gen.rs, assemble standalone programs with host.rs + message code, compile with rustc, verify init() returns Some and next(None) returns ok=true
 
 ### Success Criteria
 

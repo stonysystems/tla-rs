@@ -3045,6 +3045,201 @@ fn test_generate_scaffold_epaxos() {
     assert_scaffold_structure(&code, "EPaxos", "EPaxosMessage");
 }
 
+// ============================================================
+// Phase 17.7.2: Per-protocol host init → single step tests
+// ============================================================
+
+/// Generate a standalone Rust program that tests host init + single step.
+/// Compiles and runs it, asserting exit code 0.
+fn run_host_init_test(
+    toml_path: &str,
+    protocol: &str,
+    types_gen_path: &str,
+    gen_path: &str,
+    host_path: &str,
+) {
+    let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+        .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+    let msg_config = config
+        .messages
+        .clone()
+        .unwrap_or_else(|| panic!("No [messages] in {}", toml_path));
+    let message_code = verus_transpiler::generate_message_code(&msg_config);
+
+    let types_gen_code = std::fs::read_to_string(types_gen_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", types_gen_path, e));
+    let gen_code = std::fs::read_to_string(gen_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", gen_path, e));
+    let host_code = std::fs::read_to_string(host_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", host_path, e));
+
+    // Derive gen_module from filename, not protocol name
+    // (e.g., "election_gen" from "election_gen.rs", not "leaderelection_gen")
+    let gen_module = std::path::Path::new(gen_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown_gen")
+        .to_string();
+
+    let params = verus_transpiler::HostTestParams {
+        protocol_name: protocol.to_string(),
+        types_gen_code,
+        gen_code,
+        message_code,
+        host_code,
+        gen_module,
+    };
+
+    let test_program = verus_transpiler::generate_host_init_test_program(&params);
+
+    let tmp_dir = std::env::temp_dir();
+    let src_path = tmp_dir.join(format!("host_test_{}.rs", protocol.to_lowercase()));
+    let bin_path = tmp_dir.join(format!("host_test_{}", protocol.to_lowercase()));
+
+    std::fs::write(&src_path, &test_program).expect("Failed to write test program");
+
+    // Compile
+    let compile = std::process::Command::new("rustc")
+        .args([
+            src_path.to_str().unwrap(),
+            "-o",
+            bin_path.to_str().unwrap(),
+            "--edition",
+            "2021",
+        ])
+        .output()
+        .expect("Failed to run rustc");
+
+    if !compile.status.success() {
+        let stderr = String::from_utf8_lossy(&compile.stderr);
+        // Also dump the generated program for debugging
+        eprintln!("=== Generated program for {} ===", protocol);
+        for (i, line) in test_program.lines().enumerate() {
+            eprintln!("{:4}: {}", i + 1, line);
+        }
+        eprintln!("=== End generated program ===");
+        panic!(
+            "Compilation failed for {}:\n{}",
+            protocol, stderr
+        );
+    }
+
+    // Run
+    let run = std::process::Command::new(&bin_path)
+        .output()
+        .expect("Failed to run test binary");
+    assert!(
+        run.status.success(),
+        "Host test failed for {}:\nstdout: {}\nstderr: {}",
+        protocol,
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr),
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&src_path);
+    let _ = std::fs::remove_file(&bin_path);
+}
+
+#[test]
+fn test_host_init_paxos() {
+    run_host_init_test(
+        "../src/protocol/Paxos/paxos_transpile.toml",
+        "Paxos",
+        "../src/generated/Paxos/types_gen.rs",
+        "../src/generated/Paxos/paxos_gen.rs",
+        "../src/implementation/Paxos/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_twophase() {
+    run_host_init_test(
+        "../src/protocol/TwoPhase/twophase_transpile.toml",
+        "TwoPhase",
+        "../src/generated/TwoPhase/types_gen.rs",
+        "../src/generated/TwoPhase/twophase_gen.rs",
+        "../src/implementation/TwoPhase/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_leader_election() {
+    run_host_init_test(
+        "../src/protocol/LeaderElection/election_transpile.toml",
+        "LeaderElection",
+        "../src/generated/LeaderElection/types_gen.rs",
+        "../src/generated/LeaderElection/election_gen.rs",
+        "../src/implementation/LeaderElection/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_raft() {
+    run_host_init_test(
+        "../src/protocol/Raft/raft_transpile.toml",
+        "Raft",
+        "../src/generated/Raft/types_gen.rs",
+        "../src/generated/Raft/raft_gen.rs",
+        "../src/implementation/Raft/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_chain_replication() {
+    run_host_init_test(
+        "../src/protocol/ChainReplication/chain_transpile.toml",
+        "ChainReplication",
+        "../src/generated/ChainReplication/types_gen.rs",
+        "../src/generated/ChainReplication/chain_gen.rs",
+        "../src/implementation/ChainReplication/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_primary_backup() {
+    run_host_init_test(
+        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+        "PrimaryBackup",
+        "../src/generated/PrimaryBackup/types_gen.rs",
+        "../src/generated/PrimaryBackup/primarybackup_gen.rs",
+        "../src/implementation/PrimaryBackup/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_pbft() {
+    run_host_init_test(
+        "../src/protocol/PBFT/pbft_transpile.toml",
+        "PBFT",
+        "../src/generated/PBFT/types_gen.rs",
+        "../src/generated/PBFT/pbft_gen.rs",
+        "../src/implementation/PBFT/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_vertical_paxos() {
+    run_host_init_test(
+        "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+        "VerticalPaxos",
+        "../src/generated/VerticalPaxos/types_gen.rs",
+        "../src/generated/VerticalPaxos/vpaxos_gen.rs",
+        "../src/implementation/VerticalPaxos/host.rs",
+    );
+}
+
+#[test]
+fn test_host_init_epaxos() {
+    run_host_init_test(
+        "../src/protocol/EPaxos/epaxos_transpile.toml",
+        "EPaxos",
+        "../src/generated/EPaxos/types_gen.rs",
+        "../src/generated/EPaxos/epaxos_gen.rs",
+        "../src/implementation/EPaxos/host.rs",
+    );
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();
