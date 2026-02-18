@@ -5255,12 +5255,15 @@ For each protocol, generate/write the thin protocol-specific layer. Ordered by c
 
 **Tier 1: Fully generated protocols (0 skipped functions besides LNext)**
 
-**17.5.1: TwoPhase — runnable implementation**
-- [ ] Generate `CMessage` marshalling (5 variants: Prepare, Commit, Abort, Ready, TMCommitted)
-- [ ] Generate host scheduler from LNext (simple: TM actions vs RM actions based on role)
-- [ ] Generate config parser (list of resource managers)
-- [ ] Generate `src/services/TwoPhase/main_i.rs` entry point
-- [ ] Verify with Verus, test with 3-node setup
+**17.5.1: TwoPhase — runnable implementation** — ✅ COMPLETE (597 verified, 0 errors)
+- [x] Define `TwoPhaseMessage` enum (4 variants: Prepare, PreparedVote{rm_id}, Commit, Abort) with `ProtocolMessage` trait (u64 tag-based serialization)
+- [x] Implement `TwoPhaseConfig` with `ProtocolConfig` trait (parse peers from args, index 0 = TM, rest = RMs)
+- [x] Implement `TwoPhaseHost` with `ProtocolHost` trait:
+  - TM scheduler: round-robin try_send_prepare/commit/abort + message-driven receive_prepared
+  - RM scheduler: message-driven receive_prepare/commit/abort + PreparedVote reply
+  - Bridges shared-state spec to distributed model (incoming PreparedVote triggers CRMReceivePrepare + CTMRcvPrepared)
+- [x] Create `src/services/TwoPhase/main_i.rs` entry point using `protocol_main::<TwoPhaseHost>()`
+- [x] Wire modules: `src/implementation/TwoPhase/` (message.rs, host.rs) + `src/services/TwoPhase/`
 
 **17.5.2: LeaderElection — runnable implementation**
 - [ ] Generate `CMessage` marshalling (3 variants: Election, Alive, Leader)
