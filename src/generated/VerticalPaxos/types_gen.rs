@@ -33,6 +33,15 @@ pub struct CState {
     pub msgs_accept_val: u64,
 }
 
+impl Clone for CState {
+    #[verifier(external_body)]
+    fn clone(&self) -> (res: Self)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    { unimplemented!() }
+}
+
 impl CState {
     pub open spec fn valid(&self) -> bool {
         true

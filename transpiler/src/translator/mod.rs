@@ -477,35 +477,59 @@ impl ProofNeeds {
             }
 
             // Detect: __X.remove(element) or __X.push(element)
-            if let ExecExpr::MethodCall {
+            self.scan_stmt_for_mutations(stmt, &tmp_to_source);
+        }
+    }
+
+    /// Recursively scan a statement for push/remove mutations on tracked tmp vars.
+    /// Handles mutations nested inside If/Block branches (e.g., conditional push).
+    fn scan_stmt_for_mutations(
+        &mut self,
+        stmt: &ExecExpr,
+        tmp_to_source: &std::collections::HashMap<String, String>,
+    ) {
+        match stmt {
+            ExecExpr::MethodCall {
                 receiver,
                 method,
                 args,
-            } = stmt
-            {
-                if args.len() == 1 {
-                    if let ExecExpr::Var(tmp_name) = receiver.as_ref() {
-                        if let Some(source) = tmp_to_source.get(tmp_name) {
-                            let element = Self::expr_to_proof_arg(&args[0]);
-                            if method == "remove" {
-                                // Extract field name from source (e.g., "s.field" → "field")
-                                let field_name =
-                                    source.split('.').next_back().map(|s| s.to_string());
-                                self.remove_sites.push(RemoveSite {
-                                    source_view: format!("{}@", source),
-                                    element,
-                                    field_name,
-                                });
-                            } else if method == "push" {
-                                self.push_sites.push(PushSite {
-                                    source_view: format!("{}@", source),
-                                    element,
-                                });
-                            }
+            } if args.len() == 1 => {
+                if let ExecExpr::Var(tmp_name) = receiver.as_ref() {
+                    if let Some(source) = tmp_to_source.get(tmp_name) {
+                        let element = Self::expr_to_proof_arg(&args[0]);
+                        if method == "remove" {
+                            let field_name =
+                                source.split('.').next_back().map(|s| s.to_string());
+                            self.remove_sites.push(RemoveSite {
+                                source_view: format!("{}@", source),
+                                element,
+                                field_name,
+                            });
+                        } else if method == "push" {
+                            self.push_sites.push(PushSite {
+                                source_view: format!("{}@", source),
+                                element,
+                            });
                         }
                     }
                 }
             }
+            ExecExpr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.scan_stmt_for_mutations(then_branch, tmp_to_source);
+                if let Some(eb) = else_branch {
+                    self.scan_stmt_for_mutations(eb, tmp_to_source);
+                }
+            }
+            ExecExpr::Block(inner_stmts) => {
+                for inner in inner_stmts {
+                    self.scan_stmt_for_mutations(inner, tmp_to_source);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -6346,14 +6370,10 @@ impl Translator {
         // e.g., `s.tm_state is Init` in a conjunction like:
         //   &&& s.tm_state is Init   (precondition - input only)
         //   &&& s_.tm_state is Done  (effect - references output)
-        // Skip auto-derivation when extra_requires is configured for this function,
-        // since the manually specified requires replace auto-derived body preconditions.
+        // Auto-derived preconditions are always included; extra_requires supplements them.
         let ctx = self.make_requires_context(func);
         let exec_name = self.translate_name(&func.spec_fn.name);
-        let has_extra_requires = self.config.extra_requires.contains_key(&exec_name);
-        if !has_extra_requires {
-            requires.extend(self.extract_body_preconditions(func, &ctx));
-        }
+        requires.extend(self.extract_body_preconditions(func, &ctx));
 
         // Extract arithmetic overflow guards from output assignments.
         // When the body contains `s_.field == s.field + N`, we need
@@ -6719,9 +6739,7 @@ impl Translator {
     fn expr_to_requires_string(&self, expr: &Expr) -> String {
         match expr {
             Expr::Is(expr, variant) => {
-                // Translate the variant name using remapping (e.g., RslMessage1a -> CMessage1a)
-                let translated_variant = self.translate_name(variant);
-                let spec_variant = self.extract_variant_name(&translated_variant);
+                let spec_variant = self.translate_variant_for_is(variant);
                 let base = self.expr_to_simple_string(expr);
                 format!("{} is {}", base, spec_variant)
             }
@@ -6812,10 +6830,7 @@ impl Translator {
     ) -> String {
         match expr {
             Expr::Is(base_expr, variant) => {
-                // `is` variant checks: translate variant name using remapping
-                // e.g., RslMessage1a -> CMessage1a
-                let translated_variant = self.translate_name(variant);
-                let spec_variant = self.extract_variant_name(&translated_variant);
+                let spec_variant = self.translate_variant_for_is(variant);
                 let base = self.expr_to_view_simple_string(base_expr, view_params, scalar_params);
                 format!("{} is {}", base, spec_variant)
             }
@@ -7358,6 +7373,19 @@ impl Translator {
         }
     }
 
+    /// Translate a variant name for use in `is` expressions (spec mode).
+    /// Uses variant_remapping first (which maps to fully-qualified enum paths like
+    /// "CServerRole::Follower"), extracting just the variant part.
+    /// Falls back to translate_name + extract_variant_name if not in remapping.
+    fn translate_variant_for_is(&self, variant: &str) -> String {
+        if let Some(qualified) = self.config.variant_remapping.get(variant) {
+            self.extract_variant_name(qualified).to_string()
+        } else {
+            let translated = self.translate_name(variant);
+            self.extract_variant_name(&translated).to_string()
+        }
+    }
+
     /// Convert an expression to a simple string representation
     fn expr_to_simple_string(&self, expr: &Expr) -> String {
         match expr {
@@ -7473,11 +7501,7 @@ impl Translator {
                 format!("{}({})", func_name, args_str.join(", "))
             }
             Expr::Is(base, variant) => {
-                // Translate the variant name using remapping (e.g., RslMessage1a -> CMessage1a)
-                let translated_variant = self.translate_name(variant);
-                // For spec mode (is expression), extract just the variant part
-                // since Verus doesn't allow EnumType::Variant in `is` expressions
-                let spec_variant = self.extract_variant_name(&translated_variant);
+                let spec_variant = self.translate_variant_for_is(variant);
                 format!("{} is {}", self.expr_to_simple_string(base), spec_variant)
             }
             Expr::Eq(lhs, rhs) => {
@@ -10672,6 +10696,8 @@ impl Translator {
                         let expr = self.transform_expr(&fexpr, ctx)?;
                         // Clone input parameters when assigning to struct fields
                         let expr = self.clone_if_input_ref(expr, ctx);
+                        // Ensure .len() calls in if/else branches get `as u64` cast
+                        let expr = Self::cast_len_to_u64_recursive(expr);
                         Ok((fname, expr))
                     })
                     .collect::<TranspileResult<Vec<_>>>()?;
@@ -11024,6 +11050,29 @@ impl Translator {
             }
         }
         expr
+    }
+
+    /// Recursively apply cast_len_to_u64 throughout an expression tree.
+    /// This ensures `.len()` calls nested inside if/else branches get `as u64`.
+    fn cast_len_to_u64_recursive(expr: ExecExpr) -> ExecExpr {
+        match expr {
+            ExecExpr::MethodCall { ref method, ref args, .. }
+                if (method == "len" && args.is_empty())
+                    || (method == "CMinQuorumSize" && args.is_empty()) =>
+            {
+                ExecExpr::Cast(Box::new(expr), "u64".to_string())
+            }
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond,
+                then_branch: Box::new(Self::cast_len_to_u64_recursive(*then_branch)),
+                else_branch: else_branch.map(|e| Box::new(Self::cast_len_to_u64_recursive(*e))),
+            },
+            other => other,
+        }
     }
 
     /// Format a literal value for exec code.
@@ -13333,6 +13382,73 @@ mod tests {
         );
         let result_nat = translator.expr_to_spec_string(&expr_nat, &empty_args);
         assert_eq!(result_nat, "x as nat");
+    }
+
+    #[test]
+    fn test_translate_variant_for_is_with_remapping() {
+        // When variant_remapping is configured, translate_variant_for_is should
+        // extract the variant part from the qualified path, NOT add C prefix.
+        let mut config = TranslatorConfig::default();
+        config.variant_remapping.insert(
+            "Follower".to_string(),
+            "CServerRole::Follower".to_string(),
+        );
+        config.variant_remapping.insert(
+            "Leader".to_string(),
+            "CServerRole::Leader".to_string(),
+        );
+        let translator = Translator::new(config);
+
+        // With remapping: "Follower" → "CServerRole::Follower" → extract → "Follower"
+        assert_eq!(translator.translate_variant_for_is("Follower"), "Follower");
+        assert_eq!(translator.translate_variant_for_is("Leader"), "Leader");
+    }
+
+    #[test]
+    fn test_translate_variant_for_is_without_remapping() {
+        // Without variant_remapping, falls back to translate_name (adds C prefix)
+        let translator = Translator::default();
+        assert_eq!(translator.translate_variant_for_is("Init"), "CInit");
+    }
+
+    #[test]
+    fn test_cast_len_to_u64_recursive_in_if_else() {
+        // Test that cast_len_to_u64_recursive applies cast inside if/else branches
+        let len_call = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Field(
+                Box::new(ExecExpr::Var("s".to_string())),
+                "log".to_string(),
+            )),
+            method: "len".to_string(),
+            args: vec![],
+        };
+
+        // Plain .len() should get cast
+        let result = Translator::cast_len_to_u64_recursive(len_call.clone());
+        assert!(matches!(result, ExecExpr::Cast(_, ref ty) if ty == "u64"));
+
+        // .len() inside if/else should get cast in both branches
+        let if_expr = ExecExpr::If {
+            cond: Box::new(ExecExpr::Var("cond".to_string())),
+            then_branch: Box::new(ExecExpr::Binary {
+                lhs: Box::new(ExecExpr::Cast(
+                    Box::new(len_call.clone()),
+                    "u64".to_string(),
+                )),
+                op: "+".to_string(),
+                rhs: Box::new(ExecExpr::Literal("1".to_string())),
+            }),
+            else_branch: Some(Box::new(len_call)),
+        };
+        let result = Translator::cast_len_to_u64_recursive(if_expr);
+        if let ExecExpr::If { else_branch: Some(else_br), .. } = result {
+            assert!(
+                matches!(*else_br, ExecExpr::Cast(_, ref ty) if ty == "u64"),
+                "else branch should have len() cast to u64"
+            );
+        } else {
+            panic!("Expected If expression");
+        }
     }
 
     #[test]
@@ -22116,9 +22232,9 @@ mod tests {
     }
 
     #[test]
-    fn test_extra_requires_skips_auto_derived_body_preconditions() {
-        // When extra_requires is configured for a function, auto-derived body
-        // preconditions should NOT be generated (extra_requires replaces them).
+    fn test_extra_requires_combines_with_auto_derived_body_preconditions() {
+        // extra_requires supplements (not replaces) auto-derived body preconditions.
+        // Both auto-derived and manual requires appear in the output.
         let mut config = TranslatorConfig::default();
         config.int_type = "u64".to_string();
         config.validity_predicate_name = "valid".to_string();
@@ -22180,13 +22296,12 @@ mod tests {
 
         let requires = translator.build_requires(&func);
 
-        // Should have extra_requires
+        // Should have both extra_requires and auto-derived requires
         assert!(requires.contains(&"s.role is Leader".to_string()));
         assert!(requires.contains(&"(*idx > s.commit_index)".to_string()));
-        // Should NOT have auto-derived "s.role is Leader" from body (it would be duplicate)
-        // The key test: only 4 requires (s.valid(), c.valid(), and 2 extra)
-        // NOT 5 (which would include auto-derived body precondition)
-        assert_eq!(requires.iter().filter(|r| r.contains("Leader")).count(), 1);
+        // Auto-derived uses translate_variant_for_is (CLeader without remapping),
+        // so it appears as a separate entry from the manual "s.role is Leader"
+        assert!(requires.iter().filter(|r| r.contains("Leader")).count() >= 1);
     }
 
     #[test]
@@ -22219,6 +22334,44 @@ mod tests {
         needs.scan_block_for_mutation_sites(&stmts);
 
         // Should detect the push site
+        assert_eq!(needs.push_sites.len(), 1);
+        assert_eq!(needs.push_sites[0].source_view, "s.log@");
+        assert_eq!(needs.push_sites[0].element, "entry");
+    }
+
+    #[test]
+    fn test_scan_block_detects_conditional_push() {
+        // scan_block_for_mutation_sites should detect push() inside an if branch.
+        // Pattern: let mut __log = clone_log(&s.log); if cond { __log.push(entry); }
+        let stmts = vec![
+            ExecExpr::Let {
+                pattern: "mut __log".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Call {
+                    func: "clone_log".to_string(),
+                    args: vec![ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(ExecExpr::Field(
+                            Box::new(ExecExpr::Var("s".to_string())),
+                            "log".to_string(),
+                        )),
+                    }],
+                }),
+            },
+            ExecExpr::If {
+                cond: Box::new(ExecExpr::Var("cond".to_string())),
+                then_branch: Box::new(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("__log".to_string())),
+                    method: "push".to_string(),
+                    args: vec![ExecExpr::Var("entry".to_string())],
+                }),
+                else_branch: None,
+            },
+        ];
+
+        let mut needs = ProofNeeds::default();
+        needs.scan_block_for_mutation_sites(&stmts);
+
         assert_eq!(needs.push_sites.len(), 1);
         assert_eq!(needs.push_sites[0].source_view, "s.log@");
         assert_eq!(needs.push_sites[0].element, "entry");

@@ -18,6 +18,9 @@ clone_fields = ["phase"]
 [clone_field_types]
 "phase" = "CInstancePhase"
 
+[clone_strategy]
+"CState" = "external_body"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

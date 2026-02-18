@@ -9,7 +9,7 @@ module Raft::raft {
     LBecomeLeader(+, -, +);
     LClientRequest(+, -, +, +);
     LSendAppendEntries(+, -, +, +, +, +, +, +);
-    // LFollowerAppendEntries not transpiled (complex Seq::push in inline if/else with struct literals)
+    LFollowerAppendEntries(+, -, +, +);
     LHandleAppendResponse(+, -, +, +, +);
     LHandleAppendReject(+, -, +, +);
     LAdvanceCommitIndex(+, -, +, +);

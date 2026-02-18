@@ -179,6 +179,8 @@ pub exec fn CGrantVote(s: &CState, c: &CConstants, candidate_term: &u64, candida
 requires
     s.valid(),
     c.valid(),
+    (*candidate_term >= s.current_term),
+    (!s.has_voted || s.voted_for == *candidate_id),
     *candidate_term >= s.current_term,
     !s.has_voted || s.voted_for == *candidate_id,
     ({
@@ -428,6 +430,89 @@ CState {
     }
 }
 
+pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, entry_value: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.msgs_append_entries == true,
+    (s.msgs_append_entries_term >= s.current_term),
+    s.log.len() < u64::MAX,
+ensures
+    result.valid(),
+    LFollowerAppendEntries(s@, result@, c@, *entry_value as int),
+{
+    let result = {
+        let mut __log = clone_log(&s.log);
+        if s.msgs_append_entries_has_entry {
+                        __log.push(CLogEntry {
+    term: s.msgs_append_entries_term.clone(),
+    value: *entry_value,
+});
+            
+
+        };
+        CState {
+            current_term: s.msgs_append_entries_term.clone(),
+            has_voted: if (s.msgs_append_entries_term > s.current_term) {
+                false
+            } else {
+                s.has_voted.clone()
+            },
+            voted_for: if (s.msgs_append_entries_term > s.current_term) {
+                0u64
+            } else {
+                s.voted_for.clone()
+            },
+            log: __log,
+            commit_index: if (s.msgs_append_entries_leader_commit > s.commit_index) {
+                s.msgs_append_entries_leader_commit.clone()
+            } else {
+                s.commit_index.clone()
+            },
+            votes_granted: if (s.msgs_append_entries_term > s.current_term) {
+                HashSet::new()
+            } else {
+                clone_hashset(&s.votes_granted)
+            },
+            match_index: s.match_index.clone(),
+            next_index: s.next_index.clone(),
+            msgs_append_response: true,
+            msgs_append_response_term: s.msgs_append_entries_term.clone(),
+            msgs_append_response_success: true,
+            msgs_append_response_match_index: if s.msgs_append_entries_has_entry {
+                ((s.log.len() as u64) + 1)
+            } else {
+                (s.log.len() as u64)
+            },
+            msgs_append_response_follower: c.my_id.clone(),
+            msgs_request_vote: s.msgs_request_vote.clone(),
+            msgs_request_vote_term: s.msgs_request_vote_term.clone(),
+            msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
+            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
+            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
+            msgs_vote_response: s.msgs_vote_response.clone(),
+            msgs_vote_response_term: s.msgs_vote_response_term.clone(),
+            msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
+            msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
+            msgs_append_entries: s.msgs_append_entries.clone(),
+            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
+            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
+            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
+            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
+            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
+            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
+            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
+            role: CServerRole::Follower,
+        }
+    };
+    proof {
+        lemma_empty_set_map();
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.msgs_append_entries_term, value: *entry_value });
+    }
+    result
+
+}
+
 pub exec fn CHandleAppendResponse(s: &CState, c: &CConstants, follower: &u64, new_match_index: &u64) -> (result: CState)
 requires
     s.valid(),
@@ -555,6 +640,8 @@ requires
     c.valid(),
     s.role is Leader,
     (*new_commit_index > s.commit_index),
+    (*new_commit_index <= s@.log.len()),
+    s.log[(new_commit_index - 1)].term == s.current_term,
     (*new_commit_index as int <= s@.log.len()),
     s.log@[*new_commit_index as int - 1].term == s.current_term,
 ensures

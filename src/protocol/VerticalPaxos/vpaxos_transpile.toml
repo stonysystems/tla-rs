@@ -15,6 +15,9 @@ vec_fields = []
 # Fields that are non-Copy types requiring .clone()
 clone_fields = []
 
+[clone_strategy]
+"CState" = "external_body"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

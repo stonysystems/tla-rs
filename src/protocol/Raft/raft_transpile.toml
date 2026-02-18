@@ -3,7 +3,6 @@
 # Skip functions that contain complex inline if/else or existential quantifiers
 skip_functions = [
     "LNext",
-    "LFollowerAppendEntries",
 ]
 
 # Primitive types that don't need valid() predicates
@@ -42,6 +41,9 @@ clone_fields = ["role"]
             || (*candidate_last_log_term as int == last_log_term
                 && *candidate_last_log_index as int >= s.log@.len())
     })""",
+]
+"CHandleAppendResponse" = [
+    "*new_match_index < u64::MAX",
 ]
 "CAdvanceCommitIndex" = [
     "s.role is Leader",
