@@ -107,7 +107,9 @@ existential_params = [["value", "int"]]
 spec_name = "LReceiveUpdate"
 exec_name = "CReceiveUpdate"
 kind = "message_driven"
+message_variant = "Forward"
 existential_params = [["value", "int"]]
+flag_injections = [["msgs_forward", "true"], ["msgs_forward_value", "value"]]
 
 [[scheduler.actions]]
 spec_name = "LTailCommit"
@@ -121,6 +123,7 @@ exec_name = "CReceiveAck"
 kind = "message_driven"
 message_variant = "Ack"
 existential_params = [["value", "int"]]
+flag_injections = [["msgs_ack", "true"], ["msgs_ack_value", "value"]]
 
 [[scheduler.actions]]
 spec_name = "LClientRead"

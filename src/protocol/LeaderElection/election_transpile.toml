@@ -94,6 +94,7 @@ exec_name = "CReceiveAnswer"
 kind = "message_driven"
 message_variant = "Answer"
 existential_params = [["node", "int"]]
+flag_injections = [["msgs_answer", "true"], ["msgs_answer_responder", "responder"]]
 
 [[scheduler.actions]]
 spec_name = "LSendCoordinator"
@@ -107,6 +108,7 @@ exec_name = "CReceiveCoordinator"
 kind = "message_driven"
 message_variant = "Coordinator"
 existential_params = [["node", "int"]]
+flag_injections = [["msgs_coordinator", "true"], ["msgs_coordinator_leader", "leader"]]
 
 [[scheduler.actions]]
 spec_name = "LNodeFail"

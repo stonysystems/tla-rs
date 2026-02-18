@@ -3047,6 +3047,158 @@ fn test_generate_scaffold_epaxos() {
 }
 
 // ============================================================
+// Phase 17.4.4b: Flag injection integration tests
+// Verify that flag_injections populated in real protocol TOMLs
+// produce the expected `self.state.msgs_* = ...;` lines in
+// the generated scaffold code.
+// ============================================================
+
+#[test]
+fn test_scaffold_flag_injections_leader_election() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/LeaderElection/election_transpile.toml",
+        "LeaderElection",
+    );
+    // LReceiveAnswer handler should inject answer message fields
+    assert!(code.contains("self.state.msgs_answer = true;"),
+        "LReceiveAnswer should inject msgs_answer flag");
+    assert!(code.contains("self.state.msgs_answer_responder = responder;"),
+        "LReceiveAnswer should inject msgs_answer_responder");
+    // LReceiveCoordinator handler should inject coordinator message fields
+    assert!(code.contains("self.state.msgs_coordinator = true;"),
+        "LReceiveCoordinator should inject msgs_coordinator flag");
+    assert!(code.contains("self.state.msgs_coordinator_leader = leader;"),
+        "LReceiveCoordinator should inject msgs_coordinator_leader");
+    // Verify injection comment present
+    assert!(code.contains("Flag injection"),
+        "LeaderElection scaffold should have flag injection comments");
+}
+
+#[test]
+fn test_scaffold_flag_injections_raft() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/Raft/raft_transpile.toml",
+        "Raft",
+    );
+    // LGrantVote handler: RequestVote message fields
+    assert!(code.contains("self.state.msgs_request_vote = true;"),
+        "LGrantVote should inject msgs_request_vote flag");
+    assert!(code.contains("self.state.msgs_request_vote_term = term;"),
+        "LGrantVote should inject term field");
+    assert!(code.contains("self.state.msgs_request_vote_candidate = candidate_id;"),
+        "LGrantVote should inject candidate_id field");
+    // LFollowerAppendEntries handler: AppendEntries message fields
+    assert!(code.contains("self.state.msgs_append_entries = true;"),
+        "LFollowerAppendEntries should inject msgs_append_entries flag");
+    assert!(code.contains("self.state.msgs_append_entries_leader = leader_id;"),
+        "LFollowerAppendEntries should inject leader_id");
+    // LReceiveVoteGranted handler: VoteResponse message fields
+    assert!(code.contains("self.state.msgs_vote_response = true;"),
+        "LReceiveVoteGranted should inject msgs_vote_response flag");
+    // LHandleAppendResponse handler: AppendResponse message fields
+    assert!(code.contains("self.state.msgs_append_response = true;"),
+        "LHandleAppendResponse should inject msgs_append_response flag");
+    assert!(code.contains("self.state.msgs_append_response_follower = follower;"),
+        "LHandleAppendResponse should inject follower field");
+}
+
+#[test]
+fn test_scaffold_flag_injections_chain_replication() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/ChainReplication/chain_transpile.toml",
+        "ChainReplication",
+    );
+    // LReceiveUpdate handler: Forward message fields
+    assert!(code.contains("self.state.msgs_forward = true;"),
+        "LReceiveUpdate should inject msgs_forward flag");
+    assert!(code.contains("self.state.msgs_forward_value = value;"),
+        "LReceiveUpdate should inject msgs_forward_value");
+    // LReceiveAck handler: Ack message fields
+    assert!(code.contains("self.state.msgs_ack = true;"),
+        "LReceiveAck should inject msgs_ack flag");
+    assert!(code.contains("self.state.msgs_ack_value = value;"),
+        "LReceiveAck should inject msgs_ack_value");
+}
+
+#[test]
+fn test_scaffold_flag_injections_pbft() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/PBFT/pbft_transpile.toml",
+        "PBFT",
+    );
+    // LReceivePrePrepare handler: PrePrepare message fields
+    assert!(code.contains("self.state.msgs_preprepare = true;"),
+        "LReceivePrePrepare should inject msgs_preprepare flag");
+    assert!(code.contains("self.state.msgs_preprepare_view = view;"),
+        "LReceivePrePrepare should inject view field");
+    assert!(code.contains("self.state.msgs_preprepare_seq = seq;"),
+        "LReceivePrePrepare should inject seq field");
+    assert!(code.contains("self.state.msgs_preprepare_digest = digest;"),
+        "LReceivePrePrepare should inject digest field");
+}
+
+#[test]
+fn test_scaffold_flag_injections_epaxos() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/EPaxos/epaxos_transpile.toml",
+        "EPaxos",
+    );
+    // LReceivePreAcceptOk handler: PreAcceptOk message fields
+    assert!(code.contains("self.state.msgs_preaccept_ok = true;"),
+        "LReceivePreAcceptOk should inject msgs_preaccept_ok flag");
+    assert!(code.contains("self.state.msgs_preaccept_ok_sender = sender;"),
+        "LReceivePreAcceptOk should inject sender field");
+    assert!(code.contains("self.state.msgs_preaccept_ok_seq = seq;"),
+        "LReceivePreAcceptOk should inject seq field");
+    // LReceiveAcceptOk handler: AcceptOk message fields
+    assert!(code.contains("self.state.msgs_accept_ok = true;"),
+        "LReceiveAcceptOk should inject msgs_accept_ok flag");
+    assert!(code.contains("self.state.msgs_accept_ok_sender = sender;"),
+        "LReceiveAcceptOk should inject sender field");
+}
+
+// Negative tests: protocols with NO flag injections should have no injection code
+#[test]
+fn test_scaffold_no_flag_injections_paxos() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/Paxos/paxos_transpile.toml",
+        "Paxos",
+    );
+    assert!(!code.contains("Flag injection"),
+        "Paxos scaffold should have no flag injection comments");
+}
+
+#[test]
+fn test_scaffold_no_flag_injections_twophase() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/TwoPhase/twophase_transpile.toml",
+        "TwoPhase",
+    );
+    assert!(!code.contains("Flag injection"),
+        "TwoPhase scaffold should have no flag injection comments");
+}
+
+#[test]
+fn test_scaffold_no_flag_injections_primarybackup() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+        "PrimaryBackup",
+    );
+    assert!(!code.contains("Flag injection"),
+        "PrimaryBackup scaffold should have no flag injection comments");
+}
+
+#[test]
+fn test_scaffold_no_flag_injections_verticalpaxos() {
+    let code = load_and_generate_scaffold(
+        "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+        "VerticalPaxos",
+    );
+    assert!(!code.contains("Flag injection"),
+        "VerticalPaxos scaffold should have no flag injection comments");
+}
+
+// ============================================================
 // Phase 17.7.1: Scheduler generation comprehensive tests
 // ============================================================
 
@@ -3395,6 +3547,72 @@ fn test_message_driven_actions_have_variants_or_heuristic() {
 fn compile_scaffold(toml_path: &str, protocol: &str) {
     let code = load_and_generate_scaffold(toml_path, protocol);
 
+    // Load config once for all template parameters
+    let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+        .expect("load toml");
+    let msg = config.messages.as_ref().expect("messages");
+    let msg_enum = msg.enum_name.clone();
+    let msg_variants = msg.variants.iter().map(|v| {
+        if v.fields.is_empty() {
+            format!("    {},", v.name)
+        } else {
+            let fields: Vec<String> = v.fields.iter()
+                .filter_map(|f| if f.len() >= 2 { Some(format!("{}: {}", f[0], f[1])) } else { None })
+                .collect();
+            format!("    {} {{ {} }},", v.name, fields.join(", "))
+        }
+    }).collect::<Vec<_>>().join("\n                    ");
+
+    // Collect flag_injection state fields so CState stub compiles with injection assignments.
+    // Each flag_injection is [state_field, value]; the state_field becomes a pub field on CState.
+    // Build a map of message variant field name → type for cross-referencing.
+    let mut variant_field_types: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if let Some(ref messages) = config.messages {
+        for variant in &messages.variants {
+            for field in &variant.fields {
+                if field.len() >= 2 {
+                    variant_field_types.insert(field[0].clone(), field[1].clone());
+                }
+            }
+        }
+    }
+    let mut state_fields = std::collections::BTreeSet::new();
+    if let Some(ref sched) = config.scheduler {
+        for action in &sched.actions {
+            for inj in &action.flag_injections {
+                if inj.len() >= 2 {
+                    // Determine field type: "true"/"false" → bool, check message variant field type, else u64
+                    let field_type = if inj[1] == "true" || inj[1] == "false" {
+                        "bool"
+                    } else if let Some(vtype) = variant_field_types.get(&inj[1]) {
+                        vtype.as_str()
+                    } else {
+                        "u64"
+                    };
+                    state_fields.insert((inj[0].clone(), field_type.to_string()));
+                }
+            }
+        }
+    }
+
+    // Build CState struct: unit struct if no fields, regular struct with pub fields otherwise
+    let (cstate_def, cstate_init) = if state_fields.is_empty() {
+        ("pub struct CState;".to_string(), "pub fn CInit(_c: &CConstants) -> CState {{ CState }}".to_string())
+    } else {
+        let fields_str: Vec<String> = state_fields.iter()
+            .map(|(name, ty)| format!("pub {}: {},", name, ty))
+            .collect();
+        let init_fields: Vec<String> = state_fields.iter()
+            .map(|(name, ty)| {
+                if ty == "bool" { format!("{}: false,", name) } else { format!("{}: 0,", name) }
+            })
+            .collect();
+        (
+            format!("pub struct CState {{ {} }}", fields_str.join(" ")),
+            format!("pub fn CInit(_c: &CConstants) -> CState {{ CState {{ {} }} }}", init_fields.join(" ")),
+        )
+    };
+
     // Provide minimal stubs so the scaffold compiles as standalone Rust.
     // The scaffold imports from: args_t::*, protocol_trait::*, io_s::*, types_gen::*, gen_module, message::*
     // io_s re-exports protocol_trait so we must avoid duplicate definitions.
@@ -3436,8 +3654,8 @@ pub mod crate_stub {{
             pub mod {gen_module} {{
                 pub struct CConstants;
                 impl Default for CConstants {{ fn default() -> Self {{ CConstants }} }}
-                pub struct CState;
-                pub fn CInit(_c: &CConstants) -> CState {{ CState }}
+                {cstate_def}
+                {cstate_init}
             }}
             pub mod types_gen {{
                 pub use super::{gen_module}::*;
@@ -3457,26 +3675,10 @@ pub mod crate_stub {{
 "#,
         protocol = protocol,
         gen_module = format!("{}_gen", protocol.to_lowercase()),
-        msg_enum = {
-            let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
-                .expect("load toml");
-            config.messages.as_ref().expect("messages").enum_name.clone()
-        },
-        msg_variants = {
-            let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
-                .expect("load toml");
-            let msg = config.messages.as_ref().expect("messages");
-            msg.variants.iter().map(|v| {{
-                if v.fields.is_empty() {
-                    format!("    {},", v.name)
-                } else {
-                    let fields: Vec<String> = v.fields.iter()
-                        .filter_map(|f| if f.len() >= 2 { Some(format!("{}: {}", f[0], f[1])) } else { None })
-                        .collect();
-                    format!("    {} {{ {} }},", v.name, fields.join(", "))
-                }
-            }}).collect::<Vec<_>>().join("\n                    ")
-        },
+        msg_enum = msg_enum,
+        msg_variants = msg_variants,
+        cstate_def = cstate_def,
+        cstate_init = cstate_init,
     );
 
     // Rewrite use paths and fix inner doc comments

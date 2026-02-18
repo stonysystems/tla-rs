@@ -132,13 +132,17 @@ kind = "timer_driven"
 spec_name = "LGrantVote"
 exec_name = "CGrantVote"
 kind = "message_driven"
+message_variant = "RequestVote"
 existential_params = [["candidate_term", "int"], ["candidate_last_log_term", "int"], ["candidate_last_log_index", "int"], ["candidate_id", "int"]]
+flag_injections = [["msgs_request_vote", "true"], ["msgs_request_vote_term", "term"], ["msgs_request_vote_candidate", "candidate_id"], ["msgs_request_vote_last_log_index", "last_log_index"], ["msgs_request_vote_last_log_term", "last_log_term"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveVoteGranted"
 exec_name = "CReceiveVoteGranted"
 kind = "message_driven"
+message_variant = "VoteResponse"
 existential_params = [["voter", "int"]]
+flag_injections = [["msgs_vote_response", "true"], ["msgs_vote_response_term", "term"], ["msgs_vote_response_granted", "true"], ["msgs_vote_response_voter", "voter"]]
 
 [[scheduler.actions]]
 spec_name = "LBecomeLeader"
@@ -163,6 +167,7 @@ exec_name = "CFollowerAppendEntries"
 kind = "message_driven"
 message_variant = "AppendEntries"
 existential_params = [["entry_value", "int"]]
+flag_injections = [["msgs_append_entries", "true"], ["msgs_append_entries_term", "term"], ["msgs_append_entries_leader", "leader_id"], ["msgs_append_entries_prev_index", "prev_log_index"], ["msgs_append_entries_prev_term", "prev_log_term"], ["msgs_append_entries_value", "value"], ["msgs_append_entries_has_entry", "has_entry"], ["msgs_append_entries_leader_commit", "leader_commit"]]
 
 [[scheduler.actions]]
 spec_name = "LHandleAppendResponse"
@@ -170,6 +175,7 @@ exec_name = "CHandleAppendResponse"
 kind = "message_driven"
 message_variant = "AppendResponse"
 existential_params = [["follower", "u64"], ["new_match_index", "u64"]]
+flag_injections = [["msgs_append_response", "true"], ["msgs_append_response_term", "term"], ["msgs_append_response_success", "success"], ["msgs_append_response_match_index", "match_index"], ["msgs_append_response_follower", "follower"]]
 
 [[scheduler.actions]]
 spec_name = "LHandleAppendReject"

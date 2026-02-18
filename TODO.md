@@ -5293,6 +5293,11 @@ The LNext spec function is a disjunction of all protocol actions — it's the sc
   - Scaffold generator emits `self.state.{field} = {value};` in handler body before TODO stubs
   - Parameters referenced in flag_injections drop `_` prefix (usable in assignments)
   - 8 new unit tests (1034 total = 923 unit + 111 integration)
+  - **Populated flag_injections in 5 real protocol TOMLs**: LeaderElection (2 actions), Raft (4 actions), ChainReplication (2 actions), PBFT (1 action), EPaxos (2 actions)
+  - Fixed missing `message_variant` on 3 actions (LReceiveUpdate, LGrantVote, LReceiveVoteGranted)
+  - Removed misclassified LSendAnswer flag_injections (message_variant mismatch: Answer vs Election)
+  - Dynamic CState stub generation in compile_scaffold() with message variant field type cross-referencing
+  - 9 new integration tests (5 positive + 4 negative) — 1093 total (930 unit + 120 integration + 43 roundtrip)
 - [x] **17.4.4c**: Add guard check generation from spec preconditions
   - Added `guard_checks: Vec<String>` field to `SchedulerActionConfig` (serde default, backwards compatible)
   - Scaffold generator emits `if !({condition}) { return StepResult::noop() }` per guard

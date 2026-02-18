@@ -99,6 +99,7 @@ spec_name = "LReceivePrePrepare"
 exec_name = "CReceivePrePrepare"
 kind = "message_driven"
 message_variant = "PrePrepare"
+flag_injections = [["msgs_preprepare", "true"], ["msgs_preprepare_view", "view"], ["msgs_preprepare_seq", "seq"], ["msgs_preprepare_digest", "digest"]]
 
 [[scheduler.actions]]
 spec_name = "LReceivePrepare"
