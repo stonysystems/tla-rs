@@ -2475,6 +2475,212 @@ fn test_generate_messages_epaxos_toml() {
     assert!(code.contains("const TAG_COMMIT_MSG: u64 = 5;"));
 }
 
+// ============================================================
+// Phase 17.7.2: Per-protocol marshalling round-trip tests
+// ============================================================
+
+/// Generate a standalone Rust program that tests round-trip serialization.
+/// Compiles and runs it, asserting exit code 0.
+fn run_roundtrip_test(toml_path: &str) {
+    let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+        .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+    let msg_config = config
+        .messages
+        .unwrap_or_else(|| panic!("No [messages] in {}", toml_path));
+    let generated_code = verus_transpiler::generate_message_code(&msg_config);
+    let enum_name = &msg_config.enum_name;
+
+    // Build test cases: construct each variant, serialize, deserialize, compare fields
+    let mut test_body = String::new();
+    for (i, variant) in msg_config.variants.iter().enumerate() {
+        let var_name = format!("msg{}", i);
+        if variant.fields.is_empty() {
+            // Unit variant
+            test_body.push_str(&format!(
+                "    let {} = {}::{};\n",
+                var_name, enum_name, variant.name
+            ));
+        } else {
+            // Struct variant with field values
+            let mut field_inits = Vec::new();
+            for (fi, field) in variant.fields.iter().enumerate() {
+                let fname = &field[0];
+                let ftype = &field[1];
+                let val = if ftype == "bool" {
+                    if fi % 2 == 0 { "true" } else { "false" }
+                } else {
+                    // Use i*100 + fi to get unique non-zero values
+                    &format!("{}u64", i * 100 + fi + 1)
+                };
+                // Need to own the string for bool case
+                let val_owned = if ftype == "bool" {
+                    val.to_string()
+                } else {
+                    format!("{}u64", i * 100 + fi + 1)
+                };
+                field_inits.push(format!("{}: {}", fname, val_owned));
+            }
+            test_body.push_str(&format!(
+                "    let {} = {}::{} {{ {} }};\n",
+                var_name,
+                enum_name,
+                variant.name,
+                field_inits.join(", ")
+            ));
+        }
+
+        // Serialize
+        test_body.push_str(&format!(
+            "    let mut buf{} = Vec::new();\n    {}.serialize_to_bytes(&mut buf{});\n",
+            i, var_name, i
+        ));
+
+        // Deserialize
+        test_body.push_str(&format!(
+            "    let decoded{} = {}::deserialize_from_bytes(&buf{}).expect(\"Failed to deserialize {}\");\n",
+            i, enum_name, i, variant.name
+        ));
+
+        // Re-serialize and compare bytes (canonical round-trip check)
+        test_body.push_str(&format!(
+            "    let mut rebuf{} = Vec::new();\n    decoded{}.serialize_to_bytes(&mut rebuf{});\n",
+            i, i, i
+        ));
+        test_body.push_str(&format!(
+            "    assert!(buf{} == rebuf{}, \"Round-trip failed for {}\");\n",
+            i, i, variant.name
+        ));
+    }
+
+    // Test that invalid data returns None
+    test_body.push_str(&format!(
+        "\n    // Edge cases\n    assert!({}::deserialize_from_bytes(&vec![]).is_none(), \"Empty should return None\");\n",
+        enum_name
+    ));
+    test_body.push_str(&format!(
+        "    assert!({}::deserialize_from_bytes(&vec![0u8; 4]).is_none(), \"Too short should return None\");\n",
+        enum_name
+    ));
+    test_body.push_str(&format!(
+        "    assert!({}::deserialize_from_bytes(&vec![0xFF; 8]).is_none(), \"Invalid tag should return None\");\n",
+        enum_name
+    ));
+
+    // Remove the ProtocolMessage import and inner doc comments from generated code
+    let cleaned_code: String = generated_code
+        .lines()
+        .filter(|line| {
+            !line.starts_with("use crate::common::framework::protocol_trait::ProtocolMessage;")
+                && !line.starts_with("//!")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let test_program = format!(
+        r#"// Auto-generated round-trip test
+trait ProtocolMessage: Sized {{
+    fn serialize_to_bytes(&self, buf: &mut Vec<u8>);
+    fn deserialize_from_bytes(data: &Vec<u8>) -> Option<Self>;
+}}
+
+{}
+
+fn main() {{
+{}
+    println!("All round-trip tests passed for {}");
+}}
+"#,
+        cleaned_code,
+        test_body,
+        enum_name,
+    );
+
+    // Write to temp file, compile, and run
+    let tmp_dir = std::env::temp_dir();
+    let src_path = tmp_dir.join(format!("roundtrip_test_{}.rs", enum_name.to_lowercase()));
+    let bin_path = tmp_dir.join(format!("roundtrip_test_{}", enum_name.to_lowercase()));
+
+    std::fs::write(&src_path, &test_program).expect("Failed to write test program");
+
+    // Compile
+    let compile = std::process::Command::new("rustc")
+        .args([
+            src_path.to_str().unwrap(),
+            "-o",
+            bin_path.to_str().unwrap(),
+            "--edition",
+            "2021",
+        ])
+        .output()
+        .expect("Failed to run rustc");
+    assert!(
+        compile.status.success(),
+        "Compilation failed for {}:\n{}",
+        enum_name,
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    // Run
+    let run = std::process::Command::new(&bin_path)
+        .output()
+        .expect("Failed to run test binary");
+    assert!(
+        run.status.success(),
+        "Round-trip test failed for {}:\n{}",
+        enum_name,
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&src_path);
+    let _ = std::fs::remove_file(&bin_path);
+}
+
+#[test]
+fn test_roundtrip_twophase() {
+    run_roundtrip_test("../src/protocol/TwoPhase/twophase_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_paxos() {
+    run_roundtrip_test("../src/protocol/Paxos/paxos_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_leader_election() {
+    run_roundtrip_test("../src/protocol/LeaderElection/election_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_primarybackup() {
+    run_roundtrip_test("../src/protocol/PrimaryBackup/primarybackup_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_chain_replication() {
+    run_roundtrip_test("../src/protocol/ChainReplication/chain_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_vertical_paxos() {
+    run_roundtrip_test("../src/protocol/VerticalPaxos/vpaxos_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_raft() {
+    run_roundtrip_test("../src/protocol/Raft/raft_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_pbft() {
+    run_roundtrip_test("../src/protocol/PBFT/pbft_transpile.toml");
+}
+
+#[test]
+fn test_roundtrip_epaxos() {
+    run_roundtrip_test("../src/protocol/EPaxos/epaxos_transpile.toml");
+}
+
 fn diff_strings(a: &str, b: &str) -> String {
     let a_lines: Vec<&str> = a.lines().collect();
     let b_lines: Vec<&str> = b.lines().collect();
