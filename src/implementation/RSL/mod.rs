@@ -19,6 +19,9 @@ pub mod cparameters;
 /// Shared helper functions (clone_cpacket_*, outbound_packets_to_vec) used by
 /// generated RSL dispatch wrappers. Centralizes duplicated helpers from *_gen.rs files.
 pub mod gen_helpers;
+/// Hand-written dispatch functions that orchestrate IO patterns for the RSL replica.
+/// These functions call into transpiler-generated functions in replica_gen.rs.
+pub mod replica_dispatch;
 /// Deprecated: use `crate::generated::RSL::learner_gen` for functional wrappers.
 /// Retained because generated wrappers delegate to methods in this module.
 pub mod learnerimpl;
