@@ -258,36 +258,6 @@ impl Marshalable for bool {
     data.push(*self as u8);
 
     // proof {
-    //   assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);
-    //   assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize().subrange(0, i as int));
-    //   // lemma_auto_spec_u64_to_from_le_bytes();
-    // }
-
-    // while i < 1
-    //   invariant
-    //     0 <= i <= 1,
-    //     s.len() == 1,
-    //     s@ == self.ghost_serialize(),
-    //     data@.subrange(0, old(data)@.len() as int) == old(data)@,
-    //     data@.subrange(old(data)@.len() as int, data@.len() as int) == self.ghost_serialize().subrange(0, i as int),
-    //     data@.len() == old(data)@.len() + i as int,
-    // {
-    //   assert(data@.subrange(old(data)@.len() as int, data@.len() as int) == data@.subrange(old(data)@.len() as int, old(data)@.len() + i as int));
-
-    //   let x: u8 = s[i];
-    //   data.push(x);
-    //   i = i + 1;
-
-    //   proof {
-    //     assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);
-    //     assert (data@.subrange(old(data)@.len() as int, data@.len() as int) == self.ghost_serialize().subrange(0, i as int)) by {
-    //       assert(self.ghost_serialize().subrange(0, (i - 1) as int).push(x) =~= self.ghost_serialize().subrange(0, i as int));
-    //       assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize().subrange(0, (i - 1) as int).push(x));
-    //     }
-    //   }
-    // }
-
-    // proof {
     //   assert(self.ghost_serialize().subrange(0, i as int) =~= self.ghost_serialize());
     // }
   }
@@ -653,32 +623,6 @@ where
       keys[i].clone().serialize(data);
       values[i].clone().serialize(data);
       i = i + 1;
-
-      // proof {
-      //   assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);
-      //   assert(data@.subrange(old(data)@.len() as int, data@.len() as int) ==
-      //   self.len().ghost_serialize() +
-      //   self.keys().cloned().collect()@.subrange(0, i as int).fold_left(Seq::<u8>::empty(), |acc: Seq<u8>, x:   T| acc + x.ghost_serialize()) + self.values().cloned().collect()@.subrange(0, i as int).fold_left (Seq::<u8>::empty(), |acc: Seq<u8>, x: V| acc + x.ghost_serialize())) by {
-      //     let s = self@;
-      //     let emp = Seq::<u8>::empty();
-      //     let accf = |acc: Seq<u8>, x: T| acc + x.ghost_serialize();
-      //     let f = |x: T| x.ghost_serialize();
-      //     let t = s.subrange(0, i as int);
-
-      //     fun_ext_2(accf, |acc: Seq<u8>, x: T| acc + f(x));
-      //     assert(t.subrange(0, t.len() - 1) =~= s.subrange(0, i - 1));
-      //     seq_lib_v::lemma_seq_fold_left_append_right(t, emp, f);
-      //     assert(
-      //       data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.len().ghost_serialize() +
-      //         s.subrange(0, (i - 1) as int).fold_left(emp, accf) +
-      //         s.index((i - 1) as int).ghost_serialize()
-      //     );
-      //     assert(
-      //       data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.len().ghost_serialize() +
-      //         t.fold_left(emp, accf)
-      //     );
-      //   }
-      // }
     }
 
     proof {
@@ -701,26 +645,11 @@ where
     let mut i: usize = 0;
     let mut end = mid;
 
-    // let emp: Ghost<Seq<u8>> = Ghost(Seq::<u8>::empty());
-    // let accf: Ghost<spec_fn(Seq<u8>, K) -> Seq<u8>> = Ghost(|acc: Seq<u8>, x: K| acc + x.ghost_serialize());
-
-    // proof {
-    //   assert(data@.subrange(mid as int, end as int) =~= emp@);
-    //   // assert(emp == seq_lib_v::seq_fold_left(res@, emp@, accf@));
-
-    //   lemma_auto_spec_u64_to_from_le_bytes();
-    // }
-
     while i < len
       invariant
         0 <= i <= len,
         res.is_marshalable(),
         start <= mid <= end <= data@.len(),
-        // data@.subrange(mid as int, end as int) == res@.fold_left(emp@, accf@),
-        // res@.len() == i,
-        // len.ghost_serialize().len() +
-        //   res@.fold_left(0, |acc: int, x: K| acc + x.ghost_serialize().len()) == end - start,
-        // accf@ == |acc: Seq<u8>, x: K| acc + x.ghost_serialize(),
     {
       let (k, end1) = match K::deserialize(data, end) { None => {
         return None;
@@ -729,44 +658,9 @@ where
         return None;
       }, Some(x) => x, };
 
-      // let old_end: Ghost<int> = Ghost(end as int);
-      // let old_res: Ghost<Seq<K>> = Ghost(res@);
-
       res.insert(k,v);
       end = end2;
       i = i + 1;
-
-      // assert(data@.subrange(mid as int, end as int) == res@.fold_left(emp@, accf@)) by {
-      //   let f = |x: K| x.ghost_serialize();
-      //   // assert(data@.subrange(mid as int, old_end@) == seq_lib_v::seq_fold_left(old_res@, emp@, accf@));
-      //   seq_lib_v::lemma_seq_add_subrange::<u8>(data@, mid as int, old_end@, end as int);
-      //   // assert(data@.subrange(mid as int, end as int) ==
-      //   //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + data@.subrange(old_end@, end as int));
-      //   // assert(data@.subrange(mid as int, end as int) ==
-      //   //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + x.ghost_serialize());
-      //   // assert(f(x) == x.ghost_serialize());
-      //   // assert(data@.subrange(mid as int, end as int) ==
-      //   //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + f(x));
-      //   seq_lib_v::lemma_seq_fold_left_append_right(res@, emp@, f);
-      //   assert(accf@ == (|acc: Seq<u8>, x: K| acc + f(x))) by {
-      //     fun_ext_2(accf@, |acc: Seq<u8>, x: K| acc + f(x));
-      //   }
-      //   assert(old_res@ =~= res@.subrange(0, res@.len() - 1));
-      //   // assert(data@.subrange(mid as int, end as int) == seq_lib_v::seq_fold_left(res@, emp@, accf@));
-      // }
-
-      // assert (len.ghost_serialize().len() +
-      //         res@.fold_left(0, |acc: int, x: K| acc + x.ghost_serialize().len()) == end - start) by {
-      //   let l = |x: K| x.ghost_serialize().len() as int;
-      //   let suml = |acc: int, x: K| acc + l(x);
-      //   seq_lib_v::lemma_seq_fold_left_sum_right(res@, 0, l);
-      //   fun_ext_2(|acc: int, x: K| acc + x.ghost_serialize().len(), suml);
-      //   assert(old_res@ =~= res@.subrange(0, res@.len() - 1));
-      // }
-
-      // assert (len.ghost_serialize().len() == (res@.len() as usize).ghost_serialize().len()) by {
-      //   lemma_auto_spec_u64_to_from_le_bytes();
-      // }
     }
     assert(data@.subrange(start as int, end as int) == res.ghost_serialize()) by {
       seq_lib_v::lemma_seq_add_subrange::<u8>(data@, start as int, mid as int, end as int);

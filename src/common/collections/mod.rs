@@ -6,5 +6,4 @@ pub mod maps2;
 pub mod seq_is_unique_v;
 pub mod seqs;
 pub mod sets;
-pub mod sets_lib;
 pub mod vecs;

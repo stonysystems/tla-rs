@@ -262,24 +262,6 @@ impl CProposer{
             None=>{}
         }
         return true;
-
-        // exists |p:CPacket|
-        // S@.contains(p)
-        // && match p.msg {
-        //     CMessage::CMessage1b { votes, .. } => {
-        //         if votes.contains_key(&opn) {
-        //             return false;
-        //         }
-        //         else{
-        //             true
-        //         }
-        //     }
-        //     _ => {
-        //         return false; // Unexpected message type
-        //     }
-        // };
-        // true
-
     }
 
     #[verifier(external_body)]
@@ -1376,45 +1358,12 @@ impl CProposer{
                                 assume(v@ == p@.msg->votes[sopn]);
                                 assert(target@.msg->votes.contains_key(sopn));
                                 assert(target_val@ == target@.msg->votes[sopn]);
-                                // break;
-                                // assume(ss.received_1b_packets.contains(p@));
-                                // assert(exists |sp:RslPacket| ss.received_1b_packets.contains(sp));
-                                // assume(LValIsHighestNumberedProposal(p@.msg->votes[sopn].max_val, ss.received_1b_packets, sopn));
-                                // assume(self.next_operation_number_to_propose < 0xffff_ffff_ffff_ffff);
-                                // self.next_operation_number_to_propose = self.next_operation_number_to_propose + 1;
-                                // let msg = CMessage::CMessage2a{bal_2a:self.max_ballot_i_sent_1a, opn_2a:opn, val_2a:clone_request_batch_up_to_view(&v.max_val)};
-                                // broadcast = CBroadcast::BuildBroadcastToEveryone(self.constants.all.config.clone_up_to_view(), self.constants.my_index, msg);
-                                // assert(broadcast.valid());
-                                // assert(self.valid());
-                                // let ghost out = OutboundPackets::Broadcast {
-                                //     broadcast: broadcast
-                                // };
-                                // assert(LProposerNominateOldValueAndSend2a(ss, self@, slog_truncate, out@));
                             }
-                            // else {
-                            //     let ghost out = OutboundPackets::Broadcast {
-                            //         broadcast: CBroadcast::CBroadcastNop{},
-                            //     };
-                            //     assert(LProposerNominateOldValueAndSend2a(ss, self@, slog_truncate, out@));
-                            //     assert(self.valid());
-                            // }
                         }
-                        None => {
-                            // let ghost out = OutboundPackets::Broadcast {
-                            //     broadcast: CBroadcast::CBroadcastNop{},
-                            // };
-                            // assert(LProposerNominateOldValueAndSend2a(ss, self@, slog_truncate, out@));
-                            // assert(self.valid());
-                        }
+                        None => {}
                     }
                 }
-                _ => {
-                    // let ghost out = OutboundPackets::Broadcast {
-                    //     broadcast: CBroadcast::CBroadcastNop{},
-                    // };
-                    // assert(LProposerNominateOldValueAndSend2a(ss, self@, slog_truncate, out@));
-                    // assert(self.valid());
-                }
+                _ => {}
             }
         }
         if find {

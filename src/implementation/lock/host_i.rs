@@ -48,7 +48,6 @@ verus! {
 
             proof {
                 assert(config.is_some());
-                // assert(config.is_some() ==> parse_args(abstractify_args(*args)).is_some());
             }
 
             let (config, my_index) = config.unwrap();
@@ -57,17 +56,6 @@ verus! {
             let host_state = HostState{
                 node_impl,
             };
-
-            // Uncomment these observes if needed
-            // proof{
-                // assert(netc.ok());
-                // assert(host_state.invariants(&netc.my_end_point()));
-                // assert(0 <= my_index < config.len());
-                // assert(seq_is_unique(abstractify_end_points(config)));
-                // assert(valid_config(config));
-                // assert(NodeInit(host_state@, host_state@.my_index, abstractify_end_points(config)));
-                // assert(host_state@.config[host_state@.my_index as int] == me@);
-            // }
 
             Some(host_state)
         }

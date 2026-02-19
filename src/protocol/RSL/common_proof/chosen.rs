@@ -228,24 +228,7 @@ verus! {
         assert(s_prime.executor.next_op_to_execute == OutstandingOperation::OutstandingOpKnown{v:v, bal:bal});
         let senders = s.learner.unexecuted_learner_state[opn].received_2b_message_senders;
 
-        // let mut indices: Set<int> = Set::empty();
-        // let mut packets: Seq<RslPacket> = Seq::empty();
         let mut sender_idx: int = 0;
-        // let dummy_packet = LPacket{dst:c.config.replica_ids[0], src:c.config.replica_ids[0], msg:RslMessage::RslMessage1a{bal_1a:Ballot{seqno:0, proposer_id:0}}};
-
-        // while sender_idx < c.config.replica_ids.len() {
-        //     let sender = c.config.replica_ids[sender_idx];
-        //     if senders.contains(sender) {
-        //         assert(b[i].replicas[idx].replica.learner.unexecuted_learner_state.contains_key(opn));
-        //         let (sender_idx_unused, p) = lemma_GetSent2bMessageFromLearnerState(b, c, i, idx, opn, sender);
-        //         assert(ReplicasDistinct(c.config.replica_ids, sender_idx, GetReplicaIndex(p.src, c.config)));
-        //         packets = packets + seq![p];
-        //         indices = indices + set![sender_idx];
-        //     } else {
-        //         packets = packets + seq![dummy_packet];
-        //     }
-        //     sender_idx = sender_idx + 1;
-        // }
 
         let (indices, packets) = collect_2b_messages(c, senders, opn, idx, b, i, sender_idx);
 

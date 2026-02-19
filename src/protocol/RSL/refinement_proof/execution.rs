@@ -337,24 +337,6 @@ verus! {
                     ExtractSentPacketsFromIos(ios)
                 )
             })
-            // IsValidBehaviorPrefix(b, c, i + 1),
-            // 0 <= i,
-            // 0 <= idx < c.config.replica_ids.len(),
-            // 0 <= idx < b[i].replicas.len(),
-            // ios.contains(LIoOp::Send{s:p}),
-            // RslNext(b[i], b[i + 1]),
-            // b[i].environment.nextStep == LEnvStepHostIos{actor:c.config.replica_ids[idx], ios:ios},
-            // b[i].replicas[idx].replica.executor.next_op_to_execute is OutstandingOpKnown,
-            // LtUpperBound(
-            //     b[i].replicas[idx].replica.executor.ops_complete,
-            //     b[i].replicas[idx].replica.executor.constants.all.params.max_integer_val
-            // ),
-            // LReplicaConstantsValid(b[i].replicas[idx].replica.executor.constants),
-            // LExecutorExecute(
-            //     b[i].replicas[idx].replica.executor,
-            //     b[i + 1].replicas[idx].replica.executor,
-            //     ExtractSentPacketsFromIos(ios)
-            // ),
         ensures
             ({
                 let reply = Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply};

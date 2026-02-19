@@ -486,20 +486,8 @@ verus! {
         assert(pkts.contains(p));
 
         lemma_VotePrecedesMaxBal(b, c, i - 1, acceptor_idx, opn);
-        // assert(BalLeq(
-        //     s.votes[opn].max_value_bal,
-        //     s.max_bal
-        // ));
-        // assert(s.votes[opn] == s_.votes[opn]);
-        // assert(BalLt(s.max_bal, s_.max_bal));
-        // assert(p.msg->bal_1b == s_.max_bal);
-        // assert(BalLt(s_.votes[opn].max_value_bal, p.msg->bal_1b));
-        // assert(p.msg->votes == s.votes);
-        // assert(b[i-1].replicas[acceptor_idx].replica.acceptor.votes[opn].max_value_bal ==
-        //     b[i].replicas[acceptor_idx].replica.acceptor.votes[opn].max_value_bal)
   }
 
-//   #[verifier::external_body]
   pub proof fn lemma_1bMessageWithOpnImplicationsFor2b(
       b: Behavior<RslState>,
       c: LConstants,
