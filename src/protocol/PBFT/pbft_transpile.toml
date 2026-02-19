@@ -31,6 +31,9 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LPhase" = "CPhase"
+"LPBFTMessage" = "CPBFTMessage"
+# Prevent C-prefixing of message variant names in LPBFTMessage::Variant paths
+"PrePrepare" = "PrePrepare"
 
 [variant_remapping]
 "PrePrepare" = "CPhase::PrePrepare"
@@ -91,52 +94,55 @@ action_count = 9
 spec_name = "LPrePrepare"
 exec_name = "CPrePrepare"
 kind = "timer_driven"
-existential_params = [["digest", "int"]]
+existential_params = [["digest", "int"], ["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceivePrePrepare"
 exec_name = "CReceivePrePrepare"
 kind = "message_driven"
 message_variant = "PrePrepare"
-flag_injections = [["msgs_preprepare", "true"], ["msgs_preprepare_view", "view"], ["msgs_preprepare_seq", "seq"], ["msgs_preprepare_digest", "digest"]]
+existential_params = [["view", "int"], ["seq", "int"], ["digest", "int"], ["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceivePrepare"
 exec_name = "CReceivePrepare"
 kind = "message_driven"
 message_variant = "Prepare"
-existential_params = [["sender", "int"]]
+existential_params = [["sender", "int"], ["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LEnterCommit"
 exec_name = "CEnterCommit"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveCommit"
 exec_name = "CReceiveCommit"
 kind = "message_driven"
 message_variant = "Commit"
-existential_params = [["sender", "int"]]
+existential_params = [["sender", "int"], ["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LExecuteReply"
 exec_name = "CExecuteReply"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LCheckpoint"
 exec_name = "CCheckpoint"
 kind = "timer_driven"
-existential_params = [["digest", "int"]]
+existential_params = [["digest", "int"], ["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LViewChange"
 exec_name = "CViewChange"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBFTMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LNewRound"
 exec_name = "CNewRound"
 kind = "timer_driven"
-
+existential_params = [["sent_packets", "Seq<LPBFTMessage>"]]

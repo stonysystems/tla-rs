@@ -143,7 +143,8 @@ impl PBFTHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
+        let (new_state, _sent) = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
+        self.state = new_state;
 
         // Broadcast PrePrepare to all other replicas
         let others = Self::other_peers(config);
@@ -161,8 +162,7 @@ impl PBFTHost {
     }
 
     /// Non-primary: receive a PrePrepare and call CReceivePrePrepare.
-    /// Guards: phase is PrePrepare, not primary, msgs_preprepare == true,
-    ///         msgs_preprepare_view == view.
+    /// Guards: phase is PrePrepare, not primary, view matches current view.
     fn handle_pre_prepare(
         &mut self,
         config: &PBFTConfig,
@@ -177,19 +177,13 @@ impl PBFTHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Set the pre-prepare message fields in state before calling CReceivePrePrepare.
-        // The gen function reads these from the state as guards.
-        self.state.msgs_preprepare = true;
-        self.state.msgs_preprepare_view = view;
-        self.state.msgs_preprepare_seq = seq;
-        self.state.msgs_preprepare_digest = digest;
-
-        // Guard: msgs_preprepare_view must equal current view
-        if self.state.msgs_preprepare_view != self.state.view {
+        // Guard: view must equal current view
+        if view != self.state.view {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = pbft_gen::CReceivePrePrepare(&self.state, &config.constants);
+        let (new_state, _sent) = pbft_gen::CReceivePrePrepare(&self.state, &config.constants, &view, &seq, &digest);
+        self.state = new_state;
 
         // Broadcast Prepare to all peers
         let others = Self::other_peers(config);
@@ -223,13 +217,15 @@ impl PBFTHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = pbft_gen::CReceivePrepare(&self.state, &config.constants, &sender);
+        let (new_state, _sent) = pbft_gen::CReceivePrepare(&self.state, &config.constants, &sender);
+        self.state = new_state;
 
         // Check if we have enough prepares to enter commit phase.
         // Guard for CEnterCommit: phase is Prepare, prepare_senders.len() >= 2f+1.
         let threshold = 2 * config.constants.f + 1;
         if self.state.prepare_senders.len() as u64 >= threshold {
-            self.state = pbft_gen::CEnterCommit(&self.state, &config.constants);
+            let (new_state, _sent) = pbft_gen::CEnterCommit(&self.state, &config.constants);
+            self.state = new_state;
 
             // Broadcast Commit to all peers
             let others = Self::other_peers(config);
@@ -265,7 +261,8 @@ impl PBFTHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = pbft_gen::CReceiveCommit(&self.state, &config.constants, &sender);
+        let (new_state, _sent) = pbft_gen::CReceiveCommit(&self.state, &config.constants, &sender);
+        self.state = new_state;
 
         // Check if we have enough commits to execute and reply.
         // Guard for CExecuteReply: phase is Commit, commit_senders.len() >= 2f+1,
@@ -274,7 +271,8 @@ impl PBFTHost {
         if self.state.commit_senders.len() as u64 >= threshold
             && self.state.seq_num < u64::MAX
         {
-            self.state = pbft_gen::CExecuteReply(&self.state, &config.constants);
+            let (new_state, _sent) = pbft_gen::CExecuteReply(&self.state, &config.constants);
+            self.state = new_state;
             eprintln!(
                 "PBFT: COMMITTED seq={} digest={}",
                 self.state.seq_num, self.state.request_digest
@@ -307,7 +305,8 @@ impl PBFTHost {
 
         // Use seq_num as a simple digest for the checkpoint.
         let digest = self.state.seq_num;
-        self.state = pbft_gen::CCheckpoint(&self.state, &config.constants, &digest);
+        let (new_state, _sent) = pbft_gen::CCheckpoint(&self.state, &config.constants, &digest);
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -322,7 +321,8 @@ impl PBFTHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = pbft_gen::CViewChange(&self.state, &config.constants);
+        let (new_state, _sent) = pbft_gen::CViewChange(&self.state, &config.constants);
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -337,7 +337,8 @@ impl PBFTHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = pbft_gen::CNewRound(&self.state, &config.constants);
+        let (new_state, _sent) = pbft_gen::CNewRound(&self.state, &config.constants);
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -350,7 +351,8 @@ impl PBFTHost {
     ) -> StepResult<PBFTMessage> {
         // First try new round if in Replied phase
         if matches!(self.state.phase, CPhase::Replied) {
-            self.state = pbft_gen::CNewRound(&self.state, &config.constants);
+            let (new_state, _sent) = pbft_gen::CNewRound(&self.state, &config.constants);
+            self.state = new_state;
         }
 
         // Then try pre-prepare if primary and in PrePrepare phase
@@ -368,7 +370,8 @@ impl PBFTHost {
 
         // Use action_index as a synthetic digest for timer-driven proposals
         let digest = self.action_index;
-        self.state = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
+        let (new_state, _sent) = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
+        self.state = new_state;
 
         let others = Self::other_peers(config);
         StepResult {

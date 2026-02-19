@@ -15,6 +15,11 @@ pub enum LPhase {
     Replied,
 }
 
+/// PBFT protocol network messages (spec-level).
+pub enum LPBFTMessage {
+    PrePrepare { view: int, seq: int, digest: int },
+}
+
 /// State of a single PBFT replica
 pub struct LState {
     /// Current view number (incremented on view change)
@@ -41,15 +46,6 @@ pub struct LState {
     pub low_watermark: int,
     /// High watermark: upper bound on accepted sequence numbers
     pub high_watermark: int,
-    // Message flags
-    /// A pre-prepare message is pending
-    pub msgs_preprepare: bool,
-    /// View of the pre-prepare message
-    pub msgs_preprepare_view: int,
-    /// Sequence number of the pre-prepare message
-    pub msgs_preprepare_seq: int,
-    /// Digest of the pre-prepare message
-    pub msgs_preprepare_digest: int,
 }
 
 /// Protocol constants

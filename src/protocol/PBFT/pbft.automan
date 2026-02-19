@@ -1,13 +1,22 @@
 module PBFT::pbft {
     LInit(-, +);
-    LPrePrepare(+, -, +, +);
-    LReceivePrePrepare(+, -, +);
-    LReceivePrepare(+, -, +, +);
-    LReceiveCommit(+, -, +, +);
-    LCheckpoint(+, -, +, +);
-    LViewChange(+, -, +);
-    LNewRound(+, -, +);
-    LEnterCommit(+, -, +);
-    LExecuteReply(+, -, +);
+    // s, s_, c, digest, sent_packets
+    LPrePrepare(+, -, +, +, -);
+    // s, s_, c, view, seq, digest, sent_packets
+    LReceivePrePrepare(+, -, +, +, +, +, -);
+    // s, s_, c, sender, sent_packets
+    LReceivePrepare(+, -, +, +, -);
+    // s, s_, c, sender, sent_packets
+    LReceiveCommit(+, -, +, +, -);
+    // s, s_, c, digest, sent_packets
+    LCheckpoint(+, -, +, +, -);
+    // s, s_, c, sent_packets
+    LViewChange(+, -, +, -);
+    // s, s_, c, sent_packets
+    LNewRound(+, -, +, -);
+    // s, s_, c, sent_packets
+    LEnterCommit(+, -, +, -);
+    // s, s_, c, sent_packets
+    LExecuteReply(+, -, +, -);
     // LNext not transpiled (contains existential quantifiers)
 }

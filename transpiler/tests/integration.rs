@@ -3186,15 +3186,12 @@ fn test_scaffold_flag_injections_pbft() {
         "../src/protocol/PBFT/pbft_transpile.toml",
         "PBFT",
     );
-    // LReceivePrePrepare handler: PrePrepare message fields
-    assert!(code.contains("self.state.msgs_preprepare = true;"),
-        "LReceivePrePrepare should inject msgs_preprepare flag");
-    assert!(code.contains("self.state.msgs_preprepare_view = view;"),
-        "LReceivePrePrepare should inject view field");
-    assert!(code.contains("self.state.msgs_preprepare_seq = seq;"),
-        "LReceivePrePrepare should inject seq field");
-    assert!(code.contains("self.state.msgs_preprepare_digest = digest;"),
-        "LReceivePrePrepare should inject digest field");
+    // After sent_packets migration, PBFT no longer has flag_injections.
+    // CReceivePrePrepare now takes view, seq, digest as explicit parameters.
+    assert!(!code.contains("Flag injection"),
+        "PBFT scaffold should have no flag injection comments after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_preprepare"),
+        "PBFT scaffold should not reference msgs_preprepare after sent_packets migration");
 }
 
 #[test]

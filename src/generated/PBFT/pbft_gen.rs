@@ -31,6 +31,20 @@ ensures
     s.clone()
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
 
 /// Helper: clone CPhase preserving view (workaround for missing derive Clone spec).
 fn clone_phase(r: &CPhase) -> (res: CPhase)
@@ -68,10 +82,6 @@ ensures
         checkpoint_digest: 0u64,
         low_watermark: 0u64,
         high_watermark: c.checkpoint_interval.clone(),
-        msgs_preprepare: false,
-        msgs_preprepare_view: 0u64,
-        msgs_preprepare_seq: 0u64,
-        msgs_preprepare_digest: 0u64,
         phase: CPhase::PrePrepare,
     };
     proof {
@@ -81,7 +91,7 @@ ensures
 
 }
 
-pub exec fn CPrePrepare(s: &CState, c: &CConstants, digest: &u64) -> (result: CState)
+pub exec fn CPrePrepare(s: &CState, c: &CConstants, digest: &u64) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -90,195 +100,187 @@ requires
     (s.seq_num >= s.low_watermark),
     (s.seq_num < s.high_watermark),
 ensures
-    result.valid(),
-    LPrePrepare(s@, result@, c@, *digest as int),
+    result.0.valid(),
+    LPrePrepare(s@, result.0@, c@, *digest as int, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
     let result = {
         let mut __prepare_senders = clone_hashset(&HashSet::new());
         __prepare_senders.insert(c.node_id.clone());
-        CState {
-            msgs_preprepare: true,
-            msgs_preprepare_view: s.view.clone(),
-            msgs_preprepare_seq: s.seq_num.clone(),
-            msgs_preprepare_digest: *digest,
-            request_digest: *digest,
-            prepare_senders: __prepare_senders,
-            commit_senders: HashSet::new(),
-            view: s.view.clone(),
-            seq_num: s.seq_num.clone(),
-            is_primary: s.is_primary.clone(),
-            checkpoint_seq: s.checkpoint_seq.clone(),
-            checkpoint_digest: s.checkpoint_digest.clone(),
-            low_watermark: s.low_watermark.clone(),
-            high_watermark: s.high_watermark.clone(),
-            phase: CPhase::Prepare,
-        }
+        (CState {
+    request_digest: *digest,
+    prepare_senders: __prepare_senders,
+    commit_senders: HashSet::new(),
+    view: s.view.clone(),
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+    phase: CPhase::Prepare,
+}, vec![CPBFTMessage::PrePrepare {
+    view: s.view.clone(),
+    seq: s.seq_num.clone(),
+    digest: *digest,
+}])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CReceivePrePrepare(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CReceivePrePrepare(s: &CState, c: &CConstants, view: &u64, seq: &u64, digest: &u64) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is PrePrepare,
     s.is_primary == false,
-    s.msgs_preprepare == true,
-    s.msgs_preprepare_view == s.view,
+    *view == s.view,
 ensures
-    result.valid(),
-    LReceivePrePrepare(s@, result@, c@),
+    result.0.valid(),
+    LReceivePrePrepare(s@, result.0@, c@, *view as int, *seq as int, *digest as int, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
     let result = {
         let mut __prepare_senders = clone_hashset(&HashSet::new());
         __prepare_senders.insert(c.node_id.clone());
-        CState {
-            request_digest: s.msgs_preprepare_digest.clone(),
-            prepare_senders: __prepare_senders,
-            commit_senders: HashSet::new(),
-            view: s.view.clone(),
-            seq_num: s.msgs_preprepare_seq.clone(),
-            is_primary: s.is_primary.clone(),
-            checkpoint_seq: s.checkpoint_seq.clone(),
-            checkpoint_digest: s.checkpoint_digest.clone(),
-            low_watermark: s.low_watermark.clone(),
-            high_watermark: s.high_watermark.clone(),
-            msgs_preprepare: s.msgs_preprepare.clone(),
-            msgs_preprepare_view: s.msgs_preprepare_view.clone(),
-            msgs_preprepare_seq: s.msgs_preprepare_seq.clone(),
-            msgs_preprepare_digest: s.msgs_preprepare_digest.clone(),
-            phase: CPhase::Prepare,
-        }
+        (CState {
+    request_digest: *digest,
+    prepare_senders: __prepare_senders,
+    commit_senders: HashSet::new(),
+    view: s.view.clone(),
+    seq_num: *seq,
+    is_primary: s.is_primary.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+    phase: CPhase::Prepare,
+}, vec![])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CReceivePrepare(s: &CState, c: &CConstants, sender: &u64) -> (result: CState)
+pub exec fn CReceivePrepare(s: &CState, c: &CConstants, sender: &u64) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Prepare,
     !s@.prepare_senders.contains(*sender as int),
 ensures
-    result.valid(),
-    LReceivePrepare(s@, result@, c@, *sender as int),
+    result.0.valid(),
+    LReceivePrepare(s@, result.0@, c@, *sender as int, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
     let result = {
         let mut __prepare_senders = clone_hashset(&s.prepare_senders);
         __prepare_senders.insert(sender.clone());
-        CState {
-            prepare_senders: __prepare_senders,
-            phase: clone_phase(&s.phase),
-            view: s.view.clone(),
-            commit_senders: clone_hashset(&s.commit_senders),
-            seq_num: s.seq_num.clone(),
-            is_primary: s.is_primary.clone(),
-            request_digest: s.request_digest.clone(),
-            checkpoint_seq: s.checkpoint_seq.clone(),
-            checkpoint_digest: s.checkpoint_digest.clone(),
-            low_watermark: s.low_watermark.clone(),
-            high_watermark: s.high_watermark.clone(),
-            msgs_preprepare: s.msgs_preprepare.clone(),
-            msgs_preprepare_view: s.msgs_preprepare_view.clone(),
-            msgs_preprepare_seq: s.msgs_preprepare_seq.clone(),
-            msgs_preprepare_digest: s.msgs_preprepare_digest.clone(),
-        }
+        (CState {
+    prepare_senders: __prepare_senders,
+    phase: clone_phase(&s.phase),
+    view: s.view.clone(),
+    commit_senders: clone_hashset(&s.commit_senders),
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    request_digest: s.request_digest.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CEnterCommit(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CEnterCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Prepare,
     (s@.prepare_senders.len() >= ((2 * c.f) + 1)),
 ensures
-    result.valid(),
-    LEnterCommit(s@, result@, c@),
+    result.0.valid(),
+    LEnterCommit(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
     let result = {
         let mut __commit_senders = clone_hashset(&HashSet::new());
         __commit_senders.insert(c.node_id.clone());
-        CState {
-            commit_senders: __commit_senders,
-            view: s.view.clone(),
-            prepare_senders: clone_hashset(&s.prepare_senders),
-            seq_num: s.seq_num.clone(),
-            is_primary: s.is_primary.clone(),
-            request_digest: s.request_digest.clone(),
-            checkpoint_seq: s.checkpoint_seq.clone(),
-            checkpoint_digest: s.checkpoint_digest.clone(),
-            low_watermark: s.low_watermark.clone(),
-            high_watermark: s.high_watermark.clone(),
-            msgs_preprepare: s.msgs_preprepare.clone(),
-            msgs_preprepare_view: s.msgs_preprepare_view.clone(),
-            msgs_preprepare_seq: s.msgs_preprepare_seq.clone(),
-            msgs_preprepare_digest: s.msgs_preprepare_digest.clone(),
-            phase: CPhase::Commit,
-        }
+        (CState {
+    commit_senders: __commit_senders,
+    view: s.view.clone(),
+    prepare_senders: clone_hashset(&s.prepare_senders),
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    request_digest: s.request_digest.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+    phase: CPhase::Commit,
+}, vec![])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CReceiveCommit(s: &CState, c: &CConstants, sender: &u64) -> (result: CState)
+pub exec fn CReceiveCommit(s: &CState, c: &CConstants, sender: &u64) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Commit,
     !s@.commit_senders.contains(*sender as int),
 ensures
-    result.valid(),
-    LReceiveCommit(s@, result@, c@, *sender as int),
+    result.0.valid(),
+    LReceiveCommit(s@, result.0@, c@, *sender as int, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
     let result = {
         let mut __commit_senders = clone_hashset(&s.commit_senders);
         __commit_senders.insert(sender.clone());
-        CState {
-            commit_senders: __commit_senders,
-            phase: clone_phase(&s.phase),
-            view: s.view.clone(),
-            prepare_senders: clone_hashset(&s.prepare_senders),
-            seq_num: s.seq_num.clone(),
-            is_primary: s.is_primary.clone(),
-            request_digest: s.request_digest.clone(),
-            checkpoint_seq: s.checkpoint_seq.clone(),
-            checkpoint_digest: s.checkpoint_digest.clone(),
-            low_watermark: s.low_watermark.clone(),
-            high_watermark: s.high_watermark.clone(),
-            msgs_preprepare: s.msgs_preprepare.clone(),
-            msgs_preprepare_view: s.msgs_preprepare_view.clone(),
-            msgs_preprepare_seq: s.msgs_preprepare_seq.clone(),
-            msgs_preprepare_digest: s.msgs_preprepare_digest.clone(),
-        }
+        (CState {
+    commit_senders: __commit_senders,
+    phase: clone_phase(&s.phase),
+    view: s.view.clone(),
+    prepare_senders: clone_hashset(&s.prepare_senders),
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    request_digest: s.request_digest.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CExecuteReply(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CExecuteReply(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -286,34 +288,32 @@ requires
     (s@.commit_senders.len() >= ((2 * c.f) + 1)),
     s.seq_num < u64::MAX,
 ensures
-    result.valid(),
-    LExecuteReply(s@, result@, c@),
+    result.0.valid(),
+    LExecuteReply(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
-    let result = CState {
-        seq_num: (s.seq_num + 1),
-        prepare_senders: HashSet::new(),
-        commit_senders: HashSet::new(),
-        msgs_preprepare: false,
-        msgs_preprepare_view: 0u64,
-        msgs_preprepare_seq: 0u64,
-        msgs_preprepare_digest: 0u64,
-        view: s.view.clone(),
-        is_primary: s.is_primary.clone(),
-        request_digest: s.request_digest.clone(),
-        checkpoint_seq: s.checkpoint_seq.clone(),
-        checkpoint_digest: s.checkpoint_digest.clone(),
-        low_watermark: s.low_watermark.clone(),
-        high_watermark: s.high_watermark.clone(),
-        phase: CPhase::Replied,
-    };
+    let result = (CState {
+    seq_num: (s.seq_num + 1),
+    prepare_senders: HashSet::new(),
+    commit_senders: HashSet::new(),
+    view: s.view.clone(),
+    is_primary: s.is_primary.clone(),
+    request_digest: s.request_digest.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+    phase: CPhase::Replied,
+}, vec![]);
     proof {
         lemma_empty_set_map();
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CCheckpoint(s: &CState, c: &CConstants, digest: &u64) -> (result: CState)
+pub exec fn CCheckpoint(s: &CState, c: &CConstants, digest: &u64) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -321,89 +321,87 @@ requires
     (s.seq_num > s.checkpoint_seq),
     s.seq_num <= u64::MAX - c.checkpoint_interval,
 ensures
-    result.valid(),
-    LCheckpoint(s@, result@, c@, *digest as int),
+    result.0.valid(),
+    LCheckpoint(s@, result.0@, c@, *digest as int, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
-CState {
-        checkpoint_seq: s.seq_num.clone(),
-        checkpoint_digest: *digest,
-        low_watermark: s.seq_num.clone(),
-        high_watermark: (s.seq_num + c.checkpoint_interval),
-        view: s.view.clone(),
-        phase: clone_phase(&s.phase),
-        prepare_senders: clone_hashset(&s.prepare_senders),
-        commit_senders: clone_hashset(&s.commit_senders),
-        seq_num: s.seq_num.clone(),
-        is_primary: s.is_primary.clone(),
-        request_digest: s.request_digest.clone(),
-        msgs_preprepare: s.msgs_preprepare.clone(),
-        msgs_preprepare_view: s.msgs_preprepare_view.clone(),
-        msgs_preprepare_seq: s.msgs_preprepare_seq.clone(),
-        msgs_preprepare_digest: s.msgs_preprepare_digest.clone(),
-    }
-}
-
-pub exec fn CViewChange(s: &CState, c: &CConstants) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    s.view < u64::MAX,
-ensures
-    result.valid(),
-    LViewChange(s@, result@, c@),
-{
-    let result = CState {
-        view: (s.view + 1),
-        prepare_senders: HashSet::new(),
-        commit_senders: HashSet::new(),
-        request_digest: 0u64,
-        msgs_preprepare: false,
-        msgs_preprepare_view: 0u64,
-        msgs_preprepare_seq: 0u64,
-        msgs_preprepare_digest: 0u64,
-        seq_num: s.seq_num.clone(),
-        is_primary: s.is_primary.clone(),
-        checkpoint_seq: s.checkpoint_seq.clone(),
-        checkpoint_digest: s.checkpoint_digest.clone(),
-        low_watermark: s.low_watermark.clone(),
-        high_watermark: s.high_watermark.clone(),
-        phase: CPhase::PrePrepare,
-    };
+    let result = (CState {
+    checkpoint_seq: s.seq_num.clone(),
+    checkpoint_digest: *digest,
+    low_watermark: s.seq_num.clone(),
+    high_watermark: (s.seq_num + c.checkpoint_interval),
+    view: s.view.clone(),
+    phase: clone_phase(&s.phase),
+    prepare_senders: clone_hashset(&s.prepare_senders),
+    commit_senders: clone_hashset(&s.commit_senders),
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    request_digest: s.request_digest.clone(),
+}, vec![]);
     proof {
-        lemma_empty_set_map();
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CNewRound(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CViewChange(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.view < u64::MAX,
+ensures
+    result.0.valid(),
+    LViewChange(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
+{
+    let result = (CState {
+    view: (s.view + 1),
+    prepare_senders: HashSet::new(),
+    commit_senders: HashSet::new(),
+    request_digest: 0u64,
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+    phase: CPhase::PrePrepare,
+}, vec![]);
+    proof {
+        lemma_empty_set_map();
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+    }
+    result
+
+}
+
+pub exec fn CNewRound(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Replied,
 ensures
-    result.valid(),
-    LNewRound(s@, result@, c@),
+    result.0.valid(),
+    LNewRound(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
-    let result = CState {
-        prepare_senders: HashSet::new(),
-        commit_senders: HashSet::new(),
-        request_digest: 0u64,
-        view: s.view.clone(),
-        seq_num: s.seq_num.clone(),
-        is_primary: s.is_primary.clone(),
-        checkpoint_seq: s.checkpoint_seq.clone(),
-        checkpoint_digest: s.checkpoint_digest.clone(),
-        low_watermark: s.low_watermark.clone(),
-        high_watermark: s.high_watermark.clone(),
-        msgs_preprepare: s.msgs_preprepare.clone(),
-        msgs_preprepare_view: s.msgs_preprepare_view.clone(),
-        msgs_preprepare_seq: s.msgs_preprepare_seq.clone(),
-        msgs_preprepare_digest: s.msgs_preprepare_digest.clone(),
-        phase: CPhase::PrePrepare,
-    };
+    let result = (CState {
+    prepare_senders: HashSet::new(),
+    commit_senders: HashSet::new(),
+    request_digest: 0u64,
+    view: s.view.clone(),
+    seq_num: s.seq_num.clone(),
+    is_primary: s.is_primary.clone(),
+    checkpoint_seq: s.checkpoint_seq.clone(),
+    checkpoint_digest: s.checkpoint_digest.clone(),
+    low_watermark: s.low_watermark.clone(),
+    high_watermark: s.high_watermark.clone(),
+    phase: CPhase::PrePrepare,
+}, vec![]);
     proof {
         lemma_empty_set_map();
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
     }
     result
 

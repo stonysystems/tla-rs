@@ -21,10 +21,6 @@ pub struct CState {
     pub checkpoint_digest: u64,
     pub low_watermark: u64,
     pub high_watermark: u64,
-    pub msgs_preprepare: bool,
-    pub msgs_preprepare_view: u64,
-    pub msgs_preprepare_seq: u64,
-    pub msgs_preprepare_digest: u64,
 }
 
 impl Clone for CState {
@@ -58,10 +54,6 @@ impl View for CState {
             checkpoint_digest: self.checkpoint_digest as int,
             low_watermark: self.low_watermark as int,
             high_watermark: self.high_watermark as int,
-            msgs_preprepare: self.msgs_preprepare,
-            msgs_preprepare_view: self.msgs_preprepare_view as int,
-            msgs_preprepare_seq: self.msgs_preprepare_seq as int,
-            msgs_preprepare_digest: self.msgs_preprepare_digest as int,
         }
     }
 }
@@ -121,6 +113,33 @@ impl View for CPhase {
             CPhase::Prepare => LPhase::Prepare,
             CPhase::Commit => LPhase::Commit,
             CPhase::Replied => LPhase::Replied,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CPBFTMessage {
+    PrePrepare {
+        view: u64,
+        seq: u64,
+        digest: u64,
+    },
+}
+
+impl CPBFTMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CPBFTMessage::PrePrepare { view, seq, digest } => true,
+        }
+    }
+}
+
+impl View for CPBFTMessage {
+    type V = LPBFTMessage;
+
+    open spec fn view(&self) -> LPBFTMessage {
+        match self {
+            CPBFTMessage::PrePrepare { view, seq, digest } => LPBFTMessage::PrePrepare { view: *view as int, seq: *seq as int, digest: *digest as int },
         }
     }
 }
