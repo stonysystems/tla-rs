@@ -388,6 +388,26 @@ pub enum BinOp {
     Shr,
 }
 
+impl BinOp {
+    /// Returns the Rust operator string for this binary operator.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::Div => "/",
+            BinOp::Mod => "%",
+            BinOp::And => "&&",
+            BinOp::Or => "||",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
+        }
+    }
+}
+
 /// Unary operators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
@@ -594,6 +614,30 @@ mod tests {
         assert_ne!(BinOp::And, BinOp::Or);
         assert_ne!(BinOp::BitAnd, BinOp::BitOr);
         assert_ne!(BinOp::Shl, BinOp::Shr);
+    }
+
+    #[test]
+    fn test_binop_as_str_all_variants() {
+        assert_eq!(BinOp::Add.as_str(), "+");
+        assert_eq!(BinOp::Sub.as_str(), "-");
+        assert_eq!(BinOp::Mul.as_str(), "*");
+        assert_eq!(BinOp::Div.as_str(), "/");
+        assert_eq!(BinOp::Mod.as_str(), "%");
+        assert_eq!(BinOp::And.as_str(), "&&");
+        assert_eq!(BinOp::Or.as_str(), "||");
+        assert_eq!(BinOp::BitAnd.as_str(), "&");
+        assert_eq!(BinOp::BitOr.as_str(), "|");
+        assert_eq!(BinOp::BitXor.as_str(), "^");
+        assert_eq!(BinOp::Shl.as_str(), "<<");
+        assert_eq!(BinOp::Shr.as_str(), ">>");
+    }
+
+    #[test]
+    fn test_binop_as_str_returns_static_str() {
+        // Verify that as_str returns &'static str (can be used without lifetime issues)
+        let op = BinOp::Add;
+        let s: &'static str = op.as_str();
+        assert_eq!(s, "+");
     }
 
     #[test]

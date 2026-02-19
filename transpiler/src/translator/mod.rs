@@ -4939,16 +4939,7 @@ impl Translator {
             Expr::Binary(l, op, r) => {
                 let l_str = self.expr_to_spec_string(l, _extra_args);
                 let r_str = self.expr_to_spec_string(r, _extra_args);
-                let op_str = match op {
-                    BinOp::Add => "+",
-                    BinOp::Sub => "-",
-                    BinOp::Mul => "*",
-                    BinOp::Div => "/",
-                    BinOp::And => "&&",
-                    BinOp::Or => "||",
-                    _ => "?",
-                };
-                format!("({} {} {})", l_str, op_str, r_str)
+                format!("({} {} {})", l_str, op.as_str(), r_str)
             }
             Expr::Eq(l, r) => {
                 let l_str = self.expr_to_spec_string(l, _extra_args);
@@ -6862,21 +6853,7 @@ impl Translator {
             Expr::Binary(lhs, op, rhs) => {
                 let lhs_str = self.expr_to_requires_string(lhs);
                 let rhs_str = self.expr_to_requires_string(rhs);
-                let op_str = match op {
-                    crate::ast::BinOp::Add => "+",
-                    crate::ast::BinOp::Sub => "-",
-                    crate::ast::BinOp::Mul => "*",
-                    crate::ast::BinOp::Div => "/",
-                    crate::ast::BinOp::Mod => "%",
-                    crate::ast::BinOp::And => "&&",
-                    crate::ast::BinOp::Or => "||",
-                    crate::ast::BinOp::BitAnd => "&",
-                    crate::ast::BinOp::BitOr => "|",
-                    crate::ast::BinOp::BitXor => "^",
-                    crate::ast::BinOp::Shl => "<<",
-                    crate::ast::BinOp::Shr => ">>",
-                };
-                format!("({} {} {})", lhs_str, op_str, rhs_str)
+                format!("({} {} {})", lhs_str, op.as_str(), rhs_str)
             }
             Expr::Eq(lhs, rhs) => {
                 format!(
@@ -7006,21 +6983,7 @@ impl Translator {
             Expr::Binary(lhs, op, rhs) => {
                 let lhs_str = self.expr_to_view_requires_string(lhs, view_params, scalar_params);
                 let rhs_str = self.expr_to_view_requires_string(rhs, view_params, scalar_params);
-                let op_str = match op {
-                    crate::ast::BinOp::Add => "+",
-                    crate::ast::BinOp::Sub => "-",
-                    crate::ast::BinOp::Mul => "*",
-                    crate::ast::BinOp::Div => "/",
-                    crate::ast::BinOp::Mod => "%",
-                    crate::ast::BinOp::And => "&&",
-                    crate::ast::BinOp::Or => "||",
-                    crate::ast::BinOp::BitAnd => "&",
-                    crate::ast::BinOp::BitOr => "|",
-                    crate::ast::BinOp::BitXor => "^",
-                    crate::ast::BinOp::Shl => "<<",
-                    crate::ast::BinOp::Shr => ">>",
-                };
-                format!("({} {} {})", lhs_str, op_str, rhs_str)
+                format!("({} {} {})", lhs_str, op.as_str(), rhs_str)
             }
             Expr::Call { func, args } => {
                 let raw_name = if func.segments.len() == 1 {
@@ -7652,24 +7615,10 @@ impl Translator {
                 )
             }
             Expr::Binary(lhs, op, rhs) => {
-                let op_str = match op {
-                    BinOp::Add => "+",
-                    BinOp::Sub => "-",
-                    BinOp::Mul => "*",
-                    BinOp::Div => "/",
-                    BinOp::Mod => "%",
-                    BinOp::And => "&&",
-                    BinOp::Or => "||",
-                    BinOp::BitAnd => "&",
-                    BinOp::BitOr => "|",
-                    BinOp::BitXor => "^",
-                    BinOp::Shl => "<<",
-                    BinOp::Shr => ">>",
-                };
                 format!(
                     "({} {} {})",
                     self.expr_to_simple_string(lhs),
-                    op_str,
+                    op.as_str(),
                     self.expr_to_simple_string(rhs)
                 )
             }
@@ -8422,21 +8371,7 @@ impl Translator {
 
             // Binary operators from Expr::Binary
             Expr::Binary(lhs, op, rhs) => {
-                let op_str = match op {
-                    crate::ast::BinOp::Add => "+",
-                    crate::ast::BinOp::Sub => "-",
-                    crate::ast::BinOp::Mul => "*",
-                    crate::ast::BinOp::Div => "/",
-                    crate::ast::BinOp::Mod => "%",
-                    crate::ast::BinOp::And => "&&",
-                    crate::ast::BinOp::Or => "||",
-                    crate::ast::BinOp::BitAnd => "&",
-                    crate::ast::BinOp::BitOr => "|",
-                    crate::ast::BinOp::BitXor => "^",
-                    crate::ast::BinOp::Shl => "<<",
-                    crate::ast::BinOp::Shr => ">>",
-                };
-                self.transform_binary_op(lhs, rhs, op_str, ctx)
+                self.transform_binary_op(lhs, rhs, op.as_str(), ctx)
             }
 
             // Comparison operators as dedicated AST nodes
