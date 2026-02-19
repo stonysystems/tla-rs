@@ -3463,8 +3463,8 @@ fn test_exact_action_counts_per_protocol() {
             toml_path: "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
             protocol: "PrimaryBackup",
             total: 8,
-            msg_driven: 2,
-            timer_driven: 6,
+            msg_driven: 3,
+            timer_driven: 5,
         },
         Expected {
             toml_path: "../src/protocol/PBFT/pbft_transpile.toml",
@@ -3592,10 +3592,13 @@ fn test_message_driven_actions_have_variants_or_heuristic() {
                     "FollowerAppendEntries", "SendPreAcceptOk", "SendAcceptOk",
                     "SendPromise", "WitnessSync", "Sync", "ClientRead",
                 ].iter().any(|p| name.contains(p));
+                // Actions with an explicit message_variant in TOML are valid
+                // message-driven actions even without a keyword (e.g. LPrimaryWrite).
+                let has_explicit_variant = action.message_variant.is_some();
 
                 assert!(
-                    has_msg_keyword || has_response_pattern,
-                    "{}: message_driven action '{}' has no recognizable message keyword or response pattern",
+                    has_msg_keyword || has_response_pattern || has_explicit_variant,
+                    "{}: message_driven action '{}' has no recognizable message keyword, response pattern, or explicit message_variant",
                     protocol, name
                 );
             }

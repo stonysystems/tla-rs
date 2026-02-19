@@ -16,13 +16,10 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     &&& s.backup_last_value == 0
     &&& s.backup_synced == true
     &&& s.view == 0
-    &&& s.msgs_replicate == false
-    &&& s.msgs_replicate_val == 0
-    &&& s.msgs_ack == false
 }
 
 /// Primary receives a client write request
-pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int) -> bool {
+pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.acked == true
     &&& s.has_pending == false
@@ -39,20 +36,16 @@ pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int) -
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == s.backup_synced
     &&& s_.view == s.view
-    &&& s_.msgs_replicate == s.msgs_replicate
-    &&& s_.msgs_replicate_val == s.msgs_replicate_val
-    &&& s_.msgs_ack == s.msgs_ack
+    // No messages sent
+    &&& sent_packets == Seq::<LPBMessage>::empty()
 }
 
 /// Primary sends replicate message to backup with pending value
-pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.has_pending == true
     &&& s.acked == false
-    // Send replicate message
-    &&& s_.msgs_replicate == true
-    &&& s_.msgs_replicate_val == s.pending_value
-    // Frame
+    // Frame: state unchanged (message is output, not state mutation)
     &&& s_.role == s.role
     &&& s_.log_length == s.log_length
     &&& s_.last_value == s.last_value
@@ -63,16 +56,16 @@ pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants) -> 
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == s.backup_synced
     &&& s_.view == s.view
-    &&& s_.msgs_ack == s.msgs_ack
+    // Send replicate with pending value
+    &&& sent_packets == seq![LPBMessage::Replicate { val: s.pending_value }]
 }
 
 /// Backup receives replicate and appends to its log
-pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants, val: int, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary      // Global state perspective: backup is alive
-    &&& s.msgs_replicate == true
-    // Backup appends the replicated value
+    // Backup appends the replicated value (val comes from the received message)
     &&& s_.backup_log_length == s.backup_log_length + 1
-    &&& s_.backup_last_value == s.msgs_replicate_val
+    &&& s_.backup_last_value == val
     &&& s_.backup_synced == true
     // Frame
     &&& s_.role == s.role
@@ -82,19 +75,15 @@ pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants) -
     &&& s_.pending_value == s.pending_value
     &&& s_.acked == s.acked
     &&& s_.view == s.view
-    &&& s_.msgs_replicate == s.msgs_replicate
-    &&& s_.msgs_replicate_val == s.msgs_replicate_val
-    &&& s_.msgs_ack == s.msgs_ack
+    // No messages sent
+    &&& sent_packets == Seq::<LPBMessage>::empty()
 }
 
 /// Backup sends acknowledgment to primary
-pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.backup_synced == true
-    &&& s.msgs_replicate == true
-    // Send ack
-    &&& s_.msgs_ack == true
-    // Frame
+    // Frame: state unchanged (message is output)
     &&& s_.role == s.role
     &&& s_.log_length == s.log_length
     &&& s_.last_value == s.last_value
@@ -105,21 +94,16 @@ pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants) -> bool {
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == s.backup_synced
     &&& s_.view == s.view
-    &&& s_.msgs_replicate == s.msgs_replicate
-    &&& s_.msgs_replicate_val == s.msgs_replicate_val
+    // Send ack
+    &&& sent_packets == seq![LPBMessage::Ack]
 }
 
 /// Primary receives ack from backup
-pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.has_pending == true
-    &&& s.msgs_ack == true
     // Mark as acked
     &&& s_.acked == true
-    // Clear messages
-    &&& s_.msgs_replicate == false
-    &&& s_.msgs_replicate_val == 0
-    &&& s_.msgs_ack == false
     // Frame
     &&& s_.role == s.role
     &&& s_.log_length == s.log_length
@@ -130,10 +114,12 @@ pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants) -> boo
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == s.backup_synced
     &&& s_.view == s.view
+    // No messages sent
+    &&& sent_packets == Seq::<LPBMessage>::empty()
 }
 
 /// Primary commits the pending write to the log after receiving ack
-pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.acked == true
     &&& s.has_pending == true
@@ -149,13 +135,12 @@ pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants) -> bool {
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == s.backup_synced
     &&& s_.view == s.view
-    &&& s_.msgs_replicate == s.msgs_replicate
-    &&& s_.msgs_replicate_val == s.msgs_replicate_val
-    &&& s_.msgs_ack == s.msgs_ack
+    // No messages sent
+    &&& sent_packets == Seq::<LPBMessage>::empty()
 }
 
 /// Primary fails: becomes inactive, pending writes are lost
-pub open spec fn LPrimaryFail(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LPrimaryFail(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     // Primary becomes inactive
     &&& s_.role is Inactive
@@ -170,14 +155,12 @@ pub open spec fn LPrimaryFail(s: LState, s_: LState, c: LConstants) -> bool {
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == false
     &&& s_.view == s.view
-    // Clear messages
-    &&& s_.msgs_replicate == false
-    &&& s_.msgs_replicate_val == 0
-    &&& s_.msgs_ack == false
+    // No messages sent
+    &&& sent_packets == Seq::<LPBMessage>::empty()
 }
 
 /// Backup detects failure and promotes itself to primary
-pub open spec fn LBackupPromote(s: LState, s_: LState, c: LConstants) -> bool {
+pub open spec fn LBackupPromote(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Inactive
     // Backup becomes new primary, uses backup's log state
     &&& s_.role is Primary
@@ -193,22 +176,20 @@ pub open spec fn LBackupPromote(s: LState, s_: LState, c: LConstants) -> bool {
     &&& s_.backup_synced == true
     // Increment view to prevent split-brain
     &&& s_.view == s.view + 1
-    // Clear messages
-    &&& s_.msgs_replicate == false
-    &&& s_.msgs_replicate_val == 0
-    &&& s_.msgs_ack == false
+    // No messages sent
+    &&& sent_packets == Seq::<LPBMessage>::empty()
 }
 
 /// Next-state relation
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    ||| (exists |val: int| LPrimaryWrite(s, s_, c, val))
-    ||| LPrimarySendReplicate(s, s_, c)
-    ||| LBackupReceiveReplicate(s, s_, c)
-    ||| LBackupSendAck(s, s_, c)
-    ||| LPrimaryReceiveAck(s, s_, c)
-    ||| LPrimaryCommit(s, s_, c)
-    ||| LPrimaryFail(s, s_, c)
-    ||| LBackupPromote(s, s_, c)
+    ||| (exists |val: int, sent_packets: Seq<LPBMessage>| LPrimaryWrite(s, s_, c, val, sent_packets))
+    ||| (exists |sent_packets: Seq<LPBMessage>| LPrimarySendReplicate(s, s_, c, sent_packets))
+    ||| (exists |val: int, sent_packets: Seq<LPBMessage>| LBackupReceiveReplicate(s, s_, c, val, sent_packets))
+    ||| (exists |sent_packets: Seq<LPBMessage>| LBackupSendAck(s, s_, c, sent_packets))
+    ||| (exists |sent_packets: Seq<LPBMessage>| LPrimaryReceiveAck(s, s_, c, sent_packets))
+    ||| (exists |sent_packets: Seq<LPBMessage>| LPrimaryCommit(s, s_, c, sent_packets))
+    ||| (exists |sent_packets: Seq<LPBMessage>| LPrimaryFail(s, s_, c, sent_packets))
+    ||| (exists |sent_packets: Seq<LPBMessage>| LBackupPromote(s, s_, c, sent_packets))
 }
 
 }

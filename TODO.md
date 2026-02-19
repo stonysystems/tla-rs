@@ -5445,7 +5445,7 @@ For each protocol P, in order:
 ### 18.2 Implementation order (smallest-first)
 
 - [x] **18.2.1** TwoPhase (3 fields, simplest — validates the pattern)
-- [ ] **18.2.2** PrimaryBackup (3 fields)
+- [x] **18.2.2** PrimaryBackup (3 fields)
 - [ ] **18.2.3** ChainReplication (4 fields)
 - [ ] **18.2.4** PBFT (4 fields)
 - [ ] **18.2.5** LeaderElection (8 fields)

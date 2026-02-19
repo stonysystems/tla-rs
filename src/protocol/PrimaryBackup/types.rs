@@ -9,6 +9,14 @@ pub enum LNodeRole {
     Inactive,
 }
 
+/// Protocol messages for Primary-Backup
+pub enum LPBMessage {
+    /// Primary sends a replicate with a value to the backup
+    Replicate { val: int },
+    /// Backup acknowledges replication
+    Ack,
+}
+
 /// State of the primary-backup system (global perspective)
 pub struct LState {
     /// Role of this node (Primary, Backup, or Inactive)
@@ -33,13 +41,6 @@ pub struct LState {
     // View/epoch for split-brain prevention
     /// Current view/epoch number (incremented on failover)
     pub view: int,
-    // Message flags
-    /// Primary has sent a replicate message
-    pub msgs_replicate: bool,
-    /// Value being replicated
-    pub msgs_replicate_val: int,
-    /// Backup has sent an ack
-    pub msgs_ack: bool,
 }
 
 /// System constants

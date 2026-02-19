@@ -28,6 +28,10 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LNodeRole" = "CNodeRole"
+"LPBMessage" = "CPBMessage"
+# Prevent C-prefixing of message variant names
+"Replicate" = "Replicate"
+"Ack" = "Ack"
 
 [variant_remapping]
 "Primary" = "CNodeRole::Primary"
@@ -78,43 +82,50 @@ action_count = 8
 [[scheduler.actions]]
 spec_name = "LPrimaryWrite"
 exec_name = "CPrimaryWrite"
-kind = "timer_driven"
-existential_params = [["val", "int"]]
+kind = "message_driven"
+message_variant = "ClientRequest"
+existential_params = [["val", "int"], ["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LPrimarySendReplicate"
 exec_name = "CPrimarySendReplicate"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LBackupReceiveReplicate"
 exec_name = "CBackupReceiveReplicate"
 kind = "message_driven"
 message_variant = "Replicate"
+existential_params = [["val", "int"], ["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LBackupSendAck"
 exec_name = "CBackupSendAck"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LPrimaryReceiveAck"
 exec_name = "CPrimaryReceiveAck"
 kind = "message_driven"
 message_variant = "Ack"
+existential_params = [["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LPrimaryCommit"
 exec_name = "CPrimaryCommit"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LPrimaryFail"
 exec_name = "CPrimaryFail"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LPBMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LBackupPromote"
 exec_name = "CBackupPromote"
 kind = "timer_driven"
-
+existential_params = [["sent_packets", "Seq<LPBMessage>"]]

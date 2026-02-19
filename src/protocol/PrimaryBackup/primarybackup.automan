@@ -6,28 +6,28 @@ module PrimaryBackup::primarybackup {
     LInit(-, +);
 
     // Primary receives client write with value val
-    LPrimaryWrite(+, -, +, +);
+    LPrimaryWrite(+, -, +, +, -);
 
     // Primary sends replicate message to backup
-    LPrimarySendReplicate(+, -, +);
+    LPrimarySendReplicate(+, -, +, -);
 
-    // Backup receives replicate and appends to log
-    LBackupReceiveReplicate(+, -, +);
+    // Backup receives replicate and appends to log (val from received message)
+    LBackupReceiveReplicate(+, -, +, +, -);
 
     // Backup sends ack to primary
-    LBackupSendAck(+, -, +);
+    LBackupSendAck(+, -, +, -);
 
     // Primary receives ack from backup
-    LPrimaryReceiveAck(+, -, +);
+    LPrimaryReceiveAck(+, -, +, -);
 
     // Primary commits pending write to log
-    LPrimaryCommit(+, -, +);
+    LPrimaryCommit(+, -, +, -);
 
     // Primary fails, becomes inactive
-    LPrimaryFail(+, -, +);
+    LPrimaryFail(+, -, +, -);
 
     // Backup promotes to primary after failure
-    LBackupPromote(+, -, +);
+    LBackupPromote(+, -, +, -);
 
     // LNext: not transpiled (existential quantifier)
 }

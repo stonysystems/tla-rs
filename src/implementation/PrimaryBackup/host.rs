@@ -120,9 +120,10 @@ impl PrimaryBackupHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CPrimaryWrite(
+        let (new_state, _sent) = primarybackup_gen::CPrimaryWrite(
             &self.state, &config.constants, &value,
         );
+        self.state = new_state;
 
         // After writing, immediately attempt to send replicate to backup.
         self.primary_try_send_replicate(config)
@@ -142,13 +143,16 @@ impl PrimaryBackupHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CPrimarySendReplicate(
+        // Capture pending_value before the state transition for the outbound message.
+        let value = self.state.pending_value;
+
+        let (new_state, _sent) = primarybackup_gen::CPrimarySendReplicate(
             &self.state, &config.constants,
         );
+        self.state = new_state;
 
         // Send Replicate to backup
         let dst = Self::backup_endpoint(config);
-        let value = self.state.msgs_replicate_val;
         StepResult {
             ok: true,
             outbound: GenericOutbound::Send {
@@ -160,21 +164,21 @@ impl PrimaryBackupHost {
 
     /// Primary: receive Ack from backup.
     /// Guards from CPrimaryReceiveAck requires:
-    ///   s.role is Primary, s.has_pending == true, s.msgs_ack == true
+    ///   s.role is Primary, s.has_pending == true
     fn primary_receive_ack(
         &mut self,
         config: &PrimaryBackupConfig,
     ) -> StepResult<PrimaryBackupMessage> {
         if !self.is_primary()
             || !self.state.has_pending
-            || !self.state.msgs_ack
         {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CPrimaryReceiveAck(
+        let (new_state, _sent) = primarybackup_gen::CPrimaryReceiveAck(
             &self.state, &config.constants,
         );
+        self.state = new_state;
 
         // After receiving ack, try to commit
         self.primary_try_commit(config)
@@ -196,9 +200,10 @@ impl PrimaryBackupHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CPrimaryCommit(
+        let (new_state, _sent) = primarybackup_gen::CPrimaryCommit(
             &self.state, &config.constants,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -214,9 +219,10 @@ impl PrimaryBackupHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CPrimaryFail(
+        let (new_state, _sent) = primarybackup_gen::CPrimaryFail(
             &self.state, &config.constants,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -228,23 +234,21 @@ impl PrimaryBackupHost {
     /// Backup: receive Replicate message from primary.
     /// Guards from CBackupReceiveReplicate requires:
     ///   s.role is Primary (shared-state: both roles see same state),
-    ///   s.msgs_replicate == true, s.backup_log_length < u64::MAX
+    ///   s.backup_log_length < u64::MAX
     fn backup_receive_replicate(
         &mut self,
         config: &PrimaryBackupConfig,
+        value: u64,
     ) -> StepResult<PrimaryBackupMessage> {
-        // In the shared-state spec, the guard checks s.role is Primary
-        // because both nodes share the same CState. In the distributed
-        // model we check that msgs_replicate is set (the message arrived).
-        if !self.state.msgs_replicate
-            || self.state.backup_log_length >= u64::MAX
+        if self.state.backup_log_length >= u64::MAX
         {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CBackupReceiveReplicate(
-            &self.state, &config.constants,
+        let (new_state, _sent) = primarybackup_gen::CBackupReceiveReplicate(
+            &self.state, &config.constants, &value,
         );
+        self.state = new_state;
 
         // After receiving replicate, try to send ack
         self.backup_try_send_ack(config)
@@ -253,20 +257,20 @@ impl PrimaryBackupHost {
     /// Backup: send Ack back to primary.
     /// Guards from CBackupSendAck requires:
     ///   s.role is Primary (shared-state),
-    ///   s.backup_synced == true, s.msgs_replicate == true
+    ///   s.backup_synced == true
     fn backup_try_send_ack(
         &mut self,
         config: &PrimaryBackupConfig,
     ) -> StepResult<PrimaryBackupMessage> {
         if !self.state.backup_synced
-            || !self.state.msgs_replicate
         {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CBackupSendAck(
+        let (new_state, _sent) = primarybackup_gen::CBackupSendAck(
             &self.state, &config.constants,
         );
+        self.state = new_state;
 
         // Send Ack to primary
         let dst = Self::primary_endpoint(config);
@@ -292,9 +296,10 @@ impl PrimaryBackupHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = primarybackup_gen::CBackupPromote(
+        let (new_state, _sent) = primarybackup_gen::CBackupPromote(
             &self.state, &config.constants,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -348,8 +353,8 @@ impl PrimaryBackupHost {
         // Handle incoming messages
         if let Some(pkt) = packet {
             match pkt.msg {
-                PrimaryBackupMessage::Replicate { value: _ } => {
-                    return self.backup_receive_replicate(config);
+                PrimaryBackupMessage::Replicate { value } => {
+                    return self.backup_receive_replicate(config, value);
                 },
                 _ => {
                     // Backup ignores Ack and ClientRequest messages
