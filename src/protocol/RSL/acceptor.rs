@@ -50,31 +50,6 @@ verus! {
         &&& a.log_truncation_point == 0
     }
 
-    // pub open spec fn LAcceptorProcess1a(s:LAcceptor, s_:LAcceptor, inp:RslPacket, sent_packets:Seq<RslPacket>) -> bool
-    //     requires
-    //         inp.msg.is_RslMessage1a(),
-    // {
-    //     let m:RslMessage::RslMessage1b = inp.msg.get_RslMessage1a();
-    //     if s.constants.all.config.replica_ids.contains(inp.src) && BalLt(s.max_bal, m.bal_1a) && LReplicaConstantsValid(s.constants)
-    //     {
-    //         &&& sent_packets == Seq::from(vec![
-    //             RslPacket {
-    //                 src: s.constants.all.config.replica_ids[s.constants.my_index],
-    //                 dst: inp.src,
-    //                 msg: RslMessage::RslMessage1b {
-    //                     bal_1b: m.bal_1a,
-    //                     log_truncation_point: s.log_truncation_point,
-    //                     votes: s.votes,
-    //                 }
-    //             }
-    //         ])
-    //         &&& s_ == s.(max_bal := m.bal_1a)
-    //     } else {
-    //         &&& s_ == s
-    //         &&& sent_packets == Seq::empty()
-    //     }
-    // }
-
     pub open spec fn LAcceptorProcess1a(
         s: LAcceptor,
         s_: LAcceptor,

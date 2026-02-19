@@ -1,5 +1,4 @@
 use crate::common::native::io_s::*;
-use crate::implementation::common::function::*;
 use crate::implementation::RSL::{cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*};
 use crate::protocol::RSL::environment::*;
 use crate::verus_extra::seq_lib_v::*;

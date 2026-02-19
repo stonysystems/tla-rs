@@ -3,7 +3,6 @@ use crate::common::framework::args_t::*;
 use crate::common::framework::environment_s::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;
-use crate::implementation::common::function::*;
 use crate::implementation::RSL::{
     cbroadcast::*, cconfiguration::*, cconstants::*, cmd_line_parser::*, cmessage::*,
     cparameters::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,

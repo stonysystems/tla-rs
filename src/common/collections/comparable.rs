@@ -1,6 +1,4 @@
-use crate::implementation::common::function::*;
 use vstd::bytes::*;
-// use crate::implementation::common::function::*;
 use vstd::prelude::*;
 use vstd::slice::*;
 

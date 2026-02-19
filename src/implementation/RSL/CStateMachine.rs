@@ -22,27 +22,13 @@ pub fn CHandleRequest(state:&CAppState, request:&CRequest) -> ( result:(CAppStat
     (new_state, CReply { client: request.client.clone_up_to_view(), seqno: request.seqno, reply })
 }
 
-// #[verifier(external_body)]
 pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (result:(Vec<CAppState>, Vec<CReply>))
     requires
         CAppStateIsValid(state),
         crequestbatch_is_valid(batch)
     ensures
-        // result.0.len()>0,
         result.0.len() == batch.len()+1,
         (result.0@.map(|i,x:CAppState| x@),result.1@.map(|i,y:CReply| y@)) == HandleRequestBatchHidden(state@, abstractify_crequestbatch(batch)),
-        // result.1.len() == batch.len(),
-        // ({
-        //     let cr0 = result.0;
-        //     let cr1 = result.1;
-        //     let (lr0, lr1) = HandleRequestBatchHidden(AbstractifyCAppStateToAppState(&state), abstractify_crequestbatch(batch));
-        //     &&& cr0.len() == batch.len() + 1
-        //     &&& cr1.len() == batch.len()
-        //     // &&& forall |i:int| 0 <= i < cr0.len() ==> cr0[i].valid()
-        //     &&& forall |i:int| 0 <= i < cr1.len() ==> cr1[i].valid()
-        //     &&& cr1@.map(|i, x: CReply| x@) == lr1
-        //     &&& cr0@.map(|i, x: CAppState| x@) == lr0
-        // })
     decreases batch.len(),
 {
     if batch.len() == 0 {
@@ -117,31 +103,12 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
 }
 
 
-// #[verifier(external_body)]
 pub fn CHandleRequestBatch(state:&CAppState, batch:&CRequestBatch) -> (rc:(Vec<CAppState>, Vec<CReply>))
     requires
         CAppStateIsValid(state),
         crequestbatch_is_valid(batch)
     ensures
         (rc.0@.map(|i, x: CAppState| x@), rc.1@.map(|i, x: CReply| x@)) == HandleRequestBatch(state@, batch@.map(|i, x:CRequest| x@))
-        // ({
-        //     let states = rc.0;
-        //     let replies = rc.1;
-        //     let (lr0, lr1) = HandleRequestBatch(AbstractifyCAppStateToAppState(state), abstractify_crequestbatch(batch));
-        //     &&& states[0] == state
-        //     &&& states.len() == batch.len() + 1
-        //     &&& replies.len() == batch.len()
-        //     // &&& (forall |i:int| 0 <= i < batch.len() ==>
-        //     //         replies[i] is CReply
-        //     //         && (states[i+1], replies[i].reply) == HandleAppRequest(states[i], batch[i].request)
-        //     //         && replies[i].client == batch[i].client
-        //     //         && replies[i].seqno == batch[i].seqno
-        //     //     )
-        //     &&& (forall |i:int| 0 <= i < states@.len() ==> CAppStateIsValid(&states[i]))
-        //     &&& (forall |i:int| 0 <= i < replies@.len() ==> replies[i].valid())
-        //     &&& states@.map(|i, s:CAppState| AbstractifyCAppStateToAppState(&s)) == lr0
-        //     &&& replies@.map(|i, r:CReply| r@) == lr1
-        // })
 {
     let (states, replies) = CHandleRequestBatchHidden(state, batch);
     (states, replies)

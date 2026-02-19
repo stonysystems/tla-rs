@@ -102,30 +102,8 @@ verus! {
     }
 
     pub open spec fn HandleRequestBatch(state:AppState, batch:RequestBatch) -> (rc:(Seq<AppState>, Seq<Reply>))
-        // ensures
-        //     rc.0[0] == state,
-        //     rc.0.len() == batch.len() + 1,
-        //     rc.1.len() == batch.len(),
-        //     forall |i:int| 0 <= i < batch.len() ==> rc.1[i] is Reply
-        //                                             && (rc.0[i+1], rc.1[i]) == AppHandleRequest(rc.0[i], batch[i].request)
-        //                                             && rc.1[i].client == batch[i].client
-        //                                             && rc.1[i].seqno == batch[i].seqno
     {
         let (states, replies) = HandleRequestBatchHidden(state, batch);
         (states, replies)
     }
-
-    // pub proof fn lemma_HandleRequestBatch(state:AppState, batch:RequestBatch)
-    //     ensures
-    //         HandleRequestBatch(state, batch).0[0] == state,
-    //         HandleRequestBatch(state, batch).0.len() == batch.len() + 1,
-    //         HandleRequestBatch(state, batch).1.len() == batch.len(),
-    //         forall |i: int| 0 <= i < batch.len() ==> HandleRequestBatch(state, batch).1.index(i) is Reply
-    //             && (HandleRequestBatch(state, batch).0[i+1], HandleRequestBatch(state, batch).1[i].reply)
-    //             == AppHandleRequest(HandleRequestBatch(state, batch).0[i], batch.index(i).request)
-    //             && HandleRequestBatch(state, batch).1[i].client == batch.index(i).client
-    //             && HandleRequestBatch(state, batch).1[i].seqno == batch.index(i).seqno
-    // {
-
-    // }W
 }

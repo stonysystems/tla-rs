@@ -1,5 +1,4 @@
 use crate::common::native::io_s::*;
-use crate::implementation::common::function::*;
 use crate::implementation::RSL::{
     cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
     replicaimpl_process_packet_no_clock::*, replicaimpl_read_clock::*, ReplicaImpl::*,

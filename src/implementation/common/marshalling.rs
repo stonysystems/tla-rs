@@ -4,7 +4,6 @@
 
 use std::hash::Hash;
 use vstd::bytes::*;
-use crate::implementation::common::function::*;
 use std::collections::HashMap;
 use vstd::prelude::*;
 use vstd::slice::*;

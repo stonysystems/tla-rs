@@ -1,6 +1,5 @@
 use super::host_s::EventResults;
 use crate::common::native::io_s::*;
-use crate::implementation::common::function::*;
 use crate::implementation::RSL::{
     cbroadcast::*, cmessage::*, netrsl_i::*, replicaimpl_class::*, replicaimpl_delivery::*,
     replicaimpl_no_receive_clock::*, replicaimpl_no_receive_no_clock::*,
@@ -35,29 +34,7 @@ verus! {
         requires
             old(r).valid(),
             old(r).nextActionIndex == 0,
-    // ensures
-    // // result: (bool, Seq<UdpEvent>, Seq<RslIo>)| {
-    // // let (ok, net_event_log, ios) = result;
-    //     r.valid(),
-    //     r.netClient().is_some(),
-    //     r.env().valid()
-    //     r.valid && r.env().ok.ok(),
-    //     r.env() == old(r.env())
-    //     r.valid()
-    //     && (Q_LScheduler_Next(old(r.AbstractifyToLScheduler()), r.AbstractifyToLScheduler(), res.2)
-    //     || HostNextIgnoreUnsendable(old(r.AbstractifyToLScheduler()), r.AbstractifyToLScheduler(), res.1)),
-    //     RawIoConsistentWithSpecIO(net_event_log, ios)
-    //     && OnlySentMarshallableData(net_event_log)
-    //     && old(r.env().udp().history()) + net_event_log == r.env().udp().history()
     {
-        // proof {
-        //     let replica_old = old(r.AbstractifyToLReplica());
-        //     let scheduler_old = old(r.AbstractifyToLScheduler());
-
-        //     assert(scheduler_old.nextActionIndex() == 0);
-        //     assert(scheduler_old.replica == replica_old);
-        // }
-
         let ghost event_results = EventResults{
             recvs: seq![],
             clocks: seq![],
@@ -70,47 +47,7 @@ verus! {
             return (ok, Ghost(event_results), ios);
         }
 
-        // assert(r.valid());
-
-        // proof {
-        //     let net_client_old = r.net_client().clone();
-        //     let net_addr_old = r.net_client().local_end_point();
-        //     assert(UdpClientIsValid(&net_client_old));
-        // }
-
-        // proof {
-        //     let replica = r.AbstractifyToLReplica();
-        // }
         r.nextActionIndex = 1;
-
-        // proof {
-        //     let scheduler = r.AbstractifyToLScheduler();
-
-        //     assert(net_client_old == r.net_client());
-        //     assert(UdpClientIsValid(r.net_client()));
-        //     assert(net_addr_old == r.net_client().local_end_point());
-
-        //     assert(r.valid());
-
-        //     calc! {
-        //         scheduler.next_action_index();
-        //         == r.next_action_index();
-        //         == 1;
-        //         == (1 % LReplicaNumActions());
-        //         == (scheduler_old.next_action_index() + 1) % LReplicaNumActions();
-        //     }
-
-        //     if Q_LReplica_Next_ProcessPacket(old(r.AbstractifyToLReplica()), r.AbstractifyToLReplica(), ios) {
-        //         let replica = r.AbstractifyToLReplica();
-        //         let scheduler = r.AbstractifyToLScheduler();
-        //         lemma_EstablishQLSchedulerNext(replica_old, replica, ios, scheduler_old, scheduler);
-        //         assert(Q_LScheduler_Next(old(r.AbstractifyToLScheduler()), r.AbstractifyToLScheduler(), ios));
-        //     } else {
-        //         assert(IosReflectIgnoringUnsendable(net_event_log));
-        //         assert(old(r.AbstractifyToLReplica()) == r.AbstractifyToLReplica());
-        //         assert(HostNextIgnoreUnsendable(old(r.AbstractifyToLScheduler()), r.AbstractifyToLScheduler(), net_event_log));
-        //     }
-        // }
 
         (ok, Ghost(event_results), ios)
     }

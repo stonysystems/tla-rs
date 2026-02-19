@@ -84,25 +84,8 @@ verus! {
         }
     }
 
-    // #[verifier::external_body]
-    // pub proof fn lemma_GetPacketsFromReplies(me:AbstractEndPoint, requests:Seq<Request>, replies:Seq<Reply>)
-    //     requires
-    //         requests.len() == replies.len(),
-    //         forall |r:Reply| replies.contains(r) ==> r is Reply,
-    //     ensures
-    //         forall |p: RslPacket| GetPacketsFromReplies(me, requests, replies).contains(p)
-    //             ==> p.src == me && p.msg is RslMessageReply
-    // {
-
-    // }
-
     pub open spec fn LClientsInReplies(replies:Seq<Reply>) -> (r:ReplyCache)
         decreases replies.len()
-        // ensures
-        //     (forall |c:AbstractEndPoint| r.dom().contains(c) ==> r[c].client == c),
-        //     (forall |c:AbstractEndPoint| r.dom().contains(c) ==> exists |req_idx:int| 0 <= req_idx < replies.len()
-        //                                                     && replies[req_idx].client == c
-        //                                                     && r[c] == replies[req_idx])
     {
         if replies.len() == 0 {
             Map::<AbstractEndPoint, Reply>::empty()
@@ -110,19 +93,6 @@ verus! {
             LClientsInReplies(replies.drop_first()).insert(replies[0].client, replies[0])
         }
     }
-
-    // pub proof fn lemma_LClientsInReplies(replies:Seq<Reply>)
-    //     ensures
-    //         forall |c:AbstractEndPoint| LClientsInReplies(replies).dom().contains(c)
-    //             ==> LClientsInReplies(replies)[c].client == c,
-    //         forall |c:AbstractEndPoint| LClientsInReplies(replies).dom().contains(c)
-    //             ==> exists |req_idx: int|
-    //                 0 <= req_idx < replies.len()
-    //                 && replies[req_idx].client == c
-    //                 && LClientsInReplies(replies)[c] == replies[req_idx]
-    // {
-
-    // }
 
     pub open spec fn RepliesAreReplyType(replies:Seq<RslPacket>) -> bool
     {
