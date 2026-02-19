@@ -1189,6 +1189,14 @@ pub enum PatternAnalysis {
     NotRecursive,
 }
 
+/// Distinguishes `any()` vs `all()` loop generation in [`Translator::generate_predicate_loop`].
+enum PredicateLoopKind {
+    /// `any()`: init false, test predicate directly, existential invariant
+    Any,
+    /// `all()`: init true, test negated predicate, universal invariant
+    All,
+}
+
 /// Code translator
 pub struct Translator {
     config: TranslatorConfig,
@@ -3843,122 +3851,91 @@ impl Translator {
         var_name: &str,
         predicate: ExecExpr,
     ) -> ExecExpr {
-        // Convert predicate to invariant string and substitute indexed access
-        let pred_str = self.expr_to_invariant_string_with_var(&predicate, var_name);
-        let indexed_pred = self.substitute_var_with_index(&pred_str, var_name);
-
-        let stmts = vec![
-            // let mut found = false;
-            ExecExpr::Let {
-                pattern: "mut found".to_string(),
-                ty: Some(ExecType::Named("bool".to_string())),
-                value: Box::new(ExecExpr::Literal("false".to_string())),
-            },
-            // for x in container.iter() { ... }
-            ExecExpr::ForInIter {
-                var: var_name.to_string(),
-                iter_name: format!("{}_iter", var_name),
-                iter_source: Box::new(ExecExpr::MethodCall {
-                    receiver: Box::new(container),
-                    method: "iter".to_string(),
-                    args: vec![],
-                }),
-                invariants: vec![
-                    // found ==> exists|i: int| 0 <= i < idx && pred(container[i])
-                    format!(
-                        "found ==> exists|i: int| 0 <= i < {}_iter@.0 && {}",
-                        var_name, indexed_pred
-                    ),
-                ],
-                body: Box::new(ExecExpr::If {
-                    cond: Box::new(predicate),
-                    then_branch: Box::new(ExecExpr::Block(vec![
-                        ExecExpr::Binary {
-                            lhs: Box::new(ExecExpr::Var("found".to_string())),
-                            op: "=".to_string(),
-                            rhs: Box::new(ExecExpr::Literal("true".to_string())),
-                        },
-                        // break
-                        ExecExpr::Break,
-                    ])),
-                    else_branch: None,
-                }),
-            },
-            // found
-            ExecExpr::Var("found".to_string()),
-        ];
-
-        ExecExpr::Block(stmts)
+        self.generate_predicate_loop(container, var_name, predicate, PredicateLoopKind::Any)
     }
 
-    /// Generate explicit for loop for `.iter().all()` pattern.
-    /// Used when `generate_loops_for_verification` is enabled.
-    ///
-    /// Generates:
-    /// ```ignore
-    /// {
-    ///     let mut all_match = true;
-    ///     for x in container.iter() {
-    ///         if !pred(&x) {
-    ///             all_match = false;
-    ///             break;
-    ///         }
-    ///     }
-    ///     all_match
-    /// }
-    /// ```
     fn generate_all_loop(
         &self,
         container: ExecExpr,
         var_name: &str,
         predicate: ExecExpr,
     ) -> ExecExpr {
-        // Convert predicate to invariant string and substitute indexed access
+        self.generate_predicate_loop(container, var_name, predicate, PredicateLoopKind::All)
+    }
+
+    /// Unified helper for generating `any()`/`all()` predicate loops.
+    ///
+    /// For `Any`: initializes `found = false`, tests `predicate` directly, sets `found = true`,
+    /// uses existential invariant (`exists`).
+    ///
+    /// For `All`: initializes `all_match = true`, tests `!predicate`, sets `all_match = false`,
+    /// uses universal invariant (`forall`/`<==>` biconditional).
+    fn generate_predicate_loop(
+        &self,
+        container: ExecExpr,
+        var_name: &str,
+        predicate: ExecExpr,
+        kind: PredicateLoopKind,
+    ) -> ExecExpr {
         let pred_str = self.expr_to_invariant_string_with_var(&predicate, var_name);
         let indexed_pred = self.substitute_var_with_index(&pred_str, var_name);
+        let iter_name = format!("{}_iter", var_name);
+
+        let (result_var, init_value, assign_value, condition, invariant) = match kind {
+            PredicateLoopKind::Any => (
+                "found",
+                "false",
+                "true",
+                predicate,
+                format!(
+                    "found ==> exists|i: int| 0 <= i < {}@.0 && {}",
+                    iter_name, indexed_pred
+                ),
+            ),
+            PredicateLoopKind::All => (
+                "all_match",
+                "true",
+                "false",
+                ExecExpr::Unary {
+                    op: "!".to_string(),
+                    expr: Box::new(predicate),
+                },
+                format!(
+                    "all_match <==> forall|i: int| 0 <= i < {}@.0 ==> {}",
+                    iter_name, indexed_pred
+                ),
+            ),
+        };
 
         let stmts = vec![
-            // let mut all_match = true;
             ExecExpr::Let {
-                pattern: "mut all_match".to_string(),
+                pattern: format!("mut {}", result_var),
                 ty: Some(ExecType::Named("bool".to_string())),
-                value: Box::new(ExecExpr::Literal("true".to_string())),
+                value: Box::new(ExecExpr::Literal(init_value.to_string())),
             },
-            // for x in container.iter() { ... }
             ExecExpr::ForInIter {
                 var: var_name.to_string(),
-                iter_name: format!("{}_iter", var_name),
+                iter_name,
                 iter_source: Box::new(ExecExpr::MethodCall {
                     receiver: Box::new(container),
                     method: "iter".to_string(),
                     args: vec![],
                 }),
-                invariants: vec![
-                    // all_match <==> forall|i: int| 0 <= i < idx ==> pred(container[i])
-                    format!(
-                        "all_match <==> forall|i: int| 0 <= i < {}_iter@.0 ==> {}",
-                        var_name, indexed_pred
-                    ),
-                ],
+                invariants: vec![invariant],
                 body: Box::new(ExecExpr::If {
-                    cond: Box::new(ExecExpr::Unary {
-                        op: "!".to_string(),
-                        expr: Box::new(predicate),
-                    }),
+                    cond: Box::new(condition),
                     then_branch: Box::new(ExecExpr::Block(vec![
                         ExecExpr::Binary {
-                            lhs: Box::new(ExecExpr::Var("all_match".to_string())),
+                            lhs: Box::new(ExecExpr::Var(result_var.to_string())),
                             op: "=".to_string(),
-                            rhs: Box::new(ExecExpr::Literal("false".to_string())),
+                            rhs: Box::new(ExecExpr::Literal(assign_value.to_string())),
                         },
-                        // break
                         ExecExpr::Break,
                     ])),
                     else_branch: None,
                 }),
             },
-            // all_match
-            ExecExpr::Var("all_match".to_string()),
+            ExecExpr::Var(result_var.to_string()),
         ];
 
         ExecExpr::Block(stmts)
@@ -3967,38 +3944,17 @@ impl Translator {
     /// Generate explicit for loops for `.iter().chain(other.iter()).any()` pattern.
     /// Used when `generate_loops_for_verification` is enabled.
     ///
-    /// Generates:
-    /// ```ignore
-    /// {
-    ///     let mut found = false;
-    ///     for x in c1.iter() {
-    ///         if pred(&x) {
-    ///             found = true;
-    ///             break;
-    ///         }
-    ///     }
-    ///     if !found {
-    ///         for x in c2.iter() {
-    ///             if pred(&x) {
-    ///                 found = true;
-    ///                 break;
-    ///             }
-    ///         }
-    ///     }
-    ///     found
-    /// }
-    /// ```
+    /// Generates sequential loops over multiple containers, each wrapped in
+    /// `if !found { ... }` to short-circuit once a match is found.
     fn generate_chain_any_loop(
         &self,
         containers: Vec<ExecExpr>,
         var_name: &str,
         predicate: ExecExpr,
     ) -> ExecExpr {
-        // Convert predicate to invariant string
         let pred_str = self.expr_to_invariant_string_with_var(&predicate, var_name);
 
         let mut stmts = vec![
-            // let mut found = false;
             ExecExpr::Let {
                 pattern: "mut found".to_string(),
                 ty: Some(ExecType::Named("bool".to_string())),
@@ -4006,47 +3962,24 @@ impl Translator {
             },
         ];
 
-        // Generate a loop for each container
-        // Each subsequent loop is wrapped in `if !found { ... }`
         let mut remaining_loops: Vec<ExecExpr> = Vec::new();
 
         for (idx, container) in containers.into_iter().enumerate() {
             let iter_name = format!("{}_{}_iter", var_name, idx);
-            // Substitute with index for this specific iterator
             let indexed_pred =
                 pred_str.replace(&format!("*{}", var_name), &format!("{}@.1[i]", iter_name));
 
-            let loop_stmt = ExecExpr::ForInIter {
-                var: var_name.to_string(),
-                iter_name: iter_name.clone(),
-                iter_source: Box::new(ExecExpr::MethodCall {
-                    receiver: Box::new(container),
-                    method: "iter".to_string(),
-                    args: vec![],
-                }),
-                invariants: vec![format!(
-                    "found ==> exists|i: int| 0 <= i < {}@.0 && {}",
-                    iter_name, indexed_pred
-                )],
-                body: Box::new(ExecExpr::If {
-                    cond: Box::new(predicate.clone()),
-                    then_branch: Box::new(ExecExpr::Block(vec![
-                        ExecExpr::Binary {
-                            lhs: Box::new(ExecExpr::Var("found".to_string())),
-                            op: "=".to_string(),
-                            rhs: Box::new(ExecExpr::Literal("true".to_string())),
-                        },
-                        ExecExpr::Break,
-                    ])),
-                    else_branch: None,
-                }),
-            };
+            let loop_stmt = Self::build_any_for_in_iter(
+                var_name,
+                &iter_name,
+                container,
+                &indexed_pred,
+                predicate.clone(),
+            );
 
             if idx == 0 {
-                // First container loop goes directly in stmts
                 stmts.push(loop_stmt);
             } else {
-                // Subsequent loops wrapped in if !found
                 remaining_loops.push(loop_stmt);
             }
         }
@@ -4057,30 +3990,62 @@ impl Translator {
             while let Some(loop_stmt) = remaining_loops.pop() {
                 nested = ExecExpr::Block(vec![
                     loop_stmt,
-                    ExecExpr::If {
-                        cond: Box::new(ExecExpr::Unary {
-                            op: "!".to_string(),
-                            expr: Box::new(ExecExpr::Var("found".to_string())),
-                        }),
-                        then_branch: Box::new(nested),
-                        else_branch: None,
-                    },
+                    Self::wrap_if_not_found(nested),
                 ]);
             }
-            stmts.push(ExecExpr::If {
-                cond: Box::new(ExecExpr::Unary {
-                    op: "!".to_string(),
-                    expr: Box::new(ExecExpr::Var("found".to_string())),
-                }),
-                then_branch: Box::new(nested),
-                else_branch: None,
-            });
+            stmts.push(Self::wrap_if_not_found(nested));
         }
 
-        // found
         stmts.push(ExecExpr::Var("found".to_string()));
 
         ExecExpr::Block(stmts)
+    }
+
+    /// Build a `ForInIter` loop body for the `any` pattern: if predicate { found = true; break; }
+    fn build_any_for_in_iter(
+        var_name: &str,
+        iter_name: &str,
+        container: ExecExpr,
+        indexed_pred: &str,
+        predicate: ExecExpr,
+    ) -> ExecExpr {
+        ExecExpr::ForInIter {
+            var: var_name.to_string(),
+            iter_name: iter_name.to_string(),
+            iter_source: Box::new(ExecExpr::MethodCall {
+                receiver: Box::new(container),
+                method: "iter".to_string(),
+                args: vec![],
+            }),
+            invariants: vec![format!(
+                "found ==> exists|i: int| 0 <= i < {}@.0 && {}",
+                iter_name, indexed_pred
+            )],
+            body: Box::new(ExecExpr::If {
+                cond: Box::new(predicate),
+                then_branch: Box::new(ExecExpr::Block(vec![
+                    ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Var("found".to_string())),
+                        op: "=".to_string(),
+                        rhs: Box::new(ExecExpr::Literal("true".to_string())),
+                    },
+                    ExecExpr::Break,
+                ])),
+                else_branch: None,
+            }),
+        }
+    }
+
+    /// Wrap an expression in `if !found { expr }`
+    fn wrap_if_not_found(inner: ExecExpr) -> ExecExpr {
+        ExecExpr::If {
+            cond: Box::new(ExecExpr::Unary {
+                op: "!".to_string(),
+                expr: Box::new(ExecExpr::Var("found".to_string())),
+            }),
+            then_branch: Box::new(inner),
+            else_branch: None,
+        }
     }
 
     /// Translate an annotated spec function to an exec function
@@ -16747,6 +16712,253 @@ mod tests {
                 );
             } else {
                 panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_predicate_loop_any_structure() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: ">".to_string(),
+            rhs: Box::new(ExecExpr::Literal("0".to_string())),
+        };
+        let container = ExecExpr::Var("items".to_string());
+        let result = translator.generate_any_loop(container, "x", predicate);
+
+        if let ExecExpr::Block(stmts) = &result {
+            assert_eq!(stmts.len(), 3, "Should have let + for + result");
+            // Check init: let mut found = false
+            if let ExecExpr::Let { pattern, value, .. } = &stmts[0] {
+                assert_eq!(pattern, "mut found");
+                assert!(matches!(value.as_ref(), ExecExpr::Literal(v) if v == "false"));
+            } else {
+                panic!("Expected Let");
+            }
+            // Check result var
+            assert!(matches!(&stmts[2], ExecExpr::Var(name) if name == "found"));
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_predicate_loop_all_structure() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: ">".to_string(),
+            rhs: Box::new(ExecExpr::Literal("0".to_string())),
+        };
+        let container = ExecExpr::Var("items".to_string());
+        let result = translator.generate_all_loop(container, "x", predicate);
+
+        if let ExecExpr::Block(stmts) = &result {
+            assert_eq!(stmts.len(), 3, "Should have let + for + result");
+            // Check init: let mut all_match = true
+            if let ExecExpr::Let { pattern, value, .. } = &stmts[0] {
+                assert_eq!(pattern, "mut all_match");
+                assert!(matches!(value.as_ref(), ExecExpr::Literal(v) if v == "true"));
+            } else {
+                panic!("Expected Let");
+            }
+            // Check result var
+            assert!(matches!(&stmts[2], ExecExpr::Var(name) if name == "all_match"));
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_predicate_loop_any_invariant_uses_exists() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Var("x".to_string());
+        let container = ExecExpr::Var("items".to_string());
+        let result = translator.generate_any_loop(container, "x", predicate);
+
+        if let ExecExpr::Block(stmts) = result {
+            if let ExecExpr::ForInIter { invariants, .. } = &stmts[1] {
+                assert_eq!(invariants.len(), 1);
+                assert!(
+                    invariants[0].contains("exists"),
+                    "Any loop invariant should use 'exists': {}",
+                    invariants[0]
+                );
+                assert!(
+                    invariants[0].starts_with("found ==>"),
+                    "Any loop invariant should start with 'found ==>': {}",
+                    invariants[0]
+                );
+            } else {
+                panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_predicate_loop_all_invariant_uses_forall() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Var("x".to_string());
+        let container = ExecExpr::Var("items".to_string());
+        let result = translator.generate_all_loop(container, "x", predicate);
+
+        if let ExecExpr::Block(stmts) = result {
+            if let ExecExpr::ForInIter { invariants, .. } = &stmts[1] {
+                assert_eq!(invariants.len(), 1);
+                assert!(
+                    invariants[0].contains("forall"),
+                    "All loop invariant should use 'forall': {}",
+                    invariants[0]
+                );
+                assert!(
+                    invariants[0].starts_with("all_match <==>"),
+                    "All loop invariant should start with 'all_match <==>': {}",
+                    invariants[0]
+                );
+            } else {
+                panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_predicate_loop_all_negates_condition() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: ">".to_string(),
+            rhs: Box::new(ExecExpr::Literal("0".to_string())),
+        };
+        let container = ExecExpr::Var("items".to_string());
+        let result = translator.generate_all_loop(container, "x", predicate);
+
+        // The all loop should negate the condition: if !(x > 0)
+        if let ExecExpr::Block(stmts) = result {
+            if let ExecExpr::ForInIter { body, .. } = &stmts[1] {
+                if let ExecExpr::If { cond, .. } = body.as_ref() {
+                    assert!(
+                        matches!(cond.as_ref(), ExecExpr::Unary { op, .. } if op == "!"),
+                        "All loop should negate condition"
+                    );
+                } else {
+                    panic!("Expected If in body");
+                }
+            } else {
+                panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_predicate_loop_any_direct_condition() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("x".to_string())),
+            op: ">".to_string(),
+            rhs: Box::new(ExecExpr::Literal("0".to_string())),
+        };
+        let container = ExecExpr::Var("items".to_string());
+        let result = translator.generate_any_loop(container, "x", predicate);
+
+        // The any loop should use the condition directly (not negated)
+        if let ExecExpr::Block(stmts) = result {
+            if let ExecExpr::ForInIter { body, .. } = &stmts[1] {
+                if let ExecExpr::If { cond, .. } = body.as_ref() {
+                    assert!(
+                        matches!(cond.as_ref(), ExecExpr::Binary { op, .. } if op == ">"),
+                        "Any loop should use condition directly, not negated"
+                    );
+                } else {
+                    panic!("Expected If in body");
+                }
+            } else {
+                panic!("Expected ForInIter");
+            }
+        } else {
+            panic!("Expected Block");
+        }
+    }
+
+    #[test]
+    fn test_chain_any_loop_uses_build_helper() {
+        // Verify that chain_any_loop produces structurally identical inner loops
+        // to generate_any_loop (since both now use build_any_for_in_iter)
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+
+        let predicate = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("p".to_string())),
+            op: "==".to_string(),
+            rhs: Box::new(ExecExpr::Literal("1".to_string())),
+        };
+        let containers = vec![
+            ExecExpr::Var("c1".to_string()),
+            ExecExpr::Var("c2".to_string()),
+        ];
+        let result = translator.generate_chain_any_loop(containers, "p", predicate);
+
+        if let ExecExpr::Block(stmts) = result {
+            // Should have: let mut found, first loop, if !found { second loop }, found
+            assert_eq!(stmts.len(), 4, "Chain any: let + loop1 + if_not_found + result");
+            // First loop should be ForInIter with iter_name "p_0_iter"
+            if let ExecExpr::ForInIter { iter_name, invariants, .. } = &stmts[1] {
+                assert_eq!(iter_name, "p_0_iter");
+                assert!(invariants[0].contains("exists"), "Should use existential");
+            } else {
+                panic!("Expected ForInIter for first container");
+            }
+            // Third element should be If { !found, ForInIter with p_1_iter }
+            if let ExecExpr::If { cond, then_branch, .. } = &stmts[2] {
+                assert!(matches!(cond.as_ref(), ExecExpr::Unary { op, .. } if op == "!"));
+                if let ExecExpr::ForInIter { iter_name, .. } = then_branch.as_ref() {
+                    assert_eq!(iter_name, "p_1_iter");
+                } else {
+                    panic!("Expected ForInIter inside if !found");
+                }
+            } else {
+                panic!("Expected If for second container");
             }
         } else {
             panic!("Expected Block");
