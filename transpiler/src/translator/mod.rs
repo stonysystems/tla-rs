@@ -1820,15 +1820,8 @@ impl Translator {
                         op: "*".to_string(),
                         expr: Box::new(expr),
                     }
-                } else if let Some(ref method) = self.config.clone_method {
-                    // Use configured clone_method (e.g., clone_up_to_view)
-                    ExecExpr::MethodCall {
-                        receiver: Box::new(expr),
-                        method: method.clone(),
-                        args: vec![],
-                    }
                 } else {
-                    ExecExpr::Clone(Box::new(expr))
+                    self.clone_with_config(expr)
                 }
             }
             // Field access on input param: delegate to clone_input_field_access
@@ -1913,6 +1906,21 @@ impl Translator {
                         .unwrap_or(false)
             }
             _ => false,
+        }
+    }
+
+    /// Apply the configured clone method to an expression.
+    /// If `clone_method` is set (e.g., "clone_up_to_view"), generates a method call;
+    /// otherwise wraps in `ExecExpr::Clone`.
+    fn clone_with_config(&self, expr: ExecExpr) -> ExecExpr {
+        if let Some(ref method) = self.config.clone_method {
+            ExecExpr::MethodCall {
+                receiver: Box::new(expr),
+                method: method.clone(),
+                args: vec![],
+            }
+        } else {
+            ExecExpr::Clone(Box::new(expr))
         }
     }
 
@@ -2339,15 +2347,8 @@ impl Translator {
                                     expr: Box::new(expr),
                                 }],
                             }
-                        } else if let Some(ref method) = self.config.clone_method {
-                            // Use configured clone_method (e.g., clone_up_to_view)
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(expr),
-                                method: method.clone(),
-                                args: vec![],
-                            }
                         } else {
-                            ExecExpr::Clone(Box::new(expr))
+                            self.clone_with_config(expr)
                         }
                     } else if self.is_vec_field(field_name) {
                         // Vec/HashMap field: use .clone()
@@ -2405,15 +2406,8 @@ impl Translator {
                                         expr: inner.clone(),
                                     }],
                                 }
-                            } else if let Some(ref method) = self.config.clone_method {
-                                // Replace .clone() with configured clone method
-                                ExecExpr::MethodCall {
-                                    receiver: inner.clone(),
-                                    method: method.clone(),
-                                    args: vec![],
-                                }
                             } else {
-                                expr
+                                self.clone_with_config(*inner.clone())
                             }
                         } else if self.is_vec_field(field_name) {
                             // Vec/HashMap: keep .clone()
@@ -8526,15 +8520,7 @@ impl Translator {
                         }),
                     });
                     for elem in &translated {
-                        let clone_elem = if let Some(ref method) = self.config.clone_method {
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(elem.clone()),
-                                method: method.clone(),
-                                args: vec![],
-                            }
-                        } else {
-                            ExecExpr::Clone(Box::new(elem.clone()))
-                        };
+                        let clone_elem = self.clone_with_config(elem.clone());
                         stmts.push(ExecExpr::MethodCall {
                             receiver: Box::new(ExecExpr::Var("__hs".to_string())),
                             method: "insert".to_string(),
@@ -9770,16 +9756,7 @@ impl Translator {
                 // Check if rhs is also an identifier (copy case)
                 if let Expr::Ident(rhs_name) = rhs {
                     if ctx.input_params.contains(rhs_name) {
-                        let var = ExecExpr::Var(rhs_name.clone());
-                        return Ok(if let Some(ref method) = self.config.clone_method {
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(var),
-                                method: method.clone(),
-                                args: vec![],
-                            }
-                        } else {
-                            ExecExpr::Clone(Box::new(var))
-                        });
+                        return Ok(self.clone_with_config(ExecExpr::Var(rhs_name.clone())));
                     }
                 }
                 return self.transform_expr(rhs, ctx);
@@ -9874,17 +9851,7 @@ impl Translator {
                         // Check if RHS is an input param - if so, generate clone
                         if let Expr::Ident(rhs_name) = rhs.as_ref() {
                             if ctx.input_params.contains(rhs_name) {
-                                let var = ExecExpr::Var(rhs_name.clone());
-                                let cloned = if let Some(ref method) = self.config.clone_method {
-                                    ExecExpr::MethodCall {
-                                        receiver: Box::new(var),
-                                        method: method.clone(),
-                                        args: vec![],
-                                    }
-                                } else {
-                                    ExecExpr::Clone(Box::new(var))
-                                };
-                                output_exprs.push((name.clone(), cloned));
+                                output_exprs.push((name.clone(), self.clone_with_config(ExecExpr::Var(rhs_name.clone()))));
                                 continue;
                             }
                         }
@@ -9899,17 +9866,7 @@ impl Translator {
                         // Check if LHS is an input param - if so, generate clone
                         if let Expr::Ident(lhs_name) = lhs.as_ref() {
                             if ctx.input_params.contains(lhs_name) {
-                                let var = ExecExpr::Var(lhs_name.clone());
-                                let cloned = if let Some(ref method) = self.config.clone_method {
-                                    ExecExpr::MethodCall {
-                                        receiver: Box::new(var),
-                                        method: method.clone(),
-                                        args: vec![],
-                                    }
-                                } else {
-                                    ExecExpr::Clone(Box::new(var))
-                                };
-                                output_exprs.push((name.clone(), cloned));
+                                output_exprs.push((name.clone(), self.clone_with_config(ExecExpr::Var(lhs_name.clone()))));
                                 continue;
                             }
                         }
@@ -24081,5 +24038,69 @@ mod tests {
             "Complex expressions should pass through unchanged: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_clone_with_config_default_uses_clone() {
+        let config = TranslatorConfig::default();
+        assert!(config.clone_method.is_none(), "Default has no clone_method");
+        let translator = Translator::new(config);
+        let expr = ExecExpr::Var("s".to_string());
+        let result = translator.clone_with_config(expr);
+        assert!(
+            matches!(&result, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+            "Default clone_method should produce ExecExpr::Clone: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_clone_with_config_custom_method() {
+        let config = TranslatorConfig {
+            clone_method: Some("clone_up_to_view".to_string()),
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+        let expr = ExecExpr::Var("s".to_string());
+        let result = translator.clone_with_config(expr);
+        match &result {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                assert!(matches!(receiver.as_ref(), ExecExpr::Var(name) if name == "s"));
+                assert_eq!(method, "clone_up_to_view");
+                assert!(args.is_empty());
+            }
+            _ => panic!("Expected MethodCall, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_clone_with_config_preserves_complex_expr() {
+        let config = TranslatorConfig {
+            clone_method: Some("deep_clone".to_string()),
+            ..Default::default()
+        };
+        let translator = Translator::new(config);
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "votes".to_string(),
+        );
+        let result = translator.clone_with_config(expr);
+        match &result {
+            ExecExpr::MethodCall {
+                receiver, method, ..
+            } => {
+                assert!(
+                    matches!(receiver.as_ref(), ExecExpr::Field(base, field) if field == "votes" && matches!(base.as_ref(), ExecExpr::Var(n) if n == "s")),
+                    "Receiver should be s.votes: {:?}",
+                    receiver
+                );
+                assert_eq!(method, "deep_clone");
+            }
+            _ => panic!("Expected MethodCall, got: {:?}", result),
+        }
     }
 }
