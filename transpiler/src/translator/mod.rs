@@ -726,7 +726,28 @@ impl ProofNeeds {
         // Emit extensional equality assertions for VecLit in tuple positions.
         // For sent_packets: assert(result.N@.map(|i: int, p: CType| p@) =~= seq![...]);
         // This is needed because Verus cannot automatically verify View mappings on Vec literals.
+        //
+        // When the same tuple index appears multiple times with different element counts
+        // (e.g., if-else with vec![packet] in one branch and vec![] in the other),
+        // skip that index — the proof block is outside the conditional and can't assert
+        // a specific length.
+        let mut conflicting_indices = std::collections::HashSet::new();
+        {
+            let mut seen: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+            for (idx, n, _) in &self.tuple_vec_lit_sites {
+                if let Some(prev_n) = seen.get(idx) {
+                    if prev_n != n {
+                        conflicting_indices.insert(*idx);
+                    }
+                } else {
+                    seen.insert(*idx, *n);
+                }
+            }
+        }
         for (idx, n, elem_type) in &self.tuple_vec_lit_sites {
+            if conflicting_indices.contains(idx) {
+                continue;
+            }
             if let Some(type_name) = elem_type {
                 if *n == 0 {
                     // For empty vec with known type, assert the mapped view is empty
@@ -10675,6 +10696,8 @@ impl Translator {
             //           while __i < len { __v.push(elem); __i += 1; } __v }
             let length = self.transform_expr(&length_expr, ctx)?;
             let element = self.transform_expr(&element_expr, ctx)?;
+            let mut printer = crate::printer::Printer::default();
+            let length_str = printer.print_expr_to_string(&length);
             let seq_init = ExecExpr::Block(vec![
                 ExecExpr::Let {
                     pattern: "mut __v".to_string(),
@@ -10692,8 +10715,11 @@ impl Translator {
                         op: "<".to_string(),
                         rhs: Box::new(length),
                     }),
-                    invariants: vec![],
-                    decreases: None,
+                    invariants: vec![
+                        format!("__i <= {}", length_str),
+                        format!("__v@.len() == __i as int"),
+                    ],
+                    decreases: Some(format!("{} - __i", length_str)),
                     body: Box::new(ExecExpr::Block(vec![
                         ExecExpr::MethodCall {
                             receiver: Box::new(ExecExpr::Var("__v".to_string())),
@@ -19832,6 +19858,57 @@ mod tests {
             }
             other => panic!("Expected Block, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_conflicting_vec_lit_branches_skip_map_assertion() {
+        // Regression test: when an if-else returns a tuple with vec![packet] in one branch
+        // and vec![] in the other, the proof block should NOT assert a specific map
+        // (it would be contradictory). The conflicting index should be skipped.
+        let config = TranslatorConfig {
+            generate_proofs: true,
+            ..TranslatorConfig::default()
+        };
+        let translator = Translator::new(config);
+
+        // Body is an if-else with: if (...) { (state, vec![packet]) } else { (state, vec![]) }
+        let body = ExecExpr::If {
+            cond: Box::new(ExecExpr::Literal("true".to_string())),
+            then_branch: Box::new(ExecExpr::Tuple(vec![
+                ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![],
+                },
+                ExecExpr::VecLit(vec![ExecExpr::Struct {
+                    name: "CPacket".to_string(),
+                    fields: vec![],
+                }]),
+            ])),
+            else_branch: Some(Box::new(ExecExpr::Tuple(vec![
+                ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![],
+                },
+                ExecExpr::VecLit(vec![]),
+            ]))),
+        };
+
+        let return_type = ExecType::Tuple(vec![
+            ExecType::Named("CState".to_string()),
+            ExecType::Vec(Box::new(ExecType::Named("CPacket".to_string()))),
+        ]);
+
+        let result = translator.maybe_append_proof_block(body, &return_type);
+
+        // The conflicting VecLit at index 1 (1 element vs 0 elements) should be skipped.
+        // Result should NOT have contradictory map assertions.
+        let result_str = format!("{:?}", result);
+        let has_map_assertion = result_str.contains("map(|i: int, p:");
+        assert!(
+            !has_map_assertion,
+            "Should NOT emit map assertion for conflicting VecLit branches, got: {}",
+            result_str
+        );
     }
 
     // ======== Phase 12.3.0f: Remove site detection and lemma emission tests ========

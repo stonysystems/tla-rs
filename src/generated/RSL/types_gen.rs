@@ -475,6 +475,7 @@ impl CReplicaConstants {
     #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result:Self)
     ensures
+        self == result,
         self@ == result@,
         result.valid()
     {

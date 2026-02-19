@@ -1318,12 +1318,13 @@ fn test_generated_acceptor_module_public_api() {
     }
 
     // Verify packet validity ensures on packet-returning functions
+    // Manual code uses "i: int" (with space), auto-generated uses "i:int" (no space)
     assert!(
-        source.contains("forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid()"),
+        source.contains("result.1@.len() ==> result.1@[i].valid()"),
         "Packet-returning functions should ensure packet validity"
     );
     assert!(
-        source.contains("forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable()"),
+        source.contains("result.1@.len() ==> result.1@[i].abstractable()"),
         "Packet-returning functions should ensure packet abstractability"
     );
 }

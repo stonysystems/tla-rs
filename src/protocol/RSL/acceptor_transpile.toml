@@ -7,6 +7,17 @@ spec_only_functions = [
     "BalLt",
 ]
 
+# All functions injected from manual_code (proofs too complex for auto-generation)
+skip_functions = [
+    "RemoveVotesBeforeLogTruncationPoint",
+    "LAddVoteAndRemoveOldOnes",
+    "LAcceptorInit",
+    "LAcceptorProcess1a",
+    "LAcceptorProcess2a",
+    "LAcceptorProcessHeartbeat",
+    "LAcceptorTruncateLog",
+]
+
 # Primitive types that map to *param as int in ensures clauses
 # OperationNumber is remapped to u64 which is a primitive
 primitive_types = [
@@ -22,6 +33,9 @@ vec_fields = ["last_checkpointed_operation"]
 
 # HashMap fields for &key indexing (no helper generation)
 hashmap_index_fields = ["votes"]
+
+# Ensures packet elements in Vec<CPacket> outputs are valid/abstractable
+vec_element_ensures = ["valid", "abstractable"]
 
 # Custom view expressions for types in ensures clauses
 # Votes (= Map<int, Vote>) needs deep conversion from HashMap<u64, CVote>
@@ -101,6 +115,8 @@ generate_loops_for_verification = true
 generate_proofs = true
 # CAcceptor comes from types_gen.rs (includes optimization field min_vote_opn)
 generate_inline_types = false
+# Path to manually-written complex functions (relative to this TOML file)
+manual_code = "acceptor_manual.rs"
 # Custom imports for acceptor module
 # Note: Shared infrastructure types needed for CBallot, CMessage, etc.
 custom_imports = [
@@ -115,10 +131,14 @@ custom_imports = [
     "use crate::generated::RSL::types_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, outbound_packets_to_vec};",
-    "use crate::implementation::RSL::types_i::abstractify_cvotes;",
+    "use crate::implementation::RSL::types_i::{abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid};",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::protocol::RSL::acceptor::*;",
     "use crate::protocol::RSL::types::*;",
+    "use crate::protocol::RSL::environment::RslPacket;",
+    "use crate::protocol::RSL::message::RslMessage;",
     "use crate::protocol::common::upper_bound::*;",
+    "use crate::protocol::RSL::constants::LReplicaConstantsValid;",
+    "use crate::common::framework::environment_s::LPacket;",
 ]
