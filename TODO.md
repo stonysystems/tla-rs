@@ -5224,13 +5224,30 @@ Extend the transpiler to auto-generate `ProtocolMessage` implementations from co
 - [x] 3 integration tests (Paxos generation, TOML parsing, unit variant generation)
 - [x] 3 config tests (messages parsing, default none, bool fields)
 
-**17.3.2: Generate `Marshalable` for struct types** (deferred — RSL-specific)
-- [ ] For each `C*` struct, generate field-by-field serialize/deserialize
-- [ ] Respect field ordering (alphabetical or declaration order)
-- [ ] Handle optional fields, collection fields
-- [ ] Verify round-trip property: `deserialize(serialize(x)) == x`
+**17.3.2: Generate `Marshalable` for struct types**
+Generate `impl Marshalable` for C* structs, producing the same code as the
+`derive_marshalable_for_struct!` macro but as transpiler-generated source.
+Target types: CBallot (2 u64 fields), CRequest (EndPoint + u64 + CAppMessage),
+CReply (EndPoint + u64 + CAppMessage), CVote (CBallot + CRequestBatch).
+Existing macro is at `src/implementation/common/marshalling.rs:1397`.
 
-**17.3.3: Generate `Marshalable` for RSL CMessage** (deferred — RSL-specific)
+- [ ] **17.3.2a**: Add `MarshalableConfig` to transpiler config + `marshalable.rs` codegen module (~250 LOC)
+  - Add `[marshalable]` TOML section: `types = [{ name, fields = [[name, type], ...] }]`
+  - Create `transpiler/src/codegen/marshalable.rs` with `generate_marshalable_impl()`
+  - Generate all 8 trait methods: `view_equal`, `lemma_view_equal_symmetric`,
+    `is_marshalable`, `_is_marshalable`, `ghost_serialize`, `serialized_size`,
+    `serialize`, `deserialize` + 3 proof lemmas
+  - Support field types: u64, bool, Vec<u8>, and named struct types (Marshalable)
+  - 10+ unit tests for code generation
+- [ ] **17.3.2b**: Add `generate-marshalable` CLI subcommand + integration tests (~100 LOC)
+  - Wire up CLI subcommand reading TOML config, generating output file
+  - Add integration tests: CBallot-like (2 u64), CRequest-like (nested types)
+- [ ] **17.3.2c**: Add `[marshalable]` config to RSL types_transpile.toml + verify (~100 LOC)
+  - Configure CBallot, CRequest, CReply, CVote with their field types
+  - Generate and verify output matches macro-expanded code (proof-compatible)
+  - Verus verification: 616+ verified, 0 errors
+
+**17.3.3: Generate `Marshalable` for RSL CMessage** (deferred — depends on 17.3.2)
 - [ ] Extend generate-messages for RSL's complex CMessage (nested EndPoint, Vec<u8>, etc.)
 - [ ] Include Verus proof annotations (ghost_serialize, is_marshalable)
 

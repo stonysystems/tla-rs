@@ -239,6 +239,11 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub messages: Option<MessageConfig>,
 
+    /// Optional Marshalable generation configuration.
+    /// When present, `generate-marshalable` subcommand can generate `impl Marshalable` for structs.
+    #[serde(default)]
+    pub marshalable: Option<MarshalableConfig>,
+
     /// Optional scheduler configuration for host code generation.
     /// When present, `generate-host` subcommand can generate a host.rs scaffold.
     #[serde(default)]
@@ -302,6 +307,40 @@ pub struct MessageVariant {
     /// Optional doc comment for the variant
     #[serde(default)]
     pub doc: String,
+}
+
+/// Configuration for generating `impl Marshalable` for struct types.
+///
+/// Generates field-by-field serialize/deserialize with Verus proof annotations,
+/// matching the output of the `derive_marshalable_for_struct!` macro.
+///
+/// Example TOML:
+/// ```toml
+/// [[marshalable.types]]
+/// name = "CBallot"
+/// fields = [["seqno", "u64"], ["proposer_id", "u64"]]
+///
+/// [[marshalable.types]]
+/// name = "CRequest"
+/// fields = [["client", "EndPoint"], ["seqno", "u64"], ["request", "CAppMessage"]]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MarshalableConfig {
+    /// Struct types to generate Marshalable impls for
+    #[serde(default)]
+    pub types: Vec<MarshalableType>,
+}
+
+/// A single struct type to generate `impl Marshalable` for.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MarshalableType {
+    /// Struct name (e.g., "CBallot")
+    pub name: String,
+
+    /// Fields as [name, type] pairs.
+    /// Supported types: "u64", "bool", "Vec<u8>", or any named type implementing Marshalable.
+    #[serde(default)]
+    pub fields: Vec<Vec<String>>,
 }
 
 /// Configuration for scheduler/host code generation.
