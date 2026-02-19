@@ -5144,10 +5144,10 @@ transpiler/tla_test_workspace/
 
 #### 16.8.1: Real-spec D3 baseline (Verus Spec -> TLA+)
 
-- [ ] For each applicable protocol, run `verus2-tla` using inputs from `src/protocol/<Protocol>/`
-- [ ] Write outputs to `transpiler/tla_test_workspace/transpiler_generated_tla/`
-- [ ] Ensure each generated `.tla` passes TLA+ syntax/semantic compile (SANY)
-- [ ] Record per-file pass/fail in `docs/conversion-testing-guide.md` extension table
+- [x] For each applicable protocol, run `verus2-tla` using inputs from `src/protocol/<Protocol>/`
+- [x] Write outputs to `transpiler/tla_test_workspace/transpiler_generated_tla/`
+- [x] Ensure each generated `.tla` passes TLA+ syntax/semantic compile (SANY)
+- [x] Record per-file pass/fail in `docs/conversion-testing-guide.md` extension table
 
 #### 16.8.2: Property injection + TLC model checking for D3 output
 

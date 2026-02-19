@@ -26,6 +26,6 @@ pub mod converter;
 pub mod printer;
 pub mod types;
 
-pub use converter::Verus2TlaConverter;
+pub use converter::{ConverterConfig, Verus2TlaConverter};
 pub use printer::TlaPrinter;
 pub use types::{TypeMapper, VerusType};

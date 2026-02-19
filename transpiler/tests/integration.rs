@@ -2303,6 +2303,126 @@ fn test_verus2tla_all_tla_generated_specs() {
 }
 
 // ============================================================
+// Phase 16.8.1: D3 workspace — real-protocol Verus Spec → TLA+
+// ============================================================
+
+/// Test that all 10 real protocol specs convert to TLA+ successfully via the D3 pipeline.
+/// This covers Phase 16.8.1 acceptance criteria: run verus2-tla on src/protocol/ inputs.
+#[test]
+fn test_d3_real_protocol_specs_to_tla() {
+    let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
+    let protocol_dir = project_root.join("src/protocol");
+
+    // Protocol dir -> spec files to convert (excluding mod.rs, manual helpers)
+    let simple_protocols: Vec<(&str, Vec<&str>)> = vec![
+        ("TwoPhase", vec!["types.rs", "twophase.rs"]),
+        ("Paxos", vec!["types.rs", "paxos.rs"]),
+        ("LeaderElection", vec!["types.rs", "election.rs"]),
+        ("Raft", vec!["types.rs", "raft.rs"]),
+        ("ChainReplication", vec!["types.rs", "chain.rs"]),
+        ("PrimaryBackup", vec!["types.rs", "primarybackup.rs"]),
+        ("PBFT", vec!["types.rs", "pbft.rs"]),
+        ("VerticalPaxos", vec!["types.rs", "vpaxos.rs"]),
+        ("EPaxos", vec!["types.rs", "epaxos.rs"]),
+    ];
+
+    let rsl_specs = vec![
+        "types.rs",
+        "acceptor.rs",
+        "broadcast.rs",
+        "configuration.rs",
+        "constants.rs",
+        "distributed_system.rs",
+        "election.rs",
+        "environment.rs",
+        "executor.rs",
+        "learner.rs",
+        "message.rs",
+        "parameters.rs",
+        "proposer.rs",
+        "replica.rs",
+        "state_machine.rs",
+    ];
+
+    let converter_config = verus_transpiler::verus2tla::ConverterConfig {
+        spec_prefix: "L".to_string(),
+        include_recommends: false,
+        generate_type_defs: true,
+        standard_extends: vec![
+            "Integers".to_string(),
+            "Sequences".to_string(),
+            "FiniteSets".to_string(),
+        ],
+    };
+
+    let printer = verus_transpiler::verus2tla::TlaPrinter::new();
+    let mut total = 0;
+    let mut passed = 0;
+
+    // Test simple protocols
+    for (proto_name, spec_files) in &simple_protocols {
+        for spec_file in spec_files {
+            total += 1;
+            let input = protocol_dir.join(proto_name).join(spec_file);
+            assert!(input.exists(), "{}/{} should exist", proto_name, spec_file);
+
+            let mut converter =
+                verus_transpiler::verus2tla::Verus2TlaConverter::with_config(converter_config.clone());
+            match converter.convert_file(&input) {
+                Ok(module) => {
+                    let output = printer.print_module(&module);
+                    assert!(
+                        output.contains("MODULE"),
+                        "{}/{} output should contain MODULE header",
+                        proto_name,
+                        spec_file
+                    );
+                    assert!(
+                        output.contains("===="),
+                        "{}/{} output should contain footer",
+                        proto_name,
+                        spec_file
+                    );
+                    passed += 1;
+                }
+                Err(e) => {
+                    panic!("{}/{} conversion failed: {:?}", proto_name, spec_file, e);
+                }
+            }
+        }
+    }
+
+    // Test RSL specs
+    for spec_file in &rsl_specs {
+        total += 1;
+        let input = protocol_dir.join("RSL").join(spec_file);
+        assert!(input.exists(), "RSL/{} should exist", spec_file);
+
+        let mut converter =
+            verus_transpiler::verus2tla::Verus2TlaConverter::with_config(converter_config.clone());
+        match converter.convert_file(&input) {
+            Ok(module) => {
+                let output = printer.print_module(&module);
+                assert!(
+                    output.contains("MODULE"),
+                    "RSL/{} output should contain MODULE header",
+                    spec_file
+                );
+                passed += 1;
+            }
+            Err(e) => {
+                panic!("RSL/{} conversion failed: {:?}", spec_file, e);
+            }
+        }
+    }
+
+    assert_eq!(passed, total, "All {total} protocol spec files should convert successfully");
+    assert!(total >= 33, "Should convert at least 33 spec files, got {total}");
+}
+
+// ============================================================
 // Phase 17.3: Message generation tests
 // ============================================================
 

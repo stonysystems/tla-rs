@@ -548,7 +548,6 @@ impl TlaPrinter {
 
     /// Determine if parentheses are needed when child_op appears under parent_op.
     fn needs_precedence_parens(&self, parent_op: &TlaBinOp, child_op: &TlaBinOp) -> bool {
-        // List of logical operators that can conflict
         let is_logical = |op: &TlaBinOp| {
             matches!(
                 op,
@@ -556,13 +555,33 @@ impl TlaPrinter {
             )
         };
 
-        // List of arithmetic operators that can conflict
         let is_arithmetic = |op: &TlaBinOp| {
             matches!(
                 op,
                 TlaBinOp::Plus | TlaBinOp::Minus | TlaBinOp::Times | TlaBinOp::Div | TlaBinOp::Mod
             )
         };
+
+        // TLA+ comparison operators are non-associative: `a = b > c` is a parse error.
+        // When mixing any two different comparison operators, parentheses are required.
+        let is_comparison = |op: &TlaBinOp| {
+            matches!(
+                op,
+                TlaBinOp::Eq
+                    | TlaBinOp::Neq
+                    | TlaBinOp::Lt
+                    | TlaBinOp::Gt
+                    | TlaBinOp::Leq
+                    | TlaBinOp::Geq
+                    | TlaBinOp::In
+                    | TlaBinOp::NotIn
+                    | TlaBinOp::Subseteq
+            )
+        };
+
+        if is_comparison(parent_op) && is_comparison(child_op) && parent_op != child_op {
+            return true;
+        }
 
         // If both are logical operators and different, we need parens
         if is_logical(parent_op) && is_logical(child_op) && parent_op != child_op {
@@ -571,8 +590,6 @@ impl TlaPrinter {
 
         // If both are arithmetic operators and different (except mul/div have same precedence), we may need parens
         if is_arithmetic(parent_op) && is_arithmetic(child_op) && parent_op != child_op {
-            // In TLA+, + and - have lower precedence than *, /, %
-            // So we need parens when mixing add/sub with mul/div/mod
             let is_add_sub = |op: &TlaBinOp| matches!(op, TlaBinOp::Plus | TlaBinOp::Minus);
             let is_mul_div_mod =
                 |op: &TlaBinOp| matches!(op, TlaBinOp::Times | TlaBinOp::Div | TlaBinOp::Mod);
@@ -903,5 +920,40 @@ mod tests {
         let output = printer.print_expr(&expr, 0);
 
         assert!(output.contains("x'"));
+    }
+
+    #[test]
+    fn test_print_comparison_precedence_parens() {
+        // TLA+ comparison operators are non-associative: `a = b > 0` is a parse error.
+        // The printer must parenthesize: `a = (b > 0)`.
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::ident("x"),
+            TlaExpr::binop(TlaBinOp::Gt, TlaExpr::ident("y"), TlaExpr::number(0)),
+        );
+
+        let printer = TlaPrinter::new();
+        let output = printer.print_expr(&expr, 0);
+        assert_eq!(output, "x = (y > 0)");
+
+        // Also test Neq with Leq
+        let expr2 = TlaExpr::binop(
+            TlaBinOp::Neq,
+            TlaExpr::ident("a"),
+            TlaExpr::binop(TlaBinOp::Leq, TlaExpr::ident("b"), TlaExpr::number(5)),
+        );
+        let output2 = printer.print_expr(&expr2, 0);
+        assert_eq!(output2, "a # (b <= 5)");
+
+        // Same-op nesting should NOT add parens (e.g., a = b = c is unusual but not our case)
+        // In practice, = is not used nested, but if it were:
+        let expr3 = TlaExpr::binop(
+            TlaBinOp::Gt,
+            TlaExpr::ident("x"),
+            TlaExpr::binop(TlaBinOp::Gt, TlaExpr::ident("y"), TlaExpr::number(0)),
+        );
+        let output3 = printer.print_expr(&expr3, 0);
+        // Same operator — no parens needed
+        assert_eq!(output3, "x > y > 0");
     }
 }

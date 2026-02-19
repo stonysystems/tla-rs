@@ -482,6 +482,47 @@ cargo run --release -- verus2-tla \
     --output /tmp/<name>.tla
 ```
 
+#### D3 Per-File Results: `transpiler_generated_tla/` (from real protocol specs)
+
+Generated from `src/protocol/<Protocol>/` inputs via `scripts/generate_tla_workspace.sh`.
+
+| Protocol | File | SANY | Notes |
+|----------|------|------|-------|
+| TwoPhase | Types.tla | ✅ | |
+| TwoPhase | Twophase.tla | ✅ | |
+| Paxos | Types.tla | ✅ | |
+| Paxos | Paxos.tla | ✅ | |
+| LeaderElection | Types.tla | ✅ | |
+| LeaderElection | Election.tla | ✅ | |
+| Raft | Types.tla | ✅ | |
+| Raft | Raft.tla | ✅ | |
+| ChainReplication | Types.tla | ✅ | |
+| ChainReplication | Chain.tla | ✅ | Fixed: comparison precedence parens (`=` vs `>`) |
+| PrimaryBackup | Types.tla | ✅ | |
+| PrimaryBackup | Primarybackup.tla | ✅ | |
+| PBFT | Types.tla | ✅ | |
+| PBFT | Pbft.tla | ✅ | |
+| VerticalPaxos | Types.tla | ✅ | |
+| VerticalPaxos | Vpaxos.tla | ✅ | |
+| EPaxos | Types.tla | ✅ | |
+| EPaxos | Epaxos.tla | ✅ | |
+| RSL | Acceptor.tla | ✅ | |
+| RSL | Broadcast.tla | ✅ | |
+| RSL | Configuration.tla | ✅ | |
+| RSL | Constants.tla | ✅ | |
+| RSL | Distributed_system.tla | ✅ | |
+| RSL | Election.tla | ✅ | |
+| RSL | Environment.tla | ✅ | |
+| RSL | Executor.tla | ✅ | |
+| RSL | Learner.tla | ✅ | |
+| RSL | Message.tla | ✅ | |
+| RSL | Parameters.tla | ✅ | |
+| RSL | Proposer.tla | ✅ | |
+| RSL | Replica.tla | ✅ | |
+| RSL | State_machine.tla | ✅ | |
+| RSL | Types.tla | ✅ | |
+| **Total** | **33** | **33/33** | |
+
 #### Direction 4: TLA+ → Verus Exec (pipeline)
 
 | Example | Pipeline | Verus Compile | Notes |
