@@ -2478,6 +2478,30 @@ impl Translator {
         }
     }
 
+    /// Cast a Vec index expression to `usize` for exec code.
+    ///
+    /// Applies the appropriate conversion based on the expression form:
+    /// - Literals pass through unchanged (type inference handles them)
+    /// - Field accesses (`s.my_index`) get cast to `usize`
+    /// - Input params (`&u64`) get dereferenced then cast (`*param as usize`)
+    /// - Local variables get cast to `usize`
+    /// - Other expressions pass through unchanged
+    fn cast_index_to_usize(idx_expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
+        match &idx_expr {
+            ExecExpr::Literal(_) => idx_expr,
+            ExecExpr::Field(..) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
+                Box::new(ExecExpr::Unary {
+                    op: "*".to_string(),
+                    expr: Box::new(idx_expr),
+                }),
+                "usize".to_string(),
+            ),
+            ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+            _ => idx_expr,
+        }
+    }
+
     /// Check if an expression involves a field that needs a custom equality function.
     /// Returns the function name (e.g., "CBalEq") if found, None otherwise.
     fn get_eq_function_for_expr(&self, expr: &Expr) -> Option<&str> {
@@ -8084,28 +8108,7 @@ impl Translator {
                     })))
                 } else {
                     // Vec/slice indexing: vec[idx as usize]
-                    // Only cast simple vars/fields that are u64 — skip complex exprs
-                    // like method calls which may return (bool, usize) or other types.
-                    let cast_idx = match &idx_expr {
-                        // Don't cast literal integers - they infer correctly
-                        ExecExpr::Literal(_) => idx_expr,
-                        // Simple field access (e.g., s.my_index) — cast to usize
-                        ExecExpr::Field(..) => {
-                            ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                        }
-                        // Simple variable — deref if it's an input param (&u64), then cast
-                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
-                            Box::new(ExecExpr::Unary {
-                                op: "*".to_string(),
-                                expr: Box::new(idx_expr),
-                            }),
-                            "usize".to_string(),
-                        ),
-                        // Local variable (e.g., sender_index: u64) — cast to usize
-                        ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
-                        // Other expressions — don't cast, let type inference handle it
-                        _ => idx_expr,
-                    };
+                    let cast_idx = Self::cast_index_to_usize(idx_expr, ctx);
                     Ok(ExecExpr::MethodCall {
                         receiver: Box::new(base_expr),
                         method: "index".to_string(),
@@ -9531,24 +9534,7 @@ impl Translator {
                 });
             } else {
                 // Vec/slice indexing: vec[idx as usize]
-                let cast_idx = match &idx_expr {
-                    ExecExpr::Literal(_) => idx_expr,
-                    ExecExpr::Field(..) => {
-                        ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                    }
-                    ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
-                        Box::new(ExecExpr::Unary {
-                            op: "*".to_string(),
-                            expr: Box::new(idx_expr),
-                        }),
-                        "usize".to_string(),
-                    ),
-                    // Local variable — cast to usize
-                    ExecExpr::Var(_) => {
-                        ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                    }
-                    _ => idx_expr,
-                };
+                let cast_idx = Self::cast_index_to_usize(idx_expr, ctx);
                 return Ok(ExecExpr::MethodCall {
                     receiver: Box::new(recv_expr),
                     method: "index".to_string(),
@@ -9562,23 +9548,7 @@ impl Translator {
         if method == "update" && args.len() == 2 {
             let idx_expr = self.transform_expr(&args[0], ctx)?;
             let val_expr = self.transform_expr(&args[1], ctx)?;
-            // Cast index to usize for Vec indexing
-            let cast_idx = match &idx_expr {
-                ExecExpr::Literal(_) => idx_expr,
-                ExecExpr::Field(..) => {
-                    ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                }
-                ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
-                    Box::new(ExecExpr::Unary {
-                        op: "*".to_string(),
-                        expr: Box::new(idx_expr),
-                    }),
-                    "usize".to_string(),
-                ),
-                // Local variable — cast to usize
-                ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
-                _ => idx_expr,
-            };
+            let cast_idx = Self::cast_index_to_usize(idx_expr, ctx);
             return Ok(ExecExpr::Block(vec![
                 ExecExpr::Let {
                     pattern: "mut __v".to_string(),
@@ -9633,13 +9603,7 @@ impl Translator {
                 op: "&".to_string(),
                 expr: Box::new(recv_expr),
             };
-            let arg_ref = match &arg_expr {
-                ExecExpr::Unary { op, .. } if op == "&" => arg_expr,
-                _ => ExecExpr::Unary {
-                    op: "&".to_string(),
-                    expr: Box::new(arg_expr),
-                },
-            };
+            let arg_ref = Self::ensure_borrowed_expr(arg_expr);
             return Ok(ExecExpr::Call {
                 func: "contains".to_string(),
                 args: vec![recv_ref, arg_ref],
@@ -23801,5 +23765,97 @@ mod tests {
         config2.assume_postconditions = true;
         let translator = Translator::new(config2);
         assert!(translator.config.assume_postconditions, "assume_postconditions should be settable to true");
+    }
+
+    /// Helper to create a minimal TransformContext for unit testing.
+    fn make_cast_test_context(config: &TranslatorConfig) -> TransformContext<'_> {
+        TransformContext {
+            config,
+            output_params: vec![],
+            input_params: vec![],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        }
+    }
+
+    #[test]
+    fn test_cast_index_to_usize_literal_passthrough() {
+        let config = TranslatorConfig::default();
+        let ctx = make_cast_test_context(&config);
+        let expr = ExecExpr::Literal("42".to_string());
+        let result = Translator::cast_index_to_usize(expr, &ctx);
+        assert!(
+            matches!(result, ExecExpr::Literal(ref s) if s == "42"),
+            "Literal should pass through unchanged"
+        );
+    }
+
+    #[test]
+    fn test_cast_index_to_usize_field_cast() {
+        let config = TranslatorConfig::default();
+        let ctx = make_cast_test_context(&config);
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "my_idx".to_string(),
+        );
+        let result = Translator::cast_index_to_usize(expr, &ctx);
+        assert!(
+            matches!(result, ExecExpr::Cast(_, ref ty) if ty == "usize"),
+            "Field access should be cast to usize: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_cast_index_to_usize_input_param_deref() {
+        let config = TranslatorConfig::default();
+        let mut ctx = make_cast_test_context(&config);
+        ctx.input_params.push("idx".to_string());
+        let expr = ExecExpr::Var("idx".to_string());
+        let result = Translator::cast_index_to_usize(expr, &ctx);
+        // Should produce: (*idx) as usize
+        match &result {
+            ExecExpr::Cast(inner, ty) => {
+                assert_eq!(ty, "usize");
+                assert!(
+                    matches!(inner.as_ref(), ExecExpr::Unary { op, .. } if op == "*"),
+                    "Input param should be dereferenced before cast: {:?}",
+                    inner
+                );
+            }
+            _ => panic!("Expected Cast, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_cast_index_to_usize_local_var() {
+        let config = TranslatorConfig::default();
+        let ctx = make_cast_test_context(&config);
+        let expr = ExecExpr::Var("local_i".to_string());
+        let result = Translator::cast_index_to_usize(expr, &ctx);
+        assert!(
+            matches!(result, ExecExpr::Cast(_, ref ty) if ty == "usize"),
+            "Local variable should be cast to usize: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_cast_index_to_usize_complex_passthrough() {
+        let config = TranslatorConfig::default();
+        let ctx = make_cast_test_context(&config);
+        let expr = ExecExpr::Call {
+            func: "get_index".to_string(),
+            args: vec![],
+        };
+        let result = Translator::cast_index_to_usize(expr, &ctx);
+        assert!(
+            matches!(result, ExecExpr::Call { .. }),
+            "Complex expressions should pass through unchanged: {:?}",
+            result
+        );
     }
 }

@@ -134,24 +134,22 @@ impl TypeGenerator {
         self.hashset_element_types = types;
     }
 
-    /// Generate an exec struct from a spec struct
-    pub fn generate_struct(&self, spec: &StructDef) -> GeneratedCode {
-        let mut code = String::new();
-        let warnings = Vec::new();
-
-        let exec_name = self.get_exec_type(&spec.name);
+    /// Generate `#[derive(...)]` attribute and determine clone strategy for a type.
+    ///
+    /// Returns the clone strategy string ("derive" or "external_body") and appends
+    /// any `#[derive(...)]` attribute to `code`.
+    fn generate_derives(&self, exec_name: &str, code: &mut String) -> String {
         let clone_strat = self
             .clone_strategy
-            .get(&exec_name)
+            .get(exec_name)
             .map(|s| s.as_str())
             .unwrap_or("derive");
 
-        // Collect derive attributes: Clone (if strategy is "derive") + custom derives
         let mut derives = Vec::new();
         if clone_strat == "derive" {
             derives.push("Clone".to_string());
         }
-        if let Some(custom) = self.custom_derives.get(&exec_name) {
+        if let Some(custom) = self.custom_derives.get(exec_name) {
             for d in custom {
                 if !derives.contains(d) {
                     derives.push(d.clone());
@@ -161,6 +159,30 @@ impl TypeGenerator {
         if !derives.is_empty() {
             code.push_str(&format!("#[derive({})]\n", derives.join(", ")));
         }
+
+        clone_strat.to_string()
+    }
+
+    /// Generate `#[verifier(external_body)]` Clone impl for types that can't use `#[derive(Clone)]`.
+    fn generate_external_body_clone(&self, exec_name: &str, code: &mut String) {
+        code.push_str(&format!("impl Clone for {} {{\n", exec_name));
+        code.push_str(&format!(
+            "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n{}{{ unimplemented!() }}\n",
+            self.indent, self.indent, self.indent,
+            self.indent, self.indent,
+            self.validity_predicate_name, self.validity_predicate_name,
+            self.indent
+        ));
+        code.push_str("}\n\n");
+    }
+
+    /// Generate an exec struct from a spec struct
+    pub fn generate_struct(&self, spec: &StructDef) -> GeneratedCode {
+        let mut code = String::new();
+        let warnings = Vec::new();
+
+        let exec_name = self.get_exec_type(&spec.name);
+        let clone_strat = self.generate_derives(&exec_name, &mut code);
 
         // Get skip fields for this type
         let skip_fields = self.skip_fields.get(&exec_name);
@@ -194,19 +216,8 @@ impl TypeGenerator {
         }
         code.push_str("}\n\n");
 
-        // Generate external_body Clone impl if needed
-        // Note: #[verifier(external_body)] goes on the fn, not the impl block
-        // Include ensures clauses so Verus knows clone preserves View and validity
         if clone_strat == "external_body" {
-            code.push_str(&format!("impl Clone for {} {{\n", exec_name));
-            code.push_str(&format!(
-                "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n{}{{ unimplemented!() }}\n",
-                self.indent, self.indent, self.indent,
-                self.indent, self.indent,
-                self.validity_predicate_name, self.validity_predicate_name,
-                self.indent
-            ));
-            code.push_str("}\n\n");
+            self.generate_external_body_clone(&exec_name, &mut code);
         }
 
         // Generate Hash+PartialEq+Eq impls for types stored in HashSet
@@ -244,27 +255,8 @@ impl TypeGenerator {
         let warnings = Vec::new();
 
         let exec_name = self.get_exec_type(&spec.name);
-        let clone_strat = self
-            .clone_strategy
-            .get(&exec_name)
-            .map(|s| s.as_str())
-            .unwrap_or("derive");
+        let clone_strat = self.generate_derives(&exec_name, &mut code);
 
-        // Collect derive attributes: Clone (if strategy is "derive") + custom derives
-        let mut derives = Vec::new();
-        if clone_strat == "derive" {
-            derives.push("Clone".to_string());
-        }
-        if let Some(custom) = self.custom_derives.get(&exec_name) {
-            for d in custom {
-                if !derives.contains(d) {
-                    derives.push(d.clone());
-                }
-            }
-        }
-        if !derives.is_empty() {
-            code.push_str(&format!("#[derive({})]\n", derives.join(", ")));
-        }
         // Generate enum definition
         code.push_str(&format!("pub enum {} {{\n", exec_name));
         for variant in &spec.variants {
@@ -272,19 +264,8 @@ impl TypeGenerator {
         }
         code.push_str("}\n\n");
 
-        // Generate external_body Clone impl if needed
-        // Note: #[verifier(external_body)] goes on the fn, not the impl block
-        // Include ensures clauses so Verus knows clone preserves View and validity
         if clone_strat == "external_body" {
-            code.push_str(&format!("impl Clone for {} {{\n", exec_name));
-            code.push_str(&format!(
-                "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n{}{{ unimplemented!() }}\n",
-                self.indent, self.indent, self.indent,
-                self.indent, self.indent,
-                self.validity_predicate_name, self.validity_predicate_name,
-                self.indent
-            ));
-            code.push_str("}\n\n");
+            self.generate_external_body_clone(&exec_name, &mut code);
         }
 
         // Generate well_formed predicate
@@ -2816,6 +2797,111 @@ mod tests {
         assert_eq!(
             generator.collection_view_map_expr(&Type::Bool, "self.field"),
             None
+        );
+    }
+
+    #[test]
+    fn test_generate_derives_default_clone() {
+        let generator = TypeGenerator::new(make_config());
+        let mut code = String::new();
+        let strat = generator.generate_derives("CNode", &mut code);
+        assert_eq!(strat, "derive");
+        assert!(
+            code.contains("#[derive(Clone)]"),
+            "Default strategy should add Clone derive: {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_generate_derives_external_body() {
+        let mut generator = TypeGenerator::new(make_config());
+        let mut strats = HashMap::new();
+        strats.insert("CNode".to_string(), "external_body".to_string());
+        generator.clone_strategy = strats;
+
+        let mut code = String::new();
+        let strat = generator.generate_derives("CNode", &mut code);
+        assert_eq!(strat, "external_body");
+        assert!(
+            !code.contains("Clone"),
+            "external_body strategy should NOT add Clone derive: {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_generate_external_body_clone_output() {
+        let generator = TypeGenerator::new(make_config());
+        let mut code = String::new();
+        generator.generate_external_body_clone("CNode", &mut code);
+        assert!(code.contains("impl Clone for CNode"), "Should generate Clone impl");
+        assert!(
+            code.contains("#[verifier(external_body)]"),
+            "Should mark fn as external_body"
+        );
+        assert!(
+            code.contains("res@ == self@"),
+            "Should have view preservation ensure: {}",
+            code
+        );
+        assert!(
+            code.contains("res.well_formed() == self.well_formed()"),
+            "Should have validity preservation ensure: {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_struct_and_enum_use_same_derive_logic() {
+        // Verify struct and enum produce identical derive attributes for same config
+        let mut generator = TypeGenerator::new(make_config());
+        let mut strats = HashMap::new();
+        strats.insert("CNode".to_string(), "external_body".to_string());
+        generator.clone_strategy = strats;
+
+        let spec_struct = StructDef {
+            name: "LNode".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "id".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+        let spec_enum = EnumDef {
+            name: "LNode".to_string(),
+            generics: Generics::default(),
+            variants: vec![VariantDef {
+                name: "NodeA".to_string(),
+                fields: VariantFields::Unit,
+            }],
+            is_spec: true,
+        };
+
+        let struct_code = generator.generate_struct(&spec_struct).code;
+        let enum_code = generator.generate_enum(&spec_enum).code;
+
+        // Both should have external_body Clone impl
+        assert!(
+            struct_code.contains("#[verifier(external_body)]"),
+            "Struct should have external_body clone: {}",
+            struct_code
+        );
+        assert!(
+            enum_code.contains("#[verifier(external_body)]"),
+            "Enum should have external_body clone: {}",
+            enum_code
+        );
+        // Neither should have #[derive(Clone)]
+        assert!(
+            !struct_code.contains("#[derive(Clone)]"),
+            "Struct should not derive Clone with external_body"
+        );
+        assert!(
+            !enum_code.contains("#[derive(Clone)]"),
+            "Enum should not derive Clone with external_body"
         );
     }
 }
