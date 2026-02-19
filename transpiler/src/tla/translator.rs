@@ -1668,23 +1668,8 @@ pub fn translate_module_with_types(module: &TlaModule) -> String {
 // Mode Annotation Generation (T6.4)
 // =============================================================================
 
-/// Represents a mode annotation for a function parameter
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParameterMode {
-    /// Input parameter (+)
-    Input,
-    /// Output parameter (-)
-    Output,
-}
-
-impl std::fmt::Display for ParameterMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParameterMode::Input => write!(f, "+"),
-            ParameterMode::Output => write!(f, "-"),
-        }
-    }
-}
+// Re-export the canonical ParameterMode from the AST module
+pub use crate::ast::ParameterMode;
 
 /// Mode annotation for an operator
 #[derive(Debug, Clone)]

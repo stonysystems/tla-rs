@@ -96,6 +96,15 @@ pub enum ParameterMode {
     Output,
 }
 
+impl std::fmt::Display for ParameterMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParameterMode::Input => write!(f, "+"),
+            ParameterMode::Output => write!(f, "-"),
+        }
+    }
+}
+
 /// Function kind distinguishing predicates from helper functions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FunctionKind {
