@@ -2504,6 +2504,100 @@ fn walkdir(dir: &str) -> Vec<String> {
     results
 }
 
+/// Phase 16.8.4: D2 (Verus Spec → Verus Exec) on D1-generated Verus spec workspace
+/// Attempts D2 transpilation on all 33 generated Verus spec files from D1 round-trip.
+/// Currently 2/33 pass (trivial files); 31 fail due to D1 output format mismatches.
+///
+/// Failure categories:
+/// - Category A (21 files): "Expected identifier, found '{'" — anonymous record return types
+///   in Types.rs files (e.g., `fn foo() -> { field: Type }` is not valid Rust syntax)
+/// - Category B (10 files): "Expected ')', found '('" — duplicate parameter names in
+///   main module function signatures (D1 generates both struct and scalar params for state)
+///
+/// These are fundamental D1→D2 pipeline gaps, not D2 bugs.
+#[test]
+fn test_d2_spec_to_exec_on_generated_workspace() {
+    use verus_transpiler::{Transpiler, TranspilerConfig, TranslatorConfig};
+
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace/transpiler_generated_verus_spec");
+
+    if !workspace.exists() {
+        eprintln!("Skipping: workspace not found at {:?}", workspace);
+        return;
+    }
+
+    let mut total = 0;
+    let mut passed = 0;
+    let mut cat_a_fails = 0; // "Expected identifier, found '{'"
+    let mut cat_b_fails = 0; // "Expected ')', found '('"
+    let mut other_fails: Vec<String> = Vec::new();
+
+    let config = TranspilerConfig {
+        translator: TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            exec_prefix: "C".to_string(),
+            assume_postconditions: true,
+            ..TranslatorConfig::default()
+        },
+        generate_inline_types: true,
+        custom_imports: vec![
+            "use vstd::prelude::*;".to_string(),
+            "use std::collections::HashSet;".to_string(),
+        ],
+        ..TranspilerConfig::default()
+    };
+
+    for entry in walkdir(workspace.to_str().unwrap()) {
+        if !entry.ends_with(".rs") {
+            continue;
+        }
+        total += 1;
+
+        let automan = entry.replace(".rs", ".automan");
+        if !std::path::Path::new(&automan).exists() {
+            continue;
+        }
+
+        let transpiler = Transpiler::new(config.clone());
+        match transpiler.transpile_file(
+            std::path::Path::new(&entry),
+            std::path::Path::new(&automan),
+        ) {
+            Ok(_) => {
+                passed += 1;
+            }
+            Err(e) => {
+                let msg = format!("{:?}", e);
+                if msg.contains("Expected identifier, found '{'") {
+                    cat_a_fails += 1;
+                } else if msg.contains("Expected ')', found") {
+                    cat_b_fails += 1;
+                } else {
+                    other_fails.push(format!(
+                        "{}: {}",
+                        entry.strip_prefix(workspace.to_str().unwrap()).unwrap_or(&entry),
+                        msg
+                    ));
+                }
+            }
+        }
+    }
+
+    // Document the expected state: 2 pass, 31 fail
+    assert!(total >= 33, "Should process at least 33 .rs files, got {total}");
+    assert!(passed >= 2, "At least 2 trivial files should pass D2, got {passed}");
+    assert!(cat_a_fails >= 20, "Expected ~21 Category A failures (record return types), got {cat_a_fails}");
+    assert!(cat_b_fails >= 9, "Expected ~10 Category B failures (duplicate params), got {cat_b_fails}");
+    eprintln!(
+        "D2 workspace results: {passed}/{total} pass, {cat_a_fails} Cat-A, {cat_b_fails} Cat-B, {} other",
+        other_fails.len()
+    );
+    if !other_fails.is_empty() {
+        eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));
+    }
+}
+
 // ============================================================
 // Phase 17.3: Message generation tests
 // ============================================================

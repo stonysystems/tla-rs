@@ -547,6 +547,31 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
+#### D2 on D1 Output: `transpiler_generated_verus_spec/` → Verus Exec (Phase 16.8.4)
+
+Attempts D2 (Verus Spec → Verus Exec) transpilation on D1-generated Verus spec files.
+Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/`.
+
+| Protocol | Files | D2 Parse | D2 Transpile | Failure Category |
+|----------|-------|----------|-------------|------------------|
+| TwoPhase | 2 | ❌ | ❌ | Types.rs: Cat-A; Twophase.rs: Cat-B |
+| Paxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Paxos.rs: Cat-B |
+| LeaderElection | 2 | ❌ | ❌ | Types.rs: Cat-A; Election.rs: Cat-B |
+| Raft | 2 | ❌ | ❌ | Types.rs: Cat-A; Raft.rs: Cat-B |
+| ChainReplication | 2 | ❌ | ❌ | Types.rs: Cat-A; Chain.rs: Cat-B |
+| PrimaryBackup | 2 | ❌ | ❌ | Types.rs: Cat-A; Primarybackup.rs: Cat-B |
+| PBFT | 2 | ❌ | ❌ | Types.rs: Cat-A; Pbft.rs: Cat-B |
+| VerticalPaxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Vpaxos.rs: Cat-B |
+| EPaxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Epaxos.rs: Cat-B |
+| RSL | 15 | 2 ✅ / 13 ❌ | 2 ✅ | Environment.rs, Message.rs pass (trivial) |
+| **Total** | **33** | **2/33** | **2/33** | |
+
+**Failure Categories:**
+- **Cat-A (21 files)**: D1 generates anonymous record return types (`fn foo() -> { field: Type }`) — not valid Rust syntax. Affects all Types.rs files + most RSL module files.
+- **Cat-B (10 files)**: D1 generates duplicate parameter names (`s: LState, ..., s: int`) from TLA+ variable/state overlap. Affects all 9 main protocol modules + RSL/Broadcast.
+
+**Root cause**: D1 (TLA+ → Verus) generates "TLA+-flavored Verus" that preserves TLA+ semantics but doesn't conform to the Verus parser's expectations. The D3→D1→D2 round-trip requires D1 output improvements (struct field inference, parameter dedup, record type elimination). The integrated D4 pipeline avoids these issues through internal type propagation.
+
 #### Direction 4: TLA+ → Verus Exec (pipeline)
 
 | Example | Pipeline | Verus Compile | Notes |

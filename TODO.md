@@ -5167,10 +5167,14 @@ transpiler/tla_test_workspace/
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
 
-- [ ] Input: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/`
-- [ ] Require output to pass Verus compile/verification checks
-- [ ] Track failures by pattern category (annotation/mode mismatch, codegen gaps, proof obligations)
+- [x] Input: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
+- [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/` (2/33 files produce output)
+- [ ] Require output to pass Verus compile/verification checks (blocked: 31/33 files fail D2 parse — see below)
+- [x] Track failures by pattern category:
+  - **2/33 PASS**: RSL/Environment.rs, RSL/Message.rs (trivial: empty struct / constant set only)
+  - **Category A (21 files)**: "Expected identifier, found '{'" — D1 generates anonymous record return types `fn foo() -> { field: Type }` not valid in Rust; affects all Types.rs + most RSL module files
+  - **Category B (10 files)**: "Expected ')', found '('" — D1 generates duplicate parameter names (e.g., `s: LState, ..., s: int`) from TLA+ variable/state overlap; affects all 9 main protocol modules + RSL/Broadcast
+  - **Root cause**: D1 (TLA+ → Verus) output is "TLA+-flavored Verus" that matches TLA+ semantics but not Verus parser expectations. The D3→D1→D2 round-trip requires D1 output quality improvements (struct field type inference, parameter deduplication, record type elimination) before D2 can consume it. The direct D4 pipeline (TLA+ → Verus Exec) works because it uses integrated type inference and avoids the intermediate serialization step.
 
 #### 16.8.5: External TLA+ corpora (LLM + community)
 
