@@ -4331,9 +4331,9 @@ fn test_generate_marshalable_rsl_type_count() {
     let code =
         load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
-    // Exactly 4 impl blocks
+    // 4 struct + 2 enum = 6 impl blocks
     let impl_count = code.matches("impl Marshalable for").count();
-    assert_eq!(impl_count, 4, "Expected 4 Marshalable impls, got {}", impl_count);
+    assert_eq!(impl_count, 6, "Expected 6 Marshalable impls (4 struct + 2 enum), got {}", impl_count);
 
     // Each has all 11 trait methods
     for type_name in &["CBallot", "CRequest", "CReply", "CVote"] {
@@ -4413,5 +4413,122 @@ fn test_generate_marshalable_rsl_type_count() {
             "{} missing lemma_serialize_injective",
             type_name
         );
+    }
+}
+
+// ============================================================
+// Phase 17.3.3b: Enum Marshalable generation from RSL TOML
+// ============================================================
+
+#[test]
+fn test_generate_marshalable_enum_cappMessage_from_toml() {
+    let code =
+        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+
+    // CAppMessage enum impl should be generated
+    assert!(code.contains("impl Marshalable for CAppMessage {"));
+
+    // Tag-based dispatch: 3 variants with tags 0, 1, 2
+    assert!(code.contains("CAppMessage::CAppIncrement"));
+    assert!(code.contains("CAppMessage::CAppReply"));
+    assert!(code.contains("CAppMessage::CAppInvalid"));
+
+    // CAppReply has one field: response: u64
+    assert!(code.contains("response"));
+    assert!(code.contains("u64::deserialize(data, mid)"));
+
+    // Unit variants (CAppIncrement, CAppInvalid) should have no field deserialization
+    // Tag bytes: 0u8, 1u8, 2u8
+    assert!(code.contains("0u8"));
+    assert!(code.contains("1u8"));
+    assert!(code.contains("2u8"));
+}
+
+#[test]
+fn test_generate_marshalable_enum_cmessage_from_toml() {
+    let code =
+        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+
+    // CMessage enum impl should be generated
+    assert!(code.contains("impl Marshalable for CMessage {"));
+
+    // All 11 variants present
+    for variant in &[
+        "CMessageInvalid", "CMessageRequest", "CMessage1a", "CMessage1b",
+        "CMessage2a", "CMessage2b", "CMessageHeartbeat", "CMessageReply",
+        "CMessageAppStateRequest", "CMessageAppStateSupply", "CMessageStartingPhase2",
+    ] {
+        assert!(
+            code.contains(&format!("CMessage::{}", variant)),
+            "Missing variant CMessage::{}",
+            variant,
+        );
+    }
+
+    // Tags 0 through 10
+    assert!(code.contains("10u8"));
+
+    // CMessage1b has 3 fields: bal_1b: CBallot, log_truncation_point: COperationNumber, votes: CVotes
+    assert!(code.contains("bal_1b"));
+    assert!(code.contains("log_truncation_point"));
+    assert!(code.contains("votes"));
+
+    // CMessageAppStateSupply has 4 fields (most complex variant)
+    assert!(code.contains("bal_state_supply"));
+    assert!(code.contains("opn_state_supply"));
+    assert!(code.contains("app_state"));
+    assert!(code.contains("reply_cache"));
+}
+
+#[test]
+fn test_generate_marshalable_enum_count_from_toml() {
+    let code =
+        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+
+    // 4 struct impls + 2 enum impls = 6 total
+    let impl_count = code.matches("impl Marshalable for").count();
+    assert_eq!(impl_count, 6, "Expected 6 Marshalable impls (4 struct + 2 enum), got {}", impl_count);
+
+    // CAppMessage and CMessage have all 11 trait methods
+    for type_name in &["CAppMessage", "CMessage"] {
+        let impl_start = code
+            .find(&format!("impl Marshalable for {} {{", type_name))
+            .unwrap_or_else(|| panic!("Missing impl for {}", type_name));
+        let impl_section = &code[impl_start..];
+        let mut depth = 0;
+        let mut end = 0;
+        for (i, ch) in impl_section.char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let block = &impl_section[..end];
+        for method in &[
+            "open spec fn view_equal(",
+            "proof fn lemma_view_equal_symmetric(",
+            "open spec fn is_marshalable(",
+            "exec fn _is_marshalable(",
+            "open spec fn ghost_serialize(",
+            "exec fn serialized_size(",
+            "exec fn serialize(",
+            "exec fn deserialize(",
+            "proof fn lemma_serialization_is_not_a_prefix_of(",
+            "proof fn lemma_same_views_serialize_the_same(",
+            "proof fn lemma_serialize_injective(",
+        ] {
+            assert!(
+                block.contains(method),
+                "{} missing method: {}",
+                type_name, method
+            );
+        }
     }
 }

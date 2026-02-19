@@ -248,3 +248,66 @@ fields = [["client", "EndPoint"], ["seqno", "u64"], ["reply", "CAppMessage"]]
 [[marshalable.types]]
 name = "CVote"
 fields = [["max_value_bal", "CBallot"], ["max_val", "CRequestBatch"]]
+
+# Enum types to generate Marshalable impls for.
+# These types are currently defined via `define_enum_and_derive_marshalable!` macro.
+# Tag values must match the #[tag = N] attributes in the source definitions.
+
+[[marshalable.enums]]
+name = "CAppMessage"
+[[marshalable.enums.variants]]
+name = "CAppIncrement"
+tag = 0
+[[marshalable.enums.variants]]
+name = "CAppReply"
+tag = 1
+fields = [["response", "u64"]]
+[[marshalable.enums.variants]]
+name = "CAppInvalid"
+tag = 2
+
+[[marshalable.enums]]
+name = "CMessage"
+[[marshalable.enums.variants]]
+name = "CMessageInvalid"
+tag = 0
+[[marshalable.enums.variants]]
+name = "CMessageRequest"
+tag = 1
+fields = [["seqno_req", "u64"], ["val", "CAppMessage"]]
+[[marshalable.enums.variants]]
+name = "CMessage1a"
+tag = 2
+fields = [["bal_1a", "CBallot"]]
+[[marshalable.enums.variants]]
+name = "CMessage1b"
+tag = 3
+fields = [["bal_1b", "CBallot"], ["log_truncation_point", "COperationNumber"], ["votes", "CVotes"]]
+[[marshalable.enums.variants]]
+name = "CMessage2a"
+tag = 4
+fields = [["bal_2a", "CBallot"], ["opn_2a", "COperationNumber"], ["val_2a", "CRequestBatch"]]
+[[marshalable.enums.variants]]
+name = "CMessage2b"
+tag = 5
+fields = [["bal_2b", "CBallot"], ["opn_2b", "COperationNumber"], ["val_2b", "CRequestBatch"]]
+[[marshalable.enums.variants]]
+name = "CMessageHeartbeat"
+tag = 6
+fields = [["bal_heartbeat", "CBallot"], ["suspicious", "bool"], ["opn_ckpt", "COperationNumber"]]
+[[marshalable.enums.variants]]
+name = "CMessageReply"
+tag = 7
+fields = [["seqno_reply", "u64"], ["reply", "CAppMessage"]]
+[[marshalable.enums.variants]]
+name = "CMessageAppStateRequest"
+tag = 8
+fields = [["bal_state_req", "CBallot"], ["opn_state_req", "COperationNumber"]]
+[[marshalable.enums.variants]]
+name = "CMessageAppStateSupply"
+tag = 9
+fields = [["bal_state_supply", "CBallot"], ["opn_state_supply", "COperationNumber"], ["app_state", "CAppState"], ["reply_cache", "CReplyCache"]]
+[[marshalable.enums.variants]]
+name = "CMessageStartingPhase2"
+tag = 10
+fields = [["bal_2", "CBallot"], ["logTruncationPoint_2", "COperationNumber"]]
