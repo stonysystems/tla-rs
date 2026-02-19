@@ -572,6 +572,40 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 
 **Root cause**: D1 (TLA+ → Verus) generates "TLA+-flavored Verus" that preserves TLA+ semantics but doesn't conform to the Verus parser's expectations. The D3→D1→D2 round-trip requires D1 output improvements (struct field inference, parameter dedup, record type elimination). The integrated D4 pipeline avoids these issues through internal type propagation.
 
+#### D1 on External TLA+ Corpora (Phase 16.8.5)
+
+Tests D1 parser robustness against TLA+ specs NOT produced by our D3 emitter.
+
+**LLM-Authored Specs** (`tla_test_workspace/generated_tla_by_llm/`):
+
+| Spec | D1 Parse | Blocking Construct |
+|------|----------|-------------------|
+| SimpleConsensus.tla | ✅ | — |
+| SimpleLeader.tla | ✅ | — |
+| SimplePrimary.tla | ✅ | — |
+| TwoPhaseCommit.tla | ❌ | `1..NumRM` range operator |
+| SimplePaxos.tla | ❌ | `ASSUME Name ==` named assume |
+| SimpleRaft.tla | ❌ | `[][Next]_<<vars>>` temporal subscript |
+| BullyElection.tla | ❌ | `[][Next]_<<vars>>` temporal subscript |
+| PrimaryBackup.tla | ❌ | `\E v \in 1..MaxVal` range in quantifier |
+| ChainRep.tla | ❌ | `1..ChainLen` range operator |
+| SimplePBFT.tla | ❌ | `[][Next]_<<vars>>` temporal subscript |
+| SimpleEPaxos.tla | ❌ | Range in multi-var quantifier |
+| VerticalPaxos.tla | ❌ | Range in multi-var quantifier |
+| **Total** | **3/12** | |
+
+**Community Canonical Specs** (`tla_test_workspace/tla_by_community/`):
+
+| Spec | License | D1 Parse | Output Quality | Blocking Construct |
+|------|---------|----------|---------------|-------------------|
+| EPaxos_community.tla | Apache 2.0 | ✅ | Minimal (empty) | — |
+| Paxos_community.tla | MIT | ✅ | Minimal (empty) | — |
+| Raft_community.tla | CC BY 4.0 | ✅ | Minimal (constants only) | — |
+| TwoPhase_community.tla | MIT | ❌ | — | `[type : {"Prepared"}, rm : RM]` record set |
+| **Total** | | **3/4** | | |
+
+Note: Community specs that pass D1 produce minimal output because complex TLA+ constructs (CHOOSE, function mapping, LET...IN) parse but don't generate Verus code. See `docs/tla-input-compatibility-report.md` for the full analysis.
+
 #### Direction 4: TLA+ → Verus Exec (pipeline)
 
 | Example | Pipeline | Verus Compile | Notes |

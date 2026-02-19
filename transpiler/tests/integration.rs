@@ -2599,6 +2599,148 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
 }
 
 // ============================================================
+// Phase 16.8.5: External TLA+ corpora D1 tests
+// ============================================================
+
+/// Phase 16.8.5: D1 on LLM-authored TLA+ specs
+/// Tests parser robustness against TLA+ written by an LLM without knowledge of parser limitations.
+/// 3/12 pass (simple flat-variable specs), 9/12 fail (range operator, temporal subscript, etc.)
+#[test]
+fn test_d1_on_llm_tla_specs() {
+    use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace/generated_tla_by_llm");
+
+    if !dir.exists() {
+        eprintln!("Skipping: LLM TLA+ directory not found at {:?}", dir);
+        return;
+    }
+
+    let mut total = 0;
+    let mut passed = 0;
+    let mut range_fails = 0; // 1..N range operator
+    let mut temporal_fails = 0; // [][Next]_<<vars>>
+    let mut other_fails: Vec<String> = Vec::new();
+
+    for entry in walkdir(dir.to_str().unwrap()) {
+        if !entry.ends_with(".tla") {
+            continue;
+        }
+        total += 1;
+        let source = std::fs::read_to_string(&entry).unwrap();
+        let rel = entry
+            .strip_prefix(dir.to_str().unwrap())
+            .unwrap_or(&entry)
+            .trim_start_matches('/')
+            .to_string();
+
+        match parse_module(&source) {
+            Ok(module) => {
+                let mut translator = ModuleTranslator::default();
+                let output = translator.translate(&module);
+                if output.contains("verus!") {
+                    passed += 1;
+                } else {
+                    other_fails.push(format!("{}: translated but no verus! block", rel));
+                }
+            }
+            Err(e) => {
+                let msg = format!("{:?}", e);
+                if msg.contains("Expected Colon") || msg.contains("Unexpected token in") {
+                    // Range operator (1..N) or ASSUME/CONSTANT with range
+                    range_fails += 1;
+                } else if msg.contains("Expected DefEq") {
+                    // Temporal subscript [][Next]_<<vars>>
+                    temporal_fails += 1;
+                } else {
+                    other_fails.push(format!("{}: {}", rel, msg));
+                }
+            }
+        }
+    }
+
+    eprintln!(
+        "LLM TLA+ D1: {passed}/{total} pass, {range_fails} range, {temporal_fails} temporal, {} other",
+        other_fails.len()
+    );
+
+    assert!(total >= 12, "Should process at least 12 .tla files, got {total}");
+    assert!(passed >= 3, "At least 3 simple specs should pass, got {passed}");
+    assert!(range_fails >= 4, "Expected >= 4 range operator failures, got {range_fails}");
+    assert!(temporal_fails >= 3, "Expected >= 3 temporal subscript failures, got {temporal_fails}");
+    if !other_fails.is_empty() {
+        eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));
+    }
+}
+
+/// Phase 16.8.5: D1 on community canonical TLA+ specs
+/// Tests parser against real-world TLA+ from tlaplus/Examples, ongardie/raft.tla, efficient/epaxos.
+/// 3/4 pass (parser succeeds, but output is minimal for complex specs), 1/4 fail.
+#[test]
+fn test_d1_on_community_tla_specs() {
+    use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace/tla_by_community");
+
+    if !dir.exists() {
+        eprintln!("Skipping: community TLA+ directory not found at {:?}", dir);
+        return;
+    }
+
+    let mut total = 0;
+    let mut passed = 0;
+    let mut failures: Vec<String> = Vec::new();
+
+    for entry in walkdir(dir.to_str().unwrap()) {
+        if !entry.ends_with(".tla") {
+            continue;
+        }
+        total += 1;
+        let source = std::fs::read_to_string(&entry).unwrap();
+        let rel = entry
+            .strip_prefix(dir.to_str().unwrap())
+            .unwrap_or(&entry)
+            .trim_start_matches('/')
+            .to_string();
+
+        match parse_module(&source) {
+            Ok(module) => {
+                let mut translator = ModuleTranslator::default();
+                let output = translator.translate(&module);
+                if output.contains("verus!") {
+                    passed += 1;
+                } else {
+                    failures.push(format!("{}: translated but no verus! block", rel));
+                }
+            }
+            Err(e) => {
+                failures.push(format!("{}: {:?}", rel, e));
+            }
+        }
+    }
+
+    eprintln!(
+        "Community TLA+ D1: {passed}/{total} pass, {} fail",
+        failures.len()
+    );
+
+    // 3 pass (EPaxos, Paxos, Raft), 1 fail (TwoPhase — record set constructor)
+    assert!(total >= 4, "Should process at least 4 .tla files, got {total}");
+    assert!(passed >= 3, "At least 3 community specs should parse, got {passed}");
+    // TwoPhase_community.tla fails on record set constructor [type : {"Prepared"}, rm : RM]
+    assert!(
+        failures.len() >= 1,
+        "Expected at least 1 failure (TwoPhase record set), got {}",
+        failures.len()
+    );
+    if !failures.is_empty() {
+        eprintln!("Expected failures: {}", failures.join(", "));
+    }
+}
+
+// ============================================================
 // Phase 17.3: Message generation tests
 // ============================================================
 
