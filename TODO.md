@@ -5095,6 +5095,105 @@ Workflow for each failure:
 
 ---
 
+### Phase 16.8: Real-Protocol Cross-Direction + Model Checking Validation — TODO
+
+**Goal**: Extend Phase 16 with a stricter workflow that uses real protocol specs as inputs (not only simplified `tests/tla_examples/`), adds explicit TLA+ properties for model checking, and validates pipeline robustness on external TLA+ sources (LLM-generated and community-authored).
+
+**Status**: Planned (not started). This is a follow-up hardening phase after 16.1–16.7.
+
+#### Scope Notes
+
+- The current D3 flow (`Verus Spec -> TLA+`) produces syntactically valid TLA+ but does not automatically include per-protocol model-check properties/spec blocks required for TLC.
+- This phase adds a manual property-injection + model-check step to close that gap.
+- This phase also replaces/augments naive TLA+ inputs with real protocol-derived TLA+ inputs from `src/protocol/`.
+
+#### Workspace Layout (to create)
+
+```
+transpiler/tla_test_workspace/
+  transpiler_generated_tla/                    # D3 output from src/protocol/*
+  transpiler_generated_tla_with_properties/    # D3 output + manually added protocol properties
+  transpiler_generated_verus_spec/             # D1 output from transpiler_generated_tla
+  transpiler_generated_verus_exec/             # D2 output from transpiler_generated_verus_spec
+  generated_tla_by_llm/                        # External TLA+ generated without this transpiler
+  tla_by_community/                            # External community TLA+ specs + source attribution
+  llm_to_verus_spec/                           # D1 output for generated_tla_by_llm
+  llm_to_verus_exec/                           # D2 output for llm_to_verus_spec
+  community_to_verus_spec/                     # D1 output for tla_by_community
+  community_to_verus_exec/                     # D2 output for community_to_verus_spec
+```
+
+#### Target Protocol Set (applicable cases)
+
+- Start with: `Raft`, `Paxos`, `PBFT`, `TwoPhase`
+- Then extend to: `LeaderElection`, `ChainReplication`, `PrimaryBackup`, `VerticalPaxos`, `EPaxos`
+- Track unsupported/partial protocols explicitly in status matrix
+
+#### 16.8.1: Real-spec D3 baseline (Verus Spec -> TLA+)
+
+- [ ] For each applicable protocol, run `verus2-tla` using inputs from `src/protocol/<Protocol>/`
+- [ ] Write outputs to `transpiler/tla_test_workspace/transpiler_generated_tla/`
+- [ ] Ensure each generated `.tla` passes TLA+ syntax/semantic compile (SANY)
+- [ ] Record per-file pass/fail in `docs/conversion-testing-guide.md` extension table
+
+#### 16.8.2: Property injection + TLC model checking for D3 output
+
+- [ ] For each generated `.tla` in `transpiler_generated_tla/`, add protocol-specific properties manually:
+- [ ] Add `Init/Next/Spec` wrappers where needed for TLC
+- [ ] Add safety invariants and protocol-specific checks (e.g., election safety, log consistency, etc.)
+- [ ] Save augmented modules under `transpiler_generated_tla_with_properties/`
+- [ ] Run TLC model checking for each augmented case
+- [ ] Record model-check outcomes (pass/fail/counterexample/timeout) in status matrix
+
+#### 16.8.3: D1 on real generated TLA+ (TLA+ -> Verus Spec)
+
+- [ ] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
+- [ ] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
+- [ ] Require output to pass Verus compile/verification checks
+- [ ] Track failures by pattern category (parser, typing, unsupported TLA constructs)
+
+#### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
+
+- [ ] Input: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
+- [ ] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/`
+- [ ] Require output to pass Verus compile/verification checks
+- [ ] Track failures by pattern category (annotation/mode mismatch, codegen gaps, proof obligations)
+
+#### 16.8.5: External TLA+ corpora (LLM + community)
+
+- [ ] Generate TLA+ files for each protocol under `transpiler/tla_test_workspace/generated_tla_by_llm/`
+- [ ] Collect community-authored TLA+ protocol specs under `transpiler/tla_test_workspace/tla_by_community/`
+- [ ] For each community file, include source URL + author/license attribution in colocated metadata file (e.g., `SOURCES.md`)
+
+#### 16.8.6: External corpora conversion validation
+
+- [ ] For `generated_tla_by_llm/`: run D1 and D2, output to `llm_to_verus_spec/` and `llm_to_verus_exec/`
+- [ ] For `tla_by_community/`: run D1 and D2, output to `community_to_verus_spec/` and `community_to_verus_exec/`
+- [ ] Require each step output to pass compile checks (Rust/Verus as applicable)
+- [ ] Maintain per-protocol, per-source status matrix
+
+#### 16.8.7: Compatibility report for unsupported inputs
+
+- [ ] If some external TLA+ cases fail, produce a report in `docs/`:
+- [ ] Proposed file: `docs/tla-input-compatibility-report.md`
+- [ ] Include:
+- [ ] Supported input patterns (recommended canonical forms)
+- [ ] Forbidden/high-risk patterns that currently break pipeline
+- [ ] Minimal required info that must exist in input TLA+ for D1/D2 to succeed
+- [ ] Concrete failing examples + error signatures + suggested rewrites/workarounds
+
+#### 16.8 Success Criteria
+
+1. [ ] Workspace directories are created and documented
+2. [ ] Real-spec D3 outputs generated for all applicable protocols and SANY checked
+3. [ ] Property-augmented TLA+ modules exist for each applicable protocol and TLC results are recorded
+4. [ ] D1 and D2 succeed (or fail with categorized reasons) on real-spec generated TLA+
+5. [ ] D1 and D2 are executed on both external corpora (LLM/community) with compile status tracked
+6. [ ] `docs/tla-input-compatibility-report.md` published with supported/forbidden input patterns
+7. [ ] `docs/conversion-testing-guide.md` expanded with this phase's status matrix and reproduction commands
+
+---
+
 ## Phase 17: Runnable Protocols (All Non-RSL)
 
 **Goal:** Generate complete, runnable, Verus-verified implementations for all 9 non-RSL protocols with networking I/O, message marshalling, and main event loop. Core protocol logic must be transpiler-generated from specs; infrastructure (networking, marshalling, main loop) should follow uniform rules and be auto-generated where possible.
