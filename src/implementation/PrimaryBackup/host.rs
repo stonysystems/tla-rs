@@ -349,14 +349,6 @@ impl PrimaryBackupHost {
         if let Some(pkt) = packet {
             match pkt.msg {
                 PrimaryBackupMessage::Replicate { value: _ } => {
-                    // Receiving a Replicate message means msgs_replicate is set.
-                    // We update the shared-state flag before calling the gen function.
-                    if !self.state.msgs_replicate {
-                        // Simulate setting the shared-state replicate flag
-                        // by updating state fields directly from the message.
-                        // The gen function will read msgs_replicate and
-                        // msgs_replicate_val from the state.
-                    }
                     return self.backup_receive_replicate(config);
                 },
                 _ => {

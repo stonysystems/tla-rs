@@ -12,13 +12,6 @@ using IoNative;
 
 namespace IronRSLServer
 {
-    // using System;
-    // using System.Linq;
-    // using System.Numerics;
-    // using System.Threading;
-    // using Common;
-    // using MathNet.Numerics.Distributions;
-
     class Program
     {
         static void usage()
