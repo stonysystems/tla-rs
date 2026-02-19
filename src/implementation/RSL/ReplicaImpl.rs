@@ -1242,18 +1242,6 @@ pub open spec fn Replica_Next_Process_2a_Postconditions(replica: LReplica, repli
     )
 }
 
-// pub open spec fn Replica_Next_Process_2a_Postconditions(replica: LReplica, replica_: CReplica, inp: CPacket, packets_sent: OutboundPackets) -> bool {
-//     inp.abstractable()
-//     && inp.msg is CMessage2a
-//     && Replica_Common_Postconditions(replica, replica_, inp, packets_sent)
-//     && LReplicaNextProcess2a(
-//         replica,
-//         replica_@,
-//         inp.view(),
-//         packets_sent.view()
-//     )
-// }
-
 pub open spec fn Replica_Next_Process_StartingPhase2_Postconditions(replica: LReplica, replica_: CReplica, inp: CPacket, packets_sent: OutboundPackets) -> bool {
     inp.abstractable()
     && inp.msg is CMessageStartingPhase2

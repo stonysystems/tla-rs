@@ -1,6 +1,5 @@
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
-use crate::common::native::io_s::*;
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::common::marshalling::*;
 use crate::implementation::RSL::appinterface::*;
@@ -20,55 +19,6 @@ use vstd::{set::*, set_lib::*};
 
 verus! {
 
-    // #[derive(Clone)]
-    // pub enum CMessage {
-    //     CMessageInvalid{},
-    //     CMessageRequest{
-    //         seqno_req:u64,
-    //         val:CAppMessage,
-    //     },
-    //     CMessage1a{
-    //         bal_1a:CBallot,
-    //     },
-    //     CMessage1b{
-    //         bal_1b:CBallot,
-    //         log_truncation_point:COperationNumber,
-    //         votes:CVotes,
-    //     },
-    //     CMessage2a{
-    //         bal_2a:CBallot,
-    //         opn_2a:COperationNumber,
-    //         val_2a:CRequestBatch,
-    //     },
-    //     CMessage2b{
-    //         bal_2b:CBallot,
-    //         opn_2b:COperationNumber,
-    //         val_2b:CRequestBatch,
-    //     },
-    //     CMessageHeartbeat{
-    //         bal_heartbeat:CBallot,
-    //         suspicious:bool,
-    //         opn_ckpt:COperationNumber,
-    //     },
-    //     CMessageReply{
-    //         seqno_reply:u64,
-    //         reply:CAppMessage,
-    //     },
-    //     CMessageAppStateRequest{
-    //         bal_state_req:CBallot,
-    //         opn_state_req:COperationNumber,
-    //     },
-    //     CMessageAppStateSupply{
-    //         bal_state_supply:CBallot,
-    //         opn_state_supply:COperationNumber,
-    //         app_state:CAppState,
-    //         reply_cache:CReplyCache,
-    //     },
-    //     CMessageStartingPhase2{
-    //         bal_2:CBallot,
-    //         logTruncationPoint_2:COperationNumber,
-    //     },
-    // }
     define_enum_and_derive_marshalable! {
         #[derive(Clone , Eq, /*Hash,*/ PartialEq)]
         #[verus::trusted]
@@ -338,23 +288,6 @@ verus! {
             }
         }
     }
-
-    // impl PartialEq for CPacket {
-    //     #[verifier(external_body)]
-    //     fn eq(&self, other: &Self) -> bool {
-    //         self.dst == other.dst
-    //          && self.src == other.src
-    //          && self.msg == other.msg
-    //     }
-    // }
-
-    // impl Hash for CPacket {
-    //     fn hash<H: Hasher>(&self, state: &mut H) {
-    //         self.dst.hash(state);
-    //         self.src.hash(state);
-    //         self.msg.hash(state);
-    //     }
-    // }
 
     #[verifier(external_body)]
     pub broadcast proof fn axiom_cpacket_view()

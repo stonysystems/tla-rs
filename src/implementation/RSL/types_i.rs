@@ -148,19 +148,9 @@ verus! {
 
         pub open spec fn valid(self) -> bool {
             &&& self.abstractable()
-            // &&&
             &&& self.request.valid()
         }
 
-        // pub open spec fn view(self) -> Request
-        //     recommends self.abstractable()
-        // {
-        //     Request{
-        //         client : self.client@,
-        //         seqno : self.seqno as int,
-        //         request : self.request@,
-        //     }
-        // }
     }
 
     define_struct_and_derive_marshalable!{
@@ -195,15 +185,6 @@ verus! {
             &&& self.reply.valid()
         }
 
-        // pub open spec fn view(self) -> Reply
-        //     recommends self.abstractable()
-        // {
-        //     Reply{
-        //         client : self.client@,
-        //         seqno : self.seqno as int,
-        //         reply : self.reply@,
-        //     }
-        // }
     }
 
     impl View for CReply{
@@ -257,12 +238,6 @@ verus! {
     {
         s@.map(|i, r:CRequest| r@)
     }
-
-    // pub open spec fn view(self) -> RequestBatch
-    // recommends crequestbatch_is_abstractable(s)
-    // {
-    //     s@.map(|i, r:CRequest| r@)
-    // }
 
     pub open spec fn RequestBatchSizeLimit() -> int { 1000 }
 

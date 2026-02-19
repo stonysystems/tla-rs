@@ -139,15 +139,6 @@ verus! {
 
     }
 
-    // pub proof fn lemma_SetViewSizeUnchange<CT:vstd::view::View>(s:Set<CT>, ss:Set<CT::V>)
-    //     requires
-    //         ss == s.map(|x:CT| x@)
-    //     ensures
-    //         ss.len() == s.len()
-    // {
-
-    // }
-
     #[verifier::external_body]
     pub proof fn lemma_AbstractifySet_SizeUnchange<T, CT>(s:Set<CT>, ss:Set<T>, RefineValue: spec_fn(CT) -> T, AbstractableValue:spec_fn(CT) -> bool)
         requires
@@ -183,22 +174,6 @@ verus! {
             assert(s.len() == ss.len());
         }
     }
-
-    // pub proof fn lemma_AbstractifySet_Insert1<T, CT>(s1:Set<CT>, s2:Set<CT>, e:CT, Refine:spec_fn(CT) -> T)
-    //     requires
-
-    // pub proof fn lemma_HashSetView_SizeUnchange<CT: std::cmp::Eq + std::hash::Hash>(s:HashSet<CT>, ss:Set<CT>)
-    //     requires
-    //         ss == s@,
-    //     ensures
-    //         s.len() == ss.len()
-    // {
-    //     assert forall |x:CT| s.contains(x) <==> ss.contains(x) by {
-    //         assert(ss.contains(x) == s@.contains(x));
-    //     };
-    // }
-
-
 
     pub open spec fn MapIsAbstractable<CKT, CVT, KT, VT>(
         m:HashMap<CKT, CVT>,
@@ -353,32 +328,6 @@ verus! {
 
     }
 
-    // #[verifier::external_body]
-    // pub proof fn lemma_AbstractifyMap_Remove<KT:vstd::view::View, VT:vstd::view::View>(old_m:HashMap<KT, VT>, new_m:HashMap<KT, VT>, k:KT, v:VT)
-    //     requires
-    //         new_m@ == old_m@.insert(k, v)
-    //     ensures
-    //     ({
-    //         let s_old_m = Map::new(
-    //             |k:KT::V| exists |ck:KT| old_m@.contains_key(ck) && ck@ == k,
-    //             |k:KT::V| {
-    //                 let ck = choose |ck:KT| old_m@.contains_key(ck) && ck@ == k;
-    //                 old_m@[ck]@
-    //             }
-    //         );
-    //         let s_new_m = Map::new(
-    //             |k:KT::V| exists |ck:KT| new_m@.contains_key(ck) && ck@ == k,
-    //             |k:KT::V| {
-    //                 let ck = choose |ck:KT| new_m@.contains_key(ck) && ck@ == k;
-    //                 new_m@[ck]@
-    //             }
-    //         );
-    //         &&& s_new_m == s_old_m.insert(k@, v@)
-    //     })
-    // {
-
-    // }
-
     #[verifier::external_body]
     pub proof fn lemma_AbstractifyMap_Insert2<KT:vstd::view::View, VT, CVT>(old_m:HashMap<KT, CVT>, new_m:HashMap<KT, CVT>, k:KT, v:CVT, RefineValue: spec_fn(CVT) -> VT)
         requires
@@ -404,32 +353,6 @@ verus! {
     {
 
     }
-
-    // #[verifier::external_body]
-    // pub proof fn lemma_AbstractifyMap_Insert2<KT, CKT, VT:vstd::view::View>(old_m:HashMap<CKT, VT>, new_m:HashMap<CKT, VT>, k:CKT, v:VT, RefineKey: spec_fn(CKT) -> KT)
-    //     requires
-    //         new_m@ == old_m@.insert(k, v)
-    //     ensures
-    //     ({
-    //         let s_old_m = Map::new(
-    //             |k:KT::V| exists |ck:KT| old_m@.contains_key(ck) && ck@ == k,
-    //             |k:KT::V| {
-    //                 let ck = choose |ck:KT| old_m@.contains_key(ck) && ck@ == k;
-    //                 RefineValue(old_m@[ck])
-    //             }
-    //         );
-    //         let s_new_m = Map::new(
-    //             |k:KT::V| exists |ck:KT| new_m@.contains_key(ck) && ck@ == k,
-    //             |k:KT::V| {
-    //                 let ck = choose |ck:KT| new_m@.contains_key(ck) && ck@ == k;
-    //                 RefineValue(new_m@[ck])
-    //             }
-    //         );
-    //         &&& s_new_m == s_old_m.insert(k@, RefineValue(v))
-    //     })
-    // {
-
-    // }
 
     #[verifier::external_body]
     pub proof fn lemma_AbstractifyMap_Remove2<KT, CKT, VT:vstd::view::View>(old_m:HashMap<CKT, VT>, new_m:HashMap<CKT, VT>, k:CKT, RefineKey: spec_fn(CKT) -> KT)

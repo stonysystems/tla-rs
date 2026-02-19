@@ -171,49 +171,6 @@ verus! {
         new_vec
     }
 
-    // #[verifier(external_body)]
-    // pub fn concat_vecs<T>(v1: Vec<T>, v2: Vec<T>) -> (result: Vec<T>)
-    //     where T: Clone + vstd::view::View,
-    //     ensures
-    //         result@ == v1@ + v2@,
-    //         result@.len() == v1@.len() + v2@.len(),
-    //         result@.map(|i, t:T| t@).len() == v1@.map(|i, t:T| t@).len() + v2@.map(|i, t:T| t@).len()
-    // {
-    //     let mut result = Vec::new();
-    //     let mut i = 0;
-
-    //     assert(result@ == v1@.subrange(0, i as int));
-    //     while i < v1.len()
-    //         invariant
-    //             0 <= i <= v1@.len(),
-    //             result@ == v1@.subrange(0, i as int),
-    //     {
-    //         let entry = v1[i].clone();
-    //         assume(entry == v1[i as int]);
-    //         result.push(entry);
-    //         i = i + 1;
-    //         assert(result@ == v1@.subrange(0, i as int));
-    //     }
-
-    //     i = 0;
-    //     assert(result@ == v1@ + v2@.subrange(0, i as int));
-    //     while i < v2.len()
-    //         invariant
-    //             0 <= i <= v2@.len(),
-    //             result@ == v1@ + v2@.subrange(0, i as int),
-    //     {
-    //         let entry = v2[i].clone();
-    //         assume(entry == v2[i as int]);
-    //         result.push(entry);
-    //         i = i + 1;
-    //         assert(result@ == v1@ + v2@.subrange(0, i as int));
-    //     }
-
-    //     assert(result@ == v1@ + v2@);
-
-    //     result
-    // }
-
     #[verifier(external_body)]
     pub fn concat_vecs<T>(v1: &Vec<T>, v2: &Vec<T>) -> (result: Vec<T>)
         where T: Clone + vstd::view::View,

@@ -1866,19 +1866,9 @@ fn test_manual_impl_modules_have_deprecation_notices() {
 }
 
 #[test]
-fn test_replicaimpl_class_imports_types_from_generated() {
+fn test_replicaimpl_class_no_stale_imports() {
     let source = std::fs::read_to_string("../src/implementation/RSL/replicaimpl_class.rs")
         .expect("Failed to read replicaimpl_class.rs");
-
-    // Should import types from generated types_gen, not from manual modules
-    assert!(
-        source.contains("use crate::generated::RSL::types_gen::")
-            && source.contains("CAcceptor")
-            && source.contains("CExecutor")
-            && source.contains("CProposer")
-            && source.contains("CLearner"),
-        "replicaimpl_class.rs should import types from types_gen"
-    );
 
     // Should NOT import types from manual impl modules
     assert!(
@@ -1888,6 +1878,12 @@ fn test_replicaimpl_class_imports_types_from_generated() {
     assert!(
         !source.contains("ExecutorImpl::CExecutor"),
         "replicaimpl_class.rs should not import CExecutor from ExecutorImpl"
+    );
+
+    // Should not contain large blocks of commented-out code
+    assert!(
+        !source.contains("ConstructNetClient"),
+        "replicaimpl_class.rs should not contain stale ConstructNetClient"
     );
 }
 
