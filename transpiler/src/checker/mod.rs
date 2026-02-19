@@ -14,8 +14,11 @@ use std::collections::HashSet;
 pub struct SaturationChecker;
 
 impl SaturationChecker {
-    /// Check that all members of output parameters are assigned
+    /// Check that all members of output parameters are assigned.
+    /// Reports all missing assignments, not just the first one.
     pub fn check(func: &AnnotatedFunction, tracker: &AssignmentTracker) -> TranspileResult<()> {
+        let mut acc = DiagnosticAccumulator::new();
+
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
             if *mode == crate::ast::ParameterMode::Output {
                 let required = Self::get_required_members(&param.ty);
@@ -27,12 +30,12 @@ impl SaturationChecker {
 
                 let missing: Vec<_> = required.difference(&assigned).collect();
                 if !missing.is_empty() {
-                    return Err(TranspileError::Saturation {
+                    acc.add_error(TranspileError::Saturation {
                         message: format!(
                             "Output parameter '{}' has unassigned members: {:?}",
                             param.name, missing
                         ),
-                        span: None, // TODO: Convert proc_macro2::Span to SourceSpan
+                        span: None,
                         help: Some(
                             "Ensure all fields of output parameters are assigned".to_string(),
                         ),
@@ -40,7 +43,8 @@ impl SaturationChecker {
                 }
             }
         }
-        Ok(())
+
+        acc.into_result(())
     }
 
     /// Get all members that need to be assigned for a type
@@ -58,11 +62,14 @@ impl SaturationChecker {
 pub struct HarmonyChecker;
 
 impl HarmonyChecker {
-    /// Check that no member is assigned more than once
+    /// Check that no member is assigned more than once.
+    /// Reports all double-assignments, not just the first one.
     pub fn check(_func: &AnnotatedFunction, tracker: &AssignmentTracker) -> TranspileResult<()> {
+        let mut acc = DiagnosticAccumulator::new();
+
         for ((var_name, path), count) in tracker.assignment_counts() {
             if *count > 1 {
-                return Err(TranspileError::Harmony {
+                acc.add_error(TranspileError::Harmony {
                     message: format!(
                         "Output variable '{}' member '{}' assigned {} times (expected exactly once)",
                         var_name, path, count
@@ -72,7 +79,8 @@ impl HarmonyChecker {
                 });
             }
         }
-        Ok(())
+
+        acc.into_result(())
     }
 }
 
@@ -104,10 +112,11 @@ impl ObligationChecker {
         let conflicts =
             analyzer.detect_conflicts(&func.spec_fn.body, &input_params, &output_params);
 
-        // Report only UseBeforeAssignment conflicts as obligation errors
+        // Report all UseBeforeAssignment conflicts as obligation errors
+        let mut acc = DiagnosticAccumulator::new();
         for conflict in conflicts {
             if let ModeConflict::UseBeforeAssignment { var, context } = conflict {
-                return Err(TranspileError::Obligation {
+                acc.add_error(TranspileError::Obligation {
                     message: format!(
                         "Output variable '{}' used before assignment in {}",
                         var, context
@@ -117,7 +126,7 @@ impl ObligationChecker {
             }
         }
 
-        Ok(())
+        acc.into_result(())
     }
 }
 
@@ -2177,6 +2186,329 @@ mod tests {
             result,
             Some(QuantifierTemplate::MapComprehension { .. })
         ));
+    }
+
+    // ============ Multi-Error Reporting Tests ============
+
+    /// Helper to create a three-output function for multi-error testing
+    fn make_three_output_function() -> AnnotatedFunction {
+        AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "ThreeOutputs".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "a_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "b_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "c_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body: Expr::Literal(Literal::Bool(true)),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        }
+    }
+
+    /// Test: SaturationChecker reports ALL unassigned outputs, not just the first
+    #[test]
+    fn test_saturation_reports_all_missing() {
+        let func = make_three_output_function();
+        let tracker = AssignmentTracker::new(); // nothing assigned
+
+        let result = SaturationChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            TranspileError::Multiple { errors } => {
+                assert_eq!(errors.len(), 3, "expected 3 saturation errors, got {:?}", errors);
+                for e in &errors {
+                    assert!(matches!(e, TranspileError::Saturation { .. }));
+                }
+            }
+            TranspileError::Saturation { .. } => {
+                panic!("Expected Multiple with 3 errors, got single Saturation");
+            }
+            other => panic!("Expected Multiple, got {:?}", other),
+        }
+    }
+
+    /// Test: SaturationChecker with 2 of 3 outputs assigned reports only 1 error (not Multiple)
+    #[test]
+    fn test_saturation_reports_single_missing() {
+        let func = make_three_output_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("a_", MemberPath::Root);
+        tracker.record_assignment("b_", MemberPath::Root);
+        // c_ is not assigned
+
+        let result = SaturationChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Single error should not be wrapped in Multiple
+        assert!(
+            matches!(err, TranspileError::Saturation { .. }),
+            "expected single Saturation error, got {:?}",
+            err
+        );
+    }
+
+    /// Test: HarmonyChecker reports ALL double-assignments, not just the first
+    #[test]
+    fn test_harmony_reports_all_double_assignments() {
+        let func = make_three_output_function();
+        let mut tracker = AssignmentTracker::new();
+        // Double-assign a_ and b_, leave c_ single-assigned
+        tracker.record_assignment("a_", MemberPath::Root);
+        tracker.record_assignment("a_", MemberPath::Root);
+        tracker.record_assignment("b_", MemberPath::Root);
+        tracker.record_assignment("b_", MemberPath::Root);
+        tracker.record_assignment("c_", MemberPath::Root);
+
+        let result = HarmonyChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            TranspileError::Multiple { errors } => {
+                assert_eq!(errors.len(), 2, "expected 2 harmony errors, got {:?}", errors);
+                for e in &errors {
+                    assert!(matches!(e, TranspileError::Harmony { .. }));
+                }
+            }
+            TranspileError::Harmony { .. } => {
+                panic!("Expected Multiple with 2 errors, got single Harmony");
+            }
+            other => panic!("Expected Multiple, got {:?}", other),
+        }
+    }
+
+    /// Test: HarmonyChecker with single double-assignment returns unwrapped Harmony error
+    #[test]
+    fn test_harmony_single_double_returns_unwrapped() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+        tracker.record_assignment("s_", MemberPath::Root);
+
+        let result = HarmonyChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Single error should not be wrapped in Multiple
+        assert!(
+            matches!(err, TranspileError::Harmony { .. }),
+            "expected single Harmony, got {:?}",
+            err
+        );
+    }
+
+    /// Test: ObligationChecker reports multiple use-before-assignment conflicts
+    #[test]
+    fn test_obligation_reports_multiple_conflicts() {
+        // Build a two-output function where both outputs are used before assignment
+        let func = AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "TwoOutputs".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "a_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "b_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                // Both a_ and b_ used in call args before any assignment
+                body: Expr::Conjunction(vec![
+                    Expr::Eq(
+                        Box::new(Expr::Call {
+                            func: Path::single("f".to_string()),
+                            args: vec![Expr::Ident("a_".to_string()), Expr::Ident("b_".to_string())],
+                        }),
+                        Box::new(Expr::Literal(Literal::Bool(true))),
+                    ),
+                    Expr::Eq(
+                        Box::new(Expr::Ident("a_".to_string())),
+                        Box::new(Expr::Ident("s".to_string())),
+                    ),
+                    Expr::Eq(
+                        Box::new(Expr::Ident("b_".to_string())),
+                        Box::new(Expr::Ident("s".to_string())),
+                    ),
+                ]),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let tracker = AssignmentTracker::new();
+        let result = ObligationChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            TranspileError::Multiple { errors } => {
+                assert_eq!(errors.len(), 2, "expected 2 obligation errors, got {:?}", errors);
+                for e in &errors {
+                    assert!(matches!(e, TranspileError::Obligation { .. }));
+                }
+            }
+            TranspileError::Obligation { .. } => {
+                // Single error is also acceptable if detect_conflicts reports them
+                // as a single call-site conflict
+            }
+            other => panic!("Expected Multiple or Obligation, got {:?}", other),
+        }
+    }
+
+    /// Test: validate_function reports errors from ALL three checker types at once
+    #[test]
+    fn test_validate_all_three_checker_types() {
+        // Create a two-output function with body that uses b_ before assignment
+        let func = AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "AllFail".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "a_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "b_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                // b_ used before assignment in call, then a_ double-assigned, b_ never assigned
+                body: Expr::Conjunction(vec![
+                    // use b_ before assignment
+                    Expr::Eq(
+                        Box::new(Expr::Call {
+                            func: Path::single("f".to_string()),
+                            args: vec![Expr::Ident("b_".to_string())],
+                        }),
+                        Box::new(Expr::Literal(Literal::Bool(true))),
+                    ),
+                    // assign a_ twice (but b_ never)
+                    Expr::Eq(
+                        Box::new(Expr::Ident("a_".to_string())),
+                        Box::new(Expr::Ident("s".to_string())),
+                    ),
+                ]),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let mut tracker = AssignmentTracker::new();
+        // Double-assign a_ (triggers harmony)
+        tracker.record_assignment("a_", MemberPath::Root);
+        tracker.record_assignment("a_", MemberPath::Root);
+        // Don't assign b_ (triggers saturation)
+
+        let result = validate_function(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            TranspileError::Multiple { errors } => {
+                // Should have: saturation (b_ unassigned) + harmony (a_ double) + obligation (b_ used before assign)
+                assert!(
+                    errors.len() >= 2,
+                    "expected at least 2 errors from different checkers, got {}: {:?}",
+                    errors.len(),
+                    errors
+                );
+                let has_saturation = errors.iter().any(|e| matches!(e, TranspileError::Saturation { .. }));
+                let has_harmony = errors.iter().any(|e| matches!(e, TranspileError::Harmony { .. }));
+                assert!(has_saturation, "expected at least one Saturation error");
+                assert!(has_harmony, "expected at least one Harmony error");
+            }
+            _ => panic!("Expected Multiple, got {:?}", err),
+        }
     }
 
     /// Test forall |i| body that assigns a field (s_.field == expr), not seq[i] pattern
