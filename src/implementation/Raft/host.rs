@@ -6,7 +6,7 @@
 //! timer-based leader actions (heartbeats, commit advancement) in a
 //! round-robin fashion.
 //!
-//! The spec models a shared-state system with boolean message flags.
+//! The spec models messages via a sent_packets output parameter.
 //! This implementation translates that into explicit network messages:
 //! - RequestVote messages are broadcast to all peers on election timeout
 //! - VoteResponse messages are sent back to the candidate
@@ -157,15 +157,9 @@ impl RaftHost {
     ) -> StepResult<RaftMessage> {
         // If the candidate's term is higher than ours, step down first
         if term > self.state.current_term && term < u64::MAX {
-            self.state = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            self.state = new_state;
         }
-
-        // Set message flags so the spec's shared-state model is consistent
-        self.state.msgs_request_vote = true;
-        self.state.msgs_request_vote_term = term;
-        self.state.msgs_request_vote_candidate = candidate_id;
-        self.state.msgs_request_vote_last_log_index = last_log_index;
-        self.state.msgs_request_vote_last_log_term = last_log_term;
 
         // Guard: candidate_term >= current_term
         if term < self.state.current_term {
@@ -191,7 +185,7 @@ impl RaftHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = raft_gen::CGrantVote(
+        let (new_state, _sent) = raft_gen::CGrantVote(
             &self.state,
             &config.constants,
             &term,
@@ -199,6 +193,7 @@ impl RaftHost {
             &last_log_index,
             &candidate_id,
         );
+        self.state = new_state;
 
         // Send VoteResponse (granted=true) back to candidate
         StepResult {
@@ -217,8 +212,7 @@ impl RaftHost {
     /// Handle an incoming AppendEntries message (Follower).
     ///
     /// CFollowerAppendEntries requires:
-    ///   msgs_append_entries == true
-    ///   msgs_append_entries_term >= current_term
+    ///   ae_term >= current_term
     ///   log.len() < u64::MAX
     ///
     /// Applies the append entries and sends an AppendResponse back to the leader.
@@ -236,18 +230,9 @@ impl RaftHost {
     ) -> StepResult<RaftMessage> {
         // If the leader's term is higher than ours, step down first
         if term > self.state.current_term && term < u64::MAX {
-            self.state = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            self.state = new_state;
         }
-
-        // Set message flags for shared-state model
-        self.state.msgs_append_entries = true;
-        self.state.msgs_append_entries_term = term;
-        self.state.msgs_append_entries_leader = leader_id;
-        self.state.msgs_append_entries_prev_index = prev_log_index;
-        self.state.msgs_append_entries_prev_term = prev_log_term;
-        self.state.msgs_append_entries_value = value;
-        self.state.msgs_append_entries_has_entry = has_entry;
-        self.state.msgs_append_entries_leader_commit = leader_commit;
 
         // Guard: term >= current_term
         if term < self.state.current_term {
@@ -271,23 +256,36 @@ impl RaftHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = raft_gen::CFollowerAppendEntries(
+        // Compute the match_index for the response before updating state
+        let resp_match_index = if has_entry {
+            (self.state.log.len() as u64) + 1
+        } else {
+            self.state.log.len() as u64
+        };
+
+        let (new_state, _sent) = raft_gen::CFollowerAppendEntries(
             &self.state,
             &config.constants,
+            &term,
+            &leader_id,
+            &prev_log_index,
+            &prev_log_term,
             &value,
+            has_entry,
+            &leader_commit,
         );
+        self.state = new_state;
 
-        // The CFollowerAppendEntries sets msgs_append_response fields.
-        // Send AppendResponse back to the leader.
+        // Send AppendResponse back to the leader
         StepResult {
             ok: true,
             outbound: GenericOutbound::Send {
                 dst: src.clone_up_to_view(),
                 msg: RaftMessage::AppendResponse {
-                    term: self.state.msgs_append_response_term,
-                    success: self.state.msgs_append_response_success,
-                    match_index: self.state.msgs_append_response_match_index,
-                    follower: self.state.msgs_append_response_follower,
+                    term,
+                    success: true,
+                    match_index: resp_match_index,
+                    follower: config.my_index,
                 },
             },
         }
@@ -312,19 +310,21 @@ impl RaftHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = raft_gen::CTimeout(&self.state, &config.constants);
+        let new_term = self.state.current_term + 1;
+        let (new_state, _sent) = raft_gen::CTimeout(&self.state, &config.constants);
+        self.state = new_state;
 
-        // CTimeout sets msgs_request_vote fields. Broadcast RequestVote to all peers.
+        // Broadcast RequestVote to all peers
         let others = Self::other_peers(config);
         StepResult {
             ok: true,
             outbound: GenericOutbound::Broadcast {
                 dsts: others,
                 msg: RaftMessage::RequestVote {
-                    term: self.state.msgs_request_vote_term,
-                    candidate_id: self.state.msgs_request_vote_candidate,
-                    last_log_index: self.state.msgs_request_vote_last_log_index,
-                    last_log_term: self.state.msgs_request_vote_last_log_term,
+                    term: new_term,
+                    candidate_id: config.my_index,
+                    last_log_index: 0,
+                    last_log_term: 0,
                 },
             },
         }
@@ -338,8 +338,7 @@ impl RaftHost {
     ///
     /// CReceiveVoteGranted requires:
     ///   role is Candidate
-    ///   msgs_vote_response == true
-    ///   msgs_vote_response_granted == true
+    ///   vote_granted == true
     ///   voter in servers
     ///
     /// After adding the vote, check if we have a quorum and become leader.
@@ -352,7 +351,8 @@ impl RaftHost {
     ) -> StepResult<RaftMessage> {
         // If the response has a higher term, step down
         if term > self.state.current_term && term < u64::MAX {
-            self.state = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            self.state = new_state;
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
@@ -371,30 +371,21 @@ impl RaftHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Set message flags for shared-state model
-        self.state.msgs_vote_response = true;
-        self.state.msgs_vote_response_term = term;
-        self.state.msgs_vote_response_granted = true;
-        self.state.msgs_vote_response_voter = voter;
-
-        self.state = raft_gen::CReceiveVoteGranted(
+        let (new_state, _sent) = raft_gen::CReceiveVoteGranted(
             &self.state,
             &config.constants,
+            &term,
+            granted,
             &voter,
         );
+        self.state = new_state;
 
         // Check if we now have enough votes to become leader.
-        // CBecomeLeader requires:
-        //   role is Candidate
-        //   votes_granted.len() >= quorum_size (in spec domain)
-        //
-        // The spec compares in the abstract domain (Set<int>.len()), but
-        // the exec HashSet<u64>.len() is equivalent since the set map is
-        // injective and preserves cardinality.
         if matches!(self.state.role, CServerRole::Candidate)
             && self.state.votes_granted.len() as u64 >= config.constants.quorum_size
         {
-            self.state = raft_gen::CBecomeLeader(&self.state, &config.constants);
+            let (new_state, _sent) = raft_gen::CBecomeLeader(&self.state, &config.constants);
+            self.state = new_state;
             eprintln!(
                 "Raft: Node {} became LEADER for term {}",
                 config.my_index, self.state.current_term
@@ -422,7 +413,8 @@ impl RaftHost {
     ) -> StepResult<RaftMessage> {
         // If the response has a higher term, step down
         if term > self.state.current_term && term < u64::MAX {
-            self.state = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
+            self.state = new_state;
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
@@ -436,13 +428,6 @@ impl RaftHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Set message flags for shared-state model
-        self.state.msgs_append_response = true;
-        self.state.msgs_append_response_term = term;
-        self.state.msgs_append_response_success = success;
-        self.state.msgs_append_response_match_index = match_index;
-        self.state.msgs_append_response_follower = follower;
-
         if success {
             // CHandleAppendResponse additional guards:
             //   new_match_index >= 0 (always true for u64)
@@ -455,19 +440,28 @@ impl RaftHost {
                 return StepResult { ok: true, outbound: GenericOutbound::None };
             }
 
-            self.state = raft_gen::CHandleAppendResponse(
+            let (new_state, _sent) = raft_gen::CHandleAppendResponse(
                 &self.state,
                 &config.constants,
+                &term,
+                success,
+                &match_index,
+                &follower,
                 &follower,
                 &match_index,
             );
+            self.state = new_state;
         } else {
-            // CHandleAppendReject: decrement next_index for this follower
-            self.state = raft_gen::CHandleAppendReject(
+            let (new_state, _sent) = raft_gen::CHandleAppendReject(
                 &self.state,
                 &config.constants,
+                &term,
+                success,
+                &match_index,
+                &follower,
                 &follower,
             );
+            self.state = new_state;
         }
 
         StepResult { ok: true, outbound: GenericOutbound::None }
@@ -524,8 +518,8 @@ impl RaftHost {
                 0
             };
 
-            // Call CSendAppendEntries to update shared-state message flags
-            self.state = raft_gen::CSendAppendEntries(
+            // Call CSendAppendEntries
+            let (new_state, _sent) = raft_gen::CSendAppendEntries(
                 &self.state,
                 &config.constants,
                 &follower_id,
@@ -534,6 +528,7 @@ impl RaftHost {
                 &prev_log_term,
                 has_entry,
             );
+            self.state = new_state;
 
             // Build the network message
             let dst = config.peers[i].clone_up_to_view();
@@ -620,13 +615,12 @@ impl RaftHost {
         }
 
         if let Some(new_commit_index) = best_n {
-            // Additional guard: new_commit_index <= log.len() (always true by construction)
-            // and log[new_commit_index - 1].term == current_term (checked above)
-            self.state = raft_gen::CAdvanceCommitIndex(
+            let (new_state, _sent) = raft_gen::CAdvanceCommitIndex(
                 &self.state,
                 &config.constants,
                 &new_commit_index,
             );
+            self.state = new_state;
             eprintln!(
                 "Raft: Node {} advanced commit_index to {}",
                 config.my_index, new_commit_index
@@ -656,11 +650,12 @@ impl RaftHost {
         self.client_request_counter = self.client_request_counter.wrapping_add(1);
         let value = self.client_request_counter;
 
-        self.state = raft_gen::CClientRequest(
+        let (new_state, _sent) = raft_gen::CClientRequest(
             &self.state,
             &config.constants,
             &value,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -686,8 +681,7 @@ impl ProtocolHost for RaftHost {
     ) -> StepResult<Self::Msg> {
         // Handle incoming message based on current role
         if let Some(pkt) = packet {
-            // Check for step-down on any message with a higher term
-            let msg_term = match &pkt.msg {
+            let _msg_term = match &pkt.msg {
                 RaftMessage::RequestVote { term, .. } => *term,
                 RaftMessage::VoteResponse { term, .. } => *term,
                 RaftMessage::AppendEntries { term, .. } => *term,

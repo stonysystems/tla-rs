@@ -9323,6 +9323,8 @@ impl Translator {
                         let expr = self.transform_expr(fexpr, ctx)?;
                         // Clone input parameters when assigning to struct fields
                         let expr = self.clone_if_input_ref(expr, ctx);
+                        // Ensure .len() calls in if/else branches get `as u64` cast
+                        let expr = Self::cast_len_to_u64_recursive(expr);
                         Ok((fname.clone(), expr))
                     })
                     .collect();
@@ -10821,6 +10823,7 @@ impl Translator {
                 if let Some(nested_fields) = pre_translated.remove(&output_name) {
                     for (fname, fexpr) in nested_fields {
                         let fexpr = self.clone_if_input_ref(fexpr, ctx);
+                        let fexpr = Self::cast_len_to_u64_recursive(fexpr);
                         translated_fields.push((fname, fexpr));
                     }
                 }

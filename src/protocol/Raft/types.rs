@@ -14,6 +14,14 @@ verus! {
         pub value: int,
     }
 
+    /// Raft protocol messages
+    pub enum LRaftMessage {
+        RequestVote { term: int, candidate: int, last_log_index: int, last_log_term: int },
+        VoteResponse { term: int, granted: bool, voter: int },
+        AppendEntries { term: int, leader: int, prev_index: int, prev_term: int, value: int, has_entry: bool, leader_commit: int },
+        AppendResponse { term: int, success: bool, match_index: int, follower: int },
+    }
+
     /// Raft protocol state (single-server perspective)
     /// Models the core state needed for leader election + log replication.
     /// Per-server state variables from the TLA+ spec are represented as
@@ -35,36 +43,6 @@ verus! {
         // Leader state (u64 keys/values match HashMap<u64, u64> View)
         pub match_index: Map<u64, u64>, // For each server, index of highest known replicated entry
         pub next_index: Map<u64, u64>,  // For each server, index of next log entry to send
-
-        // Message flags: RequestVote
-        pub msgs_request_vote: bool,
-        pub msgs_request_vote_term: int,
-        pub msgs_request_vote_candidate: int,
-        pub msgs_request_vote_last_log_index: int,
-        pub msgs_request_vote_last_log_term: int,
-
-        // Message flags: VoteResponse
-        pub msgs_vote_response: bool,
-        pub msgs_vote_response_term: int,
-        pub msgs_vote_response_granted: bool,
-        pub msgs_vote_response_voter: int,
-
-        // Message flags: AppendEntries
-        pub msgs_append_entries: bool,
-        pub msgs_append_entries_term: int,
-        pub msgs_append_entries_leader: int,
-        pub msgs_append_entries_prev_index: int,
-        pub msgs_append_entries_prev_term: int,
-        pub msgs_append_entries_value: int,
-        pub msgs_append_entries_has_entry: bool,
-        pub msgs_append_entries_leader_commit: int,
-
-        // Message flags: AppendEntriesResponse
-        pub msgs_append_response: bool,
-        pub msgs_append_response_term: int,
-        pub msgs_append_response_success: bool,
-        pub msgs_append_response_match_index: int,
-        pub msgs_append_response_follower: int,
     }
 
     /// Protocol constants

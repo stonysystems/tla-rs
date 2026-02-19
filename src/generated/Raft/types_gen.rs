@@ -44,28 +44,6 @@ pub struct CState {
     pub votes_granted: HashSet<u64>,
     pub match_index: HashMap<u64, u64>,
     pub next_index: HashMap<u64, u64>,
-    pub msgs_request_vote: bool,
-    pub msgs_request_vote_term: u64,
-    pub msgs_request_vote_candidate: u64,
-    pub msgs_request_vote_last_log_index: u64,
-    pub msgs_request_vote_last_log_term: u64,
-    pub msgs_vote_response: bool,
-    pub msgs_vote_response_term: u64,
-    pub msgs_vote_response_granted: bool,
-    pub msgs_vote_response_voter: u64,
-    pub msgs_append_entries: bool,
-    pub msgs_append_entries_term: u64,
-    pub msgs_append_entries_leader: u64,
-    pub msgs_append_entries_prev_index: u64,
-    pub msgs_append_entries_prev_term: u64,
-    pub msgs_append_entries_value: u64,
-    pub msgs_append_entries_has_entry: bool,
-    pub msgs_append_entries_leader_commit: u64,
-    pub msgs_append_response: bool,
-    pub msgs_append_response_term: u64,
-    pub msgs_append_response_success: bool,
-    pub msgs_append_response_match_index: u64,
-    pub msgs_append_response_follower: u64,
 }
 
 impl Clone for CState {
@@ -97,28 +75,6 @@ impl View for CState {
             votes_granted: self.votes_granted@.map(|x: u64| x as int),
             match_index: self.match_index@,
             next_index: self.next_index@,
-            msgs_request_vote: self.msgs_request_vote,
-            msgs_request_vote_term: self.msgs_request_vote_term as int,
-            msgs_request_vote_candidate: self.msgs_request_vote_candidate as int,
-            msgs_request_vote_last_log_index: self.msgs_request_vote_last_log_index as int,
-            msgs_request_vote_last_log_term: self.msgs_request_vote_last_log_term as int,
-            msgs_vote_response: self.msgs_vote_response,
-            msgs_vote_response_term: self.msgs_vote_response_term as int,
-            msgs_vote_response_granted: self.msgs_vote_response_granted,
-            msgs_vote_response_voter: self.msgs_vote_response_voter as int,
-            msgs_append_entries: self.msgs_append_entries,
-            msgs_append_entries_term: self.msgs_append_entries_term as int,
-            msgs_append_entries_leader: self.msgs_append_entries_leader as int,
-            msgs_append_entries_prev_index: self.msgs_append_entries_prev_index as int,
-            msgs_append_entries_prev_term: self.msgs_append_entries_prev_term as int,
-            msgs_append_entries_value: self.msgs_append_entries_value as int,
-            msgs_append_entries_has_entry: self.msgs_append_entries_has_entry,
-            msgs_append_entries_leader_commit: self.msgs_append_entries_leader_commit as int,
-            msgs_append_response: self.msgs_append_response,
-            msgs_append_response_term: self.msgs_append_response_term as int,
-            msgs_append_response_success: self.msgs_append_response_success,
-            msgs_append_response_match_index: self.msgs_append_response_match_index as int,
-            msgs_append_response_follower: self.msgs_append_response_follower as int,
         }
     }
 }
@@ -181,6 +137,60 @@ impl View for CServerRole {
             CServerRole::Follower => LServerRole::Follower,
             CServerRole::Candidate => LServerRole::Candidate,
             CServerRole::Leader => LServerRole::Leader,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CRaftMessage {
+    RequestVote {
+        term: u64,
+        candidate: u64,
+        last_log_index: u64,
+        last_log_term: u64,
+    },
+    VoteResponse {
+        term: u64,
+        granted: bool,
+        voter: u64,
+    },
+    AppendEntries {
+        term: u64,
+        leader: u64,
+        prev_index: u64,
+        prev_term: u64,
+        value: u64,
+        has_entry: bool,
+        leader_commit: u64,
+    },
+    AppendResponse {
+        term: u64,
+        success: bool,
+        match_index: u64,
+        follower: u64,
+    },
+}
+
+impl CRaftMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => true,
+            CRaftMessage::VoteResponse { term, granted, voter } => true,
+            CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => true,
+            CRaftMessage::AppendResponse { term, success, match_index, follower } => true,
+        }
+    }
+}
+
+impl View for CRaftMessage {
+    type V = LRaftMessage;
+
+    open spec fn view(&self) -> LRaftMessage {
+        match self {
+            CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => LRaftMessage::RequestVote { term: *term as int, candidate: *candidate as int, last_log_index: *last_log_index as int, last_log_term: *last_log_term as int },
+            CRaftMessage::VoteResponse { term, granted, voter } => LRaftMessage::VoteResponse { term: *term as int, granted: *granted, voter: *voter as int },
+            CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => LRaftMessage::AppendEntries { term: *term as int, leader: *leader as int, prev_index: *prev_index as int, prev_term: *prev_term as int, value: *value as int, has_entry: *has_entry, leader_commit: *leader_commit as int },
+            CRaftMessage::AppendResponse { term, success, match_index, follower } => LRaftMessage::AppendResponse { term: *term as int, success: *success, match_index: *match_index as int, follower: *follower as int },
         }
     }
 }

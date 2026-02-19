@@ -3,16 +3,16 @@
 
 module Raft::raft {
     LInit(-, +);
-    LTimeout(+, -, +);
-    LGrantVote(+, -, +, +, +, +, +);
-    LReceiveVoteGranted(+, -, +, +);
-    LBecomeLeader(+, -, +);
-    LClientRequest(+, -, +, +);
-    LSendAppendEntries(+, -, +, +, +, +, +, +);
-    LFollowerAppendEntries(+, -, +, +);
-    LHandleAppendResponse(+, -, +, +, +);
-    LHandleAppendReject(+, -, +, +);
-    LAdvanceCommitIndex(+, -, +, +);
-    LStepDown(+, -, +, +);
+    LTimeout(+, -, +, -);
+    LGrantVote(+, -, +, +, +, +, +, -);
+    LReceiveVoteGranted(+, -, +, +, +, +, -);
+    LBecomeLeader(+, -, +, -);
+    LClientRequest(+, -, +, +, -);
+    LSendAppendEntries(+, -, +, +, +, +, +, +, -);
+    LFollowerAppendEntries(+, -, +, +, +, +, +, +, +, +, -);
+    LHandleAppendResponse(+, -, +, +, +, +, +, +, +, -);
+    LHandleAppendReject(+, -, +, +, +, +, +, +, -);
+    LAdvanceCommitIndex(+, -, +, +, -);
+    LStepDown(+, -, +, +, -);
     // LNext not transpiled (contains existential quantifiers)
 }

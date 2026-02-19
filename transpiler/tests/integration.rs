@@ -770,15 +770,15 @@ fn test_raft_annotation_parsing() {
     let timeout = funcs.get("LTimeout").expect("Should have LTimeout");
     assert_eq!(
         timeout.param_modes.len(),
-        3,
-        "LTimeout should have 3 params"
+        4,
+        "LTimeout should have 4 params (s, s_, c, sent_packets)"
     );
 
     let grant = funcs.get("LGrantVote").expect("Should have LGrantVote");
     assert_eq!(
         grant.param_modes.len(),
-        7,
-        "LGrantVote should have 7 params"
+        8,
+        "LGrantVote should have 8 params (s, s_, c, candidate_term, candidate_last_log_term, candidate_last_log_index, candidate_id, sent_packets)"
     );
 
     let send_ae = funcs
@@ -786,8 +786,8 @@ fn test_raft_annotation_parsing() {
         .expect("Should have LSendAppendEntries");
     assert_eq!(
         send_ae.param_modes.len(),
-        8,
-        "LSendAppendEntries should have 8 params"
+        9,
+        "LSendAppendEntries should have 9 params (s, s_, c, follower, entry_value, prev_log_index, prev_log_term, has_entry, sent_packets)"
     );
 }
 
@@ -3135,31 +3135,21 @@ fn test_scaffold_flag_injections_leader_election() {
 }
 
 #[test]
-fn test_scaffold_flag_injections_raft() {
+fn test_scaffold_no_flag_injections_raft() {
     let code = load_and_generate_scaffold(
         "../src/protocol/Raft/raft_transpile.toml",
         "Raft",
     );
-    // LGrantVote handler: RequestVote message fields
-    assert!(code.contains("self.state.msgs_request_vote = true;"),
-        "LGrantVote should inject msgs_request_vote flag");
-    assert!(code.contains("self.state.msgs_request_vote_term = term;"),
-        "LGrantVote should inject term field");
-    assert!(code.contains("self.state.msgs_request_vote_candidate = candidate_id;"),
-        "LGrantVote should inject candidate_id field");
-    // LFollowerAppendEntries handler: AppendEntries message fields
-    assert!(code.contains("self.state.msgs_append_entries = true;"),
-        "LFollowerAppendEntries should inject msgs_append_entries flag");
-    assert!(code.contains("self.state.msgs_append_entries_leader = leader_id;"),
-        "LFollowerAppendEntries should inject leader_id");
-    // LReceiveVoteGranted handler: VoteResponse message fields
-    assert!(code.contains("self.state.msgs_vote_response = true;"),
-        "LReceiveVoteGranted should inject msgs_vote_response flag");
-    // LHandleAppendResponse handler: AppendResponse message fields
-    assert!(code.contains("self.state.msgs_append_response = true;"),
-        "LHandleAppendResponse should inject msgs_append_response flag");
-    assert!(code.contains("self.state.msgs_append_response_follower = follower;"),
-        "LHandleAppendResponse should inject follower field");
+    assert!(!code.contains("Flag injection"),
+        "Raft scaffold should have no flag injection comments after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_request_vote"),
+        "Raft scaffold should not reference msgs_request_vote after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_vote_response"),
+        "Raft scaffold should not reference msgs_vote_response after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_append_entries"),
+        "Raft scaffold should not reference msgs_append_entries after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_append_response"),
+        "Raft scaffold should not reference msgs_append_response after sent_packets migration");
 }
 
 #[test]

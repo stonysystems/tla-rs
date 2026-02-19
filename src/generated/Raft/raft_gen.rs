@@ -88,28 +88,6 @@ ensures
         votes_granted: HashSet::new(),
         match_index: HashMap::new(),
         next_index: HashMap::new(),
-        msgs_request_vote: false,
-        msgs_request_vote_term: 0u64,
-        msgs_request_vote_candidate: 0u64,
-        msgs_request_vote_last_log_index: 0u64,
-        msgs_request_vote_last_log_term: 0u64,
-        msgs_vote_response: false,
-        msgs_vote_response_term: 0u64,
-        msgs_vote_response_granted: false,
-        msgs_vote_response_voter: 0u64,
-        msgs_append_entries: false,
-        msgs_append_entries_term: 0u64,
-        msgs_append_entries_leader: 0u64,
-        msgs_append_entries_prev_index: 0u64,
-        msgs_append_entries_prev_term: 0u64,
-        msgs_append_entries_value: 0u64,
-        msgs_append_entries_has_entry: false,
-        msgs_append_entries_leader_commit: 0u64,
-        msgs_append_response: false,
-        msgs_append_response_term: 0u64,
-        msgs_append_response_success: false,
-        msgs_append_response_match_index: 0u64,
-        msgs_append_response_follower: 0u64,
         role: CServerRole::Follower,
     };
     proof {
@@ -120,62 +98,46 @@ ensures
 
 }
 
-pub exec fn CTimeout(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CTimeout(s: &CState, c: &CConstants) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     (s.role is Follower || s.role is Candidate),
     s.current_term < u64::MAX,
 ensures
-    result.valid(),
-    LTimeout(s@, result@, c@),
+    result.0.valid(),
+    LTimeout(s@, result.0@, c@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
         let mut __votes_granted = clone_hashset(&HashSet::new());
         __votes_granted.insert(c.my_id.clone());
-        CState {
-            current_term: (s.current_term + 1),
-            has_voted: true,
-            voted_for: c.my_id.clone(),
-            log: clone_log(&s.log),
-            commit_index: s.commit_index.clone(),
-            votes_granted: __votes_granted,
-            match_index: s.match_index.clone(),
-            next_index: s.next_index.clone(),
-            msgs_request_vote: true,
-            msgs_request_vote_term: (s.current_term + 1),
-            msgs_request_vote_candidate: c.my_id.clone(),
-            msgs_request_vote_last_log_index: 0u64,
-            msgs_request_vote_last_log_term: 0u64,
-            msgs_vote_response: false,
-            msgs_vote_response_term: 0u64,
-            msgs_vote_response_granted: false,
-            msgs_vote_response_voter: 0u64,
-            msgs_append_entries: s.msgs_append_entries.clone(),
-            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-            msgs_append_response: s.msgs_append_response.clone(),
-            msgs_append_response_term: s.msgs_append_response_term.clone(),
-            msgs_append_response_success: s.msgs_append_response_success.clone(),
-            msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-            msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-            role: CServerRole::Candidate,
-        }
+        (CState {
+    current_term: (s.current_term + 1),
+    has_voted: true,
+    voted_for: c.my_id.clone(),
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: __votes_granted,
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+    role: CServerRole::Candidate,
+}, vec![CRaftMessage::RequestVote {
+    term: (s.current_term + 1),
+    candidate: c.my_id.clone(),
+    last_log_index: 0u64,
+    last_log_term: 0u64,
+}])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CGrantVote(s: &CState, c: &CConstants, candidate_term: &u64, candidate_last_log_term: &u64, candidate_last_log_index: &u64, candidate_id: &u64) -> (result: CState)
+pub exec fn CGrantVote(s: &CState, c: &CConstants, candidate_term: &u64, candidate_last_log_term: &u64, candidate_last_log_index: &u64, candidate_id: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -190,153 +152,103 @@ requires
                 && *candidate_last_log_index as int >= s.log@.len())
     }),
 ensures
-    result.valid(),
-    LGrantVote(s@, result@, c@, *candidate_term as int, *candidate_last_log_term as int, *candidate_last_log_index as int, *candidate_id as int),
+    result.0.valid(),
+    LGrantVote(s@, result.0@, c@, *candidate_term as int, *candidate_last_log_term as int, *candidate_last_log_index as int, *candidate_id as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-CState {
-        current_term: *candidate_term,
-        has_voted: true,
-        voted_for: *candidate_id,
-        log: clone_log(&s.log),
-        commit_index: s.commit_index.clone(),
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: s.match_index.clone(),
-        next_index: s.next_index.clone(),
-        msgs_vote_response: true,
-        msgs_vote_response_term: *candidate_term,
-        msgs_vote_response_granted: true,
-        msgs_vote_response_voter: c.my_id.clone(),
-        msgs_request_vote: s.msgs_request_vote.clone(),
-        msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-        msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-        msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-        msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-        msgs_append_entries: s.msgs_append_entries.clone(),
-        msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-        msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-        msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-        msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-        msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-        msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-        msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-        msgs_append_response: s.msgs_append_response.clone(),
-        msgs_append_response_term: s.msgs_append_response_term.clone(),
-        msgs_append_response_success: s.msgs_append_response_success.clone(),
-        msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-        msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-        role: CServerRole::Follower,
-    }
-}
-
-pub exec fn CReceiveVoteGranted(s: &CState, c: &CConstants, voter: &u64) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Candidate,
-    s.msgs_vote_response == true,
-    s.msgs_vote_response_granted == true,
-    c@.servers.contains(*voter as int),
-ensures
-    result.valid(),
-    LReceiveVoteGranted(s@, result@, c@, *voter as int),
-{
-    let result = {
-        let mut __votes_granted = clone_hashset(&s.votes_granted);
-        __votes_granted.insert(voter.clone());
-        CState {
-            current_term: s.current_term.clone(),
-            role: clone_role(&s.role),
-            has_voted: s.has_voted.clone(),
-            voted_for: s.voted_for.clone(),
-            log: clone_log(&s.log),
-            commit_index: s.commit_index.clone(),
-            votes_granted: __votes_granted,
-            match_index: s.match_index.clone(),
-            next_index: s.next_index.clone(),
-            msgs_request_vote: s.msgs_request_vote.clone(),
-            msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-            msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-            msgs_vote_response: s.msgs_vote_response.clone(),
-            msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-            msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-            msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-            msgs_append_entries: s.msgs_append_entries.clone(),
-            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-            msgs_append_response: s.msgs_append_response.clone(),
-            msgs_append_response_term: s.msgs_append_response_term.clone(),
-            msgs_append_response_success: s.msgs_append_response_success.clone(),
-            msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-            msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-        }
-    };
+    let result = (CState {
+    current_term: *candidate_term,
+    has_voted: true,
+    voted_for: *candidate_id,
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+    role: CServerRole::Follower,
+}, vec![CRaftMessage::VoteResponse {
+    term: *candidate_term,
+    granted: true,
+    voter: c.my_id.clone(),
+}]);
     proof {
-        broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CBecomeLeader(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CReceiveVoteGranted(s: &CState, c: &CConstants, vote_term: &u64, vote_granted: bool, voter: &u64) -> (result: (CState, Vec<CRaftMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Candidate,
+    vote_granted == true,
+    c@.servers.contains(*voter as int),
+ensures
+    result.0.valid(),
+    LReceiveVoteGranted(s@, result.0@, c@, *vote_term as int, vote_granted, *voter as int, result.1@.map(|i, p: CRaftMessage| p@)),
+{
+    let result = {
+        let mut __votes_granted = clone_hashset(&s.votes_granted);
+        __votes_granted.insert(voter.clone());
+        (CState {
+    current_term: s.current_term.clone(),
+    role: clone_role(&s.role),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: __votes_granted,
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+}, vec![])
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_log_map();
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
+    }
+    result
+
+}
+
+pub exec fn CBecomeLeader(s: &CState, c: &CConstants) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     s.role is Candidate,
     (s@.votes_granted.len() >= c.quorum_size),
 ensures
-    result.valid(),
-    LBecomeLeader(s@, result@, c@),
+    result.0.valid(),
+    LBecomeLeader(s@, result.0@, c@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-CState {
-        current_term: s.current_term.clone(),
-        has_voted: s.has_voted.clone(),
-        voted_for: s.voted_for.clone(),
-        log: clone_log(&s.log),
-        commit_index: s.commit_index.clone(),
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: HashMap::new(),
-        next_index: HashMap::new(),
-        msgs_request_vote: false,
-        msgs_request_vote_term: 0u64,
-        msgs_request_vote_candidate: 0u64,
-        msgs_request_vote_last_log_index: 0u64,
-        msgs_request_vote_last_log_term: 0u64,
-        msgs_vote_response: false,
-        msgs_vote_response_term: 0u64,
-        msgs_vote_response_granted: false,
-        msgs_vote_response_voter: 0u64,
-        msgs_append_entries: false,
-        msgs_append_entries_term: 0u64,
-        msgs_append_entries_leader: 0u64,
-        msgs_append_entries_prev_index: 0u64,
-        msgs_append_entries_prev_term: 0u64,
-        msgs_append_entries_value: 0u64,
-        msgs_append_entries_has_entry: false,
-        msgs_append_entries_leader_commit: 0u64,
-        msgs_append_response: false,
-        msgs_append_response_term: 0u64,
-        msgs_append_response_success: false,
-        msgs_append_response_match_index: 0u64,
-        msgs_append_response_follower: 0u64,
-        role: CServerRole::Leader,
+    let result = (CState {
+    current_term: s.current_term.clone(),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: HashMap::new(),
+    next_index: HashMap::new(),
+    role: CServerRole::Leader,
+}, vec![]);
+    proof {
+        lemma_empty_log_map();
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-pub exec fn CClientRequest(s: &CState, c: &CConstants, value: &u64) -> (result: CState)
+pub exec fn CClientRequest(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     s.role is Leader,
 ensures
-    result.valid(),
-    LClientRequest(s@, result@, c@, *value as int),
+    result.0.valid(),
+    LClientRequest(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
         let mut __log = clone_log(&s.log);
@@ -344,247 +256,179 @@ ensures
     term: s.current_term.clone(),
     value: *value,
 });
-        CState {
-            current_term: s.current_term.clone(),
-            role: clone_role(&s.role),
-            has_voted: s.has_voted.clone(),
-            voted_for: s.voted_for.clone(),
-            log: __log,
-            commit_index: s.commit_index.clone(),
-            votes_granted: clone_hashset(&s.votes_granted),
-            match_index: s.match_index.clone(),
-            next_index: s.next_index.clone(),
-            msgs_request_vote: s.msgs_request_vote.clone(),
-            msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-            msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-            msgs_vote_response: s.msgs_vote_response.clone(),
-            msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-            msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-            msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-            msgs_append_entries: s.msgs_append_entries.clone(),
-            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-            msgs_append_response: s.msgs_append_response.clone(),
-            msgs_append_response_term: s.msgs_append_response_term.clone(),
-            msgs_append_response_success: s.msgs_append_response_success.clone(),
-            msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-            msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-        }
+        (CState {
+    current_term: s.current_term.clone(),
+    role: clone_role(&s.role),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: __log,
+    commit_index: s.commit_index.clone(),
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+}, vec![])
     };
     proof {
+        lemma_empty_log_map();
         lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: CState)
+pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
 ensures
-    result.valid(),
-    LSendAppendEntries(s@, result@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry),
+    result.0.valid(),
+    LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-CState {
-        msgs_append_entries: true,
-        msgs_append_entries_term: s.current_term.clone(),
-        msgs_append_entries_leader: c.my_id.clone(),
-        msgs_append_entries_prev_index: *prev_log_index,
-        msgs_append_entries_prev_term: *prev_log_term,
-        msgs_append_entries_value: *entry_value,
-        msgs_append_entries_has_entry: has_entry.clone(),
-        msgs_append_entries_leader_commit: s.commit_index.clone(),
-        current_term: s.current_term.clone(),
-        role: clone_role(&s.role),
-        has_voted: s.has_voted.clone(),
-        voted_for: s.voted_for.clone(),
-        log: clone_log(&s.log),
-        commit_index: s.commit_index.clone(),
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: s.match_index.clone(),
-        next_index: s.next_index.clone(),
-        msgs_request_vote: s.msgs_request_vote.clone(),
-        msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-        msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-        msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-        msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-        msgs_vote_response: s.msgs_vote_response.clone(),
-        msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-        msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-        msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-        msgs_append_response: s.msgs_append_response.clone(),
-        msgs_append_response_term: s.msgs_append_response_term.clone(),
-        msgs_append_response_success: s.msgs_append_response_success.clone(),
-        msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-        msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-    }
-}
-
-pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, entry_value: &u64) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    s.msgs_append_entries == true,
-    (s.msgs_append_entries_term >= s.current_term),
-    s.log.len() < u64::MAX,
-ensures
-    result.valid(),
-    LFollowerAppendEntries(s@, result@, c@, *entry_value as int),
-{
-    let result = {
-        let mut __log = clone_log(&s.log);
-        if s.msgs_append_entries_has_entry {
-                        __log.push(CLogEntry {
-    term: s.msgs_append_entries_term.clone(),
+    let result = (CState {
+    current_term: s.current_term.clone(),
+    role: clone_role(&s.role),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+}, vec![CRaftMessage::AppendEntries {
+    term: s.current_term.clone(),
+    leader: c.my_id.clone(),
+    prev_index: *prev_log_index,
+    prev_term: *prev_log_term,
     value: *entry_value,
-});
-            
-
-        };
-        CState {
-            current_term: s.msgs_append_entries_term.clone(),
-            has_voted: if (s.msgs_append_entries_term > s.current_term) {
-                false
-            } else {
-                s.has_voted.clone()
-            },
-            voted_for: if (s.msgs_append_entries_term > s.current_term) {
-                0u64
-            } else {
-                s.voted_for.clone()
-            },
-            log: __log,
-            commit_index: if (s.msgs_append_entries_leader_commit > s.commit_index) {
-                s.msgs_append_entries_leader_commit.clone()
-            } else {
-                s.commit_index.clone()
-            },
-            votes_granted: if (s.msgs_append_entries_term > s.current_term) {
-                HashSet::new()
-            } else {
-                clone_hashset(&s.votes_granted)
-            },
-            match_index: s.match_index.clone(),
-            next_index: s.next_index.clone(),
-            msgs_append_response: true,
-            msgs_append_response_term: s.msgs_append_entries_term.clone(),
-            msgs_append_response_success: true,
-            msgs_append_response_match_index: if s.msgs_append_entries_has_entry {
-                ((s.log.len() as u64) + 1)
-            } else {
-                (s.log.len() as u64)
-            },
-            msgs_append_response_follower: c.my_id.clone(),
-            msgs_request_vote: s.msgs_request_vote.clone(),
-            msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-            msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-            msgs_vote_response: s.msgs_vote_response.clone(),
-            msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-            msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-            msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-            msgs_append_entries: s.msgs_append_entries.clone(),
-            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-            role: CServerRole::Follower,
-        }
-    };
+    has_entry: has_entry.clone(),
+    leader_commit: s.commit_index.clone(),
+}]);
     proof {
-        lemma_empty_set_map();
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.msgs_append_entries_term, value: *entry_value });
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CHandleAppendResponse(s: &CState, c: &CConstants, follower: &u64, new_match_index: &u64) -> (result: CState)
+pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    (*ae_term >= s.current_term),
+    s.log@.len() < u64::MAX as int,
+ensures
+    result.0.valid(),
+    LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
+{
+    let result = {
+        let mut __log = clone_log(&s.log);
+        if ae_has_entry {
+                        __log.push(CLogEntry {
+    term: *ae_term,
+    value: *ae_value,
+});
+            
+
+        };
+        (CState {
+    current_term: *ae_term,
+    has_voted: if (*ae_term > s.current_term) {
+        false
+    } else {
+        s.has_voted.clone()
+    },
+    voted_for: if (*ae_term > s.current_term) {
+        0u64
+    } else {
+        s.voted_for.clone()
+    },
+    log: __log,
+    commit_index: if (*ae_leader_commit > s.commit_index) {
+        *ae_leader_commit
+    } else {
+        s.commit_index.clone()
+    },
+    votes_granted: if (*ae_term > s.current_term) {
+        HashSet::new()
+    } else {
+        clone_hashset(&s.votes_granted)
+    },
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+    role: CServerRole::Follower,
+}, vec![CRaftMessage::AppendResponse {
+    term: *ae_term,
+    success: true,
+    match_index: if ae_has_entry {
+        ((s.log.len() as u64) + 1)
+    } else {
+        (s.log.len() as u64)
+    },
+    follower: c.my_id.clone(),
+}])
+    };
+    proof {
+        lemma_empty_set_map();
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: *ae_term, value: *ae_value });
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
+    }
+    result
+
+}
+
+pub exec fn CHandleAppendResponse(s: &CState, c: &CConstants, resp_term: &u64, resp_success: bool, resp_match_index: &u64, resp_follower: &u64, follower: &u64, new_match_index: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     s.role is Leader,
-    s.msgs_append_response == true,
-    s.msgs_append_response_success == true,
+    resp_success == true,
     c@.servers.contains(*follower as int),
     (*new_match_index as int >= 0),
     (*new_match_index as int <= s@.log.len()),
     *new_match_index < u64::MAX,
 ensures
-    result.valid(),
-    LHandleAppendResponse(s@, result@, c@, follower@, new_match_index@),
+    result.0.valid(),
+    LHandleAppendResponse(s@, result.0@, c@, *resp_term as int, resp_success, *resp_match_index as int, *resp_follower as int, follower@, new_match_index@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
         let mut __match_index = s.match_index.clone();
         __match_index.insert(follower.clone(), new_match_index.clone());
         let mut __next_index = s.next_index.clone();
         __next_index.insert(follower.clone(), Cu64_inc(&new_match_index));
-        CState {
-            current_term: s.current_term.clone(),
-            role: clone_role(&s.role),
-            has_voted: s.has_voted.clone(),
-            voted_for: s.voted_for.clone(),
-            log: clone_log(&s.log),
-            commit_index: s.commit_index.clone(),
-            votes_granted: clone_hashset(&s.votes_granted),
-            match_index: __match_index,
-            next_index: __next_index,
-            msgs_request_vote: s.msgs_request_vote.clone(),
-            msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-            msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-            msgs_vote_response: s.msgs_vote_response.clone(),
-            msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-            msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-            msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-            msgs_append_entries: s.msgs_append_entries.clone(),
-            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-            msgs_append_response: s.msgs_append_response.clone(),
-            msgs_append_response_term: s.msgs_append_response_term.clone(),
-            msgs_append_response_success: s.msgs_append_response_success.clone(),
-            msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-            msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-        }
+        (CState {
+    current_term: s.current_term.clone(),
+    role: clone_role(&s.role),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: __match_index,
+    next_index: __next_index,
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_log_map();
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CHandleAppendReject(s: &CState, c: &CConstants, follower: &u64) -> (result: CState)
+pub exec fn CHandleAppendReject(s: &CState, c: &CConstants, resp_term: &u64, resp_success: bool, resp_match_index: &u64, resp_follower: &u64, follower: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     s.role is Leader,
-    s.msgs_append_response == true,
-    s.msgs_append_response_success == false,
+    resp_success == false,
     c@.servers.contains(*follower as int),
 ensures
-    result.valid(),
-    LHandleAppendReject(s@, result@, c@, follower@),
+    result.0.valid(),
+    LHandleAppendReject(s@, result.0@, c@, *resp_term as int, resp_success, *resp_match_index as int, *resp_follower as int, follower@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
         let mut __next_index = s.next_index.clone();
@@ -593,48 +437,28 @@ ensures
             
 
         };
-        CState {
-            next_index: __next_index,
-            current_term: s.current_term.clone(),
-            role: clone_role(&s.role),
-            has_voted: s.has_voted.clone(),
-            voted_for: s.voted_for.clone(),
-            log: clone_log(&s.log),
-            commit_index: s.commit_index.clone(),
-            votes_granted: clone_hashset(&s.votes_granted),
-            match_index: s.match_index.clone(),
-            msgs_request_vote: s.msgs_request_vote.clone(),
-            msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-            msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-            msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-            msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-            msgs_vote_response: s.msgs_vote_response.clone(),
-            msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-            msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-            msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-            msgs_append_entries: s.msgs_append_entries.clone(),
-            msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-            msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-            msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-            msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-            msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-            msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-            msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-            msgs_append_response: s.msgs_append_response.clone(),
-            msgs_append_response_term: s.msgs_append_response_term.clone(),
-            msgs_append_response_success: s.msgs_append_response_success.clone(),
-            msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-            msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-        }
+        (CState {
+    next_index: __next_index,
+    current_term: s.current_term.clone(),
+    role: clone_role(&s.role),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: s.match_index.clone(),
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_log_map();
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u64) -> (result: CState)
+pub exec fn CAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -645,88 +469,52 @@ requires
     (*new_commit_index as int <= s@.log.len()),
     s.log@[*new_commit_index as int - 1].term == s.current_term,
 ensures
-    result.valid(),
-    LAdvanceCommitIndex(s@, result@, c@, *new_commit_index as int),
+    result.0.valid(),
+    LAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-CState {
-        current_term: s.current_term.clone(),
-        role: clone_role(&s.role),
-        has_voted: s.has_voted.clone(),
-        voted_for: s.voted_for.clone(),
-        log: clone_log(&s.log),
-        commit_index: *new_commit_index,
-        votes_granted: clone_hashset(&s.votes_granted),
-        match_index: s.match_index.clone(),
-        next_index: s.next_index.clone(),
-        msgs_request_vote: s.msgs_request_vote.clone(),
-        msgs_request_vote_term: s.msgs_request_vote_term.clone(),
-        msgs_request_vote_candidate: s.msgs_request_vote_candidate.clone(),
-        msgs_request_vote_last_log_index: s.msgs_request_vote_last_log_index.clone(),
-        msgs_request_vote_last_log_term: s.msgs_request_vote_last_log_term.clone(),
-        msgs_vote_response: s.msgs_vote_response.clone(),
-        msgs_vote_response_term: s.msgs_vote_response_term.clone(),
-        msgs_vote_response_granted: s.msgs_vote_response_granted.clone(),
-        msgs_vote_response_voter: s.msgs_vote_response_voter.clone(),
-        msgs_append_entries: s.msgs_append_entries.clone(),
-        msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-        msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-        msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-        msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-        msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-        msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-        msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-        msgs_append_response: s.msgs_append_response.clone(),
-        msgs_append_response_term: s.msgs_append_response_term.clone(),
-        msgs_append_response_success: s.msgs_append_response_success.clone(),
-        msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-        msgs_append_response_follower: s.msgs_append_response_follower.clone(),
+    let result = (CState {
+    current_term: s.current_term.clone(),
+    role: clone_role(&s.role),
+    has_voted: s.has_voted.clone(),
+    voted_for: s.voted_for.clone(),
+    log: clone_log(&s.log),
+    commit_index: *new_commit_index,
+    votes_granted: clone_hashset(&s.votes_granted),
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+}, vec![]);
+    proof {
+        lemma_empty_log_map();
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-pub exec fn CStepDown(s: &CState, c: &CConstants, new_term: &u64) -> (result: CState)
+pub exec fn CStepDown(s: &CState, c: &CConstants, new_term: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
     (*new_term > s.current_term),
 ensures
-    result.valid(),
-    LStepDown(s@, result@, c@, *new_term as int),
+    result.0.valid(),
+    LStepDown(s@, result.0@, c@, *new_term as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = CState {
-        current_term: *new_term,
-        has_voted: false,
-        voted_for: 0u64,
-        log: clone_log(&s.log),
-        commit_index: s.commit_index.clone(),
-        votes_granted: HashSet::new(),
-        match_index: s.match_index.clone(),
-        next_index: s.next_index.clone(),
-        msgs_request_vote: false,
-        msgs_request_vote_term: 0u64,
-        msgs_request_vote_candidate: 0u64,
-        msgs_request_vote_last_log_index: 0u64,
-        msgs_request_vote_last_log_term: 0u64,
-        msgs_vote_response: false,
-        msgs_vote_response_term: 0u64,
-        msgs_vote_response_granted: false,
-        msgs_vote_response_voter: 0u64,
-        msgs_append_entries: s.msgs_append_entries.clone(),
-        msgs_append_entries_term: s.msgs_append_entries_term.clone(),
-        msgs_append_entries_leader: s.msgs_append_entries_leader.clone(),
-        msgs_append_entries_prev_index: s.msgs_append_entries_prev_index.clone(),
-        msgs_append_entries_prev_term: s.msgs_append_entries_prev_term.clone(),
-        msgs_append_entries_value: s.msgs_append_entries_value.clone(),
-        msgs_append_entries_has_entry: s.msgs_append_entries_has_entry.clone(),
-        msgs_append_entries_leader_commit: s.msgs_append_entries_leader_commit.clone(),
-        msgs_append_response: s.msgs_append_response.clone(),
-        msgs_append_response_term: s.msgs_append_response_term.clone(),
-        msgs_append_response_success: s.msgs_append_response_success.clone(),
-        msgs_append_response_match_index: s.msgs_append_response_match_index.clone(),
-        msgs_append_response_follower: s.msgs_append_response_follower.clone(),
-        role: CServerRole::Follower,
-    };
+    let result = (CState {
+    current_term: *new_term,
+    has_voted: false,
+    voted_for: 0u64,
+    log: clone_log(&s.log),
+    commit_index: s.commit_index.clone(),
+    votes_granted: HashSet::new(),
+    match_index: s.match_index.clone(),
+    next_index: s.next_index.clone(),
+    role: CServerRole::Follower,
+}, vec![]);
     proof {
         lemma_empty_set_map();
+        lemma_empty_log_map();
+        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 

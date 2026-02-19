@@ -5450,8 +5450,8 @@ For each protocol P, in order:
 - [x] **18.2.4** PBFT (4 fields)
 - [x] **18.2.5** LeaderElection (8 fields → 6 msgs_* removed, 2 waiting_* kept as local state)
 - [x] **18.2.6** VerticalPaxos (9 msgs_* fields → sent_packets: Seq<LVPMessage>; 3 message types: Prepare{bal}, Promise{bal,v_bal,val}, Accept{bal,val})
-- [ ] **18.2.7** EPaxos (16 fields)
-- [ ] **18.2.8** Raft (22 fields, most complex)
+- [x] **18.2.7** EPaxos (16 msgs_* fields → sent_packets: Seq<LEPaxosMessage>; 5 message types: PreAccept{ballot,cmd,seq}, PreAcceptOk{sender,seq,conflict}, Accept{ballot,cmd,seq}, AcceptOk{sender}, Commit{cmd,seq})
+- [x] **18.2.8** Raft (22 msgs_* fields → sent_packets: Seq<LRaftMessage>; 4 message types: RequestVote{term,candidate,last_log_index,last_log_term}, VoteResponse{term,granted,voter}, AppendEntries{term,leader,prev_index,prev_term,value,has_entry,leader_commit}, AppendResponse{term,success,match_index,follower})
 
 ### 18.3 Estimated impact
 
@@ -5463,9 +5463,9 @@ For each protocol P, in order:
 
 ### 18.4 Acceptance criteria
 
-- [ ] All 8 protocols have zero `msgs_*` fields in LState
-- [ ] All 8 protocols use `sent_packets: Seq<LPMessage>` output parameter pattern
-- [ ] All generated code compiles and verifies with Verus (0 errors)
-- [ ] All transpiler tests pass (1,288+)
-- [ ] All host.rs implementations updated and compile
+- [x] All 8 protocols have zero `msgs_*` fields in LState
+- [x] All 8 protocols use `sent_packets: Seq<LPMessage>` output parameter pattern
+- [x] All generated code compiles and verifies with Verus (616 verified, 0 errors)
+- [x] All transpiler tests pass (1,288)
+- [x] All host.rs implementations updated and compile
 - [ ] All 10 protocols remain launchable as networked services
