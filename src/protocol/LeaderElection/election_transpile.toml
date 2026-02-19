@@ -22,6 +22,11 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LNodeState" = "CNodeState"
+"LElectionMessage" = "CElectionMessage"
+# Prevent C-prefixing of message variant names
+"Election" = "Election"
+"Answer" = "Answer"
+"Coordinator" = "Coordinator"
 
 [clone_strategy]
 "CState" = "external_body"
@@ -73,46 +78,43 @@ action_count = 7
 spec_name = "LDetectFailure"
 exec_name = "CDetectFailure"
 kind = "timer_driven"
-existential_params = [["node", "int"]]
+existential_params = [["node", "int"], ["sent_packets", "Seq<LElectionMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LStartElection"
 exec_name = "CStartElection"
 kind = "timer_driven"
-existential_params = [["node", "int"]]
+existential_params = [["node", "int"], ["sent_packets", "Seq<LElectionMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LSendAnswer"
 exec_name = "CSendAnswer"
 kind = "message_driven"
 message_variant = "Election"
-existential_params = [["node", "int"]]
+existential_params = [["node", "int"], ["sender", "int"], ["sent_packets", "Seq<LElectionMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveAnswer"
 exec_name = "CReceiveAnswer"
 kind = "message_driven"
 message_variant = "Answer"
-existential_params = [["node", "int"]]
-flag_injections = [["msgs_answer", "true"], ["msgs_answer_responder", "responder"]]
+existential_params = [["node", "int"], ["responder", "int"], ["sent_packets", "Seq<LElectionMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LSendCoordinator"
 exec_name = "CSendCoordinator"
 kind = "timer_driven"
-existential_params = [["node", "int"]]
+existential_params = [["node", "int"], ["sent_packets", "Seq<LElectionMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveCoordinator"
 exec_name = "CReceiveCoordinator"
 kind = "message_driven"
 message_variant = "Coordinator"
-existential_params = [["node", "int"]]
-flag_injections = [["msgs_coordinator", "true"], ["msgs_coordinator_leader", "leader"]]
+existential_params = [["node", "int"], ["leader", "int"], ["sent_packets", "Seq<LElectionMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LNodeFail"
 exec_name = "CNodeFail"
 kind = "timer_driven"
-existential_params = [["node", "int"]]
-
+existential_params = [["node", "int"], ["sent_packets", "Seq<LElectionMessage>"]]

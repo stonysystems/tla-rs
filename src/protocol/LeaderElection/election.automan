@@ -3,58 +3,28 @@
 
 module LeaderElection::election {
     // Initialize protocol state from constants
-    // s (output): initialized state
-    // c (input): protocol constants
     LInit(-, +);
 
-    // A node detects leader failure and starts an election
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): detecting node
-    LDetectFailure(+, -, +, +);
+    // s, s_, c, node, sent_packets
+    LDetectFailure(+, -, +, +, -);
 
-    // A node starts an election (general trigger)
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): node starting the election
-    LStartElection(+, -, +, +);
+    // s, s_, c, node, sent_packets
+    LStartElection(+, -, +, +, -);
 
-    // A higher-ID node responds with an Answer message
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): responding node
-    LSendAnswer(+, -, +, +);
+    // s, s_, c, node, sender, sent_packets
+    LSendAnswer(+, -, +, +, +, -);
 
-    // A node receives an Answer, stops its election
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): node receiving Answer
-    LReceiveAnswer(+, -, +, +);
+    // s, s_, c, node, responder, sent_packets
+    LReceiveAnswer(+, -, +, +, +, -);
 
-    // A node wins election and sends Coordinator message
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): winning node
-    LSendCoordinator(+, -, +, +);
+    // s, s_, c, node, sent_packets
+    LSendCoordinator(+, -, +, +, -);
 
-    // A node receives Coordinator and accepts new leader
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): receiving node
-    LReceiveCoordinator(+, -, +, +);
+    // s, s_, c, node, leader, sent_packets
+    LReceiveCoordinator(+, -, +, +, +, -);
 
-    // A node fails (crashes)
-    // s (input): current state
-    // s_ (output): new state
-    // c (input): constants
-    // node (input): failing node
-    LNodeFail(+, -, +, +);
+    // s, s_, c, node, sent_packets
+    LNodeFail(+, -, +, +, -);
 
     // LNext is not transpiled (contains existential quantifiers)
 }

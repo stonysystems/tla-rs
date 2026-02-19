@@ -5,7 +5,7 @@
 //! incoming network messages to the appropriate C* function calls and
 //! uses round-robin timer-driven actions for spontaneous transitions.
 //!
-//! The spec models a shared-state system with boolean message flags.
+//! The spec models a shared-state system with sent_packets output.
 //! This implementation translates that into explicit network messages:
 //! - Election messages are sent to all higher-ID peers
 //! - Answer messages are sent back to the election initiator
@@ -103,17 +103,6 @@ impl LeaderElectionHost {
     ) -> StepResult<LeaderElectionMessage> {
         let my_id = self.my_node_id;
 
-        // CSendAnswer requires:
-        //   s.alive.contains(node)
-        //   s.msgs_election == true
-        //   node > s.msgs_election_sender
-        //
-        // We simulate having received the Election message by updating
-        // the shared-state flags to reflect the message content.
-        // First, set the election message flags so the guard can be checked.
-        self.state.msgs_election = true;
-        self.state.msgs_election_sender = sender;
-
         // Guard: we must be alive and have higher ID than sender
         if !self.state.alive.contains(&my_id) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
@@ -123,8 +112,9 @@ impl LeaderElectionHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // All CSendAnswer preconditions are met: alive, msgs_election, my_id > sender
-        self.state = election_gen::CSendAnswer(&self.state, &config.constants, &my_id);
+        // All CSendAnswer preconditions met: alive, my_id > sender
+        let (new_state, _sent) = election_gen::CSendAnswer(&self.state, &config.constants, &my_id, &sender);
+        self.state = new_state;
 
         // Send Answer back to the sender to suppress their election
         if (sender as usize) < config.peers.len() {
@@ -145,7 +135,6 @@ impl LeaderElectionHost {
     ///
     /// CReceiveAnswer requires:
     ///   s.alive.contains(node)
-    ///   s.msgs_answer == true
     ///   s.waiting_answer == true
     ///   s.waiting_node == node
     ///
@@ -154,13 +143,9 @@ impl LeaderElectionHost {
     fn handle_answer(
         &mut self,
         config: &LeaderElectionConfig,
-        _responder: u64,
+        responder: u64,
     ) -> StepResult<LeaderElectionMessage> {
         let my_id = self.my_node_id;
-
-        // Set the answer flags to reflect the received message
-        self.state.msgs_answer = true;
-        self.state.msgs_answer_responder = _responder;
 
         // Check all guards for CReceiveAnswer
         if !self.state.alive.contains(&my_id) {
@@ -171,9 +156,10 @@ impl LeaderElectionHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = election_gen::CReceiveAnswer(
-            &self.state, &config.constants, &my_id,
+        let (new_state, _sent) = election_gen::CReceiveAnswer(
+            &self.state, &config.constants, &my_id, &responder,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -182,7 +168,6 @@ impl LeaderElectionHost {
     ///
     /// CReceiveCoordinator requires:
     ///   s.alive.contains(node)
-    ///   s.msgs_coordinator == true
     ///
     /// The new leader is announced; we accept it.
     fn handle_coordinator(
@@ -192,18 +177,15 @@ impl LeaderElectionHost {
     ) -> StepResult<LeaderElectionMessage> {
         let my_id = self.my_node_id;
 
-        // Set the coordinator flags to reflect the received message
-        self.state.msgs_coordinator = true;
-        self.state.msgs_coordinator_leader = leader;
-
         // Check guard for CReceiveCoordinator
         if !self.state.alive.contains(&my_id) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = election_gen::CReceiveCoordinator(
-            &self.state, &config.constants, &my_id,
+        let (new_state, _sent) = election_gen::CReceiveCoordinator(
+            &self.state, &config.constants, &my_id, &leader,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -258,9 +240,10 @@ impl LeaderElectionHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = election_gen::CStartElection(
+        let (new_state, _sent) = election_gen::CStartElection(
             &self.state, &config.constants, &my_id,
         );
+        self.state = new_state;
 
         // Send Election message to all nodes with higher IDs
         let higher_peers: Vec<EndPoint> = config.peers.iter()
@@ -292,7 +275,6 @@ impl LeaderElectionHost {
     ///   s.electing.contains(node)
     ///   s.waiting_answer == true
     ///   s.waiting_node == node
-    ///   s.msgs_answer == false
     ///
     /// In a real system, the "no answer received" condition is approximated
     /// by a timeout: if we sent Election messages and received no Answer
@@ -312,14 +294,11 @@ impl LeaderElectionHost {
         if !self.state.waiting_answer || self.state.waiting_node != my_id {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
-        if self.state.msgs_answer {
-            // An answer is pending; we should process it first (handle_answer).
-            return StepResult { ok: true, outbound: GenericOutbound::None };
-        }
 
-        self.state = election_gen::CSendCoordinator(
+        let (new_state, _sent) = election_gen::CSendCoordinator(
             &self.state, &config.constants, &my_id,
         );
+        self.state = new_state;
 
         // Broadcast Coordinator message to all peers
         let all_peers: Vec<EndPoint> = config.peers.iter()
@@ -343,18 +322,6 @@ impl LeaderElectionHost {
     ///   s.alive.contains(node)
     ///   s.has_leader == true
     ///   !s.alive.contains(s.leader)
-    ///
-    /// In a distributed system, we cannot directly observe another node's
-    /// liveness. We use a heuristic: the framework's timeout acts as a
-    /// leader heartbeat timeout. If we have a leader but the timer fires
-    /// repeatedly without hearing from it, we treat the leader as failed
-    /// by removing it from our local alive set, then triggering the
-    /// CDetectFailure action.
-    ///
-    /// Note: The spec's `!s.alive.contains(s.leader)` guard requires the
-    /// leader to already be absent from the alive set. In a distributed
-    /// model, this means we need to have previously marked the leader as
-    /// failed (via CNodeFail or local timeout heuristic).
     fn try_detect_failure(
         &mut self,
         config: &LeaderElectionConfig,
@@ -380,9 +347,10 @@ impl LeaderElectionHost {
         }
 
         // Leader is not in alive set: precondition satisfied.
-        self.state = election_gen::CDetectFailure(
+        let (new_state, _sent) = election_gen::CDetectFailure(
             &self.state, &config.constants, &my_id,
         );
+        self.state = new_state;
 
         // Send Election message to all higher-ID nodes
         let higher_peers: Vec<EndPoint> = config.peers.iter()

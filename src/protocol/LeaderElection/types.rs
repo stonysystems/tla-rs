@@ -8,8 +8,14 @@ verus! {
         Leader,      // Elected as leader
     }
 
+    /// Bully Leader Election protocol network messages (spec-level).
+    pub enum LElectionMessage {
+        Election { sender: int },
+        Answer { responder: int },
+        Coordinator { leader: int },
+    }
+
     /// Global protocol state for Bully Leader Election
-    /// Uses boolean flags for messages and state tracking
     pub struct LState {
         pub electing: Set<int>,       // Set of nodes currently in election
         pub has_leader: bool,         // Whether there is a current leader
@@ -17,14 +23,7 @@ verus! {
         pub alive: Set<int>,          // Set of alive nodes
         pub has_highest: bool,        // Whether any node has been heard
         pub highest_heard: int,       // Highest node ID heard (valid only if has_highest)
-        // Message flags for Bully algorithm
-        pub msgs_election: bool,      // An Election message is pending
-        pub msgs_election_sender: int, // Sender of the Election message
-        pub msgs_answer: bool,        // An Answer message is pending
-        pub msgs_answer_responder: int, // Responder in the Answer message
-        pub msgs_coordinator: bool,   // A Coordinator message is pending
-        pub msgs_coordinator_leader: int, // Leader announced in Coordinator
-        // Election timeout tracking
+        // Election timeout tracking (local state, not message flags)
         pub waiting_answer: bool,     // Node is waiting for an Answer
         pub waiting_node: int,        // Which node is waiting for Answer
     }

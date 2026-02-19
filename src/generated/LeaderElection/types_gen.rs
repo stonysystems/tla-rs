@@ -16,12 +16,6 @@ pub struct CState {
     pub alive: HashSet<u64>,
     pub has_highest: bool,
     pub highest_heard: u64,
-    pub msgs_election: bool,
-    pub msgs_election_sender: u64,
-    pub msgs_answer: bool,
-    pub msgs_answer_responder: u64,
-    pub msgs_coordinator: bool,
-    pub msgs_coordinator_leader: u64,
     pub waiting_answer: bool,
     pub waiting_node: u64,
 }
@@ -52,12 +46,6 @@ impl View for CState {
             alive: self.alive@.map(|x: u64| x as int),
             has_highest: self.has_highest,
             highest_heard: self.highest_heard as int,
-            msgs_election: self.msgs_election,
-            msgs_election_sender: self.msgs_election_sender as int,
-            msgs_answer: self.msgs_answer,
-            msgs_answer_responder: self.msgs_answer_responder as int,
-            msgs_coordinator: self.msgs_coordinator,
-            msgs_coordinator_leader: self.msgs_coordinator_leader as int,
             waiting_answer: self.waiting_answer,
             waiting_node: self.waiting_node as int,
         }
@@ -120,6 +108,41 @@ impl View for CNodeState {
             CNodeState::Normal => LNodeState::Normal,
             CNodeState::Election => LNodeState::Election,
             CNodeState::Leader => LNodeState::Leader,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CElectionMessage {
+    Election {
+        sender: u64,
+    },
+    Answer {
+        responder: u64,
+    },
+    Coordinator {
+        leader: u64,
+    },
+}
+
+impl CElectionMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CElectionMessage::Election { sender } => true,
+            CElectionMessage::Answer { responder } => true,
+            CElectionMessage::Coordinator { leader } => true,
+        }
+    }
+}
+
+impl View for CElectionMessage {
+    type V = LElectionMessage;
+
+    open spec fn view(&self) -> LElectionMessage {
+        match self {
+            CElectionMessage::Election { sender } => LElectionMessage::Election { sender: *sender as int },
+            CElectionMessage::Answer { responder } => LElectionMessage::Answer { responder: *responder as int },
+            CElectionMessage::Coordinator { leader } => LElectionMessage::Coordinator { leader: *leader as int },
         }
     }
 }

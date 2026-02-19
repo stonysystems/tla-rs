@@ -3123,19 +3123,15 @@ fn test_scaffold_flag_injections_leader_election() {
         "../src/protocol/LeaderElection/election_transpile.toml",
         "LeaderElection",
     );
-    // LReceiveAnswer handler should inject answer message fields
-    assert!(code.contains("self.state.msgs_answer = true;"),
-        "LReceiveAnswer should inject msgs_answer flag");
-    assert!(code.contains("self.state.msgs_answer_responder = responder;"),
-        "LReceiveAnswer should inject msgs_answer_responder");
-    // LReceiveCoordinator handler should inject coordinator message fields
-    assert!(code.contains("self.state.msgs_coordinator = true;"),
-        "LReceiveCoordinator should inject msgs_coordinator flag");
-    assert!(code.contains("self.state.msgs_coordinator_leader = leader;"),
-        "LReceiveCoordinator should inject msgs_coordinator_leader");
-    // Verify injection comment present
-    assert!(code.contains("Flag injection"),
-        "LeaderElection scaffold should have flag injection comments");
+    // After sent_packets migration, LeaderElection no longer has flag_injections.
+    // CReceiveAnswer now takes responder as explicit parameter.
+    // CReceiveCoordinator now takes leader as explicit parameter.
+    assert!(!code.contains("Flag injection"),
+        "LeaderElection scaffold should have no flag injection comments after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_answer"),
+        "LeaderElection scaffold should not reference msgs_answer after sent_packets migration");
+    assert!(!code.contains("self.state.msgs_coordinator"),
+        "LeaderElection scaffold should not reference msgs_coordinator after sent_packets migration");
 }
 
 #[test]

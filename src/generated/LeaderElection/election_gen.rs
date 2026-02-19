@@ -55,6 +55,20 @@ ensures
     }
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -70,12 +84,6 @@ ensures
         alive: clone_hashset(&c.nodes),
         has_highest: false,
         highest_heard: 0u64,
-        msgs_election: false,
-        msgs_election_sender: 0u64,
-        msgs_answer: false,
-        msgs_answer_responder: 0u64,
-        msgs_coordinator: false,
-        msgs_coordinator_leader: 0u64,
         waiting_answer: false,
         waiting_node: 0u64,
     };
@@ -86,7 +94,7 @@ ensures
 
 }
 
-pub exec fn CDetectFailure(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CDetectFailure(s: &CState, c: &CConstants, node: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -94,154 +102,139 @@ requires
     s.has_leader == true,
     !s@.alive.contains(s@.leader),
 ensures
-    result.valid(),
-    LDetectFailure(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LDetectFailure(s@, result.0@, c@, *node as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
         __electing.insert(node.clone());
-        CState {
-            electing: __electing,
-            msgs_election: true,
-            msgs_election_sender: *node,
-            waiting_answer: true,
-            waiting_node: *node,
-            has_leader: s.has_leader.clone(),
-            leader: s.leader.clone(),
-            alive: clone_hashset(&s.alive),
-            has_highest: s.has_highest.clone(),
-            highest_heard: s.highest_heard.clone(),
-            msgs_answer: s.msgs_answer.clone(),
-            msgs_answer_responder: s.msgs_answer_responder.clone(),
-            msgs_coordinator: s.msgs_coordinator.clone(),
-            msgs_coordinator_leader: s.msgs_coordinator_leader.clone(),
-        }
+        (CState {
+    electing: __electing,
+    waiting_answer: true,
+    waiting_node: *node,
+    has_leader: s.has_leader.clone(),
+    leader: s.leader.clone(),
+    alive: clone_hashset(&s.alive),
+    has_highest: s.has_highest.clone(),
+    highest_heard: s.highest_heard.clone(),
+}, vec![CElectionMessage::Election {
+    sender: *node,
+}])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CStartElection(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CStartElection(s: &CState, c: &CConstants, node: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
 ensures
-    result.valid(),
-    LStartElection(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LStartElection(s@, result.0@, c@, *node as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
         __electing.insert(node.clone());
-        CState {
-            electing: __electing,
-            has_leader: false,
-            leader: 0u64,
-            msgs_election: true,
-            msgs_election_sender: *node,
-            waiting_answer: true,
-            waiting_node: *node,
-            alive: clone_hashset(&s.alive),
-            has_highest: s.has_highest.clone(),
-            highest_heard: s.highest_heard.clone(),
-            msgs_answer: s.msgs_answer.clone(),
-            msgs_answer_responder: s.msgs_answer_responder.clone(),
-            msgs_coordinator: s.msgs_coordinator.clone(),
-            msgs_coordinator_leader: s.msgs_coordinator_leader.clone(),
-        }
+        (CState {
+    electing: __electing,
+    has_leader: false,
+    leader: 0u64,
+    waiting_answer: true,
+    waiting_node: *node,
+    alive: clone_hashset(&s.alive),
+    has_highest: s.has_highest.clone(),
+    highest_heard: s.highest_heard.clone(),
+}, vec![CElectionMessage::Election {
+    sender: *node,
+}])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CSendAnswer(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CSendAnswer(s: &CState, c: &CConstants, node: &u64, sender: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
-    s.msgs_election == true,
-    (*node > s.msgs_election_sender),
+    (*node > *sender),
 ensures
-    result.valid(),
-    LSendAnswer(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LSendAnswer(s@, result.0@, c@, *node as int, *sender as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
         __electing.insert(node.clone());
-        CState {
-            msgs_answer: true,
-            msgs_answer_responder: *node,
-            electing: __electing,
-            has_highest: true,
-            highest_heard: if (!s.has_highest || (*node > s.highest_heard)) {
-                *node
-            } else {
-                s.highest_heard.clone()
-            },
-            has_leader: s.has_leader.clone(),
-            leader: s.leader.clone(),
-            alive: clone_hashset(&s.alive),
-            msgs_election: s.msgs_election.clone(),
-            msgs_election_sender: s.msgs_election_sender.clone(),
-            msgs_coordinator: s.msgs_coordinator.clone(),
-            msgs_coordinator_leader: s.msgs_coordinator_leader.clone(),
-            waiting_answer: s.waiting_answer.clone(),
-            waiting_node: s.waiting_node.clone(),
-        }
+        (CState {
+    electing: __electing,
+    has_highest: true,
+    highest_heard: if (!s.has_highest || (*node > s.highest_heard)) {
+        *node
+    } else {
+        s.highest_heard.clone()
+    },
+    has_leader: s.has_leader.clone(),
+    leader: s.leader.clone(),
+    alive: clone_hashset(&s.alive),
+    waiting_answer: s.waiting_answer.clone(),
+    waiting_node: s.waiting_node.clone(),
+}, vec![CElectionMessage::Answer {
+    responder: *node,
+}])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CReceiveAnswer(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CReceiveAnswer(s: &CState, c: &CConstants, node: &u64, responder: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
-    s.msgs_answer == true,
     s.waiting_answer == true,
     s.waiting_node == *node,
 ensures
-    result.valid(),
-    LReceiveAnswer(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LReceiveAnswer(s@, result.0@, c@, *node as int, *responder as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
         __electing.remove(&node);
-        CState {
-            waiting_answer: false,
-            waiting_node: 0u64,
-            electing: __electing,
-            msgs_answer: false,
-            msgs_answer_responder: 0u64,
-            has_leader: s.has_leader.clone(),
-            leader: s.leader.clone(),
-            alive: clone_hashset(&s.alive),
-            has_highest: s.has_highest.clone(),
-            highest_heard: s.highest_heard.clone(),
-            msgs_election: s.msgs_election.clone(),
-            msgs_election_sender: s.msgs_election_sender.clone(),
-            msgs_coordinator: s.msgs_coordinator.clone(),
-            msgs_coordinator_leader: s.msgs_coordinator_leader.clone(),
-        }
+        (CState {
+    waiting_answer: false,
+    waiting_node: 0u64,
+    electing: __electing,
+    has_leader: s.has_leader.clone(),
+    leader: s.leader.clone(),
+    alive: clone_hashset(&s.alive),
+    has_highest: s.has_highest.clone(),
+    highest_heard: s.highest_heard.clone(),
+}, vec![])
     };
     proof {
         lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CSendCoordinator(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CSendCoordinator(s: &CState, c: &CConstants, node: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -249,149 +242,112 @@ requires
     s@.electing.contains(*node as int),
     s.waiting_answer == true,
     s.waiting_node == *node,
-    s.msgs_answer == false,
 ensures
-    result.valid(),
-    LSendCoordinator(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LSendCoordinator(s@, result.0@, c@, *node as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
         __electing.remove(&node);
-        CState {
-            has_leader: true,
-            leader: *node,
-            electing: __electing,
-            msgs_coordinator: true,
-            msgs_coordinator_leader: *node,
-            waiting_answer: false,
-            waiting_node: 0u64,
-            msgs_election: false,
-            msgs_election_sender: 0u64,
-            alive: clone_hashset(&s.alive),
-            has_highest: s.has_highest.clone(),
-            highest_heard: s.highest_heard.clone(),
-            msgs_answer: s.msgs_answer.clone(),
-            msgs_answer_responder: s.msgs_answer_responder.clone(),
-        }
+        (CState {
+    has_leader: true,
+    leader: *node,
+    electing: __electing,
+    waiting_answer: false,
+    waiting_node: 0u64,
+    alive: clone_hashset(&s.alive),
+    has_highest: s.has_highest.clone(),
+    highest_heard: s.highest_heard.clone(),
+}, vec![CElectionMessage::Coordinator {
+    leader: *node,
+}])
     };
     proof {
         lemma_set_map_remove_commute(s.electing@, *node);
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CReceiveCoordinator(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CReceiveCoordinator(s: &CState, c: &CConstants, node: &u64, leader: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
-    s.msgs_coordinator == true,
 ensures
-    result.valid(),
-    LReceiveCoordinator(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LReceiveCoordinator(s@, result.0@, c@, *node as int, *leader as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __electing = clone_hashset(&s.electing);
         __electing.remove(&node);
-        CState {
-            has_leader: true,
-            leader: s.msgs_coordinator_leader.clone(),
-            electing: __electing,
-            msgs_coordinator: false,
-            msgs_coordinator_leader: 0u64,
-            alive: clone_hashset(&s.alive),
-            has_highest: s.has_highest.clone(),
-            highest_heard: s.highest_heard.clone(),
-            msgs_election: s.msgs_election.clone(),
-            msgs_election_sender: s.msgs_election_sender.clone(),
-            msgs_answer: s.msgs_answer.clone(),
-            msgs_answer_responder: s.msgs_answer_responder.clone(),
-            waiting_answer: s.waiting_answer.clone(),
-            waiting_node: s.waiting_node.clone(),
-        }
+        (CState {
+    has_leader: true,
+    leader: *leader,
+    electing: __electing,
+    alive: clone_hashset(&s.alive),
+    has_highest: s.has_highest.clone(),
+    highest_heard: s.highest_heard.clone(),
+    waiting_answer: s.waiting_answer.clone(),
+    waiting_node: s.waiting_node.clone(),
+}, vec![])
     };
     proof {
         lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CNodeFail(s: &CState, c: &CConstants, node: &u64) -> (result: CState)
+pub exec fn CNodeFail(s: &CState, c: &CConstants, node: &u64) -> (result: (CState, Vec<CElectionMessage>))
 requires
     s.valid(),
     c.valid(),
     s@.alive.contains(*node as int),
 ensures
-    result.valid(),
-    LNodeFail(s@, result@, c@, *node as int),
+    result.0.valid(),
+    LNodeFail(s@, result.0@, c@, *node as int, result.1@.map(|i, p: CElectionMessage| p@)),
 {
     let result = {
         let mut __alive = clone_hashset(&s.alive);
         __alive.remove(&node);
         let mut __electing = clone_hashset(&s.electing);
         __electing.remove(&node);
-        CState {
-            alive: __alive,
-            electing: __electing,
-            has_leader: if (s.has_leader && (s.leader == *node)) {
-                false
-            } else {
-                s.has_leader.clone()
-            },
-            leader: if (s.has_leader && (s.leader == *node)) {
-                0u64
-            } else {
-                s.leader.clone()
-            },
-            msgs_election: if (s.msgs_election && (s.msgs_election_sender == *node)) {
-                false
-            } else {
-                s.msgs_election.clone()
-            },
-            msgs_election_sender: if (s.msgs_election && (s.msgs_election_sender == *node)) {
-                0u64
-            } else {
-                s.msgs_election_sender.clone()
-            },
-            msgs_answer: if (s.msgs_answer && (s.msgs_answer_responder == *node)) {
-                false
-            } else {
-                s.msgs_answer.clone()
-            },
-            msgs_answer_responder: if (s.msgs_answer && (s.msgs_answer_responder == *node)) {
-                0u64
-            } else {
-                s.msgs_answer_responder.clone()
-            },
-            msgs_coordinator: if (s.msgs_coordinator && (s.msgs_coordinator_leader == *node)) {
-                false
-            } else {
-                s.msgs_coordinator.clone()
-            },
-            msgs_coordinator_leader: if (s.msgs_coordinator && (s.msgs_coordinator_leader == *node)) {
-                0u64
-            } else {
-                s.msgs_coordinator_leader.clone()
-            },
-            waiting_answer: if (s.waiting_answer && (s.waiting_node == *node)) {
-                false
-            } else {
-                s.waiting_answer.clone()
-            },
-            waiting_node: if (s.waiting_answer && (s.waiting_node == *node)) {
-                0u64
-            } else {
-                s.waiting_node.clone()
-            },
-            has_highest: s.has_highest.clone(),
-            highest_heard: s.highest_heard.clone(),
-        }
+        (CState {
+    alive: __alive,
+    electing: __electing,
+    has_leader: if (s.has_leader && (s.leader == *node)) {
+        false
+    } else {
+        s.has_leader.clone()
+    },
+    leader: if (s.has_leader && (s.leader == *node)) {
+        0u64
+    } else {
+        s.leader.clone()
+    },
+    waiting_answer: if (s.waiting_answer && (s.waiting_node == *node)) {
+        false
+    } else {
+        s.waiting_answer.clone()
+    },
+    waiting_node: if (s.waiting_answer && (s.waiting_node == *node)) {
+        0u64
+    } else {
+        s.waiting_node.clone()
+    },
+    has_highest: s.has_highest.clone(),
+    highest_heard: s.highest_heard.clone(),
+}, vec![])
     };
     proof {
         lemma_set_map_remove_commute(s.alive@, *node);
         lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
     }
     result
 
