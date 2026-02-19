@@ -467,7 +467,7 @@ impl CProposer{
         && opn < self.constants.all.params.max_integer_val // CLtUpperBound
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerInit(c : CReplicaConstants)->(result_CProposerInit:CProposer)
     requires
         c.valid(),
@@ -506,7 +506,7 @@ impl CProposer{
         p
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerProcessRequest(&mut self, packet:CPacket)
     requires
         old(self).valid(),
@@ -831,7 +831,7 @@ impl CProposer{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerProcess1b(&mut self, pkt:CPacket)
         requires
             old(self).valid(),
@@ -1127,7 +1127,7 @@ impl CProposer{
     }
 
 
-    // #[verifier(external_body)]
+
     pub fn CProposerNominateNewValueAndSend2a(&mut self, clock: u64, log_truncation_point: COperationNumber) -> (result_CProposerNominateNewValueAndSend2a:OutboundPackets)
         requires
             old(self).valid(),
@@ -1253,7 +1253,7 @@ impl CProposer{
         outboundpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerNominateOldValueAndSend2a(&mut self, log_truncation_point:COperationNumber) -> (sent_packets:OutboundPackets)
         requires
             old(self).valid(),
@@ -1508,7 +1508,7 @@ impl CProposer{
         candidateOpn
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerProcessHeartbeat(&mut self, p:CPacket, clock:u64)
         requires
             old(self).valid(),
@@ -1543,7 +1543,7 @@ impl CProposer{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerCheckForViewTimeout(& mut self, clock:u64)
         requires
             old(self).valid(),
@@ -1555,7 +1555,7 @@ impl CProposer{
         CElectionState::CElectionStateCheckForViewTimeout(&mut self.election_state, clock);
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerCheckForQuorumOfViewSuspicions(&mut self, clock:u64)
         requires
             old(self).valid(),
@@ -1585,7 +1585,7 @@ impl CProposer{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CProposerResetViewTimerDueToExecution(&mut self, val:&CRequestBatch)
         requires
             old(self).valid(),

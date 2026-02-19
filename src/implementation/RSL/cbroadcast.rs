@@ -62,7 +62,6 @@ verus! {
             }
         }
 
-        // #[verifier(external_body)]
         pub fn BuildBroadcastToEveryone(config:&CConfiguration, my_index: u64, msg: CMessage) -> (res:Self)
         requires
             config.valid(),
@@ -149,7 +148,6 @@ verus! {
         }
     }
 
-    // #[verifier(external_body)]
     pub proof fn lemma_BuildBroadcast_ensures(src:AbstractEndPoint, dsts:Seq<AbstractEndPoint>, m:RslMessage)
         ensures
             ({

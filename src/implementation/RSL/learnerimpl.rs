@@ -22,7 +22,7 @@ verus! {
 
     impl CLearner
     {
-        // #[verifier(external_body)]
+
         pub fn CLearnerInit(c:CReplicaConstants) -> (clearner_init_result:Self)
         requires c.valid()
         ensures
@@ -154,7 +154,7 @@ verus! {
         }
 
 
-        // #[verifier(external_body)]
+
         pub fn CLearnerProcess2b(&mut self, packet: CPacket)
             requires
                 old(self).valid(),
@@ -338,7 +338,7 @@ verus! {
 
         }
 
-        // #[verifier(external_body)]
+
         pub fn CLearnerForgetDecision(&mut self, opn:COperationNumber)
             requires
                 old(self).valid(),
@@ -403,7 +403,7 @@ verus! {
 
         }
 
-        // #[verifier(external_body)]
+
         pub fn CLearnerForgetOperationsBefore(&mut self, ops_complete:COperationNumber)
             requires
                 old(self).valid(),

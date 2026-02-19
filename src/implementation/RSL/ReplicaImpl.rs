@@ -32,7 +32,7 @@ verus! {
 
 impl CReplica{
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaInit(c: CReplicaConstants) -> (result: Self)
         requires
             c.valid()
@@ -51,7 +51,7 @@ impl CReplica{
         s
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessInvalid(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -74,7 +74,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessRequest(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -185,7 +185,7 @@ impl CReplica{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcess1a(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -245,7 +245,7 @@ impl CReplica{
         println!("{}", s);
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcess1b(&mut self, received_packet:CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -324,7 +324,7 @@ impl CReplica{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessStartingPhase2(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -350,7 +350,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcess2a(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -409,7 +409,7 @@ impl CReplica{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcess2b(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -459,7 +459,7 @@ impl CReplica{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessReply(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -483,7 +483,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessAppStateSupply(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -527,7 +527,7 @@ impl CReplica{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessAppStateRequest(&mut self, received_packet: CPacket ) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -553,7 +553,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextProcessHeartbeat(&mut self, received_packet: CPacket ,clock: u64) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -581,7 +581,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&mut self) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -599,7 +599,7 @@ impl CReplica{
         res
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextSpontaneousMaybeEnterPhase2(&mut self) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -617,7 +617,7 @@ impl CReplica{
         res
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextSpontaneousMaybeMakeDecision(&mut self) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -710,7 +710,7 @@ impl CReplica{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextSpontaneousMaybeExecute(&mut self) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -752,7 +752,7 @@ impl CReplica{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextReadClockMaybeSendHeartbeat(&mut self, clock: u64) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -795,7 +795,7 @@ impl CReplica{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextReadClockCheckForViewTimeout(&mut self, clock: u64) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -818,7 +818,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&mut self, clock: u64) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -841,7 +841,7 @@ impl CReplica{
         outpackets
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&mut self) -> (res:OutboundPackets)
         requires
             old(self).valid()
@@ -987,7 +987,7 @@ impl CReplica{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CReplicaNextReadClockMaybeNominateValueAndSend2a(&mut self, clock: u64) -> (res: OutboundPackets)
         requires
             old(self).valid(),

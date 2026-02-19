@@ -23,7 +23,7 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
-    // #[verifier::external_body]
+
     pub proof fn lemma_2bMessageHasCorresponding2aMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -146,7 +146,7 @@ verus! {
         }
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_ActionThatOverwritesVoteWithSameBallotDoesntChangeValue(
         b:Behavior<RslState>,
         c:LConstants,
@@ -215,7 +215,7 @@ verus! {
         }
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_VoteWithOpnImplies2aSent(
         b:Behavior<RslState>,
         c:LConstants,
@@ -319,7 +319,7 @@ verus! {
         p
     }
 
-    // #[verifier::external_body]
+
     #[verifier::rlimit(100)]
     pub proof fn lemma_2bMessageImplicationsForCAcceptor(
         b: Behavior<RslState>,

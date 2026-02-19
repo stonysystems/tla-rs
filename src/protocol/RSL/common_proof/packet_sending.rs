@@ -23,11 +23,6 @@ verus! {
     //     ensures p(choose |x: T| p(x))
     // {}
 
-    // proof fn choose2_satisfies<A, B>(p: spec_fn(A, B) -> bool)
-    //     ensures p(choose |a: A, b: B| p(a, b))
-    // {}
-
-    // #[verifier::external_body]
     pub proof fn lemma_ActionThatSendsPacketIsActionOfSource(
         ps:RslState,
         ps_:RslState,
@@ -59,7 +54,7 @@ verus! {
         (idx, ios)
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_ActionThatSends2aIsMaybeNominateValueAndSend2a(
         ps:RslState,
         ps_:RslState,
@@ -112,7 +107,7 @@ verus! {
         (idx, ios)
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_ActionThatSends1bIsProcess1a(
         ps:RslState,
         ps_:RslState,
@@ -162,7 +157,7 @@ verus! {
         (idx, ios)
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_ActionThatSends2bIsProcess2a(
         ps:RslState,
         ps_:RslState,
@@ -209,7 +204,7 @@ verus! {
         (idx, ios)
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_ActionThatSendsAppStateSupplyIsProcessAppStateRequest(
         ps: RslState,
         ps_prime: RslState,

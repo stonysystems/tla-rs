@@ -24,10 +24,6 @@ pub mod gen_helpers;
 pub mod learnerimpl;
 pub mod replicaimpl_class;
 pub mod cmd_line_parser;
-#[cfg(test)]
-pub mod generated_acceptor_test;
-#[cfg(test)]
-pub mod generated_acceptor_v3;
 pub mod host_i;
 pub mod host_s;
 pub mod netrsl_i;

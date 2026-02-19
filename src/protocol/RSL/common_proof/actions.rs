@@ -74,7 +74,7 @@ verus! {
         ios
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_PacketProcessedImpliesPacketSent(
         ps:RslState,
         ps_:RslState,
@@ -98,7 +98,7 @@ verus! {
         assert(e.sentPackets.contains(inp));
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_PacketProcessedImpliesPacketSentAlt(
         b:Behavior<RslState>,
         c:LConstants,

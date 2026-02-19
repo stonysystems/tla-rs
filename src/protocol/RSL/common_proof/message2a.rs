@@ -26,7 +26,7 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
-    // #[verifier::external_body]
+
     pub proof fn lemma_2aMessageImplicationsForProposerState(
         b:Behavior<RslState>,
         c:LConstants,
@@ -107,7 +107,7 @@ verus! {
     }
 
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_Find2aThatCausedVote(
         b:Behavior<RslState>,
         c:LConstants,
@@ -206,7 +206,7 @@ verus! {
         return p;
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatch(
         b:Behavior<RslState>,
         c:LConstants,
@@ -304,7 +304,7 @@ verus! {
         assume(false);
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_2aMessageHas1bQuorumPermittingIt(
         b: Behavior<RslState>,
         c: LConstants,
@@ -385,7 +385,7 @@ verus! {
         return q_new;
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_2aMessageHasValidBallot(
         b: Behavior<RslState>,
         c: LConstants,

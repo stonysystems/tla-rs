@@ -56,7 +56,7 @@ verus! {
                                          && ps.environment.sentPackets.contains(q.packets[idx]))
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_ChosenQuorumsMatchValue(
         b: Behavior<RslState>,
         c: LConstants,

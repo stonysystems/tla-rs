@@ -15,7 +15,7 @@ use vstd::{set::*, set_lib::*};
 
 verus! {
 
-    // #[verifier(external_body)]
+
     pub fn roll_action_index(a: u64) -> (a_prime: u64)
         requires
             0 <= a < 10,

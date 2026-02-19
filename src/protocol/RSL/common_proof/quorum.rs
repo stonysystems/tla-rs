@@ -101,7 +101,7 @@ verus! {
         indices_out
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_SetOfElementsOfRangeNoBiggerThanRange(
         Q: Set<int>,
         n: int
@@ -128,7 +128,7 @@ verus! {
         }
     }
 
-    // #[verifier::external_body]
+
     pub proof fn lemma_QuorumIndexOverlap(
         Q1: Set<int>,
         Q2: Set<int>,

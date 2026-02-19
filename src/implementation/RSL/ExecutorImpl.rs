@@ -32,7 +32,7 @@ verus! {
 
 impl CExecutor{
 
-    // #[verifier(external_body)]
+
     pub fn CExecutorInit(c: CReplicaConstants) -> (s:Self)
         requires
             c.valid()
@@ -77,7 +77,7 @@ impl CExecutor{
         self.next_op_to_execute = COutstandingOperation::COutstandingOpKnown{v: clone_vec_crequest(v), bal: bal};
     }
 
-    // #[verifier(external_body)]
+
     pub fn CGetPacketsFromReplies(me:&EndPoint, requests:&Vec<CRequest>, replies:&Vec<CReply>) -> (cr:Vec<CPacket>)
         requires
             me.valid_public_key(),
@@ -137,7 +137,7 @@ impl CExecutor{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CClientsInReplies(replies:&Vec<CReply>) -> (m:CReplyCache)
         requires
             forall|i: int| 0 <= i < replies.len() ==> replies[i].valid(),
@@ -316,7 +316,7 @@ impl CExecutor{
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CExecutorProcessAppStateSupply(
         &mut self,
         inp: CPacket
@@ -353,7 +353,7 @@ impl CExecutor{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CExecutorProcessAppStateRequest(
         &mut self,
         inp: CPacket,
@@ -452,7 +452,7 @@ impl CExecutor{
 
     }
 
-    // #[verifier(external_body)]
+
     pub fn CExecutorProcessStartingPhase2(
         &mut self,
         inp: CPacket
@@ -504,7 +504,7 @@ impl CExecutor{
     }
 
 
-    // #[verifier(external_body)]
+
     pub fn CExecutorProcessRequest(&mut self,inp: CPacket) -> (res: OutboundPackets)
         requires
             old(self).valid(),

@@ -187,8 +187,6 @@ impl CElectionState
     }
 
 
-    // Blocked on Hashsets
-    // #[verifier(external_body)]
     pub fn CElectionStateProcessHeartbeat(&mut self, p: CPacket, clock: u64)
         requires
             old(self).valid(),
@@ -679,7 +677,6 @@ impl CElectionState
 
 
 
-    // #[verifier(external_body)]
     pub fn CElectionStateReflectReceivedRequest(
         &mut self,
         req:CRequest

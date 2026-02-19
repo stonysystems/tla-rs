@@ -109,7 +109,7 @@ verus! {
     }
 
 
-    // #[verifier(external_body)]
+
     pub fn CAddVoteAndRemoveOldOnes(votes:&CVotes, new_opn: COperationNumber, new_vote:&CVote, log_truncation_point: COperationNumber) -> (cvotes_2:CVotes)
         requires
             cvotes_is_valid(votes),
@@ -261,7 +261,7 @@ verus! {
     }
 
     // Function to process 1a message
-    // #[verifier(external_body)]
+
     pub fn CAcceptorProcess1a(&mut self, inp: CPacket) -> (sent: OutboundPackets)
         requires
             old(self).valid(),
@@ -353,7 +353,7 @@ verus! {
         }
     }
 
-    // #[verifier(external_body)]
+
     pub fn CAcceptorProcess2a(&mut self, inp: CPacket) -> (sent: OutboundPackets)
         requires
             old(self).valid(),
@@ -509,7 +509,7 @@ verus! {
     }
 
 
-    // #[verifier(external_body)]
+
     pub fn CAcceptorProcessHeartbeat(&mut self, inp: CPacket)
         requires
             old(self).valid(),
@@ -547,7 +547,7 @@ verus! {
     }
 
 
-    // #[verifier(external_body)]
+
     pub fn CAcceptorTruncateLog(&mut self, opn: COperationNumber)
         requires
             old(self).valid(),
