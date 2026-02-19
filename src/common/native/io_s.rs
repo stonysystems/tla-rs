@@ -61,39 +61,6 @@ verus! {
         }
     }
 
-    // impl Comparable for EndPoint {
-
-    //     // #[verifier(external_body)]
-    //     exec fn equals(&self, other: &Self) -> (result: bool)
-    //         // ensures
-    //         //     result == (*self == *other)
-    //     {
-    //         if self.id.len() != other.id.len() {
-    //             return false;
-    //         }
-
-    //         let mut i: usize = 0;
-    //         while i < self.id.len()
-    //             invariant
-    //                 i <= self.id.len(),
-    //                 forall |j: int| 0 <= j < i ==> self.id[j] == other.id[j],
-    //                 self.id.len() == other.id.len()
-    //         {
-    //             if self.id[i] != other.id[i] {
-    //                 return false;
-    //             }
-    //             i += 1;
-    //         }
-    //         proof {
-    //             assert(self.id@ == other.id@);
-    //             assert(forall |i: int| 0 <= i < self.id.len() ==> self.id@[i] == other.id@[i]);
-    //             assert(forall |i: int| 0 <= i < self.id.len() ==> self.id[i] == other.id[i]);
-    //             assert(*self == *other);
-    //         }
-    //         true
-    //     }
-    // }
-
     impl EndPoint {
         // Verus unimpl: Can't call clone through the trait
         pub fn clone_up_to_view(&self) -> (res: EndPoint)

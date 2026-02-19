@@ -25,15 +25,6 @@ verus! {
         *s
     }
 
-    // #[derive(Clone, PartialEq)]
-    // pub enum CAppMessage {
-    //     CAppIncrement{},
-    //     CAppReply{
-    //         response:u64,
-    //     },
-    //     CAppInvalid{},
-    // }
-
     define_enum_and_derive_marshalable! {
         #[derive(Clone, PartialEq, Eq, Hash)]
         pub enum CAppMessage {

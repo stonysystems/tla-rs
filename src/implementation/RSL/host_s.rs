@@ -56,11 +56,6 @@ verus! {
         // ensures
         //     Self::init_ensures(netc, *args, rc),
         {
-            // println!("init_impl called");
-            // println!("args.len = {}", args.len());
-            // for (i, a) in args.iter().enumerate() {
-            //     println!("arg[{}] = {:?}", i, a);
-            // }
             Self::host_init_impl(netc, args)
         }
 

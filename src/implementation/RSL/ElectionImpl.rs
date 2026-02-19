@@ -138,59 +138,6 @@ impl CElectionState
         do_end_points_match(&r1.client, &r2.client) && r1.seqno <= r2.seqno
     }
 
-    // pub fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> (rc: Vec<CRequest>)
-    //     requires
-    //         forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
-    //         r.valid(),
-    //     ensures
-    //         forall |i: int| 0 <= i < rc@.len() ==> rc@[i].valid(),
-    //         rc@.map(|i, req:CRequest| req@) == RemoveAllSatisfiedRequestsInSequence(s@.map(|i, req: CRequest| req@), r@),
-    // {
-    //     if s.len() == 0 {
-    //         let empty: Vec<CRequest> = Vec::new();
-    //         proof {
-    //             assert(s@.map(|i, req: CRequest| req@).len() == 0);
-    //             assert(RemoveAllSatisfiedRequestsInSequence(s@.map(|i, req: CRequest| req@), r@) == Seq::<Request>::empty());
-    //             assert(empty@.map(|i, req: CRequest| req@) == Seq::<Request>::empty());
-    //         }
-    //         return empty;
-    //     }
-
-    //     let head = s[0].clone_up_to_view();
-    //     let tail = truncate_vec(s, 1, s.len());
-
-    //     let tail_filtered = Self::CRemoveAllSatisfiedRequestsInSequence(&tail, r);
-
-    //     if Self::CRequestSatisfiedBy(head.clone_up_to_view(), r.clone_up_to_view()) {
-    //         proof {
-    //             assert(tail_filtered@.map(|i, req: CRequest| req@)
-    //                 == RemoveAllSatisfiedRequestsInSequence(tail@.map(|i, req: CRequest| req@), r@));
-    //             assert(s@.map(|i, req: CRequest| req@)[0] == head@);
-    //             assert(s@.map(|i, req: CRequest| req@).drop_first()
-    //                 == tail@.map(|i, req: CRequest| req@));
-    //             assert(RemoveAllSatisfiedRequestsInSequence(s@.map(|i, req: CRequest| req@), r@)
-    //                 == RemoveAllSatisfiedRequestsInSequence(tail@.map(|i, req: CRequest| req@), r@));
-    //         }
-    //         tail_filtered
-    //     } else {
-    //         let res = concat_vecs(&vec![head], &tail_filtered);
-    //         proof {
-    //             assert(tail_filtered@.map(|i, req: CRequest| req@)
-    //                 == RemoveAllSatisfiedRequestsInSequence(tail@.map(|i, req: CRequest| req@), r@));
-    //             let s_view = s@.map(|i, req: CRequest| req@);
-    //             let tail_view = tail@.map(|i, req: CRequest| req@);
-    //             assert(s_view.drop_first() == tail_view);
-    //             assert(s_view[0] == head@);
-    //             assert(res@.map(|i, req: CRequest| req@)
-    //                 == seq![head@] + RemoveAllSatisfiedRequestsInSequence(tail_view, r@));
-    //             assert(RemoveAllSatisfiedRequestsInSequence(s_view, r@)
-    //                 == seq![head@] + RemoveAllSatisfiedRequestsInSequence(tail_view, r@));
-    //         }
-    //         res
-    //     }
-    // }
-
-
     pub fn CElectionStateInit(c:CReplicaConstants) -> (rc:Self)
     requires
         c.valid(),

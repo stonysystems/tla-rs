@@ -4,13 +4,11 @@
 
 use std::hash::Hash;
 use vstd::bytes::*;
-// use vstd::function::*;
 use crate::implementation::common::function::*;
 use std::collections::HashMap;
 use vstd::prelude::*;
 use vstd::slice::*;
 
-use crate::implementation::common::function::*;
 use crate::verus_extra::choose_v::*;
 use crate::verus_extra::seq_lib_v;
 use crate::verus_extra::seq_lib_v::*;

@@ -25,20 +25,6 @@ verus! {
 
     }
 
-            // let x = choose |x:int| s.contains(x);
-        // if s.len() == 1 {
-        //     x
-        // } else {
-        //     let sy = s.remove(x);
-        //     let y = intsetmax(sy);
-        //     assert(forall |i:int| s.contains(y) ==> sy.contains(i) || i == x);
-        //     if x > y {
-        //         x
-        //     } else {
-        //         y
-        //     }
-        // }
-
     pub open spec fn intsetmax(s: Set<int>) -> int
         recommends s.len() > 0
     {
@@ -57,16 +43,6 @@ verus! {
         })
     {
         reveal(intsetmax);
-
-        // let m = intsetmax(s);
-
-        // // Use `assert_by` to introduce the `choose` properties explicitly
-        // assert_by({
-        //     s.contains(m) && forall |i: int| s.contains(i) ==> m >= i
-        // }, {
-        //     assert(s.contains(m));  // Verifies the first condition
-        //     assert(forall |i: int| s.contains(i) ==> m >= i);
-        // });
     }
 
     #[verifier::external_body]
@@ -126,29 +102,6 @@ verus! {
         requires x.subset_of(y)
         ensures x.len() <= y.len()
     {
-        // if x.is_empty() {
-        //     assert(x.len() == 0);
-        //     assert(0 <= y.len());
-        // } else {
-        //     let e: T = choose |e: T| x.contains(e);
-
-        //     let x_ = x.remove(e);
-        //     let y_ = y.remove(e);
-
-        //     assert(y.contains(e));
-
-        //     spec_apply(subset_remove(x, y, e));
-
-        //     spec_apply(set_remove_len(x, e));
-
-        //     spec_apply(set_remove_len(y, e));
-
-        //     subset_cardinality(x_, y_);
-
-        //     assert(x.len() == x_.len() + 1);
-        //     assert(y.len() == y_.len() + 1);
-        //     assert(x_.len() + 1 <= y_.len() + 1);
-        // }
     }
 
     #[verifier::external_body]
