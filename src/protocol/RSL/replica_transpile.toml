@@ -148,6 +148,7 @@ custom_imports = [
     "use crate::generated::RSL::election_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::implementation::RSL::gen_helpers::{clone_cpacket_full, clone_io_packet, outbound_packets_to_vec};",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::CUpperBoundedAddition;",
     "use crate::protocol::RSL::replica::*;",

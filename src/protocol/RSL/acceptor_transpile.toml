@@ -114,6 +114,7 @@ custom_imports = [
     "use crate::common::native::io_s::EndPoint;",
     "use crate::generated::RSL::types_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, outbound_packets_to_vec};",
     "use crate::implementation::RSL::types_i::abstractify_cvotes;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::common::upper_bound_i::*;",

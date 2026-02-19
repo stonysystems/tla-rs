@@ -1463,10 +1463,10 @@ fn test_generated_proposer_module_public_api() {
         "Proposer functions should take &CProposer"
     );
 
-    // Verify packet validity ensures on outbound_packets_to_vec helper
+    // Verify shared helpers are imported from gen_helpers (not duplicated locally)
     assert!(
-        source.contains("forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()"),
-        "outbound_packets_to_vec should ensure packet validity"
+        source.contains("use crate::implementation::RSL::gen_helpers::"),
+        "proposer_gen.rs should import helpers from gen_helpers module"
     );
 }
 
@@ -1537,14 +1537,26 @@ fn test_generated_replica_module_public_api() {
         "Should have no-receive dispatch"
     );
 
-    // Verify clone_io_packet ensures include validity and abstractability
+    // Verify shared helpers are imported from gen_helpers (not duplicated locally)
     assert!(
-        source.contains("res.valid()"),
-        "clone_io_packet should ensure res.valid()"
+        source.contains("use crate::implementation::RSL::gen_helpers::"),
+        "replica_gen.rs should import helpers from gen_helpers module"
+    );
+
+    // Verify gen_helpers module contains the expected helper functions
+    let helpers_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
+        .expect("Failed to read gen_helpers.rs");
+    assert!(
+        helpers_source.contains("pub fn clone_io_packet"),
+        "gen_helpers.rs should contain clone_io_packet"
     );
     assert!(
-        source.contains("res.abstractable()"),
-        "clone_io_packet should ensure res.abstractable()"
+        helpers_source.contains("res.valid()"),
+        "clone_io_packet in gen_helpers should ensure res.valid()"
+    );
+    assert!(
+        helpers_source.contains("res.abstractable()"),
+        "clone_io_packet in gen_helpers should ensure res.abstractable()"
     );
 
     // Verify IO trust boundary: all remaining assumes are packet identity statements
@@ -1563,6 +1575,59 @@ fn test_generated_replica_module_public_api() {
         "All assumes should be packet identity (sent_packets =~= ExtractSentPacketsFromIos), found {} of {}",
         packet_identity_count, assume_count
     );
+}
+
+/// Verify gen_helpers.rs contains all shared helper functions for generated modules
+#[test]
+fn test_gen_helpers_shared_module() {
+    let source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
+        .expect("Failed to read gen_helpers.rs");
+
+    // Verify all 4 helper functions are present
+    let expected_helpers = [
+        "pub fn clone_cpacket_preserving_validity",
+        "pub fn clone_cpacket_full",
+        "pub fn clone_io_packet",
+        "pub fn outbound_packets_to_vec",
+    ];
+    for helper in expected_helpers {
+        assert!(
+            source.contains(helper),
+            "gen_helpers.rs should contain `{}`",
+            helper
+        );
+    }
+
+    // Verify outbound_packets_to_vec has validity ensures
+    assert!(
+        source.contains("result@[i].valid()"),
+        "outbound_packets_to_vec should ensure packet validity"
+    );
+    assert!(
+        source.contains("result@[i].abstractable()"),
+        "outbound_packets_to_vec should ensure packet abstractability"
+    );
+
+    // Verify no generated module duplicates the helpers locally
+    let acceptor = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
+        .expect("Failed to read acceptor_gen.rs");
+    let proposer = std::fs::read_to_string("../src/generated/RSL/proposer_gen.rs")
+        .expect("Failed to read proposer_gen.rs");
+    let replica = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+
+    for (name, src) in [("acceptor_gen", &acceptor), ("proposer_gen", &proposer), ("replica_gen", &replica)] {
+        assert!(
+            !src.contains("fn clone_cpacket_preserving_validity"),
+            "{} should not define clone_cpacket_preserving_validity locally (use gen_helpers)",
+            name
+        );
+        assert!(
+            !src.contains("fn outbound_packets_to_vec"),
+            "{} should not define outbound_packets_to_vec locally (use gen_helpers)",
+            name
+        );
+    }
 }
 
 /// Verify types_gen.rs has all expected concrete types

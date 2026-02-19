@@ -8,6 +8,7 @@ use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;
+use crate::implementation::RSL::gen_helpers::{clone_cpacket_full, clone_io_packet, outbound_packets_to_vec};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::broadcast::*;
@@ -26,74 +27,6 @@ use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-#[verifier(external_body)]
-fn clone_cpacket_full(p: &CPacket) -> (res: CPacket)
-    requires p.valid(),
-    ensures res == *p,
-{
-    p.clone_up_to_view()
-}
-
-/// Clone an LPacket<EndPoint, CMessage> into a CPacket with field equality and validity guarantees.
-/// This is needed because CMessage::clone() from #[verus::trusted] has no Verus spec,
-/// but we need to reason about the cloned message's variant in dispatch functions.
-///
-/// The valid() and abstractable() ensures encode the IO trust boundary: packets received from
-/// the network layer are valid by construction (deserialized through the marshalling layer,
-/// with valid endpoints from the transport layer). This is a trusted claim — the actual
-/// clone operation preserves validity since clone cannot invalidate well-formed data.
-#[verifier(external_body)]
-fn clone_io_packet(p: &LPacket<EndPoint, CMessage>) -> (res: CPacket)
-    ensures
-        res.dst == p.dst,
-        res.src == p.src,
-        res.msg == p.msg,
-        res.valid(),
-        res.abstractable(),
-{
-    CPacket { dst: p.dst.clone(), src: p.src.clone(), msg: p.msg.clone() }
-}
-
-#[verifier(external_body)]
-fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
-    ensures
-        result@.map(|i: int, p: CPacket| p@) =~= sent@,
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
-{
-    match sent {
-        OutboundPackets::PacketSequence { s } => s,
-        OutboundPackets::Broadcast { broadcast } => {
-            match broadcast {
-                CBroadcast::CBroadcast { src, dsts, msg } => {
-                    let mut result = Vec::new();
-                    let mut i = 0;
-                    while i < dsts.len() {
-                        result.push(CPacket {
-                            dst: dsts[i].clone(),
-                            src: src.clone(),
-                            msg: msg.clone(),
-                        });
-                        i += 1;
-                    }
-                    result
-                },
-                CBroadcast::CBroadcastNop {} => Vec::new(),
-            }
-        },
-        OutboundPackets::OutboundPacket { p } => {
-            match p {
-                Some(pkt) => vec![pkt],
-                None => Vec::new(),
-            }
-        },
-    }
-}
 
 // =============================================================================
 // CReplicaInit — delegate to verified impl (static)

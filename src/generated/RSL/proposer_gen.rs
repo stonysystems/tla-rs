@@ -6,6 +6,7 @@ use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
+use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, clone_cpacket_full, outbound_packets_to_vec};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::broadcast::*;
@@ -23,64 +24,6 @@ use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-#[verifier(external_body)]
-fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
-    requires p.valid(),
-    ensures res@ == p@, res.valid(),
-{
-    p.clone_up_to_view()
-}
-
-/// Clone a CPacket preserving full structural equality (needed when
-/// callee checks concrete fields like `replica_ids@.contains(pkt.src)`)
-#[verifier(external_body)]
-fn clone_cpacket_full(p: &CPacket) -> (res: CPacket)
-    requires p.valid(),
-    ensures res == *p,
-{
-    p.clone_up_to_view()
-}
-
-#[verifier(external_body)]
-fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
-    ensures
-        result@.map(|i: int, p: CPacket| p@) =~= sent@,
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
-{
-    match sent {
-        OutboundPackets::PacketSequence { s } => s,
-        OutboundPackets::Broadcast { broadcast } => {
-            match broadcast {
-                CBroadcast::CBroadcast { src, dsts, msg } => {
-                    let mut result = Vec::new();
-                    let mut i = 0;
-                    while i < dsts.len() {
-                        result.push(CPacket {
-                            dst: dsts[i].clone(),
-                            src: src.clone(),
-                            msg: msg.clone(),
-                        });
-                        i += 1;
-                    }
-                    result
-                },
-                CBroadcast::CBroadcastNop {} => Vec::new(),
-            }
-        },
-        OutboundPackets::OutboundPacket { p } => {
-            match p {
-                Some(pkt) => vec![pkt],
-                None => Vec::new(),
-            }
-        },
-    }
-}
 
 // =============================================================================
 // CProposerInit — delegate to verified impl (static)

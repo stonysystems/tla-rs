@@ -123,6 +123,7 @@ custom_imports = [
     "use crate::generated::RSL::election_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
+    "use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, clone_cpacket_full, outbound_packets_to_vec};",
     # CIncompleteBatchTimer is defined in types_gen.rs - import the variant for convenience
     "use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTimerOff;",
     "use crate::implementation::common::upper_bound_i::*;",

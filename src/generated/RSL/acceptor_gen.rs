@@ -9,6 +9,7 @@ use crate::common::native::io_s::AbstractEndPoint;
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cbroadcast::*;
+use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, outbound_packets_to_vec};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::broadcast::LBroadcastToEveryone;
@@ -24,20 +25,6 @@ use vstd::set::*;
 use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
-
-// =============================================================================
-// Helper: clone CPacket preserving validity
-// =============================================================================
-
-/// CPacket.clone() preserves both view AND validity since it deep-clones all fields.
-/// The standard clone_up_to_view only ensures view preservation; we need validity too.
-#[verifier(external_body)]
-fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
-    requires p.valid(),
-    ensures res@ == p@, res.valid(),
-{
-    p.clone_up_to_view()
-}
 
 // =============================================================================
 // CRemoveVotesBeforeLogTruncationPoint — delegate to verified impl
@@ -111,45 +98,6 @@ pub exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CPacket) -> (result: (CAccep
 // =============================================================================
 // CAcceptorProcess2a — delegate to verified impl
 // =============================================================================
-
-/// Extract Vec<CPacket> from OutboundPackets with view-preserving ensures.
-/// The OutboundPackets can be Broadcast, PacketSequence, or OutboundPacket.
-/// For all variants, we return a Vec<CPacket> whose mapped view equals the OutboundPackets' view.
-#[verifier(external_body)]
-fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
-    ensures
-        result@.map(|i: int, p: CPacket| p@) =~= sent@,
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
-{
-    match sent {
-        OutboundPackets::PacketSequence { s } => s,
-        OutboundPackets::Broadcast { broadcast } => {
-            match broadcast {
-                CBroadcast::CBroadcast { src, dsts, msg } => {
-                    let mut result = Vec::new();
-                    let mut i = 0;
-                    while i < dsts.len() {
-                        result.push(CPacket {
-                            dst: dsts[i].clone(),
-                            src: src.clone(),
-                            msg: msg.clone(),
-                        });
-                        i += 1;
-                    }
-                    result
-                },
-                CBroadcast::CBroadcastNop {} => Vec::new(),
-            }
-        },
-        OutboundPackets::OutboundPacket { p } => {
-            match p {
-                Some(pkt) => vec![pkt],
-                None => Vec::new(),
-            }
-        },
-    }
-}
 
 pub exec fn CAcceptorProcess2a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
     requires
