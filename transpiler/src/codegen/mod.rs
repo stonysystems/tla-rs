@@ -471,7 +471,7 @@ impl TypeGenerator {
             let view_expr = if let Some(custom_expr) = self.view_overrides.get(&override_key) {
                 custom_expr.clone()
             } else {
-                self.generate_view_field_expr(&field.name, &field.ty)
+                self.generate_view_field_expr(&field.name, &field.ty, false)
             };
             code.push_str(&format!(
                 "{}{}{}{}: {},\n",
@@ -535,7 +535,7 @@ impl TypeGenerator {
 
                 let mut views = Vec::new();
                 for (i, ty) in types.iter().enumerate() {
-                    let view_expr = self.generate_view_variant_field_expr(&format!("v{}", i), ty);
+                    let view_expr = self.generate_view_field_expr(&format!("v{}", i), ty, true);
                     views.push(view_expr);
                 }
 
@@ -556,7 +556,7 @@ impl TypeGenerator {
 
                 let mut field_views = Vec::new();
                 for field in fields {
-                    let view_expr = self.generate_view_variant_field_expr(&field.name, &field.ty);
+                    let view_expr = self.generate_view_field_expr(&field.name, &field.ty, true);
                     field_views.push(format!("{}: {}", field.name, view_expr));
                 }
 
@@ -725,38 +725,32 @@ impl TypeGenerator {
         needs_view_check(ty)
     }
 
-    /// Generate the expression for a field in a View impl
-    /// Handles:
-    /// - Collections with int/nat inner types needing `.map()` conversion
-    /// - Types needing @ operator (structs, collections, etc.)
-    /// - Types needing `as int` conversion (int, nat -> i64, u64)
-    /// - Simple types that need no conversion
-    fn generate_view_field_expr(&self, field_name: &str, ty: &Type) -> String {
-        if let Some(map_expr) = self.collection_view_map_expr(ty, &format!("self.{}", field_name)) {
+    /// Generate the View expression for a field or variant binding.
+    ///
+    /// For struct fields (`is_variant_binding = false`): uses `self.{name}` accessor.
+    /// For enum variant bindings (`is_variant_binding = true`): uses bare `{name}` with
+    /// `*` dereference for plain values.
+    fn generate_view_field_expr(&self, name: &str, ty: &Type, is_variant_binding: bool) -> String {
+        let accessor = if is_variant_binding {
+            name.to_string()
+        } else {
+            format!("self.{}", name)
+        };
+        if let Some(map_expr) = self.collection_view_map_expr(ty, &accessor) {
             return map_expr;
         }
         if self.needs_view(ty) {
-            format!("self.{}@", field_name)
+            format!("{}@", accessor)
         } else if needs_as_int_conversion(ty) {
-            format!("self.{} as int", field_name)
+            if is_variant_binding {
+                format!("*{} as int", name)
+            } else {
+                format!("{} as int", accessor)
+            }
+        } else if is_variant_binding {
+            format!("*{}", name)
         } else {
-            format!("self.{}", field_name)
-        }
-    }
-
-    /// Generate the expression for a variant field in a View impl
-    /// Similar to generate_view_field_expr but for enum variant bindings
-    /// (no `self.` prefix, uses `*` for dereferencing)
-    fn generate_view_variant_field_expr(&self, binding_name: &str, ty: &Type) -> String {
-        if let Some(map_expr) = self.collection_view_map_expr(ty, binding_name) {
-            return map_expr;
-        }
-        if self.needs_view(ty) {
-            format!("{}@", binding_name)
-        } else if needs_as_int_conversion(ty) {
-            format!("*{} as int", binding_name)
-        } else {
-            format!("*{}", binding_name)
+            accessor
         }
     }
 
