@@ -78,7 +78,7 @@ action_count = 8
 [[scheduler.actions]]
 spec_name = "LPrimaryWrite"
 exec_name = "CPrimaryWrite"
-kind = "message_driven"
+kind = "timer_driven"
 existential_params = [["val", "int"]]
 
 [[scheduler.actions]]

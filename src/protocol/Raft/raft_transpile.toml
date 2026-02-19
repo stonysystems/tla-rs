@@ -147,7 +147,7 @@ flag_injections = [["msgs_vote_response", "true"], ["msgs_vote_response_term", "
 [[scheduler.actions]]
 spec_name = "LBecomeLeader"
 exec_name = "CBecomeLeader"
-kind = "message_driven"
+kind = "timer_driven"
 
 [[scheduler.actions]]
 spec_name = "LClientRequest"
@@ -180,7 +180,7 @@ flag_injections = [["msgs_append_response", "true"], ["msgs_append_response_term
 [[scheduler.actions]]
 spec_name = "LHandleAppendReject"
 exec_name = "CHandleAppendReject"
-kind = "message_driven"
+kind = "timer_driven"
 existential_params = [["follower", "u64"]]
 
 [[scheduler.actions]]
@@ -192,6 +192,6 @@ existential_params = [["new_commit_index", "int"]]
 [[scheduler.actions]]
 spec_name = "LStepDown"
 exec_name = "CStepDown"
-kind = "message_driven"
+kind = "timer_driven"
 existential_params = [["new_term", "int"]]
 

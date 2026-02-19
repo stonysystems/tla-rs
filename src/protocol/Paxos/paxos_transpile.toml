@@ -95,6 +95,7 @@ existential_params = [["b", "int"]]
 spec_name = "LSend1b"
 exec_name = "CSend1b"
 kind = "message_driven"
+message_variant = "Prepare"
 existential_params = [["b", "int"]]
 
 [[scheduler.actions]]
@@ -114,6 +115,7 @@ existential_params = [["v", "int"]]
 spec_name = "LSend2b"
 exec_name = "CSend2b"
 kind = "message_driven"
+message_variant = "Accept"
 existential_params = [["b", "int"], ["v", "int"]]
 
 [[scheduler.actions]]

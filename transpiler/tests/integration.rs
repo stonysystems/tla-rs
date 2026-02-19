@@ -3385,8 +3385,8 @@ fn test_exact_action_counts_per_protocol() {
             toml_path: "../src/protocol/Raft/raft_transpile.toml",
             protocol: "Raft",
             total: 11,
-            msg_driven: 7,
-            timer_driven: 4,
+            msg_driven: 4,
+            timer_driven: 7,
         },
         Expected {
             toml_path: "../src/protocol/ChainReplication/chain_transpile.toml",
@@ -3399,15 +3399,15 @@ fn test_exact_action_counts_per_protocol() {
             toml_path: "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
             protocol: "PrimaryBackup",
             total: 8,
-            msg_driven: 3,
-            timer_driven: 5,
+            msg_driven: 2,
+            timer_driven: 6,
         },
         Expected {
             toml_path: "../src/protocol/PBFT/pbft_transpile.toml",
             protocol: "PBFT",
             total: 9,
-            msg_driven: 6,
-            timer_driven: 3,
+            msg_driven: 3,
+            timer_driven: 6,
         },
         Expected {
             toml_path: "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
@@ -3524,16 +3524,62 @@ fn test_message_driven_actions_have_variants_or_heuristic() {
                     .iter()
                     .any(|kw| name_lower.contains(kw));
                 let has_response_pattern = [
-                    "Send1b", "Send2b", "SendAnswer", "GrantVote", "BecomeLeader",
-                    "StepDown", "FollowerAppendEntries", "SendPreAcceptOk", "SendAcceptOk",
-                    "SendPromise", "WitnessSync", "Sync", "PrePrepare", "EnterCommit",
-                    "ExecuteReply", "PrimaryWrite", "ClientRead",
+                    "Send1b", "Send2b", "SendAnswer", "GrantVote",
+                    "FollowerAppendEntries", "SendPreAcceptOk", "SendAcceptOk",
+                    "SendPromise", "WitnessSync", "Sync", "ClientRead",
                 ].iter().any(|p| name.contains(p));
 
                 assert!(
                     has_msg_keyword || has_response_pattern,
                     "{}: message_driven action '{}' has no recognizable message keyword or response pattern",
                     protocol, name
+                );
+            }
+        }
+    }
+}
+
+/// Verify every message_driven action has a message_variant that exists in the
+/// protocol's [messages] section. Catches misclassified actions and typos.
+#[test]
+fn test_message_driven_actions_have_valid_variant() {
+    let protocols: &[(&str, &str)] = &[
+        ("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase"),
+        ("../src/protocol/Paxos/paxos_transpile.toml", "Paxos"),
+        ("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection"),
+        ("../src/protocol/Raft/raft_transpile.toml", "Raft"),
+        ("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication"),
+        ("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup"),
+        ("../src/protocol/PBFT/pbft_transpile.toml", "PBFT"),
+        ("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos"),
+        ("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos"),
+    ];
+
+    for (toml_path, protocol) in protocols {
+        let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+            .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+        let sched = config
+            .scheduler
+            .unwrap_or_else(|| panic!("{} has no [scheduler] section", protocol));
+        let messages = config
+            .messages
+            .unwrap_or_else(|| panic!("{} has no [messages] section", protocol));
+        let variant_names: Vec<&str> = messages.variants.iter().map(|v| v.name.as_str()).collect();
+
+        for action in &sched.actions {
+            if action.is_message_driven() {
+                // Every message_driven action MUST have a message_variant
+                assert!(
+                    action.message_variant.is_some(),
+                    "{}: message_driven action '{}' has no message_variant",
+                    protocol, action.spec_name
+                );
+                // The message_variant MUST reference an existing variant
+                let variant = action.message_variant.as_deref().unwrap();
+                assert!(
+                    variant_names.contains(&variant),
+                    "{}: action '{}' references non-existent message_variant '{}' (available: {:?})",
+                    protocol, action.spec_name, variant, variant_names
                 );
             }
         }

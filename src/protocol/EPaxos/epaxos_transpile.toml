@@ -104,7 +104,7 @@ existential_params = [["value", "int"]]
 spec_name = "LSendPreAcceptOk"
 exec_name = "CSendPreAcceptOk"
 kind = "message_driven"
-message_variant = "PreAcceptOk"
+message_variant = "PreAccept"
 existential_params = [["local_conflict", "bool"], ["local_seq", "int"]]
 
 [[scheduler.actions]]
@@ -128,7 +128,7 @@ kind = "timer_driven"
 spec_name = "LSendAcceptOk"
 exec_name = "CSendAcceptOk"
 kind = "message_driven"
-message_variant = "AcceptOk"
+message_variant = "Accept"
 
 [[scheduler.actions]]
 spec_name = "LReceiveAcceptOk"

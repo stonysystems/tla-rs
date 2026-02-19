@@ -90,8 +90,7 @@ action_count = 9
 [[scheduler.actions]]
 spec_name = "LPrePrepare"
 exec_name = "CPrePrepare"
-kind = "message_driven"
-message_variant = "PrePrepare"
+kind = "timer_driven"
 existential_params = [["digest", "int"]]
 
 [[scheduler.actions]]
@@ -111,8 +110,7 @@ existential_params = [["sender", "int"]]
 [[scheduler.actions]]
 spec_name = "LEnterCommit"
 exec_name = "CEnterCommit"
-kind = "message_driven"
-message_variant = "Commit"
+kind = "timer_driven"
 
 [[scheduler.actions]]
 spec_name = "LReceiveCommit"
@@ -124,7 +122,7 @@ existential_params = [["sender", "int"]]
 [[scheduler.actions]]
 spec_name = "LExecuteReply"
 exec_name = "CExecuteReply"
-kind = "message_driven"
+kind = "timer_driven"
 
 [[scheduler.actions]]
 spec_name = "LCheckpoint"

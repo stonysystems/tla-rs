@@ -85,7 +85,7 @@ existential_params = [["node", "int"]]
 spec_name = "LSendAnswer"
 exec_name = "CSendAnswer"
 kind = "message_driven"
-message_variant = "Answer"
+message_variant = "Election"
 existential_params = [["node", "int"]]
 
 [[scheduler.actions]]

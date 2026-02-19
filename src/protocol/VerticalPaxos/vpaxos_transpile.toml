@@ -98,7 +98,7 @@ existential_params = [["b", "int"]]
 spec_name = "LSendPromise"
 exec_name = "CSendPromise"
 kind = "message_driven"
-message_variant = "Promise"
+message_variant = "Prepare"
 
 [[scheduler.actions]]
 spec_name = "LReceivePromise"
