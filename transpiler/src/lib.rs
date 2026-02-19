@@ -51,7 +51,8 @@ pub mod verus2tla;
 pub use annotation::{AnnotationParser, FunctionAnnotation, ModuleAnnotations};
 pub use ast::{Expr, Parameter, ParameterMode, SpecFunction, Type};
 pub use checker::{
-    validate_function, HarmonyChecker, ObligationChecker, QuantifierMatcher, SaturationChecker,
+    validate_function, validate_function_with_registry, HarmonyChecker, ObligationChecker,
+    QuantifierMatcher, SaturationChecker,
 };
 pub use codegen::{
     classify_actions, extract_lnext_actions, find_and_analyze_lnext, generate_all_types,

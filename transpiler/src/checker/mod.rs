@@ -8,6 +8,7 @@
 use crate::ast::{ParameterMode, Type};
 use crate::error::{DiagnosticAccumulator, TranspileError, TranspileResult};
 use crate::moder::{AnnotatedFunction, AssignmentTracker, MemberPath, ModeAnalyzer, ModeConflict};
+use crate::types::TypeRegistry;
 use std::collections::HashSet;
 
 /// Saturation checker - verifies all output members are assigned
@@ -16,30 +17,90 @@ pub struct SaturationChecker;
 impl SaturationChecker {
     /// Check that all members of output parameters are assigned.
     /// Reports all missing assignments, not just the first one.
+    ///
+    /// Without a type registry, only checks that Root is assigned (either directly
+    /// or via field-level assignments). With a registry, checks that all struct
+    /// fields are individually assigned when Root is not directly assigned.
     pub fn check(func: &AnnotatedFunction, tracker: &AssignmentTracker) -> TranspileResult<()> {
+        Self::check_with_registry(func, tracker, None)
+    }
+
+    /// Check with an optional type registry for field-level saturation.
+    ///
+    /// When a `TypeRegistry` is provided and a parameter's type is a known struct,
+    /// the checker requires either:
+    /// - A whole-struct assignment (`s_ == expr`, tracked as `Root`), or
+    /// - Individual assignments to ALL struct fields (`s_.f1 == ...`, `s_.f2 == ...`)
+    ///
+    /// Without a registry, field-level assignments are accepted as covering Root
+    /// (best-effort: any field assignment counts as partial coverage).
+    pub fn check_with_registry(
+        func: &AnnotatedFunction,
+        tracker: &AssignmentTracker,
+        registry: Option<&TypeRegistry>,
+    ) -> TranspileResult<()> {
         let mut acc = DiagnosticAccumulator::new();
 
         for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
             if *mode == crate::ast::ParameterMode::Output {
-                let required = Self::get_required_members(&param.ty);
                 let assigned = tracker
                     .assignments
                     .get(&param.name)
                     .cloned()
                     .unwrap_or_default();
 
-                let missing: Vec<_> = required.difference(&assigned).collect();
-                if !missing.is_empty() {
-                    acc.add_error(TranspileError::Saturation {
-                        message: format!(
-                            "Output parameter '{}' has unassigned members: {:?}",
-                            param.name, missing
-                        ),
-                        span: None,
-                        help: Some(
-                            "Ensure all fields of output parameters are assigned".to_string(),
-                        ),
-                    });
+                // If Root is directly assigned, the whole struct is covered
+                if assigned.contains(&MemberPath::Root) {
+                    continue;
+                }
+
+                // Root not directly assigned — check field-level assignments
+                let required_fields = Self::get_required_fields(&param.ty, registry);
+
+                match required_fields {
+                    Some(fields) => {
+                        // We know the struct fields — check each is assigned
+                        let missing: Vec<_> = fields
+                            .iter()
+                            .filter(|f| !assigned.contains(f))
+                            .collect();
+                        if !missing.is_empty() {
+                            acc.add_error(TranspileError::Saturation {
+                                message: format!(
+                                    "Output parameter '{}' has unassigned members: {:?}",
+                                    param.name, missing
+                                ),
+                                span: None,
+                                help: Some(
+                                    "Ensure all fields of output parameters are assigned, \
+                                     or assign the whole struct"
+                                        .to_string(),
+                                ),
+                            });
+                        }
+                    }
+                    None => {
+                        // No type info — check if ANY field assignments exist
+                        let has_field_assignments = assigned
+                            .iter()
+                            .any(|p| matches!(p, MemberPath::Field(_, _)));
+
+                        if !has_field_assignments {
+                            // No Root and no field assignments — definitely unsaturated
+                            acc.add_error(TranspileError::Saturation {
+                                message: format!(
+                                    "Output parameter '{}' has unassigned members: [Root]",
+                                    param.name
+                                ),
+                                span: None,
+                                help: Some(
+                                    "Ensure all fields of output parameters are assigned"
+                                        .to_string(),
+                                ),
+                            });
+                        }
+                        // If field assignments exist without type info, accept as best-effort
+                    }
                 }
             }
         }
@@ -47,14 +108,33 @@ impl SaturationChecker {
         acc.into_result(())
     }
 
-    /// Get all members that need to be assigned for a type
-    fn get_required_members(ty: &Type) -> HashSet<MemberPath> {
+    /// Get required field-level member paths for a type.
+    ///
+    /// Returns `Some(fields)` when the type is a struct with known fields in the registry,
+    /// or `None` when the type is unknown (primitives, enums, or no registry).
+    fn get_required_fields(
+        ty: &Type,
+        registry: Option<&TypeRegistry>,
+    ) -> Option<HashSet<MemberPath>> {
+        let registry = registry?;
+
+        // Extract the type name from Named types
+        let type_name = match ty {
+            Type::Named(path) => path.segments.last()?,
+            _ => return None,
+        };
+
+        // Look up struct fields in the registry
+        let fields = registry.get_struct_fields(type_name)?;
+
         let mut members = HashSet::new();
-        // For now, just require the root to be assigned
-        // TODO: Expand to handle struct fields recursively
-        members.insert(MemberPath::Root);
-        let _ = ty; // Use the parameter to avoid warning
-        members
+        for field in fields {
+            members.insert(MemberPath::Field(
+                Box::new(MemberPath::Root),
+                field.name.clone(),
+            ));
+        }
+        Some(members)
     }
 }
 
@@ -960,9 +1040,21 @@ pub fn validate_function(
     func: &AnnotatedFunction,
     tracker: &AssignmentTracker,
 ) -> TranspileResult<()> {
+    validate_function_with_registry(func, tracker, None)
+}
+
+/// Run all validation checks with an optional type registry.
+///
+/// When a `TypeRegistry` is provided, the saturation checker can verify that
+/// all struct fields are assigned individually (not just whole-struct assignment).
+pub fn validate_function_with_registry(
+    func: &AnnotatedFunction,
+    tracker: &AssignmentTracker,
+    registry: Option<&TypeRegistry>,
+) -> TranspileResult<()> {
     let mut acc = DiagnosticAccumulator::new();
 
-    if let Err(e) = SaturationChecker::check(func, tracker) {
+    if let Err(e) = SaturationChecker::check_with_registry(func, tracker, registry) {
         acc.add_error(e);
     }
     if let Err(e) = HarmonyChecker::check(func, tracker) {
@@ -2455,5 +2547,239 @@ mod tests {
             result,
             Some(QuantifierTemplate::SeqComprehension { .. })
         ));
+    }
+
+    // ============ Field-Level Saturation Tests ============
+
+    /// Helper to build a TypeRegistry with a "State" struct having given fields
+    fn make_registry_with_fields(fields: &[&str]) -> TypeRegistry {
+        use crate::types::{FieldDef, StructDef};
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "State".to_string(),
+            generics: Default::default(),
+            fields: fields
+                .iter()
+                .map(|f| FieldDef {
+                    name: f.to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                })
+                .collect(),
+            is_spec: true,
+        });
+        registry
+    }
+
+    #[test]
+    fn test_saturation_root_assignment_passes_with_registry() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_ok(), "Root assignment should satisfy saturation even with registry");
+    }
+
+    #[test]
+    fn test_saturation_all_fields_assigned_passes() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "votes".to_string()));
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_ok(), "All fields assigned should pass saturation");
+    }
+
+    #[test]
+    fn test_saturation_partial_fields_fails() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        // Only assign max_bal, not votes
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_err(), "Partial field assignment should fail");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("votes"),
+            "Error should mention missing 'votes' field, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_saturation_no_assignment_fails_with_registry() {
+        let func = make_test_function();
+        let tracker = AssignmentTracker::new();
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_err(), "No assignment should fail");
+    }
+
+    #[test]
+    fn test_saturation_field_assignment_without_registry_passes() {
+        // Without a registry, field assignments are accepted as best-effort
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+
+        let result = SaturationChecker::check(&func, &tracker);
+        assert!(result.is_ok(), "Field assignment without registry should pass (best-effort)");
+    }
+
+    #[test]
+    fn test_saturation_no_assignment_fails_without_registry() {
+        let func = make_test_function();
+        let tracker = AssignmentTracker::new();
+
+        let result = SaturationChecker::check(&func, &tracker);
+        assert!(result.is_err(), "No assignment should fail even without registry");
+    }
+
+    #[test]
+    fn test_saturation_unknown_type_with_registry_uses_heuristic() {
+        // Type "State" is in registry, but param type is "UnknownType" — falls through
+        let func = AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "TestFn".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("UnknownType".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "s_".to_string(),
+                        ty: Type::Named(Path::single("UnknownType".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body: Expr::Literal(Literal::Bool(true)),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "some_field".to_string()));
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        // "UnknownType" not in registry, so falls back to heuristic (field exists = ok)
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_ok(), "Unknown type with field assignment should pass via heuristic");
+    }
+
+    #[test]
+    fn test_saturation_three_field_struct() {
+        let func = make_test_function();
+        let registry = make_registry_with_fields(&["field_a", "field_b", "field_c"]);
+
+        // Assign only two of three fields
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "field_a".to_string()));
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "field_b".to_string()));
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_err(), "Missing field_c should be detected");
+
+        // Now assign all three
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "field_c".to_string()));
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_ok(), "All three fields assigned should pass");
+    }
+
+    #[test]
+    fn test_saturation_primitive_type_needs_root() {
+        // For non-struct types (Bool, Int, etc.) there are no fields — need Root
+        let func = AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "TestFn".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "x".to_string(),
+                        ty: Type::Int,
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "y_".to_string(),
+                        ty: Type::Int,
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body: Expr::Literal(Literal::Bool(true)),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+
+        // No assignment — should fail
+        let tracker = AssignmentTracker::new();
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_err(), "Primitive type with no assignment should fail");
+
+        // Root assignment — should pass
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("y_", MemberPath::Root);
+        let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_ok(), "Primitive type with Root assignment should pass");
+    }
+
+    #[test]
+    fn test_validate_with_registry() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "votes".to_string()));
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        let result = validate_function_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_ok(), "validate_function_with_registry should accept full field coverage");
+    }
+
+    #[test]
+    fn test_validate_with_registry_detects_missing() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+        // votes not assigned
+
+        let registry = make_registry_with_fields(&["max_bal", "votes"]);
+        let result = validate_function_with_registry(&func, &tracker, Some(&registry));
+        assert!(result.is_err(), "validate_function_with_registry should detect missing field");
     }
 }
