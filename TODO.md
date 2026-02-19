@@ -42,7 +42,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 
 **Next steps (priority order):**
 1. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
-2. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. Remaining: 17.3.2/17.3.3 (RSL-specific marshalling, deferred), 17.6.3 (cluster integration tests, requires .NET SDK).
+2. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
 3. ~~**Phase 12: Generate proof code to eliminate assumes**~~ ✅ Phase 12.2.2 COMPLETE (12 executor assumes eliminated; 10 IO trust boundary assumes are irreducible). Phase 12.2.7 unreachable arms DONE. Remaining deferred items (12.2.3-12.2.6) are low priority.
 4. ~~**Phase 16: End-to-end compile & run testing**~~ ✅ COMPLETE — all 4 directions × all examples compile and verify; status matrix complete
 5. ~~**Phase 13: Port `tla+2tlars` branch features to main**~~ ✅ COMPLETE
@@ -50,7 +50,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 7. ~~Phase 14: Regeneration audit~~ ✅ DONE
 8. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: Phase 18 COMPLETE. 1288 total tests (976 unit + 122 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main), 616 verified, 0 errors.
+**Active work**: All phases complete. 1334 total tests (1011 unit + 133 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main), 616 verified, 0 errors. Remaining: 4 blocked/deferred items (1 manual impl replacement, 10 IO trust boundary assumes, 1 branch deletion).
 
 ## Reference
 
