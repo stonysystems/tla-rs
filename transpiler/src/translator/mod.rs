@@ -1202,6 +1202,19 @@ pub struct Translator {
     config: TranslatorConfig,
 }
 
+/// Controls how variables are dereferenced in invariant string conversion.
+///
+/// - `DerefOnly(var)`: Only dereference the named variable (used for loop invariants
+///   where only the loop variable needs `*`). Also enables `is`-operator cleanup,
+///   `&`-stripping, and exec→spec function name translation.
+/// - `DerefAllExcept(var)`: Dereference all variables except the named one (used for
+///   forall invariants where the bound variable should stay as-is).
+#[derive(Clone, Copy)]
+enum DerefMode<'a> {
+    DerefOnly(&'a str),
+    DerefAllExcept(&'a str),
+}
+
 impl Translator {
     /// Create a new translator with the given configuration
     pub fn new(config: TranslatorConfig) -> Self {
@@ -2838,157 +2851,7 @@ impl Translator {
     /// `loop_var` is the name of the loop variable that should be dereferenced (e.g., "p", "io").
     /// Only references to this variable will get a `*` prefix.
     fn expr_to_invariant_string_with_var(&self, expr: &ExecExpr, loop_var: &str) -> String {
-        match expr {
-            ExecExpr::Var(name) => {
-                // Only dereference the loop variable
-                if name == loop_var {
-                    format!("*{}", name)
-                } else if name.starts_with('*') {
-                    // Already has dereference
-                    name.clone()
-                } else {
-                    // Non-loop variable - don't dereference
-                    name.clone()
-                }
-            }
-            ExecExpr::Binary { lhs, op, rhs } => {
-                // For "is" expressions, the RHS is a variant name (not a variable to deref)
-                if op == "is" {
-                    let lhs_str = self.expr_to_invariant_string_with_var(lhs, loop_var);
-                    // RHS is the variant name - strip any * we might have added
-                    let rhs_str = match rhs.as_ref() {
-                        ExecExpr::Var(name) => name.trim_start_matches('*').to_string(),
-                        _ => self.expr_to_invariant_string_with_var(rhs, loop_var),
-                    };
-                    format!("{} {} {}", lhs_str, op, rhs_str)
-                } else {
-                    format!(
-                        "{} {} {}",
-                        self.expr_to_invariant_string_with_var(lhs, loop_var),
-                        op,
-                        self.expr_to_invariant_string_with_var(rhs, loop_var)
-                    )
-                }
-            }
-            ExecExpr::Field(base, field) => {
-                let base_str = self.expr_to_invariant_string_with_var(base, loop_var);
-                // Remove dereference for field access
-                let base_str = base_str.trim_start_matches('*');
-                format!("{}.{}", base_str, field)
-            }
-            ExecExpr::Literal(lit) => lit.clone(),
-            ExecExpr::MethodCall {
-                receiver,
-                method,
-                args,
-            } => {
-                let recv_str = self.expr_to_invariant_string_with_var(receiver, loop_var);
-                let recv_str = recv_str.trim_start_matches('*');
-                if args.is_empty() {
-                    format!("{}.{}()", recv_str, method)
-                } else {
-                    let args_str: Vec<String> = args
-                        .iter()
-                        .map(|a| self.expr_to_invariant_string_with_var(a, loop_var))
-                        .collect();
-                    format!("{}.{}({})", recv_str, method, args_str.join(", "))
-                }
-            }
-            ExecExpr::Call { func, args } => {
-                // Invariants are spec context — convert exec function name to spec name
-                let spec_func = self.exec_name_to_spec_name(func);
-                let needs_view = spec_func != *func; // exec name was translated, args need @
-                let args_str: Vec<String> = args
-                    .iter()
-                    .map(|a| {
-                        let s = self.expr_to_invariant_string_with_var(a, loop_var);
-                        if needs_view && !s.ends_with('@') {
-                            format!("{}@", s)
-                        } else {
-                            s
-                        }
-                    })
-                    .collect();
-                format!("{}({})", spec_func, args_str.join(", "))
-            }
-            ExecExpr::Unary { op, expr } => {
-                // For dereference, check if we're already dereferencing the loop var
-                if op == "*" {
-                    match expr.as_ref() {
-                        ExecExpr::Var(name) if name == loop_var => format!("*{}", name),
-                        ExecExpr::Var(name) => format!("*{}", name),
-                        _ => format!(
-                            "{}{}",
-                            op,
-                            self.expr_to_invariant_string_with_var(expr, loop_var)
-                        ),
-                    }
-                } else if op == "&" {
-                    // Invariants are spec context — strip & references
-                    self.expr_to_invariant_string_with_var(expr, loop_var)
-                } else {
-                    format!(
-                        "{}{}",
-                        op,
-                        self.expr_to_invariant_string_with_var(expr, loop_var)
-                    )
-                }
-            }
-            ExecExpr::If {
-                cond,
-                then_branch,
-                else_branch,
-            } => {
-                let cond_str = self.expr_to_invariant_string_with_var(cond, loop_var);
-                let then_str = self.expr_to_invariant_string_with_var(then_branch, loop_var);
-                if let Some(else_expr) = else_branch {
-                    let else_str = self.expr_to_invariant_string_with_var(else_expr, loop_var);
-                    format!("if {} {{ {} }} else {{ {} }}", cond_str, then_str, else_str)
-                } else {
-                    format!("if {} {{ {} }}", cond_str, then_str)
-                }
-            }
-            ExecExpr::Struct { name, fields } => {
-                let fields_str: Vec<String> = fields
-                    .iter()
-                    .map(|(field_name, field_val)| {
-                        format!(
-                            "{}: {}",
-                            field_name,
-                            self.expr_to_invariant_string_with_var(field_val, loop_var)
-                        )
-                    })
-                    .collect();
-                format!("{} {{ {} }}", name, fields_str.join(", "))
-            }
-            ExecExpr::Tuple(elems) => {
-                let elems_str: Vec<String> = elems
-                    .iter()
-                    .map(|e| self.expr_to_invariant_string_with_var(e, loop_var))
-                    .collect();
-                format!("({})", elems_str.join(", "))
-            }
-            ExecExpr::Clone(inner) => {
-                // For invariants, we can usually just use the inner expression
-                self.expr_to_invariant_string_with_var(inner, loop_var)
-            }
-            ExecExpr::VecLit(elems) => {
-                let elems_str: Vec<String> = elems
-                    .iter()
-                    .map(|e| self.expr_to_invariant_string_with_var(e, loop_var))
-                    .collect();
-                format!("seq![{}]", elems_str.join(", "))
-            }
-            ExecExpr::Block(stmts) => {
-                // For a block, convert the last statement (if any)
-                if let Some(last) = stmts.last() {
-                    self.expr_to_invariant_string_with_var(last, loop_var)
-                } else {
-                    "()".to_string()
-                }
-            }
-            _ => "/* unsupported expr */".to_string(),
-        }
+        self.expr_to_invariant_string_core(expr, DerefMode::DerefOnly(loop_var))
     }
 
     /// Convert an ExecExpr to a string representation for use in invariants.
@@ -2996,31 +2859,55 @@ impl Translator {
     /// Assumes any variable should be dereferenced (legacy behavior).
     #[cfg(test)]
     fn expr_to_invariant_string(&self, expr: &ExecExpr) -> String {
-        self.expr_to_invariant_string_skip(expr, "")
+        self.expr_to_invariant_string_core(expr, DerefMode::DerefAllExcept(""))
     }
 
     /// Convert ExecExpr to a string for use in forall invariants.
     /// `skip_var` is the forall-bound variable that should NOT be dereferenced.
     /// All other variables get `*` dereference (function parameters are &T).
     fn expr_to_invariant_string_skip(&self, expr: &ExecExpr, skip_var: &str) -> String {
+        self.expr_to_invariant_string_core(expr, DerefMode::DerefAllExcept(skip_var))
+    }
+
+    /// Core implementation for converting ExecExpr to invariant strings.
+    /// The `mode` parameter controls variable dereferencing behavior.
+    fn expr_to_invariant_string_core(&self, expr: &ExecExpr, mode: DerefMode<'_>) -> String {
+        // Recursive helper that preserves the mode
+        let recurse = |e: &ExecExpr| self.expr_to_invariant_string_core(e, mode);
+
         match expr {
-            ExecExpr::Var(name) => {
-                if name.starts_with('*') || name == skip_var {
-                    name.clone()
+            ExecExpr::Var(name) => match mode {
+                DerefMode::DerefOnly(target) => {
+                    if name == target {
+                        format!("*{}", name)
+                    } else {
+                        name.clone()
+                    }
+                }
+                DerefMode::DerefAllExcept(skip) => {
+                    if name.starts_with('*') || name == skip {
+                        name.clone()
+                    } else {
+                        format!("*{}", name)
+                    }
+                }
+            },
+            ExecExpr::Binary { lhs, op, rhs } => {
+                // DerefOnly mode: "is" expressions need special handling —
+                // RHS is a variant name, not a variable to dereference
+                if matches!(mode, DerefMode::DerefOnly(_)) && op == "is" {
+                    let lhs_str = recurse(lhs);
+                    let rhs_str = match rhs.as_ref() {
+                        ExecExpr::Var(name) => name.trim_start_matches('*').to_string(),
+                        _ => recurse(rhs),
+                    };
+                    format!("{} {} {}", lhs_str, op, rhs_str)
                 } else {
-                    format!("*{}", name)
+                    format!("{} {} {}", recurse(lhs), op, recurse(rhs))
                 }
             }
-            ExecExpr::Binary { lhs, op, rhs } => {
-                format!(
-                    "{} {} {}",
-                    self.expr_to_invariant_string_skip(lhs, skip_var),
-                    op,
-                    self.expr_to_invariant_string_skip(rhs, skip_var)
-                )
-            }
             ExecExpr::Field(base, field) => {
-                let base_str = self.expr_to_invariant_string_skip(base, skip_var);
+                let base_str = recurse(base);
                 let base_str = base_str.trim_start_matches('*');
                 format!("{}.{}", base_str, field)
             }
@@ -3030,41 +2917,48 @@ impl Translator {
                 method,
                 args,
             } => {
-                let recv_str = self.expr_to_invariant_string_skip(receiver, skip_var);
+                let recv_str = recurse(receiver);
                 let recv_str = recv_str.trim_start_matches('*');
                 if args.is_empty() {
                     format!("{}.{}()", recv_str, method)
                 } else {
-                    let args_str: Vec<String> = args
-                        .iter()
-                        .map(|a| self.expr_to_invariant_string_skip(a, skip_var))
-                        .collect();
+                    let args_str: Vec<String> = args.iter().map(&recurse).collect();
                     format!("{}.{}({})", recv_str, method, args_str.join(", "))
                 }
             }
             ExecExpr::Call { func, args } => {
-                let args_str: Vec<String> = args
-                    .iter()
-                    .map(|a| self.expr_to_invariant_string_skip(a, skip_var))
-                    .collect();
-                format!("{}({})", func, args_str.join(", "))
+                // DerefOnly mode: translate exec function names to spec names and add @ to args
+                if matches!(mode, DerefMode::DerefOnly(_)) {
+                    let spec_func = self.exec_name_to_spec_name(func);
+                    let needs_view = spec_func != *func;
+                    let args_str: Vec<String> = args
+                        .iter()
+                        .map(|a| {
+                            let s = recurse(a);
+                            if needs_view && !s.ends_with('@') {
+                                format!("{}@", s)
+                            } else {
+                                s
+                            }
+                        })
+                        .collect();
+                    format!("{}({})", spec_func, args_str.join(", "))
+                } else {
+                    let args_str: Vec<String> = args.iter().map(&recurse).collect();
+                    format!("{}({})", func, args_str.join(", "))
+                }
             }
             ExecExpr::Unary { op, expr } => {
                 if op == "*" {
                     match expr.as_ref() {
                         ExecExpr::Var(name) => format!("*{}", name),
-                        _ => format!(
-                            "{}{}",
-                            op,
-                            self.expr_to_invariant_string_skip(expr, skip_var)
-                        ),
+                        _ => format!("{}{}", op, recurse(expr)),
                     }
+                } else if matches!(mode, DerefMode::DerefOnly(_)) && op == "&" {
+                    // DerefOnly mode: invariants are spec context — strip & references
+                    recurse(expr)
                 } else {
-                    format!(
-                        "{}{}",
-                        op,
-                        self.expr_to_invariant_string_skip(expr, skip_var)
-                    )
+                    format!("{}{}", op, recurse(expr))
                 }
             }
             ExecExpr::If {
@@ -3072,10 +2966,10 @@ impl Translator {
                 then_branch,
                 else_branch,
             } => {
-                let cond_str = self.expr_to_invariant_string_skip(cond, skip_var);
-                let then_str = self.expr_to_invariant_string_skip(then_branch, skip_var);
+                let cond_str = recurse(cond);
+                let then_str = recurse(then_branch);
                 if let Some(else_expr) = else_branch {
-                    let else_str = self.expr_to_invariant_string_skip(else_expr, skip_var);
+                    let else_str = recurse(else_expr);
                     format!("if {} {{ {} }} else {{ {} }}", cond_str, then_str, else_str)
                 } else {
                     format!("if {} {{ {} }}", cond_str, then_str)
@@ -3085,33 +2979,23 @@ impl Translator {
                 let fields_str: Vec<String> = fields
                     .iter()
                     .map(|(field_name, field_val)| {
-                        format!(
-                            "{}: {}",
-                            field_name,
-                            self.expr_to_invariant_string_skip(field_val, skip_var)
-                        )
+                        format!("{}: {}", field_name, recurse(field_val))
                     })
                     .collect();
                 format!("{} {{ {} }}", name, fields_str.join(", "))
             }
             ExecExpr::Tuple(elems) => {
-                let elems_str: Vec<String> = elems
-                    .iter()
-                    .map(|e| self.expr_to_invariant_string_skip(e, skip_var))
-                    .collect();
+                let elems_str: Vec<String> = elems.iter().map(&recurse).collect();
                 format!("({})", elems_str.join(", "))
             }
-            ExecExpr::Clone(inner) => self.expr_to_invariant_string_skip(inner, skip_var),
+            ExecExpr::Clone(inner) => recurse(inner),
             ExecExpr::VecLit(elems) => {
-                let elems_str: Vec<String> = elems
-                    .iter()
-                    .map(|e| self.expr_to_invariant_string_skip(e, skip_var))
-                    .collect();
+                let elems_str: Vec<String> = elems.iter().map(&recurse).collect();
                 format!("seq![{}]", elems_str.join(", "))
             }
             ExecExpr::Block(stmts) => {
                 if let Some(last) = stmts.last() {
-                    self.expr_to_invariant_string_skip(last, skip_var)
+                    recurse(last)
                 } else {
                     "()".to_string()
                 }
@@ -16927,6 +16811,47 @@ mod tests {
         ]);
         let result = translator.expr_to_invariant_string_with_var(&vec_expr, "x");
         assert_eq!(result, "seq![1, 2]");
+    }
+
+    #[test]
+    fn test_deref_mode_contrast() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Same expression processed with both DerefMode variants should differ
+        let expr = ExecExpr::Binary {
+            lhs: Box::new(ExecExpr::Var("key".to_string())),
+            op: "==".to_string(),
+            rhs: Box::new(ExecExpr::Var("val".to_string())),
+        };
+
+        // DerefOnly("key"): only "key" gets *, "val" stays as-is
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&expr, "key"),
+            "*key == val"
+        );
+
+        // DerefAllExcept("key"): "key" stays, "val" gets *
+        assert_eq!(
+            translator.expr_to_invariant_string_skip(&expr, "key"),
+            "key == *val"
+        );
+
+        // DerefOnly mode: & is stripped in unary
+        let ref_expr = ExecExpr::Unary {
+            op: "&".to_string(),
+            expr: Box::new(ExecExpr::Var("x".to_string())),
+        };
+        assert_eq!(
+            translator.expr_to_invariant_string_with_var(&ref_expr, "y"),
+            "x"
+        );
+
+        // DerefAllExcept mode: & is kept as unary operator
+        assert_eq!(
+            translator.expr_to_invariant_string_skip(&ref_expr, "y"),
+            "&*x"
+        );
     }
 
     #[test]
