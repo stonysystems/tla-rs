@@ -1,7 +1,6 @@
 use vstd::{map::*, prelude::*, set::*};
 
 use crate::common::collections::{maps::*, sets::*, vecs::*};
-use crate::common::framework::abstractservice_s;
 use crate::common::native::io_s::*;
 use crate::implementation::common::generic_refinement::*;
 use crate::implementation::RSL::cconstants::*;
@@ -49,27 +48,6 @@ verus! {
             rc
         }
 
-        // pub proof fn lemma_received2b_insert(s:HashSet<EndPoint>, e:EndPoint)
-        //     requires
-        //         forall |p:EndPoint| s@.contains(p) ==> p.abstractable(),
-        //         e.abstractable(),
-        //     ensures
-        //         forall |p:EndPoint| s@.insert(e).contains(p) ==> p.abstractable(),
-        // {
-
-        // }
-
-        // pub proof fn lemma_received2b_insert2(s:HashSet<EndPoint>, s2:HashSet<EndPoint>, e:EndPoint)
-        //     requires
-        //         forall |p:EndPoint| s@.contains(p) ==> p.abstractable(),
-        //         e.abstractable(),
-        //         s2@ == s@.insert(e),
-        //     ensures
-        //         forall |p:EndPoint| s2@.contains(p) ==> p.abstractable(),
-        // {
-
-        // }
-
         pub proof fn lemma_learnerstate_insert(s:CLearnerState, s2:CLearnerState, opn:COperationNumber, tup:CLearnerTuple)
             requires
                 clearnerstate_is_abstractable(s),
@@ -86,32 +64,6 @@ verus! {
         {
 
         }
-
-        pub fn test1(e:EndPoint)
-        {
-            broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
-            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-            assert(obeys_key_model::<EndPoint>());
-
-            let mut s1: HashSet<EndPoint> = HashSet::new();
-            let ghost s2 = s1@;
-            s1.insert(e);
-            assert(s1@ == s2.insert(e));
-        }
-
-        // pub fn test2(e:CPacket)
-        // {
-        //     broadcast use vstd::std_specs::hash::group_hash_axioms;
-        //     broadcast use vstd::hash_map::group_hash_map_axioms;
-        //     broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
-        //     assert(obeys_key_model::<CPacket>());
-
-        //     let mut s1: HashSet<CPacket> = HashSet::new();
-        //     let ghost s2 = s1@;
-        //     s1.insert(e);
-        //     assert(s1@ == s2.insert(e));
-        // }
 
         #[verifier(external_body)]
         proof fn lemma_singleitem_hashset(s:HashSet<EndPoint>, ss:Set<AbstractEndPoint>, e:EndPoint)

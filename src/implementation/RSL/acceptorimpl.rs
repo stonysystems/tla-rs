@@ -3,9 +3,6 @@ use crate::common::collections::sets::*;
 use std::collections::HashMap;
 use vstd::prelude::*;
 
-// use std::iter::Map;
-use std::hash::RandomState;
-use std::result;
 use vstd::std_specs::hash::*;
 use vstd::{map::*, prelude::*, seq::*, set_lib::set_int_range};
 

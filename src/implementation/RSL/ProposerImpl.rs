@@ -13,7 +13,6 @@ use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::{configuration::*, proposer::*};
-use std::collections::hash_set::Iter;
 use std::collections::HashSet;
 use std::collections::*;
 use vstd::hash_set::HashSetWithView;
