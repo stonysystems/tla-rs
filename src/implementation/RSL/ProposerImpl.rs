@@ -332,24 +332,12 @@ impl CProposer{
         c.valid(),
         forall |p:CPacket| S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(*opn),
-        // ({
-        //     forall |p:CPacket| S@.contains(p) ==> p.msg is CMessage1b
-        // })
     ensures
     ({
         let lr = Lmax_balInS(c.view(),S@.map(|p:CPacket| p.view()), AbstractifyCOperationNumberToOperationNumber(*opn));
         result_Cmax_balInS == lr
     })
     {
-        // for p in &S {
-        //     for (opn, _) in &p.msg.clone()->votes {
-        //         if !CBalLeq(&p.msg.clone()->votes[opn].max_value_bal, &c) {
-        //             return false;
-        //         }
-        //     }
-        // }
-        // true
-
         for p in S {
             match p.msg.clone() {
                 CMessage::CMessage1b { votes, .. } => {
@@ -375,24 +363,12 @@ impl CProposer{
         c.valid(),
         forall |p:CPacket| S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(*opn),
-        // ({
-        //     forall |p:CPacket| S@.contains(p) ==> p.msg is CMessage1b
-        // })
     ensures
     ({
         let lr = LExistsBallotInS(abstractify_crequestbatch(v), c.view(), S@.map(|p:CPacket| p.view()), AbstractifyCOperationNumberToOperationNumber(*opn));
         result_CExistsBallotInS == lr
     })
     {
-        // for p in &S {
-        //     for (opn, _) in &p.msg.clone()->votes {
-        //         if !(p.msg.clone()->votes[opn].max_value_bal==c) || !(p.msg.clone()->votes[opn].max_val==v) {
-        //             return false;
-        //         }
-        //     }
-        // }
-        // true
-
         for p in S {
             match p.msg.clone() {
                 CMessage::CMessage1b { votes, .. } => {
@@ -729,16 +705,6 @@ impl CProposer{
 
     fn test3()
     {
-        // // assert(obeys_hash_table_key_model::<u32>());
-        // assume(vstd::std_specs::hash::obeys_key_model::<u32>());
-        // assume(vstd::std_specs::hash::obeys_key_model::<EndPoint>());
-        // let mut m = HashMapWithView::<u32, u32>::new();
-        // m.insert(2, 3);
-        // m.insert(3, 4);
-        // assert(m@.contains_key(2));
-
-        // // assume(axiom_endpoint_view());
-        // let mut mm = HashMapWithView::<EndPoint, u64>::new();
         broadcast use vstd::std_specs::hash::group_hash_axioms;
             let mut m = HashMap::<u32, i8>::new();
             assert(m@ == Map::<u32, i8>::empty());
@@ -768,7 +734,6 @@ impl CProposer{
             assert(items@.no_duplicates());
     }
 
-    // #[verifier(external_body)]
     pub fn CProposerMaybeEnterNewViewAndSend1a(&mut self) -> (result_CProposerMaybeEnterNewViewAndSend1a:OutboundPackets)
     requires
         old(self).valid(),

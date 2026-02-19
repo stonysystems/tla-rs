@@ -132,12 +132,6 @@ verus! {
             &&& r_sends.finite()
         }),
     {
-        // assume(forall |i: int| 0 <= i < glb.len() ==> glb[i].ls.environment.sentPackets.finite());
-        // lemma_set_properties::<NetPacket>();
-        // lemma_set_properties::<LockPacket>();
-        // lemma_seq_properties::<NetPacket>();
-        // lemma_seq_properties::<LockPacket>();
-
         assert(r_ios.len() == ios.len());
 
         let sends = ios.filter(|io:NetEvent| io is Send).map_values(|io: NetEvent| io->s).to_set();
@@ -527,21 +521,6 @@ verus! {
                          && p.msg == marshall_lock_message(epoch) 
                 ==> 2 <= epoch <= ss.history.len()
                      && p.src == ss.history[epoch-1]
-                // by
-            // {
-            //     let ap = abstractify_net_packet_to_lock_packet(p);
-            //     assert(sb[0].hosts.contains(p.src));
-            //     lemma_PacketSentByServerIsDemarshallable(config, db, i, p);
-            //     assert(net_packet_is_abstractable(p));
-            //     // lemma_ParseMarshallLockedAbstract(p.msg, epoch, ap.msg);
-            //     lemma_LockedPacketImpliesTransferPacket(config, lsb, i, ap);
-            //     let q = choose |q| ls.environment.sentPackets.contains(q)
-            //              && q.msg is Transfer
-            //              && q.msg->transfer_epoch == ap.msg->locked_epoch
-            //              && q.dst == p.src;
-
-            //     assert(gls.ls.environment.sentPackets.contains(q));
-            // }
         );
         }
         sb

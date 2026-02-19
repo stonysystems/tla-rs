@@ -53,17 +53,8 @@ pub proof fn lemma_seq_fold_left_merge_right_assoc<A, B>(s: Seq<A>, init: B, f: 
     let head = s[0];
     let tail = s.subrange(1, len);
     let p = accf(init, s[0]);
-    // assert(tail.len() > 0);
-    // assert(all == tail.fold_left(p, accf));
-    // assert(start == s1.fold_left(init, accf));
-    // assert(s1.len() > 0);
-    // assert(start == s1.subrange(1, s1.len() as int).fold_left(p, accf));
-    // assert(start == s1.subrange(1, len - 1).fold_left(p, accf));
     assert_seqs_equal!(tail.subrange(0, len - 2) == s1.subrange(1, len - 1));
-    // assert(start == tail.subrange(0, tail.len() - 1).fold_left(p, accf));
-    // assert(all == tail.fold_left(p, accf));
     lemma_seq_fold_left_merge_right_assoc::<A, B>(tail, p, f, g);
-    // assert(all == g(start, f(last)));
   }
 }
 

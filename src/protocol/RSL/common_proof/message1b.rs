@@ -618,39 +618,6 @@ verus! {
                 BalLt(p_2b.msg->bal_2b, p_1b.msg->votes[opn].max_value_bal));
             } else {
                 let (acceptor_idx, ios) = lemma_ActionThatSends1bIsProcess1a(b[i - 1], b[i], p_1b);
-                // let s = b[i-1].replicas[acceptor_idx].replica.acceptor;
-                // let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
-                // let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-
-                // let e = b[i-1].environment;
-                // let e_ = b[i].environment;
-
-                // assert(nextActionIndex!=4);
-                // assert(nextActionIndex == 0);
-
-                // let recv = ios[0]->r;
-                // assert(LEnvironment_Next(e, e_));
-                // assert(IsValidLEnvStep(e, e.nextStep));
-                // assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-                // assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-                // assert(ios[0] is Receive);
-                // // assert(ios[0]->r.dst == e.nextStep->actor);
-                // assert(recv.dst == e.nextStep->actor);
-                // assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
-                // let pkts = ExtractSentPacketsFromIos(ios);
-                // lemma_ExtractSentPacketsFromIos(ios);
-
-                // assert(e.nextStep is LEnvStepHostIos);
-                // assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-                // assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
-                // assert(ios.contains(ios[0]) && ios[0] is Receive);
-                // assert(match_ios_recv(ios[0], e.sentPackets));
-                // assert(e.sentPackets.contains(ios[0]->r));
-                // assert(b[i].environment.sentPackets.contains(p_1b));
-                // assert(pkts.contains(p_1b));
-
                 assert(ios.contains(LIoOp::Send{s:p_1b}));
                 assume(false); //why?
             }

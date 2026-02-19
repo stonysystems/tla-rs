@@ -32,16 +32,6 @@ verus! {
         }
     }
 
-    // pub proof fn lemma_HandleRequestBatchHidden(state:AppState, batch:RequestBatch)
-    //     ensures
-    //         HandleRequestBatchHidden(state, batch).0.len() == batch.len() + 1,
-    //         HandleRequestBatchHidden(state, batch).1.len() == batch.len(),
-    //         forall |i: int| 0 <= i < batch.len() ==> HandleRequestBatchHidden(state, batch).1.index(i) is Reply
-    // {
-
-    // }
-
-
     pub proof fn lemma_HandleRequestBatchHidden(
         state: AppState,
         batch: RequestBatch,

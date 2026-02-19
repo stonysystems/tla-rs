@@ -12,17 +12,6 @@ use crate::verus_extra::choose_v::*;
 use crate::verus_extra::seq_lib_v;
 use crate::verus_extra::seq_lib_v::*;
 
-// TODO: possible improvements.
-//
-// + [2023-02-10] `&[u8]` doesn't have a usable `.len()` in pervasive, so we end up using
-//   `Vec<u8>` instead, which may cause an unnecessary runtime overhead.
-//
-// + [2023-02-10] Verus doesn't have a higher performance Vec constructor; need to do repeated
-//   pushes right now.
-//
-// + [2023-03-31] There is no convenient support for overflow/underflow checking (for example,
-//   `checked_add`), would be nice to have them in the standard library.
-
 verus! {
 #[verifier::external_body]
 pub fn print(s: &str) {
@@ -344,11 +333,6 @@ impl Marshalable for usize {
     let (r, end) = match u64::deserialize(data, start) { None => { return None; }, Some(x) => x, };
     if r <= usize::MAX as u64 {
       let res = r as usize;
-      // assert(res.0 as int <= u64::MAX);
-      // assert(r.0 as int <= u64::MAX);
-      // assert(res.0 as int <= usize::MAX);
-      // assert(r.0 as int <= usize::MAX);
-      // assert(res.0 as int == r.0 as int);
       Some((res, end))
     } else {
       None
@@ -483,15 +467,6 @@ impl Marshalable for Vec<u8> {
     // assert(res_slice@ == data@.subrange(mid as int, end as int));
     // assert(res@ == res_slice@);
 
-    // assert(res.ghost_serialize() == usize(len).ghost_serialize() + res@);
-    // assert(data@.subrange(start as int, mid as int) == usize(len).ghost_serialize());
-    // assert(data@.subrange(mid as int, end as int) == res@);
-
-    // assert(0 <= start);
-    // assert(start <= mid);
-    // assert(mid <= end);
-    // assert(end <= data.len());
-
     proof {
       // We split this part of the proof out into a lemma due to verifier performance issues;
       // with the lemma inlined, the proof failed.
@@ -567,11 +542,6 @@ where
 
   #[verifier(external_body)]
   exec fn _is_marshalable(&self) -> bool {
-    // &&& self@.len() <= usize::MAX
-    // &&& (forall |x: K| self.keys().cloned().collect::<Vec<K>>()@.contains(x) ==> #[trigger] x.is_marshalable())
-    // &&& (forall |x: V| self.values().cloned().collect::<Vec<V>>()@.contains(x) ==> #[trigger] x.is_marshalable())
-    // &&& (self@.len() as usize).ghost_serialize().len() +
-    //     self.keys().cloned().collect::<Vec<K>>()@.fold_left(0, |acc: int, x: K| acc + x.ghost_serialize().len()) + self.values().cloned().collect::<Vec<V>>()@.fold_left(0, |acc: int, x: V| acc + x.ghost_serialize().len()) <= usize::MAX
     true
   }
 
@@ -1095,21 +1065,12 @@ impl<T: Marshalable> Marshalable for Vec<T> {
 
       assert(data@.subrange(mid as int, end as int) == res@.fold_left(emp@, accf@)) by {
         let f = |x: T| x.ghost_serialize();
-        // assert(data@.subrange(mid as int, old_end@) == seq_lib_v::seq_fold_left(old_res@, emp@, accf@));
         seq_lib_v::lemma_seq_add_subrange::<u8>(data@, mid as int, old_end@, end as int);
-        // assert(data@.subrange(mid as int, end as int) ==
-        //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + data@.subrange(old_end@, end as int));
-        // assert(data@.subrange(mid as int, end as int) ==
-        //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + x.ghost_serialize());
-        // assert(f(x) == x.ghost_serialize());
-        // assert(data@.subrange(mid as int, end as int) ==
-        //        seq_lib_v::seq_fold_left(old_res@, emp@, accf@) + f(x));
         seq_lib_v::lemma_seq_fold_left_append_right(res@, emp@, f);
         assert(accf@ == (|acc: Seq<u8>, x: T| acc + f(x))) by {
           assert(accf@ =~= (|acc: Seq<u8>, x: T| acc + f(x)));
         }
         assert(old_res@ =~= res@.subrange(0, res@.len() - 1));
-        // assert(data@.subrange(mid as int, end as int) == seq_lib_v::seq_fold_left(res@, emp@, accf@));
       }
 
       assert (len.ghost_serialize().len() +

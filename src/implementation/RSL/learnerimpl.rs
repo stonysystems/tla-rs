@@ -327,13 +327,6 @@ verus! {
                                 assert(LLearnerProcess2b(ss, ns, p));
                             }
                         }
-                        // if self.unexecuted_learner_state[&opn].received_2b_message_senders.contains(&packet.src) {
-                        //             // No state changes needed
-                        // } else {
-                        //             let mut tup = self.unexecuted_learner_state[&opn].clone();
-                        //             tup.received_2b_message_senders.insert(packet.src);
-                        //             self.unexecuted_learner_state.insert(opn, tup);
-                        // }
                     }
 
                 }

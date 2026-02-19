@@ -1034,15 +1034,6 @@ pub open spec fn ConstantsStayConstant_Replica(replica: LReplica, replica_: CRep
 pub open spec fn Replica_Common_Preconditions(replica:CReplica, inp:CPacket) ->bool
   {
     replica.valid()
-    // && CPacketIsSendable(inp)
-    //
-    // ^^^ Needs to be implemented in packetparsing:
-    // predicate CPacketIsSendable(cpacket:CPacket)
-    // {
-    //   && CMessageIsMarshallable(cpacket.msg)
-    //   && CPacketIsAbstractable(cpacket)
-    //   && EndPointIsValidIPV4(cpacket.src)
-    // }
   }
 
   pub open spec fn Replica_Next_Process_Heartbeat_Preconditions(replica:CReplica, inp:CPacket) -> bool
@@ -1050,7 +1041,6 @@ pub open spec fn Replica_Common_Preconditions(replica:CReplica, inp:CPacket) ->b
     inp.msg is CMessageHeartbeat
     && replica.valid()
     && inp.valid()
-    // && inp.msg.marshallable()
   }
 
   pub open spec fn Replica_Next_ReadClock_MaybeNominateValueAndSend2a_Preconditions(replica:CReplica) -> bool

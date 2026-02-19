@@ -251,13 +251,6 @@ verus! {
                     } else {
                         history = prev_history;
                     }
-                    // This passes
-                    // assert(forall |p: LockPacket| glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> 2 <= p.msg->transfer_epoch <= history.len());
-                    // assert(forall |p: LockPacket| glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> history[p.msg->transfer_epoch-1] == p.dst);
-                    // assert(forall |h: AbstractEndPoint, j: int| glb[i].ls.servers.contains_key(h) && 0 <= j < history.len()-1 && history[j] == h ==> j+1 <= glb[i].ls.servers[h].epoch);
-                    // assert(forall |h: AbstractEndPoint| glb[i].ls.servers.contains_key(h) && h != history.last() ==> !glb[i].ls.servers[h].held);
-                    // assert(forall |h: AbstractEndPoint| glb[i].ls.servers.contains_key(h) && glb[i].ls.servers[h].held ==> glb[i].ls.servers[h].epoch == history.len());
-
                 } else {
                     if !(ios[0] is TimeoutReceive)
                     && !s_prev.ls.servers[id].held

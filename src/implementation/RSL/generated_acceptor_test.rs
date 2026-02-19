@@ -64,8 +64,6 @@ pub fn test_generated_code_structure() {
 // for the same input.
 #[verifier(external)]
 pub fn test_generated_vs_manual_equivalence() {
-    use std::collections::HashMap;
-
     // Create test data
     let mut votes: CVotes = HashMap::new();
     votes.insert(5, CVote { max_value_bal: CBallot { seqno: 1, proposer_id: 0 }, max_val: Vec::new() });

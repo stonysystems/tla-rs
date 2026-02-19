@@ -278,13 +278,4 @@ verus! {
         }
     }
 
-    // pub proof fn test()
-    // {
-    //     let s = seq![1,2,3];
-    //     assert(s.len() > 0);
-    //     assert(s.contains(1));
-    //     let x = choose |x:int| s.contains(x) && (forall |i:int| s.contains(i) ==> x <= i);
-    //     assert(s.contains(x));
-    //     assert(forall |i:int| s.contains(i) ==> x <= i);
-    // }
 }

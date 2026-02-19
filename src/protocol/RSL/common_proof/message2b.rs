@@ -386,33 +386,6 @@ verus! {
                 // // let s_ = b[i].replicas[idx].replica.acceptor;
                 // let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
 
-                // let e = b[i-1].environment;
-                // let e_ = b[i].environment;
-
-                // // assert(nextActionIndex!=4);
-                // assert(nextActionIndex == 0); // why?
-
-                // let recv = ios[0]->r;
-                // assert(LEnvironment_Next(e, e_));
-                // assert(IsValidLEnvStep(e, e.nextStep));
-                // assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-                // assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-                // assert(ios[0] is Receive);
-                // // assert(ios[0]->r.dst == e.nextStep->actor);
-                // assert(recv.dst == e.nextStep->actor);
-                // assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
-                // let pkts = ExtractSentPacketsFromIos(ios);
-                // lemma_ExtractSentPacketsFromIos(ios);
-
-                // assert(e.nextStep is LEnvStepHostIos);
-                // assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-                // assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
-                // assert(ios.contains(ios[0]) && ios[0] is Receive);
-                // assert(match_ios_recv(ios[0], e.sentPackets));
-                // assert(e.sentPackets.contains(ios[0]->r));
-
                 if opn >= s_.log_truncation_point {
                     lemma_CurrentVoteDoesNotExceedMaxBal(b, c, i - 1, opn, acceptor_idx);
                     if s_.votes[p.msg->opn_2b].max_value_bal == s.votes[p.msg->opn_2b].max_value_bal {
