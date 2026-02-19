@@ -9805,24 +9805,7 @@ impl Translator {
             });
         }
 
-        let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
-        let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
-        // Deref remapped scalar input params only when the other side is not a variable reference
-        let rhs_is_var = matches!(&rhs_expr, ExecExpr::Var(_));
-        let lhs_is_var = matches!(&lhs_expr, ExecExpr::Var(_));
-        let lhs_expr = if !rhs_is_var {
-            self.deref_remapped_scalar_input(lhs_expr, ctx)
-        } else {
-            lhs_expr
-        };
-        let rhs_expr = if !lhs_is_var {
-            self.deref_remapped_scalar_input(rhs_expr, ctx)
-        } else {
-            rhs_expr
-        };
-        // Cast .len() → u64 to prevent usize vs u64 mismatches
-        let lhs_expr = Self::cast_len_to_u64(lhs_expr);
-        let rhs_expr = Self::cast_len_to_u64(rhs_expr);
+        let (lhs_expr, rhs_expr) = self.normalize_binary_operands(lhs_expr, rhs_expr, ctx);
         Ok(ExecExpr::Binary {
             lhs: Box::new(lhs_expr),
             op: "==".to_string(),
@@ -10983,21 +10966,22 @@ impl Translator {
     ///     __lhs_result && __rhs_result
     /// }
     /// ```
-    fn transform_binary_op(
+    /// Normalize a pair of binary operands: dereference scalar inputs,
+    /// conditionally dereference remapped scalars, and cast `.len()` to u64.
+    ///
+    /// This 3-step sequence is shared between `transform_equality` and
+    /// `transform_binary_op` to ensure consistent operand handling.
+    fn normalize_binary_operands(
         &self,
-        lhs: &Expr,
-        rhs: &Expr,
-        op: &str,
+        lhs_expr: ExecExpr,
+        rhs_expr: ExecExpr,
         ctx: &TransformContext,
-    ) -> TranspileResult<ExecExpr> {
-        let lhs_expr = self.transform_expr(lhs, ctx)?;
-        let rhs_expr = self.transform_expr(rhs, ctx)?;
-        // Deref scalar input params (&u64 → u64) in comparisons and arithmetic
+    ) -> (ExecExpr, ExecExpr) {
+        // Step 1: Dereference scalar input params (&u64 → u64)
         let lhs_expr = self.deref_scalar_input_in_expr(lhs_expr, ctx);
         let rhs_expr = self.deref_scalar_input_in_expr(rhs_expr, ctx);
-        // Deref remapped scalar input params (e.g., opn: OperationNumber → &u64)
-        // only when the other side is NOT a variable reference to avoid breaking
-        // comparisons where both sides are &u64 (e.g., opn >= log_truncation_point).
+        // Step 2: Dereference remapped scalar inputs only when the other side
+        // is NOT a bare variable reference (avoids breaking &u64 vs &u64 comparisons)
         let rhs_is_var = matches!(&rhs_expr, ExecExpr::Var(_));
         let lhs_is_var = matches!(&lhs_expr, ExecExpr::Var(_));
         let lhs_expr = if !rhs_is_var {
@@ -11010,9 +10994,22 @@ impl Translator {
         } else {
             rhs_expr
         };
-        // Cast .len() → u64 to prevent usize vs u64 mismatches
+        // Step 3: Cast .len() → u64 to prevent usize vs u64 mismatches
         let lhs_expr = Self::cast_len_to_u64(lhs_expr);
         let rhs_expr = Self::cast_len_to_u64(rhs_expr);
+        (lhs_expr, rhs_expr)
+    }
+
+    fn transform_binary_op(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        op: &str,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        let lhs_expr = self.transform_expr(lhs, ctx)?;
+        let rhs_expr = self.transform_expr(rhs, ctx)?;
+        let (lhs_expr, rhs_expr) = self.normalize_binary_operands(lhs_expr, rhs_expr, ctx);
         let collection_add_helper = if op == "+" {
             self.collection_add_helper(lhs, rhs, ctx)
         } else {
@@ -24102,5 +24099,104 @@ mod tests {
             }
             _ => panic!("Expected MethodCall, got: {:?}", result),
         }
+    }
+
+    #[test]
+    fn test_normalize_binary_operands_derefs_scalar_inputs() {
+        let translator = Translator::default();
+        let mut input_types = HashMap::new();
+        input_types.insert("node".to_string(), Type::Int);
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["node".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let lhs = ExecExpr::Var("node".to_string());
+        let rhs = ExecExpr::Literal("42".to_string());
+        let (lhs_result, rhs_result) = translator.normalize_binary_operands(lhs, rhs, &ctx);
+
+        // Scalar input "node" should be dereferenced
+        assert!(
+            matches!(&lhs_result, ExecExpr::Unary { op, .. } if op == "*"),
+            "Scalar input should be dereferenced: {:?}",
+            lhs_result
+        );
+        // Literal stays unchanged
+        assert!(
+            matches!(&rhs_result, ExecExpr::Literal(v) if v == "42"),
+            "Literal should be unchanged: {:?}",
+            rhs_result
+        );
+    }
+
+    #[test]
+    fn test_normalize_binary_operands_casts_len() {
+        let translator = Translator::default();
+        let ctx = make_cast_test_context(&translator.config);
+
+        let lhs = ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("items".to_string())),
+            method: "len".to_string(),
+            args: vec![],
+        };
+        let rhs = ExecExpr::Literal("5".to_string());
+        let (lhs_result, _) = translator.normalize_binary_operands(lhs, rhs, &ctx);
+
+        // .len() should be cast to u64
+        assert!(
+            matches!(&lhs_result, ExecExpr::Cast(inner, ty) if ty == "u64" && matches!(inner.as_ref(), ExecExpr::MethodCall { method, .. } if method == "len")),
+            ".len() should be cast to u64: {:?}",
+            lhs_result
+        );
+    }
+
+    #[test]
+    fn test_normalize_binary_operands_no_remapped_deref_when_both_vars() {
+        // When both sides are variable references, remapped scalar inputs should NOT
+        // be dereferenced (to avoid breaking &u64 vs &u64 comparisons)
+        let mut config = TranslatorConfig::default();
+        config.type_remapping.insert("OperationNumber".to_string(), "u64".to_string());
+        let translator = Translator::new(config);
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "opn".to_string(),
+            Type::Named(Path { segments: vec!["OperationNumber".to_string()] }),
+        );
+        input_types.insert(
+            "other_opn".to_string(),
+            Type::Named(Path { segments: vec!["OperationNumber".to_string()] }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["opn".to_string(), "other_opn".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let lhs = ExecExpr::Var("opn".to_string());
+        let rhs = ExecExpr::Var("other_opn".to_string());
+        let (lhs_result, rhs_result) = translator.normalize_binary_operands(lhs, rhs, &ctx);
+
+        // Both sides are Var, so neither should get remapped deref
+        assert!(
+            matches!(&lhs_result, ExecExpr::Var(name) if name == "opn"),
+            "Both-Var LHS should stay unchanged: {:?}",
+            lhs_result
+        );
+        assert!(
+            matches!(&rhs_result, ExecExpr::Var(name) if name == "other_opn"),
+            "Both-Var RHS should stay unchanged: {:?}",
+            rhs_result
+        );
     }
 }
