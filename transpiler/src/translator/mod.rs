@@ -2020,34 +2020,15 @@ impl Translator {
                 // - vec_fields (insert on HashMap): use recv.clone()
                 // - collection_fields (insert/remove on HashSet): use clone_hashset(&recv)
                 let clone_call = if self.is_struct_vec_field(&fname) {
-                    ExecExpr::Call {
-                        func: format!("clone_{}", fname),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(recv),
-                        }],
-                    }
+                    Self::make_ref_call(format!("clone_{}", fname), recv)
                 } else if self.is_map_field(&fname) {
-                    // HashMap with deep abstraction: clone_{prefix}(&receiver)
                     let prefix = self.get_map_field_prefix(&fname).unwrap().to_string();
-                    ExecExpr::Call {
-                        func: format!("clone_{}", prefix),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(recv),
-                        }],
-                    }
+                    Self::make_ref_call(format!("clone_{}", prefix), recv)
                 } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
                     // HashSet: clone_hashset(&receiver)
-                    ExecExpr::Call {
-                        func: "clone_hashset".to_string(),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(recv),
-                        }],
-                    }
+                    Self::make_ref_call("clone_hashset".to_string(), recv)
                 };
 
                 // let mut __field = clone_hashset(&receiver);
@@ -2078,32 +2059,14 @@ impl Translator {
                 let tmp_name = format!("__{}", fname);
 
                 let clone_call = if self.is_struct_vec_field(&fname) {
-                    ExecExpr::Call {
-                        func: format!("clone_{}", fname),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(recv),
-                        }],
-                    }
+                    Self::make_ref_call(format!("clone_{}", fname), recv)
                 } else if self.is_map_field(&fname) {
                     let prefix = self.get_map_field_prefix(&fname).unwrap().to_string();
-                    ExecExpr::Call {
-                        func: format!("clone_{}", prefix),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(recv),
-                        }],
-                    }
+                    Self::make_ref_call(format!("clone_{}", prefix), recv)
                 } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
-                    ExecExpr::Call {
-                        func: "clone_hashset".to_string(),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(recv),
-                        }],
-                    }
+                    Self::make_ref_call("clone_hashset".to_string(), recv)
                 };
 
                 pre_stmts.push(ExecExpr::Let {
@@ -2317,49 +2280,32 @@ impl Translator {
     /// When `vec_fields` is configured, those fields get `.clone()`.
     /// Unlisted fields are assumed Copy and accessed directly.
     /// When both are empty, falls back to `clone_hashset()` for all fields (backwards-compatible).
+    /// Build `func_name(&expr)` — a call expression passing the argument by reference.
+    fn make_ref_call(func_name: String, expr: ExecExpr) -> ExecExpr {
+        ExecExpr::Call {
+            func: func_name,
+            args: vec![ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(expr),
+            }],
+        }
+    }
+
     fn clone_input_field_access(&self, expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
         match &expr {
             // Field access on input: s.field
             ExecExpr::Field(base, field_name) => {
                 if Self::is_input_var(base, ctx) {
                     if self.is_struct_vec_field(field_name) {
-                        // Struct-typed Vec field: use clone_<field>(&s.field)
-                        ExecExpr::Call {
-                            func: format!("clone_{}", field_name),
-                            args: vec![ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(expr),
-                            }],
-                        }
+                        Self::make_ref_call(format!("clone_{}", field_name), expr)
                     } else if self.is_map_field(field_name) {
-                        // HashMap with deep abstraction: use clone_{prefix}(&s.field)
                         let prefix = self.get_map_field_prefix(field_name).unwrap().to_string();
-                        ExecExpr::Call {
-                            func: format!("clone_{}", prefix),
-                            args: vec![ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(expr),
-                            }],
-                        }
+                        Self::make_ref_call(format!("clone_{}", prefix), expr)
                     } else if self.is_hashset_field(field_name) {
-                        // HashSet field: wrap with clone_hashset(&s.field)
-                        ExecExpr::Call {
-                            func: "clone_hashset".to_string(),
-                            args: vec![ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(expr),
-                            }],
-                        }
+                        Self::make_ref_call("clone_hashset".to_string(), expr)
                     } else if self.is_clone_field(field_name) {
-                        // Non-Copy field with clone helper: use clone_<type>(&s.field)
                         if let Some(helper) = self.get_clone_helper_name(field_name) {
-                            ExecExpr::Call {
-                                func: helper,
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: Box::new(expr),
-                                }],
-                            }
+                            Self::make_ref_call(helper, expr)
                         } else {
                             self.clone_with_config(expr)
                         }
@@ -2382,43 +2328,15 @@ impl Translator {
                 match inner.as_ref() {
                     ExecExpr::Field(base, field_name) if Self::is_input_var(base, ctx) => {
                         if self.is_struct_vec_field(field_name) {
-                            // Struct-typed Vec: replace .clone() with clone_<field>(&...)
-                            ExecExpr::Call {
-                                func: format!("clone_{}", field_name),
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: inner.clone(),
-                                }],
-                            }
+                            Self::make_ref_call(format!("clone_{}", field_name), *inner.clone())
                         } else if self.is_map_field(field_name) {
-                            // HashMap with deep abstraction: replace .clone() with clone_{prefix}(&...)
                             let prefix = self.get_map_field_prefix(field_name).unwrap().to_string();
-                            ExecExpr::Call {
-                                func: format!("clone_{}", prefix),
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: inner.clone(),
-                                }],
-                            }
+                            Self::make_ref_call(format!("clone_{}", prefix), *inner.clone())
                         } else if self.is_hashset_field(field_name) {
-                            // Replace .clone() with clone_hashset(&...)
-                            ExecExpr::Call {
-                                func: "clone_hashset".to_string(),
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: inner.clone(),
-                                }],
-                            }
+                            Self::make_ref_call("clone_hashset".to_string(), *inner.clone())
                         } else if self.is_clone_field(field_name) {
-                            // Non-Copy field with clone helper
                             if let Some(helper) = self.get_clone_helper_name(field_name) {
-                                ExecExpr::Call {
-                                    func: helper,
-                                    args: vec![ExecExpr::Unary {
-                                        op: "&".to_string(),
-                                        expr: inner.clone(),
-                                    }],
-                                }
+                                Self::make_ref_call(helper, *inner.clone())
                             } else {
                                 self.clone_with_config(*inner.clone())
                             }
@@ -9431,13 +9349,10 @@ impl Translator {
                 stmts.push(ExecExpr::Let {
                     pattern: "__other_vec".to_string(),
                     ty: None,
-                    value: Box::new(ExecExpr::Call {
-                        func: "hashset_to_vec".to_string(),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(ExecExpr::Var("__other".to_string())),
-                        }],
-                    }),
+                    value: Box::new(Self::make_ref_call(
+                        "hashset_to_vec".to_string(),
+                        ExecExpr::Var("__other".to_string()),
+                    )),
                 });
                 stmts.push(ExecExpr::Let {
                     pattern: "mut __i".to_string(),
@@ -9522,13 +9437,10 @@ impl Translator {
                 stmts.push(ExecExpr::Let {
                     pattern: "__other_vec".to_string(),
                     ty: None,
-                    value: Box::new(ExecExpr::Call {
-                        func: "hashset_to_vec".to_string(),
-                        args: vec![ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(ExecExpr::Var("__other".to_string())),
-                        }],
-                    }),
+                    value: Box::new(Self::make_ref_call(
+                        "hashset_to_vec".to_string(),
+                        ExecExpr::Var("__other".to_string()),
+                    )),
                 });
                 stmts.push(ExecExpr::Let {
                     pattern: "mut __i".to_string(),
