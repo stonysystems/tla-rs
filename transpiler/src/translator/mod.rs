@@ -6893,11 +6893,8 @@ impl Translator {
                     .iter()
                     .map(|a| {
                         if use_spec_call {
-                            // For spec function arguments, apply @ at root of field chains
-                            if let Some(root) = Self::field_chain_root(a) {
-                                if view_params.contains(root) {
-                                    return self.expr_with_view_at_root(a);
-                                }
+                            if let Some(s) = self.try_view_at_root(a, view_params) {
+                                return s;
                             }
                         }
                         self.expr_to_view_requires_string(a, view_params, scalar_params)
@@ -7021,10 +7018,8 @@ impl Translator {
                 let args_str: Vec<_> = args
                     .iter()
                     .map(|a| {
-                        if let Some(root) = Self::field_chain_root(a) {
-                            if view_params.contains(root) {
-                                return self.expr_with_view_at_root(a);
-                            }
+                        if let Some(s) = self.try_view_at_root(a, view_params) {
+                            return s;
                         }
                         self.expr_to_spec_requires_string(a, view_params, scalar_params)
                     })
@@ -7084,16 +7079,9 @@ impl Translator {
                 // container@.contains(item@) instead of exec-level method.
                 // HashMap uses .contains_key() (handled separately below).
                 if method == "contains" && args.len() == 1 {
-                    // Use @ on the receiver for spec-level Seq::contains
-                    let recv_view = if let Some(root) = Self::field_chain_root(receiver) {
-                        if view_params.contains(root) {
-                            self.expr_with_view_at_root(receiver)
-                        } else {
-                            format!("{}@", recv)
-                        }
-                    } else {
-                        format!("{}@", recv)
-                    };
+                    let recv_view = self
+                        .try_view_at_root(receiver, view_params)
+                        .unwrap_or_else(|| format!("{}@", recv));
                     // Apply @ to the argument for spec-level comparison
                     let arg = if let Some(root) = Self::field_chain_root(&args[0]) {
                         if view_params.contains(root) {
@@ -7134,26 +7122,14 @@ impl Translator {
                 // For HashMap .contains_key() in requires/ensures (spec context), use view:
                 // receiver@.field.contains_key(arg@) instead of exec-level HashMap method.
                 if method == "contains_key" && args.len() == 1 && self.is_map_index_base(receiver) {
-                    // Use @ on the receiver root for spec-level Map::contains_key
-                    let recv_view = if let Some(root) = Self::field_chain_root(receiver) {
-                        if view_params.contains(root) {
-                            self.expr_with_view_at_root(receiver)
-                        } else {
-                            format!("{}@", recv)
-                        }
-                    } else {
-                        format!("{}@", recv)
-                    };
-                    // Apply @ to the argument for spec-level comparison
-                    let arg = if let Some(root) = Self::field_chain_root(&args[0]) {
-                        if view_params.contains(root) {
-                            self.expr_with_view_at_root(&args[0])
-                        } else {
+                    let recv_view = self
+                        .try_view_at_root(receiver, view_params)
+                        .unwrap_or_else(|| format!("{}@", recv));
+                    let arg = self
+                        .try_view_at_root(&args[0], view_params)
+                        .unwrap_or_else(|| {
                             self.expr_to_view_simple_string(&args[0], view_params, scalar_params)
-                        }
-                    } else {
-                        self.expr_to_view_simple_string(&args[0], view_params, scalar_params)
-                    };
+                        });
                     return format!("{}.contains_key({})", recv_view, arg);
                 }
                 // For .contains() / .contains_key(), add & and cast scalar args
@@ -7203,6 +7179,17 @@ impl Translator {
             }
             // For other expressions, delegate to expr_to_simple_string
             _ => self.expr_to_simple_string(expr),
+        }
+    }
+
+    /// Try to apply `@` view at the root of a field chain if the root is a view param.
+    /// Returns `Some(view_string)` if applicable, `None` otherwise.
+    fn try_view_at_root(&self, expr: &Expr, view_params: &HashSet<String>) -> Option<String> {
+        let root = Self::field_chain_root(expr)?;
+        if view_params.contains(root) {
+            Some(self.expr_with_view_at_root(expr))
+        } else {
+            None
         }
     }
 
