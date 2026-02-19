@@ -5231,7 +5231,7 @@ Target types: CBallot (2 u64 fields), CRequest (EndPoint + u64 + CAppMessage),
 CReply (EndPoint + u64 + CAppMessage), CVote (CBallot + CRequestBatch).
 Existing macro is at `src/implementation/common/marshalling.rs:1397`.
 
-- [ ] **17.3.2a**: Add `MarshalableConfig` to transpiler config + `marshalable.rs` codegen module (~250 LOC)
+- [x] **17.3.2a**: Add `MarshalableConfig` to transpiler config + `marshalable.rs` codegen module (~250 LOC) [26:02:19] — 14 unit tests, 1302 total
   - Add `[marshalable]` TOML section: `types = [{ name, fields = [[name, type], ...] }]`
   - Create `transpiler/src/codegen/marshalable.rs` with `generate_marshalable_impl()`
   - Generate all 8 trait methods: `view_equal`, `lemma_view_equal_symmetric`,
@@ -5239,7 +5239,7 @@ Existing macro is at `src/implementation/common/marshalling.rs:1397`.
     `serialize`, `deserialize` + 3 proof lemmas
   - Support field types: u64, bool, Vec<u8>, and named struct types (Marshalable)
   - 10+ unit tests for code generation
-- [ ] **17.3.2b**: Add `generate-marshalable` CLI subcommand + integration tests (~100 LOC)
+- [x] **17.3.2b**: Add `generate-marshalable` CLI subcommand + integration tests (~100 LOC) [26:02:19] — 5 integration tests, 1307 total
   - Wire up CLI subcommand reading TOML config, generating output file
   - Add integration tests: CBallot-like (2 u64), CRequest-like (nested types)
 - [ ] **17.3.2c**: Add `[marshalable]` config to RSL types_transpile.toml + verify (~100 LOC)

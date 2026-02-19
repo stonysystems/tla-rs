@@ -207,6 +207,17 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Generate Marshalable impls for struct types from config
+    GenerateMarshalable {
+        /// Configuration file (TOML) with [marshalable] section
+        #[arg(short, long)]
+        config: PathBuf,
+
+        /// Output file (marshalable_gen.rs)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// Analyze LNext function to extract scheduler action structure
     AnalyzeLnext {
         /// Spec file containing LNext function (e.g., src/protocol/Paxos/paxos.rs)
@@ -1003,6 +1014,35 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     "Generated {} message with {} variants -> {}",
                     msg_config.enum_name,
                     msg_config.variants.len(),
+                    output_path.display()
+                );
+            } else {
+                println!("{}", code);
+            }
+
+            Ok(())
+        }
+
+        Commands::GenerateMarshalable { config, output } => {
+            let file_config = FileConfig::from_file(config)
+                .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+
+            let marsh_config = file_config
+                .marshalable
+                .ok_or_else(|| miette::miette!("Config file has no [marshalable] section"))?;
+
+            if marsh_config.types.is_empty() {
+                return Err(miette::miette!("[marshalable] must have at least one type"));
+            }
+
+            let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
+
+            if let Some(output_path) = output {
+                std::fs::write(output_path, &code)
+                    .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                println!(
+                    "Generated Marshalable impls for {} types -> {}",
+                    marsh_config.types.len(),
                     output_path.display()
                 );
             } else {

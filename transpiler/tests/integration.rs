@@ -4099,3 +4099,156 @@ fn diff_strings(a: &str, b: &str) -> String {
     }
     diff
 }
+
+// ============================================================
+// Phase 17.3.2b: Marshalable generation integration tests
+// ============================================================
+
+#[test]
+fn test_generate_marshalable_ballot_like() {
+    let toml_content = r#"
+        [[marshalable.types]]
+        name = "CBallot"
+        fields = [["seqno", "u64"], ["proposer_id", "u64"]]
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let marsh_config = config.marshalable.unwrap();
+    assert_eq!(marsh_config.types.len(), 1);
+
+    let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
+
+    // impl header
+    assert!(code.contains("impl Marshalable for CBallot {"));
+
+    // All 11 trait methods present
+    assert!(code.contains("open spec fn view_equal("));
+    assert!(code.contains("proof fn lemma_view_equal_symmetric("));
+    assert!(code.contains("open spec fn is_marshalable("));
+    assert!(code.contains("exec fn _is_marshalable("));
+    assert!(code.contains("open spec fn ghost_serialize("));
+    assert!(code.contains("exec fn serialized_size("));
+    assert!(code.contains("exec fn serialize("));
+    assert!(code.contains("exec fn deserialize("));
+    assert!(code.contains("proof fn lemma_serialization_is_not_a_prefix_of("));
+    assert!(code.contains("proof fn lemma_same_views_serialize_the_same("));
+    assert!(code.contains("proof fn lemma_serialize_injective("));
+
+    // view_equal uses both fields
+    assert!(code.contains("self.seqno.view_equal(&other.seqno)"));
+    assert!(code.contains("self.proposer_id.view_equal(&other.proposer_id)"));
+
+    // deserialize uses correct types
+    assert!(code.contains("let (seqno, mid) = match u64::deserialize(data, mid)"));
+    assert!(code.contains("let (proposer_id, mid) = match u64::deserialize(data, mid)"));
+
+    // struct construction in deserialize
+    assert!(code.contains("let res = CBallot {"));
+    assert!(code.contains("seqno,"));
+    assert!(code.contains("proposer_id,"));
+}
+
+#[test]
+fn test_generate_marshalable_nested_types() {
+    let toml_content = r#"
+        [[marshalable.types]]
+        name = "CRequest"
+        fields = [["client", "EndPoint"], ["seqno", "u64"], ["request", "CAppMessage"]]
+
+        [[marshalable.types]]
+        name = "CVote"
+        fields = [["max_value_bal", "CBallot"], ["max_val", "CRequestBatch"]]
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let marsh_config = config.marshalable.unwrap();
+    assert_eq!(marsh_config.types.len(), 2);
+
+    let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
+
+    // Both impls generated
+    assert!(code.contains("impl Marshalable for CRequest {"));
+    assert!(code.contains("impl Marshalable for CVote {"));
+
+    // CRequest deserialize uses named types
+    assert!(code.contains("let (client, mid) = match EndPoint::deserialize(data, mid)"));
+    assert!(code.contains("let (request, mid) = match CAppMessage::deserialize(data, mid)"));
+
+    // CVote deserialize uses named types
+    assert!(code.contains("let (max_value_bal, mid) = match CBallot::deserialize(data, mid)"));
+    assert!(code.contains("let (max_val, mid) = match CRequestBatch::deserialize(data, mid)"));
+
+    // Serialize calls for CRequest
+    assert!(code.contains("self.client.serialize(data);"));
+    assert!(code.contains("self.seqno.serialize(data);"));
+    assert!(code.contains("self.request.serialize(data);"));
+}
+
+#[test]
+fn test_generate_marshalable_single_field_endpoint() {
+    let toml_content = r#"
+        [[marshalable.types]]
+        name = "EndPoint"
+        fields = [["id", "Vec<u8>"]]
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let marsh_config = config.marshalable.unwrap();
+    let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
+
+    assert!(code.contains("impl Marshalable for EndPoint {"));
+    assert!(code.contains("let (id, mid) = match Vec<u8>::deserialize(data, mid)"));
+    assert!(code.contains("self.id.serialize(data);"));
+    assert!(code.contains("self.id.ghost_serialize()"));
+}
+
+#[test]
+fn test_generate_marshalable_proof_structure() {
+    let toml_content = r#"
+        [[marshalable.types]]
+        name = "TwoFields"
+        fields = [["a", "u64"], ["b", "u64"]]
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let marsh_config = config.marshalable.unwrap();
+    let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
+
+    // serialize proof block
+    assert!(code.contains("assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);"));
+    assert!(code.contains("assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize());"));
+
+    // deserialize proof block
+    assert!(code.contains("assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());"));
+
+    // prefix lemma: divergence pattern for both fields
+    assert!(code.contains("if !self.a.view_equal(&other.a) {"));
+    assert!(code.contains("if !self.b.view_equal(&other.b) {"));
+    assert!(code.contains("x0.lemma_serialization_is_not_a_prefix_of(&x1);"));
+    assert!(code.contains("let mid = mid + self.a.ghost_serialize().len();"));
+
+    // injective lemma
+    assert!(code.contains("self.lemma_serialization_is_not_a_prefix_of(other);"));
+    assert!(code.contains("assert(other.ghost_serialize().subrange(0, self.ghost_serialize().len() as int)"));
+}
+
+#[test]
+fn test_generate_marshalable_overflow_checks() {
+    let toml_content = r#"
+        [[marshalable.types]]
+        name = "Triple"
+        fields = [["x", "u64"], ["y", "u64"], ["z", "u64"]]
+    "#;
+
+    let config = verus_transpiler::FileConfig::from_toml(toml_content).unwrap();
+    let marsh_config = config.marshalable.unwrap();
+    let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
+
+    // spec is_marshalable: overflow guard with all three fields
+    assert!(code.contains("0 + self.x.ghost_serialize().len() + self.y.ghost_serialize().len() + self.z.ghost_serialize().len() <= usize::MAX"));
+
+    // exec _is_marshalable: chained overflow checks
+    assert!(code.contains("usize::MAX - (0) >= self.x.serialized_size()"));
+    assert!(code.contains("usize::MAX - (self.x.serialized_size()) >= self.y.serialized_size()"));
+    assert!(code.contains("usize::MAX - (self.x.serialized_size() + self.y.serialized_size()) >= self.z.serialized_size()"));
+}
