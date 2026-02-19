@@ -20,10 +20,6 @@ pub struct CState {
     pub has_successor: bool,
     pub successor: u64,
     pub alive: bool,
-    pub msgs_forward: bool,
-    pub msgs_forward_value: u64,
-    pub msgs_ack: bool,
-    pub msgs_ack_value: u64,
 }
 
 impl Clone for CState {
@@ -56,10 +52,6 @@ impl View for CState {
             has_successor: self.has_successor,
             successor: self.successor as int,
             alive: self.alive,
-            msgs_forward: self.msgs_forward,
-            msgs_forward_value: self.msgs_forward_value as int,
-            msgs_ack: self.msgs_ack,
-            msgs_ack_value: self.msgs_ack_value as int,
         }
     }
 }
@@ -112,6 +104,36 @@ impl View for CNodeRole {
             CNodeRole::Head => LNodeRole::Head,
             CNodeRole::Middle => LNodeRole::Middle,
             CNodeRole::Tail => LNodeRole::Tail,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CCRMessage {
+    Forward {
+        value: u64,
+    },
+    Ack {
+        value: u64,
+    },
+}
+
+impl CCRMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CCRMessage::Forward { value } => true,
+            CCRMessage::Ack { value } => true,
+        }
+    }
+}
+
+impl View for CCRMessage {
+    type V = LCRMessage;
+
+    open spec fn view(&self) -> LCRMessage {
+        match self {
+            CCRMessage::Forward { value } => LCRMessage::Forward { value: *value as int },
+            CCRMessage::Ack { value } => LCRMessage::Ack { value: *value as int },
         }
     }
 }

@@ -38,6 +38,10 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LNodeRole" = "CNodeRole"
+"LCRMessage" = "CCRMessage"
+# Prevent C-prefixing of message variant names in LCRMessage::Variant paths
+"Forward" = "Forward"
+"Ack" = "Ack"
 
 [variant_remapping]
 "Head" = "CNodeRole::Head"
@@ -95,50 +99,49 @@ spec_name = "LHeadReceiveWrite"
 exec_name = "CHeadReceiveWrite"
 kind = "message_driven"
 message_variant = "ClientWrite"
-existential_params = [["value", "int"]]
+existential_params = [["value", "int"], ["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LForwardToSuccessor"
 exec_name = "CForwardToSuccessor"
 kind = "timer_driven"
-existential_params = [["value", "int"]]
+existential_params = [["value", "int"], ["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveUpdate"
 exec_name = "CReceiveUpdate"
 kind = "message_driven"
 message_variant = "Forward"
-existential_params = [["value", "int"]]
-flag_injections = [["msgs_forward", "true"], ["msgs_forward_value", "value"]]
+existential_params = [["value", "int"], ["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LTailCommit"
 exec_name = "CTailCommit"
 kind = "timer_driven"
-existential_params = [["value", "int"]]
+existential_params = [["value", "int"], ["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveAck"
 exec_name = "CReceiveAck"
 kind = "message_driven"
 message_variant = "Ack"
-existential_params = [["value", "int"]]
-flag_injections = [["msgs_ack", "true"], ["msgs_ack_value", "value"]]
+existential_params = [["value", "int"], ["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LClientRead"
 exec_name = "CClientRead"
 kind = "message_driven"
 message_variant = "ClientRead"
+existential_params = [["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LNodeFail"
 exec_name = "CNodeFail"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LCRMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReconfigure"
 exec_name = "CReconfigure"
 kind = "timer_driven"
-existential_params = [["new_has_predecessor", "bool"], ["new_predecessor", "int"], ["new_has_successor", "bool"], ["new_successor", "int"]]
-
+existential_params = [["new_has_predecessor", "bool"], ["new_predecessor", "int"], ["new_has_successor", "bool"], ["new_successor", "int"], ["sent_packets", "Seq<LCRMessage>"]]

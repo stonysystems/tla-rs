@@ -12,48 +12,57 @@ module ChainReplication::chain {
     // s_ (output): new state
     // c (input): constants
     // value (input): value to write
-    LHeadReceiveWrite(+, -, +, +);
+    // sent_packets (output): messages sent
+    LHeadReceiveWrite(+, -, +, +, -);
 
     // Head or middle node forwards value to successor
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
     // value (input): value to forward
-    LForwardToSuccessor(+, -, +, +);
+    // sent_packets (output): messages sent
+    LForwardToSuccessor(+, -, +, +, -);
 
     // Node receives an update from predecessor
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
     // value (input): value received from predecessor
-    LReceiveUpdate(+, -, +, +);
+    // sent_packets (output): messages sent
+    LReceiveUpdate(+, -, +, +, -);
 
     // Tail commits a value
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
     // value (input): value to commit
-    LTailCommit(+, -, +, +);
+    // sent_packets (output): messages sent
+    LTailCommit(+, -, +, +, -);
 
     // Node receives an ack from successor
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
     // value (input): value being acknowledged
-    LReceiveAck(+, -, +, +);
+    // sent_packets (output): messages sent
+    LReceiveAck(+, -, +, +, -);
 
     // Client reads current committed value (no state change)
     // s (input): current state
     // s_ (output): new state (same as s)
     // c (input): constants
-    LClientRead(+, -, +);
+    // sent_packets (output): messages sent
+    LClientRead(+, -, +, -);
 
     // A node fails (crashes)
     // s (input): current state
     // s_ (output): new state
     // c (input): constants
-    LNodeFail(+, -, +);
+    // sent_packets (output): messages sent
+    LNodeFail(+, -, +, -);
 
-    LReconfigure(+, -, +, +, +, +, +);
+    // Reconfigure: adjust chain links after failure
+    // sent_packets (output): messages sent
+    LReconfigure(+, -, +, +, +, +, +, -);
     // LNext is not transpiled (contains existential quantifiers)
 }

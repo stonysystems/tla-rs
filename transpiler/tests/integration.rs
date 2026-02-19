@@ -1022,22 +1022,22 @@ fn test_chain_replication_annotation_parsing() {
         .expect("Should have LHeadReceiveWrite");
     assert_eq!(
         head_write.param_modes.len(),
-        4,
-        "LHeadReceiveWrite should have 4 params"
+        5,
+        "LHeadReceiveWrite should have 5 params (s, s_, c, value, sent_packets)"
     );
 
     let tail_commit = funcs.get("LTailCommit").expect("Should have LTailCommit");
     assert_eq!(
         tail_commit.param_modes.len(),
-        4,
-        "LTailCommit should have 4 params"
+        5,
+        "LTailCommit should have 5 params (s, s_, c, value, sent_packets)"
     );
 
     let client_read = funcs.get("LClientRead").expect("Should have LClientRead");
     assert_eq!(
         client_read.param_modes.len(),
-        3,
-        "LClientRead should have 3 params"
+        4,
+        "LClientRead should have 4 params (s, s_, c, sent_packets)"
     );
 }
 
@@ -3172,16 +3172,12 @@ fn test_scaffold_flag_injections_chain_replication() {
         "../src/protocol/ChainReplication/chain_transpile.toml",
         "ChainReplication",
     );
-    // LReceiveUpdate handler: Forward message fields
-    assert!(code.contains("self.state.msgs_forward = true;"),
-        "LReceiveUpdate should inject msgs_forward flag");
-    assert!(code.contains("self.state.msgs_forward_value = value;"),
-        "LReceiveUpdate should inject msgs_forward_value");
-    // LReceiveAck handler: Ack message fields
-    assert!(code.contains("self.state.msgs_ack = true;"),
-        "LReceiveAck should inject msgs_ack flag");
-    assert!(code.contains("self.state.msgs_ack_value = value;"),
-        "LReceiveAck should inject msgs_ack_value");
+    // After sent_packets migration, ChainReplication no longer uses flag_injections.
+    // Verify no msgs_* flag injections appear in the scaffold.
+    assert!(!code.contains("self.state.msgs_forward"),
+        "ChainReplication scaffold should not inject msgs_forward (migrated to sent_packets)");
+    assert!(!code.contains("self.state.msgs_ack"),
+        "ChainReplication scaffold should not inject msgs_ack (migrated to sent_packets)");
 }
 
 #[test]

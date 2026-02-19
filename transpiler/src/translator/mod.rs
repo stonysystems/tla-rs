@@ -6003,6 +6003,12 @@ impl Translator {
             return remapped.clone();
         }
 
+        // Check variant_remapping — identity mappings (e.g., "Forward" = "Forward")
+        // prevent the C-prefix from being applied to enum variant names.
+        if let Some(remapped) = self.config.variant_remapping.get(spec_name) {
+            return remapped.clone();
+        }
+
         // Check if type starts with spec prefix (e.g., "L") followed by an uppercase letter
         // This distinguishes LAcceptor (L prefix) from LearnerTuple (part of "Learner")
         if spec_name.starts_with(&self.config.spec_prefix) {

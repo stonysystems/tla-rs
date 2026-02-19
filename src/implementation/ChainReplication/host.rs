@@ -226,7 +226,8 @@ impl ChainHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = chain_gen::CHeadReceiveWrite(&self.state, &config.constants, &value);
+        let (new_state, _sent) = chain_gen::CHeadReceiveWrite(&self.state, &config.constants, &value);
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -256,7 +257,8 @@ impl ChainHost {
             None => return StepResult { ok: true, outbound: GenericOutbound::None },
         };
 
-        self.state = chain_gen::CForwardToSuccessor(&self.state, &config.constants, &value);
+        let (new_state, _sent) = chain_gen::CForwardToSuccessor(&self.state, &config.constants, &value);
+        self.state = new_state;
 
         // Send Forward message to successor
         match Self::successor_endpoint(config, &self.state) {
@@ -279,30 +281,19 @@ impl ChainHost {
         config: &ChainConfig,
         value: u64,
     ) -> StepResult<ChainMessage> {
-        // Guard: role is Middle|Tail, alive, msgs_forward==true, value==msgs_forward_value,
-        //        !history.contains(value)
+        // Guard: role is Middle|Tail, alive, !history.contains(value)
         if !matches!(self.state.role, CNodeRole::Middle | CNodeRole::Tail) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
         if !self.state.alive {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
-        // In the distributed model, receiving a Forward message is equivalent to
-        // msgs_forward being true with the value. We simulate this by setting the
-        // shared-state flags before calling the generated function.
-        // However, the generated function checks s.msgs_forward == true and
-        // *value == s.msgs_forward_value, so we need to set these on the state.
-        // We do a lightweight state update to set the message flags.
         if self.state.history.contains(&value) {
-            // Already in history -- skip (guard: !history.contains(value))
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Set the forward message flags to simulate receiving the message
-        self.state.msgs_forward = true;
-        self.state.msgs_forward_value = value;
-
-        self.state = chain_gen::CReceiveUpdate(&self.state, &config.constants, &value);
+        let (new_state, _sent) = chain_gen::CReceiveUpdate(&self.state, &config.constants, &value);
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -329,7 +320,8 @@ impl ChainHost {
         // Pick a value from history to commit (use first element)
         let value = self.state.history[0];
 
-        self.state = chain_gen::CTailCommit(&self.state, &config.constants, &value);
+        let (new_state, _sent) = chain_gen::CTailCommit(&self.state, &config.constants, &value);
+        self.state = new_state;
 
         // Send Ack to predecessor
         match Self::predecessor_endpoint(config, &self.state) {
@@ -352,8 +344,7 @@ impl ChainHost {
         config: &ChainConfig,
         value: u64,
     ) -> StepResult<ChainMessage> {
-        // Guard: role is Head|Middle, alive, msgs_ack==true, value==msgs_ack_value,
-        //        pending_sent.contains(value)
+        // Guard: role is Head|Middle, alive, pending_sent.contains(value)
         if !matches!(self.state.role, CNodeRole::Head | CNodeRole::Middle) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
@@ -364,11 +355,8 @@ impl ChainHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Set the ack message flags to simulate receiving the message
-        self.state.msgs_ack = true;
-        self.state.msgs_ack_value = value;
-
-        self.state = chain_gen::CReceiveAck(&self.state, &config.constants, &value);
+        let (new_state, _sent) = chain_gen::CReceiveAck(&self.state, &config.constants, &value);
+        self.state = new_state;
 
         // If this is a Middle node, propagate Ack to predecessor
         if matches!(self.state.role, CNodeRole::Middle) {
@@ -401,7 +389,8 @@ impl ChainHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = chain_gen::CClientRead(&self.state, &config.constants);
+        let (new_state, _sent) = chain_gen::CClientRead(&self.state, &config.constants);
+        self.state = new_state;
 
         // In a real deployment, the read result (self.state.obj_value) would be
         // returned to the client. For now, this is a no-op on the network.
@@ -441,10 +430,6 @@ impl ProtocolHost for ChainHost {
                 has_successor: config.constants.chain_len > 1,
                 successor: if config.constants.chain_len > 1 { 1 } else { 0 },
                 alive: true,
-                msgs_forward: false,
-                msgs_forward_value: 0,
-                msgs_ack: false,
-                msgs_ack_value: 0,
             };
             Some(ChainHost { state, action_index: 0 })
         } else {

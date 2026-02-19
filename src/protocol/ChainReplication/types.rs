@@ -8,6 +8,12 @@ verus! {
         Tail,           // Receives from predecessor, commits and serves reads
     }
 
+    /// Chain replication network messages.
+    pub enum LCRMessage {
+        Forward { value: int },
+        Ack { value: int },
+    }
+
     /// State of a single node in the chain replication protocol.
     /// Models one server's perspective: its local history, pending
     /// forwarded updates, and knowledge of committed state.
@@ -23,11 +29,6 @@ verus! {
         pub has_successor: bool,        // Whether this node has a successor
         pub successor: int,             // Successor node ID (valid when has_successor)
         pub alive: bool,                // Whether this node is alive
-        // Message flags for chain forwarding
-        pub msgs_forward: bool,         // A ForwardUpdate message is pending
-        pub msgs_forward_value: int,    // Value being forwarded
-        pub msgs_ack: bool,             // An Ack message is pending
-        pub msgs_ack_value: int,        // Value being acknowledged
     }
 
     /// Protocol constants
