@@ -4532,3 +4532,192 @@ fn test_generate_marshalable_enum_count_from_toml() {
         }
     }
 }
+
+// ============================================================
+// Phase 17.3.4a: Marshalable CLI pipeline tests
+// ============================================================
+
+/// Test that the generate-marshalable CLI subcommand produces correct output
+/// when invoked with the real RSL types_transpile.toml config.
+#[test]
+fn test_marshalable_cli_pipeline_produces_all_impls() {
+    let transpiler_bin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/verus-transpile");
+    if !transpiler_bin.exists() {
+        eprintln!("Skipping: transpiler binary not built (run cargo build --release)");
+        return;
+    }
+
+    let toml_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/protocol/RSL/types_transpile.toml");
+    if !toml_path.exists() {
+        eprintln!("Skipping: RSL types_transpile.toml not found");
+        return;
+    }
+
+    let output_file = std::env::temp_dir().join("test_marshalable_cli_output.rs");
+
+    let result = std::process::Command::new(&transpiler_bin)
+        .args([
+            "generate-marshalable",
+            "--config",
+            toml_path.to_str().unwrap(),
+            "--output",
+            output_file.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+
+    assert!(
+        result.status.success(),
+        "generate-marshalable CLI failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let code = std::fs::read_to_string(&output_file).expect("Failed to read generated output");
+
+    // Should contain all 6 Marshalable impls (4 struct + 2 enum)
+    let impl_count = code.matches("impl Marshalable for").count();
+    assert_eq!(
+        impl_count, 6,
+        "Expected 6 Marshalable impls (4 struct + 2 enum), got {}",
+        impl_count
+    );
+
+    // All 4 struct types present
+    assert!(code.contains("impl Marshalable for CBallot {"));
+    assert!(code.contains("impl Marshalable for CRequest {"));
+    assert!(code.contains("impl Marshalable for CReply {"));
+    assert!(code.contains("impl Marshalable for CVote {"));
+
+    // Both enum types present
+    assert!(code.contains("impl Marshalable for CAppMessage {"));
+    assert!(code.contains("impl Marshalable for CMessage {"));
+
+    // CMessage should have all 11 variant patterns
+    for variant in &[
+        "CMessage::CMessageInvalid",
+        "CMessage::CMessageRequest",
+        "CMessage::CMessage1a",
+        "CMessage::CMessage1b",
+        "CMessage::CMessage2a",
+        "CMessage::CMessage2b",
+        "CMessage::CMessageHeartbeat",
+        "CMessage::CMessageReply",
+        "CMessage::CMessageAppStateRequest",
+        "CMessage::CMessageAppStateSupply",
+        "CMessage::CMessageStartingPhase2",
+    ] {
+        assert!(
+            code.contains(variant),
+            "Missing CMessage variant: {}",
+            variant
+        );
+    }
+
+    // Cleanup
+    let _ = std::fs::remove_file(&output_file);
+}
+
+/// Test that the generate-marshalable CLI produces deterministic output
+/// (running twice produces identical results).
+#[test]
+fn test_marshalable_cli_deterministic_output() {
+    let transpiler_bin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/verus-transpile");
+    if !transpiler_bin.exists() {
+        eprintln!("Skipping: transpiler binary not built (run cargo build --release)");
+        return;
+    }
+
+    let toml_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/protocol/RSL/types_transpile.toml");
+    if !toml_path.exists() {
+        eprintln!("Skipping: RSL types_transpile.toml not found");
+        return;
+    }
+
+    // Run twice
+    let run = |label: &str| -> String {
+        let output_file =
+            std::env::temp_dir().join(format!("test_marshalable_deterministic_{}.rs", label));
+        let result = std::process::Command::new(&transpiler_bin)
+            .args([
+                "generate-marshalable",
+                "--config",
+                toml_path.to_str().unwrap(),
+                "--output",
+                output_file.to_str().unwrap(),
+            ])
+            .output()
+            .expect("Failed to run transpiler");
+        assert!(result.status.success(), "CLI failed on run {}", label);
+        let code = std::fs::read_to_string(&output_file).expect("Failed to read output");
+        let _ = std::fs::remove_file(&output_file);
+        code
+    };
+
+    let run1 = run("run1");
+    let run2 = run("run2");
+
+    assert_eq!(
+        run1, run2,
+        "generate-marshalable output should be deterministic"
+    );
+    assert!(
+        !run1.is_empty(),
+        "Generated output should not be empty"
+    );
+}
+
+/// Test that generate-marshalable CLI stdout mode works (no --output flag).
+#[test]
+fn test_marshalable_cli_stdout_mode() {
+    let transpiler_bin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/verus-transpile");
+    if !transpiler_bin.exists() {
+        eprintln!("Skipping: transpiler binary not built (run cargo build --release)");
+        return;
+    }
+
+    let toml_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/protocol/RSL/types_transpile.toml");
+    if !toml_path.exists() {
+        eprintln!("Skipping: RSL types_transpile.toml not found");
+        return;
+    }
+
+    let result = std::process::Command::new(&transpiler_bin)
+        .args([
+            "generate-marshalable",
+            "--config",
+            toml_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+
+    assert!(
+        result.status.success(),
+        "generate-marshalable stdout mode failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        stdout.contains("impl Marshalable for CBallot {"),
+        "stdout should contain CBallot impl"
+    );
+    assert!(
+        stdout.contains("impl Marshalable for CMessage {"),
+        "stdout should contain CMessage impl"
+    );
+    // 6 impls in stdout
+    let impl_count = stdout.matches("impl Marshalable for").count();
+    assert_eq!(impl_count, 6, "Expected 6 impls in stdout, got {}", impl_count);
+}

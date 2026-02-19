@@ -1031,8 +1031,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .marshalable
                 .ok_or_else(|| miette::miette!("Config file has no [marshalable] section"))?;
 
-            if marsh_config.types.is_empty() {
-                return Err(miette::miette!("[marshalable] must have at least one type"));
+            if marsh_config.types.is_empty() && marsh_config.enums.is_empty() {
+                return Err(miette::miette!(
+                    "[marshalable] must have at least one type or enum"
+                ));
             }
 
             let code = verus_transpiler::generate_marshalable_impls(&marsh_config);
@@ -1040,9 +1042,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             if let Some(output_path) = output {
                 std::fs::write(output_path, &code)
                     .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                let total = marsh_config.types.len() + marsh_config.enums.len();
                 println!(
-                    "Generated Marshalable impls for {} types -> {}",
+                    "Generated Marshalable impls for {} types ({} struct, {} enum) -> {}",
+                    total,
                     marsh_config.types.len(),
+                    marsh_config.enums.len(),
                     output_path.display()
                 );
             } else {

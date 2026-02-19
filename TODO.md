@@ -50,7 +50,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 7. ~~Phase 14: Regeneration audit~~ ✅ DONE
 8. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: All phases complete. 1334 total tests (1011 unit + 133 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main), 616 verified, 0 errors. Remaining: 4 blocked/deferred items (1 manual impl replacement, 10 IO trust boundary assumes, 1 branch deletion).
+**Active work**: 1337 total tests (1011 unit + 136 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main), 616 verified, 0 errors. Remaining: 4 blocked/deferred items (1 manual impl replacement, 10 IO trust boundary assumes, 1 branch deletion).
 
 ## Reference
 
@@ -5267,6 +5267,18 @@ CRequestBatch, CAppMessage, CAppState, CReplyCache. Tag is u8 prefix (1 byte).
   - Compare generated code structure against `define_enum_and_derive_marshalable!` expansion
   - Verify all proof lemmas match macro patterns
   - Ensure proof-compatible output (tag divergence in prefix lemma)
+
+**17.3.4: End-to-end marshalable codegen pipeline test**
+Run the `generate-marshalable` CLI against the real RSL TOML config, produce an output file,
+and add pipeline integration tests verifying: (a) the CLI produces well-formed output,
+(b) the output contains the expected 6 impls (4 struct + 2 enum), (c) the output is
+deterministic (running twice produces identical output). Also add the codegen invocation
+to `regenerate_rsl.sh` so the pipeline can be reproduced.
+
+- [x] **17.3.4a**: Add `generate-marshalable` to regeneration script + CLI pipeline tests (~150 LOC)
+  - Added `generate-marshalable` step to `regenerate_rsl.sh` (step 3, before mod.rs generation)
+  - Fixed CLI validation to accept enum-only configs + improved status message (struct+enum counts)
+  - 3 CLI integration tests: full pipeline (6 impls, all variants), deterministic output, stdout mode
 
 ### Phase 17.4: Transpiler-Generated Host / Scheduler (LNext replacement)
 

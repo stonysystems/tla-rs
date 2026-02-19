@@ -79,8 +79,19 @@ for MODULE in "${MODULES[@]}"; do
     echo ""
 done
 
-# Step 3: Generate mod.rs
-echo "3. Generating mod.rs..."
+# Step 3: Generate marshalable_gen.rs
+echo "3. Generating marshalable_gen.rs..."
+$TRANSPILER generate-marshalable \
+    --config "$SPEC_DIR/types_transpile.toml" \
+    --output "$OUT_DIR/marshalable_gen.rs" || {
+    echo "ERROR: Marshalable generation failed"
+    exit 1
+}
+echo "  ✓ marshalable_gen.rs complete"
+echo ""
+
+# Step 4: Generate mod.rs
+echo "4. Generating mod.rs..."
 cat > "$OUT_DIR/mod.rs" <<'MOD_EOF'
 // Auto-generated RSL types and functions module
 // DO NOT EDIT MANUALLY
@@ -90,6 +101,7 @@ pub mod broadcast_gen;
 pub mod election_gen;
 pub mod executor_gen;
 pub mod learner_gen;
+pub mod marshalable_gen;
 pub mod proposer_gen;
 pub mod replica_gen;
 pub mod types_gen;
