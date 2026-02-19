@@ -31,6 +31,13 @@ nat_type = "u64"
 "LState" = "CState"
 "LConstants" = "CConstants"
 "LInstancePhase" = "CInstancePhase"
+"LEPaxosMessage" = "CEPaxosMessage"
+# Prevent C-prefixing of message variant names
+"PreAccept" = "PreAccept"
+"PreAcceptOk" = "PreAcceptOk"
+"Accept" = "Accept"
+"AcceptOk" = "AcceptOk"
+"Commit" = "Commit"
 
 [variant_remapping]
 "Empty" = "CInstancePhase::Empty"
@@ -98,63 +105,68 @@ action_count = 11
 spec_name = "LPropose"
 exec_name = "CPropose"
 kind = "timer_driven"
-existential_params = [["value", "int"]]
+existential_params = [["value", "int"], ["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LSendPreAcceptOk"
 exec_name = "CSendPreAcceptOk"
 kind = "message_driven"
 message_variant = "PreAccept"
-existential_params = [["local_conflict", "bool"], ["local_seq", "int"]]
+existential_params = [["local_conflict", "bool"], ["local_seq", "int"], ["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceivePreAcceptOk"
 exec_name = "CReceivePreAcceptOk"
 kind = "message_driven"
 message_variant = "PreAcceptOk"
-flag_injections = [["msgs_preaccept_ok", "true"], ["msgs_preaccept_ok_sender", "sender"], ["msgs_preaccept_ok_seq", "seq"], ["msgs_preaccept_ok_conflict", "conflict"]]
+existential_params = [["pa_sender", "int"], ["pa_seq", "int"], ["pa_conflict", "bool"], ["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LFastCommit"
 exec_name = "CFastCommit"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LStartAccept"
 exec_name = "CStartAccept"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LSendAcceptOk"
 exec_name = "CSendAcceptOk"
 kind = "message_driven"
 message_variant = "Accept"
+existential_params = [["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LReceiveAcceptOk"
 exec_name = "CReceiveAcceptOk"
 kind = "message_driven"
 message_variant = "AcceptOk"
-flag_injections = [["msgs_accept_ok", "true"], ["msgs_accept_ok_sender", "sender"]]
+existential_params = [["ao_sender", "int"], ["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LSlowCommit"
 exec_name = "CSlowCommit"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LExecute"
 exec_name = "CExecute"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LRecover"
 exec_name = "CRecover"
 kind = "timer_driven"
-existential_params = [["new_ballot", "int"]]
+existential_params = [["new_ballot", "int"], ["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LNewInstance"
 exec_name = "CNewInstance"
 kind = "timer_driven"
-
+existential_params = [["sent_packets", "Seq<LEPaxosMessage>"]]

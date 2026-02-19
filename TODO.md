@@ -5449,7 +5449,7 @@ For each protocol P, in order:
 - [x] **18.2.3** ChainReplication (4 fields)
 - [x] **18.2.4** PBFT (4 fields)
 - [x] **18.2.5** LeaderElection (8 fields → 6 msgs_* removed, 2 waiting_* kept as local state)
-- [ ] **18.2.6** VerticalPaxos (8 fields)
+- [x] **18.2.6** VerticalPaxos (9 msgs_* fields → sent_packets: Seq<LVPMessage>; 3 message types: Prepare{bal}, Promise{bal,v_bal,val}, Accept{bal,val})
 - [ ] **18.2.7** EPaxos (16 fields)
 - [ ] **18.2.8** Raft (22 fields, most complex)
 

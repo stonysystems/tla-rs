@@ -6,7 +6,7 @@
 /// - Fast path (1 RTT) when quorum agrees on dependencies
 /// - Slow path (2 RTT) when dependency conflict detected
 /// - Set-based quorum tracking for pre-accept and accept phases
-/// - Message flags for PreAccept, PreAcceptOk, Accept, AcceptOk, Commit
+/// - Messages modeled as sent_packets output parameter
 /// - Dependency tracking via dep_count and sequence numbers
 use vstd::prelude::*;
 use vstd::set::*;
@@ -53,28 +53,6 @@ pub struct LState {
     pub has_conflict: bool,
     /// Maximum sequence number seen from PreAcceptOk responses
     pub max_resp_seq: int,
-    // --- PreAccept message flags ---
-    pub msgs_preaccept: bool,
-    pub msgs_preaccept_ballot: int,
-    pub msgs_preaccept_cmd: int,
-    pub msgs_preaccept_seq: int,
-    // --- PreAcceptOk message flags ---
-    pub msgs_preaccept_ok: bool,
-    pub msgs_preaccept_ok_sender: int,
-    pub msgs_preaccept_ok_seq: int,
-    pub msgs_preaccept_ok_conflict: bool,
-    // --- Accept message flags ---
-    pub msgs_accept: bool,
-    pub msgs_accept_ballot: int,
-    pub msgs_accept_cmd: int,
-    pub msgs_accept_seq: int,
-    // --- AcceptOk message flags ---
-    pub msgs_accept_ok: bool,
-    pub msgs_accept_ok_sender: int,
-    // --- Commit message flags ---
-    pub msgs_commit: bool,
-    pub msgs_commit_cmd: int,
-    pub msgs_commit_seq: int,
 }
 
 /// Protocol constants
@@ -87,6 +65,15 @@ pub struct LConstants {
     pub quorum_size: int,
     /// This replica's ID
     pub my_id: int,
+}
+
+/// EPaxos protocol messages.
+pub enum LEPaxosMessage {
+    PreAccept { ballot: int, cmd: int, seq: int },
+    PreAcceptOk { sender: int, seq: int, conflict: bool },
+    Accept { ballot: int, cmd: int, seq: int },
+    AcceptOk { sender: int },
+    Commit { cmd: int, seq: int },
 }
 
 } // verus!

@@ -31,6 +31,20 @@ ensures
     s.clone()
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
 
 /// Helper: clone CInstancePhase preserving view (workaround for missing derive Clone spec).
 fn clone_phase(r: &CInstancePhase) -> (res: CInstancePhase)
@@ -70,23 +84,6 @@ ensures
         accept_senders: HashSet::new(),
         has_conflict: false,
         max_resp_seq: 0u64,
-        msgs_preaccept: false,
-        msgs_preaccept_ballot: 0u64,
-        msgs_preaccept_cmd: 0u64,
-        msgs_preaccept_seq: 0u64,
-        msgs_preaccept_ok: false,
-        msgs_preaccept_ok_sender: 0u64,
-        msgs_preaccept_ok_seq: 0u64,
-        msgs_preaccept_ok_conflict: false,
-        msgs_accept: false,
-        msgs_accept_ballot: 0u64,
-        msgs_accept_cmd: 0u64,
-        msgs_accept_seq: 0u64,
-        msgs_accept_ok: false,
-        msgs_accept_ok_sender: 0u64,
-        msgs_commit: false,
-        msgs_commit_cmd: 0u64,
-        msgs_commit_seq: 0u64,
         phase: CInstancePhase::Empty,
     };
     proof {
@@ -96,173 +93,136 @@ ensures
 
 }
 
-pub exec fn CPropose(s: &CState, c: &CConstants, value: &u64) -> (result: CState)
+pub exec fn CPropose(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Empty,
     s.committed_count < u64::MAX,
 ensures
-    result.valid(),
-    LPropose(s@, result@, c@, *value as int),
+    result.0.valid(),
+    LPropose(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
     let result = {
         let mut __preaccept_senders = clone_hashset(&HashSet::new());
         __preaccept_senders.insert(c.my_id.clone());
-        CState {
-            ballot: s.ballot.clone(),
-            cmd: *value,
-            seq: (s.committed_count + 1),
-            dep_count: 0u64,
-            is_leader: true,
-            committed_count: s.committed_count.clone(),
-            executed_count: s.executed_count.clone(),
-            preaccept_senders: __preaccept_senders,
-            accept_senders: HashSet::new(),
-            has_conflict: false,
-            max_resp_seq: 0u64,
-            msgs_preaccept: true,
-            msgs_preaccept_ballot: s.ballot.clone(),
-            msgs_preaccept_cmd: *value,
-            msgs_preaccept_seq: (s.committed_count + 1),
-            msgs_preaccept_ok: false,
-            msgs_preaccept_ok_sender: 0u64,
-            msgs_preaccept_ok_seq: 0u64,
-            msgs_preaccept_ok_conflict: false,
-            msgs_accept: false,
-            msgs_accept_ballot: 0u64,
-            msgs_accept_cmd: 0u64,
-            msgs_accept_seq: 0u64,
-            msgs_accept_ok: false,
-            msgs_accept_ok_sender: 0u64,
-            msgs_commit: false,
-            msgs_commit_cmd: 0u64,
-            msgs_commit_seq: 0u64,
-            phase: CInstancePhase::PreAccepted,
-        }
+        (CState {
+    ballot: s.ballot.clone(),
+    cmd: *value,
+    seq: (s.committed_count + 1),
+    dep_count: 0u64,
+    is_leader: true,
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: __preaccept_senders,
+    accept_senders: HashSet::new(),
+    has_conflict: false,
+    max_resp_seq: 0u64,
+    phase: CInstancePhase::PreAccepted,
+}, vec![CEPaxosMessage::PreAccept {
+    ballot: s.ballot.clone(),
+    cmd: *value,
+    seq: (s.committed_count + 1),
+}])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CSendPreAcceptOk(s: &CState, c: &CConstants, local_conflict: bool, local_seq: &u64) -> (result: CState)
+pub exec fn CSendPreAcceptOk(s: &CState, c: &CConstants, local_conflict: bool, local_seq: &u64) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
-    s.msgs_preaccept == true,
 ensures
-    result.valid(),
-    LSendPreAcceptOk(s@, result@, c@, local_conflict, *local_seq as int),
+    result.0.valid(),
+    LSendPreAcceptOk(s@, result.0@, c@, local_conflict, *local_seq as int, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-CState {
-        msgs_preaccept_ok: true,
-        msgs_preaccept_ok_sender: c.my_id.clone(),
-        msgs_preaccept_ok_seq: *local_seq,
-        msgs_preaccept_ok_conflict: local_conflict.clone(),
-        ballot: s.ballot.clone(),
-        phase: clone_phase(&s.phase),
-        cmd: s.cmd.clone(),
-        seq: s.seq.clone(),
-        dep_count: s.dep_count.clone(),
-        is_leader: s.is_leader.clone(),
-        committed_count: s.committed_count.clone(),
-        executed_count: s.executed_count.clone(),
-        preaccept_senders: clone_hashset(&s.preaccept_senders),
-        accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict.clone(),
-        max_resp_seq: s.max_resp_seq.clone(),
-        msgs_preaccept: s.msgs_preaccept.clone(),
-        msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
-        msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
-        msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
-        msgs_accept: s.msgs_accept.clone(),
-        msgs_accept_ballot: s.msgs_accept_ballot.clone(),
-        msgs_accept_cmd: s.msgs_accept_cmd.clone(),
-        msgs_accept_seq: s.msgs_accept_seq.clone(),
-        msgs_accept_ok: s.msgs_accept_ok.clone(),
-        msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
-        msgs_commit: s.msgs_commit.clone(),
-        msgs_commit_cmd: s.msgs_commit_cmd.clone(),
-        msgs_commit_seq: s.msgs_commit_seq.clone(),
+    let result = (CState {
+    ballot: s.ballot.clone(),
+    phase: clone_phase(&s.phase),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    accept_senders: clone_hashset(&s.accept_senders),
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+}, vec![CEPaxosMessage::PreAcceptOk {
+    sender: c.my_id.clone(),
+    seq: *local_seq,
+    conflict: local_conflict.clone(),
+}]);
+    proof {
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
+    result
+
 }
 
-pub exec fn CReceivePreAcceptOk(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CReceivePreAcceptOk(s: &CState, c: &CConstants, pa_sender: &u64, pa_seq: &u64, pa_conflict: bool) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is PreAccepted,
     s.is_leader == true,
-    s.msgs_preaccept_ok == true,
-    !s@.preaccept_senders.contains(s@.msgs_preaccept_ok_sender),
+    !s@.preaccept_senders.contains(*pa_sender as int),
     s.dep_count < u64::MAX,
 ensures
-    result.valid(),
-    LReceivePreAcceptOk(s@, result@, c@),
+    result.0.valid(),
+    LReceivePreAcceptOk(s@, result.0@, c@, *pa_sender as int, *pa_seq as int, pa_conflict, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
     let result = {
         let mut __preaccept_senders = clone_hashset(&s.preaccept_senders);
-        __preaccept_senders.insert(s.msgs_preaccept_ok_sender.clone());
-        CState {
-            preaccept_senders: __preaccept_senders,
-            has_conflict: if s.msgs_preaccept_ok_conflict {
-                true
-            } else {
-                s.has_conflict.clone()
-            },
-            dep_count: if s.msgs_preaccept_ok_conflict {
-                (s.dep_count + 1)
-            } else {
-                s.dep_count.clone()
-            },
-            max_resp_seq: if (s.msgs_preaccept_ok_seq > s.max_resp_seq) {
-                s.msgs_preaccept_ok_seq.clone()
-            } else {
-                s.max_resp_seq.clone()
-            },
-            seq: if (s.msgs_preaccept_ok_seq > s.seq) {
-                s.msgs_preaccept_ok_seq.clone()
-            } else {
-                s.seq.clone()
-            },
-            ballot: s.ballot.clone(),
-            phase: clone_phase(&s.phase),
-            cmd: s.cmd.clone(),
-            is_leader: s.is_leader.clone(),
-            committed_count: s.committed_count.clone(),
-            executed_count: s.executed_count.clone(),
-            accept_senders: clone_hashset(&s.accept_senders),
-            msgs_preaccept: s.msgs_preaccept.clone(),
-            msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
-            msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
-            msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
-            msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
-            msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
-            msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
-            msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
-            msgs_accept: s.msgs_accept.clone(),
-            msgs_accept_ballot: s.msgs_accept_ballot.clone(),
-            msgs_accept_cmd: s.msgs_accept_cmd.clone(),
-            msgs_accept_seq: s.msgs_accept_seq.clone(),
-            msgs_accept_ok: s.msgs_accept_ok.clone(),
-            msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_commit_cmd: s.msgs_commit_cmd.clone(),
-            msgs_commit_seq: s.msgs_commit_seq.clone(),
-        }
+        __preaccept_senders.insert(pa_sender.clone());
+        (CState {
+    preaccept_senders: __preaccept_senders,
+    has_conflict: if pa_conflict {
+        true
+    } else {
+        s.has_conflict.clone()
+    },
+    dep_count: if pa_conflict {
+        (s.dep_count + 1)
+    } else {
+        s.dep_count.clone()
+    },
+    max_resp_seq: if (*pa_seq > s.max_resp_seq) {
+        *pa_seq
+    } else {
+        s.max_resp_seq.clone()
+    },
+    seq: if (*pa_seq > s.seq) {
+        *pa_seq
+    } else {
+        s.seq.clone()
+    },
+    ballot: s.ballot.clone(),
+    phase: clone_phase(&s.phase),
+    cmd: s.cmd.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    accept_senders: clone_hashset(&s.accept_senders),
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CFastCommit(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CFastCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -272,43 +232,34 @@ requires
     s.has_conflict == false,
     s.committed_count < u64::MAX,
 ensures
-    result.valid(),
-    LFastCommit(s@, result@, c@),
+    result.0.valid(),
+    LFastCommit(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-CState {
-        ballot: s.ballot.clone(),
-        cmd: s.cmd.clone(),
-        seq: s.seq.clone(),
-        dep_count: s.dep_count.clone(),
-        is_leader: s.is_leader.clone(),
-        committed_count: (s.committed_count + 1),
-        executed_count: s.executed_count.clone(),
-        preaccept_senders: clone_hashset(&s.preaccept_senders),
-        accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict.clone(),
-        max_resp_seq: s.max_resp_seq.clone(),
-        msgs_commit: true,
-        msgs_commit_cmd: s.cmd.clone(),
-        msgs_commit_seq: s.seq.clone(),
-        msgs_preaccept: false,
-        msgs_preaccept_ballot: 0u64,
-        msgs_preaccept_cmd: 0u64,
-        msgs_preaccept_seq: 0u64,
-        msgs_preaccept_ok: false,
-        msgs_preaccept_ok_sender: 0u64,
-        msgs_preaccept_ok_seq: 0u64,
-        msgs_preaccept_ok_conflict: false,
-        msgs_accept: false,
-        msgs_accept_ballot: 0u64,
-        msgs_accept_cmd: 0u64,
-        msgs_accept_seq: 0u64,
-        msgs_accept_ok: false,
-        msgs_accept_ok_sender: 0u64,
-        phase: CInstancePhase::Committed,
+    let result = (CState {
+    ballot: s.ballot.clone(),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: (s.committed_count + 1),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    accept_senders: clone_hashset(&s.accept_senders),
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+    phase: CInstancePhase::Committed,
+}, vec![CEPaxosMessage::Commit {
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+}]);
+    proof {
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
+    result
+
 }
 
-pub exec fn CStartAccept(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CStartAccept(s: &CState, c: &CConstants) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -317,149 +268,110 @@ requires
     (s@.preaccept_senders.len() >= c.quorum_size),
     s.has_conflict == true,
 ensures
-    result.valid(),
-    LStartAccept(s@, result@, c@),
+    result.0.valid(),
+    LStartAccept(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
     let result = {
         let mut __accept_senders = clone_hashset(&HashSet::new());
         __accept_senders.insert(c.my_id.clone());
-        CState {
-            ballot: s.ballot.clone(),
-            cmd: s.cmd.clone(),
-            seq: s.seq.clone(),
-            dep_count: s.dep_count.clone(),
-            is_leader: s.is_leader.clone(),
-            committed_count: s.committed_count.clone(),
-            executed_count: s.executed_count.clone(),
-            preaccept_senders: clone_hashset(&s.preaccept_senders),
-            accept_senders: __accept_senders,
-            has_conflict: s.has_conflict.clone(),
-            max_resp_seq: s.max_resp_seq.clone(),
-            msgs_accept: true,
-            msgs_accept_ballot: s.ballot.clone(),
-            msgs_accept_cmd: s.cmd.clone(),
-            msgs_accept_seq: s.seq.clone(),
-            msgs_preaccept: false,
-            msgs_preaccept_ballot: 0u64,
-            msgs_preaccept_cmd: 0u64,
-            msgs_preaccept_seq: 0u64,
-            msgs_preaccept_ok: false,
-            msgs_preaccept_ok_sender: 0u64,
-            msgs_preaccept_ok_seq: 0u64,
-            msgs_preaccept_ok_conflict: false,
-            msgs_accept_ok: false,
-            msgs_accept_ok_sender: 0u64,
-            msgs_commit: false,
-            msgs_commit_cmd: 0u64,
-            msgs_commit_seq: 0u64,
-            phase: CInstancePhase::Accepted,
-        }
+        (CState {
+    ballot: s.ballot.clone(),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    accept_senders: __accept_senders,
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+    phase: CInstancePhase::Accepted,
+}, vec![CEPaxosMessage::Accept {
+    ballot: s.ballot.clone(),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+}])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CSendAcceptOk(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CSendAcceptOk(s: &CState, c: &CConstants) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
-    s.msgs_accept == true,
 ensures
-    result.valid(),
-    LSendAcceptOk(s@, result@, c@),
+    result.0.valid(),
+    LSendAcceptOk(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-CState {
-        msgs_accept_ok: true,
-        msgs_accept_ok_sender: c.my_id.clone(),
-        ballot: s.ballot.clone(),
-        phase: clone_phase(&s.phase),
-        cmd: s.cmd.clone(),
-        seq: s.seq.clone(),
-        dep_count: s.dep_count.clone(),
-        is_leader: s.is_leader.clone(),
-        committed_count: s.committed_count.clone(),
-        executed_count: s.executed_count.clone(),
-        preaccept_senders: clone_hashset(&s.preaccept_senders),
-        accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict.clone(),
-        max_resp_seq: s.max_resp_seq.clone(),
-        msgs_preaccept: s.msgs_preaccept.clone(),
-        msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
-        msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
-        msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
-        msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
-        msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
-        msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
-        msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
-        msgs_accept: s.msgs_accept.clone(),
-        msgs_accept_ballot: s.msgs_accept_ballot.clone(),
-        msgs_accept_cmd: s.msgs_accept_cmd.clone(),
-        msgs_accept_seq: s.msgs_accept_seq.clone(),
-        msgs_commit: s.msgs_commit.clone(),
-        msgs_commit_cmd: s.msgs_commit_cmd.clone(),
-        msgs_commit_seq: s.msgs_commit_seq.clone(),
+    let result = (CState {
+    ballot: s.ballot.clone(),
+    phase: clone_phase(&s.phase),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    accept_senders: clone_hashset(&s.accept_senders),
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+}, vec![CEPaxosMessage::AcceptOk {
+    sender: c.my_id.clone(),
+}]);
+    proof {
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
+    result
+
 }
 
-pub exec fn CReceiveAcceptOk(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CReceiveAcceptOk(s: &CState, c: &CConstants, ao_sender: &u64) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Accepted,
     s.is_leader == true,
-    s.msgs_accept_ok == true,
-    !s@.accept_senders.contains(s@.msgs_accept_ok_sender),
+    !s@.accept_senders.contains(*ao_sender as int),
 ensures
-    result.valid(),
-    LReceiveAcceptOk(s@, result@, c@),
+    result.0.valid(),
+    LReceiveAcceptOk(s@, result.0@, c@, *ao_sender as int, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
     let result = {
         let mut __accept_senders = clone_hashset(&s.accept_senders);
-        __accept_senders.insert(s.msgs_accept_ok_sender.clone());
-        CState {
-            accept_senders: __accept_senders,
-            ballot: s.ballot.clone(),
-            phase: clone_phase(&s.phase),
-            cmd: s.cmd.clone(),
-            seq: s.seq.clone(),
-            dep_count: s.dep_count.clone(),
-            is_leader: s.is_leader.clone(),
-            committed_count: s.committed_count.clone(),
-            executed_count: s.executed_count.clone(),
-            preaccept_senders: clone_hashset(&s.preaccept_senders),
-            has_conflict: s.has_conflict.clone(),
-            max_resp_seq: s.max_resp_seq.clone(),
-            msgs_preaccept: s.msgs_preaccept.clone(),
-            msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
-            msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
-            msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
-            msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
-            msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
-            msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
-            msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
-            msgs_accept: s.msgs_accept.clone(),
-            msgs_accept_ballot: s.msgs_accept_ballot.clone(),
-            msgs_accept_cmd: s.msgs_accept_cmd.clone(),
-            msgs_accept_seq: s.msgs_accept_seq.clone(),
-            msgs_accept_ok: s.msgs_accept_ok.clone(),
-            msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_commit_cmd: s.msgs_commit_cmd.clone(),
-            msgs_commit_seq: s.msgs_commit_seq.clone(),
-        }
+        __accept_senders.insert(ao_sender.clone());
+        (CState {
+    accept_senders: __accept_senders,
+    ballot: s.ballot.clone(),
+    phase: clone_phase(&s.phase),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CSlowCommit(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CSlowCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -468,180 +380,133 @@ requires
     (s@.accept_senders.len() >= c.quorum_size),
     s.committed_count < u64::MAX,
 ensures
-    result.valid(),
-    LSlowCommit(s@, result@, c@),
+    result.0.valid(),
+    LSlowCommit(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-CState {
-        ballot: s.ballot.clone(),
-        cmd: s.cmd.clone(),
-        seq: s.seq.clone(),
-        dep_count: s.dep_count.clone(),
-        is_leader: s.is_leader.clone(),
-        committed_count: (s.committed_count + 1),
-        executed_count: s.executed_count.clone(),
-        preaccept_senders: clone_hashset(&s.preaccept_senders),
-        accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict.clone(),
-        max_resp_seq: s.max_resp_seq.clone(),
-        msgs_commit: true,
-        msgs_commit_cmd: s.cmd.clone(),
-        msgs_commit_seq: s.seq.clone(),
-        msgs_preaccept: false,
-        msgs_preaccept_ballot: 0u64,
-        msgs_preaccept_cmd: 0u64,
-        msgs_preaccept_seq: 0u64,
-        msgs_preaccept_ok: false,
-        msgs_preaccept_ok_sender: 0u64,
-        msgs_preaccept_ok_seq: 0u64,
-        msgs_preaccept_ok_conflict: false,
-        msgs_accept: false,
-        msgs_accept_ballot: 0u64,
-        msgs_accept_cmd: 0u64,
-        msgs_accept_seq: 0u64,
-        msgs_accept_ok: false,
-        msgs_accept_ok_sender: 0u64,
-        phase: CInstancePhase::Committed,
+    let result = (CState {
+    ballot: s.ballot.clone(),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: (s.committed_count + 1),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    accept_senders: clone_hashset(&s.accept_senders),
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+    phase: CInstancePhase::Committed,
+}, vec![CEPaxosMessage::Commit {
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+}]);
+    proof {
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
+    result
+
 }
 
-pub exec fn CExecute(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CExecute(s: &CState, c: &CConstants) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Committed,
     s.executed_count < u64::MAX,
 ensures
-    result.valid(),
-    LExecute(s@, result@, c@),
+    result.0.valid(),
+    LExecute(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-CState {
-        ballot: s.ballot.clone(),
-        cmd: s.cmd.clone(),
-        seq: s.seq.clone(),
-        dep_count: s.dep_count.clone(),
-        is_leader: s.is_leader.clone(),
-        committed_count: s.committed_count.clone(),
-        executed_count: (s.executed_count + 1),
-        preaccept_senders: clone_hashset(&s.preaccept_senders),
-        accept_senders: clone_hashset(&s.accept_senders),
-        has_conflict: s.has_conflict.clone(),
-        max_resp_seq: s.max_resp_seq.clone(),
-        msgs_preaccept: s.msgs_preaccept.clone(),
-        msgs_preaccept_ballot: s.msgs_preaccept_ballot.clone(),
-        msgs_preaccept_cmd: s.msgs_preaccept_cmd.clone(),
-        msgs_preaccept_seq: s.msgs_preaccept_seq.clone(),
-        msgs_preaccept_ok: s.msgs_preaccept_ok.clone(),
-        msgs_preaccept_ok_sender: s.msgs_preaccept_ok_sender.clone(),
-        msgs_preaccept_ok_seq: s.msgs_preaccept_ok_seq.clone(),
-        msgs_preaccept_ok_conflict: s.msgs_preaccept_ok_conflict.clone(),
-        msgs_accept: s.msgs_accept.clone(),
-        msgs_accept_ballot: s.msgs_accept_ballot.clone(),
-        msgs_accept_cmd: s.msgs_accept_cmd.clone(),
-        msgs_accept_seq: s.msgs_accept_seq.clone(),
-        msgs_accept_ok: s.msgs_accept_ok.clone(),
-        msgs_accept_ok_sender: s.msgs_accept_ok_sender.clone(),
-        msgs_commit: s.msgs_commit.clone(),
-        msgs_commit_cmd: s.msgs_commit_cmd.clone(),
-        msgs_commit_seq: s.msgs_commit_seq.clone(),
-        phase: CInstancePhase::Executed,
+    let result = (CState {
+    ballot: s.ballot.clone(),
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: s.dep_count.clone(),
+    is_leader: s.is_leader.clone(),
+    committed_count: s.committed_count.clone(),
+    executed_count: (s.executed_count + 1),
+    preaccept_senders: clone_hashset(&s.preaccept_senders),
+    accept_senders: clone_hashset(&s.accept_senders),
+    has_conflict: s.has_conflict.clone(),
+    max_resp_seq: s.max_resp_seq.clone(),
+    phase: CInstancePhase::Executed,
+}, vec![]);
+    proof {
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-pub exec fn CRecover(s: &CState, c: &CConstants, new_ballot: &u64) -> (result: CState)
+pub exec fn CRecover(s: &CState, c: &CConstants, new_ballot: &u64) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
     (s.phase is PreAccepted || s.phase is Accepted),
     (*new_ballot > s.ballot),
 ensures
-    result.valid(),
-    LRecover(s@, result@, c@, *new_ballot as int),
+    result.0.valid(),
+    LRecover(s@, result.0@, c@, *new_ballot as int, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
     let result = {
         let mut __preaccept_senders = clone_hashset(&HashSet::new());
         __preaccept_senders.insert(c.my_id.clone());
-        CState {
-            ballot: *new_ballot,
-            cmd: s.cmd.clone(),
-            seq: s.seq.clone(),
-            dep_count: 0u64,
-            is_leader: true,
-            committed_count: s.committed_count.clone(),
-            executed_count: s.executed_count.clone(),
-            preaccept_senders: __preaccept_senders,
-            accept_senders: HashSet::new(),
-            has_conflict: false,
-            max_resp_seq: 0u64,
-            msgs_preaccept: true,
-            msgs_preaccept_ballot: *new_ballot,
-            msgs_preaccept_cmd: s.cmd.clone(),
-            msgs_preaccept_seq: s.seq.clone(),
-            msgs_preaccept_ok: false,
-            msgs_preaccept_ok_sender: 0u64,
-            msgs_preaccept_ok_seq: 0u64,
-            msgs_preaccept_ok_conflict: false,
-            msgs_accept: false,
-            msgs_accept_ballot: 0u64,
-            msgs_accept_cmd: 0u64,
-            msgs_accept_seq: 0u64,
-            msgs_accept_ok: false,
-            msgs_accept_ok_sender: 0u64,
-            msgs_commit: false,
-            msgs_commit_cmd: 0u64,
-            msgs_commit_seq: 0u64,
-            phase: CInstancePhase::PreAccepted,
-        }
+        (CState {
+    ballot: *new_ballot,
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+    dep_count: 0u64,
+    is_leader: true,
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: __preaccept_senders,
+    accept_senders: HashSet::new(),
+    has_conflict: false,
+    max_resp_seq: 0u64,
+    phase: CInstancePhase::PreAccepted,
+}, vec![CEPaxosMessage::PreAccept {
+    ballot: *new_ballot,
+    cmd: s.cmd.clone(),
+    seq: s.seq.clone(),
+}])
     };
     proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CNewInstance(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CNewInstance(s: &CState, c: &CConstants) -> (result: (CState, Vec<CEPaxosMessage>))
 requires
     s.valid(),
     c.valid(),
     s.phase is Executed,
 ensures
-    result.valid(),
-    LNewInstance(s@, result@, c@),
+    result.0.valid(),
+    LNewInstance(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-    let result = CState {
-        ballot: s.ballot.clone(),
-        cmd: 0u64,
-        seq: 0u64,
-        dep_count: 0u64,
-        is_leader: false,
-        committed_count: s.committed_count.clone(),
-        executed_count: s.executed_count.clone(),
-        preaccept_senders: HashSet::new(),
-        accept_senders: HashSet::new(),
-        has_conflict: false,
-        max_resp_seq: 0u64,
-        msgs_preaccept: false,
-        msgs_preaccept_ballot: 0u64,
-        msgs_preaccept_cmd: 0u64,
-        msgs_preaccept_seq: 0u64,
-        msgs_preaccept_ok: false,
-        msgs_preaccept_ok_sender: 0u64,
-        msgs_preaccept_ok_seq: 0u64,
-        msgs_preaccept_ok_conflict: false,
-        msgs_accept: false,
-        msgs_accept_ballot: 0u64,
-        msgs_accept_cmd: 0u64,
-        msgs_accept_seq: 0u64,
-        msgs_accept_ok: false,
-        msgs_accept_ok_sender: 0u64,
-        msgs_commit: false,
-        msgs_commit_cmd: 0u64,
-        msgs_commit_seq: 0u64,
-        phase: CInstancePhase::Empty,
-    };
+    let result = (CState {
+    ballot: s.ballot.clone(),
+    cmd: 0u64,
+    seq: 0u64,
+    dep_count: 0u64,
+    is_leader: false,
+    committed_count: s.committed_count.clone(),
+    executed_count: s.executed_count.clone(),
+    preaccept_senders: HashSet::new(),
+    accept_senders: HashSet::new(),
+    has_conflict: false,
+    max_resp_seq: 0u64,
+    phase: CInstancePhase::Empty,
+}, vec![]);
     proof {
         lemma_empty_set_map();
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty());
     }
     result
 

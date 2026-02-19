@@ -23,23 +23,6 @@ pub struct CState {
     pub accept_senders: HashSet<u64>,
     pub has_conflict: bool,
     pub max_resp_seq: u64,
-    pub msgs_preaccept: bool,
-    pub msgs_preaccept_ballot: u64,
-    pub msgs_preaccept_cmd: u64,
-    pub msgs_preaccept_seq: u64,
-    pub msgs_preaccept_ok: bool,
-    pub msgs_preaccept_ok_sender: u64,
-    pub msgs_preaccept_ok_seq: u64,
-    pub msgs_preaccept_ok_conflict: bool,
-    pub msgs_accept: bool,
-    pub msgs_accept_ballot: u64,
-    pub msgs_accept_cmd: u64,
-    pub msgs_accept_seq: u64,
-    pub msgs_accept_ok: bool,
-    pub msgs_accept_ok_sender: u64,
-    pub msgs_commit: bool,
-    pub msgs_commit_cmd: u64,
-    pub msgs_commit_seq: u64,
 }
 
 impl Clone for CState {
@@ -74,23 +57,6 @@ impl View for CState {
             accept_senders: self.accept_senders@.map(|x: u64| x as int),
             has_conflict: self.has_conflict,
             max_resp_seq: self.max_resp_seq as int,
-            msgs_preaccept: self.msgs_preaccept,
-            msgs_preaccept_ballot: self.msgs_preaccept_ballot as int,
-            msgs_preaccept_cmd: self.msgs_preaccept_cmd as int,
-            msgs_preaccept_seq: self.msgs_preaccept_seq as int,
-            msgs_preaccept_ok: self.msgs_preaccept_ok,
-            msgs_preaccept_ok_sender: self.msgs_preaccept_ok_sender as int,
-            msgs_preaccept_ok_seq: self.msgs_preaccept_ok_seq as int,
-            msgs_preaccept_ok_conflict: self.msgs_preaccept_ok_conflict,
-            msgs_accept: self.msgs_accept,
-            msgs_accept_ballot: self.msgs_accept_ballot as int,
-            msgs_accept_cmd: self.msgs_accept_cmd as int,
-            msgs_accept_seq: self.msgs_accept_seq as int,
-            msgs_accept_ok: self.msgs_accept_ok,
-            msgs_accept_ok_sender: self.msgs_accept_ok_sender as int,
-            msgs_commit: self.msgs_commit,
-            msgs_commit_cmd: self.msgs_commit_cmd as int,
-            msgs_commit_seq: self.msgs_commit_seq as int,
         }
     }
 }
@@ -153,6 +119,58 @@ impl View for CInstancePhase {
             CInstancePhase::Accepted => LInstancePhase::Accepted,
             CInstancePhase::Committed => LInstancePhase::Committed,
             CInstancePhase::Executed => LInstancePhase::Executed,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CEPaxosMessage {
+    PreAccept {
+        ballot: u64,
+        cmd: u64,
+        seq: u64,
+    },
+    PreAcceptOk {
+        sender: u64,
+        seq: u64,
+        conflict: bool,
+    },
+    Accept {
+        ballot: u64,
+        cmd: u64,
+        seq: u64,
+    },
+    AcceptOk {
+        sender: u64,
+    },
+    Commit {
+        cmd: u64,
+        seq: u64,
+    },
+}
+
+impl CEPaxosMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CEPaxosMessage::PreAccept { ballot, cmd, seq } => true,
+            CEPaxosMessage::PreAcceptOk { sender, seq, conflict } => true,
+            CEPaxosMessage::Accept { ballot, cmd, seq } => true,
+            CEPaxosMessage::AcceptOk { sender } => true,
+            CEPaxosMessage::Commit { cmd, seq } => true,
+        }
+    }
+}
+
+impl View for CEPaxosMessage {
+    type V = LEPaxosMessage;
+
+    open spec fn view(&self) -> LEPaxosMessage {
+        match self {
+            CEPaxosMessage::PreAccept { ballot, cmd, seq } => LEPaxosMessage::PreAccept { ballot: *ballot as int, cmd: *cmd as int, seq: *seq as int },
+            CEPaxosMessage::PreAcceptOk { sender, seq, conflict } => LEPaxosMessage::PreAcceptOk { sender: *sender as int, seq: *seq as int, conflict: *conflict },
+            CEPaxosMessage::Accept { ballot, cmd, seq } => LEPaxosMessage::Accept { ballot: *ballot as int, cmd: *cmd as int, seq: *seq as int },
+            CEPaxosMessage::AcceptOk { sender } => LEPaxosMessage::AcceptOk { sender: *sender as int },
+            CEPaxosMessage::Commit { cmd, seq } => LEPaxosMessage::Commit { cmd: *cmd as int, seq: *seq as int },
         }
     }
 }

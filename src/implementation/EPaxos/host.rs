@@ -9,6 +9,9 @@
 //! EPaxos uses two commit paths:
 //!   Fast path: PreAccept -> PreAcceptOk (fast quorum, no conflict) -> FastCommit
 //!   Slow path: PreAccept -> PreAcceptOk (conflict) -> StartAccept -> AcceptOk -> SlowCommit
+//!
+//! The spec models messages as sent_packets output parameters. This
+//! implementation translates that into explicit network messages.
 
 use crate::common::framework::args_t::*;
 use crate::common::framework::protocol_trait::*;
@@ -142,23 +145,18 @@ impl EPaxosHost {
         _cmd: u64,
         _seq: u64,
     ) -> StepResult<EPaxosMessage> {
-        // Guard: msgs_preaccept must be true (set by incoming message injection)
-        // Guard: phase must be Empty (only idle replicas respond)
-        if !self.state.msgs_preaccept {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
-        }
-
         // Determine local conflict and sequence: for simplicity, use the
         // committed_count as a proxy for local sequence knowledge.
         let local_conflict = false;
         let local_seq = self.state.committed_count;
 
-        self.state = epaxos_gen::CSendPreAcceptOk(
+        let (new_state, _sent) = epaxos_gen::CSendPreAcceptOk(
             &self.state,
             &config.constants,
             local_conflict,
             &local_seq,
         );
+        self.state = new_state;
 
         StepResult {
             ok: true,
@@ -200,16 +198,14 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Inject the message fields into state before calling CReceivePreAcceptOk
-        self.state.msgs_preaccept_ok = true;
-        self.state.msgs_preaccept_ok_sender = sender_id;
-        self.state.msgs_preaccept_ok_seq = seq;
-        self.state.msgs_preaccept_ok_conflict = conflict;
-
-        self.state = epaxos_gen::CReceivePreAcceptOk(
+        let (new_state, _sent) = epaxos_gen::CReceivePreAcceptOk(
             &self.state,
             &config.constants,
+            &sender_id,
+            &seq,
+            conflict,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -224,15 +220,11 @@ impl EPaxosHost {
         _cmd: u64,
         _seq: u64,
     ) -> StepResult<EPaxosMessage> {
-        // Guard: msgs_accept must be true
-        if !self.state.msgs_accept {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
-        }
-
-        self.state = epaxos_gen::CSendAcceptOk(
+        let (new_state, _sent) = epaxos_gen::CSendAcceptOk(
             &self.state,
             &config.constants,
         );
+        self.state = new_state;
 
         StepResult {
             ok: true,
@@ -265,14 +257,12 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Inject the message fields into state before calling CReceiveAcceptOk
-        self.state.msgs_accept_ok = true;
-        self.state.msgs_accept_ok_sender = sender_id;
-
-        self.state = epaxos_gen::CReceiveAcceptOk(
+        let (new_state, _sent) = epaxos_gen::CReceiveAcceptOk(
             &self.state,
             &config.constants,
+            &sender_id,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -313,11 +303,12 @@ impl EPaxosHost {
         self.propose_counter = self.propose_counter.wrapping_add(1);
         let value = self.propose_counter;
 
-        self.state = epaxos_gen::CPropose(
+        let (new_state, _sent) = epaxos_gen::CPropose(
             &self.state,
             &config.constants,
             &value,
         );
+        self.state = new_state;
 
         // Broadcast PreAccept to all other replicas
         let others = Self::other_peers(config);
@@ -363,10 +354,11 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = epaxos_gen::CFastCommit(
+        let (new_state, _sent) = epaxos_gen::CFastCommit(
             &self.state,
             &config.constants,
         );
+        self.state = new_state;
 
         eprintln!("EPaxos: FAST COMMIT cmd={} seq={}", self.state.cmd, self.state.seq);
 
@@ -385,7 +377,7 @@ impl EPaxosHost {
     }
 
     /// Timer action: Start slow-path Accept phase.
-    /// Fires when the leader has a fast quorum of PreAcceptOk but with conflicts.
+    /// Fires when the leader has a quorum of PreAcceptOk but with conflicts.
     fn try_start_accept(
         &mut self,
         config: &EPaxosConfig,
@@ -398,9 +390,7 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Guard: must have at least quorum_size responses (the spec uses
-        // fast_quorum_size for the slow-path trigger as well, but here we
-        // use quorum_size as the minimum threshold before switching to Accept).
+        // Guard: must have at least quorum_size responses
         if (self.state.preaccept_senders.len() as u64) < config.constants.fast_quorum_size {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
@@ -410,10 +400,11 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = epaxos_gen::CStartAccept(
+        let (new_state, _sent) = epaxos_gen::CStartAccept(
             &self.state,
             &config.constants,
         );
+        self.state = new_state;
 
         // Broadcast Accept to all other replicas
         let others = Self::other_peers(config);
@@ -454,10 +445,11 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = epaxos_gen::CSlowCommit(
+        let (new_state, _sent) = epaxos_gen::CSlowCommit(
             &self.state,
             &config.constants,
         );
+        self.state = new_state;
 
         eprintln!("EPaxos: SLOW COMMIT cmd={} seq={}", self.state.cmd, self.state.seq);
 
@@ -491,10 +483,11 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = epaxos_gen::CExecute(
+        let (new_state, _sent) = epaxos_gen::CExecute(
             &self.state,
             &config.constants,
         );
+        self.state = new_state;
 
         eprintln!("EPaxos: EXECUTED cmd={} seq={}", self.state.cmd, self.state.seq);
 
@@ -512,10 +505,11 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = epaxos_gen::CNewInstance(
+        let (new_state, _sent) = epaxos_gen::CNewInstance(
             &self.state,
             &config.constants,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -538,11 +532,12 @@ impl EPaxosHost {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = epaxos_gen::CRecover(
+        let (new_state, _sent) = epaxos_gen::CRecover(
             &self.state,
             &config.constants,
             &new_ballot,
         );
+        self.state = new_state;
 
         // Broadcast PreAccept with new ballot to all replicas
         let others = Self::other_peers(config);
@@ -582,7 +577,7 @@ impl ProtocolHost for EPaxosHost {
         // Handle incoming message
         if let Some(pkt) = packet {
             let sender_id = Self::resolve_sender_index(config, &pkt.src);
-            let sender_id = match sender_id {
+            let _sender_id = match sender_id {
                 Some(id) => id,
                 None => {
                     // Unknown sender, ignore
@@ -592,22 +587,12 @@ impl ProtocolHost for EPaxosHost {
 
             return match pkt.msg {
                 EPaxosMessage::PreAccept { ballot, cmd, seq } => {
-                    // Inject message fields into state for the guard check
-                    self.state.msgs_preaccept = true;
-                    self.state.msgs_preaccept_ballot = ballot;
-                    self.state.msgs_preaccept_cmd = cmd;
-                    self.state.msgs_preaccept_seq = seq;
                     self.handle_preaccept(config, &pkt.src, ballot, cmd, seq)
                 },
                 EPaxosMessage::PreAcceptOk { sender, seq, conflict } => {
                     self.handle_preaccept_ok(config, sender, seq, conflict)
                 },
                 EPaxosMessage::Accept { ballot, cmd, seq } => {
-                    // Inject message fields into state for the guard check
-                    self.state.msgs_accept = true;
-                    self.state.msgs_accept_ballot = ballot;
-                    self.state.msgs_accept_cmd = cmd;
-                    self.state.msgs_accept_seq = seq;
                     self.handle_accept(config, &pkt.src, ballot, cmd, seq)
                 },
                 EPaxosMessage::AcceptOk { sender } => {

@@ -3191,23 +3191,17 @@ fn test_scaffold_flag_injections_pbft() {
 }
 
 #[test]
-fn test_scaffold_flag_injections_epaxos() {
+fn test_scaffold_no_flag_injections_epaxos() {
     let code = load_and_generate_scaffold(
         "../src/protocol/EPaxos/epaxos_transpile.toml",
         "EPaxos",
     );
-    // LReceivePreAcceptOk handler: PreAcceptOk message fields
-    assert!(code.contains("self.state.msgs_preaccept_ok = true;"),
-        "LReceivePreAcceptOk should inject msgs_preaccept_ok flag");
-    assert!(code.contains("self.state.msgs_preaccept_ok_sender = sender;"),
-        "LReceivePreAcceptOk should inject sender field");
-    assert!(code.contains("self.state.msgs_preaccept_ok_seq = seq;"),
-        "LReceivePreAcceptOk should inject seq field");
-    // LReceiveAcceptOk handler: AcceptOk message fields
-    assert!(code.contains("self.state.msgs_accept_ok = true;"),
-        "LReceiveAcceptOk should inject msgs_accept_ok flag");
-    assert!(code.contains("self.state.msgs_accept_ok_sender = sender;"),
-        "LReceiveAcceptOk should inject sender field");
+    assert!(!code.contains("Flag injection"),
+        "EPaxos scaffold should have no flag injection comments");
+    assert!(!code.contains("msgs_preaccept_ok"),
+        "EPaxos scaffold should not reference msgs_preaccept_ok");
+    assert!(!code.contains("msgs_accept_ok"),
+        "EPaxos scaffold should not reference msgs_accept_ok");
 }
 
 // Negative tests: protocols with NO flag injections should have no injection code
