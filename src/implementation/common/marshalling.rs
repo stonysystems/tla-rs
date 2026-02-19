@@ -204,7 +204,6 @@ impl Marshalable for u64 {
   }
 }
 
-// #[verifier(external_body)]
 impl Marshalable for bool {
 
   open spec fn view_equal(&self, other: &Self) -> bool {
