@@ -5259,11 +5259,11 @@ CRequestBatch, CAppMessage, CAppState, CReplyCache. Tag is u8 prefix (1 byte).
   - Generate all 11 trait methods with tag-based dispatch
   - Tag byte (u8) prefix: `seq![tag as u8]` in ghost_serialize
   - 10+ unit tests (empty variants, single-field, multi-field, mixed)
-- [ ] **17.3.3b**: Add `[marshalable.enums]` to TOML + integration tests (~150 LOC)
+- [x] **17.3.3b**: Add `[marshalable.enums]` to TOML + integration tests (~150 LOC)
   - Wire enum generation into `generate-marshalable` CLI subcommand
   - Add CAppMessage (3 variants) and CMessage (11 variants) to types_transpile.toml
   - 3+ integration tests: CAppMessage, CMessage, real TOML loading
-- [ ] **17.3.3c**: Verify generated enum Marshalable against macro output (~100 LOC)
+- [x] **17.3.3c**: Verify generated enum Marshalable against macro output (~100 LOC)
   - Compare generated code structure against `define_enum_and_derive_marshalable!` expansion
   - Verify all proof lemmas match macro patterns
   - Ensure proof-compatible output (tag divergence in prefix lemma)

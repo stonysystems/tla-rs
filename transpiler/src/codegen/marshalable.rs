@@ -1182,4 +1182,225 @@ mod tests {
         assert!(result.contains("impl Marshalable for S {"));
         assert!(result.contains("impl Marshalable for E {"));
     }
+
+    // ===== 17.3.3c: Verify generated code matches derive_marshalable_for_enum! macro pattern =====
+
+    /// Verify generated CAppMessage matches the structure produced by the
+    /// `derive_marshalable_for_enum!` macro in marshalling.rs.
+    ///
+    /// CAppMessage has: CAppIncrement (tag=0), CAppReply{response:u64} (tag=1), CAppInvalid (tag=2)
+    #[test]
+    fn test_enum_macro_match_cappMessage_view_equal() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro produces: match (self, other) { (Variant, Variant) => { ... &&& true }, _ => false }
+        assert!(code.contains("&&& match (self, other) {"));
+        assert!(code.contains("(CAppMessage::CAppIncrement, CAppMessage::CAppIncrement) => {"));
+        assert!(code.contains("(CAppMessage::CAppReply { response }, CAppMessage::CAppReply { response: o_response }) => {"));
+        assert!(code.contains("(CAppMessage::CAppInvalid, CAppMessage::CAppInvalid) => {"));
+        assert!(code.contains("&&& response.view_equal(&o_response)"));
+        // view_equal arms end with &&& true (check in the view_equal section)
+        let view_eq_start = code.find("open spec fn view_equal(").unwrap();
+        let view_eq_end = code.find("proof fn lemma_view_equal_symmetric(").unwrap();
+        let view_eq_section = &code[view_eq_start..view_eq_end];
+        assert_eq!(view_eq_section.matches("&&& true").count(), 3);
+        assert!(code.contains("_ => false,"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_is_marshalable() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro produces: &&& match self { Variant => { ... &&& 1 [+ sizes] <= usize::MAX } }
+        assert!(code.contains("&&& match self {"));
+        // Unit variant: just 1 <= usize::MAX
+        assert!(code.contains("CAppMessage::CAppIncrement => {\n                &&& 1 <= usize::MAX"));
+        // Field variant: 1 + field size
+        assert!(code.contains("&&& response.is_marshalable()"));
+        assert!(code.contains("&&& 1 + response.ghost_serialize().len() <= usize::MAX"));
+        assert!(code.contains("CAppMessage::CAppInvalid => {\n                &&& 1 <= usize::MAX"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_exec_is_marshalable() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro produces: match self { Variant => { &&& true [&&& field._is_marshalable()]* [&&& no_usize_overflows!(...)] } }
+        // Unit variants: just &&& true (no overflow check)
+        assert!(code.contains("CAppMessage::CAppIncrement => {\n                &&& true\n            }"));
+        // Field variant: &&& true &&& field._is_marshalable() &&& overflow
+        assert!(code.contains("&&& response._is_marshalable()"));
+        assert!(code.contains("usize::MAX - (1) >= response.serialized_size()"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_ghost_serialize() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro produces: match self { Variant => seq![tag] [+ field.ghost_serialize()]* }
+        assert!(code.contains("seq![0u8]\n"));
+        assert!(code.contains("seq![1u8] + response.ghost_serialize()"));
+        assert!(code.contains("seq![2u8]\n"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_serialize() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro: data.push(tag); [mid_data_len ghost; proof+serialize per field;] final proof
+        assert!(code.contains("data.push(0u8);"));
+        assert!(code.contains("data.push(1u8);"));
+        assert!(code.contains("data.push(2u8);"));
+        // Field variant has mid_data_len ghost
+        assert!(code.contains("let mid_data_len: Ghost<int> = Ghost(data@.len() as int);"));
+        // Mid-field proof for CAppReply
+        assert!(code.contains("assert(data@.subrange(old(data)@.len() as int, mid_data_len@) =~= seq![1u8]);"));
+        assert!(code.contains("response.serialize(data);"));
+        // Final proof in every arm
+        assert_eq!(
+            code.matches("assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize());")
+                .count(),
+            3,
+            "Each variant arm must have the final serialize proof assertion"
+        );
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_deserialize() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro: if data.len() == 0 || start >= data.len() - 1 { return None; }
+        assert!(code.contains("if data.len() == 0 || start >= data.len() - 1 {"));
+        assert!(code.contains("let tag = data[start];"));
+        // if-else chain
+        assert!(code.contains("if tag == 0u8 {"));
+        assert!(code.contains("} else if tag == 1u8 {"));
+        assert!(code.contains("} else if tag == 2u8 {"));
+        // Field deserialization
+        assert!(code.contains("let (response, mid) = match u64::deserialize(data, mid)"));
+        // Construction
+        assert!(code.contains("(CAppMessage::CAppIncrement, mid)"));
+        assert!(code.contains("(CAppMessage::CAppReply { response }, mid)"));
+        assert!(code.contains("(CAppMessage::CAppInvalid, mid)"));
+        // Final else + proof block
+        assert!(code.contains("} else {\n            return None;\n        };"));
+        assert!(code.contains("assert(data@.subrange(start as int, end as int) == x.ghost_serialize())"));
+        assert!(code.contains("assert(data@.subrange(start as int, end as int).len() == x.ghost_serialize().len());"));
+        assert!(code.contains("assert(data@.subrange(start as int, end as int) =~= x.ghost_serialize());"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_prefix_lemma() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // Macro: let si = self.ghost_serialize(); let so = other.ghost_serialize();
+        assert!(code.contains("let si = self.ghost_serialize();"));
+        assert!(code.contains("let so = other.ghost_serialize();"));
+        // Same-variant arm with fields: field-by-field divergence
+        assert!(code.contains("if !response.view_equal(&o_response) {"));
+        assert!(code.contains("let (x0, x1) = (response, o_response);"));
+        assert!(code.contains("x0.lemma_view_equal_symmetric(&x1);"));
+        assert!(code.contains("x0.lemma_serialization_is_not_a_prefix_of(&x1);"));
+        assert!(code.contains("assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE"));
+        assert!(code.contains("let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];"));
+        // Cross-variant catch-all
+        assert!(code.contains("assert(si[0] == so[0]); // OBSERVE"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_same_views_lemma() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // lemma_same_views_serialize_the_same: match with delegation
+        assert!(code.contains("response.lemma_same_views_serialize_the_same(&o_response);"));
+        // Catch-all
+        let same_views_section = code
+            .find("proof fn lemma_same_views_serialize_the_same")
+            .expect("missing lemma_same_views_serialize_the_same");
+        let section = &code[same_views_section..];
+        assert!(section.contains("_ => (),"));
+    }
+
+    #[test]
+    fn test_enum_macro_match_cappMessage_injective_lemma() {
+        let config = make_enum_config(vec![make_enum(
+            "CAppMessage",
+            vec![
+                make_variant("CAppIncrement", 0, vec![]),
+                make_variant("CAppReply", 1, vec![("response", "u64")]),
+                make_variant("CAppInvalid", 2, vec![]),
+            ],
+        )]);
+        let code = generate_marshalable_impls(&config);
+
+        // lemma_serialize_injective: same for structs and enums
+        assert!(code.contains("self.lemma_serialization_is_not_a_prefix_of(other);"));
+        assert!(code.contains(
+            "assert(other.ghost_serialize().subrange(0, self.ghost_serialize().len() as int)"
+        ));
+    }
 }
