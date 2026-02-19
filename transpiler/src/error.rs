@@ -6,7 +6,6 @@
 //! - Source location tracking
 
 // Suppress false positives from thiserror/miette derive macros in Rust 1.93+
-// See: https://github.com/rust-lang/rust/issues/XXXXX
 #![allow(unused_assignments)]
 
 use miette::{Diagnostic, SourceSpan};
@@ -102,6 +101,14 @@ pub enum TranspileError {
         #[help]
         help: Option<String>,
     },
+
+    /// Multiple validation errors collected during a single pass
+    #[error("{} validation errors occurred", errors.len())]
+    #[diagnostic(code(verus_transpiler::multiple_errors))]
+    Multiple {
+        #[related]
+        errors: Vec<TranspileError>,
+    },
 }
 
 /// Warning type for non-fatal issues
@@ -163,14 +170,18 @@ impl DiagnosticAccumulator {
         self.errors.len() + self.warnings.len()
     }
 
-    /// Consume the accumulator and return errors if any exist
+    /// Consume the accumulator and return errors if any exist.
+    ///
+    /// When a single error was accumulated, returns it directly.
+    /// When multiple errors were accumulated, wraps them in `TranspileError::Multiple`
+    /// so all failures are reported at once.
     pub fn into_result<T>(self, value: T) -> TranspileResult<T> {
-        if self.has_errors() {
-            // Return the first error for now
-            // TODO: Consider returning a multi-error type
-            Err(self.errors.into_iter().next().unwrap())
-        } else {
-            Ok(value)
+        match self.errors.len() {
+            0 => Ok(value),
+            1 => Err(self.errors.into_iter().next().unwrap()),
+            _ => Err(TranspileError::Multiple {
+                errors: self.errors,
+            }),
         }
     }
 }
@@ -215,5 +226,66 @@ mod tests {
         let acc = DiagnosticAccumulator::new();
         let result: TranspileResult<i32> = acc.into_result(42);
         assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_into_result_single_error_no_wrapping() {
+        let mut acc = DiagnosticAccumulator::new();
+        acc.add_error(TranspileError::Config {
+            message: "only one".to_string(),
+        });
+        let result: TranspileResult<()> = acc.into_result(());
+        let err = result.unwrap_err();
+        // Single error should be returned directly, not wrapped in Multiple
+        assert!(matches!(err, TranspileError::Config { .. }));
+    }
+
+    #[test]
+    fn test_into_result_multiple_errors() {
+        let mut acc = DiagnosticAccumulator::new();
+        acc.add_error(TranspileError::Config {
+            message: "error 1".to_string(),
+        });
+        acc.add_error(TranspileError::Config {
+            message: "error 2".to_string(),
+        });
+        let result: TranspileResult<()> = acc.into_result(());
+        let err = result.unwrap_err();
+        match err {
+            TranspileError::Multiple { errors } => {
+                assert_eq!(errors.len(), 2);
+            }
+            other => panic!("Expected Multiple, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_into_result_three_errors() {
+        let mut acc = DiagnosticAccumulator::new();
+        acc.add_error(TranspileError::Saturation {
+            message: "s_ unassigned".to_string(),
+            span: None,
+            help: None,
+        });
+        acc.add_error(TranspileError::Harmony {
+            message: "t_ double assigned".to_string(),
+            first_span: None,
+            second_span: None,
+        });
+        acc.add_error(TranspileError::Obligation {
+            message: "u_ used before assignment".to_string(),
+            span: None,
+        });
+        let result: TranspileResult<()> = acc.into_result(());
+        let err = result.unwrap_err();
+        match err {
+            TranspileError::Multiple { errors } => {
+                assert_eq!(errors.len(), 3);
+                assert!(matches!(errors[0], TranspileError::Saturation { .. }));
+                assert!(matches!(errors[1], TranspileError::Harmony { .. }));
+                assert!(matches!(errors[2], TranspileError::Obligation { .. }));
+            }
+            other => panic!("Expected Multiple, got {:?}", other),
+        }
     }
 }

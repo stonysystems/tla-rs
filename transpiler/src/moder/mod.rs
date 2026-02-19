@@ -58,11 +58,23 @@ impl MemberPath {
     }
 }
 
+impl std::fmt::Display for MemberPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MemberPath::Root => write!(f, "<root>"),
+            MemberPath::Field(base, name) => write!(f, "{}.{}", base, name),
+            MemberPath::Index(base) => write!(f, "{}[_]", base),
+        }
+    }
+}
+
 /// Tracks assignments to output variables
 #[derive(Debug, Default)]
 pub struct AssignmentTracker {
     /// Maps output variable name to set of assigned member paths
     pub assignments: HashMap<String, HashSet<MemberPath>>,
+    /// Counts how many times each (variable, path) pair has been assigned
+    assignment_counts: HashMap<(String, MemberPath), usize>,
 }
 
 impl AssignmentTracker {
@@ -73,6 +85,10 @@ impl AssignmentTracker {
 
     /// Record an assignment to a member path
     pub fn record_assignment(&mut self, var_name: &str, path: MemberPath) {
+        *self
+            .assignment_counts
+            .entry((var_name.to_string(), path.clone()))
+            .or_insert(0) += 1;
         self.assignments
             .entry(var_name.to_string())
             .or_default()
@@ -85,6 +101,19 @@ impl AssignmentTracker {
             .get(var_name)
             .map(|paths| paths.contains(path))
             .unwrap_or(false)
+    }
+
+    /// Get the number of times a (variable, path) pair was assigned
+    pub fn get_count(&self, var_name: &str, path: &MemberPath) -> usize {
+        self.assignment_counts
+            .get(&(var_name.to_string(), path.clone()))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Iterate over all (variable, path) pairs with their assignment counts
+    pub fn assignment_counts(&self) -> impl Iterator<Item = (&(String, MemberPath), &usize)> {
+        self.assignment_counts.iter()
     }
 }
 
@@ -779,6 +808,45 @@ mod tests {
         tracker.record_assignment("s_", path.clone());
         assert!(tracker.is_assigned("s_", &path));
         assert!(!tracker.is_assigned("s_", &MemberPath::root()));
+    }
+
+    #[test]
+    fn test_member_path_display() {
+        assert_eq!(format!("{}", MemberPath::Root), "<root>");
+        assert_eq!(
+            format!("{}", MemberPath::root().field("max_bal".to_string())),
+            "<root>.max_bal"
+        );
+        assert_eq!(
+            format!("{}", MemberPath::root().field("votes".to_string()).index()),
+            "<root>.votes[_]"
+        );
+    }
+
+    #[test]
+    fn test_assignment_tracker_get_count() {
+        let mut tracker = AssignmentTracker::new();
+        assert_eq!(tracker.get_count("s_", &MemberPath::Root), 0);
+
+        tracker.record_assignment("s_", MemberPath::Root);
+        assert_eq!(tracker.get_count("s_", &MemberPath::Root), 1);
+
+        tracker.record_assignment("s_", MemberPath::Root);
+        assert_eq!(tracker.get_count("s_", &MemberPath::Root), 2);
+
+        // Different path is independent
+        let field_path = MemberPath::root().field("x".to_string());
+        assert_eq!(tracker.get_count("s_", &field_path), 0);
+    }
+
+    #[test]
+    fn test_assignment_tracker_counts_different_vars() {
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+        tracker.record_assignment("t_", MemberPath::Root);
+
+        assert_eq!(tracker.get_count("s_", &MemberPath::Root), 1);
+        assert_eq!(tracker.get_count("t_", &MemberPath::Root), 1);
     }
 
     #[test]

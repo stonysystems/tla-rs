@@ -6,7 +6,7 @@
 //! - Obligation: Output variables are only used after assignment
 
 use crate::ast::Type;
-use crate::error::{TranspileError, TranspileResult};
+use crate::error::{DiagnosticAccumulator, TranspileError, TranspileResult};
 use crate::moder::{AnnotatedFunction, AssignmentTracker, MemberPath};
 use std::collections::HashSet;
 
@@ -59,9 +59,19 @@ pub struct HarmonyChecker;
 
 impl HarmonyChecker {
     /// Check that no member is assigned more than once
-    pub fn check(_func: &AnnotatedFunction, _tracker: &AssignmentTracker) -> TranspileResult<()> {
-        // TODO: Implement harmony check
-        // This requires tracking assignment order during expression analysis
+    pub fn check(_func: &AnnotatedFunction, tracker: &AssignmentTracker) -> TranspileResult<()> {
+        for ((var_name, path), count) in tracker.assignment_counts() {
+            if *count > 1 {
+                return Err(TranspileError::Harmony {
+                    message: format!(
+                        "Output variable '{}' member '{}' assigned {} times (expected exactly once)",
+                        var_name, path, count
+                    ),
+                    first_span: None,
+                    second_span: None,
+                });
+            }
+        }
         Ok(())
     }
 }
@@ -997,15 +1007,27 @@ impl TemplateMatcher {
     }
 }
 
-/// Run all validation checks on a function
+/// Run all validation checks on a function.
+///
+/// Collects errors from all checkers instead of short-circuiting on the first failure,
+/// so users see all validation problems at once.
 pub fn validate_function(
     func: &AnnotatedFunction,
     tracker: &AssignmentTracker,
 ) -> TranspileResult<()> {
-    SaturationChecker::check(func, tracker)?;
-    HarmonyChecker::check(func, tracker)?;
-    ObligationChecker::check(func, tracker)?;
-    Ok(())
+    let mut acc = DiagnosticAccumulator::new();
+
+    if let Err(e) = SaturationChecker::check(func, tracker) {
+        acc.add_error(e);
+    }
+    if let Err(e) = HarmonyChecker::check(func, tracker) {
+        acc.add_error(e);
+    }
+    if let Err(e) = ObligationChecker::check(func, tracker) {
+        acc.add_error(e);
+    }
+
+    acc.into_result(())
 }
 
 #[cfg(test)]
@@ -1678,19 +1700,145 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    /// Test harmony checker with double assignment to the same field
-    /// (HarmonyChecker is currently a stub that always returns Ok)
+    /// Test harmony checker detects double assignment to the same path
     #[test]
     fn test_harmony_double_assignment() {
         let func = make_test_function();
         let mut tracker = AssignmentTracker::new();
         tracker.record_assignment("s_", MemberPath::Root);
-        // Record the same path again
         tracker.record_assignment("s_", MemberPath::Root);
 
-        // HarmonyChecker is currently a TODO stub that always passes
+        let result = HarmonyChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, TranspileError::Harmony { .. }));
+    }
+
+    /// Test harmony checker passes with single assignment
+    #[test]
+    fn test_harmony_single_assignment_passes() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+
         let result = HarmonyChecker::check(&func, &tracker);
         assert!(result.is_ok());
+    }
+
+    /// Test harmony checker: different paths on same variable are fine
+    #[test]
+    fn test_harmony_different_paths_pass() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+        tracker.record_assignment("s_", MemberPath::root().field("max_bal".to_string()));
+
+        let result = HarmonyChecker::check(&func, &tracker);
+        assert!(result.is_ok());
+    }
+
+    /// Test harmony checker: double assignment to a field path
+    #[test]
+    fn test_harmony_field_double_assignment() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        let path = MemberPath::root().field("max_bal".to_string());
+        tracker.record_assignment("s_", path.clone());
+        tracker.record_assignment("s_", path);
+
+        let result = HarmonyChecker::check(&func, &tracker);
+        assert!(result.is_err());
+    }
+
+    /// Test harmony error message includes useful details
+    #[test]
+    fn test_harmony_error_message() {
+        let func = make_test_function();
+        let mut tracker = AssignmentTracker::new();
+        tracker.record_assignment("s_", MemberPath::Root);
+        tracker.record_assignment("s_", MemberPath::Root);
+
+        let err = HarmonyChecker::check(&func, &tracker).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("s_"), "error should mention the variable name");
+        assert!(msg.contains("2"), "error should mention the count");
+    }
+
+    /// Test validate_function accumulates errors from multiple checkers.
+    /// Uses a two-output function: leave t_ unassigned (saturation fail)
+    /// and double-assign s_ (harmony fail). Both errors should be reported.
+    #[test]
+    fn test_validate_accumulates_errors() {
+        let func = AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "TwoOutputs".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "s_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "t_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body: Expr::Literal(Literal::Bool(true)),
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let mut tracker = AssignmentTracker::new();
+        // Double-assign s_ (triggers harmony error)
+        tracker.record_assignment("s_", MemberPath::Root);
+        tracker.record_assignment("s_", MemberPath::Root);
+        // Don't assign t_ at all (triggers saturation error)
+
+        let result = validate_function(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Should be Multiple since both saturation and harmony failed
+        match err {
+            TranspileError::Multiple { errors } => {
+                assert_eq!(errors.len(), 2, "expected 2 errors, got {:?}", errors);
+                // First should be Saturation (for unassigned t_)
+                assert!(matches!(errors[0], TranspileError::Saturation { .. }));
+                // Second should be Harmony (for double-assigned s_)
+                assert!(matches!(errors[1], TranspileError::Harmony { .. }));
+            }
+            other => panic!(
+                "Expected Multiple with 2 errors, got {:?}",
+                other
+            ),
+        }
     }
 
     /// Test that a new AssignmentTracker starts empty
