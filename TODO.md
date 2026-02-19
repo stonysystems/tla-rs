@@ -5247,9 +5247,26 @@ Existing macro is at `src/implementation/common/marshalling.rs:1397`.
   - Generated code verified: all 4 types have 11 trait methods, correct field types in serialize/deserialize
   - Existing Verus build unaffected (config-only change; macro impls still in use)
 
-**17.3.3: Generate `Marshalable` for RSL CMessage** (deferred — depends on 17.3.2)
-- [ ] Extend generate-messages for RSL's complex CMessage (nested EndPoint, Vec<u8>, etc.)
-- [ ] Include Verus proof annotations (ghost_serialize, is_marshalable)
+**17.3.3: Generate `Marshalable` for enum types**
+Generate `impl Marshalable` for C* enums, producing the same code as the
+`derive_marshalable_for_enum!` macro in `marshalling.rs:1577`. CMessage has
+11 variants with field types: u64, bool, CBallot, COperationNumber, CVotes,
+CRequestBatch, CAppMessage, CAppState, CReplyCache. Tag is u8 prefix (1 byte).
+
+- [x] **17.3.3a**: Add enum Marshalable codegen module + unit tests (~350 LOC) [26:02:19] — 12 unit tests, 1322 total
+  - Add `MarshalableEnum` config type with variants (name, tag, fields)
+  - Create `generate_enum_marshalable_impls()` in `marshalable.rs`
+  - Generate all 11 trait methods with tag-based dispatch
+  - Tag byte (u8) prefix: `seq![tag as u8]` in ghost_serialize
+  - 10+ unit tests (empty variants, single-field, multi-field, mixed)
+- [ ] **17.3.3b**: Add `[marshalable.enums]` to TOML + integration tests (~150 LOC)
+  - Wire enum generation into `generate-marshalable` CLI subcommand
+  - Add CAppMessage (3 variants) and CMessage (11 variants) to types_transpile.toml
+  - 3+ integration tests: CAppMessage, CMessage, real TOML loading
+- [ ] **17.3.3c**: Verify generated enum Marshalable against macro output (~100 LOC)
+  - Compare generated code structure against `define_enum_and_derive_marshalable!` expansion
+  - Verify all proof lemmas match macro patterns
+  - Ensure proof-compatible output (tag divergence in prefix lemma)
 
 ### Phase 17.4: Transpiler-Generated Host / Scheduler (LNext replacement)
 

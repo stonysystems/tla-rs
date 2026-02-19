@@ -329,6 +329,10 @@ pub struct MarshalableConfig {
     /// Struct types to generate Marshalable impls for
     #[serde(default)]
     pub types: Vec<MarshalableType>,
+
+    /// Enum types to generate Marshalable impls for
+    #[serde(default)]
+    pub enums: Vec<MarshalableEnum>,
 }
 
 /// A single struct type to generate `impl Marshalable` for.
@@ -339,6 +343,45 @@ pub struct MarshalableType {
 
     /// Fields as [name, type] pairs.
     /// Supported types: "u64", "bool", "Vec<u8>", or any named type implementing Marshalable.
+    #[serde(default)]
+    pub fields: Vec<Vec<String>>,
+}
+
+/// A single enum type to generate `impl Marshalable` for.
+///
+/// Each variant has a u8 tag and optional named fields.
+/// Example TOML:
+/// ```toml
+/// [[marshalable.enums]]
+/// name = "CAppMessage"
+/// [[marshalable.enums.variants]]
+/// name = "CAppIncrement"
+/// tag = 0
+/// [[marshalable.enums.variants]]
+/// name = "CAppReply"
+/// tag = 1
+/// fields = [["response", "u64"]]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MarshalableEnum {
+    /// Enum name (e.g., "CMessage")
+    pub name: String,
+
+    /// Variant definitions with tags and fields
+    #[serde(default)]
+    pub variants: Vec<MarshalableEnumVariant>,
+}
+
+/// A single variant in a Marshalable enum.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MarshalableEnumVariant {
+    /// Variant name (e.g., "CMessageRequest")
+    pub name: String,
+
+    /// Tag byte (u8) for serialization dispatch
+    pub tag: u8,
+
+    /// Fields as [name, type] pairs (empty for unit variants)
     #[serde(default)]
     pub fields: Vec<Vec<String>>,
 }
