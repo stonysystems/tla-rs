@@ -8156,992 +8156,17 @@ impl Translator {
                 })
             }
 
-            Expr::Conjunction(exprs) => {
-                // First, check if this is an output sequence comprehension pattern:
-                // - output.len() == input_length_expr (length constraint)
-                // - forall |i| 0 <= i < output.len() ==> output[i] == element_expr
-                if let Some((output_name, length_expr, index_var, element_expr)) =
-                    self.try_extract_output_seq_comprehension(exprs, ctx)
-                {
-                    let length = self.transform_expr(&length_expr, ctx)?;
-                    let element = self.transform_expr(&element_expr, ctx)?;
-                    let _ = output_name;
-
-                    if self.config.generate_loops_for_verification {
-                        // Generate while loop with invariants for Verus verification
-                        return Ok(self.generate_seq_comprehension_while_loop(
-                            &length,
-                            &length_expr,
-                            &index_var,
-                            &element,
-                            &element_expr,
-                            ctx,
-                        ));
-                    } else {
-                        // Generate: (0..length_expr).map(|i| element_expr).collect()
-                        return Ok(ExecExpr::MethodCall {
-                            receiver: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Range {
-                                    start: Box::new(ExecExpr::Literal("0".to_string())),
-                                    end: Box::new(length),
-                                }),
-                                method: "map".to_string(),
-                                args: vec![ExecExpr::Closure {
-                                    params: vec![index_var],
-                                    body: Box::new(element),
-                                }],
-                            }),
-                            method: "collect".to_string(),
-                            args: vec![],
-                        });
-                    }
-                }
-
-                // Next, check if this is a map update with insert pattern
-                // (domain biconditional forall + value conditional forall)
-                if let Some((
-                    source_map,
-                    key_var,
-                    filter_pred,
-                    new_key,
-                    new_value,
-                    old_value_expr,
-                )) = self.try_extract_map_update_with_value(exprs, ctx)
-                {
-                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
-                    let new_key_expr = self.transform_expr(&new_key, ctx)?;
-                    let new_value_expr = self.transform_expr(&new_value, ctx)?;
-
-                    if self.config.generate_loops_for_verification {
-                        // Generate loop-based filter then insert
-                        let filter_loop =
-                            self.generate_map_filter_loop(&source_map, &key_var, filter_expr);
-                        return Ok(ExecExpr::Block(vec![
-                            ExecExpr::Let {
-                                pattern: "mut __result".to_string(),
-                                ty: None,
-                                value: Box::new(filter_loop),
-                            },
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("__result".to_string())),
-                                method: "insert".to_string(),
-                                args: vec![
-                                    ExecExpr::Clone(Box::new(new_key_expr)),
-                                    ExecExpr::Clone(Box::new(new_value_expr)),
-                                ],
-                            },
-                            ExecExpr::Var("__result".to_string()),
-                        ]));
-                    } else {
-                        let old_value = self.transform_expr(&old_value_expr, ctx)?;
-                        // Generate: source.iter().filter().map(value_fn).collect() then insert new_key
-                        return Ok(ExecExpr::Block(vec![
-                            ExecExpr::Let {
-                                pattern: "mut __result".to_string(),
-                                ty: None,
-                                value: Box::new(ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::MethodCall {
-                                            receiver: Box::new(ExecExpr::MethodCall {
-                                                receiver: Box::new(ExecExpr::Var(
-                                                    source_map.clone(),
-                                                )),
-                                                method: "iter".to_string(),
-                                                args: vec![],
-                                            }),
-                                            method: "filter".to_string(),
-                                            args: vec![ExecExpr::Closure {
-                                                params: vec![format!("({}, _)", key_var)],
-                                                body: Box::new(filter_expr.clone()),
-                                            }],
-                                        }),
-                                        method: "map".to_string(),
-                                        args: vec![ExecExpr::Closure {
-                                            params: vec![format!("({}, {})", key_var, "__v")],
-                                            body: Box::new(ExecExpr::Tuple(vec![
-                                                ExecExpr::Clone(Box::new(ExecExpr::Var(
-                                                    key_var.clone(),
-                                                ))),
-                                                old_value,
-                                            ])),
-                                        }],
-                                    }),
-                                    method: "collect".to_string(),
-                                    args: vec![],
-                                }),
-                            },
-                            // Insert new key with new value
-                            ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("__result".to_string())),
-                                method: "insert".to_string(),
-                                args: vec![
-                                    ExecExpr::Clone(Box::new(new_key_expr)),
-                                    ExecExpr::Clone(Box::new(new_value_expr)),
-                                ],
-                            },
-                            ExecExpr::Var("__result".to_string()),
-                        ]));
-                    }
-                }
-
-                // Next, check if this is a map filter conjunction pattern
-                // (multiple foralls that together define filtering a map)
-                if let Some((source_map, output_map, key_var, filter_pred)) =
-                    self.try_extract_map_filter_conjunction(exprs, ctx)
-                {
-                    let filter_expr = self.transform_expr(&filter_pred, ctx)?;
-
-                    let filter_collect = if self.config.generate_loops_for_verification {
-                        // Generate explicit for loop for Verus verification
-                        self.generate_map_filter_loop(&source_map, &key_var, filter_expr)
-                    } else {
-                        // Generate: source.iter().filter(|(k, _)| predicate).cloned().collect()
-                        ExecExpr::MethodCall {
-                            receiver: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::Var(source_map.clone())),
-                                        method: "iter".to_string(),
-                                        args: vec![],
-                                    }),
-                                    method: "filter".to_string(),
-                                    args: vec![ExecExpr::Closure {
-                                        params: vec![format!("({}, _)", key_var)],
-                                        body: Box::new(filter_expr),
-                                    }],
-                                }),
-                                method: "cloned".to_string(),
-                                args: vec![],
-                            }),
-                            method: "collect".to_string(),
-                            args: vec![],
-                        }
-                    };
-
-                    // Check if there's a struct literal that uses this map as a self-referential field
-                    // Pattern: s_ == Struct{..., field: s_.field} where field is output_map
-                    if let Some((output_var, struct_expr_with_self_ref)) =
-                        self.find_self_referential_struct_literal(exprs, &output_map, ctx)
-                    {
-                        // Extract the field name from output_map (e.g., "s_.unexecuted_learner_state" -> "unexecuted_learner_state")
-                        let field_name = self.extract_field_name_from_output_map(&output_map);
-
-                        // Generate an intermediate variable name
-                        let intermediate_var = format!("__{}", output_map.replace('.', "_"));
-
-                        // Generate let binding: let __intermediate = filter_collect;
-                        let let_binding = ExecExpr::Let {
-                            pattern: intermediate_var.clone(),
-                            ty: None,
-                            value: Box::new(filter_collect),
-                        };
-
-                        // Transform the struct, substituting the self-referential field
-                        let struct_result = self.transform_struct_with_field_substitution(
-                            &struct_expr_with_self_ref,
-                            &output_var,
-                            &field_name,
-                            &intermediate_var,
-                            ctx,
-                        )?;
-
-                        return Ok(ExecExpr::Block(vec![let_binding, struct_result]));
-                    }
-
-                    // No self-referential struct literal, return just the filter
-                    return Ok(filter_collect);
-                }
-
-                // Next, process any helper calls in the conjunction
-                // This generates let bindings, field substitutions, and tracks bound outputs
-                let (let_bindings, remaining_exprs, substitutions, bound_outputs) =
-                    self.process_helper_calls_in_conjunction(exprs, ctx);
-
-                // Create updated context with field substitutions if any helper calls were found
-                let updated_ctx = if !substitutions.is_empty() {
-                    Self::with_field_substitutions(ctx, substitutions)
-                } else {
-                    // No substitutions, use original context
-                    TransformContext {
-                        config: ctx.config,
-                        output_params: ctx.output_params.clone(),
-                        input_params: ctx.input_params.clone(),
-                        output_types: ctx.output_types.clone(),
-                        input_types: ctx.input_types.clone(),
-                        field_substitutions: ctx.field_substitutions.clone(),
-                        temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
-                        requires: ctx.requires.clone(),
-                    }
-                };
-
-                // Use remaining exprs if we processed helper calls, otherwise use original
-                let exprs_to_process = if !let_bindings.is_empty() {
-                    &remaining_exprs
-                } else {
-                    exprs
-                };
-
-                // Check if this is a struct construction pattern (s_.f1 == e1 &&& s_.f2 == e2)
-                if let Some(struct_expr) =
-                    self.try_extract_struct_construction(exprs_to_process, &updated_ctx)?
-                {
-                    // If we have let bindings, wrap them in a block with the struct
-                    if !let_bindings.is_empty() {
-                        // If there are bound outputs (like sent_packets from helper calls),
-                        // we need to return a tuple with the struct and those outputs
-                        if !bound_outputs.is_empty() {
-                            // Collect outputs: first the struct, then any helper-bound outputs
-                            let mut outputs = vec![struct_expr];
-                            for bound_output in &bound_outputs {
-                                // Direct output params like sent_packets
-                                if ctx.is_output(bound_output) {
-                                    outputs.push(ExecExpr::Var(bound_output.clone()));
-                                }
-                            }
-
-                            let mut block = let_bindings;
-                            if outputs.len() > 1 {
-                                block.push(ExecExpr::Tuple(outputs));
-                            } else {
-                                block.push(outputs.pop().unwrap());
-                            }
-                            return Ok(ExecExpr::Block(block));
-                        }
-                        let mut block = let_bindings;
-                        block.push(struct_expr);
-                        return Ok(ExecExpr::Block(block));
-                    }
-                    return Ok(struct_expr);
-                }
-
-                // Check if we have multiple output assignments that should be wrapped as a tuple
-                // Exclude outputs that were already bound by helper calls
-                let (mut output_exprs, other_exprs) = self
-                    .categorize_output_assignments_with_exclusions(
-                        exprs_to_process,
-                        &updated_ctx,
-                        &bound_outputs,
-                    )?;
-
-                // Add bound direct output params (like sent_packets) to output_exprs
-                // These were bound by helper calls and need to be included in the return tuple
-                for bound_output in &bound_outputs {
-                    // Only include direct output params, not substitution variable names
-                    if ctx.is_output(bound_output) {
-                        output_exprs
-                            .push((bound_output.clone(), ExecExpr::Var(bound_output.clone())));
-                    }
-                }
-
-                if output_exprs.len() > 1 {
-                    // Multiple outputs should be returned as a tuple
-                    // Sort by output parameter order if possible
-                    let sorted_outputs =
-                        self.sort_outputs_by_param_order(&output_exprs, &updated_ctx);
-
-                    // Combine let bindings + other expressions + tuple
-                    let mut block = let_bindings;
-                    block.extend(other_exprs);
-                    block.push(ExecExpr::Tuple(sorted_outputs));
-                    if block.len() == 1 {
-                        Ok(block.pop().unwrap())
-                    } else {
-                        Ok(ExecExpr::Block(block))
-                    }
-                } else if output_exprs.len() == 1 {
-                    // Single output - extract the ExecExpr from the tuple
-                    let (_, single_output) = output_exprs.into_iter().next().unwrap();
-                    let mut block = let_bindings;
-                    block.extend(other_exprs);
-                    block.push(single_output);
-                    if block.len() == 1 {
-                        Ok(block.pop().unwrap())
-                    } else {
-                        Ok(ExecExpr::Block(block))
-                    }
-                } else {
-                    // No outputs detected, transform as block
-                    // But first filter out spec-level constraints:
-                    // - Input-only expressions (preconditions)
-                    // - Equality constraints that aren't output assignments
-                    // - Unmatched quantifiers (spec constraints)
-                    let filtered_exprs: Vec<_> = exprs_to_process
-                        .iter()
-                        .filter(|e| {
-                            // Skip input-only expressions (preconditions)
-                            if Self::is_input_only_expression(e, &updated_ctx) {
-                                return false;
-                            }
-                            // Skip equality constraints that aren't output assignments
-                            if let Expr::Eq(lhs, rhs) = e {
-                                // Only keep if one side is a direct output variable
-                                let lhs_is_output = matches!(lhs.as_ref(), Expr::Ident(name) if updated_ctx.is_output(name));
-                                let rhs_is_output = matches!(rhs.as_ref(), Expr::Ident(name) if updated_ctx.is_output(name));
-                                if !lhs_is_output && !rhs_is_output {
-                                    return false;
-                                }
-                            }
-                            true
-                        })
-                        .collect();
-
-                    // If filtering removed ALL expressions but there were expressions to
-                    // process, this conjunction is a pure boolean condition (e.g.,
-                    // `a == b && c is Variant` inside a || or let-binding). Treat it as
-                    // a && chain of the original expressions instead of dropping them.
-                    if filtered_exprs.is_empty() && !exprs_to_process.is_empty() && let_bindings.is_empty() {
-                        let mut result = self.transform_expr(&exprs_to_process[0], &updated_ctx)?;
-                        for e in &exprs_to_process[1..] {
-                            let next = self.transform_expr(e, &updated_ctx)?;
-                            result = ExecExpr::Binary {
-                                lhs: Box::new(result),
-                                op: "&&".to_string(),
-                                rhs: Box::new(next),
-                            };
-                        }
-                        return Ok(result);
-                    }
-
-                    let stmts: TranspileResult<Vec<_>> = filtered_exprs
-                        .iter()
-                        .map(|e| self.transform_expr(e, &updated_ctx))
-                        .collect();
-                    let mut block = let_bindings;
-                    block.extend(stmts?);
-                    if block.is_empty() {
-                        Ok(ExecExpr::Block(vec![]))
-                    } else if block.len() == 1 {
-                        Ok(block.pop().unwrap())
-                    } else {
-                        Ok(ExecExpr::Block(block))
-                    }
-                }
-            }
+            Expr::Conjunction(exprs) => self.transform_conjunction(exprs, ctx),
 
             Expr::Eq(lhs, rhs) => self.transform_equality(lhs, rhs, ctx),
 
-            Expr::Call { func, args } => {
-                let func_name = func.last().unwrap_or("unknown");
-
-                // Check for empty collection constructors: Set::empty(), Seq::empty(), Map::empty()
-                // These should be converted to proper constructors, not translated with C prefix
-                if func_name == "empty" && args.is_empty() {
-                    // Get the type from the path (e.g., "Set" from "Set::<int>::empty")
-                    if !func.segments.is_empty() {
-                        let type_part = &func.segments[0];
-                        // Check if it's a collection type (may have type params like "Set::<int>")
-                        if type_part.starts_with("Set") {
-                            return Ok(ExecExpr::Call {
-                                func: "HashSet::new".to_string(),
-                                args: vec![],
-                            });
-                        } else if type_part.starts_with("Seq") {
-                            return Ok(ExecExpr::VecLit(vec![]));
-                        } else if type_part.starts_with("Map") {
-                            return Ok(ExecExpr::Call {
-                                func: "HashMap::new".to_string(),
-                                args: vec![],
-                            });
-                        }
-                    }
-                }
-
-                // Bound helper call lowering: CUpperBoundedAddition expects owned u64 args.
-                // Avoid auto-borrowing and normalize input refs to owned values.
-                if matches!(func_name, "UpperBoundedAddition" | "CUpperBoundedAddition") {
-                    let translated_args: TranspileResult<Vec<_>> = args
-                        .iter()
-                        .map(|a| {
-                            let transformed = self.transform_expr(a, ctx)?;
-                            Ok(self.clone_if_input_ref(transformed, ctx))
-                        })
-                        .collect();
-                    return Ok(ExecExpr::Call {
-                        func: self.translate_name(func_name),
-                        args: translated_args?,
-                    });
-                }
-
-                // Bound predicate call lowering:
-                // LtUpperBound(x, max_u64) in exec context should be a concrete comparison.
-                // Keep call form only when rhs is already typed as UpperBound/CUpperBound.
-                if func_name == "LtUpperBound" && args.len() == 2 {
-                    let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
-                    let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
-                    if self.is_upper_bound_typed_expr(&args[1], ctx) {
-                        return Ok(ExecExpr::Call {
-                            func: self.translate_name(func_name),
-                            args: vec![lhs, rhs],
-                        });
-                    }
-                    return Ok(ExecExpr::Binary {
-                        lhs: Box::new(lhs),
-                        op: "<".to_string(),
-                        rhs: Box::new(rhs),
-                    });
-                }
-
-                // LeqUpperBound(x, max_u64) in exec context should also be a concrete comparison.
-                if func_name == "LeqUpperBound" && args.len() == 2 {
-                    let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
-                    let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
-                    if self.is_upper_bound_typed_expr(&args[1], ctx) {
-                        return Ok(ExecExpr::Call {
-                            func: self.translate_name(func_name),
-                            args: vec![lhs, rhs],
-                        });
-                    }
-                    return Ok(ExecExpr::Binary {
-                        lhs: Box::new(lhs),
-                        op: "<=".to_string(),
-                        rhs: Box::new(rhs),
-                    });
-                }
-
-                // Bound request sequence helper lowering:
-                // Keep first arg as borrowed Vec and second arg as owned scalar bound.
-                if matches!(func_name, "BoundRequestSequence" | "CBoundRequestSequence")
-                    && args.len() == 2
-                {
-                    let seq_expr = self.transform_expr(&args[0], ctx)?;
-                    let bound_expr =
-                        self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
-                    return Ok(ExecExpr::Call {
-                        func: self.translate_name(func_name),
-                        args: vec![Self::ensure_borrowed_expr(seq_expr), bound_expr],
-                    });
-                }
-
-                // Check if this is a helper call with output parameters
-                // A helper call has output parameters if any argument is an output variable
-                // In that case, we should only pass input arguments and the call returns the outputs
-                if let Some(helper_info) = self.detect_helper_call(expr, ctx) {
-                    // Check if this should also be transformed to a method call
-                    if let Some(method_config) =
-                        self.config.method_calls.get(&helper_info.func_name)
-                    {
-                        // The receiver_arg_index refers to position in original args
-                        // We need to figure out which position in input_args this corresponds to
-
-                        let receiver_orig_pos = method_config.receiver_arg_index;
-
-                        // Check if the receiver position is an input (not an output)
-                        let is_receiver_input = if receiver_orig_pos < args.len() {
-                            match &args[receiver_orig_pos] {
-                                Expr::Field(base, _) | Expr::Arrow(base, _) => {
-                                    if let Expr::Ident(name) = base.as_ref() {
-                                        !ctx.is_output(name)
-                                    } else {
-                                        true
-                                    }
-                                }
-                                Expr::Ident(name) => !ctx.is_output(name),
-                                _ => true,
-                            }
-                        } else {
-                            false
-                        };
-
-                        if is_receiver_input {
-                            // Count input args before the receiver in the original args
-                            let inputs_before_receiver = args[..receiver_orig_pos]
-                                .iter()
-                                .filter(|a| match a {
-                                    Expr::Field(base, _) | Expr::Arrow(base, _) => {
-                                        if let Expr::Ident(name) = base.as_ref() {
-                                            !ctx.is_output(name)
-                                        } else {
-                                            true
-                                        }
-                                    }
-                                    Expr::Ident(name) => !ctx.is_output(name),
-                                    _ => true,
-                                })
-                                .count();
-
-                            let receiver_input_pos = inputs_before_receiver;
-
-                            if receiver_input_pos < helper_info.input_args.len() {
-                                // Get the receiver (might have & prefix, remove it for method call)
-                                let receiver = match &helper_info.input_args[receiver_input_pos] {
-                                    ExecExpr::Unary { op, expr } if op == "&" => (**expr).clone(),
-                                    other => other.clone(),
-                                };
-
-                                let other_args: Vec<_> = helper_info
-                                    .input_args
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|(i, _)| *i != receiver_input_pos)
-                                    .map(|(_, a)| a.clone())
-                                    .collect();
-
-                                return Ok(ExecExpr::MethodCall {
-                                    receiver: Box::new(receiver),
-                                    method: method_config.method_name.clone(),
-                                    args: other_args,
-                                });
-                            }
-                        }
-                    }
-
-                    // This is a helper call - use only input args (outputs are stripped)
-                    return Ok(ExecExpr::Call {
-                        func: self.translate_name_for_exec(&helper_info.func_name),
-                        args: helper_info.input_args,
-                    });
-                }
-
-                // Check if this should be transformed to a method call
-                // (e.g., LMinQuorumSize(config) -> config.CMinQuorumSize())
-                if func.segments.len() == 1 {
-                    if let Some(method_config) = self.config.method_calls.get(func_name) {
-                        if method_config.receiver_arg_index < args.len() {
-                            // Transform the receiver
-                            let receiver =
-                                self.transform_expr(&args[method_config.receiver_arg_index], ctx)?;
-
-                            // Transform remaining arguments (excluding the receiver)
-                            let other_args: TranspileResult<Vec<_>> = args
-                                .iter()
-                                .enumerate()
-                                .filter(|(i, _)| *i != method_config.receiver_arg_index)
-                                .map(|(_, a)| {
-                                    let transformed = self.transform_expr(a, ctx)?;
-                                    // Add reference for field accesses, identifiers, etc.
-                                    let needs_ref = match a {
-                                        Expr::Field(..)
-                                        | Expr::MethodCall { .. }
-                                        | Expr::Arrow(..)
-                                        | Expr::Index(..) => true,
-                                        Expr::Ident(name) => !ctx.is_output(name),
-                                        _ => false,
-                                    };
-                                    if needs_ref {
-                                        Ok(ExecExpr::Unary {
-                                            op: "&".to_string(),
-                                            expr: Box::new(transformed),
-                                        })
-                                    } else {
-                                        Ok(transformed)
-                                    }
-                                })
-                                .collect();
-
-                            return Ok(ExecExpr::MethodCall {
-                                receiver: Box::new(receiver),
-                                method: method_config.method_name.clone(),
-                                args: other_args?,
-                            });
-                        }
-                    }
-                }
-
-                // Transform arguments, adding reference prefixes where appropriate
-                let translated_args: TranspileResult<Vec<_>> = args
-                    .iter()
-                    .map(|a| {
-                        let transformed = self.transform_expr(a, ctx)?;
-                        // Add reference for most argument types:
-                        // - Field accesses (s.field)
-                        // - Method calls (obj.method())
-                        // - Arrow accesses (msg->field)
-                        // - Input parameters and local variables (identifiers)
-                        // Do NOT add reference for:
-                        // - Literals (0, "string", true)
-                        // - Struct construction
-                        let needs_ref = match a {
-                            Expr::Field(..)
-                            | Expr::MethodCall { .. }
-                            | Expr::Arrow(..)
-                            | Expr::Index(..)
-                            | Expr::Struct { .. } => true,
-                            Expr::Ident(name) => {
-                                // Add & for input params and local variables (not outputs)
-                                !ctx.is_output(name)
-                            }
-                            _ => false,
-                        };
-                        if needs_ref {
-                            Ok(ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(transformed),
-                            })
-                        } else {
-                            Ok(transformed)
-                        }
-                    })
-                    .collect();
-                Ok(ExecExpr::Call {
-                    func: self.translate_name_for_exec(func_name),
-                    args: translated_args?,
-                })
-            }
+            Expr::Call { func, args } => self.transform_call(func, args, expr, ctx),
 
             Expr::MethodCall {
                 receiver,
                 method,
                 args,
-            } => {
-                let recv_expr = self.transform_expr(receiver, ctx)?;
-
-                // Special handling for .index() — apply HashMap/Vec discrimination
-                // same as Expr::Index, since .index(key) ≡ collection[key].
-                if method == "index" && args.len() == 1 {
-                    let idx_expr = self.transform_expr(&args[0], ctx)?;
-                    let is_map = self.is_map_index_base(receiver);
-                    if is_map {
-                        // HashMap indexing: map[&key]
-                        return Ok(ExecExpr::MethodCall {
-                            receiver: Box::new(recv_expr),
-                            method: "index".to_string(),
-                            args: vec![ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(idx_expr),
-                            }],
-                        });
-                    } else {
-                        // Vec/slice indexing: vec[idx as usize]
-                        let cast_idx = match &idx_expr {
-                            ExecExpr::Literal(_) => idx_expr,
-                            ExecExpr::Field(..) => {
-                                ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                            }
-                            ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
-                                Box::new(ExecExpr::Unary {
-                                    op: "*".to_string(),
-                                    expr: Box::new(idx_expr),
-                                }),
-                                "usize".to_string(),
-                            ),
-                            // Local variable — cast to usize
-                            ExecExpr::Var(_) => {
-                                ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                            }
-                            _ => idx_expr,
-                        };
-                        return Ok(ExecExpr::MethodCall {
-                            receiver: Box::new(recv_expr),
-                            method: "index".to_string(),
-                            args: vec![cast_idx],
-                        });
-                    }
-                }
-
-                // Special handling for .update(idx, val) — Seq::update exists in spec
-                // but not on Vec in exec. Generate: { let mut __v = recv.clone(); __v[idx as usize] = val; __v }
-                if method == "update" && args.len() == 2 {
-                    let idx_expr = self.transform_expr(&args[0], ctx)?;
-                    let val_expr = self.transform_expr(&args[1], ctx)?;
-                    // Cast index to usize for Vec indexing
-                    let cast_idx = match &idx_expr {
-                        ExecExpr::Literal(_) => idx_expr,
-                        ExecExpr::Field(..) => {
-                            ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
-                        }
-                        ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
-                            Box::new(ExecExpr::Unary {
-                                op: "*".to_string(),
-                                expr: Box::new(idx_expr),
-                            }),
-                            "usize".to_string(),
-                        ),
-                        // Local variable — cast to usize
-                        ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
-                        _ => idx_expr,
-                    };
-                    return Ok(ExecExpr::Block(vec![
-                        ExecExpr::Let {
-                            pattern: "mut __v".to_string(),
-                            ty: None,
-                            value: Box::new(ExecExpr::Clone(Box::new(recv_expr))),
-                        },
-                        ExecExpr::Binary {
-                            lhs: Box::new(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("__v".to_string())),
-                                method: "index".to_string(),
-                                args: vec![cast_idx],
-                            }),
-                            op: "=".to_string(),
-                            rhs: Box::new(val_expr),
-                        },
-                        ExecExpr::Var("__v".to_string()),
-                    ]));
-                }
-
-                // Spec pattern: map.dom().contains(key) → exec: map.contains_key(&key)
-                // Must be checked BEFORE the Vec .contains() handler below, because
-                // is_map_index_base() doesn't recognize .dom() method call chains.
-                if method == "contains" && args.len() == 1 {
-                    if let Expr::MethodCall {
-                        receiver: dom_receiver,
-                        method: dom_method,
-                        args: dom_args,
-                    } = receiver.as_ref()
-                    {
-                        if dom_method == "dom" && dom_args.is_empty() {
-                            let map_expr = self.transform_expr(dom_receiver, ctx)?;
-                            let key_expr = self.transform_expr(&args[0], ctx)?;
-                            let key_ref = ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(key_expr),
-                            };
-                            return Ok(ExecExpr::MethodCall {
-                                receiver: Box::new(map_expr),
-                                method: "contains_key".to_string(),
-                                args: vec![key_ref],
-                            });
-                        }
-                    }
-                }
-
-                // Special handling for Vec .contains() — Verus doesn't support slice::contains.
-                // Convert to free function: contains(&vec, &item) from vecs module.
-                // Only for Vec fields (not HashSet/HashMap which have their own .contains()).
-                if method == "contains" && args.len() == 1 && !self.is_map_index_base(receiver) {
-                    let arg_expr = self.transform_expr(&args[0], ctx)?;
-                    let recv_ref = ExecExpr::Unary {
-                        op: "&".to_string(),
-                        expr: Box::new(recv_expr),
-                    };
-                    let arg_ref = match &arg_expr {
-                        ExecExpr::Unary { op, .. } if op == "&" => arg_expr,
-                        _ => ExecExpr::Unary {
-                            op: "&".to_string(),
-                            expr: Box::new(arg_expr),
-                        },
-                    };
-                    return Ok(ExecExpr::Call {
-                        func: "contains".to_string(),
-                        args: vec![recv_ref, arg_ref],
-                    });
-                }
-
-                // Special handling for .union() — spec Set.union(other) returns Set,
-                // but exec HashSet::union() returns an iterator, not a HashSet.
-                // For the common TLA+ pattern `s.field \union {x}`, the arg is a SetLit.
-                // Generate: { let mut __hs = recv.clone(); __hs.insert(x1); __hs.insert(x2); ... __hs }
-                // For non-SetLit args, generate: clone recv, then insert elements from the arg set.
-                if method == "union" && args.len() == 1 {
-                    let mut stmts: Vec<ExecExpr> = Vec::new();
-                    let cloned_recv = self.clone_input_field_access(
-                        ExecExpr::Clone(Box::new(recv_expr)),
-                        ctx,
-                    );
-                    stmts.push(ExecExpr::Let {
-                        pattern: "mut __hs".to_string(),
-                        ty: None,
-                        value: Box::new(cloned_recv),
-                    });
-
-                    // Check if the arg is a SetLit — if so, inline the inserts
-                    if let Expr::SetLit(elems) = &args[0] {
-                        for elem in elems {
-                            let elem_expr = self.transform_expr(elem, ctx)?;
-                            // Dereference input refs: &i64 → *voter for HashSet<i64>::insert
-                            let owned_elem = self.clone_if_input_ref(elem_expr, ctx);
-                            stmts.push(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("__hs".to_string())),
-                                method: "insert".to_string(),
-                                args: vec![owned_elem],
-                            });
-                        }
-                    } else {
-                        // General case: transform arg (produces a HashSet block), bind it,
-                        // then we need to merge. Use the fact that Verus HashSet supports insert.
-                        // For now, just insert the entire other set via a let+insert pattern.
-                        let arg_expr = self.transform_expr(&args[0], ctx)?;
-                        stmts.push(ExecExpr::Let {
-                            pattern: "__other".to_string(),
-                            ty: None,
-                            value: Box::new(arg_expr),
-                        });
-                        // Use a Verus-compatible approach: convert to vec then insert each
-                        stmts.push(ExecExpr::Let {
-                            pattern: "__other_vec".to_string(),
-                            ty: None,
-                            value: Box::new(ExecExpr::Call {
-                                func: "hashset_to_vec".to_string(),
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: Box::new(ExecExpr::Var("__other".to_string())),
-                                }],
-                            }),
-                        });
-                        stmts.push(ExecExpr::Let {
-                            pattern: "mut __i".to_string(),
-                            ty: Some(ExecType::Named("usize".to_string())),
-                            value: Box::new(ExecExpr::Literal("0".to_string())),
-                        });
-                        stmts.push(ExecExpr::WhileLoop {
-                            cond: Box::new(ExecExpr::Binary {
-                                lhs: Box::new(ExecExpr::Var("__i".to_string())),
-                                op: "<".to_string(),
-                                rhs: Box::new(ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::Var("__other_vec".to_string())),
-                                    method: "len".to_string(),
-                                    args: vec![],
-                                }),
-                            }),
-                            invariants: vec![],
-                            decreases: Some("__other_vec.len() - __i".to_string()),
-                            body: Box::new(ExecExpr::Block(vec![
-                                ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::Var("__hs".to_string())),
-                                    method: "insert".to_string(),
-                                    args: vec![ExecExpr::MethodCall {
-                                        receiver: Box::new(ExecExpr::Var("__other_vec".to_string())),
-                                        method: "index".to_string(),
-                                        args: vec![ExecExpr::Var("__i".to_string())],
-                                    }],
-                                },
-                                ExecExpr::Binary {
-                                    lhs: Box::new(ExecExpr::Var("__i".to_string())),
-                                    op: "=".to_string(),
-                                    rhs: Box::new(ExecExpr::Binary {
-                                        lhs: Box::new(ExecExpr::Var("__i".to_string())),
-                                        op: "+".to_string(),
-                                        rhs: Box::new(ExecExpr::Literal("1".to_string())),
-                                    }),
-                                },
-                            ])),
-                        });
-                    }
-                    stmts.push(ExecExpr::Var("__hs".to_string()));
-                    return Ok(ExecExpr::Block(stmts));
-                }
-
-                // Special handling for .difference() — spec Set.difference(other) returns Set,
-                // but exec HashSet::difference() returns an iterator, not a HashSet.
-                // For SetLit args: clone recv, then remove each element.
-                // Generate: { let mut __hs = recv.clone(); __hs.remove(&x1); ... __hs }
-                if method == "difference" && args.len() == 1 {
-                    let mut stmts: Vec<ExecExpr> = Vec::new();
-                    let cloned_recv = self.clone_input_field_access(
-                        ExecExpr::Clone(Box::new(recv_expr)),
-                        ctx,
-                    );
-                    stmts.push(ExecExpr::Let {
-                        pattern: "mut __hs".to_string(),
-                        ty: None,
-                        value: Box::new(cloned_recv),
-                    });
-
-                    if let Expr::SetLit(elems) = &args[0] {
-                        for elem in elems {
-                            let elem_expr = self.transform_expr(elem, ctx)?;
-                            let owned_elem = self.clone_if_input_ref(elem_expr, ctx);
-                            stmts.push(ExecExpr::MethodCall {
-                                receiver: Box::new(ExecExpr::Var("__hs".to_string())),
-                                method: "remove".to_string(),
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: Box::new(owned_elem),
-                                }],
-                            });
-                        }
-                    } else {
-                        // General case: transform arg, convert to vec, remove each
-                        let arg_expr = self.transform_expr(&args[0], ctx)?;
-                        stmts.push(ExecExpr::Let {
-                            pattern: "__other".to_string(),
-                            ty: None,
-                            value: Box::new(arg_expr),
-                        });
-                        stmts.push(ExecExpr::Let {
-                            pattern: "__other_vec".to_string(),
-                            ty: None,
-                            value: Box::new(ExecExpr::Call {
-                                func: "hashset_to_vec".to_string(),
-                                args: vec![ExecExpr::Unary {
-                                    op: "&".to_string(),
-                                    expr: Box::new(ExecExpr::Var("__other".to_string())),
-                                }],
-                            }),
-                        });
-                        stmts.push(ExecExpr::Let {
-                            pattern: "mut __i".to_string(),
-                            ty: Some(ExecType::Named("usize".to_string())),
-                            value: Box::new(ExecExpr::Literal("0".to_string())),
-                        });
-                        stmts.push(ExecExpr::WhileLoop {
-                            cond: Box::new(ExecExpr::Binary {
-                                lhs: Box::new(ExecExpr::Var("__i".to_string())),
-                                op: "<".to_string(),
-                                rhs: Box::new(ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::Var(
-                                        "__other_vec".to_string(),
-                                    )),
-                                    method: "len".to_string(),
-                                    args: vec![],
-                                }),
-                            }),
-                            invariants: vec![],
-                            decreases: Some("__other_vec.len() - __i".to_string()),
-                            body: Box::new(ExecExpr::Block(vec![
-                                ExecExpr::MethodCall {
-                                    receiver: Box::new(ExecExpr::Var("__hs".to_string())),
-                                    method: "remove".to_string(),
-                                    args: vec![ExecExpr::Unary {
-                                        op: "&".to_string(),
-                                        expr: Box::new(ExecExpr::MethodCall {
-                                            receiver: Box::new(ExecExpr::Var(
-                                                "__other_vec".to_string(),
-                                            )),
-                                            method: "index".to_string(),
-                                            args: vec![ExecExpr::Var("__i".to_string())],
-                                        }),
-                                    }],
-                                },
-                                ExecExpr::Binary {
-                                    lhs: Box::new(ExecExpr::Var("__i".to_string())),
-                                    op: "=".to_string(),
-                                    rhs: Box::new(ExecExpr::Binary {
-                                        lhs: Box::new(ExecExpr::Var("__i".to_string())),
-                                        op: "+".to_string(),
-                                        rhs: Box::new(ExecExpr::Literal("1".to_string())),
-                                    }),
-                                },
-                            ])),
-                        });
-                    }
-                    stmts.push(ExecExpr::Var("__hs".to_string()));
-                    return Ok(ExecExpr::Block(stmts));
-                }
-
-                // For collection methods like "contains", auto-borrow args.
-                // Skip "index" (array indexing) and "update" (Vec::update) —
-                // these need raw values, not references.
-                let auto_borrow = method != "index" && method != "update";
-                let translated_args: TranspileResult<Vec<_>> = args
-                    .iter()
-                    .map(|a| {
-                        let transformed = self.transform_expr(a, ctx)?;
-                        let needs_ref = auto_borrow
-                            && match a {
-                                Expr::Field(..)
-                                | Expr::MethodCall { .. }
-                                | Expr::Arrow(..)
-                                | Expr::Index(..) => true,
-                                Expr::Ident(name) => !ctx.is_output(name),
-                                _ => false,
-                            };
-                        if needs_ref {
-                            Ok(ExecExpr::Unary {
-                                op: "&".to_string(),
-                                expr: Box::new(transformed),
-                            })
-                        } else {
-                            Ok(transformed)
-                        }
-                    })
-                    .collect();
-                Ok(ExecExpr::MethodCall {
-                    receiver: Box::new(recv_expr),
-                    method: method.clone(),
-                    args: translated_args?,
-                })
-            }
+            } => self.transform_method_call(receiver, method, args, ctx),
 
             Expr::Let {
                 binding,
@@ -9821,6 +8846,1030 @@ impl Translator {
                 Ok(ExecExpr::Cast(Box::new(inner), exec_type.to_rust_string()))
             }
         }
+    }
+
+    /// Transform a conjunction expression (multiple `&&&` clauses).
+    ///
+    /// Handles several patterns:
+    /// - Output sequence comprehensions (length + forall element constraint)
+    /// - Map update with insert (domain biconditional + value conditional)
+    /// - Map filter conjunctions (multiple foralls defining a filter)
+    /// - Helper calls with output parameters
+    /// - Struct construction patterns (s_.f1 == e1 &&& s_.f2 == e2)
+    /// - Multiple output assignments (tuple return)
+    /// - Boolean conjunction fallback
+    fn transform_conjunction(
+        &self,
+        exprs: &[Expr],
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        // First, check if this is an output sequence comprehension pattern:
+        // - output.len() == input_length_expr (length constraint)
+        // - forall |i| 0 <= i < output.len() ==> output[i] == element_expr
+        if let Some((output_name, length_expr, index_var, element_expr)) =
+            self.try_extract_output_seq_comprehension(exprs, ctx)
+        {
+            let length = self.transform_expr(&length_expr, ctx)?;
+            let element = self.transform_expr(&element_expr, ctx)?;
+            let _ = output_name;
+
+            if self.config.generate_loops_for_verification {
+                // Generate while loop with invariants for Verus verification
+                return Ok(self.generate_seq_comprehension_while_loop(
+                    &length,
+                    &length_expr,
+                    &index_var,
+                    &element,
+                    &element_expr,
+                    ctx,
+                ));
+            } else {
+                // Generate: (0..length_expr).map(|i| element_expr).collect()
+                return Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Range {
+                            start: Box::new(ExecExpr::Literal("0".to_string())),
+                            end: Box::new(length),
+                        }),
+                        method: "map".to_string(),
+                        args: vec![ExecExpr::Closure {
+                            params: vec![index_var],
+                            body: Box::new(element),
+                        }],
+                    }),
+                    method: "collect".to_string(),
+                    args: vec![],
+                });
+            }
+        }
+
+        // Next, check if this is a map update with insert pattern
+        // (domain biconditional forall + value conditional forall)
+        if let Some((
+            source_map,
+            key_var,
+            filter_pred,
+            new_key,
+            new_value,
+            old_value_expr,
+        )) = self.try_extract_map_update_with_value(exprs, ctx)
+        {
+            let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+            let new_key_expr = self.transform_expr(&new_key, ctx)?;
+            let new_value_expr = self.transform_expr(&new_value, ctx)?;
+
+            if self.config.generate_loops_for_verification {
+                // Generate loop-based filter then insert
+                let filter_loop =
+                    self.generate_map_filter_loop(&source_map, &key_var, filter_expr);
+                return Ok(ExecExpr::Block(vec![
+                    ExecExpr::Let {
+                        pattern: "mut __result".to_string(),
+                        ty: None,
+                        value: Box::new(filter_loop),
+                    },
+                    ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("__result".to_string())),
+                        method: "insert".to_string(),
+                        args: vec![
+                            ExecExpr::Clone(Box::new(new_key_expr)),
+                            ExecExpr::Clone(Box::new(new_value_expr)),
+                        ],
+                    },
+                    ExecExpr::Var("__result".to_string()),
+                ]));
+            } else {
+                let old_value = self.transform_expr(&old_value_expr, ctx)?;
+                // Generate: source.iter().filter().map(value_fn).collect() then insert new_key
+                return Ok(ExecExpr::Block(vec![
+                    ExecExpr::Let {
+                        pattern: "mut __result".to_string(),
+                        ty: None,
+                        value: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::MethodCall {
+                                        receiver: Box::new(ExecExpr::Var(
+                                            source_map.clone(),
+                                        )),
+                                        method: "iter".to_string(),
+                                        args: vec![],
+                                    }),
+                                    method: "filter".to_string(),
+                                    args: vec![ExecExpr::Closure {
+                                        params: vec![format!("({}, _)", key_var)],
+                                        body: Box::new(filter_expr.clone()),
+                                    }],
+                                }),
+                                method: "map".to_string(),
+                                args: vec![ExecExpr::Closure {
+                                    params: vec![format!("({}, {})", key_var, "__v")],
+                                    body: Box::new(ExecExpr::Tuple(vec![
+                                        ExecExpr::Clone(Box::new(ExecExpr::Var(
+                                            key_var.clone(),
+                                        ))),
+                                        old_value,
+                                    ])),
+                                }],
+                            }),
+                            method: "collect".to_string(),
+                            args: vec![],
+                        }),
+                    },
+                    // Insert new key with new value
+                    ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("__result".to_string())),
+                        method: "insert".to_string(),
+                        args: vec![
+                            ExecExpr::Clone(Box::new(new_key_expr)),
+                            ExecExpr::Clone(Box::new(new_value_expr)),
+                        ],
+                    },
+                    ExecExpr::Var("__result".to_string()),
+                ]));
+            }
+        }
+
+        // Next, check if this is a map filter conjunction pattern
+        // (multiple foralls that together define filtering a map)
+        if let Some((source_map, output_map, key_var, filter_pred)) =
+            self.try_extract_map_filter_conjunction(exprs, ctx)
+        {
+            let filter_expr = self.transform_expr(&filter_pred, ctx)?;
+
+            let filter_collect = if self.config.generate_loops_for_verification {
+                // Generate explicit for loop for Verus verification
+                self.generate_map_filter_loop(&source_map, &key_var, filter_expr)
+            } else {
+                // Generate: source.iter().filter(|(k, _)| predicate).cloned().collect()
+                ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var(source_map.clone())),
+                                method: "iter".to_string(),
+                                args: vec![],
+                            }),
+                            method: "filter".to_string(),
+                            args: vec![ExecExpr::Closure {
+                                params: vec![format!("({}, _)", key_var)],
+                                body: Box::new(filter_expr),
+                            }],
+                        }),
+                        method: "cloned".to_string(),
+                        args: vec![],
+                    }),
+                    method: "collect".to_string(),
+                    args: vec![],
+                }
+            };
+
+            // Check if there's a struct literal that uses this map as a self-referential field
+            // Pattern: s_ == Struct{..., field: s_.field} where field is output_map
+            if let Some((output_var, struct_expr_with_self_ref)) =
+                self.find_self_referential_struct_literal(exprs, &output_map, ctx)
+            {
+                // Extract the field name from output_map (e.g., "s_.unexecuted_learner_state" -> "unexecuted_learner_state")
+                let field_name = self.extract_field_name_from_output_map(&output_map);
+
+                // Generate an intermediate variable name
+                let intermediate_var = format!("__{}", output_map.replace('.', "_"));
+
+                // Generate let binding: let __intermediate = filter_collect;
+                let let_binding = ExecExpr::Let {
+                    pattern: intermediate_var.clone(),
+                    ty: None,
+                    value: Box::new(filter_collect),
+                };
+
+                // Transform the struct, substituting the self-referential field
+                let struct_result = self.transform_struct_with_field_substitution(
+                    &struct_expr_with_self_ref,
+                    &output_var,
+                    &field_name,
+                    &intermediate_var,
+                    ctx,
+                )?;
+
+                return Ok(ExecExpr::Block(vec![let_binding, struct_result]));
+            }
+
+            // No self-referential struct literal, return just the filter
+            return Ok(filter_collect);
+        }
+
+        // Next, process any helper calls in the conjunction
+        // This generates let bindings, field substitutions, and tracks bound outputs
+        let (let_bindings, remaining_exprs, substitutions, bound_outputs) =
+            self.process_helper_calls_in_conjunction(exprs, ctx);
+
+        // Create updated context with field substitutions if any helper calls were found
+        let updated_ctx = if !substitutions.is_empty() {
+            Self::with_field_substitutions(ctx, substitutions)
+        } else {
+            // No substitutions, use original context
+            TransformContext {
+                config: ctx.config,
+                output_params: ctx.output_params.clone(),
+                input_params: ctx.input_params.clone(),
+                output_types: ctx.output_types.clone(),
+                input_types: ctx.input_types.clone(),
+                field_substitutions: ctx.field_substitutions.clone(),
+                temp_var_counter: std::cell::RefCell::new(*ctx.temp_var_counter.borrow()),
+                requires: ctx.requires.clone(),
+            }
+        };
+
+        // Use remaining exprs if we processed helper calls, otherwise use original
+        let exprs_to_process = if !let_bindings.is_empty() {
+            &remaining_exprs
+        } else {
+            exprs
+        };
+
+        // Check if this is a struct construction pattern (s_.f1 == e1 &&& s_.f2 == e2)
+        if let Some(struct_expr) =
+            self.try_extract_struct_construction(exprs_to_process, &updated_ctx)?
+        {
+            // If we have let bindings, wrap them in a block with the struct
+            if !let_bindings.is_empty() {
+                // If there are bound outputs (like sent_packets from helper calls),
+                // we need to return a tuple with the struct and those outputs
+                if !bound_outputs.is_empty() {
+                    // Collect outputs: first the struct, then any helper-bound outputs
+                    let mut outputs = vec![struct_expr];
+                    for bound_output in &bound_outputs {
+                        // Direct output params like sent_packets
+                        if ctx.is_output(bound_output) {
+                            outputs.push(ExecExpr::Var(bound_output.clone()));
+                        }
+                    }
+
+                    let mut block = let_bindings;
+                    if outputs.len() > 1 {
+                        block.push(ExecExpr::Tuple(outputs));
+                    } else {
+                        block.push(outputs.pop().unwrap());
+                    }
+                    return Ok(ExecExpr::Block(block));
+                }
+                let mut block = let_bindings;
+                block.push(struct_expr);
+                return Ok(ExecExpr::Block(block));
+            }
+            return Ok(struct_expr);
+        }
+
+        // Check if we have multiple output assignments that should be wrapped as a tuple
+        // Exclude outputs that were already bound by helper calls
+        let (mut output_exprs, other_exprs) = self
+            .categorize_output_assignments_with_exclusions(
+                exprs_to_process,
+                &updated_ctx,
+                &bound_outputs,
+            )?;
+
+        // Add bound direct output params (like sent_packets) to output_exprs
+        // These were bound by helper calls and need to be included in the return tuple
+        for bound_output in &bound_outputs {
+            // Only include direct output params, not substitution variable names
+            if ctx.is_output(bound_output) {
+                output_exprs
+                    .push((bound_output.clone(), ExecExpr::Var(bound_output.clone())));
+            }
+        }
+
+        if output_exprs.len() > 1 {
+            // Multiple outputs should be returned as a tuple
+            // Sort by output parameter order if possible
+            let sorted_outputs =
+                self.sort_outputs_by_param_order(&output_exprs, &updated_ctx);
+
+            // Combine let bindings + other expressions + tuple
+            let mut block = let_bindings;
+            block.extend(other_exprs);
+            block.push(ExecExpr::Tuple(sorted_outputs));
+            if block.len() == 1 {
+                Ok(block.pop().unwrap())
+            } else {
+                Ok(ExecExpr::Block(block))
+            }
+        } else if output_exprs.len() == 1 {
+            // Single output - extract the ExecExpr from the tuple
+            let (_, single_output) = output_exprs.into_iter().next().unwrap();
+            let mut block = let_bindings;
+            block.extend(other_exprs);
+            block.push(single_output);
+            if block.len() == 1 {
+                Ok(block.pop().unwrap())
+            } else {
+                Ok(ExecExpr::Block(block))
+            }
+        } else {
+            // No outputs detected, transform as block
+            // But first filter out spec-level constraints:
+            // - Input-only expressions (preconditions)
+            // - Equality constraints that aren't output assignments
+            // - Unmatched quantifiers (spec constraints)
+            let filtered_exprs: Vec<_> = exprs_to_process
+                .iter()
+                .filter(|e| {
+                    // Skip input-only expressions (preconditions)
+                    if Self::is_input_only_expression(e, &updated_ctx) {
+                        return false;
+                    }
+                    // Skip equality constraints that aren't output assignments
+                    if let Expr::Eq(lhs, rhs) = e {
+                        // Only keep if one side is a direct output variable
+                        let lhs_is_output = matches!(lhs.as_ref(), Expr::Ident(name) if updated_ctx.is_output(name));
+                        let rhs_is_output = matches!(rhs.as_ref(), Expr::Ident(name) if updated_ctx.is_output(name));
+                        if !lhs_is_output && !rhs_is_output {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .collect();
+
+            // If filtering removed ALL expressions but there were expressions to
+            // process, this conjunction is a pure boolean condition (e.g.,
+            // `a == b && c is Variant` inside a || or let-binding). Treat it as
+            // a && chain of the original expressions instead of dropping them.
+            if filtered_exprs.is_empty() && !exprs_to_process.is_empty() && let_bindings.is_empty() {
+                let mut result = self.transform_expr(&exprs_to_process[0], &updated_ctx)?;
+                for e in &exprs_to_process[1..] {
+                    let next = self.transform_expr(e, &updated_ctx)?;
+                    result = ExecExpr::Binary {
+                        lhs: Box::new(result),
+                        op: "&&".to_string(),
+                        rhs: Box::new(next),
+                    };
+                }
+                return Ok(result);
+            }
+
+            let stmts: TranspileResult<Vec<_>> = filtered_exprs
+                .iter()
+                .map(|e| self.transform_expr(e, &updated_ctx))
+                .collect();
+            let mut block = let_bindings;
+            block.extend(stmts?);
+            if block.is_empty() {
+                Ok(ExecExpr::Block(vec![]))
+            } else if block.len() == 1 {
+                Ok(block.pop().unwrap())
+            } else {
+                Ok(ExecExpr::Block(block))
+            }
+        }
+    }
+
+    /// Transform a function call expression.
+    ///
+    /// Handles special cases:
+    /// - Empty collection constructors (Set::empty, Seq::empty, Map::empty)
+    /// - Bound helper calls (CUpperBoundedAddition, LtUpperBound, etc.)
+    /// - Helper calls with output parameters
+    /// - Method call transformations (config-driven)
+    /// - General function calls with argument borrowing
+    fn transform_call(
+        &self,
+        func: &Path,
+        args: &[Expr],
+        expr: &Expr,
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        let func_name = func.last().unwrap_or("unknown");
+
+        // Check for empty collection constructors: Set::empty(), Seq::empty(), Map::empty()
+        // These should be converted to proper constructors, not translated with C prefix
+        if func_name == "empty" && args.is_empty() {
+            // Get the type from the path (e.g., "Set" from "Set::<int>::empty")
+            if !func.segments.is_empty() {
+                let type_part = &func.segments[0];
+                // Check if it's a collection type (may have type params like "Set::<int>")
+                if type_part.starts_with("Set") {
+                    return Ok(ExecExpr::Call {
+                        func: "HashSet::new".to_string(),
+                        args: vec![],
+                    });
+                } else if type_part.starts_with("Seq") {
+                    return Ok(ExecExpr::VecLit(vec![]));
+                } else if type_part.starts_with("Map") {
+                    return Ok(ExecExpr::Call {
+                        func: "HashMap::new".to_string(),
+                        args: vec![],
+                    });
+                }
+            }
+        }
+
+        // Bound helper call lowering: CUpperBoundedAddition expects owned u64 args.
+        // Avoid auto-borrowing and normalize input refs to owned values.
+        if matches!(func_name, "UpperBoundedAddition" | "CUpperBoundedAddition") {
+            let translated_args: TranspileResult<Vec<_>> = args
+                .iter()
+                .map(|a| {
+                    let transformed = self.transform_expr(a, ctx)?;
+                    Ok(self.clone_if_input_ref(transformed, ctx))
+                })
+                .collect();
+            return Ok(ExecExpr::Call {
+                func: self.translate_name(func_name),
+                args: translated_args?,
+            });
+        }
+
+        // Bound predicate call lowering:
+        // LtUpperBound(x, max_u64) in exec context should be a concrete comparison.
+        // Keep call form only when rhs is already typed as UpperBound/CUpperBound.
+        if func_name == "LtUpperBound" && args.len() == 2 {
+            let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
+            let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
+            if self.is_upper_bound_typed_expr(&args[1], ctx) {
+                return Ok(ExecExpr::Call {
+                    func: self.translate_name(func_name),
+                    args: vec![lhs, rhs],
+                });
+            }
+            return Ok(ExecExpr::Binary {
+                lhs: Box::new(lhs),
+                op: "<".to_string(),
+                rhs: Box::new(rhs),
+            });
+        }
+
+        // LeqUpperBound(x, max_u64) in exec context should also be a concrete comparison.
+        if func_name == "LeqUpperBound" && args.len() == 2 {
+            let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
+            let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
+            if self.is_upper_bound_typed_expr(&args[1], ctx) {
+                return Ok(ExecExpr::Call {
+                    func: self.translate_name(func_name),
+                    args: vec![lhs, rhs],
+                });
+            }
+            return Ok(ExecExpr::Binary {
+                lhs: Box::new(lhs),
+                op: "<=".to_string(),
+                rhs: Box::new(rhs),
+            });
+        }
+
+        // Bound request sequence helper lowering:
+        // Keep first arg as borrowed Vec and second arg as owned scalar bound.
+        if matches!(func_name, "BoundRequestSequence" | "CBoundRequestSequence")
+            && args.len() == 2
+        {
+            let seq_expr = self.transform_expr(&args[0], ctx)?;
+            let bound_expr =
+                self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
+            return Ok(ExecExpr::Call {
+                func: self.translate_name(func_name),
+                args: vec![Self::ensure_borrowed_expr(seq_expr), bound_expr],
+            });
+        }
+
+        // Check if this is a helper call with output parameters
+        // A helper call has output parameters if any argument is an output variable
+        // In that case, we should only pass input arguments and the call returns the outputs
+        if let Some(helper_info) = self.detect_helper_call(expr, ctx) {
+            // Check if this should also be transformed to a method call
+            if let Some(method_config) =
+                self.config.method_calls.get(&helper_info.func_name)
+            {
+                // The receiver_arg_index refers to position in original args
+                // We need to figure out which position in input_args this corresponds to
+
+                let receiver_orig_pos = method_config.receiver_arg_index;
+
+                // Check if the receiver position is an input (not an output)
+                let is_receiver_input = if receiver_orig_pos < args.len() {
+                    match &args[receiver_orig_pos] {
+                        Expr::Field(base, _) | Expr::Arrow(base, _) => {
+                            if let Expr::Ident(name) = base.as_ref() {
+                                !ctx.is_output(name)
+                            } else {
+                                true
+                            }
+                        }
+                        Expr::Ident(name) => !ctx.is_output(name),
+                        _ => true,
+                    }
+                } else {
+                    false
+                };
+
+                if is_receiver_input {
+                    // Count input args before the receiver in the original args
+                    let inputs_before_receiver = args[..receiver_orig_pos]
+                        .iter()
+                        .filter(|a| match a {
+                            Expr::Field(base, _) | Expr::Arrow(base, _) => {
+                                if let Expr::Ident(name) = base.as_ref() {
+                                    !ctx.is_output(name)
+                                } else {
+                                    true
+                                }
+                            }
+                            Expr::Ident(name) => !ctx.is_output(name),
+                            _ => true,
+                        })
+                        .count();
+
+                    let receiver_input_pos = inputs_before_receiver;
+
+                    if receiver_input_pos < helper_info.input_args.len() {
+                        // Get the receiver (might have & prefix, remove it for method call)
+                        let receiver = match &helper_info.input_args[receiver_input_pos] {
+                            ExecExpr::Unary { op, expr } if op == "&" => (**expr).clone(),
+                            other => other.clone(),
+                        };
+
+                        let other_args: Vec<_> = helper_info
+                            .input_args
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i != receiver_input_pos)
+                            .map(|(_, a)| a.clone())
+                            .collect();
+
+                        return Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(receiver),
+                            method: method_config.method_name.clone(),
+                            args: other_args,
+                        });
+                    }
+                }
+            }
+
+            // This is a helper call - use only input args (outputs are stripped)
+            return Ok(ExecExpr::Call {
+                func: self.translate_name_for_exec(&helper_info.func_name),
+                args: helper_info.input_args,
+            });
+        }
+
+        // Check if this should be transformed to a method call
+        // (e.g., LMinQuorumSize(config) -> config.CMinQuorumSize())
+        if func.segments.len() == 1 {
+            if let Some(method_config) = self.config.method_calls.get(func_name) {
+                if method_config.receiver_arg_index < args.len() {
+                    // Transform the receiver
+                    let receiver =
+                        self.transform_expr(&args[method_config.receiver_arg_index], ctx)?;
+
+                    // Transform remaining arguments (excluding the receiver)
+                    let other_args: TranspileResult<Vec<_>> = args
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != method_config.receiver_arg_index)
+                        .map(|(_, a)| {
+                            let transformed = self.transform_expr(a, ctx)?;
+                            // Add reference for field accesses, identifiers, etc.
+                            let needs_ref = match a {
+                                Expr::Field(..)
+                                | Expr::MethodCall { .. }
+                                | Expr::Arrow(..)
+                                | Expr::Index(..) => true,
+                                Expr::Ident(name) => !ctx.is_output(name),
+                                _ => false,
+                            };
+                            if needs_ref {
+                                Ok(ExecExpr::Unary {
+                                    op: "&".to_string(),
+                                    expr: Box::new(transformed),
+                                })
+                            } else {
+                                Ok(transformed)
+                            }
+                        })
+                        .collect();
+
+                    return Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(receiver),
+                        method: method_config.method_name.clone(),
+                        args: other_args?,
+                    });
+                }
+            }
+        }
+
+        // Transform arguments, adding reference prefixes where appropriate
+        let translated_args: TranspileResult<Vec<_>> = args
+            .iter()
+            .map(|a| {
+                let transformed = self.transform_expr(a, ctx)?;
+                // Add reference for most argument types:
+                // - Field accesses (s.field)
+                // - Method calls (obj.method())
+                // - Arrow accesses (msg->field)
+                // - Input parameters and local variables (identifiers)
+                // Do NOT add reference for:
+                // - Literals (0, "string", true)
+                // - Struct construction
+                let needs_ref = match a {
+                    Expr::Field(..)
+                    | Expr::MethodCall { .. }
+                    | Expr::Arrow(..)
+                    | Expr::Index(..)
+                    | Expr::Struct { .. } => true,
+                    Expr::Ident(name) => {
+                        // Add & for input params and local variables (not outputs)
+                        !ctx.is_output(name)
+                    }
+                    _ => false,
+                };
+                if needs_ref {
+                    Ok(ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(transformed),
+                    })
+                } else {
+                    Ok(transformed)
+                }
+            })
+            .collect();
+        Ok(ExecExpr::Call {
+            func: self.translate_name_for_exec(func_name),
+            args: translated_args?,
+        })
+    }
+
+    /// Transform a method call expression.
+    ///
+    /// Handles special cases:
+    /// - `.index()` — HashMap vs Vec discrimination
+    /// - `.update()` — Seq::update to Vec mutation block
+    /// - `.contains()` — map.dom().contains() and Vec contains
+    /// - `.union()` — HashSet union with inline inserts
+    /// - `.difference()` — HashSet difference with inline removes
+    /// - General method calls with argument auto-borrowing
+    fn transform_method_call(
+        &self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+        ctx: &TransformContext,
+    ) -> TranspileResult<ExecExpr> {
+        let recv_expr = self.transform_expr(receiver, ctx)?;
+
+        // Special handling for .index() — apply HashMap/Vec discrimination
+        // same as Expr::Index, since .index(key) ≡ collection[key].
+        if method == "index" && args.len() == 1 {
+            let idx_expr = self.transform_expr(&args[0], ctx)?;
+            let is_map = self.is_map_index_base(receiver);
+            if is_map {
+                // HashMap indexing: map[&key]
+                return Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(recv_expr),
+                    method: "index".to_string(),
+                    args: vec![ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(idx_expr),
+                    }],
+                });
+            } else {
+                // Vec/slice indexing: vec[idx as usize]
+                let cast_idx = match &idx_expr {
+                    ExecExpr::Literal(_) => idx_expr,
+                    ExecExpr::Field(..) => {
+                        ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
+                    }
+                    ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
+                        Box::new(ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(idx_expr),
+                        }),
+                        "usize".to_string(),
+                    ),
+                    // Local variable — cast to usize
+                    ExecExpr::Var(_) => {
+                        ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
+                    }
+                    _ => idx_expr,
+                };
+                return Ok(ExecExpr::MethodCall {
+                    receiver: Box::new(recv_expr),
+                    method: "index".to_string(),
+                    args: vec![cast_idx],
+                });
+            }
+        }
+
+        // Special handling for .update(idx, val) — Seq::update exists in spec
+        // but not on Vec in exec. Generate: { let mut __v = recv.clone(); __v[idx as usize] = val; __v }
+        if method == "update" && args.len() == 2 {
+            let idx_expr = self.transform_expr(&args[0], ctx)?;
+            let val_expr = self.transform_expr(&args[1], ctx)?;
+            // Cast index to usize for Vec indexing
+            let cast_idx = match &idx_expr {
+                ExecExpr::Literal(_) => idx_expr,
+                ExecExpr::Field(..) => {
+                    ExecExpr::Cast(Box::new(idx_expr), "usize".to_string())
+                }
+                ExecExpr::Var(name) if ctx.is_input(name) => ExecExpr::Cast(
+                    Box::new(ExecExpr::Unary {
+                        op: "*".to_string(),
+                        expr: Box::new(idx_expr),
+                    }),
+                    "usize".to_string(),
+                ),
+                // Local variable — cast to usize
+                ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+                _ => idx_expr,
+            };
+            return Ok(ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "mut __v".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::Clone(Box::new(recv_expr))),
+                },
+                ExecExpr::Binary {
+                    lhs: Box::new(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("__v".to_string())),
+                        method: "index".to_string(),
+                        args: vec![cast_idx],
+                    }),
+                    op: "=".to_string(),
+                    rhs: Box::new(val_expr),
+                },
+                ExecExpr::Var("__v".to_string()),
+            ]));
+        }
+
+        // Spec pattern: map.dom().contains(key) → exec: map.contains_key(&key)
+        // Must be checked BEFORE the Vec .contains() handler below, because
+        // is_map_index_base() doesn't recognize .dom() method call chains.
+        if method == "contains" && args.len() == 1 {
+            if let Expr::MethodCall {
+                receiver: dom_receiver,
+                method: dom_method,
+                args: dom_args,
+            } = receiver
+            {
+                if dom_method == "dom" && dom_args.is_empty() {
+                    let map_expr = self.transform_expr(dom_receiver, ctx)?;
+                    let key_expr = self.transform_expr(&args[0], ctx)?;
+                    let key_ref = ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(key_expr),
+                    };
+                    return Ok(ExecExpr::MethodCall {
+                        receiver: Box::new(map_expr),
+                        method: "contains_key".to_string(),
+                        args: vec![key_ref],
+                    });
+                }
+            }
+        }
+
+        // Special handling for Vec .contains() — Verus doesn't support slice::contains.
+        // Convert to free function: contains(&vec, &item) from vecs module.
+        // Only for Vec fields (not HashSet/HashMap which have their own .contains()).
+        if method == "contains" && args.len() == 1 && !self.is_map_index_base(receiver) {
+            let arg_expr = self.transform_expr(&args[0], ctx)?;
+            let recv_ref = ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(recv_expr),
+            };
+            let arg_ref = match &arg_expr {
+                ExecExpr::Unary { op, .. } if op == "&" => arg_expr,
+                _ => ExecExpr::Unary {
+                    op: "&".to_string(),
+                    expr: Box::new(arg_expr),
+                },
+            };
+            return Ok(ExecExpr::Call {
+                func: "contains".to_string(),
+                args: vec![recv_ref, arg_ref],
+            });
+        }
+
+        // Special handling for .union() — spec Set.union(other) returns Set,
+        // but exec HashSet::union() returns an iterator, not a HashSet.
+        // For the common TLA+ pattern `s.field \union {x}`, the arg is a SetLit.
+        // Generate: { let mut __hs = recv.clone(); __hs.insert(x1); __hs.insert(x2); ... __hs }
+        // For non-SetLit args, generate: clone recv, then insert elements from the arg set.
+        if method == "union" && args.len() == 1 {
+            let mut stmts: Vec<ExecExpr> = Vec::new();
+            let cloned_recv = self.clone_input_field_access(
+                ExecExpr::Clone(Box::new(recv_expr)),
+                ctx,
+            );
+            stmts.push(ExecExpr::Let {
+                pattern: "mut __hs".to_string(),
+                ty: None,
+                value: Box::new(cloned_recv),
+            });
+
+            // Check if the arg is a SetLit — if so, inline the inserts
+            if let Expr::SetLit(elems) = &args[0] {
+                for elem in elems {
+                    let elem_expr = self.transform_expr(elem, ctx)?;
+                    // Dereference input refs: &i64 → *voter for HashSet<i64>::insert
+                    let owned_elem = self.clone_if_input_ref(elem_expr, ctx);
+                    stmts.push(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("__hs".to_string())),
+                        method: "insert".to_string(),
+                        args: vec![owned_elem],
+                    });
+                }
+            } else {
+                // General case: transform arg (produces a HashSet block), bind it,
+                // then we need to merge. Use the fact that Verus HashSet supports insert.
+                // For now, just insert the entire other set via a let+insert pattern.
+                let arg_expr = self.transform_expr(&args[0], ctx)?;
+                stmts.push(ExecExpr::Let {
+                    pattern: "__other".to_string(),
+                    ty: None,
+                    value: Box::new(arg_expr),
+                });
+                // Use a Verus-compatible approach: convert to vec then insert each
+                stmts.push(ExecExpr::Let {
+                    pattern: "__other_vec".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::Call {
+                        func: "hashset_to_vec".to_string(),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(ExecExpr::Var("__other".to_string())),
+                        }],
+                    }),
+                });
+                stmts.push(ExecExpr::Let {
+                    pattern: "mut __i".to_string(),
+                    ty: Some(ExecType::Named("usize".to_string())),
+                    value: Box::new(ExecExpr::Literal("0".to_string())),
+                });
+                stmts.push(ExecExpr::WhileLoop {
+                    cond: Box::new(ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                        op: "<".to_string(),
+                        rhs: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__other_vec".to_string())),
+                            method: "len".to_string(),
+                            args: vec![],
+                        }),
+                    }),
+                    invariants: vec![],
+                    decreases: Some("__other_vec.len() - __i".to_string()),
+                    body: Box::new(ExecExpr::Block(vec![
+                        ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__hs".to_string())),
+                            method: "insert".to_string(),
+                            args: vec![ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("__other_vec".to_string())),
+                                method: "index".to_string(),
+                                args: vec![ExecExpr::Var("__i".to_string())],
+                            }],
+                        },
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                            op: "=".to_string(),
+                            rhs: Box::new(ExecExpr::Binary {
+                                lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                                op: "+".to_string(),
+                                rhs: Box::new(ExecExpr::Literal("1".to_string())),
+                            }),
+                        },
+                    ])),
+                });
+            }
+            stmts.push(ExecExpr::Var("__hs".to_string()));
+            return Ok(ExecExpr::Block(stmts));
+        }
+
+        // Special handling for .difference() — spec Set.difference(other) returns Set,
+        // but exec HashSet::difference() returns an iterator, not a HashSet.
+        // For SetLit args: clone recv, then remove each element.
+        // Generate: { let mut __hs = recv.clone(); __hs.remove(&x1); ... __hs }
+        if method == "difference" && args.len() == 1 {
+            let mut stmts: Vec<ExecExpr> = Vec::new();
+            let cloned_recv = self.clone_input_field_access(
+                ExecExpr::Clone(Box::new(recv_expr)),
+                ctx,
+            );
+            stmts.push(ExecExpr::Let {
+                pattern: "mut __hs".to_string(),
+                ty: None,
+                value: Box::new(cloned_recv),
+            });
+
+            if let Expr::SetLit(elems) = &args[0] {
+                for elem in elems {
+                    let elem_expr = self.transform_expr(elem, ctx)?;
+                    let owned_elem = self.clone_if_input_ref(elem_expr, ctx);
+                    stmts.push(ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var("__hs".to_string())),
+                        method: "remove".to_string(),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(owned_elem),
+                        }],
+                    });
+                }
+            } else {
+                // General case: transform arg, convert to vec, remove each
+                let arg_expr = self.transform_expr(&args[0], ctx)?;
+                stmts.push(ExecExpr::Let {
+                    pattern: "__other".to_string(),
+                    ty: None,
+                    value: Box::new(arg_expr),
+                });
+                stmts.push(ExecExpr::Let {
+                    pattern: "__other_vec".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::Call {
+                        func: "hashset_to_vec".to_string(),
+                        args: vec![ExecExpr::Unary {
+                            op: "&".to_string(),
+                            expr: Box::new(ExecExpr::Var("__other".to_string())),
+                        }],
+                    }),
+                });
+                stmts.push(ExecExpr::Let {
+                    pattern: "mut __i".to_string(),
+                    ty: Some(ExecType::Named("usize".to_string())),
+                    value: Box::new(ExecExpr::Literal("0".to_string())),
+                });
+                stmts.push(ExecExpr::WhileLoop {
+                    cond: Box::new(ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                        op: "<".to_string(),
+                        rhs: Box::new(ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var(
+                                "__other_vec".to_string(),
+                            )),
+                            method: "len".to_string(),
+                            args: vec![],
+                        }),
+                    }),
+                    invariants: vec![],
+                    decreases: Some("__other_vec.len() - __i".to_string()),
+                    body: Box::new(ExecExpr::Block(vec![
+                        ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("__hs".to_string())),
+                            method: "remove".to_string(),
+                            args: vec![ExecExpr::Unary {
+                                op: "&".to_string(),
+                                expr: Box::new(ExecExpr::MethodCall {
+                                    receiver: Box::new(ExecExpr::Var(
+                                        "__other_vec".to_string(),
+                                    )),
+                                    method: "index".to_string(),
+                                    args: vec![ExecExpr::Var("__i".to_string())],
+                                }),
+                            }],
+                        },
+                        ExecExpr::Binary {
+                            lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                            op: "=".to_string(),
+                            rhs: Box::new(ExecExpr::Binary {
+                                lhs: Box::new(ExecExpr::Var("__i".to_string())),
+                                op: "+".to_string(),
+                                rhs: Box::new(ExecExpr::Literal("1".to_string())),
+                            }),
+                        },
+                    ])),
+                });
+            }
+            stmts.push(ExecExpr::Var("__hs".to_string()));
+            return Ok(ExecExpr::Block(stmts));
+        }
+
+        // For collection methods like "contains", auto-borrow args.
+        // Skip "index" (array indexing) and "update" (Vec::update) —
+        // these need raw values, not references.
+        let auto_borrow = method != "index" && method != "update";
+        let translated_args: TranspileResult<Vec<_>> = args
+            .iter()
+            .map(|a| {
+                let transformed = self.transform_expr(a, ctx)?;
+                let needs_ref = auto_borrow
+                    && match a {
+                        Expr::Field(..)
+                        | Expr::MethodCall { .. }
+                        | Expr::Arrow(..)
+                        | Expr::Index(..) => true,
+                        Expr::Ident(name) => !ctx.is_output(name),
+                        _ => false,
+                    };
+                if needs_ref {
+                    Ok(ExecExpr::Unary {
+                        op: "&".to_string(),
+                        expr: Box::new(transformed),
+                    })
+                } else {
+                    Ok(transformed)
+                }
+            })
+            .collect();
+        Ok(ExecExpr::MethodCall {
+            receiver: Box::new(recv_expr),
+            method: method.to_string(),
+            args: translated_args?,
+        })
     }
 
     /// Transform an equality expression
