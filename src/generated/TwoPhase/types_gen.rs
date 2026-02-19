@@ -15,9 +15,6 @@ pub struct CState {
     pub rm_prepared: HashSet<u64>,
     pub rm_committed: HashSet<u64>,
     pub rm_aborted: HashSet<u64>,
-    pub msgs_prepare: bool,
-    pub msgs_commit: bool,
-    pub msgs_abort: bool,
 }
 
 impl Clone for CState {
@@ -45,9 +42,6 @@ impl View for CState {
             rm_prepared: self.rm_prepared@.map(|x: u64| x as int),
             rm_committed: self.rm_committed@.map(|x: u64| x as int),
             rm_aborted: self.rm_aborted@.map(|x: u64| x as int),
-            msgs_prepare: self.msgs_prepare,
-            msgs_commit: self.msgs_commit,
-            msgs_abort: self.msgs_abort,
         }
     }
 }
@@ -77,6 +71,40 @@ impl View for CConstants {
     open spec fn view(&self) -> LConstants {
         LConstants {
             rm: self.rm@.map(|x: u64| x as int),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CTPCMessage {
+    Prepare,
+    PreparedVote {
+        rm: u64,
+    },
+    Commit,
+    Abort,
+}
+
+impl CTPCMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CTPCMessage::Prepare => true,
+            CTPCMessage::PreparedVote { rm } => true,
+            CTPCMessage::Commit => true,
+            CTPCMessage::Abort => true,
+        }
+    }
+}
+
+impl View for CTPCMessage {
+    type V = LTPCMessage;
+
+    open spec fn view(&self) -> LTPCMessage {
+        match self {
+            CTPCMessage::Prepare => LTPCMessage::Prepare,
+            CTPCMessage::PreparedVote { rm } => LTPCMessage::PreparedVote { rm: *rm as int },
+            CTPCMessage::Commit => LTPCMessage::Commit,
+            CTPCMessage::Abort => LTPCMessage::Abort,
         }
     }
 }

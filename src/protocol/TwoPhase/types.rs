@@ -1,6 +1,14 @@
 use vstd::prelude::*;
 
 verus! {
+    /// Two-Phase Commit protocol message types
+    pub enum LTPCMessage {
+        Prepare,
+        PreparedVote { rm: int },
+        Commit,
+        Abort,
+    }
+
     /// Transaction Manager state
     pub enum LTMState {
         Init,
@@ -23,9 +31,6 @@ verus! {
         pub rm_prepared: Set<int>,        // RMs that have entered Prepared state
         pub rm_committed: Set<int>,       // RMs that have committed
         pub rm_aborted: Set<int>,         // RMs that have aborted
-        pub msgs_prepare: bool,           // TM has broadcast Prepare
-        pub msgs_commit: bool,            // TM has broadcast Commit
-        pub msgs_abort: bool,             // TM has broadcast Abort
     }
 
     /// Protocol constants

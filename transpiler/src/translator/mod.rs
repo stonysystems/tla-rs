@@ -250,6 +250,10 @@ pub struct ProofNeeds {
     pub push_sites: Vec<PushSite>,
     /// Map field names that have HashMap::new() assigned (need lemma_abstractify_empty_{prefix})
     pub map_field_empty_sites: Vec<String>,
+    /// Tuple contains a VecLit with message-type elements — needs `assert(result.N@.map(...) =~= ...)`
+    /// Each entry is (tuple_index, element_count, element_type_name).
+    /// element_type_name is the concrete type (e.g., "CTPCMessage") extracted from variant paths.
+    pub tuple_vec_lit_sites: Vec<(usize, usize, Option<String>)>,
 }
 
 impl ProofNeeds {
@@ -261,6 +265,7 @@ impl ProofNeeds {
             || self.has_empty_vec
             || self.has_vec_push
             || !self.map_field_empty_sites.is_empty()
+            || !self.tuple_vec_lit_sites.is_empty()
     }
 
     /// Scan an ExecExpr tree to determine what proof helpers are needed.
@@ -350,6 +355,22 @@ impl ProofNeeds {
                 self.scan_expr(expr);
             }
             ExecExpr::Tuple(exprs) => {
+                // Detect VecLit elements in tuples (for sent_packets proof generation)
+                for (idx, e) in exprs.iter().enumerate() {
+                    if let ExecExpr::VecLit(elems) = e {
+                        // Try to extract the element type from variant paths like "CTPCMessage::Prepare"
+                        let elem_type = elems.iter().find_map(|el| {
+                            if let ExecExpr::Var(name) = el {
+                                name.split("::").next().map(|s| s.to_string())
+                            } else if let ExecExpr::Struct { name, .. } = el {
+                                name.split("::").next().map(|s| s.to_string())
+                            } else {
+                                None
+                            }
+                        });
+                        self.tuple_vec_lit_sites.push((idx, elems.len(), elem_type));
+                    }
+                }
                 for e in exprs {
                     self.scan_expr(e);
                 }
@@ -600,6 +621,33 @@ impl ProofNeeds {
         }
     }
 
+    /// Convert an ExecExpr to a code string for use in generated proof assertions.
+    /// Similar to expr_to_proof_arg but handles VecLit elements specifically.
+    fn expr_to_code_string(expr: &ExecExpr) -> String {
+        match expr {
+            ExecExpr::Var(name) => name.clone(),
+            ExecExpr::Literal(lit) => lit.clone(),
+            ExecExpr::Unary { op, expr } => {
+                format!("{}{}", op, Self::expr_to_code_string(expr))
+            }
+            ExecExpr::Field(base, field) => {
+                format!("{}.{}", Self::expr_to_code_string(base), field)
+            }
+            ExecExpr::Struct { name, fields } => {
+                let fields_str: Vec<String> = fields
+                    .iter()
+                    .map(|(fname, fval)| format!("{}: {}", fname, Self::expr_to_code_string(fval)))
+                    .collect();
+                format!("{} {{ {} }}", name, fields_str.join(", "))
+            }
+            ExecExpr::Clone(inner) => Self::expr_to_code_string(inner),
+            ExecExpr::Cast(inner, ty) => {
+                format!("{} as {}", Self::expr_to_code_string(inner), ty)
+            }
+            _ => format!("{:?}", expr),
+        }
+    }
+
     /// Build a proof block ExecExpr containing the necessary lemma calls.
     pub fn build_proof_block(
         &self,
@@ -699,6 +747,42 @@ impl ProofNeeds {
                     func: format!("lemma_abstractify_empty_{}", prefix),
                     args: vec![ExecExpr::Var(format!("result.{}", field_name))],
                 });
+            }
+        }
+
+        // Emit extensional equality assertions for VecLit in tuple positions.
+        // For sent_packets: assert(result.N@.map(|i: int, p: CType| p@) =~= seq![...]);
+        // This is needed because Verus cannot automatically verify View mappings on Vec literals.
+        for (idx, n, elem_type) in &self.tuple_vec_lit_sites {
+            if let Some(type_name) = elem_type {
+                if *n == 0 {
+                    // For empty vec with known type, assert the mapped view is empty
+                    let assertion = format!(
+                        "result.{}@.map(|i: int, p: {}| p@) =~= Seq::empty()",
+                        idx, type_name
+                    );
+                    stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Var(assertion))));
+                } else {
+                    // For non-empty vec, assert extensional equality with mapped elements
+                    let mapped_elements: Vec<String> = (0..*n)
+                        .map(|i| format!("result.{}@[{}]@", idx, i))
+                        .collect();
+                    let seq_str = if *n == 1 {
+                        format!("Seq::empty().push({})", mapped_elements[0])
+                    } else {
+                        format!("seq![{}]", mapped_elements.join(", "))
+                    };
+                    let assertion = format!(
+                        "result.{}@.map(|i: int, p: {}| p@) =~= {}",
+                        idx, type_name, seq_str
+                    );
+                    stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Var(assertion))));
+                }
+            } else if *n == 0 {
+                // Empty vec without known type — just assert length is 0
+                // (Verus can usually verify this automatically)
+                let assertion = format!("result.{}@.len() == 0", idx);
+                stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Var(assertion))));
             }
         }
 
@@ -5261,7 +5345,23 @@ impl Translator {
             return body;
         }
 
-        let needs = ProofNeeds::analyze(&body);
+        let mut needs = ProofNeeds::analyze(&body);
+
+        // Resolve missing element types for empty VecLit sites from config's type_remapping.
+        // Look for message enum types (L*Message -> C*Message pattern).
+        if needs.tuple_vec_lit_sites.iter().any(|(_, _, t)| t.is_none()) {
+            let msg_type = self.config.type_remapping.values()
+                .find(|v| v.ends_with("Message") && v.starts_with("C"))
+                .cloned();
+            if let Some(ref type_name) = msg_type {
+                for site in &mut needs.tuple_vec_lit_sites {
+                    if site.2.is_none() {
+                        site.2 = Some(type_name.clone());
+                    }
+                }
+            }
+        }
+
         let proof_block = match needs
             .build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields)
         {
@@ -7940,7 +8040,16 @@ impl Translator {
         match expr {
             Expr::Literal(lit) => Ok(ExecExpr::Literal(self.format_literal(lit))),
 
-            Expr::Ident(name) => Ok(ExecExpr::Var(name.clone())),
+            Expr::Ident(name) => {
+                // If the identifier contains :: (enum variant path like LTPCMessage::Prepare),
+                // translate each path segment (e.g., L* -> C*) to produce CTPCMessage::Prepare
+                if name.contains("::") {
+                    let path = Path::single(name.clone());
+                    Ok(ExecExpr::Var(self.translate_path(&path)))
+                } else {
+                    Ok(ExecExpr::Var(name.clone()))
+                }
+            }
 
             Expr::Field(base, field) => {
                 // Check if this is an output field access that has a substitution
@@ -10919,6 +11028,29 @@ impl Translator {
             if results.len() == 1 {
                 return Ok(Some(results.into_iter().next().unwrap()));
             } else {
+                // If any result element is a Block (e.g., struct with set mutations),
+                // hoist the Block's pre-statements out so we get:
+                //   Block([pre_stmts..., Tuple([struct, other_outputs])])
+                // instead of invalid:
+                //   Tuple([Block([pre_stmts, struct]), other_outputs])
+                let has_block = results.iter().any(|r| matches!(r, ExecExpr::Block(_)));
+                if has_block {
+                    let mut hoisted_stmts: Vec<ExecExpr> = Vec::new();
+                    let mut tuple_elems: Vec<ExecExpr> = Vec::new();
+                    for result in results {
+                        if let ExecExpr::Block(mut stmts) = result {
+                            if !stmts.is_empty() {
+                                let last = stmts.pop().unwrap();
+                                hoisted_stmts.extend(stmts);
+                                tuple_elems.push(last);
+                            }
+                        } else {
+                            tuple_elems.push(result);
+                        }
+                    }
+                    hoisted_stmts.push(ExecExpr::Tuple(tuple_elems));
+                    return Ok(Some(ExecExpr::Block(hoisted_stmts)));
+                }
                 return Ok(Some(ExecExpr::Tuple(results)));
             }
         }

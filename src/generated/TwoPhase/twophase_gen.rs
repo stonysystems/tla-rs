@@ -31,6 +31,20 @@ ensures
     s.clone()
 }
 
+/// Helper proof: mapping over an empty Seq yields an empty Seq.
+proof fn lemma_empty_seq_map()
+ensures
+    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
+{
+}
+
+/// Helper proof: push commutes with Seq::map for index-ignoring functions.
+proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
+ensures
+    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
+{
+}
+
 
 /// Helper: clone CTMState preserving view (workaround for missing derive Clone spec).
 fn clone_tm_state(r: &CTMState) -> (res: CTMState)
@@ -58,9 +72,6 @@ ensures
         rm_prepared: HashSet::new(),
         rm_committed: HashSet::new(),
         rm_aborted: HashSet::new(),
-        msgs_prepare: false,
-        msgs_commit: false,
-        msgs_abort: false,
         tm_state: CTMState::Init,
     };
     proof {
@@ -70,61 +81,62 @@ ensures
 
 }
 
-pub exec fn CTMSendPrepare(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CTMSendPrepare(s: &CState, c: &CConstants) -> (result: (CState, Vec<CTPCMessage>))
 requires
     s.valid(),
     c.valid(),
     s.tm_state is Init,
 ensures
-    result.valid(),
-    LTMSendPrepare(s@, result@, c@),
+    result.0.valid(),
+    LTMSendPrepare(s@, result.0@, c@, result.1@.map(|i, p: CTPCMessage| p@)),
 {
-CState {
-        tm_state: clone_tm_state(&s.tm_state),
-        tm_prepared: clone_hashset(&s.tm_prepared),
-        rm_prepared: clone_hashset(&s.rm_prepared),
-        rm_committed: clone_hashset(&s.rm_committed),
-        rm_aborted: clone_hashset(&s.rm_aborted),
-        msgs_prepare: true,
-        msgs_commit: s.msgs_commit.clone(),
-        msgs_abort: s.msgs_abort.clone(),
-    }
-}
-
-pub exec fn CRMReceivePrepare(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    c@.rm.contains(*rm as int),
-    s.msgs_prepare == true,
-    !s@.rm_prepared.contains(*rm as int),
-    !s@.rm_aborted.contains(*rm as int),
-ensures
-    result.valid(),
-    LRMReceivePrepare(s@, result@, c@, *rm as int),
-{
-    let result = {
-        let mut __rm_prepared = clone_hashset(&s.rm_prepared);
-        __rm_prepared.insert(rm.clone());
-        CState {
-            tm_state: clone_tm_state(&s.tm_state),
-            tm_prepared: clone_hashset(&s.tm_prepared),
-            rm_prepared: __rm_prepared,
-            rm_committed: clone_hashset(&s.rm_committed),
-            rm_aborted: clone_hashset(&s.rm_aborted),
-            msgs_prepare: s.msgs_prepare.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_abort: s.msgs_abort.clone(),
-        }
-    };
+    let result = (CState {
+    tm_state: clone_tm_state(&s.tm_state),
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: clone_hashset(&s.rm_aborted),
+}, vec![CTPCMessage::Prepare]);
     proof {
-        broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CRMAbort(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
+pub exec fn CRMReceivePrepare(s: &CState, c: &CConstants, rm: &u64) -> (result: (CState, Vec<CTPCMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    c@.rm.contains(*rm as int),
+    !s@.rm_prepared.contains(*rm as int),
+    !s@.rm_aborted.contains(*rm as int),
+ensures
+    result.0.valid(),
+    LRMReceivePrepare(s@, result.0@, c@, *rm as int, result.1@.map(|i, p: CTPCMessage| p@)),
+{
+    let result = {
+        let mut __rm_prepared = clone_hashset(&s.rm_prepared);
+        __rm_prepared.insert(rm.clone());
+        (CState {
+    tm_state: clone_tm_state(&s.tm_state),
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: __rm_prepared,
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: clone_hashset(&s.rm_aborted),
+}, vec![CTPCMessage::PreparedVote {
+    rm: *rm,
+}])
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty().push(result.1@[0]@));
+    }
+    result
+
+}
+
+pub exec fn CRMAbort(s: &CState, c: &CConstants, rm: &u64) -> (result: (CState, Vec<CTPCMessage>))
 requires
     s.valid(),
     c.valid(),
@@ -133,165 +145,163 @@ requires
     !s@.rm_aborted.contains(*rm as int),
     !s@.rm_committed.contains(*rm as int),
 ensures
-    result.valid(),
-    LRMAbort(s@, result@, c@, *rm as int),
+    result.0.valid(),
+    LRMAbort(s@, result.0@, c@, *rm as int, result.1@.map(|i, p: CTPCMessage| p@)),
 {
     let result = {
         let mut __rm_aborted = clone_hashset(&s.rm_aborted);
         __rm_aborted.insert(rm.clone());
-        CState {
-            tm_state: clone_tm_state(&s.tm_state),
-            tm_prepared: clone_hashset(&s.tm_prepared),
-            rm_prepared: clone_hashset(&s.rm_prepared),
-            rm_committed: clone_hashset(&s.rm_committed),
-            rm_aborted: __rm_aborted,
-            msgs_prepare: s.msgs_prepare.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_abort: s.msgs_abort.clone(),
-        }
+        (CState {
+    tm_state: clone_tm_state(&s.tm_state),
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: __rm_aborted,
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CTMRcvPrepared(s: &CState, c: &CConstants, r: &u64) -> (result: CState)
+pub exec fn CTMRcvPrepared(s: &CState, c: &CConstants, r: &u64) -> (result: (CState, Vec<CTPCMessage>))
 requires
     s.valid(),
     c.valid(),
     s.tm_state is Init,
     s@.rm_prepared.contains(*r as int),
 ensures
-    result.valid(),
-    LTMRcvPrepared(s@, result@, c@, *r as int),
+    result.0.valid(),
+    LTMRcvPrepared(s@, result.0@, c@, *r as int, result.1@.map(|i, p: CTPCMessage| p@)),
 {
     let result = {
         let mut __tm_prepared = clone_hashset(&s.tm_prepared);
         __tm_prepared.insert(r.clone());
-        CState {
-            tm_prepared: __tm_prepared,
-            rm_prepared: clone_hashset(&s.rm_prepared),
-            rm_committed: clone_hashset(&s.rm_committed),
-            rm_aborted: clone_hashset(&s.rm_aborted),
-            msgs_prepare: s.msgs_prepare.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_abort: s.msgs_abort.clone(),
-            tm_state: CTMState::Init,
-        }
+        (CState {
+    tm_prepared: __tm_prepared,
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: clone_hashset(&s.rm_aborted),
+    tm_state: CTMState::Init,
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CTMSendCommit(s: &CState, c: &CConstants) -> (result: CState)
+pub exec fn CTMSendCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CTPCMessage>))
 requires
     s.valid(),
     c.valid(),
     s.tm_state is Init,
     s@.tm_prepared == c@.rm,
 ensures
-    result.valid(),
-    LTMSendCommit(s@, result@, c@),
+    result.0.valid(),
+    LTMSendCommit(s@, result.0@, c@, result.1@.map(|i, p: CTPCMessage| p@)),
 {
-CState {
-        tm_prepared: clone_hashset(&s.tm_prepared),
-        rm_prepared: clone_hashset(&s.rm_prepared),
-        rm_committed: clone_hashset(&s.rm_committed),
-        rm_aborted: clone_hashset(&s.rm_aborted),
-        msgs_prepare: s.msgs_prepare.clone(),
-        msgs_commit: true,
-        msgs_abort: s.msgs_abort.clone(),
-        tm_state: CTMState::Committed,
-    }
-}
-
-pub exec fn CTMSendAbort(s: &CState, c: &CConstants) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    s.tm_state is Init,
-ensures
-    result.valid(),
-    LTMSendAbort(s@, result@, c@),
-{
-CState {
-        tm_prepared: clone_hashset(&s.tm_prepared),
-        rm_prepared: clone_hashset(&s.rm_prepared),
-        rm_committed: clone_hashset(&s.rm_committed),
-        rm_aborted: clone_hashset(&s.rm_aborted),
-        msgs_prepare: s.msgs_prepare.clone(),
-        msgs_commit: s.msgs_commit.clone(),
-        msgs_abort: true,
-        tm_state: CTMState::Aborted,
-    }
-}
-
-pub exec fn CRMReceiveCommit(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
-requires
-    s.valid(),
-    c.valid(),
-    c@.rm.contains(*rm as int),
-    s.msgs_commit == true,
-    s@.rm_prepared.contains(*rm as int),
-    !s@.rm_committed.contains(*rm as int),
-ensures
-    result.valid(),
-    LRMReceiveCommit(s@, result@, c@, *rm as int),
-{
-    let result = {
-        let mut __rm_committed = clone_hashset(&s.rm_committed);
-        __rm_committed.insert(rm.clone());
-        CState {
-            tm_state: clone_tm_state(&s.tm_state),
-            tm_prepared: clone_hashset(&s.tm_prepared),
-            rm_prepared: clone_hashset(&s.rm_prepared),
-            rm_committed: __rm_committed,
-            rm_aborted: clone_hashset(&s.rm_aborted),
-            msgs_prepare: s.msgs_prepare.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_abort: s.msgs_abort.clone(),
-        }
-    };
+    let result = (CState {
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: clone_hashset(&s.rm_aborted),
+    tm_state: CTMState::Committed,
+}, vec![CTPCMessage::Commit]);
     proof {
-        broadcast use Set::lemma_set_map_insert_commute;
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
 }
 
-pub exec fn CRMReceiveAbort(s: &CState, c: &CConstants, rm: &u64) -> (result: CState)
+pub exec fn CTMSendAbort(s: &CState, c: &CConstants) -> (result: (CState, Vec<CTPCMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.tm_state is Init,
+ensures
+    result.0.valid(),
+    LTMSendAbort(s@, result.0@, c@, result.1@.map(|i, p: CTPCMessage| p@)),
+{
+    let result = (CState {
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: clone_hashset(&s.rm_aborted),
+    tm_state: CTMState::Aborted,
+}, vec![CTPCMessage::Abort]);
+    proof {
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty().push(result.1@[0]@));
+    }
+    result
+
+}
+
+pub exec fn CRMReceiveCommit(s: &CState, c: &CConstants, rm: &u64) -> (result: (CState, Vec<CTPCMessage>))
 requires
     s.valid(),
     c.valid(),
     c@.rm.contains(*rm as int),
-    s.msgs_abort == true,
+    s@.rm_prepared.contains(*rm as int),
+    !s@.rm_committed.contains(*rm as int),
+ensures
+    result.0.valid(),
+    LRMReceiveCommit(s@, result.0@, c@, *rm as int, result.1@.map(|i, p: CTPCMessage| p@)),
+{
+    let result = {
+        let mut __rm_committed = clone_hashset(&s.rm_committed);
+        __rm_committed.insert(rm.clone());
+        (CState {
+    tm_state: clone_tm_state(&s.tm_state),
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: __rm_committed,
+    rm_aborted: clone_hashset(&s.rm_aborted),
+}, vec![])
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty());
+    }
+    result
+
+}
+
+pub exec fn CRMReceiveAbort(s: &CState, c: &CConstants, rm: &u64) -> (result: (CState, Vec<CTPCMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    c@.rm.contains(*rm as int),
     !s@.rm_committed.contains(*rm as int),
     !s@.rm_aborted.contains(*rm as int),
 ensures
-    result.valid(),
-    LRMReceiveAbort(s@, result@, c@, *rm as int),
+    result.0.valid(),
+    LRMReceiveAbort(s@, result.0@, c@, *rm as int, result.1@.map(|i, p: CTPCMessage| p@)),
 {
     let result = {
         let mut __rm_aborted = clone_hashset(&s.rm_aborted);
         __rm_aborted.insert(rm.clone());
-        CState {
-            tm_state: clone_tm_state(&s.tm_state),
-            tm_prepared: clone_hashset(&s.tm_prepared),
-            rm_prepared: clone_hashset(&s.rm_prepared),
-            rm_committed: clone_hashset(&s.rm_committed),
-            rm_aborted: __rm_aborted,
-            msgs_prepare: s.msgs_prepare.clone(),
-            msgs_commit: s.msgs_commit.clone(),
-            msgs_abort: s.msgs_abort.clone(),
-        }
+        (CState {
+    tm_state: clone_tm_state(&s.tm_state),
+    tm_prepared: clone_hashset(&s.tm_prepared),
+    rm_prepared: clone_hashset(&s.rm_prepared),
+    rm_committed: clone_hashset(&s.rm_committed),
+    rm_aborted: __rm_aborted,
+}, vec![])
     };
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty());
     }
     result
 

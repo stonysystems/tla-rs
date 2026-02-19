@@ -25,6 +25,12 @@ nat_type = "u64"
 "LConstants" = "CConstants"
 "LTMState" = "CTMState"
 "LRMState" = "CRMState"
+"LTPCMessage" = "CTPCMessage"
+# Prevent C-prefixing of message variant names in LTPCMessage::Variant paths
+"Prepare" = "Prepare"
+"PreparedVote" = "PreparedVote"
+"Commit" = "Commit"
+"Abort" = "Abort"
 
 [clone_field_types]
 "tm_state" = "CTMState"
@@ -86,48 +92,51 @@ action_count = 8
 spec_name = "LTMSendPrepare"
 exec_name = "CTMSendPrepare"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LRMReceivePrepare"
 exec_name = "CRMReceivePrepare"
 kind = "message_driven"
 message_variant = "Prepare"
-existential_params = [["rm", "int"]]
+existential_params = [["rm", "int"], ["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LRMAbort"
 exec_name = "CRMAbort"
 kind = "timer_driven"
-existential_params = [["rm", "int"]]
+existential_params = [["rm", "int"], ["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LTMRcvPrepared"
 exec_name = "CTMRcvPrepared"
 kind = "message_driven"
 message_variant = "PreparedVote"
-existential_params = [["r", "int"]]
+existential_params = [["r", "int"], ["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LTMSendCommit"
 exec_name = "CTMSendCommit"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LTMSendAbort"
 exec_name = "CTMSendAbort"
 kind = "timer_driven"
+existential_params = [["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LRMReceiveCommit"
 exec_name = "CRMReceiveCommit"
 kind = "message_driven"
 message_variant = "Commit"
-existential_params = [["rm", "int"]]
+existential_params = [["rm", "int"], ["sent_packets", "Seq<LTPCMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LRMReceiveAbort"
 exec_name = "CRMReceiveAbort"
 kind = "message_driven"
 message_variant = "Abort"
-existential_params = [["rm", "int"]]
+existential_params = [["rm", "int"], ["sent_packets", "Seq<LTPCMessage>"]]
 

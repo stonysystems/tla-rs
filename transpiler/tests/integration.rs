@@ -2759,11 +2759,12 @@ fn test_analyze_lnext_twophase() {
     let config = analyze_lnext("../src/protocol/TwoPhase/twophase.rs");
     assert_eq!(config.actions.len(), 8, "TwoPhase has 8 actions");
     assert_eq!(config.params, vec!["s", "s_", "c"]);
-    // 3 direct + 5 quantified
-    let direct: Vec<_> = config.actions.iter().filter(|a| a.existential_params.is_empty()).collect();
-    let quantified: Vec<_> = config.actions.iter().filter(|a| !a.existential_params.is_empty()).collect();
-    assert_eq!(direct.len(), 3, "3 direct actions");
-    assert_eq!(quantified.len(), 5, "5 quantified actions");
+    // All 8 actions have sent_packets as existential param
+    // 3 have only sent_packets, 5 have sent_packets + another param (rm/r)
+    let with_one: Vec<_> = config.actions.iter().filter(|a| a.existential_params.len() == 1).collect();
+    let with_two: Vec<_> = config.actions.iter().filter(|a| a.existential_params.len() == 2).collect();
+    assert_eq!(with_one.len(), 3, "3 actions with only sent_packets");
+    assert_eq!(with_two.len(), 5, "5 actions with sent_packets + rm/r");
 }
 
 #[test]
@@ -2863,7 +2864,9 @@ fn test_analyze_lnext_toml_output() {
     assert!(toml.contains("action_count = 8"));
     assert!(toml.contains("spec_name = \"LTMSendPrepare\""));
     assert!(toml.contains("exec_name = \"CTMSendPrepare\""));
-    assert!(toml.contains("existential_params = [[\"rm\", \"int\"]]"));
+    // All actions now have sent_packets; some also have rm
+    assert!(toml.contains("existential_params = [[\"sent_packets\", \"Seq<LTPCMessage>\"]]"));
+    assert!(toml.contains("existential_params = [[\"rm\", \"int\"], [\"sent_packets\", \"Seq<LTPCMessage>\"]]"));
 }
 
 // --- Classification integration tests ---

@@ -126,12 +126,9 @@ impl TwoPhaseHost {
         if !matches!(self.state.tm_state, CTMState::Init) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
-        if self.state.msgs_prepare {
-            // Already sent prepare
-            return StepResult { ok: true, outbound: GenericOutbound::None };
-        }
 
-        self.state = twophase_gen::CTMSendPrepare(&self.state, &config.constants);
+        let (new_state, _sent) = twophase_gen::CTMSendPrepare(&self.state, &config.constants);
+        self.state = new_state;
 
         // Broadcast Prepare to all RMs
         let rm_endpoints: Vec<EndPoint> = config.peers[1..].iter()
@@ -153,32 +150,31 @@ impl TwoPhaseHost {
         config: &TwoPhaseConfig,
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
-        // Guard: tm_state is Init && rm is in rm_prepared set
+        // Guard: tm_state is Init
         if !matches!(self.state.tm_state, CTMState::Init) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // The spec requires s.rm_prepared.contains(r) — in our distributed model,
-        // receiving the PreparedVote message IS the evidence that rm prepared.
-        // We first apply CRMReceivePrepare to record the RM as prepared
-        // (simulating the shared-state view), then apply CTMRcvPrepared.
+        // In our distributed model, receiving a PreparedVote over the network
+        // is equivalent to the RM having prepared. Record the RM as prepared
+        // in the shared-state simulation.
         if !self.state.rm_prepared.contains(&rm_id) {
-            // Record that this RM has prepared (shared-state simulation)
             if config.constants.rm.contains(&rm_id) &&
-               self.state.msgs_prepare &&
                !self.state.rm_aborted.contains(&rm_id) {
-                self.state = twophase_gen::CRMReceivePrepare(
+                let (new_state, _sent) = twophase_gen::CRMReceivePrepare(
                     &self.state, &config.constants, &rm_id,
                 );
+                self.state = new_state;
             }
         }
 
         // Now TM can process the prepared vote
         if self.state.rm_prepared.contains(&rm_id) &&
            !self.state.tm_prepared.contains(&rm_id) {
-            self.state = twophase_gen::CTMRcvPrepared(
+            let (new_state, _sent) = twophase_gen::CTMRcvPrepared(
                 &self.state, &config.constants, &rm_id,
             );
+            self.state = new_state;
         }
 
         StepResult { ok: true, outbound: GenericOutbound::None }
@@ -206,7 +202,8 @@ impl TwoPhaseHost {
             }
         }
 
-        self.state = twophase_gen::CTMSendCommit(&self.state, &config.constants);
+        let (new_state, _sent) = twophase_gen::CTMSendCommit(&self.state, &config.constants);
+        self.state = new_state;
 
         let rm_endpoints: Vec<EndPoint> = config.peers[1..].iter()
             .map(|ep| ep.clone_up_to_view())
@@ -266,24 +263,17 @@ impl TwoPhaseHost {
         config: &TwoPhaseConfig,
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
-        // Guard checks
+        // Guard checks — receiving Prepare over the network is evidence it was sent
         if !config.constants.rm.contains(&rm_id) ||
-           !self.state.msgs_prepare ||
            self.state.rm_prepared.contains(&rm_id) ||
            self.state.rm_aborted.contains(&rm_id) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        // Set msgs_prepare flag (simulating having received the broadcast)
-        if !self.state.msgs_prepare {
-            // We need to flip the flag since the message came over the network
-            // but in shared state it was already set by TM. In our model,
-            // receiving the Prepare message is equivalent to the flag being set.
-        }
-
-        self.state = twophase_gen::CRMReceivePrepare(
+        let (new_state, _sent) = twophase_gen::CRMReceivePrepare(
             &self.state, &config.constants, &rm_id,
         );
+        self.state = new_state;
 
         // Send PreparedVote back to TM (index 0)
         let tm_endpoint = config.peers[0].clone_up_to_view();
@@ -303,15 +293,15 @@ impl TwoPhaseHost {
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
         if !config.constants.rm.contains(&rm_id) ||
-           !self.state.msgs_commit ||
            !self.state.rm_prepared.contains(&rm_id) ||
            self.state.rm_committed.contains(&rm_id) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = twophase_gen::CRMReceiveCommit(
+        let (new_state, _sent) = twophase_gen::CRMReceiveCommit(
             &self.state, &config.constants, &rm_id,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }
@@ -323,15 +313,15 @@ impl TwoPhaseHost {
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
         if !config.constants.rm.contains(&rm_id) ||
-           !self.state.msgs_abort ||
            self.state.rm_committed.contains(&rm_id) ||
            self.state.rm_aborted.contains(&rm_id) {
             return StepResult { ok: true, outbound: GenericOutbound::None };
         }
 
-        self.state = twophase_gen::CRMReceiveAbort(
+        let (new_state, _sent) = twophase_gen::CRMReceiveAbort(
             &self.state, &config.constants, &rm_id,
         );
+        self.state = new_state;
 
         StepResult { ok: true, outbound: GenericOutbound::None }
     }

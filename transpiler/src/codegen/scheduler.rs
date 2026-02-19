@@ -192,6 +192,9 @@ fn type_to_string(ty: &Type) -> String {
             let args_str: Vec<String> = args.iter().map(type_to_string).collect();
             format!("{}<{}>", func_name(path), args_str.join(", "))
         }
+        Type::Seq(inner) => format!("Seq<{}>", type_to_string(inner)),
+        Type::Set(inner) => format!("Set<{}>", type_to_string(inner)),
+        Type::Map(k, v) => format!("Map<{}, {}>", type_to_string(k), type_to_string(v)),
         _ => "unknown".to_string(),
     }
 }
@@ -1459,13 +1462,14 @@ mod tests {
         assert!(names.contains(&"LTMSendCommit"));
         assert!(names.contains(&"LTMSendAbort"));
 
-        // LTMSendPrepare is direct (no existential)
+        // LTMSendPrepare has exists |sent_packets|
         let send_prepare = config.actions.iter().find(|a| a.spec_name == "LTMSendPrepare").unwrap();
-        assert!(send_prepare.existential_params.is_empty());
+        assert_eq!(send_prepare.existential_params.len(), 1);
+        assert_eq!(send_prepare.existential_params[0].0, "sent_packets");
 
-        // LRMReceivePrepare has exists |rm: int|
+        // LRMReceivePrepare has exists |rm: int, sent_packets|
         let rcv_prepare = config.actions.iter().find(|a| a.spec_name == "LRMReceivePrepare").unwrap();
-        assert_eq!(rcv_prepare.existential_params.len(), 1);
+        assert_eq!(rcv_prepare.existential_params.len(), 2);
         assert_eq!(rcv_prepare.existential_params[0].0, "rm");
     }
 
