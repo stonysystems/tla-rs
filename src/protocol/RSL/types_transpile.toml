@@ -228,3 +228,23 @@ custom_imports = [
 # LConfiguration.clientIds is a Set<AbstractEndPoint> in spec but CConfiguration drops it.
 # The view_override provides Set::<AbstractEndPoint>::empty() for the View impl.
 "CConfiguration" = ["clientIds"]
+
+# Marshalable implementation generation for struct types.
+# These types are currently defined via `define_struct_and_derive_marshalable!` macro
+# in types_i.rs. The transpiler can generate equivalent `impl Marshalable` code.
+# Field types must implement Marshalable (u64, bool, Vec<u8>, EndPoint, CBallot, etc.)
+[[marshalable.types]]
+name = "CBallot"
+fields = [["seqno", "u64"], ["proposer_id", "u64"]]
+
+[[marshalable.types]]
+name = "CRequest"
+fields = [["client", "EndPoint"], ["seqno", "u64"], ["request", "CAppMessage"]]
+
+[[marshalable.types]]
+name = "CReply"
+fields = [["client", "EndPoint"], ["seqno", "u64"], ["reply", "CAppMessage"]]
+
+[[marshalable.types]]
+name = "CVote"
+fields = [["max_value_bal", "CBallot"], ["max_val", "CRequestBatch"]]

@@ -4252,3 +4252,166 @@ fn test_generate_marshalable_overflow_checks() {
     assert!(code.contains("usize::MAX - (self.x.serialized_size()) >= self.y.serialized_size()"));
     assert!(code.contains("usize::MAX - (self.x.serialized_size() + self.y.serialized_size()) >= self.z.serialized_size()"));
 }
+
+// ============================================================
+// Phase 17.3.2c: Marshalable generation from real RSL TOML
+// ============================================================
+
+/// Helper: load marshalable config from a real protocol TOML file
+fn load_and_generate_marshalable(toml_path: &str) -> String {
+    let config = verus_transpiler::FileConfig::from_file(std::path::Path::new(toml_path))
+        .unwrap_or_else(|e| panic!("Failed to load {}: {}", toml_path, e));
+    let marsh_config = config
+        .marshalable
+        .unwrap_or_else(|| panic!("No [marshalable] in {}", toml_path));
+    verus_transpiler::generate_marshalable_impls(&marsh_config)
+}
+
+#[test]
+fn test_generate_marshalable_rsl_types_toml() {
+    let code =
+        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+
+    // All 4 RSL types should have impls
+    assert!(code.contains("impl Marshalable for CBallot {"));
+    assert!(code.contains("impl Marshalable for CRequest {"));
+    assert!(code.contains("impl Marshalable for CReply {"));
+    assert!(code.contains("impl Marshalable for CVote {"));
+
+    // CBallot: 2 u64 fields
+    assert!(code.contains("self.seqno.view_equal(&other.seqno)"));
+    assert!(code.contains("self.proposer_id.view_equal(&other.proposer_id)"));
+    assert!(code.contains("let (seqno, mid) = match u64::deserialize(data, mid)"));
+    assert!(code.contains("let (proposer_id, mid) = match u64::deserialize(data, mid)"));
+
+    // CRequest: EndPoint + u64 + CAppMessage
+    assert!(code.contains("let (client, mid) = match EndPoint::deserialize(data, mid)"));
+    assert!(code.contains("let (request, mid) = match CAppMessage::deserialize(data, mid)"));
+    assert!(code.contains("self.client.serialize(data);"));
+    assert!(code.contains("self.request.serialize(data);"));
+
+    // CReply: EndPoint + u64 + CAppMessage
+    assert!(code.contains("self.reply.serialize(data);"));
+
+    // CVote: CBallot + CRequestBatch
+    assert!(code.contains("let (max_value_bal, mid) = match CBallot::deserialize(data, mid)"));
+    assert!(code.contains("let (max_val, mid) = match CRequestBatch::deserialize(data, mid)"));
+}
+
+#[test]
+fn test_generate_marshalable_rsl_cballot_detail() {
+    let code =
+        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+
+    // Extract just the CBallot impl (it's the first one)
+    let ballot_start = code.find("impl Marshalable for CBallot {").unwrap();
+    let request_start = code.find("impl Marshalable for CRequest {").unwrap();
+    let ballot_code = &code[ballot_start..request_start];
+
+    // ghost_serialize concatenates both fields
+    assert!(ballot_code.contains(
+        "Seq::empty() + self.seqno.ghost_serialize() + self.proposer_id.ghost_serialize()"
+    ));
+
+    // serialized_size adds both
+    assert!(ballot_code
+        .contains("0 + self.seqno.serialized_size() + self.proposer_id.serialized_size()"));
+
+    // deserialize constructs CBallot struct
+    assert!(ballot_code.contains("let res = CBallot {"));
+    assert!(ballot_code.contains("seqno,"));
+    assert!(ballot_code.contains("proposer_id,"));
+
+    // proof blocks present
+    assert!(ballot_code.contains("assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());"));
+}
+
+#[test]
+fn test_generate_marshalable_rsl_type_count() {
+    let code =
+        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+
+    // Exactly 4 impl blocks
+    let impl_count = code.matches("impl Marshalable for").count();
+    assert_eq!(impl_count, 4, "Expected 4 Marshalable impls, got {}", impl_count);
+
+    // Each has all 11 trait methods
+    for type_name in &["CBallot", "CRequest", "CReply", "CVote"] {
+        let impl_start = code
+            .find(&format!("impl Marshalable for {} {{", type_name))
+            .unwrap_or_else(|| panic!("Missing impl for {}", type_name));
+        let impl_section = &code[impl_start..];
+        // Find the closing brace (end of impl block)
+        let mut depth = 0;
+        let mut end = 0;
+        for (i, ch) in impl_section.char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let block = &impl_section[..end];
+        assert!(
+            block.contains("open spec fn view_equal("),
+            "{} missing view_equal",
+            type_name
+        );
+        assert!(
+            block.contains("proof fn lemma_view_equal_symmetric("),
+            "{} missing lemma_view_equal_symmetric",
+            type_name
+        );
+        assert!(
+            block.contains("open spec fn is_marshalable("),
+            "{} missing is_marshalable",
+            type_name
+        );
+        assert!(
+            block.contains("exec fn _is_marshalable("),
+            "{} missing _is_marshalable",
+            type_name
+        );
+        assert!(
+            block.contains("open spec fn ghost_serialize("),
+            "{} missing ghost_serialize",
+            type_name
+        );
+        assert!(
+            block.contains("exec fn serialized_size("),
+            "{} missing serialized_size",
+            type_name
+        );
+        assert!(
+            block.contains("exec fn serialize("),
+            "{} missing serialize",
+            type_name
+        );
+        assert!(
+            block.contains("exec fn deserialize("),
+            "{} missing deserialize",
+            type_name
+        );
+        assert!(
+            block.contains("proof fn lemma_serialization_is_not_a_prefix_of("),
+            "{} missing lemma_serialization_is_not_a_prefix_of",
+            type_name
+        );
+        assert!(
+            block.contains("proof fn lemma_same_views_serialize_the_same("),
+            "{} missing lemma_same_views_serialize_the_same",
+            type_name
+        );
+        assert!(
+            block.contains("proof fn lemma_serialize_injective("),
+            "{} missing lemma_serialize_injective",
+            type_name
+        );
+    }
+}
