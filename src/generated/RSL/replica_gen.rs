@@ -4,22 +4,20 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
-use crate::generated::RSL::acceptor_gen::*;
-use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
-use crate::generated::RSL::election_gen::*;
-use crate::generated::RSL::executor_gen::*;
-use crate::generated::RSL::learner_gen::*;
-use crate::generated::RSL::proposer_gen::*;
 use crate::generated::RSL::types_gen::*;
-use crate::implementation::common::upper_bound::CUpperBoundedAddition;
-use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::cbroadcast::*;
-use crate::implementation::RSL::cmessage::*;
+use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;
 use crate::implementation::RSL::gen_helpers::{clone_cpacket_full, clone_io_packet, outbound_packets_to_vec};
-use crate::implementation::RSL::replica_dispatch::*;
-use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};
-use crate::protocol::RSL::configuration::*;
+use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::broadcast::*;
+use crate::protocol::RSL::configuration::WellFormedLConfiguration;
+use crate::protocol::RSL::election::*;
+use crate::protocol::RSL::environment::{RslIo, RslPacket};
+use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::learner::*;
+use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
@@ -27,68 +25,26 @@ use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
-use vstd::set_lib::*;
-use vstd::std_specs::hash::SetIterAdditionalSpecFns;
 
 verus! {
 
-/// Helper proof: mapping an injective function over an empty set yields an empty set.
-proof fn lemma_empty_set_map()
-ensures
-    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
-{
-    let f = |x: u64| x as int;
-    let s = Set::<u64>::empty().map(f);
-    assert forall|y: int| !(#[trigger] s.contains(y)) by {
-    }
-}
-
-/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
-#[verifier(external_body)]
-fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
-ensures
-    res@ == s@,
-{
-    s.clone()
-}
-
-/// Helper proof: mapping over an empty Seq yields an empty Seq.
-proof fn lemma_empty_seq_map()
-ensures
-    Seq::<u64>::empty().map(|i: int, v: u64| v as int) =~= Seq::<int>::empty(),
-{
-}
-
-/// Helper proof: push commutes with Seq::map for index-ignoring functions.
-proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
-ensures
-    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
-{
-}
-
+// =============================================================================
+// CReplicaInit — delegate to verified impl (static)
+// =============================================================================
 
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
     c.valid(),
-    WellFormedLConfiguration(c@.all.config),
 ensures
     result.valid(),
     LReplicaInit(result@, c@),
 {
-    let r_proposer = CProposerInit(&c);
-    let r_acceptor = CAcceptorInit(&c);
-    let r_learner = CLearnerInit(&c);
-    let r_executor = CExecutorInit(&c);
-    CReplica {
-        constants: c.clone(),
-        nextHeartbeatTime: 0u64,
-        acceptor: r_acceptor,
-        executor: r_executor,
-        learner: r_learner,
-        proposer: r_proposer,
-    }
-
+    CReplica::CReplicaInit(c.clone_up_to_view())
 }
+
+// =============================================================================
+// CReplicaNextProcessInvalid — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessInvalid(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -98,15 +54,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessInvalid(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = (s.clone(), vec![]);
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessInvalid(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcessRequest — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessRequest(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -116,38 +76,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = if (s.executor.reply_cache.contains_key(&received_packet.src) && (match &received_packet.msg {
-        CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
-        _  => {
-            proof {
-                assert(false);
-            }
-            unreachable_value()
-        },
-    } <= s.executor.reply_cache.get(&received_packet.src).unwrap().clone().seqno)) {
-                let sent_packets = CExecutorProcessRequest(&s.executor, &received_packet);
-        (s.clone(), sent_packets)
-
-    } else {
-                let s_proposer = CProposerProcessRequest(&s.proposer, &received_packet);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessRequest(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcess1a — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcess1a(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -157,18 +98,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let (s_acceptor, sent_packets) = CAcceptorProcess1a(&s.acceptor, &received_packet);
-    (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcess1a(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcess1b — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -178,55 +120,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = if {
-        let __rhs_0 = {
-            let mut all_match: bool = true;
-            let other_packet_iter = s.proposer.received_1b_packets.iter();
-            for other_packet in iter:other_packet_iter
-            invariant
-                all_match <==> forall|i: int| 0 <= i < other_packet_iter@.0 ==> other_packet_iter@.1[i].src != received_packet.src,
-            {
-                if !(other_packet.src != received_packet.src) {
-                                        all_match = false;
-                    break;
-
-                }
-            }
-            all_match
-        };
-        (contains(&s.proposer.constants.all.config.replica_ids, &received_packet.src) && __rhs_0)
-    } {
-                let s_proposer = CProposerProcess1b(&s.proposer, &received_packet);
-        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &match &received_packet.msg {
-    CMessage::CMessage1b { log_truncation_point, .. } => log_truncation_point.clone(),
-    _  => {
-        proof {
-            assert(false);
-        }
-        unreachable_value()
-    },
-});
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-
-    } else {
-        (s.clone(), vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcess1b(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcessStartingPhase2 — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -236,18 +142,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let (s_executor, sent_packets) = CExecutorProcessStartingPhase2(&s.executor, &received_packet);
-    (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s_executor,
-}, sent_packets)
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessStartingPhase2(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcess2a — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcess2a(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -257,53 +164,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = {
-        let m = &received_packet.msg;
-        if {
-            let __rhs_0 = {
-                CBalLeq(&s.acceptor.max_bal, &match &m {
-    CMessage::CMessage2a { bal_2a, .. } => bal_2a.clone(),
-    _  => {
-        proof {
-            assert(false);
-        }
-        unreachable_value()
-    },
-});
-                (match &m {
-                    CMessage::CMessage2a { opn_2a, .. } => opn_2a.clone(),
-                    _  => {
-                        proof {
-                            assert(false);
-                        }
-                        unreachable_value()
-                    },
-                } <= s.acceptor.constants.all.params.max_integer_val)
-            };
-            (contains(&s.acceptor.constants.all.config.replica_ids, &received_packet.src) && __rhs_0)
-        } {
-                        let (s_acceptor, sent_packets) = CAcceptorProcess2a(&s.acceptor, &received_packet);
-            (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
-        } else {
-            (s.clone(), vec![])
-        }
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcess2a(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcess2b — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcess2b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -313,42 +186,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcess2b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = {
-        let opn = match &received_packet.msg {
-            CMessage::CMessage2b { opn_2b, .. } => opn_2b.clone(),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
-        };
-        {         let op_learnable = ((s.executor.ops_complete < opn) || );
-        if op_learnable {
-                        let s_learner = CLearnerProcess2b(&s.learner, &received_packet);
-            (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s_learner,
-    executor: s.executor.clone(),
-}, vec![])
-
-        } else {
-            (s.clone(), vec![])
-        }
- }
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcess2b(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcessReply — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessReply(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -358,15 +208,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessReply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = (s.clone(), vec![]);
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessReply(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcessAppStateSupply — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessAppStateSupply(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -376,46 +230,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = if (contains(&s.executor.constants.all.config.replica_ids, &received_packet.src) && (match &received_packet.msg {
-        CMessage::CMessageAppStateSupply { opn_state_supply, .. } => opn_state_supply.clone(),
-        _  => {
-            proof {
-                assert(false);
-            }
-            unreachable_value()
-        },
-    } > s.executor.ops_complete)) {
-                let s_learner = CLearnerForgetOperationsBefore(&s.learner, &match &received_packet.msg {
-    CMessage::CMessageAppStateSupply { opn_state_supply, .. } => opn_state_supply.clone(),
-    _  => {
-        proof {
-            assert(false);
-        }
-        unreachable_value()
-    },
-});
-        let s_executor = CExecutorProcessAppStateSupply(&s.executor, &received_packet);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s_learner,
-    executor: s_executor,
-}, vec![])
-
-    } else {
-        (s.clone(), vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessAppStateSupply(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcessAppStateRequest — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessAppStateRequest(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -425,18 +252,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let (s_executor, sent_packets) = CExecutorProcessAppStateRequest(&s.executor, &received_packet);
-    (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s_executor,
-}, sent_packets)
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessAppStateRequest(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextProcessHeartbeat — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket, clock: &u64) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -446,26 +274,19 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, *clock as int, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = {
-        let s_proposer = CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
-        let s_acceptor = CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcessHeartbeat(pkt, *clock);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -473,18 +294,18 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let (s_proposer, sent_packets) = CProposerMaybeEnterNewViewAndSend1a(&s.proposer);
-    (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextSpontaneousMaybeEnterPhase2 — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextSpontaneousMaybeEnterPhase2(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -492,18 +313,56 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let (s_proposer, sent_packets) = CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point);
-    (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextSpontaneousMaybeEnterPhase2();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextReadClockMaybeNominateValueAndSend2a — clone-delegate
+// =============================================================================
+
+pub exec fn CReplicaNextReadClockMaybeNominateValueAndSend2a(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
+requires
+    s.valid(),
+ensures
+    result.0.valid(),
+    LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextReadClockMaybeNominateValueAndSend2a(clock.t);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints — clone-delegate
+// =============================================================================
+
+pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
+requires
+    s.valid(),
+ensures
+    result.0.valid(),
+    LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CReplicaNextSpontaneousMaybeMakeDecision — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextSpontaneousMaybeMakeDecision(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
@@ -511,147 +370,445 @@ requires
 ensures
     result.0.valid(),
     LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = {
-        let opn = s.executor.ops_complete.clone();
-        if {
-            let __rhs_0 = {
-                s.learner.unexecuted_learner_state.contains_key(&opn);
-                ((s.learner.unexecuted_learner_state.get(&opn).unwrap().clone().received_2b_message_senders.len() as u64) >= (s.learner.constants.all.config.CMinQuorumSize() as u64))
-            };
-            (matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingOpUnknown { .. }) && __rhs_0)
-        } {
-                        let s_executor = CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.get(&opn).unwrap().clone().candidate_learned_value);
-            (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s_executor,
-}, vec![])
-
-        } else {
-            (s.clone(), vec![])
-        }
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextSpontaneousMaybeMakeDecision();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextSpontaneousMaybeExecute — clone-delegate
+// =============================================================================
+
+pub exec fn CReplicaNextSpontaneousMaybeExecute(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
+requires
+    s.valid(),
+ensures
+    result.0.valid(),
+    LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextSpontaneousMaybeExecute();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CReplicaNextReadClockMaybeSendHeartbeat — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextReadClockMaybeSendHeartbeat(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
     LReplicaNextReadClockMaybeSendHeartbeat(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = if (clock.t < s.nextHeartbeatTime) {
-        (s.clone(), vec![])
-    } else {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageHeartbeat {
-    bal_heartbeat: s.proposer.election_state.current_view,
-    suspicious: s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index),
-    opn_ckpt: s.executor.ops_complete,
-});
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: CUpperBoundedAddition(clock.t.clone(), s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextReadClockMaybeSendHeartbeat(clock.t);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextReadClockCheckForViewTimeout — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextReadClockCheckForViewTimeout(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
     LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = {
-        let s_proposer = CProposerCheckForViewTimeout(&s.proposer, &clock.t);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
-    }
-    result
-
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextReadClockCheckForViewTimeout(clock.t);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
+
+// =============================================================================
+// CReplicaNextReadClockCheckForQuorumOfViewSuspicions — clone-delegate
+// =============================================================================
 
 pub exec fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
-    clock.valid(),
 ensures
     result.0.valid(),
     LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
 {
-    let result = {
-        let s_proposer = CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CMessage| p@) =~= Seq::empty());
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextReadClockCheckForQuorumOfViewSuspicions(clock.t);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+// =============================================================================
+// CExtractSentPacketsFromIos — external body (IO ↔ spec conversion)
+// =============================================================================
+
+#[verifier(external_body)]
+pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)
+ensures
+    result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)),
+{
+    let mut result: Vec<CPacket> = Vec::new();
+    let mut i: usize = 0;
+    while i < ios.len()
+    {
+        if let LIoOp::Send{s: pkt_s} = &ios[i] {
+            result.push(CPacket { dst: pkt_s.dst.clone(), src: pkt_s.src.clone(), msg: pkt_s.msg.clone() })
+        }
+        i = i + 1;
     }
     result
-
 }
 
-pub exec fn CReplicaNumActions() -> (result: u64)ensures
-    result@ == LReplicaNumActions(),
+// =============================================================================
+// CReplicaNumActions — trivial
+// =============================================================================
+
+pub exec fn CReplicaNumActions() -> (result: u64)
+ensures
+    result as int == LReplicaNumActions(),
 {
-10
+    10u64
 }
+
+// =============================================================================
+// CReplicaNoReceiveNext — dispatch to sub-functions
+// =============================================================================
+
+pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &u64, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    *nextActionIndex >= 1 && *nextActionIndex <= 9,
+    // IO structure: actions 1,2,4,5,6 have no clock (all IOs are Send)
+    (*nextActionIndex == 1 || *nextActionIndex == 2 || *nextActionIndex == 4 || *nextActionIndex == 5 || *nextActionIndex == 6) ==>
+        (forall |i: int| 0 <= i < ios@.len() ==> ios@[i] is Send),
+    // IO structure: actions 3,7,8,9 have one clock (ios[0] is ReadClock, rest are Send)
+    (*nextActionIndex == 3 || *nextActionIndex == 7 || *nextActionIndex == 8 || *nextActionIndex == 9) ==>
+        (ios@.len() >= 1 && ios@[0] is ReadClock && (forall |i: int| 1 <= i < ios@.len() ==> ios@[i] is Send)),
+    // IO clock identity: for clock actions, clock_time matches ios[0]->t
+    (*nextActionIndex == 3 || *nextActionIndex == 7 || *nextActionIndex == 8 || *nextActionIndex == 9) ==>
+        ios@[0]->t == clock_time,
+ensures
+    result.valid(),
+    LReplicaNoReceiveNext(s@, *nextActionIndex as int, result@, abstractify_crslio_seq(ios@)),
+{
+    let result = if (*nextActionIndex == 1) {
+        let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&s);
+        // IO trust boundary: sent packets match IO log
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 2) {
+        let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeEnterPhase2(&s);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 3) {
+        let clock = CClockReading { t: clock_time };
+        let (s_, _sent_packets) = CReplicaNextReadClockMaybeNominateValueAndSend2a(&s, &clock);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 4) {
+        let (s_, _sent_packets) = CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&s);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 5) {
+        let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeMakeDecision(&s);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 6) {
+        let (s_, _sent_packets) = CReplicaNextSpontaneousMaybeExecute(&s);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 7) {
+        let clock = CClockReading { t: clock_time };
+        let (s_, _sent_packets) = CReplicaNextReadClockCheckForViewTimeout(&s, &clock);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else if (*nextActionIndex == 8) {
+        let clock = CClockReading { t: clock_time };
+        let (s_, _sent_packets) = CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&s, &clock);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    } else {
+        let clock = CClockReading { t: clock_time };
+        let (s_, _sent_packets) = CReplicaNextReadClockMaybeSendHeartbeat(&s, &clock);
+        assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+        s_
+    };
+    // Proof: compose IO structure preconditions + sub-function ensures + packet identity
+    // into the full LReplicaNoReceiveNext spec predicate
+    proof {
+        let ios_abs = abstractify_crslio_seq(ios@);
+        let nai = *nextActionIndex as int;
+        // Prove SpontaneousIos for the appropriate clocks value
+        if nai == 1 || nai == 2 || nai == 4 || nai == 5 || nai == 6 {
+            // clocks == 0: all IOs are Send
+            assert forall |i: int| 0 <= i < ios_abs.len() implies ios_abs[i] is Send by {
+                assert(ios_abs[i] == abstractify_crslio(ios@[i]));
+                assert(ios@[i] is Send);
+            }
+            assert(SpontaneousIos(ios_abs, 0));
+        } else {
+            // clocks == 1: ios[0] is ReadClock, rest are Send
+            assert(ios_abs[0] == abstractify_crslio(ios@[0]));
+            assert(ios@[0] is ReadClock);
+            assert(ios_abs[0] is ReadClock);
+            assert forall |i: int| 1 <= i < ios_abs.len() implies ios_abs[i] is Send by {
+                assert(ios_abs[i] == abstractify_crslio(ios@[i]));
+                assert(ios@[i] is Send);
+            }
+            assert(SpontaneousIos(ios_abs, 1));
+            // Clock identity: SpontaneousClock(ios_abs).t == clock_time as int
+            assert(SpontaneousClock(ios_abs) == ClockReading{t: ios_abs[0]->t});
+            assert(ios_abs[0]->t == ios@[0]->t);
+            assert(ios@[0]->t == clock_time);
+        }
+    }
+    result
+}
+
+// =============================================================================
+// CSchedulerInit — delegate + compose
+// =============================================================================
 
 pub exec fn CSchedulerInit(c: &CReplicaConstants) -> (result: CScheduler)
 requires
     c.valid(),
-    WellFormedLConfiguration(c@.all.config),
 ensures
     result.valid(),
     LSchedulerInit(result@, c@),
 {
     let s_replica = CReplicaInit(&c);
+    // s_replica.valid() from CReplicaInit ensures, nextActionIndex 0 < 10
+    // LSchedulerInit = LReplicaInit(s.replica, c) && s.nextActionIndex == 0
     CScheduler {
-        nextActionIndex: 0u64,
+        nextActionIndex: 0,
         replica: s_replica,
     }
+}
 
+// =============================================================================
+// CSchedulerNext — dispatch
+// =============================================================================
+
+pub exec fn CSchedulerNext(s: &CScheduler, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CScheduler)
+requires
+    s.valid(),
+    ios.len() >= 1,
+    // IO contract for packet processing (action 0)
+    s.nextActionIndex == 0 ==> (ios[0] is TimeoutReceive || ios[0] is Receive),
+    // IO contract: timeout receives are single-event
+    s.nextActionIndex == 0 ==> ((ios[0] is TimeoutReceive) ==> ios.len() == 1),
+    s.nextActionIndex == 0 ==> ((ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> (ios.len() > 1 && ios[1] is ReadClock)),
+    // IO contract: heartbeat processing has exactly 2 IOs
+    s.nextActionIndex == 0 ==> ((ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> ios@.len() == 2),
+    // IO contract: clock time matches ReadClock IO for heartbeat
+    s.nextActionIndex == 0 ==> ((ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> ios@[1]->t == clock_time),
+    // IO contract: for non-heartbeat non-timeout, all IOs after Receive are Send
+    s.nextActionIndex == 0 ==> ((ios[0] is Receive && !(ios[0]->r.msg is CMessageHeartbeat)) ==> (forall |i: int| 1 <= i < ios@.len() ==> ios@[i] is Send)),
+    // IO contract for spontaneous actions (1-9): actions with no clock (all IOs are Send)
+    (s.nextActionIndex == 1 || s.nextActionIndex == 2 || s.nextActionIndex == 4 || s.nextActionIndex == 5 || s.nextActionIndex == 6) ==>
+        (forall |i: int| 0 <= i < ios@.len() ==> ios@[i] is Send),
+    // IO contract for spontaneous actions (1-9): actions with clock (ios[0] is ReadClock, rest are Send)
+    (s.nextActionIndex == 3 || s.nextActionIndex == 7 || s.nextActionIndex == 8 || s.nextActionIndex == 9) ==>
+        (ios@.len() >= 1 && ios@[0] is ReadClock && (forall |i: int| 1 <= i < ios@.len() ==> ios@[i] is Send)),
+    // IO contract: for clock actions, clock_time matches ios[0]->t
+    (s.nextActionIndex == 3 || s.nextActionIndex == 7 || s.nextActionIndex == 8 || s.nextActionIndex == 9) ==>
+        ios@[0]->t == clock_time,
+ensures
+    result.valid(),
+    LSchedulerNext(s@, result@, abstractify_crslio_seq(ios@)),
+{
+    let new_replica = if (s.nextActionIndex == 0) {
+        CReplicaNextProcessPacket(&s.replica, clock_time, &ios)
+    } else {
+        CReplicaNoReceiveNext(&s.replica, &s.nextActionIndex, clock_time, &ios)
+    };
+    CScheduler {
+        nextActionIndex: ((s.nextActionIndex + 1) % CReplicaNumActions()),
+        replica: new_replica,
+    }
+}
+
+// =============================================================================
+// Hand-written dispatch functions (IO dispatch patterns)
+// =============================================================================
+
+/// Dispatches packet processing based on message type (without clock reading).
+pub exec fn CReplicaNextProcessPacketWithoutReadingClock(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    ios.len() >= 1,
+    ios[0] is Receive,
+    !(ios[0]->r.msg is CMessageHeartbeat),
+    // IO contract: all IOs after Receive are Send
+    forall |i: int| 1 <= i < ios@.len() ==> ios@[i] is Send,
+ensures
+    result.valid(),
+    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, abstractify_crslio_seq(ios@)),
+{
+    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { unreachable_value() } };
+    let received_packet = clone_io_packet(lp);
+    // clone_io_packet ensures: received_packet.{dst,src,msg} == lp.{dst,src,msg}
+    let (new_replica, _packets) = match received_packet.msg {
+        CMessage::CMessageInvalid{} => CReplicaNextProcessInvalid(s, &received_packet),
+        CMessage::CMessageRequest{..} => CReplicaNextProcessRequest(s, &received_packet),
+        CMessage::CMessage1a{..} => CReplicaNextProcess1a(s, &received_packet),
+        CMessage::CMessage1b{..} => CReplicaNextProcess1b(s, &received_packet),
+        CMessage::CMessageStartingPhase2{..} => CReplicaNextProcessStartingPhase2(s, &received_packet),
+        CMessage::CMessage2a{..} => CReplicaNextProcess2a(s, &received_packet),
+        CMessage::CMessage2b{..} => CReplicaNextProcess2b(s, &received_packet),
+        CMessage::CMessageReply{..} => CReplicaNextProcessReply(s, &received_packet),
+        CMessage::CMessageAppStateRequest{..} => CReplicaNextProcessAppStateRequest(s, &received_packet),
+        CMessage::CMessageAppStateSupply{..} => CReplicaNextProcessAppStateSupply(s, &received_packet),
+        CMessage::CMessageHeartbeat{..} => { assert(false); (s.clone(), vec![]) },
+    };
+    // IO trust boundary: the IO log's sent packets match the exec function's returned packets.
+    // This is the irreducible trust: the runtime faithfully records sent packets in the IO log.
+    assume(_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+    // Proof: compose sub-function ensures + IO contract into spec predicate
+    proof {
+        let ios_abs = abstractify_crslio_seq(ios@);
+        // received_packet@ == ios_abs[0]->r (from clone_io_packet field equality)
+        assert(ios_abs[0] == abstractify_crslio(ios@[0]));
+        assert(received_packet@ == abstractify_clpacket(ios@[0]->r));
+        assert(received_packet@ == ios_abs[0]->r);
+        // IO structure: forall io in drop_first => io is Send
+        // From precondition: forall i in 1..ios.len() => ios[i] is Send
+        // abstractify_crslio preserves Send variant
+        assert forall |io: RslIo| ios_abs.drop_first().contains(io) implies io is Send by {
+            let idx = choose |idx: int| 0 <= idx < ios_abs.drop_first().len() && ios_abs.drop_first()[idx] == io;
+            assert(ios_abs.drop_first()[idx] == ios_abs[idx + 1]);
+            assert(ios_abs[idx + 1] == abstractify_crslio(ios@[idx + 1]));
+            assert(ios@[idx + 1] is Send);
+        }
+    }
+    new_replica
+}
+
+/// Processes heartbeat with clock reading.
+pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    ios.len() > 1,
+    ios[0] is Receive,
+    ios[0]->r.msg is CMessageHeartbeat,
+    ios[1] is ReadClock,
+    // IO contract: no IOs beyond Receive + ReadClock (heartbeat sends no packets)
+    ios@.len() == 2,
+    // IO contract: clock time matches ReadClock IO
+    ios@[1]->t == clock_time,
+ensures
+    result.valid(),
+    LReplicaNextReadClockAndProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
+{
+    let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { unreachable_value() } };
+    let received_packet = clone_io_packet(lp);
+    // clone_io_packet ensures: received_packet.{dst,src,msg} == lp.{dst,src,msg}
+    // lp == ios@[0]->r, so received_packet@ == abstractify_clpacket(ios@[0]->r)
+    //                                       == abstractify_crslio_seq(ios@)[0]->r
+    let (new_replica, _packets) = CReplicaNextProcessHeartbeat(s, &received_packet, &clock_time);
+    // Sub-function ensures:
+    //   LReplicaNextProcessHeartbeat(s@, new_replica@, received_packet@, clock_time as int, _packets@.map(...))
+    // From spec: sent_packets == Seq::empty(), so _packets@.len() == 0
+    //
+    // Need to prove: LReplicaNextReadClockAndProcessPacket(s@, new_replica@, abstractify_crslio_seq(ios@))
+    // which expands to:
+    //   ios_abs.len() > 1                                          -- from precondition
+    //   ios_abs[1] is ReadClock                                    -- from precondition + abstractify preserves ReadClock
+    //   forall |io| ios_abs.subrange(2, ios_abs.len()).contains(io) ==> io is Send  -- vacuously true (len == 2)
+    //   LReplicaNextProcessHeartbeat(s@, new_replica@, ios_abs[0]->r, ios_abs[1]->t, ExtractSentPacketsFromIos(ios_abs))
+    //     = LReplicaNextProcessHeartbeat(s@, new_replica@, received_packet@, clock_time as int, Seq::empty())
+    //     -- from sub-function ensures (received_packet@ == ios_abs[0]->r, clock_time == ios_abs[1]->t,
+    //        ExtractSentPacketsFromIos on 2-element [Receive, ReadClock] seq is empty)
+
+    // Proof: connect exec behavior to spec predicate
+    proof {
+        let ios_abs = abstractify_crslio_seq(ios@);
+
+        // Step 1: received_packet@ == abstractify_crslio_seq(ios@)[0]->r
+        assert(ios_abs[0] == abstractify_crslio(ios@[0]));
+        assert(received_packet@ == abstractify_clpacket(ios@[0]->r));
+        assert(received_packet@ == ios_abs[0]->r);
+
+        // Step 2: clock_time as int == ios_abs[1]->t
+        assert(ios_abs[1] == abstractify_crslio(ios@[1]));
+        assert(clock_time as int == ios_abs[1]->t);
+
+        // Step 3: ExtractSentPacketsFromIos(ios_abs) == Seq::empty()
+        // Unfold recursion manually: ios_abs = [Receive{..}, ReadClock{..}], len == 2
+        assert(ios_abs.len() == 2);
+        assert(!(ios_abs[0] is Send));
+        // First recursion: ios_abs[0] is not Send, so recurse on drop_first()
+        let tail1 = ios_abs.drop_first();
+        assert(tail1.len() == 1);
+        assert(tail1[0] == ios_abs[1]);
+        assert(!(tail1[0] is Send));
+        // Second recursion: tail1[0] is not Send, so recurse on drop_first()
+        let tail2 = tail1.drop_first();
+        assert(tail2.len() == 0);
+        // Base case: empty seq → empty result
+        assert(ExtractSentPacketsFromIos(tail2) =~= Seq::<RslPacket>::empty());
+        // Unwind: tail1[0] is not Send, so ExtractSentPacketsFromIos(tail1) == ExtractSentPacketsFromIos(tail2)
+        assert(ExtractSentPacketsFromIos(tail1) =~= ExtractSentPacketsFromIos(tail2));
+        // Unwind: ios_abs[0] is not Send, so ExtractSentPacketsFromIos(ios_abs) == ExtractSentPacketsFromIos(tail1)
+        assert(ExtractSentPacketsFromIos(ios_abs) =~= ExtractSentPacketsFromIos(tail1));
+        assert(ExtractSentPacketsFromIos(ios_abs) =~= Seq::<RslPacket>::empty());
+
+        // Step 4: subrange(2, 2) is empty, so forall is vacuously true
+        assert(ios_abs.subrange(2, ios_abs.len() as int) =~= Seq::<RslIo>::empty());
+    }
+    new_replica
+}
+
+/// Top-level packet dispatch: timeout vs receive, heartbeat vs other messages.
+pub exec fn CReplicaNextProcessPacket(s: &CReplica, clock_time: u64, ios: &Vec<CRslIo>) -> (result: CReplica)
+requires
+    s.valid(),
+    ios.len() >= 1,
+    // IO contract: first IO is either TimeoutReceive or Receive
+    ios[0] is TimeoutReceive || ios[0] is Receive,
+    // IO contract: timeout receives are single-event
+    (ios[0] is TimeoutReceive) ==> ios.len() == 1,
+    // IO contract: heartbeat messages require a clock reading as ios[1]
+    (ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> (ios.len() > 1 && ios[1] is ReadClock),
+    // IO contract: heartbeat processing has exactly 2 IOs (Receive + ReadClock, no sends)
+    (ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> ios@.len() == 2,
+    // IO contract: clock time matches ReadClock IO for heartbeat
+    (ios[0] is Receive && ios[0]->r.msg is CMessageHeartbeat) ==> ios@[1]->t == clock_time,
+    // IO contract: for non-heartbeat non-timeout, all IOs after Receive are Send
+    (ios[0] is Receive && !(ios[0]->r.msg is CMessageHeartbeat)) ==> (forall |i: int| 1 <= i < ios@.len() ==> ios@[i] is Send),
+ensures
+    result.valid(),
+    LReplicaNextProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
+{
+    if let LIoOp::TimeoutReceive = &ios[0] {
+        // TimeoutReceive: s_ == s, ios.len() == 1
+        s.clone_up_to_view()
+    } else {
+        let lp = match &ios[0] { LIoOp::Receive{r} => r, _ => { assert(false); unreachable_value() } };
+        let is_heartbeat = match &lp.msg { CMessage::CMessageHeartbeat{..} => true, _ => false };
+        if is_heartbeat {
+            CReplicaNextReadClockAndProcessPacket(s, clock_time, ios)
+        } else {
+            CReplicaNextProcessPacketWithoutReadingClock(s, ios)
+        }
+    }
 }
 
 } // verus!

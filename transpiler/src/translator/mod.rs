@@ -5195,7 +5195,7 @@ impl Translator {
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
         // If generate_proofs is enabled, analyze the body and append proof blocks
-        let body = self.maybe_append_proof_block(body);
+        let body = self.maybe_append_proof_block(body, &return_type);
 
         // When assume_postconditions is enabled, prepend assume(false) to make postconditions trusted
         let body = if self.config.assume_postconditions {
@@ -5249,7 +5249,7 @@ impl Translator {
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
 
         // If generate_proofs is enabled, analyze the body and append proof blocks
-        let body = self.maybe_append_proof_block(body);
+        let body = self.maybe_append_proof_block(body, &return_type);
 
         // For string-constant helpers (e.g., Follower == "follower"),
         // the ensures clause may be hard to verify automatically.
@@ -5335,7 +5335,7 @@ impl Translator {
     ///   `StructExpr { ... }`
     /// into:
     ///   `Block [ Let { result = StructExpr }, ProofBlock { lemma_calls }, Var(result) ]`
-    fn maybe_append_proof_block(&self, body: ExecExpr) -> ExecExpr {
+    fn maybe_append_proof_block(&self, body: ExecExpr, return_type: &ExecType) -> ExecExpr {
         if !self.config.generate_proofs {
             return body;
         }
@@ -5347,16 +5347,32 @@ impl Translator {
 
         let mut needs = ProofNeeds::analyze(&body);
 
-        // Resolve missing element types for empty VecLit sites from config's type_remapping.
-        // Look for message enum types (L*Message -> C*Message pattern).
+        // Resolve missing element types for empty VecLit sites.
+        // First try extracting from the function's return type (most accurate).
+        // Fall back to searching type_remapping for C*Message pattern.
         if needs.tuple_vec_lit_sites.iter().any(|(_, _, t)| t.is_none()) {
-            let msg_type = self.config.type_remapping.values()
-                .find(|v| v.ends_with("Message") && v.starts_with("C"))
-                .cloned();
-            if let Some(ref type_name) = msg_type {
+            // Try to extract element type from return type tuple structure
+            if let ExecType::Tuple(types) = return_type {
                 for site in &mut needs.tuple_vec_lit_sites {
                     if site.2.is_none() {
-                        site.2 = Some(type_name.clone());
+                        if let Some(ExecType::Vec(inner)) = types.get(site.0) {
+                            if let ExecType::Named(type_name) = inner.as_ref() {
+                                site.2 = Some(type_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            // Fall back to type_remapping for any still-unresolved sites
+            if needs.tuple_vec_lit_sites.iter().any(|(_, _, t)| t.is_none()) {
+                let msg_type = self.config.type_remapping.values()
+                    .find(|v| v.ends_with("Message") && v.starts_with("C"))
+                    .cloned();
+                if let Some(ref type_name) = msg_type {
+                    for site in &mut needs.tuple_vec_lit_sites {
+                        if site.2.is_none() {
+                            site.2 = Some(type_name.clone());
+                        }
                     }
                 }
             }
@@ -8495,6 +8511,23 @@ impl Translator {
                             true
                         })
                         .collect();
+
+                    // If filtering removed ALL expressions but there were expressions to
+                    // process, this conjunction is a pure boolean condition (e.g.,
+                    // `a == b && c is Variant` inside a || or let-binding). Treat it as
+                    // a && chain of the original expressions instead of dropping them.
+                    if filtered_exprs.is_empty() && !exprs_to_process.is_empty() && let_bindings.is_empty() {
+                        let mut result = self.transform_expr(&exprs_to_process[0], &updated_ctx)?;
+                        for e in &exprs_to_process[1..] {
+                            let next = self.transform_expr(e, &updated_ctx)?;
+                            result = ExecExpr::Binary {
+                                lhs: Box::new(result),
+                                op: "&&".to_string(),
+                                rhs: Box::new(next),
+                            };
+                        }
+                        return Ok(result);
+                    }
 
                     let stmts: TranspileResult<Vec<_>> = filtered_exprs
                         .iter()
@@ -13567,6 +13600,50 @@ mod tests {
         // Without variant_remapping, falls back to translate_name (adds C prefix)
         let translator = Translator::default();
         assert_eq!(translator.translate_variant_for_is("Init"), "CInit");
+    }
+
+    /// Regression test: a conjunction of input-only boolean expressions (equality + is-check)
+    /// used inside a disjunction should produce a && chain, not be filtered away.
+    /// Bug: `ops_complete < opn || (ops_complete == opn && next_op is Unknown)` inside
+    /// a let-binding was producing `(ops_complete < opn) || )` with empty RHS.
+    #[test]
+    fn test_conjunction_of_input_only_booleans_preserved_in_disjunction() {
+        let translator = Translator::default();
+        // Build AST: a < b || (a == b && c is Unknown)
+        let disjunction = Expr::Disjunction(vec![
+            Expr::Lt(
+                Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "ops_complete".to_string())),
+                Box::new(Expr::Ident("opn".to_string())),
+            ),
+            Expr::Conjunction(vec![
+                Expr::Eq(
+                    Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "ops_complete".to_string())),
+                    Box::new(Expr::Ident("opn".to_string())),
+                ),
+                Expr::Is(
+                    Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "next_op".to_string())),
+                    "Unknown".to_string(),
+                ),
+            ]),
+        ]);
+        let ctx = TransformContext {
+            config: &TranslatorConfig::default(),
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "opn".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::new(),
+            field_substitutions: std::collections::HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+        let result = translator.transform_expr(&disjunction, &ctx).unwrap();
+        let output = format!("{:?}", result);
+        // The RHS conjunction must be preserved — not filtered to empty
+        assert!(output.contains("||") || output.contains("Or"),
+            "Output should contain disjunction: {}", output);
+        // The RHS must contain the variant check
+        assert!(output.contains("Matches") || output.contains("Unknown"),
+            "Output should preserve variant check: {}", output);
     }
 
     #[test]
@@ -19671,7 +19748,7 @@ mod tests {
             func: "HashSet::new".to_string(),
             args: vec![],
         };
-        let result = translator.maybe_append_proof_block(body.clone());
+        let result = translator.maybe_append_proof_block(body.clone(), &ExecType::Named("()".to_string()));
         // When proofs disabled, body should be returned as-is
         match result {
             ExecExpr::Call { func, .. } => assert_eq!(func, "HashSet::new"),
@@ -19690,7 +19767,7 @@ mod tests {
             func: "HashSet::new".to_string(),
             args: vec![],
         };
-        let result = translator.maybe_append_proof_block(body);
+        let result = translator.maybe_append_proof_block(body, &ExecType::Named("()".to_string()));
         // Should wrap in Block with Let, ProofBlock, Var
         match result {
             ExecExpr::Block(stmts) => {
@@ -19714,11 +19791,60 @@ mod tests {
             name: "CState".to_string(),
             fields: vec![("x".to_string(), ExecExpr::Literal("0u64".to_string()))],
         };
-        let result = translator.maybe_append_proof_block(body);
+        let result = translator.maybe_append_proof_block(body, &ExecType::Named("()".to_string()));
         // No proof needs -> body returned as-is
         match result {
             ExecExpr::Struct { name, .. } => assert_eq!(name, "CState"),
             other => panic!("Expected original Struct, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_proof_block_uses_return_type_for_vec_element_type() {
+        // Regression test: when a function returns (CState, Vec<CPacket>) and the body
+        // contains a tuple with an empty vec![], the proof assertion should use CPacket
+        // (from the return type), not CMessage (from type_remapping).
+        let mut config = TranslatorConfig {
+            generate_proofs: true,
+            ..TranslatorConfig::default()
+        };
+        // Add a CMessage to type_remapping to simulate RSL config
+        config.type_remapping.insert("RslMessage".to_string(), "CMessage".to_string());
+
+        let translator = Translator::new(config);
+
+        // Body is a tuple: (CState { ... }, vec![])
+        let body = ExecExpr::Tuple(vec![
+            ExecExpr::Struct {
+                name: "CState".to_string(),
+                fields: vec![("x".to_string(), ExecExpr::Literal("0u64".to_string()))],
+            },
+            ExecExpr::VecLit(vec![]),
+        ]);
+
+        // Return type says Vec<CPacket> at index 1
+        let return_type = ExecType::Tuple(vec![
+            ExecType::Named("CState".to_string()),
+            ExecType::Vec(Box::new(ExecType::Named("CPacket".to_string()))),
+        ]);
+
+        let result = translator.maybe_append_proof_block(body, &return_type);
+
+        // Should produce proof block with CPacket, not CMessage
+        match result {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 3, "Expected Let + ProofBlock + Var");
+                if let ExecExpr::ProofBlock { stmts: proof_stmts } = &stmts[1] {
+                    let proof_str = format!("{:?}", proof_stmts);
+                    assert!(proof_str.contains("CPacket"),
+                        "Proof assertion should reference CPacket from return type, got: {}", proof_str);
+                    assert!(!proof_str.contains("CMessage"),
+                        "Proof assertion should NOT reference CMessage, got: {}", proof_str);
+                } else {
+                    panic!("Expected ProofBlock at index 1, got {:?}", stmts[1]);
+                }
+            }
+            other => panic!("Expected Block, got {:?}", other),
         }
     }
 
