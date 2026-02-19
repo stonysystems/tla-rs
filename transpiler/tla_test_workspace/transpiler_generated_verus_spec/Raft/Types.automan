@@ -1,0 +1,10 @@
+// Mode annotations for Types.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Types {
+    helper LState(+);  // s is input (state to check)
+    helper LConstants();  // 
+    helper LLogEntry();  // 
+    helper LRaftMessage();  // 
+    helper LServerRole();  // 
+}

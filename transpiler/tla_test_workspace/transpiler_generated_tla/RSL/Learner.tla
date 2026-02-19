@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS OperationNumber, ReplicaConstants, Learner, RslPacket
+CONSTANTS ReplicaConstants, RslPacket, Learner, OperationNumber
 
 Learner ==
     [constants |-> ReplicaConstants, max_ballot_seen |-> Ballot, unexecuted_learner_state |-> earnerState]

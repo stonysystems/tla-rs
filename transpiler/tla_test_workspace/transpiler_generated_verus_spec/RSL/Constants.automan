@@ -1,0 +1,8 @@
+// Mode annotations for Constants.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Constants {
+    helper LConstants(+);  // c is input (constants)
+    helper LReplicaConstants(+);  // c is input (constants)
+    LReplicaConstantsValid(+, +);  // c is input (constants), c is input
+}

@@ -1,0 +1,14 @@
+// Mode annotations for Paxos.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Paxos {
+    LInit(-, +, +, +);  // s is output (initialized state), c is input (constants), s is input, c is input
+    LSend1a(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, b is input
+    LSend1b(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, b is input
+    LRecvPromise(+, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, a is input, a_accepted_bal is input, a_accepted_val is input
+    LSend2a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, v is input
+    LSend2b(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, b is input, v is input
+    LRecvAccepted(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, a is input
+    LLearn(+, +, +, +);  // c is input (constants), s is input, s_ is input, c is input
+    LNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input
+}

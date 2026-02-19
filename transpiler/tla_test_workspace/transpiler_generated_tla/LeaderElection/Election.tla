@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS State, Constants, ElectionMessage
+CONSTANTS ElectionMessage, Constants, State
 
 Init(s, c) ==
     /\ s.electing = {}

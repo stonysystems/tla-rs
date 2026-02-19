@@ -523,6 +523,30 @@ Generated from `src/protocol/<Protocol>/` inputs via `scripts/generate_tla_works
 | RSL | Types.tla | ✅ | |
 | **Total** | **33** | **33/33** | |
 
+#### D1 Round-trip: `transpiler_generated_tla/` → Verus Spec (Phase 16.8.3)
+
+Feeds D3 output back through `translate-tla` to verify the TLA+ parser handles all generated patterns.
+Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`.
+
+| Protocol | Files | Parse | Translate | Notes |
+|----------|-------|-------|-----------|-------|
+| TwoPhase | 2 | ✅ | ✅ | Fixed: `::` enum path stripping |
+| Paxos | 2 | ✅ | ✅ | |
+| LeaderElection | 2 | ✅ | ✅ | |
+| Raft | 2 | ✅ | ✅ | Fixed: `[D -> R]` fn set type, EXCEPT base parsing |
+| ChainReplication | 2 | ✅ | ✅ | |
+| PrimaryBackup | 2 | ✅ | ✅ | Fixed: `::` enum path stripping |
+| PBFT | 2 | ✅ | ✅ | |
+| VerticalPaxos | 2 | ✅ | ✅ | |
+| EPaxos | 2 | ✅ | ✅ | |
+| RSL | 15 | ✅ | ✅ | Fixed: EXCEPT with dotted/call base, `[D -> R]` fn set type |
+| **Total** | **33** | **33/33** | **33/33** | |
+
+**Fixes applied to unblock round-trip:**
+1. **D3 emitter** (`verus2tla/converter.rs`): Strip Rust `::` enum type prefix from `Ident` and `Call` expressions
+2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
+3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
+
 #### Direction 4: TLA+ → Verus Exec (pipeline)
 
 | Example | Pipeline | Verus Compile | Notes |

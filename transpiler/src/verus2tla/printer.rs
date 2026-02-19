@@ -328,6 +328,12 @@ impl TlaPrinter {
                 format!("{}[{} EXCEPT {}]", indent, func_str, updates_str.join(", "))
             }
 
+            TlaExpr::FnSet { domain, range } => {
+                let domain_str = self.print_expr_no_indent(domain);
+                let range_str = self.print_expr_no_indent(range);
+                format!("{}[{} -> {}]", indent, domain_str, range_str)
+            }
+
             TlaExpr::Record(fields) => {
                 if fields.is_empty() {
                     // Empty record - use a named constant or special syntax
@@ -955,5 +961,46 @@ mod tests {
         let output3 = printer.print_expr(&expr3, 0);
         // Same operator — no parens needed
         assert_eq!(output3, "x > y > 0");
+    }
+
+    #[test]
+    fn test_print_function_set_type() {
+        // [Domain -> Range] function set type
+        let expr = TlaExpr::FnSet {
+            domain: Box::new(TlaExpr::ident("Int")),
+            range: Box::new(TlaExpr::ident("Int")),
+        };
+        let printer = TlaPrinter::new();
+        let output = printer.print_expr(&expr, 0);
+        assert_eq!(output, "[Int -> Int]");
+
+        // Nested in a record
+        let record = TlaExpr::Record(vec![(
+            "index".to_string(),
+            TlaExpr::FnSet {
+                domain: Box::new(TlaExpr::ident("u64")),
+                range: Box::new(TlaExpr::ident("u64")),
+            },
+        )]);
+        let output2 = printer.print_expr(&record, 0);
+        assert_eq!(output2, "[index |-> [u64 -> u64]]");
+    }
+
+    #[test]
+    fn test_print_except_with_complex_base() {
+        // [s.field EXCEPT ![key] = val] - dotted base
+        let except = TlaExpr::FnExcept {
+            func: Box::new(TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("s")),
+                field: "data".to_string(),
+            }),
+            updates: vec![TlaExceptUpdate {
+                path: vec![TlaExceptPath::Index(TlaExpr::ident("k"))],
+                value: TlaExpr::ident("v"),
+            }],
+        };
+        let printer = TlaPrinter::new();
+        let output = printer.print_expr(&except, 0);
+        assert_eq!(output, "[s.data EXCEPT ![k] = v]");
     }
 }

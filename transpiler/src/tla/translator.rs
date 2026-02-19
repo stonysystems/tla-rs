@@ -133,6 +133,12 @@ impl<'a> ExprTranslator<'a> {
                 self.translate_fn_construct(var, domain, body)
             }
             TlaExpr::FnExcept { func, updates } => self.translate_fn_except(func, updates),
+            TlaExpr::FnSet { domain, range } => {
+                // [Domain -> Range] = set of all functions from Domain to Range
+                let domain_str = self.translate(domain);
+                let range_str = self.translate(range);
+                format!("Map::<{}, {}>", domain_str, range_str)
+            }
 
             // Records
             TlaExpr::Record(fields) => self.translate_record(fields),

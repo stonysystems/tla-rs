@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS State, PBMessage, Constants
+CONSTANTS Constants, State, PBMessage
 
 Init(s, c) ==
     /\ s.role.tag = Primary
@@ -78,7 +78,7 @@ BackupSendAck(s, s_, c, sent_packets) ==
     /\ s_.backup_last_value = s.backup_last_value
     /\ s_.backup_synced = s.backup_synced
     /\ s_.view = s.view
-    /\ sent_packets = <<LPBMessage::Ack>>
+    /\ sent_packets = <<Ack>>
 
 PrimaryReceiveAck(s, s_, c, sent_packets) ==
     /\ s.role.tag = Primary

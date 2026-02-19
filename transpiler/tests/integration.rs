@@ -2422,6 +2422,88 @@ fn test_d3_real_protocol_specs_to_tla() {
     assert!(total >= 33, "Should convert at least 33 spec files, got {total}");
 }
 
+/// Phase 16.8.3: D1 round-trip on generated TLA+ workspace
+/// Runs translate-tla on all 33 generated .tla files from the D3 workspace,
+/// verifying the TLA+ parser can handle the generated output.
+#[test]
+fn test_d1_translate_tla_on_generated_workspace() {
+    use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
+
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace/transpiler_generated_tla");
+
+    if !workspace.exists() {
+        // Skip if workspace not generated yet
+        eprintln!("Skipping: workspace not found at {:?}", workspace);
+        return;
+    }
+
+    let mut total = 0;
+    let mut passed = 0;
+    let mut failures: Vec<String> = Vec::new();
+
+    for entry in walkdir(workspace.to_str().unwrap()) {
+        if !entry.ends_with(".tla") {
+            continue;
+        }
+        total += 1;
+        let source = std::fs::read_to_string(&entry).unwrap();
+        let rel_path = entry
+            .strip_prefix(workspace.to_str().unwrap())
+            .unwrap_or(&entry)
+            .trim_start_matches('/');
+
+        match parse_module(&source) {
+            Ok(module) => {
+                // Also verify translation to Verus succeeds
+                let mut translator = ModuleTranslator::default();
+                let verus_output = translator.translate(&module);
+                assert!(
+                    verus_output.contains("verus!"),
+                    "{} should produce verus! block",
+                    rel_path
+                );
+                passed += 1;
+            }
+            Err(e) => {
+                failures.push(format!("{}: {:?}", rel_path, e));
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        panic!(
+            "{} of {} files failed to parse:\n{}",
+            failures.len(),
+            total,
+            failures.join("\n")
+        );
+    }
+
+    assert_eq!(passed, total);
+    assert!(total >= 33, "Should process at least 33 .tla files, got {total}");
+}
+
+/// Walk a directory recursively and return all file paths as strings.
+fn walkdir(dir: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    fn walk(dir: &std::path::Path, results: &mut Vec<String>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, results);
+                } else {
+                    results.push(path.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    walk(std::path::Path::new(dir), &mut results);
+    results.sort();
+    results
+}
+
 // ============================================================
 // Phase 17.3: Message generation tests
 // ============================================================

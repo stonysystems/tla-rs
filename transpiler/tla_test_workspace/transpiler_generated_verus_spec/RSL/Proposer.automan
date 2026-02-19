@@ -1,0 +1,30 @@
+// Mode annotations for Proposer.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Proposer {
+    helper LProposer(+, +);  // s is input (state to check), c is input (constants)
+    helper LIncompleteBatchTimer(+);  // c is input (constants)
+    LIsAfterLogTruncationPoint(+, +, +, +);  // s is input (state to check), c is input (constants), opn is input, received_1b_packets is input
+    LSetOfMessage1b(+, +, +);  // s is input (state to check), c is input (constants), S is input
+    LSetOfMessage1bAboutBallot(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, b is input
+    LExistVotesHasProposalLargeThanOpn(+, +, +, +);  // s is input (state to check), c is input (constants), p is input, op is input
+    LExistsAcceptorHasProposalLargeThanOpn(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, op is input
+    LAllAcceptorsHadNoProposal(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, opn is input
+    LLmax_balInS(+, +, +, +, +);  // s is input (state to check), c is input (constants), c is input, S is input, opn is input
+    LExistsBallotInS(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), v is input, c is input, S is input, opn is input
+    LValIsHighestNumberedProposalAtBallot(+, +, +, +, +);  // c is input (constants), v is input, c is input, S is input, opn is input
+    LValIsHighestNumberedProposal(+, +, +, +, +);  // s is input (state to check), c is input (constants), v is input, S is input, opn is input
+    LProposerCanNominateUsingOperationNumber(+, +, +, +);  // c is input (constants), s is input, log_truncation_point is input, opn is input
+    LProposerInit(+, +, +);  // c is input (constants), s is input, c is input
+    LProposerProcessRequest(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, packet is input
+    LProposerMaybeEnterNewViewAndSend1a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, sent_packets is input
+    LProposerProcess1b(+, +, +, +);  // c is input (constants), s is input, s_ is input, p is input
+    LProposerMaybeEnterPhase2(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, log_truncation_point is input, sent_packets is input
+    LProposerNominateNewValueAndSend2a(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, clock is input, log_truncation_point is input, sent_packets is input
+    LProposerNominateOldValueAndSend2a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, log_truncation_point is input, sent_packets is input
+    LProposerMaybeNominateValueAndSend2a(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, clock is input, log_truncation_point is input, sent_packets is input
+    LProposerProcessHeartbeat(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, p is input, clock is input
+    LProposerCheckForViewTimeout(+, +, +, +);  // c is input (constants), s is input, s_ is input, clock is input
+    LProposerCheckForQuorumOfViewSuspicions(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, clock is input
+    LProposerResetViewTimerDueToExecution(+, +, +, +);  // c is input (constants), s is input, s_ is input, val is input
+}

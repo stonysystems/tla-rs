@@ -10,10 +10,10 @@ State ==
 Constants ==
     [nodes |-> SUBSET Int, num_nodes |-> Int]
 
-NodeState ==
-    {Normal, Election, Leader}
-
 ElectionMessage ==
     {Election, Answer, Coordinator}
+
+NodeState ==
+    {Normal, Election, Leader}
 
 ====

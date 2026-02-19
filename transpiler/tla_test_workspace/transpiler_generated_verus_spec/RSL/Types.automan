@@ -1,0 +1,12 @@
+// Mode annotations for Types.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Types {
+    helper LBallot(+);  // c is input (constants)
+    helper LRequest(+);  // c is input (constants)
+    helper LReply(+);  // c is input (constants)
+    helper LLearnerTuple(+);  // c is input (constants)
+    helper LVote(+);  // c is input (constants)
+    helper LClockReading(+);  // c is input (constants)
+    LBalLeq(+, +, +);  // c is input (constants), ba is input, bb is input
+}

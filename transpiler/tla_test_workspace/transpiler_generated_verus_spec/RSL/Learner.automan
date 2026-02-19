@@ -1,0 +1,10 @@
+// Mode annotations for Learner.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Learner {
+    helper LLearner(+);  // c is input (constants)
+    LLearnerInit(+, +, +);  // c is input (constants), l is input, c is input
+    LLearnerProcess2b(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, packet is input
+    LLearnerForgetDecision(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, opn is input
+    LLearnerForgetOperationsBefore(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, ops_complete is input
+}

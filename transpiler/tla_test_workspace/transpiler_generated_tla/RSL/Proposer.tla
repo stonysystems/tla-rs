@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS RequestBatch, Proposer, OperationNumber, Ballot, ReplicaConstants, RslPacket
+CONSTANTS OperationNumber, Ballot, RequestBatch, Proposer, ReplicaConstants, RslPacket
 
 Proposer ==
     [constants |-> ReplicaConstants, current_state |-> Int, request_queue |-> Seq(Request), max_ballot_i_sent_1a |-> Ballot, next_operation_number_to_propose |-> Int, received_1b_packets |-> SUBSET RslPacket, highest_seqno_requested_by_client_this_view |-> [AbstractEndPoint -> Int], incomplete_batch_timer |-> IncompleteBatchTimer, election_state |-> ElectionState]

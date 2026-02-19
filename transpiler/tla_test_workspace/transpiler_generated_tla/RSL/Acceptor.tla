@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Vote, Configuration, RslPacket, Acceptor, Votes, OperationNumber, ReplicaConstants
+CONSTANTS Votes, ReplicaConstants, OperationNumber, Acceptor, Configuration, Vote, RslPacket
 
 Acceptor ==
     [constants |-> ReplicaConstants, max_bal |-> Ballot, votes |-> Votes, last_checkpointed_operation |-> Seq(OperationNumber), log_truncation_point |-> OperationNumber]

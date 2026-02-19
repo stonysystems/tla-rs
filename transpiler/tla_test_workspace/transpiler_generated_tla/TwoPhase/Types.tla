@@ -4,11 +4,11 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-Constants ==
-    [rm |-> SUBSET Int]
-
 State ==
     [tm_state |-> TMState, tm_prepared |-> SUBSET Int, rm_prepared |-> SUBSET Int, rm_committed |-> SUBSET Int, rm_aborted |-> SUBSET Int]
+
+Constants ==
+    [rm |-> SUBSET Int]
 
 TMState ==
     {Init, Committed, Aborted}

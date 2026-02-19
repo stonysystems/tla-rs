@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS AbstractEndPoint, RslPacket, Configuration, RslMessage
+CONSTANTS RslMessage, Configuration, AbstractEndPoint, RslPacket
 
 BroadcastToEveryone(c, myidx, m, sent_packets) ==
     /\ Len(sent_packets) = Len(c.replica_ids)

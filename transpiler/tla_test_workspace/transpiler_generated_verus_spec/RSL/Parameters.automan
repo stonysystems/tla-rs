@@ -1,0 +1,7 @@
+// Mode annotations for Parameters.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Parameters {
+    helper LParameters(+);  // c is input (constants)
+    LWFLParameters(+, +);  // c is input (constants), p is input
+}

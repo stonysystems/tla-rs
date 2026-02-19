@@ -5160,10 +5160,10 @@ transpiler/tla_test_workspace/
 
 #### 16.8.3: D1 on real generated TLA+ (TLA+ -> Verus Spec)
 
-- [ ] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
-- [ ] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks
-- [ ] Track failures by pattern category (parser, typing, unsupported TLA constructs)
+- [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
+- [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
+- [ ] Require output to pass Verus compile/verification checks (deferred: needs per-file type annotations and Verus toolchain integration)
+- [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
 

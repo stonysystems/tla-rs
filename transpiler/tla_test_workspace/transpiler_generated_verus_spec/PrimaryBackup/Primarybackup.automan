@@ -1,0 +1,15 @@
+// Mode annotations for Primarybackup.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Primarybackup {
+    LInit(-, +, +, +);  // s is output (initialized state), c is input (constants), s is input, c is input
+    LPrimaryWrite(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, val is input, sent_packets is input
+    LPrimarySendReplicate(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
+    LBackupReceiveReplicate(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, val is input, sent_packets is input
+    LBackupSendAck(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
+    LPrimaryReceiveAck(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
+    LPrimaryCommit(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
+    LPrimaryFail(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
+    LBackupPromote(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
+    LNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input
+}

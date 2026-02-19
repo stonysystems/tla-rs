@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS ReplicaConstants, ClockReading, RslIo, Scheduler, RslPacket, Replica
+CONSTANTS Replica, ClockReading, Scheduler, RslIo, RslPacket, ReplicaConstants
 
 Replica ==
     [constants |-> ReplicaConstants, nextHeartbeatTime |-> Int, proposer |-> Proposer, acceptor |-> Acceptor, learner |-> Learner, executor |-> Executor]

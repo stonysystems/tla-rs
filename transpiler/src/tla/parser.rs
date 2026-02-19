@@ -600,8 +600,13 @@ impl TlaParser {
 
     /// Parse postfix expressions (prime, function application, field access)
     fn parse_postfix_expr(&mut self) -> ParseResult<TlaExpr> {
-        let mut expr = self.parse_primary_expr()?;
+        let expr = self.parse_primary_expr()?;
+        self.parse_postfix_chain(expr)
+    }
 
+    /// Continue parsing postfix operations from an already-parsed base expression.
+    /// Handles `.field`, `[index]`, `(args)`, and `'` (prime).
+    fn parse_postfix_chain(&mut self, mut expr: TlaExpr) -> ParseResult<TlaExpr> {
         loop {
             match self.peek_kind() {
                 Some(TlaTokenKind::Prime) => {
@@ -849,13 +854,14 @@ impl TlaParser {
         Ok(TlaExpr::Tuple(elements))
     }
 
-    /// Parse bracket expression (function or record)
+    /// Parse bracket expression (function, record, EXCEPT, or function set type)
     fn parse_bracket_expr(&mut self) -> ParseResult<TlaExpr> {
         self.expect(TlaTokenKind::LBracket)?;
 
         // Check for function construction: [x \in S |-> expr]
         // vs record: [a |-> 1, b |-> 2]
         // vs EXCEPT: [f EXCEPT ![i] = v]
+        // vs function set type: [Domain -> Range]
 
         if self.check(TlaTokenKind::RBracket) {
             self.advance();
@@ -865,7 +871,7 @@ impl TlaParser {
         let first_ident = if self.check_ident() {
             let name = self.expect_ident()?;
 
-            // Check what follows
+            // Check what follows the identifier
             if self.check(TlaTokenKind::SetIn) {
                 // Function construction: [x \in S |-> expr]
                 self.advance();
@@ -895,7 +901,7 @@ impl TlaParser {
                 self.expect(TlaTokenKind::RBracket)?;
                 return Ok(TlaExpr::Record(fields));
             } else if self.check(TlaTokenKind::Except) {
-                // EXCEPT: [f EXCEPT ![i] = v]
+                // EXCEPT with simple identifier base: [f EXCEPT ![i] = v]
                 self.advance();
                 let updates = self.parse_except_updates()?;
                 self.expect(TlaTokenKind::RBracket)?;
@@ -903,17 +909,26 @@ impl TlaParser {
                     func: Box::new(TlaExpr::ident(name)),
                     updates,
                 });
+            } else if self.check(TlaTokenKind::RightArrow) {
+                // Function set type: [Domain -> Range]
+                self.advance();
+                let range = self.parse_expr()?;
+                self.expect(TlaTokenKind::RBracket)?;
+                return Ok(TlaExpr::FnSet {
+                    domain: Box::new(TlaExpr::ident(name)),
+                    range: Box::new(range),
+                });
             }
 
-            // Otherwise, it might be something else
+            // Otherwise, fall through to general expression parsing
             Some(name)
         } else {
             None
         };
 
-        // Fallback: parse as general expression
+        // Fallback: build full expression with postfix chain (.field, (args), [idx])
         let expr = if let Some(name) = first_ident {
-            TlaExpr::ident(name)
+            self.parse_postfix_chain(TlaExpr::ident(name))?
         } else {
             self.parse_expr()?
         };
@@ -926,6 +941,17 @@ impl TlaParser {
             return Ok(TlaExpr::FnExcept {
                 func: Box::new(expr),
                 updates,
+            });
+        }
+
+        // Check if followed by -> (function set type with complex domain)
+        if self.check(TlaTokenKind::RightArrow) {
+            self.advance();
+            let range = self.parse_expr()?;
+            self.expect(TlaTokenKind::RBracket)?;
+            return Ok(TlaExpr::FnSet {
+                domain: Box::new(expr),
+                range: Box::new(range),
             });
         }
 
@@ -1677,6 +1703,107 @@ mod tests {
                 op: TlaBinOp::Eq, ..
             } => {} // OK - just the comparison
             other => panic!("Expected equality, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_except_with_dotted_base() {
+        // [s.field EXCEPT ![key] = val] - dotted expression as EXCEPT base
+        let source = r#"
+            ---- MODULE Test ----
+            Op(s, s_, key, val) == s_ = [s.field EXCEPT ![key] = val]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.operators.len(), 1);
+        // Should parse successfully with FnExcept whose func is a RecordAccess
+        match &module.operators[0].body {
+            TlaExpr::BinOp { op: TlaBinOp::Eq, right, .. } => {
+                match right.as_ref() {
+                    TlaExpr::FnExcept { func, updates } => {
+                        match func.as_ref() {
+                            TlaExpr::RecordAccess { field, .. } => {
+                                assert_eq!(field, "field");
+                            }
+                            other => panic!("Expected RecordAccess, got {:?}", other),
+                        }
+                        assert_eq!(updates.len(), 1);
+                    }
+                    other => panic!("Expected FnExcept, got {:?}", other),
+                }
+            }
+            other => panic!("Expected BinOp Eq, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_except_with_function_call_base() {
+        // [f(x) EXCEPT ![i] = v] - function call as EXCEPT base
+        let source = r#"
+            ---- MODULE Test ----
+            Op(f, x, i, v) == [f(x) EXCEPT ![i] = v]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.operators.len(), 1);
+        match &module.operators[0].body {
+            TlaExpr::FnExcept { func, updates } => {
+                match func.as_ref() {
+                    TlaExpr::OpApply { args, .. } => {
+                        assert_eq!(args.len(), 1);
+                    }
+                    other => panic!("Expected OpApply, got {:?}", other),
+                }
+                assert_eq!(updates.len(), 1);
+            }
+            other => panic!("Expected FnExcept, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_set_type() {
+        // [Domain -> Range] - function set type notation
+        let source = r#"
+            ---- MODULE Test ----
+            FuncSet == [Int -> Int]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.operators.len(), 1);
+        match &module.operators[0].body {
+            TlaExpr::FnSet { domain, range } => {
+                match (domain.as_ref(), range.as_ref()) {
+                    (TlaExpr::Ident(d), TlaExpr::Ident(r)) => {
+                        assert_eq!(d, "Int");
+                        assert_eq!(r, "Int");
+                    }
+                    other => panic!("Expected Ident/Ident, got {:?}", other),
+                }
+            }
+            other => panic!("Expected FnSet, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_set_in_record() {
+        // [field |-> [u64 -> u64]] - function set type nested in a record
+        let source = r#"
+            ---- MODULE Test ----
+            RecordType == [match_index |-> [u64 -> u64], next_index |-> [u64 -> u64]]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.operators.len(), 1);
+        match &module.operators[0].body {
+            TlaExpr::Record(fields) => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].0, "match_index");
+                match &fields[0].1 {
+                    TlaExpr::FnSet { .. } => {}
+                    other => panic!("Expected FnSet, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Record, got {:?}", other),
         }
     }
 }

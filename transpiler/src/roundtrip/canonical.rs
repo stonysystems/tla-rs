@@ -182,6 +182,10 @@ impl Canonicalizer {
                     })
                     .collect(),
             },
+            TlaExpr::FnSet { domain, range } => TlaExpr::FnSet {
+                domain: Box::new(self.canonicalize_expr(domain)),
+                range: Box::new(self.canonicalize_expr(range)),
+            },
 
             // Records: optionally sort fields
             TlaExpr::Record(fields) => {

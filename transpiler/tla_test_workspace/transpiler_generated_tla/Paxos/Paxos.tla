@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS State, Constants
+CONSTANTS Constants, State
 
 Init(s, c) ==
     /\ s.promised_bal = 0

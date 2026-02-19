@@ -555,8 +555,17 @@ impl Verus2TlaConverter {
                     _ => {}
                 }
 
+                // Strip enum type prefix: "TPCMessage::Prepare" -> "Prepare"
+                // Multi-segment paths in TLA+ are invalid (:: is not TLA+ syntax),
+                // so use only the last segment (the variant/function name).
+                let tla_name = if func_name.contains("::") {
+                    func_name.rsplit("::").next().unwrap_or(&func_name).to_string()
+                } else {
+                    func_name
+                };
+
                 Ok(TlaExpr::OpApply {
-                    op: Box::new(TlaExpr::ident(&func_name)),
+                    op: Box::new(TlaExpr::ident(&tla_name)),
                     args: converted_args?,
                 })
             }
@@ -580,7 +589,16 @@ impl Verus2TlaConverter {
             }
 
             // Primitives
-            VerusExpr::Ident(name) => Ok(TlaExpr::ident(name)),
+            VerusExpr::Ident(name) => {
+                let stripped = self.strip_prefix(name);
+                // Strip Rust enum type prefix: "TPCMessage::Prepare" -> "Prepare"
+                let tla_name = if stripped.contains("::") {
+                    stripped.rsplit("::").next().unwrap_or(&stripped).to_string()
+                } else {
+                    stripped
+                };
+                Ok(TlaExpr::ident(&tla_name))
+            }
 
             VerusExpr::Literal(lit) => self.convert_literal(lit),
 
@@ -1573,5 +1591,59 @@ verus! {
         // No turbofish (function calls)
         assert_eq!(strip_turbofish("foo"), "foo");
         assert_eq!(strip_turbofish("SomeFunc::call"), "SomeFunc::call");
+    }
+
+    #[test]
+    fn test_convert_enum_variant_ident_strips_path() {
+        // Rust enum variant paths like "LTPCMessage::Prepare" stored as Ident
+        // should be stripped to just the variant name in TLA+
+        let body = VerusExpr::Eq(
+            Box::new(VerusExpr::Ident("x".to_string())),
+            Box::new(VerusExpr::Ident("LTPCMessage::Prepare".to_string())),
+        );
+        let func = make_simple_func("LTest", body);
+        let mut converter = Verus2TlaConverter::new();
+        let module = converter.convert_functions("Test", vec![func]).unwrap();
+        // The operator body should contain "Prepare" not "LTPCMessage::Prepare"
+        let op = &module.operators[0];
+        match &op.body {
+            TlaExpr::BinOp { right, .. } => match right.as_ref() {
+                TlaExpr::Ident(name) => assert_eq!(name, "Prepare"),
+                other => panic!("Expected Ident, got {:?}", other),
+            },
+            other => panic!("Expected BinOp, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_convert_call_strips_enum_path() {
+        // A Call with multi-segment path like ["LMessage", "Commit"]
+        // should be stripped to just "Commit" in TLA+
+        let body = VerusExpr::Eq(
+            Box::new(VerusExpr::Ident("x".to_string())),
+            Box::new(VerusExpr::Call {
+                func: Path {
+                    segments: vec!["LMessage".to_string(), "Commit".to_string()],
+                },
+                args: vec![],
+            }),
+        );
+        let func = make_simple_func("LTest", body);
+        let mut converter = Verus2TlaConverter::new();
+        let module = converter.convert_functions("Test", vec![func]).unwrap();
+        let op = &module.operators[0];
+        match &op.body {
+            TlaExpr::BinOp { right, .. } => match right.as_ref() {
+                TlaExpr::OpApply { op: name, args } => {
+                    assert!(args.is_empty());
+                    match name.as_ref() {
+                        TlaExpr::Ident(n) => assert_eq!(n, "Commit"),
+                        other => panic!("Expected Ident, got {:?}", other),
+                    }
+                }
+                other => panic!("Expected OpApply, got {:?}", other),
+            },
+            other => panic!("Expected BinOp, got {:?}", other),
+        }
     }
 }

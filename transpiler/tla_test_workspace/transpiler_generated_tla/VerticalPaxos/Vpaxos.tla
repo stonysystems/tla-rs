@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS State, Constants, VPMessage
+CONSTANTS VPMessage, State, Constants
 
 Init(s, c) ==
     /\ s.config_num = 0

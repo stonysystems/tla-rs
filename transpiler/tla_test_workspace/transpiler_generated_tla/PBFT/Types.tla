@@ -10,10 +10,10 @@ State ==
 Constants ==
     [f |-> Int, n |-> Int, node_id |-> Int, checkpoint_interval |-> Int]
 
-Phase ==
-    {PrePrepare, Prepare, Commit, Replied}
-
 PBFTMessage ==
     {PrePrepare}
+
+Phase ==
+    {PrePrepare, Prepare, Commit, Replied}
 
 ====

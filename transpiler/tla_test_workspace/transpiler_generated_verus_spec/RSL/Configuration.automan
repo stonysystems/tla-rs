@@ -1,0 +1,12 @@
+// Mode annotations for Configuration.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Configuration {
+    helper LConfiguration(+);  // c is input (constants)
+    LMinQuorumSize(+, +);  // c is input (constants), c is input
+    LReplicasDistinct(+, +, +, +);  // c is input (constants), replica_ids is input, i is input, j is input
+    LReplicasIsUnique(+, +, +);  // s is input (state to check), c is input (constants), replica_ids is input
+    LWellFormedLConfiguration(+, +, +);  // s is input (state to check), c is input (constants), c is input
+    LIsReplicaIndex(+, +, +, +);  // c is input (constants), idx is input, id is input, c is input
+    LGetReplicaIndex(+, +, +);  // c is input (constants), id is input, c is input
+}

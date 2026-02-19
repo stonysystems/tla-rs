@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Constants, RslIo, RslState, AbstractEndPoint
+CONSTANTS AbstractEndPoint, RslState, Constants, RslIo
 
 RslState ==
     [constants |-> Constants, environment |-> Environment, replicas |-> Seq(Scheduler), clients |-> Seq(AbstractEndPoint)]

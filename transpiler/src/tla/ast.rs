@@ -226,6 +226,11 @@ pub enum TlaExpr {
         func: Box<TlaExpr>,
         updates: Vec<TlaExceptUpdate>,
     },
+    /// Function set type: `[Domain -> Range]` (set of all functions from Domain to Range)
+    FnSet {
+        domain: Box<TlaExpr>,
+        range: Box<TlaExpr>,
+    },
 
     // Records
     /// Record construction: `[a |-> 1, b |-> 2]`

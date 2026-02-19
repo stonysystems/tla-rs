@@ -1,0 +1,14 @@
+// Mode annotations for Election.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Election {
+    LInit(-, +, +, +);  // s is output (initialized state), c is input (constants), s is input, c is input
+    LDetectFailure(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, node is input, sent_packets is input
+    LStartElection(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, node is input, sent_packets is input
+    LSendAnswer(+, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, node is input, sender is input, sent_packets is input
+    LReceiveAnswer(+, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, node is input, responder is input, sent_packets is input
+    LSendCoordinator(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, node is input, sent_packets is input
+    LReceiveCoordinator(+, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, node is input, leader is input, sent_packets is input
+    LNodeFail(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, node is input, sent_packets is input
+    LNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input
+}

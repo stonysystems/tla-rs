@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS State, EPaxosMessage, Constants
+CONSTANTS EPaxosMessage, State, Constants
 
 Init(s, c) ==
     /\ s.ballot = 0

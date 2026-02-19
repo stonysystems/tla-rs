@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS RaftMessage, Constants, State, u64
+CONSTANTS Constants, u64, State, RaftMessage
 
 u64_inc(x) ==
     x + 1

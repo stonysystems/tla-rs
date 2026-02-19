@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Constants, State, CRMessage
+CONSTANTS State, CRMessage, Constants
 
 Init(s, c) ==
     /\ s.history = <<>>

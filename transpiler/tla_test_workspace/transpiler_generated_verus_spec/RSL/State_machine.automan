@@ -1,0 +1,8 @@
+// Mode annotations for State_machine.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module State_machine {
+    LHandleRequest(+, +, +, +);  // s is input (state to check), c is input (constants), state is input, request is input
+    helper LHandleRequestBatchHidden(+, +, +, +);  // s is input (state to check), c is input (constants), state is input, batch is input
+    LHandleRequestBatch(+, +, +, +);  // s is input (state to check), c is input (constants), state is input, batch is input
+}

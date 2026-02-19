@@ -9,8 +9,8 @@ CONSTANTS Ballot
 Ballot ==
     [seqno |-> Int, proposer_id |-> Int]
 
-Vote ==
-    [max_value_bal |-> Ballot, max_val |-> Seq(Request)]
+Request ==
+    [client |-> AbstractEndPoint, seqno |-> Int, request |-> AppMessage]
 
 Reply ==
     [client |-> AbstractEndPoint, seqno |-> Int, reply |-> AppMessage]
@@ -18,8 +18,8 @@ Reply ==
 LearnerTuple ==
     [received_2b_message_senders |-> SUBSET AbstractEndPoint, candidate_learned_value |-> Seq(Request)]
 
-Request ==
-    [client |-> AbstractEndPoint, seqno |-> Int, request |-> AppMessage]
+Vote ==
+    [max_value_bal |-> Ballot, max_val |-> Seq(Request)]
 
 ClockReading ==
     [t |-> Int]

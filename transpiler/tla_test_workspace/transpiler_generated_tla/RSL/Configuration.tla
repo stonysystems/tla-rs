@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS AbstractEndPoint, Configuration
+CONSTANTS Configuration, AbstractEndPoint
 
 Configuration ==
     [clientIds |-> SUBSET AbstractEndPoint, replica_ids |-> Seq(AbstractEndPoint)]

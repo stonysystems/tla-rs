@@ -757,6 +757,13 @@ impl ConstraintCollector {
             // Function EXCEPT: [f EXCEPT ![i] = v]
             TlaExpr::FnExcept { func, updates: _ } => self.collect_from_expr(func),
 
+            // Function set type: [Domain -> Range]
+            TlaExpr::FnSet { domain, range } => {
+                let domain_type = self.collect_from_expr(domain);
+                let range_type = self.collect_from_expr(range);
+                TlaType::set(TlaType::function(domain_type, range_type))
+            }
+
             // Operator application: Op(a, b)
             TlaExpr::OpApply { op, args } => {
                 let op_type = self.collect_from_expr(op);

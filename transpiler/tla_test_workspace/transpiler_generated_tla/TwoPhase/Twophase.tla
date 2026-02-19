@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS TPCMessage, Constants, State
+CONSTANTS Constants, State, TPCMessage
 
 Init(s, c) ==
     /\ s.tm_state.tag = Init
@@ -20,7 +20,7 @@ TMSendPrepare(s, s_, c, sent_packets) ==
     /\ s_.rm_prepared = s.rm_prepared
     /\ s_.rm_committed = s.rm_committed
     /\ s_.rm_aborted = s.rm_aborted
-    /\ sent_packets = <<LTPCMessage::Prepare>>
+    /\ sent_packets = <<Prepare>>
 
 RMReceivePrepare(s, s_, c, rm, sent_packets) ==
     /\ rm \in c.rm
@@ -63,7 +63,7 @@ TMSendCommit(s, s_, c, sent_packets) ==
     /\ s_.rm_prepared = s.rm_prepared
     /\ s_.rm_committed = s.rm_committed
     /\ s_.rm_aborted = s.rm_aborted
-    /\ sent_packets = <<LTPCMessage::Commit>>
+    /\ sent_packets = <<Commit>>
 
 TMSendAbort(s, s_, c, sent_packets) ==
     /\ s.tm_state.tag = Init
@@ -72,7 +72,7 @@ TMSendAbort(s, s_, c, sent_packets) ==
     /\ s_.rm_prepared = s.rm_prepared
     /\ s_.rm_committed = s.rm_committed
     /\ s_.rm_aborted = s.rm_aborted
-    /\ sent_packets = <<LTPCMessage::Abort>>
+    /\ sent_packets = <<Abort>>
 
 RMReceiveCommit(s, s_, c, rm, sent_packets) ==
     /\ rm \in c.rm

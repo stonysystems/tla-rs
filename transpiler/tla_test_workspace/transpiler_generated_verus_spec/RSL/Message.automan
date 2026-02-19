@@ -1,0 +1,6 @@
+// Mode annotations for Message.rs
+// Format: FunctionName(mode1, mode2, ...) where + = input, - = output
+
+module Message {
+    helper LRslMessage();  // 
+}
