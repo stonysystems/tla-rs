@@ -232,6 +232,15 @@ fn classify_single_action(
     };
     let name_lower = name.to_lowercase();
 
+    // Timer-driven override: checked FIRST because some action names contain
+    // message keywords (like "Handle") but are actually timer/state-driven.
+    let timer_override_patterns = [
+        "HandleAppendReject",  // Raft: failure sub-case, handled within AppendResponse
+    ];
+    if timer_override_patterns.iter().any(|p| name.contains(p)) {
+        return (ActionKind::TimerDriven, None);
+    }
+
     // Strong message-driven indicators
     let message_keywords = ["receive", "rcv", "recv", "handle"];
     if message_keywords.iter().any(|kw| name_lower.contains(kw)) {
@@ -243,25 +252,27 @@ fn classify_single_action(
     // even though their names don't contain "Receive"/"Rcv"):
     // - Paxos: Send1b (response to Prepare), Send2b (response to Accept)
     // - LeaderElection: SendAnswer (response to Election)
-    // - Raft: GrantVote (response to RequestVote), BecomeLeader, StepDown,
+    // - Raft: GrantVote (response to RequestVote),
     //         FollowerAppendEntries (response to AppendEntries)
     // - EPaxos: SendPreAcceptOk, SendAcceptOk
+    //
+    // NOTE: The following are NOT message-driven despite suggestive names:
+    // - BecomeLeader (quorum state transition, no msgs_* flag check)
+    // - StepDown (cross-cutting higher-term detection, not a single-variant handler)
+    // - PrePrepare (primary initiates, not responding to a message)
+    // - EnterCommit (quorum state transition on prepare_senders count)
+    // - ExecuteReply (quorum state transition on commit_senders count)
+    // - PrimaryWrite (client request action, not triggered by network message)
     let message_response_patterns = [
-        "Send1b", "Send2b",        // Paxos
+        "Send1b", "Send2b",        // Paxos (acceptor responds to Prepare/Accept)
         "SendAnswer",              // LeaderElection (response to Election msg)
-        "GrantVote",               // Raft
-        "BecomeLeader",            // Raft (triggered after collecting votes)
-        "StepDown",                // Raft (triggered by higher-term message)
-        "FollowerAppendEntries",   // Raft
-        "SendPreAcceptOk",         // EPaxos
-        "SendAcceptOk",            // EPaxos
-        "SendPromise",             // VerticalPaxos
+        "GrantVote",               // Raft (response to RequestVote)
+        "FollowerAppendEntries",   // Raft (response to AppendEntries)
+        "SendPreAcceptOk",         // EPaxos (response to PreAccept)
+        "SendAcceptOk",            // EPaxos (response to Accept)
+        "SendPromise",             // VerticalPaxos (response to Prepare)
         "WitnessSync",             // VerticalPaxos (response to Sync message)
         "Sync",                    // VerticalPaxos (joining new config via Sync)
-        "PrePrepare",              // PBFT (response to ClientRequest)
-        "EnterCommit",             // PBFT (triggered by Prepare quorum)
-        "ExecuteReply",            // PBFT (triggered by Commit quorum)
-        "PrimaryWrite",            // PrimaryBackup (response to ClientRequest)
         "ClientRead",              // ChainReplication (tail responds to read)
     ];
     if message_response_patterns.iter().any(|p| name.contains(p)) {
@@ -459,6 +470,60 @@ pub struct HostScaffoldParams {
     pub actions: Vec<SchedulerActionConfig>,
     /// Optional role-based dispatch configuration
     pub role_dispatch: Option<RoleDispatchConfig>,
+}
+
+/// Validate scaffold params for common configuration errors.
+///
+/// Returns a list of warning strings. An empty list means no issues.
+/// Checks:
+/// - Every message_driven action has a message_variant
+/// - Every message_variant references an existing message variant name
+/// - No two message_driven actions map to the same variant (shared variant conflict)
+pub fn validate_scaffold_params(params: &HostScaffoldParams) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let variant_names: Vec<&str> = params.message_variants.iter().map(|v| v.name.as_str()).collect();
+
+    // Track variant → action mapping for conflict detection
+    let mut variant_to_actions: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+
+    for action in &params.actions {
+        if action.is_message_driven() {
+            match &action.message_variant {
+                None => {
+                    warnings.push(format!(
+                        "message_driven action '{}' has no message_variant",
+                        action.spec_name
+                    ));
+                }
+                Some(variant) => {
+                    if !variant_names.contains(&variant.as_str()) {
+                        warnings.push(format!(
+                            "action '{}' references non-existent message_variant '{}'",
+                            action.spec_name, variant
+                        ));
+                    }
+                    variant_to_actions
+                        .entry(variant.as_str())
+                        .or_default()
+                        .push(&action.spec_name);
+                }
+            }
+        }
+    }
+
+    // Report shared variant conflicts
+    for (variant, actions) in &variant_to_actions {
+        if actions.len() > 1 {
+            warnings.push(format!(
+                "multiple actions map to variant '{}': {} (only first will be dispatched)",
+                variant,
+                actions.join(", ")
+            ));
+        }
+    }
+
+    warnings
 }
 
 /// Generate a host.rs scaffold from a scheduler config and message config.
@@ -1489,8 +1554,54 @@ mod tests {
 
     #[test]
     fn test_classify_become_leader() {
+        // BecomeLeader is a quorum state transition (votes_granted >= quorum_size),
+        // not a response to a specific message variant.
         let (kind, _) = classify_single_action("LBecomeLeader", &[]);
-        assert_eq!(kind, ActionKind::MessageDriven);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_classify_handle_append_reject_timer() {
+        // HandleAppendReject contains "Handle" keyword but is a failure sub-case
+        // of the AppendResponse handler — should be timer_driven.
+        let (kind, _) = classify_single_action("LHandleAppendReject", &[]);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_classify_step_down_timer() {
+        // StepDown detects higher terms from any message — cross-cutting concern,
+        // not a single-variant message handler.
+        let (kind, _) = classify_single_action("LStepDown", &[]);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_classify_pre_prepare_timer() {
+        // PrePrepare is the primary initiating a round — not responding to a message.
+        let (kind, _) = classify_single_action("LPrePrepare", &[]);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_classify_enter_commit_timer() {
+        // EnterCommit is a quorum state transition (prepare_senders >= threshold).
+        let (kind, _) = classify_single_action("LEnterCommit", &[]);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_classify_execute_reply_timer() {
+        // ExecuteReply is a quorum state transition (commit_senders >= threshold).
+        let (kind, _) = classify_single_action("LExecuteReply", &[]);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_classify_primary_write_timer() {
+        // PrimaryWrite is a client request action, not triggered by network message.
+        let (kind, _) = classify_single_action("LPrimaryWrite", &[]);
+        assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
@@ -1621,20 +1732,20 @@ mod tests {
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
-        // Timer-driven
+        // Timer-driven (including state transitions that don't check msgs_* flags)
         assert_eq!(find("LTimeout").kind, ActionKind::TimerDriven);
         assert_eq!(find("LSendAppendEntries").kind, ActionKind::TimerDriven);
         assert_eq!(find("LAdvanceCommitIndex").kind, ActionKind::TimerDriven);
         assert_eq!(find("LClientRequest").kind, ActionKind::TimerDriven);
+        assert_eq!(find("LBecomeLeader").kind, ActionKind::TimerDriven);     // quorum state transition
+        assert_eq!(find("LStepDown").kind, ActionKind::TimerDriven);         // cross-cutting term detection
+        assert_eq!(find("LHandleAppendReject").kind, ActionKind::TimerDriven); // failure sub-case
 
-        // Message-driven
+        // Message-driven (actions that check msgs_* flags for specific variants)
         assert_eq!(find("LGrantVote").kind, ActionKind::MessageDriven);
         assert_eq!(find("LReceiveVoteGranted").kind, ActionKind::MessageDriven);
         assert_eq!(find("LFollowerAppendEntries").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LBecomeLeader").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LStepDown").kind, ActionKind::MessageDriven);
         assert_eq!(find("LHandleAppendResponse").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LHandleAppendReject").kind, ActionKind::MessageDriven);
     }
 
     #[test]
@@ -1683,15 +1794,15 @@ mod tests {
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
-        // Timer-driven
+        // Timer-driven (including client request action)
         assert_eq!(find("LPrimarySendReplicate").kind, ActionKind::TimerDriven);
         assert_eq!(find("LBackupSendAck").kind, ActionKind::TimerDriven);
         assert_eq!(find("LPrimaryCommit").kind, ActionKind::TimerDriven);
         assert_eq!(find("LPrimaryFail").kind, ActionKind::TimerDriven);
         assert_eq!(find("LBackupPromote").kind, ActionKind::TimerDriven);
+        assert_eq!(find("LPrimaryWrite").kind, ActionKind::TimerDriven); // client request, no msgs_* flags
 
         // Message-driven
-        assert_eq!(find("LPrimaryWrite").kind, ActionKind::MessageDriven);
         assert_eq!(find("LBackupReceiveReplicate").kind, ActionKind::MessageDriven);
         assert_eq!(find("LPrimaryReceiveAck").kind, ActionKind::MessageDriven);
 
@@ -1748,18 +1859,18 @@ mod tests {
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
-        // Timer-driven
+        // Timer-driven (including quorum state transitions and primary initiation)
         assert_eq!(find("LCheckpoint").kind, ActionKind::TimerDriven);
         assert_eq!(find("LViewChange").kind, ActionKind::TimerDriven);
         assert_eq!(find("LNewRound").kind, ActionKind::TimerDriven);
+        assert_eq!(find("LPrePrepare").kind, ActionKind::TimerDriven);   // primary initiates, no incoming msg
+        assert_eq!(find("LEnterCommit").kind, ActionKind::TimerDriven);  // quorum state transition
+        assert_eq!(find("LExecuteReply").kind, ActionKind::TimerDriven); // quorum state transition
 
-        // Message-driven
-        assert_eq!(find("LPrePrepare").kind, ActionKind::MessageDriven);
+        // Message-driven (actions that check msgs_* flags)
         assert_eq!(find("LReceivePrePrepare").kind, ActionKind::MessageDriven);
         assert_eq!(find("LReceivePrepare").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LEnterCommit").kind, ActionKind::MessageDriven);
         assert_eq!(find("LReceiveCommit").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LExecuteReply").kind, ActionKind::MessageDriven);
 
         // Variant matching
         assert_eq!(find("LReceivePrePrepare").message_variant, Some("PrePrepare".to_string()));
@@ -1849,6 +1960,130 @@ mod tests {
         let (kind, variant) = classify_single_action("LReceivePrepare", &[]);
         assert_eq!(kind, ActionKind::MessageDriven);
         assert!(variant.is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // validate_scaffold_params tests
+    // ---------------------------------------------------------------
+
+    fn make_action(spec_name: &str, kind: &str, variant: Option<&str>) -> SchedulerActionConfig {
+        SchedulerActionConfig {
+            spec_name: spec_name.to_string(),
+            exec_name: format!("C{}", &spec_name[1..]),
+            kind: kind.to_string(),
+            message_variant: variant.map(|s| s.to_string()),
+            existential_params: vec![],
+            flag_injections: vec![],
+            guard_checks: vec![],
+        }
+    }
+
+    fn make_variant(name: &str) -> MessageVariant {
+        MessageVariant {
+            name: name.to_string(),
+            fields: vec![],
+            doc: String::new(),
+        }
+    }
+
+    fn make_params(
+        actions: Vec<SchedulerActionConfig>,
+        variants: Vec<MessageVariant>,
+    ) -> HostScaffoldParams {
+        HostScaffoldParams {
+            protocol_name: "Test".to_string(),
+            module_name: "test".to_string(),
+            gen_module: "test_gen".to_string(),
+            message_enum: "TestMessage".to_string(),
+            message_variants: variants,
+            actions,
+            role_dispatch: None,
+        }
+    }
+
+    #[test]
+    fn test_validate_no_warnings_when_valid() {
+        let params = make_params(
+            vec![
+                make_action("LReceivePrepare", "message_driven", Some("Prepare")),
+                make_action("LSend1a", "timer_driven", None),
+            ],
+            vec![make_variant("Prepare")],
+        );
+        let warnings = validate_scaffold_params(&params);
+        assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+    }
+
+    #[test]
+    fn test_validate_missing_message_variant() {
+        let params = make_params(
+            vec![make_action("LReceivePrepare", "message_driven", None)],
+            vec![make_variant("Prepare")],
+        );
+        let warnings = validate_scaffold_params(&params);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("no message_variant"));
+        assert!(warnings[0].contains("LReceivePrepare"));
+    }
+
+    #[test]
+    fn test_validate_nonexistent_variant_reference() {
+        let params = make_params(
+            vec![make_action("LReceivePrepare", "message_driven", Some("Bogus"))],
+            vec![make_variant("Prepare")],
+        );
+        let warnings = validate_scaffold_params(&params);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("non-existent"));
+        assert!(warnings[0].contains("Bogus"));
+    }
+
+    #[test]
+    fn test_validate_shared_variant_conflict() {
+        let params = make_params(
+            vec![
+                make_action("LReceivePrepare", "message_driven", Some("Prepare")),
+                make_action("LSendPromise", "message_driven", Some("Prepare")),
+            ],
+            vec![make_variant("Prepare")],
+        );
+        let warnings = validate_scaffold_params(&params);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("multiple actions"));
+        assert!(warnings[0].contains("Prepare"));
+        assert!(warnings[0].contains("LReceivePrepare"));
+        assert!(warnings[0].contains("LSendPromise"));
+    }
+
+    #[test]
+    fn test_validate_timer_driven_ignored() {
+        // Timer-driven actions should not be checked for message_variant
+        let params = make_params(
+            vec![make_action("LPropose", "timer_driven", None)],
+            vec![make_variant("Prepare")],
+        );
+        let warnings = validate_scaffold_params(&params);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_multiple_issues() {
+        let params = make_params(
+            vec![
+                make_action("LReceivePrepare", "message_driven", None),          // missing variant
+                make_action("LSendPromise", "message_driven", Some("Bogus")),     // non-existent
+                make_action("LRecvAccepted", "message_driven", Some("Accept")),   // shared
+                make_action("LSend2b", "message_driven", Some("Accept")),         // shared
+            ],
+            vec![make_variant("Prepare"), make_variant("Accept")],
+        );
+        let warnings = validate_scaffold_params(&params);
+        assert!(warnings.len() >= 3, "expected >=3 warnings, got: {:?}", warnings);
+        // Should have: missing variant, non-existent reference, shared conflict
+        let joined = warnings.join(" | ");
+        assert!(joined.contains("no message_variant"));
+        assert!(joined.contains("non-existent"));
+        assert!(joined.contains("multiple actions"));
     }
 
     // ---------------------------------------------------------------
