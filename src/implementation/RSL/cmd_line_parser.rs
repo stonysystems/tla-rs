@@ -1,4 +1,4 @@
-use crate::common::collections::seq_is_unique_v::{get_host_index, seq_is_unique, test_unique};
+use crate::common::collections::seq_is_unique_v::test_unique;
 use crate::common::framework::args_t::*;
 use crate::common::logic::*;
 use crate::common::native::io_s::*;

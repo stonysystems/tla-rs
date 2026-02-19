@@ -1,10 +1,7 @@
 use crate::common::collections::seq_is_unique_v::{endpoints_contain, seq_is_unique};
 use crate::common::framework::environment_s::*;
-use crate::common::framework::environment_s::*;
 use vstd::prelude::*;
-// use crate::common::native::io_s::AbstractEndPoint::*;
 use crate::common::native::io_s::*;
-use crate::common::native::io_s::{abstractify_end_points, EndPoint};
 use crate::implementation::common::marshalling::*;
 use crate::implementation::RSL::appinterface::*;
 use crate::implementation::RSL::cbroadcast::*;
@@ -17,103 +14,6 @@ use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
 verus! {
-
-    // define_enum_and_derive_marshalable! {
-    //     #[derive(Clone)]
-    //     pub enum CMessage {
-    //         #[tag = 0]
-    //         CMessageInvalid{},
-    //         #[tag = 1]
-    //         CMessageRequest{
-    //             #[o=o0] seqno_req:u64,
-    //             #[o=o1] val:CAppMessage,
-    //         },
-    //         #[tag = 2]
-    //         CMessage1a{
-    //             #[o=o0] bal_1a:CBallot,
-    //         },
-    //         #[tag = 3]
-    //         CMessage1b{
-    //             #[o=o0] bal_1b:CBallot,
-    //             #[o=o1] log_truncation_point:COperationNumber,
-    //             // #[o=o2] votes:CVotes,
-    //         },
-    //         #[tag = 4]
-    //         CMessage2a{
-    //             #[o=o0] bal_2a:CBallot,
-    //             #[o=o1] opn_2a:COperationNumber,
-    //             #[o=o2] val_2a:CRequestBatch,
-    //         },
-    //         #[tag = 5]
-    //         CMessage2b{
-    //             #[o=o0] bal_2b:CBallot,
-    //             #[o=o1] opn_2b:COperationNumber,
-    //             #[o=o2] val_2b:CRequestBatch,
-    //         },
-    //         #[tag = 6]
-    //         CMessageHeartbeat{
-    //             #[o=o0] bal_heartbeat:CBallot,
-    //             // #[o=o1] suspicious:bool,
-    //             #[o=o1] opn_ckpt:COperationNumber,
-    //         },
-    //         #[tag = 7]
-    //         CMessageReply{
-    //             #[o=o0] seqno_reply:u64,
-    //             #[o=o1] reply:CAppMessage,
-    //         },
-    //         #[tag = 8]
-    //         CMessageAppStateRequest{
-    //             #[o=o0] bal_state_req:CBallot,
-    //             #[o=o1] opn_state_req:COperationNumber,
-    //         },
-    //         #[tag = 9]
-    //         CMessageAppStateSupply{
-    //             #[o=o0] bal_state_supply:CBallot,
-    //             #[o=o1] opn_state_supply:COperationNumber,
-    //             #[o=o2] app_state:CAppState,
-    //             #[o=o3] reply_cache:CReplyCache,
-    //         },
-    //         #[tag = 10]
-    //         CMessageStartingPhase2{
-    //             #[o=o0] bal_2:CBallot,
-    //             #[o=o1] logTruncationPoint_2:COperationNumber,
-    //         },
-    //     }
-    //     [rlimit attr = verifier::rlimit(25)]
-    // }
-
-    // #[derive(Clone)]
-    // pub struct CPacket{
-    //     pub dst: EndPoint,
-    //     pub src: EndPoint,
-    //     pub msg: CMessage,
-    // }
-
-    // impl CPacket{
-    //     pub open spec fn abstractable(self) -> bool
-    //     {
-    //         &&& self.dst.abstractable()
-    //         &&& self.src.abstractable()
-    //         &&& self.msg.abstractable()
-    //     }
-
-    //     pub open spec fn valid(self) -> bool
-    //     {
-    //         &&& self.dst.valid_public_key()
-    //         &&& self.src.valid_public_key()
-    //         &&& self.msg.valid()
-    //     }
-
-    //     // pub open spec fn view(self) -> RslPacket
-    //     //     recommends self.abstractable()
-    //     // {
-    //     //     LPacket{
-    //     //         dst: self.dst@,
-    //     //         src: self.src@,
-    //     //         msg: self.msg@,
-    //     //     }
-    //     // }
-    // }
 
     pub enum ReceiveResult {
         Fail,

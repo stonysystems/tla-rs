@@ -23,7 +23,6 @@ pub mod gen_helpers;
 /// Retained because generated wrappers delegate to methods in this module.
 pub mod learnerimpl;
 pub mod replicaimpl_class;
-// pub mod test;
 pub mod cmd_line_parser;
 #[cfg(test)]
 pub mod generated_acceptor_test;

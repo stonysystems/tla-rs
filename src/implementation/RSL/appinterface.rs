@@ -1,10 +1,6 @@
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
-// use crate::protocol::RSL::configuration::*;
-// use crate::protocol::RSL::constants::*;
-// use crate::protocol::RSL::broadcast::*;
-// use crate::protocol::RSL::environment::*;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::protocol::RSL::types::*;
