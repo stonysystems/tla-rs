@@ -218,17 +218,19 @@ impl Transpiler {
                 nat_type: self.config.translator.nat_type.clone(),
                 ..Default::default()
             };
-            let mut type_gen = TypeGenerator::with_all_options(
-                naming_config.clone(),
-                self.config.type_remapping.clone(),
-                self.config.translator.validity_predicate_name.clone(),
-                self.config
-                    .translator
-                    .primitive_types
-                    .iter()
-                    .cloned()
-                    .collect(),
-            );
+            let mut type_gen = TypeGenerator::new(naming_config.clone())
+                .with_remapping(self.config.type_remapping.clone())
+                .with_validity_predicate_name(
+                    self.config.translator.validity_predicate_name.clone(),
+                )
+                .with_primitive_types(
+                    self.config
+                        .translator
+                        .primitive_types
+                        .iter()
+                        .cloned()
+                        .collect(),
+                );
             type_gen.set_hashset_element_types(hashset_element_types);
             if !auto_clone_strategy.is_empty() {
                 type_gen.set_clone_strategy(auto_clone_strategy);
@@ -446,17 +448,19 @@ impl Transpiler {
                 nat_type: self.config.translator.nat_type.clone(),
                 ..Default::default()
             };
-            let type_gen = TypeGenerator::with_all_options(
-                naming_config.clone(),
-                self.config.type_remapping.clone(),
-                self.config.translator.validity_predicate_name.clone(),
-                self.config
-                    .translator
-                    .primitive_types
-                    .iter()
-                    .cloned()
-                    .collect(),
-            );
+            let type_gen = TypeGenerator::new(naming_config.clone())
+                .with_remapping(self.config.type_remapping.clone())
+                .with_validity_predicate_name(
+                    self.config.translator.validity_predicate_name.clone(),
+                )
+                .with_primitive_types(
+                    self.config
+                        .translator
+                        .primitive_types
+                        .iter()
+                        .cloned()
+                        .collect(),
+                );
 
             // Generate structs (sorted by name for deterministic output)
             let mut struct_names: Vec<_> = registry.structs.keys().cloned().collect();

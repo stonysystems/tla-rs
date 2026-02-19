@@ -66,7 +66,10 @@ pub struct TypeGenerator {
 }
 
 impl TypeGenerator {
-    /// Create a new type generator
+    /// Create a new type generator with default settings.
+    ///
+    /// Use the builder methods (`with_remapping`, `with_validity_predicate_name`,
+    /// `with_primitive_types`) to customize before generating code.
     pub fn new(config: NamingConfig) -> Self {
         Self {
             config,
@@ -83,64 +86,22 @@ impl TypeGenerator {
         }
     }
 
-    /// Create a new type generator with remapping table
-    pub fn with_remapping(config: NamingConfig, remapping: HashMap<String, String>) -> Self {
-        Self {
-            config,
-            remapping,
-            indent: "    ".to_string(),
-            validity_predicate_name: "well_formed".to_string(),
-            primitive_types: Vec::new(),
-            view_overrides: HashMap::new(),
-            extra_fields: HashMap::new(),
-            clone_strategy: HashMap::new(),
-            custom_derives: HashMap::new(),
-            skip_fields: HashMap::new(),
-            hashset_element_types: HashSet::new(),
-        }
+    /// Set the type remapping table (spec name -> exec name).
+    pub fn with_remapping(mut self, remapping: HashMap<String, String>) -> Self {
+        self.remapping = remapping;
+        self
     }
 
-    /// Create a new type generator with remapping table and validity predicate name
-    pub fn with_options(
-        config: NamingConfig,
-        remapping: HashMap<String, String>,
-        validity_predicate_name: String,
-    ) -> Self {
-        Self {
-            config,
-            remapping,
-            indent: "    ".to_string(),
-            validity_predicate_name,
-            primitive_types: Vec::new(),
-            view_overrides: HashMap::new(),
-            extra_fields: HashMap::new(),
-            clone_strategy: HashMap::new(),
-            custom_derives: HashMap::new(),
-            skip_fields: HashMap::new(),
-            hashset_element_types: HashSet::new(),
-        }
+    /// Set the validity predicate name (default: "well_formed").
+    pub fn with_validity_predicate_name(mut self, name: String) -> Self {
+        self.validity_predicate_name = name;
+        self
     }
 
-    /// Create a new type generator with all options including primitive types list
-    pub fn with_all_options(
-        config: NamingConfig,
-        remapping: HashMap<String, String>,
-        validity_predicate_name: String,
-        primitive_types: Vec<String>,
-    ) -> Self {
-        Self {
-            config,
-            remapping,
-            indent: "    ".to_string(),
-            validity_predicate_name,
-            primitive_types,
-            view_overrides: HashMap::new(),
-            extra_fields: HashMap::new(),
-            clone_strategy: HashMap::new(),
-            custom_derives: HashMap::new(),
-            skip_fields: HashMap::new(),
-            hashset_element_types: HashSet::new(),
-        }
+    /// Set the list of primitive types (no valid() predicate needed).
+    pub fn with_primitive_types(mut self, types: Vec<String>) -> Self {
+        self.primitive_types = types;
+        self
     }
 
     /// Set view overrides for custom per-field View expressions
@@ -1033,11 +994,9 @@ pub struct TypeGenConfig<'a> {
 
 /// Generate all types from a type registry with all configuration options
 pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
-    let mut generator = TypeGenerator::with_options(
-        cfg.naming.clone(),
-        cfg.remapping.clone(),
-        cfg.validity_predicate_name.to_string(),
-    );
+    let mut generator = TypeGenerator::new(cfg.naming.clone())
+        .with_remapping(cfg.remapping.clone())
+        .with_validity_predicate_name(cfg.validity_predicate_name.to_string());
     generator.set_view_overrides(cfg.view_overrides.clone());
     generator.set_extra_fields(cfg.extra_fields.clone());
     generator.set_clone_strategy(cfg.clone_strategy.clone());
@@ -1425,7 +1384,7 @@ mod tests {
         remapping.insert("AbstractEndPoint".to_string(), "EndPoint".to_string());
         remapping.insert("AppMessage".to_string(), "CAppMessage".to_string());
 
-        let generator = TypeGenerator::with_remapping(make_config(), remapping);
+        let generator = TypeGenerator::new(make_config()).with_remapping(remapping);
 
         let spec = StructDef {
             name: "Request".to_string(),
@@ -1467,7 +1426,7 @@ mod tests {
         let mut remapping = HashMap::new();
         remapping.insert("AbstractEndPoint".to_string(), "EndPoint".to_string());
 
-        let generator = TypeGenerator::with_remapping(make_config(), remapping);
+        let generator = TypeGenerator::new(make_config()).with_remapping(remapping);
 
         let spec = StructDef {
             name: "LGroup".to_string(),
@@ -1494,9 +1453,9 @@ mod tests {
 
     #[test]
     fn test_custom_validity_predicate_name() {
-        // Test that with_options allows customizing the validity predicate name
+        // Test that builder method allows customizing the validity predicate name
         let generator =
-            TypeGenerator::with_options(make_config(), HashMap::new(), "valid".to_string());
+            TypeGenerator::new(make_config()).with_validity_predicate_name("valid".to_string());
 
         let spec = StructDef {
             name: "Ballot".to_string(),
@@ -1520,6 +1479,51 @@ mod tests {
         assert!(
             !result.code.contains("fn well_formed"),
             "Should NOT contain 'well_formed' when using 'valid': {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_builder_methods_chainable() {
+        // Test that all builder methods can be chained together
+        let mut remapping = HashMap::new();
+        remapping.insert("AbstractEndPoint".to_string(), "EndPoint".to_string());
+
+        let generator = TypeGenerator::new(make_config())
+            .with_remapping(remapping)
+            .with_validity_predicate_name("valid".to_string())
+            .with_primitive_types(vec!["u64".to_string()]);
+
+        let spec = StructDef {
+            name: "LNode".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "id".to_string(),
+                    ty: Type::Int,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "endpoint".to_string(),
+                    ty: Type::Named(Path::single("AbstractEndPoint".to_string())),
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Remapping applied
+        assert!(
+            result.code.contains("EndPoint"),
+            "Remapping should convert AbstractEndPoint to EndPoint: {}",
+            result.code
+        );
+        // Custom validity predicate name
+        assert!(
+            result.code.contains("fn valid"),
+            "Should use custom 'valid' predicate: {}",
             result.code
         );
     }
@@ -1737,8 +1741,9 @@ mod tests {
         remapping.insert("RslMessage1a".to_string(), "CMessage1a".to_string());
         remapping.insert("RslMessage1b".to_string(), "CMessage1b".to_string());
 
-        let generator =
-            TypeGenerator::with_options(NamingConfig::default(), remapping, "valid".to_string());
+        let generator = TypeGenerator::new(NamingConfig::default())
+            .with_remapping(remapping)
+            .with_validity_predicate_name("valid".to_string());
 
         let spec = EnumDef {
             name: "RslMessage".to_string(),
@@ -1790,8 +1795,9 @@ mod tests {
         let mut remapping = HashMap::new();
         remapping.insert("RslMessage1a".to_string(), "CMessage1a".to_string());
 
-        let generator =
-            TypeGenerator::with_options(NamingConfig::default(), remapping, "valid".to_string());
+        let generator = TypeGenerator::new(NamingConfig::default())
+            .with_remapping(remapping)
+            .with_validity_predicate_name("valid".to_string());
 
         let spec = EnumDef {
             name: "LMessage".to_string(),
