@@ -153,11 +153,8 @@ fn func_name(path: &Path) -> String {
 /// Convert a spec function name to an exec function name.
 /// E.g., "LTMSendPrepare" → "CTMSendPrepare" (replace L prefix with C prefix)
 fn spec_to_exec_name(spec_name: &str, spec_prefix: &str, exec_prefix: &str) -> String {
-    if spec_name.starts_with(spec_prefix) {
-        format!("{}{}", exec_prefix, &spec_name[spec_prefix.len()..])
-    } else {
-        format!("{}{}", exec_prefix, spec_name)
-    }
+    let suffix = spec_name.strip_prefix(spec_prefix).unwrap_or(spec_name);
+    format!("{}{}", exec_prefix, suffix)
 }
 
 /// Try to extract an identifier name from an expression.
@@ -225,11 +222,7 @@ fn classify_single_action(
     message_variants: &[String],
 ) -> (ActionKind, Option<String>) {
     // Normalize: strip common spec prefix "L" for pattern matching
-    let name = if spec_name.starts_with('L') {
-        &spec_name[1..]
-    } else {
-        spec_name
-    };
+    let name = spec_name.strip_prefix('L').unwrap_or(spec_name);
     let name_lower = name.to_lowercase();
 
     // Timer-driven override: checked FIRST because some action names contain
@@ -314,10 +307,10 @@ fn find_matching_variant(action_suffix: &str, message_variants: &[String]) -> Op
         let mut best: Option<&String> = None;
         for variant in message_variants {
             let variant_lower = variant.to_lowercase();
-            if variant_lower.starts_with(&keyword_lower) {
-                if best.map_or(true, |b| variant.len() < b.len()) {
-                    best = Some(variant);
-                }
+            if variant_lower.starts_with(&keyword_lower)
+                && best.is_none_or(|b| variant.len() < b.len())
+            {
+                best = Some(variant);
             }
         }
         if let Some(variant) = best {
@@ -329,11 +322,10 @@ fn find_matching_variant(action_suffix: &str, message_variants: &[String]) -> Op
         let mut best_match: Option<(usize, &String)> = None;
         for variant in message_variants {
             let variant_lower = variant.to_lowercase();
-            if keyword_lower.contains(&variant_lower) || variant_lower.contains(&keyword_lower) {
-                let len = variant.len();
-                if best_match.map_or(true, |(best_len, _)| len > best_len) {
-                    best_match = Some((len, variant));
-                }
+            if (keyword_lower.contains(&variant_lower) || variant_lower.contains(&keyword_lower))
+                && best_match.is_none_or(|(best_len, _)| variant.len() > best_len)
+            {
+                best_match = Some((variant.len(), variant));
             }
         }
         if let Some((_, variant)) = best_match {
@@ -346,11 +338,10 @@ fn find_matching_variant(action_suffix: &str, message_variants: &[String]) -> Op
     let mut best_match: Option<(usize, &String)> = None;
     for variant in message_variants {
         let variant_lower = variant.to_lowercase();
-        if action_lower.contains(&variant_lower) {
-            let len = variant.len();
-            if best_match.map_or(true, |(best_len, _)| len > best_len) {
-                best_match = Some((len, variant));
-            }
+        if action_lower.contains(&variant_lower)
+            && best_match.is_none_or(|(best_len, _)| variant.len() > best_len)
+        {
+            best_match = Some((variant.len(), variant));
         }
     }
     if let Some((_, variant)) = best_match {
@@ -363,14 +354,15 @@ fn find_matching_variant(action_suffix: &str, message_variants: &[String]) -> Op
 /// Extract the "keyword" part of an action name by stripping:
 /// - Role prefixes (TM, RM, Primary, etc.)
 /// - Action verbs (Receive, Rcv, Recv, Handle, Send)
+///
 /// E.g., "TMRcvPrepared" → "Prepared", "RMReceiveCommit" → "Commit"
 fn extract_action_keyword(name: &str) -> &str {
     let stripped = strip_role_prefix(name);
     // Strip action verb prefixes
     let verb_prefixes = ["Receive", "Rcv", "Recv", "Handle", "Send"];
     for prefix in &verb_prefixes {
-        if stripped.starts_with(prefix) {
-            return &stripped[prefix.len()..];
+        if let Some(rest) = stripped.strip_prefix(prefix) {
+            return rest;
         }
     }
     stripped
@@ -383,8 +375,8 @@ fn strip_role_prefix(name: &str) -> &str {
         "Follower", "Leader", "Candidate",
     ];
     for prefix in &role_prefixes {
-        if name.starts_with(prefix) {
-            return &name[prefix.len()..];
+        if let Some(rest) = name.strip_prefix(prefix) {
+            return rest;
         }
     }
     name
@@ -1054,7 +1046,7 @@ fn emit_role_dispatch_host_impl(out: &mut String, params: &HostScaffoldParams) {
             }
             out.push_str("        }\n");
         }
-        "state_field" | _ => {
+        _ => {
             // Match on the dispatch field
             out.push_str(&format!(
                 "        match {} {{\n",

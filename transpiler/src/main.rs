@@ -1025,9 +1025,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
             let mut sched_config = verus_transpiler::find_and_analyze_lnext(
                 &spec_fns,
-                &next_fn,
-                &spec_prefix,
-                &exec_prefix,
+                next_fn,
+                spec_prefix,
+                exec_prefix,
             )
             .ok_or_else(|| {
                 miette::miette!(

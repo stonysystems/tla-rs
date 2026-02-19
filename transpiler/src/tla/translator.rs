@@ -1573,7 +1573,7 @@ impl ModuleTranslator {
                     self.operator_refs_variables(cond, local_vars)
                         || self.operator_refs_variables(body, local_vars)
                 })
-                || other.as_ref().map_or(false, |e| self.operator_refs_variables(e, local_vars))
+                || other.as_ref().is_some_and(|e| self.operator_refs_variables(e, local_vars))
             }
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
                 let mut locals = local_vars.to_vec();
@@ -1581,13 +1581,13 @@ impl ModuleTranslator {
                     locals.push(qb.var.clone());
                 }
                 vars.iter().any(|qb| {
-                    qb.set.as_ref().map_or(false, |s| self.operator_refs_variables(s, local_vars))
+                    qb.set.as_ref().is_some_and(|s| self.operator_refs_variables(s, local_vars))
                 }) || self.operator_refs_variables(body, &locals)
             }
             TlaExpr::Choose { var, set, body } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                set.as_ref().map_or(false, |s| self.operator_refs_variables(s, local_vars))
+                set.as_ref().is_some_and(|s| self.operator_refs_variables(s, local_vars))
                     || self.operator_refs_variables(body, &locals)
             }
             TlaExpr::LetIn { defs, body } => {

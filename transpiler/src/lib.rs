@@ -606,7 +606,7 @@ impl Transpiler {
         // lemma_empty_set_map — only when HashSet fields are present
         if has_set_fields {
             output.push_str("/// Helper proof: mapping an injective function over an empty set yields an empty set.\n");
-            output.push_str(&format!("proof fn lemma_empty_set_map()\n"));
+            output.push_str("proof fn lemma_empty_set_map()\n");
             output.push_str("ensures\n");
             output.push_str(&format!(
                 "    Set::<{}>::empty().map(|x: {}| x as int) =~= Set::<int>::empty(),\n",
@@ -625,9 +625,9 @@ impl Transpiler {
             // clone_hashset — external_body helper for cloning HashSet fields
             output.push_str("/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).\n");
             output.push_str("#[verifier(external_body)]\n");
-            output.push_str(&format!(
+            output.push_str(
                 "fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)\n"
-            ));
+            );
             output.push_str("ensures\n");
             output.push_str("    res@ == s@,\n");
             output.push_str("{\n");

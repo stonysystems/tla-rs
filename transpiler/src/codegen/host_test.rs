@@ -40,7 +40,7 @@ pub fn generate_host_init_test_program(params: &HostTestParams) -> String {
     let types = strip_verus_types(&params.types_gen_code);
     out.push_str("// --- Protocol types ---\n");
     out.push_str(&types);
-    out.push_str("\n");
+    out.push('\n');
 
     // All generated functions stripped from gen.rs
     // Skip functions already defined in types_gen to avoid duplicates
@@ -48,19 +48,19 @@ pub fn generate_host_init_test_program(params: &HostTestParams) -> String {
     let gen_fns = strip_verus_gen(&params.gen_code, &types_fns);
     out.push_str("// --- Generated functions ---\n");
     out.push_str(&gen_fns);
-    out.push_str("\n");
+    out.push('\n');
 
     // Message enum (strip crate imports)
     let msg = strip_message_imports(&params.message_code);
     out.push_str("// --- Message enum ---\n");
     out.push_str(&msg);
-    out.push_str("\n");
+    out.push('\n');
 
     // Host code (fix imports)
     let host = fixup_host_imports(&params.host_code, &params.gen_module, &params.protocol_name);
     out.push_str("// --- Host ---\n");
     out.push_str(&host);
-    out.push_str("\n");
+    out.push('\n');
 
     // Test main
     out.push_str(&generate_test_main(&params.protocol_name));
@@ -199,11 +199,11 @@ pub fn strip_verus_types(code: &str) -> String {
         }
 
         // Skip CState/CConstants impl blocks with only spec fns
-        if trimmed.starts_with("impl C") && trimmed.contains('{') && !trimmed.contains("Clone") {
-            if impl_block_is_spec_only(&lines, i) {
-                i = skip_brace_block(&lines, i);
-                continue;
-            }
+        if trimmed.starts_with("impl C") && trimmed.contains('{') && !trimmed.contains("Clone")
+            && impl_block_is_spec_only(&lines, i)
+        {
+            i = skip_brace_block(&lines, i);
+            continue;
         }
 
         // Handle exec fn in types_gen (manual_code helpers like Cu64_inc)
@@ -388,12 +388,12 @@ pub fn strip_verus_gen(code: &str, skip_fns: &[String]) -> String {
 fn is_external_body_helper(lines: &[&str], i: usize) -> bool {
     let trimmed = lines[i].trim();
     // Pattern 1: current line is #[verifier(external_body)], next line is fn
-    if trimmed.starts_with("#[verifier(external_body)]") {
-        if i + 1 < lines.len() {
-            let next = lines[i + 1].trim();
-            if next.starts_with("fn clone_hashset") || next.starts_with("fn clone_log") {
-                return true;
-            }
+    if trimmed.starts_with("#[verifier(external_body)]")
+        && i + 1 < lines.len()
+    {
+        let next = lines[i + 1].trim();
+        if next.starts_with("fn clone_hashset") || next.starts_with("fn clone_log") {
+            return true;
         }
     }
     false
@@ -722,22 +722,22 @@ fn extract_type_name(line: &str) -> Option<String> {
     let rest = trimmed
         .strip_prefix("pub struct ")
         .or_else(|| trimmed.strip_prefix("pub enum "))?;
-    let name = rest.split(|c: char| c == '{' || c == ' ').next()?;
+    let name = rest.split(['{', ' ']).next()?;
     Some(name.trim().to_string())
 }
 
 /// Check if an impl block contains only spec functions.
 fn impl_block_is_spec_only(lines: &[&str], start: usize) -> bool {
     let end = skip_brace_block(lines, start);
-    for i in start..end {
-        let trimmed = lines[i].trim();
+    for line in &lines[start..end] {
+        let trimmed = line.trim();
         if trimmed.contains("pub open spec fn") || trimmed.contains("open spec fn") {
             return true;
         }
-        if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ") {
-            if !trimmed.contains("spec fn") {
-                return false;
-            }
+        if (trimmed.starts_with("pub fn ") || trimmed.starts_with("fn "))
+            && !trimmed.contains("spec fn")
+        {
+            return false;
         }
     }
     true

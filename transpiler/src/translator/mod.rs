@@ -6473,7 +6473,7 @@ impl Translator {
                         Type::Named(path) => {
                             if let Some(name) = path.last() {
                                 matches!(
-                                    name.as_ref(),
+                                    name,
                                     "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
                                         | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
                                 )
@@ -7746,7 +7746,7 @@ impl Translator {
             for (i, name) in output_names.iter().enumerate() {
                 let is_vec_output = output_types
                     .get(name)
-                    .map(|ty| Self::is_vec_or_seq_type(ty))
+                    .map(Self::is_vec_or_seq_type)
                     .unwrap_or(false);
 
                 if is_vec_output {
