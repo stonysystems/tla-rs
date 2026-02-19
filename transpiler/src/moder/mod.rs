@@ -201,7 +201,7 @@ impl ModeAnalyzer {
     /// Check if a function can be functionalized
     fn check_functionalizable(
         &self,
-        _spec_fn: &SpecFunction,
+        spec_fn: &SpecFunction,
         param_modes: &[ParameterMode],
         kind: FunctionKind,
     ) -> (bool, Option<String>) {
@@ -212,7 +212,26 @@ impl ModeAnalyzer {
                 if !has_output {
                     return (false, Some("No output parameters".to_string()));
                 }
-                // TODO: Add more checks (unsupported patterns, etc.)
+
+                // Collect output parameter names for body analysis
+                let output_names: HashSet<String> = spec_fn
+                    .params
+                    .iter()
+                    .zip(param_modes)
+                    .filter(|(_, mode)| **mode == ParameterMode::Output)
+                    .map(|(p, _)| p.name.clone())
+                    .collect();
+
+                // Check for output parameters assigned inside quantifier bodies
+                if let Some(reason) = Self::check_output_in_quantifier(&spec_fn.body, &output_names, false) {
+                    return (false, Some(reason));
+                }
+
+                // Check for multi-variable exists quantifiers
+                if let Some(reason) = Self::check_multi_var_exists(&spec_fn.body) {
+                    return (false, Some(reason));
+                }
+
                 (true, None)
             }
             FunctionKind::Helper => {
@@ -227,6 +246,178 @@ impl ModeAnalyzer {
                 }
                 (true, None)
             }
+        }
+    }
+
+    /// Check if output parameters are assigned (via equality) inside quantifier bodies.
+    ///
+    /// An output parameter appearing on the LHS of an equality inside a forall/exists
+    /// body means the spec constrains the output through a quantified formula, which
+    /// cannot be directly converted to executable assignment code.
+    ///
+    /// Note: output parameters appearing in quantifier bodies on the RHS (as values
+    /// being read, not assigned) are fine — this is the common "forall invariant" pattern.
+    fn check_output_in_quantifier(
+        expr: &Expr,
+        output_names: &HashSet<String>,
+        inside_quantifier: bool,
+    ) -> Option<String> {
+        match expr {
+            // Equality: check if LHS is an output assignment inside a quantifier
+            Expr::Eq(left, right) => {
+                if inside_quantifier {
+                    if let Some(name) = Self::extract_root_ident(left) {
+                        if output_names.contains(&name) {
+                            return Some(format!(
+                                "Output parameter '{}' is assigned inside a quantifier body \
+                                 (cannot convert quantified assignment to executable code)",
+                                name
+                            ));
+                        }
+                    }
+                }
+                // Recurse into both sides for nested quantifiers
+                Self::check_output_in_quantifier(left, output_names, inside_quantifier)
+                    .or_else(|| Self::check_output_in_quantifier(right, output_names, inside_quantifier))
+            }
+
+            // Quantifiers: recurse with inside_quantifier = true
+            Expr::Forall { body, .. } | Expr::Exists { body, .. } => {
+                Self::check_output_in_quantifier(body, output_names, true)
+            }
+
+            // Conjunction/disjunction: recurse into clauses
+            Expr::Conjunction(clauses) | Expr::Disjunction(clauses) => {
+                clauses.iter().find_map(|c| {
+                    Self::check_output_in_quantifier(c, output_names, inside_quantifier)
+                })
+            }
+
+            // Implication: recurse into both sides
+            Expr::Implies(left, right) | Expr::Iff(left, right) => {
+                Self::check_output_in_quantifier(left, output_names, inside_quantifier)
+                    .or_else(|| Self::check_output_in_quantifier(right, output_names, inside_quantifier))
+            }
+
+            // Conditional: recurse into all branches
+            Expr::If { cond, then_branch, else_branch } => {
+                Self::check_output_in_quantifier(cond, output_names, inside_quantifier)
+                    .or_else(|| Self::check_output_in_quantifier(then_branch, output_names, inside_quantifier))
+                    .or_else(|| {
+                        else_branch.as_ref().and_then(|e| {
+                            Self::check_output_in_quantifier(e, output_names, inside_quantifier)
+                        })
+                    })
+            }
+
+            // Let binding: recurse into value and body
+            Expr::Let { value, body, .. } => {
+                Self::check_output_in_quantifier(value, output_names, inside_quantifier)
+                    .or_else(|| Self::check_output_in_quantifier(body, output_names, inside_quantifier))
+            }
+
+            // Binary: recurse
+            Expr::Binary(left, _, right)
+            | Expr::Ne(left, right)
+            | Expr::Lt(left, right)
+            | Expr::Le(left, right)
+            | Expr::Gt(left, right)
+            | Expr::Ge(left, right) => {
+                Self::check_output_in_quantifier(left, output_names, inside_quantifier)
+                    .or_else(|| Self::check_output_in_quantifier(right, output_names, inside_quantifier))
+            }
+
+            // Match: recurse into scrutinee and arms
+            Expr::Match { scrutinee, arms } => {
+                Self::check_output_in_quantifier(scrutinee, output_names, inside_quantifier)
+                    .or_else(|| {
+                        arms.iter().find_map(|arm| {
+                            Self::check_output_in_quantifier(&arm.body, output_names, inside_quantifier)
+                        })
+                    })
+            }
+
+            // Terminals and other expressions: no quantifier issues
+            _ => None,
+        }
+    }
+
+    /// Extract the root identifier from an expression (through field/index chains).
+    ///
+    /// For `s_.field.subfield`, returns `"s_"`.
+    /// For `s_[i]`, returns `"s_"`.
+    /// For `s_`, returns `"s_"`.
+    fn extract_root_ident(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Ident(name) => Some(name.clone()),
+            Expr::Field(base, _) | Expr::Arrow(base, _) => Self::extract_root_ident(base),
+            Expr::Index(base, _) => Self::extract_root_ident(base),
+            _ => None,
+        }
+    }
+
+    /// Check for multi-variable exists quantifiers, which cannot be functionalized.
+    ///
+    /// The translator only supports single-variable exists (converted to `.any()`).
+    /// Multi-variable exists would require nested iteration or solver support.
+    fn check_multi_var_exists(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Exists { vars, body } => {
+                if vars.len() > 1 {
+                    let var_names: Vec<_> = vars.iter().map(|v| v.name_string()).collect();
+                    return Some(format!(
+                        "Exists quantifier with {} variables ({}) not supported \
+                         (only single-variable exists can be converted to executable code)",
+                        vars.len(),
+                        var_names.join(", ")
+                    ));
+                }
+                Self::check_multi_var_exists(body)
+            }
+
+            Expr::Forall { body, .. } => Self::check_multi_var_exists(body),
+
+            Expr::Conjunction(clauses) | Expr::Disjunction(clauses) => {
+                clauses.iter().find_map(Self::check_multi_var_exists)
+            }
+
+            Expr::Implies(left, right) | Expr::Iff(left, right) => {
+                Self::check_multi_var_exists(left)
+                    .or_else(|| Self::check_multi_var_exists(right))
+            }
+
+            Expr::If { cond, then_branch, else_branch } => {
+                Self::check_multi_var_exists(cond)
+                    .or_else(|| Self::check_multi_var_exists(then_branch))
+                    .or_else(|| {
+                        else_branch.as_deref().and_then(Self::check_multi_var_exists)
+                    })
+            }
+
+            Expr::Let { value, body, .. } => {
+                Self::check_multi_var_exists(value)
+                    .or_else(|| Self::check_multi_var_exists(body))
+            }
+
+            Expr::Binary(left, _, right)
+            | Expr::Eq(left, right)
+            | Expr::Ne(left, right)
+            | Expr::Lt(left, right)
+            | Expr::Le(left, right)
+            | Expr::Gt(left, right)
+            | Expr::Ge(left, right) => {
+                Self::check_multi_var_exists(left)
+                    .or_else(|| Self::check_multi_var_exists(right))
+            }
+
+            Expr::Match { scrutinee, arms } => {
+                Self::check_multi_var_exists(scrutinee)
+                    .or_else(|| {
+                        arms.iter().find_map(|arm| Self::check_multi_var_exists(&arm.body))
+                    })
+            }
+
+            _ => None,
         }
     }
 
@@ -1159,5 +1350,333 @@ mod tests {
         };
 
         assert!(!ModeAnalyzer::is_recursive(&spec_fn));
+    }
+
+    // ============ Functionalizable Check Tests ============
+
+    use crate::annotation::FunctionAnnotation;
+    use crate::ast::{Binding, FunctionKind, Pattern, VariableMode};
+
+    /// Helper to create a simple annotated function for testing
+    fn make_annotated(
+        body: Expr,
+        param_modes: Vec<ParameterMode>,
+    ) -> (AnnotatedFunction, bool, Option<String>) {
+        let params: Vec<_> = param_modes
+            .iter()
+            .enumerate()
+            .map(|(i, mode)| crate::ast::Parameter {
+                name: if *mode == ParameterMode::Output {
+                    format!("s{}_", i)
+                } else {
+                    format!("s{}", i)
+                },
+                ty: Type::Named(Path::single("State".to_string())),
+                mode: Some(*mode),
+                variable_mode: VariableMode::Exec,
+                span: None,
+            })
+            .collect();
+
+        let spec_fn = SpecFunction {
+            name: "TestPredicate".to_string(),
+            generics: Default::default(),
+            params,
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        let annotation = FunctionAnnotation {
+            name: "TestPredicate".to_string(),
+            param_modes: param_modes.clone(),
+            kind: FunctionKind::Predicate,
+            return_type: None,
+        };
+
+        let mut analyzer = ModeAnalyzer::new();
+        let result = analyzer.annotate(spec_fn, &annotation).unwrap();
+        let is_func = result.is_functionalizable;
+        let reason = result.non_functionalizable_reason.clone();
+        (result, is_func, reason)
+    }
+
+    fn make_binding(name: &str) -> Binding {
+        Binding {
+            pattern: Pattern::Ident(name.to_string()),
+            ty: Some(Type::Int),
+            variable_mode: VariableMode::default(),
+        }
+    }
+
+    #[test]
+    fn test_functionalizable_simple_predicate() {
+        // s1_ == s0 (simple equality, output assigned at top level)
+        let body = Expr::Eq(
+            Box::new(Expr::Ident("s1_".to_string())),
+            Box::new(Expr::Ident("s0".to_string())),
+        );
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(is_func, "Simple equality should be functionalizable, reason: {:?}", reason);
+    }
+
+    #[test]
+    fn test_functionalizable_no_output() {
+        // No output parameters → not functionalizable
+        let body = Expr::Literal(Literal::Bool(true));
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input]);
+        assert!(!is_func);
+        assert_eq!(reason.unwrap(), "No output parameters");
+    }
+
+    #[test]
+    fn test_functionalizable_output_in_forall() {
+        // forall |i| s1_.field[i] == s0.field[i]
+        // Output s1_ is assigned inside a forall body → not functionalizable
+        let body = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::Index(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s1_".to_string())),
+                        "field".to_string(),
+                    )),
+                    Box::new(Expr::Ident("i".to_string())),
+                )),
+                Box::new(Expr::Index(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s0".to_string())),
+                        "field".to_string(),
+                    )),
+                    Box::new(Expr::Ident("i".to_string())),
+                )),
+            )),
+        };
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(!is_func, "Output inside forall should not be functionalizable");
+        assert!(
+            reason.as_ref().unwrap().contains("inside a quantifier"),
+            "Expected quantifier message, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_functionalizable_output_in_exists() {
+        // exists |x| s1_.field == x (output assigned inside exists)
+        let body = Expr::Exists {
+            vars: vec![make_binding("x")],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s1_".to_string())),
+                    "field".to_string(),
+                )),
+                Box::new(Expr::Ident("x".to_string())),
+            )),
+        };
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(!is_func, "Output inside exists should not be functionalizable");
+        assert!(
+            reason.as_ref().unwrap().contains("inside a quantifier"),
+            "Expected quantifier message, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_functionalizable_forall_over_input_only() {
+        // forall |i| s0.votes[i].value > 0 (only input in quantifier body — OK)
+        let body = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Ident("s1_".to_string())),
+                Box::new(Expr::Ident("s0".to_string())),
+            ),
+            Expr::Forall {
+                vars: vec![make_binding("i")],
+                triggers: vec![],
+                body: Box::new(Expr::Gt(
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Index(
+                            Box::new(Expr::Field(
+                                Box::new(Expr::Ident("s0".to_string())),
+                                "votes".to_string(),
+                            )),
+                            Box::new(Expr::Ident("i".to_string())),
+                        )),
+                        "value".to_string(),
+                    )),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+            },
+        ]);
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(is_func, "Forall over input should be functionalizable, reason: {:?}", reason);
+    }
+
+    #[test]
+    fn test_functionalizable_multi_var_exists() {
+        // exists |x, y| x + y == s0.value (multi-variable exists → not functionalizable)
+        let body = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Ident("s1_".to_string())),
+                Box::new(Expr::Ident("s0".to_string())),
+            ),
+            Expr::Exists {
+                vars: vec![make_binding("x"), make_binding("y")],
+                body: Box::new(Expr::Eq(
+                    Box::new(Expr::Binary(
+                        Box::new(Expr::Ident("x".to_string())),
+                        BinOp::Add,
+                        Box::new(Expr::Ident("y".to_string())),
+                    )),
+                    Box::new(Expr::Field(
+                        Box::new(Expr::Ident("s0".to_string())),
+                        "value".to_string(),
+                    )),
+                )),
+            },
+        ]);
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(!is_func, "Multi-variable exists should not be functionalizable");
+        assert!(
+            reason.as_ref().unwrap().contains("2 variables"),
+            "Expected multi-var message, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_functionalizable_single_var_exists_ok() {
+        // exists |x| container.contains(x) && ... (single var exists — OK)
+        let body = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Ident("s1_".to_string())),
+                Box::new(Expr::Ident("s0".to_string())),
+            ),
+            Expr::Exists {
+                vars: vec![make_binding("x")],
+                body: Box::new(Expr::Binary(
+                    Box::new(Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident("container".to_string())),
+                        method: "contains".to_string(),
+                        args: vec![Expr::Ident("x".to_string())],
+                    }),
+                    BinOp::And,
+                    Box::new(Expr::Gt(
+                        Box::new(Expr::Ident("x".to_string())),
+                        Box::new(Expr::Literal(Literal::Int(0))),
+                    )),
+                )),
+            },
+        ]);
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(is_func, "Single-var exists should be functionalizable, reason: {:?}", reason);
+    }
+
+    #[test]
+    fn test_functionalizable_output_in_nested_if_forall() {
+        // if cond { forall |i| s1_.field[i] == val } else { s1_ == s0 }
+        // Output inside forall in one branch → not functionalizable
+        let body = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(true))),
+            then_branch: Box::new(Expr::Forall {
+                vars: vec![make_binding("i")],
+                triggers: vec![],
+                body: Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s1_".to_string())),
+                            "field".to_string(),
+                        )),
+                        Box::new(Expr::Ident("i".to_string())),
+                    )),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+            }),
+            else_branch: Some(Box::new(Expr::Eq(
+                Box::new(Expr::Ident("s1_".to_string())),
+                Box::new(Expr::Ident("s0".to_string())),
+            ))),
+        };
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(!is_func, "Output inside forall in if-branch should not be functionalizable");
+        assert!(
+            reason.as_ref().unwrap().contains("inside a quantifier"),
+            "Expected quantifier message, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_extract_root_ident() {
+        assert_eq!(
+            ModeAnalyzer::extract_root_ident(&Expr::Ident("s_".to_string())),
+            Some("s_".to_string())
+        );
+        assert_eq!(
+            ModeAnalyzer::extract_root_ident(&Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "field".to_string(),
+            )),
+            Some("s_".to_string())
+        );
+        assert_eq!(
+            ModeAnalyzer::extract_root_ident(&Expr::Index(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s_".to_string())),
+                    "votes".to_string(),
+                )),
+                Box::new(Expr::Ident("i".to_string())),
+            )),
+            Some("s_".to_string())
+        );
+        assert_eq!(
+            ModeAnalyzer::extract_root_ident(&Expr::Literal(Literal::Int(42))),
+            None
+        );
+    }
+
+    #[test]
+    fn test_functionalizable_helper_with_output_rejected() {
+        // Helper function with output parameter → not functionalizable
+        let spec_fn = SpecFunction {
+            name: "Helper".to_string(),
+            generics: Default::default(),
+            params: vec![crate::ast::Parameter {
+                name: "x_".to_string(),
+                ty: Type::Int,
+                mode: Some(ParameterMode::Output),
+                variable_mode: VariableMode::Exec,
+                span: None,
+            }],
+            return_type: Type::Int,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Int(42)),
+            span: None,
+        };
+
+        let annotation = FunctionAnnotation {
+            name: "Helper".to_string(),
+            param_modes: vec![ParameterMode::Output],
+            kind: FunctionKind::Helper,
+            return_type: Some("int".to_string()),
+        };
+
+        let mut analyzer = ModeAnalyzer::new();
+        let result = analyzer.annotate(spec_fn, &annotation).unwrap();
+        assert!(!result.is_functionalizable);
+        assert!(result
+            .non_functionalizable_reason
+            .as_ref()
+            .unwrap()
+            .contains("Helper functions should not have output parameters"));
     }
 }
