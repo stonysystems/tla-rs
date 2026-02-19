@@ -621,33 +621,6 @@ impl ProofNeeds {
         }
     }
 
-    /// Convert an ExecExpr to a code string for use in generated proof assertions.
-    /// Similar to expr_to_proof_arg but handles VecLit elements specifically.
-    fn expr_to_code_string(expr: &ExecExpr) -> String {
-        match expr {
-            ExecExpr::Var(name) => name.clone(),
-            ExecExpr::Literal(lit) => lit.clone(),
-            ExecExpr::Unary { op, expr } => {
-                format!("{}{}", op, Self::expr_to_code_string(expr))
-            }
-            ExecExpr::Field(base, field) => {
-                format!("{}.{}", Self::expr_to_code_string(base), field)
-            }
-            ExecExpr::Struct { name, fields } => {
-                let fields_str: Vec<String> = fields
-                    .iter()
-                    .map(|(fname, fval)| format!("{}: {}", fname, Self::expr_to_code_string(fval)))
-                    .collect();
-                format!("{} {{ {} }}", name, fields_str.join(", "))
-            }
-            ExecExpr::Clone(inner) => Self::expr_to_code_string(inner),
-            ExecExpr::Cast(inner, ty) => {
-                format!("{} as {}", Self::expr_to_code_string(inner), ty)
-            }
-            _ => format!("{:?}", expr),
-        }
-    }
-
     /// Build a proof block ExecExpr containing the necessary lemma calls.
     pub fn build_proof_block(
         &self,

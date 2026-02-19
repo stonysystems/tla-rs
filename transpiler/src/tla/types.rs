@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::error::{TranspileError, TranspileResult};
+
 /// Represents a TLA+ type, inferred from usage patterns.
 ///
 /// TLA+ is untyped, but we infer types from:
@@ -1843,7 +1845,7 @@ impl TypeAnnotations {
     }
 
     /// Parse type annotations from file content
-    pub fn parse(content: &str) -> Result<Self, String> {
+    pub fn parse(content: &str) -> TranspileResult<Self> {
         let mut annotations = TypeAnnotations::new();
         let mut current_section: Option<&str> = None;
         let mut current_record_name: Option<String> = None;
@@ -1874,10 +1876,13 @@ impl TypeAnnotations {
             // Record start
             if line.ends_with('{') {
                 if current_section != Some("records") {
-                    return Err(format!(
-                        "Line {}: Record definition outside [records] section",
-                        line_num + 1
-                    ));
+                    return Err(TranspileError::Parse {
+                        message: format!(
+                            "Line {}: Record definition outside [records] section",
+                            line_num + 1
+                        ),
+                        span: None,
+                    });
                 }
                 let name = line.strip_suffix('{').unwrap().trim().to_string();
                 current_record_name = Some(name);
@@ -1918,10 +1923,13 @@ impl TypeAnnotations {
                         annotations.operators.insert(name, ty);
                     }
                     _ => {
-                        return Err(format!(
-                            "Line {}: Type annotation outside a section",
-                            line_num + 1
-                        ));
+                        return Err(TranspileError::Parse {
+                            message: format!(
+                                "Line {}: Type annotation outside a section",
+                                line_num + 1
+                            ),
+                            span: None,
+                        });
                     }
                 }
             }
@@ -1938,7 +1946,7 @@ impl TypeAnnotations {
     }
 
     /// Parse a type string into a TlaType
-    fn parse_type(s: &str) -> Result<TlaType, String> {
+    fn parse_type(s: &str) -> TranspileResult<TlaType> {
         let s = s.trim();
 
         // Basic types
@@ -2021,11 +2029,14 @@ impl TypeAnnotations {
             return Ok(TlaType::Unknown);
         }
 
-        Err(format!("Unknown type: {}", s))
+        Err(TranspileError::Parse {
+            message: format!("Unknown type: {}", s),
+            span: None,
+        })
     }
 
     /// Parse comma-separated types
-    fn parse_tuple_types(s: &str) -> Result<Vec<TlaType>, String> {
+    fn parse_tuple_types(s: &str) -> TranspileResult<Vec<TlaType>> {
         if s.trim().is_empty() {
             return Ok(Vec::new());
         }

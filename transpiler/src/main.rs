@@ -740,8 +740,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
                 let types_content = std::fs::read_to_string(types_path)
                     .map_err(|e| miette::miette!("Failed to read type annotations file: {}", e))?;
-                let annotations = TypeAnnotations::parse(&types_content)
-                    .map_err(|e| miette::miette!("Failed to parse type annotations: {}", e))?;
+                let annotations = TypeAnnotations::parse(&types_content)?;
 
                 // Start with inferred types, then override with annotations
                 let mut inference = TypeInference::new();
@@ -867,8 +866,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
                 let types_content = std::fs::read_to_string(types_path)
                     .map_err(|e| miette::miette!("Failed to read type annotations file: {}", e))?;
-                let annotations = TypeAnnotations::parse(&types_content)
-                    .map_err(|e| miette::miette!("Failed to parse type annotations: {}", e))?;
+                let annotations = TypeAnnotations::parse(&types_content)?;
 
                 let mut inference = TypeInference::new();
                 let mut env = inference.infer_types(&tla_module);
