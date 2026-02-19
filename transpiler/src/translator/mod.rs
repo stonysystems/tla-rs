@@ -9567,9 +9567,9 @@ impl Translator {
 
             Expr::Forall { vars, body, .. } => {
                 // Try to match to a known template using the checker module
-                use crate::checker::TemplateMatcher;
+                use crate::checker::QuantifierMatcher;
 
-                if let Some(template) = TemplateMatcher::match_template(expr) {
+                if let Some(template) = QuantifierMatcher::match_template(expr) {
                     self.translate_quantifier_template(&template, ctx)
                 } else {
                     Err(TranspileError::UnsupportedPattern {
@@ -12737,16 +12737,17 @@ impl Translator {
     /// Translate a matched quantifier template to executable code
     fn translate_quantifier_template(
         &self,
-        template: &crate::checker::QuantifierTemplate,
+        template: &crate::templates::QuantifierTemplate,
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
-        use crate::checker::QuantifierTemplate;
+        use crate::templates::QuantifierTemplate;
 
         match template {
             QuantifierTemplate::SeqComprehension {
                 length_expr,
                 element_expr,
                 index_var,
+                seq_var: _,
             } => {
                 // Generate: (0..length).map(|i| element).collect::<Vec<_>>()
                 let length = self.transform_expr(length_expr, ctx)?;
@@ -12927,6 +12928,7 @@ impl Translator {
             QuantifierTemplate::SetComprehension {
                 domain_predicate,
                 element_var,
+                set_var: _,
             } => {
                 // Try to extract source set from domain predicate
                 // Pattern: source.contains(x) && filter_pred
@@ -12970,6 +12972,7 @@ impl Translator {
                 domain_predicate,
                 value_expr,
                 key_var,
+                map_var: _,
             } => {
                 // Try to extract source from domain predicate
                 if let Some((source_map, filter_pred)) =
@@ -13080,6 +13083,20 @@ impl Translator {
                         }],
                     })
                 }
+            }
+
+            // TemplateMatcher-only variants — not produced by QuantifierMatcher
+            QuantifierTemplate::MapDomain { .. }
+            | QuantifierTemplate::MapValue { .. }
+            | QuantifierTemplate::SimpleAssignment { .. }
+            | QuantifierTemplate::Copy { .. }
+            | QuantifierTemplate::StructConstruction { .. }
+            | QuantifierTemplate::Unrecognized { .. } => {
+                Err(TranspileError::UnsupportedPattern {
+                    message: "TemplateMatcher-only variant in quantifier translation".to_string(),
+                    span: None,
+                    help: Some("Use TemplateCodeGenerator for these patterns".to_string()),
+                })
             }
         }
     }

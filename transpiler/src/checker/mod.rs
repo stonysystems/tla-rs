@@ -130,118 +130,17 @@ impl ObligationChecker {
     }
 }
 
-/// Supported quantifier templates for collection operations
-#[derive(Debug, Clone)]
-pub enum QuantifierTemplate {
-    /// Sequence comprehension: `seq![...] or Seq::new(|i| ...)`
-    SeqComprehension {
-        length_expr: Box<crate::ast::Expr>,
-        element_expr: Box<crate::ast::Expr>,
-        index_var: String,
-    },
+// Re-export the canonical QuantifierTemplate from the templates module
+pub use crate::templates::QuantifierTemplate;
 
-    /// Set comprehension: `Set::new(|x| ...)`
-    SetComprehension {
-        domain_predicate: Box<crate::ast::Expr>,
-        element_var: String,
-    },
+/// Quantifier matcher for forall expressions (stateless).
+///
+/// Unlike `templates::TemplateMatcher` (which is stateful and handles all patterns),
+/// this matcher focuses exclusively on forall-quantifier patterns and returns
+/// `Option<QuantifierTemplate>` (None when no pattern matches).
+pub struct QuantifierMatcher;
 
-    /// Map comprehension: `Map::new(|k| ..., |k| ...)`
-    MapComprehension {
-        domain_predicate: Box<crate::ast::Expr>,
-        value_expr: Box<crate::ast::Expr>,
-        key_var: String,
-    },
-
-    /// Map filtering: filter keys from source map based on predicate
-    /// Pattern: `forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]`
-    /// combined with exclusion: `forall |k| k < threshold ==> !output.contains_key(k)`
-    /// and inclusion: `forall |k| k >= threshold && source.contains_key(k) ==> output.contains_key(k)`
-    MapFilter {
-        /// Source map variable name
-        source_map: String,
-        /// Output map variable name
-        output_map: String,
-        /// Key variable name
-        key_var: String,
-        /// Filter predicate (key >= threshold form)
-        filter_predicate: Box<crate::ast::Expr>,
-    },
-
-    /// Map preservation pattern: output[k] == source[k] for all k in output
-    /// Pattern: `forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]`
-    MapPreservation {
-        /// Source map variable
-        source_map: String,
-        /// Output map variable
-        output_map: String,
-        /// Key variable
-        key_var: String,
-    },
-
-    /// Map with conditional value: output[k] == if cond then v1 else v2
-    /// Pattern: `forall |k| output.contains_key(k) ==> output[k] == (if cond { v1 } else { v2 })`
-    MapConditionalValue {
-        /// Output map variable
-        output_map: String,
-        /// Key variable
-        key_var: String,
-        /// Conditional value expression
-        value_expr: Box<crate::ast::Expr>,
-    },
-
-    /// Map domain biconditional: output.dom().contains(k) <==> predicate
-    /// Used for defining which keys are in the output map
-    MapDomainBiconditional {
-        /// Output map variable
-        output_map: String,
-        /// Key variable
-        key_var: String,
-        /// Domain predicate (what keys should be in output)
-        domain_predicate: Box<crate::ast::Expr>,
-    },
-
-    /// Map exclusion pattern: predicate ==> !output.contains_key(key)
-    /// Keys satisfying predicate are excluded from output
-    MapExclusion {
-        /// Output map variable
-        output_map: String,
-        /// Key variable
-        key_var: String,
-        /// Exclusion predicate (when true, key is NOT in output)
-        exclusion_predicate: Box<crate::ast::Expr>,
-    },
-
-    /// Map inclusion pattern: predicate && source.contains_key(key) ==> output.contains_key(key)
-    /// Keys that meet predicate and are in source are included in output
-    MapInclusion {
-        /// Output map variable
-        output_map: String,
-        /// Source map variable (optional)
-        source_map: Option<String>,
-        /// Key variable
-        key_var: String,
-        /// Inclusion predicate
-        inclusion_predicate: Box<crate::ast::Expr>,
-    },
-
-    /// Collection check pattern: forall |x| container.contains(x) ==> pred(x)
-    /// Used to verify all elements in a collection satisfy a predicate
-    /// Translates to: container.iter().all(|x| pred(x))
-    CollectionCheck {
-        /// Container expression (can be a set, vec, etc.)
-        container: Box<crate::ast::Expr>,
-        /// Element variable
-        element_var: String,
-        /// Predicate to check for each element
-        predicate: Box<crate::ast::Expr>,
-    },
-}
-
-/// Template matcher for quantifier expressions
-pub struct TemplateMatcher;
-
-impl TemplateMatcher {
+impl QuantifierMatcher {
     /// Try to match a quantifier expression to a known template
     pub fn match_template(expr: &crate::ast::Expr) -> Option<QuantifierTemplate> {
         use crate::ast::Expr;
@@ -321,6 +220,7 @@ impl TemplateMatcher {
                         length_expr: upper_bound,
                         element_expr: Box::new(element_expr.clone()),
                         index_var: var.name_string().clone(),
+                        seq_var: None,
                     });
                 }
             }
@@ -346,6 +246,7 @@ impl TemplateMatcher {
                         domain_predicate: Box::new(Expr::Literal(crate::ast::Literal::Bool(true))),
                         value_expr: Box::new(value_expr.clone()),
                         key_var: var.name_string().clone(),
+                        map_var: None,
                     });
                 }
             }
@@ -366,12 +267,14 @@ impl TemplateMatcher {
                 return Some(QuantifierTemplate::SetComprehension {
                     domain_predicate: rhs.clone(),
                     element_var: var.name_string().clone(),
+                    set_var: None,
                 });
             }
             if let Some(_collection) = Self::extract_membership(rhs, &var.name_string()) {
                 return Some(QuantifierTemplate::SetComprehension {
                     domain_predicate: lhs.clone(),
                     element_var: var.name_string().clone(),
+                    set_var: None,
                 });
             }
         }
@@ -982,7 +885,7 @@ pub enum TemplateMatchFailure {
     InvalidIndexUsage { var: String },
 }
 
-impl TemplateMatcher {
+impl QuantifierMatcher {
     /// Match with detailed failure information for error reporting
     pub fn match_template_detailed(expr: &crate::ast::Expr) -> TemplateMatchResult {
         use crate::ast::Expr;
@@ -1197,7 +1100,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::SeqComprehension {
@@ -1245,7 +1148,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
         assert!(matches!(
             result,
@@ -1278,7 +1181,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::SetComprehension { element_var, .. }) = result {
@@ -1319,7 +1222,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::MapComprehension { key_var, .. }) = result {
@@ -1333,7 +1236,7 @@ mod tests {
     #[test]
     fn test_template_match_non_forall() {
         let expr = Expr::Literal(Literal::Bool(true));
-        let result = TemplateMatcher::match_template(&expr);
+        let result = QuantifierMatcher::match_template(&expr);
         assert!(result.is_none());
     }
 
@@ -1346,7 +1249,7 @@ mod tests {
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_none());
     }
 
@@ -1360,7 +1263,7 @@ mod tests {
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
 
-        let result = TemplateMatcher::match_template_detailed(&forall);
+        let result = QuantifierMatcher::match_template_detailed(&forall);
         assert!(matches!(
             result,
             TemplateMatchResult::NotMatched(TemplateMatchFailure::UnrecognizedPattern { .. })
@@ -1376,7 +1279,7 @@ mod tests {
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
 
-        let result = TemplateMatcher::match_template_detailed(&forall);
+        let result = QuantifierMatcher::match_template_detailed(&forall);
         if let TemplateMatchResult::NotMatched(TemplateMatchFailure::MultipleVariables { count }) =
             result
         {
@@ -1417,7 +1320,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
         assert!(matches!(
             result,
@@ -1468,7 +1371,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::MapDomainBiconditional {
@@ -1523,7 +1426,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::MapPreservation {
@@ -1582,7 +1485,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::MapConditionalValue {
@@ -1623,7 +1526,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::MapDomainBiconditional {
@@ -1671,7 +1574,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
         if let Some(QuantifierTemplate::CollectionCheck {
@@ -2117,11 +2020,11 @@ mod tests {
             )),
         };
 
-        let result = TemplateMatcher::match_template(&exists);
+        let result = QuantifierMatcher::match_template(&exists);
         assert!(result.is_none());
 
         // Also verify detailed gives NotForall
-        let detailed = TemplateMatcher::match_template_detailed(&exists);
+        let detailed = QuantifierMatcher::match_template_detailed(&exists);
         assert!(matches!(
             detailed,
             TemplateMatchResult::NotMatched(TemplateMatchFailure::NotForall)
@@ -2137,10 +2040,10 @@ mod tests {
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_none());
 
-        let detailed = TemplateMatcher::match_template_detailed(&forall);
+        let detailed = QuantifierMatcher::match_template_detailed(&forall);
         assert!(matches!(
             detailed,
             TemplateMatchResult::NotMatched(TemplateMatchFailure::UnrecognizedPattern { .. })
@@ -2180,7 +2083,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         // This should NOT be MapComprehension since the value assignment is in the premise
         assert!(!matches!(
             result,
@@ -2545,7 +2448,7 @@ mod tests {
             body: Box::new(body),
         };
 
-        let result = TemplateMatcher::match_template(&forall);
+        let result = QuantifierMatcher::match_template(&forall);
         // The RHS is s_.field == some_value, not seq[i] == expr,
         // so it should NOT match SeqComprehension
         assert!(!matches!(

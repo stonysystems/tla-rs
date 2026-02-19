@@ -10,34 +10,55 @@
 
 use crate::ast::{BinOp, Expr};
 
-/// Recognized quantifier templates for code generation
+/// Recognized quantifier templates for code generation.
+///
+/// This is the single canonical enum for all template patterns, used by both
+/// the `templates::TemplateMatcher` (stateful, handles all patterns including
+/// non-quantifier assignments) and the `checker::QuantifierMatcher` (stateless,
+/// handles forall-quantifier patterns only).
 #[derive(Debug, Clone)]
 pub enum QuantifierTemplate {
+    // ── Shared variants (used by both matchers) ──────────────────────
+
     /// Sequence comprehension pattern
     /// Pattern: `forall |i| 0 <= i < len ==> seq[i] == element_expr(i)`
     /// Generates: `Vec::from_fn(len, |i| element_expr(i))`
     SeqComprehension {
-        /// Variable name for the index
-        index_var: String,
         /// Expression for the sequence length
         length_expr: Box<Expr>,
         /// Expression for each element (as function of index)
         element_expr: Box<Expr>,
-        /// The sequence variable being defined
-        seq_var: String,
+        /// Variable name for the index
+        index_var: String,
+        /// The sequence variable being defined (set by TemplateMatcher, None from QuantifierMatcher)
+        seq_var: Option<String>,
     },
 
     /// Set comprehension pattern
     /// Pattern: `forall |x| x in set <==> domain_pred(x)`
     /// Generates: domain iteration with predicate filter
     SetComprehension {
-        /// Variable name for set elements
-        elem_var: String,
         /// Domain predicate that defines membership
         domain_predicate: Box<Expr>,
-        /// The set variable being defined
-        set_var: String,
+        /// Variable name for set elements
+        element_var: String,
+        /// The set variable being defined (set by TemplateMatcher, None from QuantifierMatcher)
+        set_var: Option<String>,
     },
+
+    /// Full map comprehension (domain + value combined)
+    MapComprehension {
+        /// Domain predicate
+        domain_predicate: Box<Expr>,
+        /// Value expression
+        value_expr: Box<Expr>,
+        /// Variable name for keys
+        key_var: String,
+        /// The map variable being defined (set by TemplateMatcher, None from QuantifierMatcher)
+        map_var: Option<String>,
+    },
+
+    // ── TemplateMatcher-only variants ────────────────────────────────
 
     /// Map comprehension pattern - domain
     /// Pattern: `forall |k| k in map <==> domain_pred(k)`
@@ -58,18 +79,6 @@ pub enum QuantifierTemplate {
         /// Variable name for keys
         key_var: String,
         /// Value expression (as function of key)
-        value_expr: Box<Expr>,
-        /// The map variable being defined
-        map_var: String,
-    },
-
-    /// Full map comprehension (domain + value combined)
-    MapComprehension {
-        /// Variable name for keys
-        key_var: String,
-        /// Domain predicate
-        domain_predicate: Box<Expr>,
-        /// Value expression
         value_expr: Box<Expr>,
         /// The map variable being defined
         map_var: String,
@@ -110,6 +119,90 @@ pub enum QuantifierTemplate {
         reason: String,
         /// Suggested manual implementation hint
         hint: Option<String>,
+    },
+
+    // ── QuantifierMatcher-only variants ──────────────────────────────
+
+    /// Map filtering: filter keys from source map based on predicate
+    /// Pattern: `forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]`
+    MapFilter {
+        /// Source map variable name
+        source_map: String,
+        /// Output map variable name
+        output_map: String,
+        /// Key variable name
+        key_var: String,
+        /// Filter predicate (key >= threshold form)
+        filter_predicate: Box<Expr>,
+    },
+
+    /// Map preservation pattern: output[k] == source[k] for all k in output
+    /// Pattern: `forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]`
+    MapPreservation {
+        /// Source map variable
+        source_map: String,
+        /// Output map variable
+        output_map: String,
+        /// Key variable
+        key_var: String,
+    },
+
+    /// Map with conditional value: output[k] == if cond then v1 else v2
+    /// Pattern: `forall |k| output.contains_key(k) ==> output[k] == (if cond { v1 } else { v2 })`
+    MapConditionalValue {
+        /// Output map variable
+        output_map: String,
+        /// Key variable
+        key_var: String,
+        /// Conditional value expression
+        value_expr: Box<Expr>,
+    },
+
+    /// Map domain biconditional: output.dom().contains(k) <==> predicate
+    /// Used for defining which keys are in the output map
+    MapDomainBiconditional {
+        /// Output map variable
+        output_map: String,
+        /// Key variable
+        key_var: String,
+        /// Domain predicate (what keys should be in output)
+        domain_predicate: Box<Expr>,
+    },
+
+    /// Map exclusion pattern: predicate ==> !output.contains_key(key)
+    /// Keys satisfying predicate are excluded from output
+    MapExclusion {
+        /// Output map variable
+        output_map: String,
+        /// Key variable
+        key_var: String,
+        /// Exclusion predicate (when true, key is NOT in output)
+        exclusion_predicate: Box<Expr>,
+    },
+
+    /// Map inclusion pattern: predicate && source.contains_key(key) ==> output.contains_key(key)
+    /// Keys that meet predicate and are in source are included in output
+    MapInclusion {
+        /// Output map variable
+        output_map: String,
+        /// Source map variable (optional)
+        source_map: Option<String>,
+        /// Key variable
+        key_var: String,
+        /// Inclusion predicate
+        inclusion_predicate: Box<Expr>,
+    },
+
+    /// Collection check pattern: forall |x| container.contains(x) ==> pred(x)
+    /// Used to verify all elements in a collection satisfy a predicate
+    /// Translates to: container.iter().all(|x| pred(x))
+    CollectionCheck {
+        /// Container expression (can be a set, vec, etc.)
+        container: Box<Expr>,
+        /// Element variable
+        element_var: String,
+        /// Predicate to check for each element
+        predicate: Box<Expr>,
     },
 }
 
@@ -189,7 +282,7 @@ impl TemplateMatcher {
             index_var,
             length_expr: Box::new(length_expr),
             element_expr: Box::new(element_expr),
-            seq_var,
+            seq_var: Some(seq_var),
         })
     }
 
@@ -246,18 +339,18 @@ impl TemplateMatcher {
         if vars.len() != 1 {
             return None;
         }
-        let elem_var = vars[0].name_string();
+        let element_var = vars[0].name_string();
 
         // Check for: x in set <==> pred(x)
         if let Expr::Eq(lhs, rhs) = body.as_ref() {
             if let Some((set_var, domain_pred)) =
-                self.extract_set_membership_equiv(lhs, rhs, &elem_var)
+                self.extract_set_membership_equiv(lhs, rhs, &element_var)
             {
                 if self.output_vars.contains(&set_var) {
                     return Some(QuantifierTemplate::SetComprehension {
-                        elem_var,
+                        element_var,
                         domain_predicate: Box::new(domain_pred),
-                        set_var,
+                        set_var: Some(set_var),
                     });
                 }
             }
@@ -595,6 +688,14 @@ pub fn match_expression(expr: &Expr, output_vars: &[String]) -> MatchResult {
         QuantifierTemplate::SimpleAssignment { .. } => 0.95,
         QuantifierTemplate::Copy { .. } => 1.0,
         QuantifierTemplate::Unrecognized { .. } => 0.0,
+        // QuantifierMatcher-only variants (not produced by TemplateMatcher)
+        QuantifierTemplate::MapFilter { .. }
+        | QuantifierTemplate::MapPreservation { .. }
+        | QuantifierTemplate::MapConditionalValue { .. }
+        | QuantifierTemplate::MapDomainBiconditional { .. }
+        | QuantifierTemplate::MapExclusion { .. }
+        | QuantifierTemplate::MapInclusion { .. }
+        | QuantifierTemplate::CollectionCheck { .. } => 0.90,
     };
 
     MatchResult {
@@ -691,7 +792,7 @@ mod tests {
                 index_var, seq_var, ..
             } => {
                 assert_eq!(index_var, "i");
-                assert_eq!(seq_var, "seq");
+                assert_eq!(seq_var, Some("seq".to_string()));
             }
             _ => panic!("Expected SeqComprehension, got {:?}", template),
         }
@@ -867,7 +968,7 @@ mod tests {
         match matcher.match_template(&expr) {
             QuantifierTemplate::SeqComprehension { index_var, seq_var, .. } => {
                 assert_eq!(index_var, "i");
-                assert_eq!(seq_var, "seq");
+                assert_eq!(seq_var, Some("seq".to_string()));
             }
             other => panic!("Expected SeqComprehension, got {:?}", other),
         }

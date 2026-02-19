@@ -146,7 +146,7 @@ fn test_saturation_no_assignments() {
 #[test]
 fn test_unsupported_quantifier_multiple_vars() {
     use verus_transpiler::ast::{Binding, Expr, VariableMode};
-    use verus_transpiler::checker::TemplateMatcher;
+    use verus_transpiler::checker::QuantifierMatcher;
 
     // Create forall with multiple bound variables - not supported by our templates
     let expr = Expr::Forall {
@@ -166,8 +166,8 @@ fn test_unsupported_quantifier_multiple_vars() {
         body: Box::new(Expr::Literal(ast::Literal::Bool(true))),
     };
 
-    // Template matcher should not match this
-    let result = TemplateMatcher::match_template(&expr);
+    // Quantifier matcher should not match this
+    let result = QuantifierMatcher::match_template(&expr);
     assert!(result.is_none());
 }
 

@@ -34,10 +34,10 @@ impl TemplateCodeGenerator {
             } => self.generate_seq_comprehension(index_var, length_expr, element_expr, ctx),
 
             QuantifierTemplate::SetComprehension {
-                elem_var,
+                element_var,
                 domain_predicate,
                 set_var: _,
-            } => self.generate_set_comprehension(elem_var, domain_predicate, ctx),
+            } => self.generate_set_comprehension(element_var, domain_predicate, ctx),
 
             QuantifierTemplate::MapDomain {
                 key_var,
@@ -57,7 +57,8 @@ impl TemplateCodeGenerator {
                 value_expr,
                 map_var,
             } => {
-                self.generate_map_comprehension(key_var, domain_predicate, value_expr, map_var, ctx)
+                let map_var_ref = map_var.as_deref().unwrap_or("_map");
+                self.generate_map_comprehension(key_var, domain_predicate, value_expr, map_var_ref, ctx)
             }
 
             QuantifierTemplate::SimpleAssignment {
@@ -79,6 +80,22 @@ impl TemplateCodeGenerator {
                     message: reason.clone(),
                     span: None,
                     help: hint.clone(),
+                })
+            }
+
+            // QuantifierMatcher-only variants — not produced by TemplateMatcher,
+            // but handled here for exhaustive matching.
+            QuantifierTemplate::MapFilter { .. }
+            | QuantifierTemplate::MapPreservation { .. }
+            | QuantifierTemplate::MapConditionalValue { .. }
+            | QuantifierTemplate::MapDomainBiconditional { .. }
+            | QuantifierTemplate::MapExclusion { .. }
+            | QuantifierTemplate::MapInclusion { .. }
+            | QuantifierTemplate::CollectionCheck { .. } => {
+                Err(TranspileError::UnsupportedPattern {
+                    message: "QuantifierMatcher-only template variant passed to TemplateCodeGenerator".to_string(),
+                    span: None,
+                    help: Some("Use translator::translate_quantifier_template() for these patterns".to_string()),
                 })
             }
         }
@@ -404,7 +421,7 @@ mod tests {
             index_var: "i".to_string(),
             length_expr: Box::new(Expr::Literal(Literal::Int(10))),
             element_expr: Box::new(Expr::Ident("i".to_string())),
-            seq_var: "result".to_string(),
+            seq_var: Some("result".to_string()),
         };
 
         let result = generator.generate(&template, &ctx).unwrap();
@@ -450,9 +467,9 @@ mod tests {
         let ctx = make_ctx();
 
         let template = QuantifierTemplate::SetComprehension {
-            elem_var: "x".to_string(),
+            element_var: "x".to_string(),
             domain_predicate: Box::new(Expr::Literal(Literal::Bool(true))),
-            set_var: "result".to_string(),
+            set_var: Some("result".to_string()),
         };
 
         let result = generator.generate(&template, &ctx);
@@ -560,7 +577,7 @@ mod tests {
             key_var: "k".to_string(),
             domain_predicate: Box::new(Expr::Literal(Literal::Bool(true))),
             value_expr: Box::new(Expr::Literal(Literal::Int(0))),
-            map_var: "src".to_string(),
+            map_var: Some("src".to_string()),
         };
 
         let result = generator.generate(&template, &ctx).unwrap();
