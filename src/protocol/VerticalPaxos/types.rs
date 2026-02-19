@@ -22,16 +22,6 @@ verus! {
         // Witness/sync state
         pub witness_val: int,         // Value carried by witness from old config
         pub has_witness: bool,        // Whether a witness value has been received
-        // Message flags
-        pub msgs_prepare: bool,       // A prepare message is pending
-        pub msgs_prepare_bal: int,    // Ballot of prepare message
-        pub msgs_promise: bool,       // A promise message is pending
-        pub msgs_promise_bal: int,    // Ballot of promise
-        pub msgs_promise_v_bal: int,  // Accepted ballot in promise
-        pub msgs_promise_val: int,    // Accepted value in promise
-        pub msgs_accept: bool,        // An accept message is pending
-        pub msgs_accept_bal: int,     // Ballot of accept
-        pub msgs_accept_val: int,     // Value of accept
     }
 
     /// Protocol constants
@@ -39,5 +29,12 @@ verus! {
         pub quorum_size: int,         // Quorum size for current configuration
         pub num_nodes: int,           // Total number of nodes in cluster
         pub node_id: int,             // This node's ID
+    }
+
+    /// Vertical Paxos protocol messages.
+    pub enum LVPMessage {
+        Prepare { bal: int },
+        Promise { bal: int, v_bal: int, val: int },
+        Accept { bal: int, val: int },
     }
 }

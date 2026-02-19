@@ -3,15 +3,15 @@
 
 module VerticalPaxos::vpaxos {
     LInit(-, +);
-    LPrepare(+, -, +, +);
-    LSendPromise(+, -, +);
-    LReceivePromise(+, -, +, +);
-    LAccept(+, -, +, +, +);
-    LReceiveAccepted(+, -, +, +);
-    LReconfigure(+, -, +);
-    LWitnessSync(+, -, +, +);
-    LSync(+, -, +, +, +);
-    LDeactivate(+, -, +);
-    LCommit(+, -, +);
+    LPrepare(+, -, +, +, -);
+    LSendPromise(+, -, +, +, -);
+    LReceivePromise(+, -, +, +, +, +, +, -);
+    LAccept(+, -, +, +, +, -);
+    LReceiveAccepted(+, -, +, +, +, -);
+    LReconfigure(+, -, +, -);
+    LWitnessSync(+, -, +, +, -);
+    LSync(+, -, +, +, +, -);
+    LDeactivate(+, -, +, -);
+    LCommit(+, -, +, -);
     // LNext not transpiled (contains existential quantifiers)
 }

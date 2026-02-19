@@ -22,15 +22,6 @@ pub struct CState {
     pub committed_val: u64,
     pub witness_val: u64,
     pub has_witness: bool,
-    pub msgs_prepare: bool,
-    pub msgs_prepare_bal: u64,
-    pub msgs_promise: bool,
-    pub msgs_promise_bal: u64,
-    pub msgs_promise_v_bal: u64,
-    pub msgs_promise_val: u64,
-    pub msgs_accept: bool,
-    pub msgs_accept_bal: u64,
-    pub msgs_accept_val: u64,
 }
 
 impl Clone for CState {
@@ -65,15 +56,6 @@ impl View for CState {
             committed_val: self.committed_val as int,
             witness_val: self.witness_val as int,
             has_witness: self.has_witness,
-            msgs_prepare: self.msgs_prepare,
-            msgs_prepare_bal: self.msgs_prepare_bal as int,
-            msgs_promise: self.msgs_promise,
-            msgs_promise_bal: self.msgs_promise_bal as int,
-            msgs_promise_v_bal: self.msgs_promise_v_bal as int,
-            msgs_promise_val: self.msgs_promise_val as int,
-            msgs_accept: self.msgs_accept,
-            msgs_accept_bal: self.msgs_accept_bal as int,
-            msgs_accept_val: self.msgs_accept_val as int,
         }
     }
 }
@@ -99,6 +81,44 @@ impl View for CConstants {
             quorum_size: self.quorum_size as int,
             num_nodes: self.num_nodes as int,
             node_id: self.node_id as int,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CVPMessage {
+    Prepare {
+        bal: u64,
+    },
+    Promise {
+        bal: u64,
+        v_bal: u64,
+        val: u64,
+    },
+    Accept {
+        bal: u64,
+        val: u64,
+    },
+}
+
+impl CVPMessage {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CVPMessage::Prepare { bal } => true,
+            CVPMessage::Promise { bal, v_bal, val } => true,
+            CVPMessage::Accept { bal, val } => true,
+        }
+    }
+}
+
+impl View for CVPMessage {
+    type V = LVPMessage;
+
+    open spec fn view(&self) -> LVPMessage {
+        match self {
+            CVPMessage::Prepare { bal } => LVPMessage::Prepare { bal: *bal as int },
+            CVPMessage::Promise { bal, v_bal, val } => LVPMessage::Promise { bal: *bal as int, v_bal: *v_bal as int, val: *val as int },
+            CVPMessage::Accept { bal, val } => LVPMessage::Accept { bal: *bal as int, val: *val as int },
         }
     }
 }
