@@ -1,11 +1,13 @@
 #!/bin/bash
 # Phase 17.6.3: Integration test harness for protocol clusters
 # Launches N-node clusters for each protocol, verifies startup and stability.
+# For RSL: also runs a client to verify end-to-end request/reply.
 #
 # Usage:
 #   ./scripts/integration_test_cluster.sh [protocol ...]
-#   ./scripts/integration_test_cluster.sh              # test all protocols
+#   ./scripts/integration_test_cluster.sh              # test all protocols (incl. RSL)
 #   ./scripts/integration_test_cluster.sh raft paxos   # test specific protocols
+#   ./scripts/integration_test_cluster.sh rsl          # test RSL end-to-end
 
 set -euo pipefail
 
@@ -14,17 +16,20 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$PROJECT_ROOT/bin"
 CERT_TOOL="$BIN_DIR/CreateIronServiceCerts.dll"
 SERVER="$BIN_DIR/IronProtocolServer.dll"
+RSL_SERVER="$BIN_DIR/IronRSLServerUDP.dll"
+RSL_CLIENT="$BIN_DIR/IronRSLClientUDP.dll"
 
 # Cluster parameters
 NUM_NODES=3
 BASE_PORT=17600
 READY_TIMEOUT=10     # seconds to wait for [[READY]]
 RUN_DURATION=5       # seconds to let the cluster run
+RSL_CLIENT_DURATION=15  # seconds for RSL client experiment
 TEMP_DIR=""
 PIDS=()
 
-# All supported protocols (excluding rsl which uses a different server binary)
-ALL_PROTOCOLS=(twophase leaderelection primarybackup chainreplication paxos verticalpaxos raft pbft epaxos)
+# All supported protocols
+ALL_PROTOCOLS=(rsl twophase leaderelection primarybackup chainreplication paxos verticalpaxos raft pbft epaxos)
 
 cleanup() {
     # Kill any remaining background processes
@@ -61,16 +66,25 @@ check_prerequisites() {
         echo "FAIL: liblib.so not found. Run: scons --verus-path=... liblib.so"
         exit 1
     fi
+    if [ ! -f "$RSL_SERVER" ]; then
+        echo "FAIL: $RSL_SERVER not found. Run: scons bin/IronRSLServerUDP.dll"
+        exit 1
+    fi
+    if [ ! -f "$RSL_CLIENT" ]; then
+        echo "FAIL: $RSL_CLIENT not found. Run: scons bin/IronRSLClientUDP.dll"
+        exit 1
+    fi
 }
 
 # Generate certificates for an N-node cluster
-# Args: $1=output_dir, $2=base_port, $3=num_nodes
+# Args: $1=output_dir, $2=base_port, $3=num_nodes, $4=service_type (default: Proto)
 generate_certs() {
     local out_dir="$1"
     local base_port="$2"
     local n="$3"
+    local svc_type="${4:-Proto}"
 
-    local args=(dotnet "$CERT_TOOL" "name=TestCluster" "type=Proto" "outputdir=$out_dir" "usessl=false")
+    local args=(dotnet "$CERT_TOOL" "name=TestCluster" "type=$svc_type" "outputdir=$out_dir" "usessl=false")
     for i in $(seq 1 "$n"); do
         local port=$((base_port + i - 1))
         args+=("addr${i}=127.0.0.1" "port${i}=${port}")
@@ -211,6 +225,160 @@ test_protocol() {
     fi
 }
 
+# Test RSL with end-to-end client request/reply
+# Args: $1=base_port
+# Returns: 0=pass, 1=fail
+test_rsl() {
+    local port_base="$1"
+    local cert_dir="$TEMP_DIR/certs_rsl"
+    local log_dir="$TEMP_DIR/logs_rsl"
+    local local_pids=()
+
+    mkdir -p "$cert_dir" "$log_dir"
+
+    # Step 1: Generate certificates (RSL requires type=IronRSL)
+    if ! generate_certs "$cert_dir" "$port_base" "$NUM_NODES" "IronRSL"; then
+        echo "  FAIL: Certificate generation failed"
+        return 1
+    fi
+
+    local service_file="$cert_dir/TestCluster.IronRSL.service.txt"
+    if [ ! -f "$service_file" ]; then
+        echo "  FAIL: Service file not generated"
+        return 1
+    fi
+
+    # Step 2: Launch RSL server nodes
+    for i in $(seq 1 "$NUM_NODES"); do
+        local private_file="$cert_dir/TestCluster.IronRSL.server${i}.private.txt"
+        local log_file="$log_dir/server${i}.log"
+
+        if [ ! -f "$private_file" ]; then
+            echo "  FAIL: Private key for node $i not generated"
+            for pid in "${local_pids[@]}"; do
+                kill "$pid" 2>/dev/null || true
+            done
+            return 1
+        fi
+
+        dotnet "$RSL_SERVER" "$service_file" "$private_file" \
+            >"$log_file" 2>&1 &
+        local_pids+=("$!")
+        PIDS+=("$!")
+    done
+
+    # Step 3: Wait for all servers to become ready
+    for i in $(seq 1 "$NUM_NODES"); do
+        local log_file="$log_dir/server${i}.log"
+        if ! wait_for_ready "$log_file" "$READY_TIMEOUT" "server $i"; then
+            echo "  FAIL: Server $i did not become ready within ${READY_TIMEOUT}s"
+            echo "  Log contents:"
+            head -20 "$log_file" 2>/dev/null | sed 's/^/    /'
+            for pid in "${local_pids[@]}"; do
+                kill "$pid" 2>/dev/null || true
+            done
+            return 1
+        fi
+    done
+
+    # Step 4: Launch RSL client
+    local client_port=$((port_base + NUM_NODES))
+    local client_log="$log_dir/client.log"
+    local port1=$((port_base))
+    local port2=$((port_base + 1))
+    local port3=$((port_base + 2))
+
+    dotnet "$RSL_CLIENT" \
+        "clientip=127.0.0.1" "clientport=$client_port" \
+        "ip1=127.0.0.1" "port1=$port1" \
+        "ip2=127.0.0.1" "port2=$port2" \
+        "ip3=127.0.0.1" "port3=$port3" \
+        "nthreads=1" "duration=$RSL_CLIENT_DURATION" \
+        >"$client_log" 2>&1 &
+    local client_pid=$!
+    local_pids+=("$client_pid")
+    PIDS+=("$client_pid")
+
+    # Step 5: Wait for client to finish (it runs for RSL_CLIENT_DURATION seconds)
+    local client_deadline=$((SECONDS + RSL_CLIENT_DURATION + 10))
+    local client_done=false
+    while [ $SECONDS -lt $client_deadline ]; do
+        if ! kill -0 "$client_pid" 2>/dev/null; then
+            client_done=true
+            break
+        fi
+        if grep -q '\[\[DONE\]\]' "$client_log" 2>/dev/null; then
+            client_done=true
+            # Give client a moment to print final stats and exit
+            sleep 1
+            break
+        fi
+        sleep 0.5
+    done
+
+    if [ "$client_done" = false ]; then
+        echo "  FAIL: Client did not finish within timeout"
+        kill "$client_pid" 2>/dev/null || true
+    fi
+
+    # Step 6: Verify servers are still alive
+    local all_alive=true
+    for idx in $(seq 0 $((NUM_NODES - 1))); do
+        local pid="${local_pids[$idx]}"
+        local node_num=$((idx + 1))
+        if ! kill -0 "$pid" 2>/dev/null; then
+            all_alive=false
+            local log_file="$log_dir/server${node_num}.log"
+            echo "  FAIL: Server $node_num (pid $pid) exited prematurely"
+            echo "  Last 10 lines of log:"
+            tail -10 "$log_file" 2>/dev/null | sed 's/^/    /'
+        fi
+    done
+
+    # Step 7: Check client got responses (throughput > 0)
+    local throughput_ok=false
+    if grep -q 'throughput' "$client_log" 2>/dev/null; then
+        # Extract the final throughput line: "throughput N | avg latency ms M"
+        local tp_line
+        tp_line=$(grep '^throughput' "$client_log" | tail -1)
+        if [ -n "$tp_line" ]; then
+            local tp_val
+            tp_val=$(echo "$tp_line" | awk '{print $2}')
+            if [ -n "$tp_val" ] && [ "$tp_val" -gt 0 ] 2>/dev/null; then
+                throughput_ok=true
+            fi
+        fi
+    fi
+
+    # Step 8: Clean shutdown
+    for pid in "${local_pids[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    local wait_deadline=$((SECONDS + 3))
+    for pid in "${local_pids[@]}"; do
+        while [ $SECONDS -lt $wait_deadline ] && kill -0 "$pid" 2>/dev/null; do
+            sleep 0.1
+        done
+        kill -9 "$pid" 2>/dev/null || true
+    done
+    wait "${local_pids[@]}" 2>/dev/null || true
+
+    for pid in "${local_pids[@]}"; do
+        PIDS=("${PIDS[@]/$pid/}")
+    done
+
+    if [ "$all_alive" = true ] && [ "$throughput_ok" = true ]; then
+        return 0
+    elif [ "$all_alive" = false ]; then
+        return 1
+    else
+        echo "  FAIL: Client reported zero throughput (no replies received)"
+        echo "  Client log:"
+        cat "$client_log" 2>/dev/null | sed 's/^/    /'
+        return 1
+    fi
+}
+
 # ---- Main ----
 
 check_prerequisites
@@ -239,16 +407,31 @@ port_offset=0
 
 for protocol in "${PROTOCOLS[@]}"; do
     port_base=$((BASE_PORT + port_offset))
-    port_offset=$((port_offset + NUM_NODES))
+    # RSL needs an extra port for the client
+    if [ "$protocol" = "rsl" ]; then
+        port_offset=$((port_offset + NUM_NODES + 1))
+    else
+        port_offset=$((port_offset + NUM_NODES))
+    fi
 
     printf "%-20s ... " "$protocol"
 
-    if test_protocol "$protocol" "$port_base"; then
-        echo "PASS"
-        passed=$((passed + 1))
+    if [ "$protocol" = "rsl" ]; then
+        if test_rsl "$port_base"; then
+            echo "PASS (end-to-end)"
+            passed=$((passed + 1))
+        else
+            echo "FAIL"
+            failed=$((failed + 1))
+        fi
     else
-        echo "FAIL"
-        failed=$((failed + 1))
+        if test_protocol "$protocol" "$port_base"; then
+            echo "PASS"
+            passed=$((passed + 1))
+        else
+            echo "FAIL"
+            failed=$((failed + 1))
+        fi
     fi
 done
 

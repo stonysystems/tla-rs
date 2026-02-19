@@ -1521,13 +1521,15 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
           - Redirected `replicaimpl_class.rs` to import types from `types_gen.rs` directly
           - Modules retained (not deleted) because generated wrappers delegate to their methods
           - 581 verified, 0 errors confirmed after changes
-- [ ] Run full system tests with generated implementation (regeneration parity resolved ✅; blocked by .NET SDK needed for end-to-end runtime testing)
+- [x] Run full system tests with generated implementation (regeneration parity resolved ✅; .NET SDK available)
   - [x] Added equivalence test in generated_acceptor_test.rs [26:01:25, 12:30]
     - test_generated_vs_manual_equivalence() compares generated vs manual output
     - Verifies keys >= log_truncation_point preserved correctly
     - Verifies values match original
   - [x] Wrapper methods now implemented [26:01:29, 06:30]
     - Optimized variants are now added; remaining blocker is full regeneration parity
+  - [x] End-to-end RSL cluster test: 3-node IronRSLServerUDP + IronRSLClientUDP, client achieves >0 throughput [26:02:19]
+    - `scripts/integration_test_cluster.sh rsl` runs full request/reply cycle
 - [x] Document any manual adjustments needed [26:01:25, 12:00]
   - Created docs/dev/generated-code-integration.md
   - Documents struct definitions, View trait, method adaptation, type mappings
