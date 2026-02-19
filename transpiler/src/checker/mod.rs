@@ -5,9 +5,9 @@
 //! - Harmony: No double assignments to the same member
 //! - Obligation: Output variables are only used after assignment
 
-use crate::ast::Type;
+use crate::ast::{ParameterMode, Type};
 use crate::error::{DiagnosticAccumulator, TranspileError, TranspileResult};
-use crate::moder::{AnnotatedFunction, AssignmentTracker, MemberPath};
+use crate::moder::{AnnotatedFunction, AssignmentTracker, MemberPath, ModeAnalyzer, ModeConflict};
 use std::collections::HashSet;
 
 /// Saturation checker - verifies all output members are assigned
@@ -80,10 +80,43 @@ impl HarmonyChecker {
 pub struct ObligationChecker;
 
 impl ObligationChecker {
-    /// Check that output variables are only used after assignment
-    pub fn check(_func: &AnnotatedFunction, _tracker: &AssignmentTracker) -> TranspileResult<()> {
-        // TODO: Implement obligation check
-        // This requires building a dependency graph and detecting cycles
+    /// Check that output variables are only used after assignment.
+    ///
+    /// Delegates to `ModeAnalyzer::detect_conflicts()` which walks the function
+    /// body tracking which output variables have been assigned so far, and flags
+    /// any use of an output variable before its assignment point.
+    pub fn check(func: &AnnotatedFunction, _tracker: &AssignmentTracker) -> TranspileResult<()> {
+        let mut input_params = HashSet::new();
+        let mut output_params = HashSet::new();
+
+        for (param, mode) in func.spec_fn.params.iter().zip(&func.param_modes) {
+            match mode {
+                ParameterMode::Input => {
+                    input_params.insert(param.name.clone());
+                }
+                ParameterMode::Output => {
+                    output_params.insert(param.name.clone());
+                }
+            }
+        }
+
+        let mut analyzer = ModeAnalyzer::new();
+        let conflicts =
+            analyzer.detect_conflicts(&func.spec_fn.body, &input_params, &output_params);
+
+        // Report only UseBeforeAssignment conflicts as obligation errors
+        for conflict in conflicts {
+            if let ModeConflict::UseBeforeAssignment { var, context } = conflict {
+                return Err(TranspileError::Obligation {
+                    message: format!(
+                        "Output variable '{}' used before assignment in {}",
+                        var, context
+                    ),
+                    span: None,
+                });
+            }
+        }
+
         Ok(())
     }
 }
@@ -1762,6 +1795,203 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("s_"), "error should mention the variable name");
         assert!(msg.contains("2"), "error should mention the count");
+    }
+
+    // ============ Obligation Checker Tests ============
+
+    /// Helper to create a function with a specific body expression
+    fn make_function_with_body(body: Expr) -> AnnotatedFunction {
+        AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: "TestFn".to_string(),
+                generics: Default::default(),
+                params: vec![
+                    Parameter {
+                        name: "s".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Input),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                    Parameter {
+                        name: "s_".to_string(),
+                        ty: Type::Named(Path::single("State".to_string())),
+                        mode: Some(ParameterMode::Output),
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    },
+                ],
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body,
+                span: None,
+            },
+            kind: crate::ast::FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        }
+    }
+
+    /// Test: output variable used before assignment triggers obligation error.
+    /// In a conjunction, clause 1 uses s_ in a function call (not an assignment),
+    /// then clause 2 assigns s_. The use in clause 1 is before assignment.
+    #[test]
+    fn test_obligation_use_before_assignment() {
+        // Body (conjunction):
+        //   Clause 1: f(s_) == true   — s_ used in call arg before any assignment
+        //   Clause 2: s_ == s         — assignment of s_
+        let body = Expr::Conjunction(vec![
+            // Clause 1: use s_ in a call — use-before-assignment
+            Expr::Eq(
+                Box::new(Expr::Call {
+                    func: Path::single("f".to_string()),
+                    args: vec![Expr::Ident("s_".to_string())],
+                }),
+                Box::new(Expr::Literal(Literal::Bool(true))),
+            ),
+            // Clause 2: assign s_
+            Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("s".to_string())),
+            ),
+        ]);
+
+        let func = make_function_with_body(body);
+        let tracker = AssignmentTracker::new();
+
+        let result = ObligationChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, TranspileError::Obligation { .. }));
+    }
+
+    /// Test: output variable properly assigned before use passes obligation check.
+    /// In a conjunction, clause 1 assigns s_, then clause 2 uses it in a call.
+    #[test]
+    fn test_obligation_assigned_then_used_passes() {
+        // Body (conjunction):
+        //   Clause 1: s_ == s         — assignment of s_
+        //   Clause 2: f(s_) == true   — use after assignment is fine
+        let body = Expr::Conjunction(vec![
+            // Clause 1: assign s_ first
+            Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("s".to_string())),
+            ),
+            // Clause 2: use s_ in a call — ok because already assigned
+            Expr::Eq(
+                Box::new(Expr::Call {
+                    func: Path::single("f".to_string()),
+                    args: vec![Expr::Ident("s_".to_string())],
+                }),
+                Box::new(Expr::Literal(Literal::Bool(true))),
+            ),
+        ]);
+
+        let func = make_function_with_body(body);
+        let tracker = AssignmentTracker::new();
+
+        let result = ObligationChecker::check(&func, &tracker);
+        assert!(result.is_ok());
+    }
+
+    /// Test: output used in a method call argument before any assignment
+    #[test]
+    fn test_obligation_use_in_method_call() {
+        // Body (conjunction):
+        //   Clause 1: s.method(s_) == true  — s_ used as method arg before assignment
+        //   Clause 2: s_ == s               — assignment
+        let body = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("s".to_string())),
+                    method: "contains".to_string(),
+                    args: vec![Expr::Ident("s_".to_string())],
+                }),
+                Box::new(Expr::Literal(Literal::Bool(true))),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("s".to_string())),
+            ),
+        ]);
+
+        let func = make_function_with_body(body);
+        let tracker = AssignmentTracker::new();
+
+        let result = ObligationChecker::check(&func, &tracker);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, TranspileError::Obligation { .. }));
+    }
+
+    /// Test: only input variables used passes obligation check
+    #[test]
+    fn test_obligation_only_inputs_passes() {
+        // Body: s.field == true (only uses input s, never touches output s_)
+        let body = Expr::Eq(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "field".to_string(),
+            )),
+            Box::new(Expr::Literal(Literal::Bool(true))),
+        );
+
+        let func = make_function_with_body(body);
+        let tracker = AssignmentTracker::new();
+
+        let result = ObligationChecker::check(&func, &tracker);
+        assert!(result.is_ok());
+    }
+
+    /// Test: simple assignment (s_ == s) without prior use is fine
+    #[test]
+    fn test_obligation_simple_assignment_passes() {
+        let body = Expr::Eq(
+            Box::new(Expr::Ident("s_".to_string())),
+            Box::new(Expr::Ident("s".to_string())),
+        );
+
+        let func = make_function_with_body(body);
+        let tracker = AssignmentTracker::new();
+
+        let result = ObligationChecker::check(&func, &tracker);
+        assert!(result.is_ok());
+    }
+
+    /// Test: obligation error message includes variable name and context
+    #[test]
+    fn test_obligation_error_message() {
+        let body = Expr::Conjunction(vec![
+            Expr::Eq(
+                Box::new(Expr::Call {
+                    func: Path::single("f".to_string()),
+                    args: vec![Expr::Ident("s_".to_string())],
+                }),
+                Box::new(Expr::Literal(Literal::Bool(true))),
+            ),
+            Expr::Eq(
+                Box::new(Expr::Ident("s_".to_string())),
+                Box::new(Expr::Ident("s".to_string())),
+            ),
+        ]);
+
+        let func = make_function_with_body(body);
+        let tracker = AssignmentTracker::new();
+
+        let err = ObligationChecker::check(&func, &tracker).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("s_"), "error should mention the variable name");
+        assert!(
+            msg.contains("before assignment"),
+            "error should mention 'before assignment'"
+        );
     }
 
     /// Test validate_function accumulates errors from multiple checkers.
