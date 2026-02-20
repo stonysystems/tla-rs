@@ -39,7 +39,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 **What doesn't work yet:**
 - 10 packet-identity assumes in replica_gen.rs — all state `sent_packets =~= ExtractSentPacketsFromIos(ios)`, the irreducible IO trust boundary (runtime faithfully records sent packets)
 - Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
-- **Generated RSL code still delegates to manual implementations** — proposer_gen (0/12, all standalone), acceptor_gen (0/7, all standalone), executor_gen (0/10, all standalone), replica_gen (20/20 delegates). Phases 19.2/19.3/19.4 COMPLETE, Phase 19.7 partial (dead code stripped).
+- **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 - **election_gen.rs is disabled** — 11 standalone functions are fully generated but commented out in mod.rs; election calls route through ProposerImpl→ElectionImpl instead
 
 **Next steps (priority order):**
@@ -53,7 +53,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1396 total tests (1059 unit + 147 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main + 21 doc-ignored), 583 verified, 0 errors. Phase 19.2 (proposer), 19.3 (executor), 19.4 (acceptor), 19.5 (election), 19.6 (replica), 19.7 (dead code) COMPLETE. Remaining: 10 IO trust boundary assumes, replica_gen.rs 20 delegates.
+**Active work**: 1396 total tests (1059 unit + 147 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main + 21 doc-ignored), 583 verified, 0 errors. Phase 19.2 (proposer), 19.3 (executor), 19.4 (acceptor), 19.5 (election), 19.6 (replica), 19.7 (dead code) COMPLETE. Remaining: 10 IO trust boundary assumes. All RSL gen modules fully standalone (Phase 19 acceptance criteria met except election_gen.rs enablement).
 
 ## Reference
 

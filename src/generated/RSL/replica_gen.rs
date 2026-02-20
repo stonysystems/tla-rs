@@ -17,7 +17,7 @@ use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::gen_helpers::{clone_cpacket_full, clone_io_packet, outbound_packets_to_vec};
+use crate::implementation::RSL::gen_helpers::clone_io_packet;
 use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::environment::{RslIo, RslPacket};
