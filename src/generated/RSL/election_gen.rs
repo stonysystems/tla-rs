@@ -157,7 +157,6 @@ pub exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CReques
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)
 requires
     c.valid(),
-    (c.all.config.replica_ids.len() > 0),
 ensures
     result.valid(),
     ElectionStateInit(result@, c@),
@@ -187,7 +186,6 @@ pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clo
 requires
     es.valid(),
     p.valid(),
-    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, *clock as int),

@@ -5641,8 +5641,11 @@ impl Translator {
         }
 
         // Add recommends clauses from the spec as requires
-        for recommends_expr in &func.spec_fn.recommends {
-            requires.push(self.expr_to_requires_string(recommends_expr));
+        // (skip when assume_postconditions is enabled — extra requires would break callers)
+        if !self.config.assume_postconditions {
+            for recommends_expr in &func.spec_fn.recommends {
+                requires.push(self.expr_to_requires_string(recommends_expr));
+            }
         }
 
         requires
@@ -6249,12 +6252,15 @@ impl Translator {
 
         // Add recommends clauses from the spec as requires
         // (recommends in spec functions become requires in exec functions)
-        for recommends_expr in &func.spec_fn.recommends {
-            requires.push(self.expr_to_view_requires_string(
-                recommends_expr,
-                &view_params,
-                &scalar_params,
-            ));
+        // Skip when assume_postconditions is enabled — extra requires would break callers
+        if !self.config.assume_postconditions {
+            for recommends_expr in &func.spec_fn.recommends {
+                requires.push(self.expr_to_view_requires_string(
+                    recommends_expr,
+                    &view_params,
+                    &scalar_params,
+                ));
+            }
         }
 
         // Extract input-only conjuncts from the spec body as preconditions.

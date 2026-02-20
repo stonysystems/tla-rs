@@ -413,7 +413,7 @@ impl Transpiler {
                     Ok(a) => a,
                     Err(e) => {
                         let reason = format!("annotation error: {}", e);
-                        if self.config.proof_fallback {
+                        if self.config.proof_fallback && !self.config.no_stub_functions.contains(&fn_name) {
                             let stub = self.generate_external_body_stub(spec_fn_backup.as_ref().unwrap(), Some(annotation), &reason);
                             output.push_str(&stub);
                             output.push('\n');
@@ -437,7 +437,7 @@ impl Transpiler {
                         Ok(f) => f,
                         Err(e) => {
                             let reason = format!("transpilation error: {}", e);
-                            if self.config.proof_fallback {
+                            if self.config.proof_fallback && !self.config.no_stub_functions.contains(&fn_name) {
                                 let stub = self.generate_external_body_stub(&annotated.spec_fn, Some(annotation), &reason);
                                 output.push_str(&stub);
                                 output.push('\n');
@@ -463,7 +463,7 @@ impl Transpiler {
                     if self.config.generate_wrapper_methods {
                         exec_functions.push(exec_fn);
                     }
-                } else if self.config.proof_fallback {
+                } else if self.config.proof_fallback && !self.config.no_stub_functions.contains(&fn_name) {
                     // Function exists but can't be functionalized — emit stub
                     let reason = annotated.non_functionalizable_reason
                         .as_deref()
@@ -557,14 +557,33 @@ impl Transpiler {
         let mut ensures_lines = Vec::new();
         // Add validity ensures for output types (skip if type is in skip_valid_types)
         let vp = &self.config.translator.validity_predicate_name;
-        if !vp.is_empty() && output_types.len() == 1 {
-            let output_type_skips_valid = output_types.first().map_or(false, |t| {
-                self.config.translator.skip_valid_types.iter().any(|sv| t.contains(sv))
-                    || t.starts_with("Vec<") || t.starts_with("HashMap<") || t.starts_with("HashSet<")
-                    || t == "bool" || t == "u64" || t == "i64" || t == "usize"
-            });
-            if !output_type_skips_valid {
-                ensures_lines.push(format!("    result.{}(),", vp));
+        if !vp.is_empty() {
+            for (idx, ot) in output_types.iter().enumerate() {
+                let skips_valid = self.config.translator.skip_valid_types.iter().any(|sv| ot.contains(sv))
+                    || ot.starts_with("Vec<") || ot.starts_with("HashMap<") || ot.starts_with("HashSet<")
+                    || ot == "bool" || ot == "u64" || ot == "i64" || ot == "usize";
+                if !skips_valid {
+                    let accessor = if output_types.len() > 1 {
+                        format!("result.{}", idx)
+                    } else {
+                        "result".to_string()
+                    };
+                    ensures_lines.push(format!("    {}.{}(),", accessor, vp));
+                }
+                // Add vec_element_ensures for Vec outputs
+                if ot.starts_with("Vec<") && !self.config.translator.vec_element_ensures.is_empty() {
+                    let accessor = if output_types.len() > 1 {
+                        format!("result.{}", idx)
+                    } else {
+                        "result".to_string()
+                    };
+                    for pred in &self.config.translator.vec_element_ensures {
+                        ensures_lines.push(format!(
+                            "    forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}(),",
+                            accessor, accessor, pred
+                        ));
+                    }
+                }
             }
         }
         // Add spec predicate ensures: SpecFn(input@, result@, ...)
@@ -572,6 +591,8 @@ impl Transpiler {
         let is_predicate = matches!(spec_fn.return_type, crate::ast::Type::Bool);
         if annotation.is_some() && is_predicate {
             let mut spec_args = Vec::new();
+            let mut output_idx = 0usize;
+            let num_outputs = output_types.len();
             for (i, param) in spec_fn.params.iter().enumerate() {
                 let is_output = annotation
                     .map(|a| i < a.param_modes.len() && a.param_modes[i] == crate::ast::ParameterMode::Output)
@@ -585,13 +606,28 @@ impl Transpiler {
                 // Check for custom view expression (e.g., "Votes" → "abstractify_cvotes({param})")
                 let has_custom_view = self.config.translator.type_view_exprs.contains_key(&type_name);
                 if is_output {
+                    // For tuple returns, use result.0@, result.1@, etc.
+                    let result_ref = if num_outputs > 1 {
+                        format!("result.{}", output_idx)
+                    } else {
+                        "result".to_string()
+                    };
                     if has_custom_view {
                         let view_expr = self.config.translator.type_view_exprs[&type_name]
-                            .replace("{param}", "&result");
+                            .replace("{param}", &format!("&{}", result_ref));
                         spec_args.push(view_expr);
                     } else {
-                        spec_args.push("result@".to_string());
+                        // Check if this is a Seq<NamedType> that needs .map(|i, p: T| p@)
+                        let output_type = &output_types[output_idx];
+                        if output_type.starts_with("Vec<") && !output_type.starts_with("Vec<u64>") && !output_type.starts_with("Vec<i64>") {
+                            // Extract inner type for view mapping
+                            let inner = &output_type[4..output_type.len()-1];
+                            spec_args.push(format!("{}@.map(|i, p: {}| p@)", result_ref, inner));
+                        } else {
+                            spec_args.push(format!("{}@", result_ref));
+                        }
                     }
+                    output_idx += 1;
                 } else if matches!(param.ty, crate::ast::Type::Int | crate::ast::Type::Nat | crate::ast::Type::Bool) || is_primitive {
                     spec_args.push(format!("*{} as int", param.name));
                 } else if has_custom_view {
@@ -1174,6 +1210,7 @@ impl Transpiler {
                 "/// Helper: clone {} preserving view (workaround for missing derive Clone spec).\n",
                 enum_type
             ));
+            output.push_str("#[verifier(external_body)]\n");
             output.push_str(&format!(
                 "fn {}(r: &{}) -> (res: {})\n",
                 fn_name, enum_type, enum_type
@@ -1182,11 +1219,7 @@ impl Transpiler {
             output.push_str("    res@ == r@,\n");
             output.push_str("    res.valid() == r.valid(),\n");
             output.push_str("{\n");
-            output.push_str("    match r {\n");
-            for variant in &variants {
-                output.push_str(&format!("        {} => {},\n", variant, variant));
-            }
-            output.push_str("    }\n");
+            output.push_str("    r.clone()\n");
             output.push_str("}\n\n");
         }
 
@@ -2635,11 +2668,10 @@ mod tests {
 
         // Helper name is based on field name: field "role" -> "clone_role"
         assert!(output.contains("fn clone_role(r: &CNodeRole) -> (res: CNodeRole)"));
+        assert!(output.contains("#[verifier(external_body)]"), "Should have external_body: {}", output);
         assert!(output.contains("res@ == r@,"));
         assert!(output.contains("res.valid() == r.valid(),"));
-        assert!(output.contains("CNodeRole::Head => CNodeRole::Head,"));
-        assert!(output.contains("CNodeRole::Middle => CNodeRole::Middle,"));
-        assert!(output.contains("CNodeRole::Tail => CNodeRole::Tail,"));
+        assert!(output.contains("r.clone()"), "Should use r.clone() body: {}", output);
     }
 
     #[test]

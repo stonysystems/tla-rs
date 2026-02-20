@@ -6256,19 +6256,19 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] Verification: 576 verified, 0 errors (was 581 — delta from verified-with-assumes to external_body stubs)
 - [x] 1132 lib tests pass
 
-#### 21.2.6 RSL executor: 9 external_body helpers
+#### 21.2.6 RSL executor: DEFERRED — fully verified proofs
 
-- [ ] Remove `manual_code` and `skip_functions` from executor_transpile.toml
-- [ ] Regenerate with `--auto-skip --proof-fallback`
-- [ ] Expected: HashMap/cache helpers stay `external_body`, others may pass
-- [ ] CGetPacketsFromReplies: recursive function — test if transpiler handles recursion
+- **DEFERRED**: executor_manual.rs has 706 LOC with **0 assumes** — all 7 functions + 5 lemmas are fully verified with proof blocks. Using `assume_postconditions` would regress from proven to assumed. Manual code stays until transpiler can generate proof blocks.
 
 #### 21.2.7 RSL proposer: 41 assumes → external_body
 
-- [ ] Remove `manual_code` and `skip_functions` from proposer_transpile.toml
-- [ ] Regenerate with `--auto-skip --proof-fallback`
-- [ ] Expected: many functions get `external_body` (41 assumes currently)
-- [ ] Note: proposer depends on election functions — election must be done first (21.2.5)
+- [x] Removed `manual_code = "proposer_manual.rs"` from proposer_transpile.toml (692 LOC, 41 assumes)
+- [x] Added `assume_postconditions = true` + `vec_element_ensures = ["valid", "abstractable"]`
+- [x] Added `no_stub_functions` for 11 spec predicates (suppress stubs for ProposerImpl.rs-owned functions)
+- [x] Added `variant_remapping` for CIncompleteBatchTimer variants
+- [x] Transpiler fixes: `no_stub_functions` check in all 3 stub code paths, `assume_postconditions` suppresses recommends-to-requires, enum clone helpers use external_body, stub ensures use `result.N@` for tuples with Vec view mapping
+- [x] 9 functions auto-transpiled + 3 stubs (NominateOldValue, NominateNewValue, MaybeNominate)
+- [x] Verification: 572 verified, 0 errors. 1132 lib tests pass
 
 #### 21.2.8 RSL replica: 130 assumes → mostly external_body
 
