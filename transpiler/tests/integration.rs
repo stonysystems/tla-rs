@@ -5264,3 +5264,121 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
         .count();
     assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
 }
+
+/// Phase 19.7: Verify impl files have been stripped of dead code.
+/// After Phase 19 standalone conversions, most &mut self methods on component
+/// types are dead code. This test ensures the stripped files only contain
+/// the live functions that are still called.
+#[test]
+fn test_impl_files_stripped_of_dead_code() {
+    // === acceptorimpl.rs ===
+    // Should retain: CAcceptorProcess1a (delegated from acceptor_manual.rs),
+    //   CIsLogTruncationPointValid, CCountLargerInSeq, CCountLargerOrEqualInSeq,
+    //   CIsNthHighestValueInSequence
+    // Should NOT contain any other CAcceptor methods
+    let acceptor = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
+        .expect("Failed to read acceptorimpl.rs");
+    assert!(acceptor.contains("CAcceptorProcess1a"), "acceptorimpl.rs should retain CAcceptorProcess1a");
+    assert!(acceptor.contains("CIsLogTruncationPointValid"), "acceptorimpl.rs should retain CIsLogTruncationPointValid");
+    assert!(acceptor.contains("CCountLargerInSeq"), "acceptorimpl.rs should retain CCountLargerInSeq");
+    // Dead methods that should be removed
+    assert!(!acceptor.contains("fn CAcceptorInit"), "acceptorimpl.rs should not contain dead CAcceptorInit");
+    assert!(!acceptor.contains("fn CAcceptorProcess2a"), "acceptorimpl.rs should not contain dead CAcceptorProcess2a");
+    assert!(!acceptor.contains("fn CRemoveVotesBeforeLogTruncationPoint"), "acceptorimpl.rs should not contain dead CRemoveVotesBeforeLogTruncationPoint");
+    assert!(!acceptor.contains("fn CAddVoteAndRemoveOldOnes"), "acceptorimpl.rs should not contain dead CAddVoteAndRemoveOldOnes");
+    assert!(!acceptor.contains("fn CAcceptorTruncateLog"), "acceptorimpl.rs should not contain dead CAcceptorTruncateLog");
+    assert!(!acceptor.contains("lemma_voteLen"), "acceptorimpl.rs should not contain dead lemma_voteLen");
+
+    // === ExecutorImpl.rs ===
+    // Should retain: CExecutorExecute (called from ReplicaImpl.rs:732),
+    //   CGetPacketsFromReplies, CClientsInReplies, CUpdateNewCache
+    let executor = std::fs::read_to_string("../src/implementation/RSL/ExecutorImpl.rs")
+        .expect("Failed to read ExecutorImpl.rs");
+    assert!(executor.contains("CExecutorExecute"), "ExecutorImpl.rs should retain CExecutorExecute");
+    assert!(executor.contains("CGetPacketsFromReplies"), "ExecutorImpl.rs should retain CGetPacketsFromReplies");
+    assert!(executor.contains("CClientsInReplies"), "ExecutorImpl.rs should retain CClientsInReplies");
+    assert!(executor.contains("CUpdateNewCache"), "ExecutorImpl.rs should retain CUpdateNewCache");
+    // Dead methods
+    assert!(!executor.contains("fn CExecutorInit"), "ExecutorImpl.rs should not contain dead CExecutorInit");
+    assert!(!executor.contains("fn CExecutorGetDecision"), "ExecutorImpl.rs should not contain dead CExecutorGetDecision");
+    assert!(!executor.contains("fn CExecutorProcessAppStateSupply"), "ExecutorImpl.rs should not contain dead CExecutorProcessAppStateSupply");
+    assert!(!executor.contains("fn CExecutorProcessAppStateRequest"), "ExecutorImpl.rs should not contain dead CExecutorProcessAppStateRequest");
+    assert!(!executor.contains("fn CExecutorProcessStartingPhase2"), "ExecutorImpl.rs should not contain dead CExecutorProcessStartingPhase2");
+    assert!(!executor.contains("fn CExecutorProcessRequest"), "ExecutorImpl.rs should not contain dead CExecutorProcessRequest");
+    assert!(!executor.contains("lemma_ReplyCacheLen"), "ExecutorImpl.rs should not contain dead lemma_ReplyCacheLen");
+
+    // === ElectionImpl.rs ===
+    // Should retain: Clone impl, CRequestHeader, clone_up_to_view, CBoundRequestSequence,
+    //   clone_hashset_u64, clone_vec_crequest
+    let election = std::fs::read_to_string("../src/implementation/RSL/ElectionImpl.rs")
+        .expect("Failed to read ElectionImpl.rs");
+    assert!(election.contains("impl Clone for CElectionState"), "ElectionImpl.rs should retain Clone impl");
+    assert!(election.contains("struct CRequestHeader"), "ElectionImpl.rs should retain CRequestHeader");
+    assert!(election.contains("clone_up_to_view"), "ElectionImpl.rs should retain clone_up_to_view");
+    assert!(election.contains("CBoundRequestSequence"), "ElectionImpl.rs should retain CBoundRequestSequence");
+    assert!(election.contains("clone_hashset_u64"), "ElectionImpl.rs should retain clone_hashset_u64");
+    assert!(election.contains("clone_vec_crequest"), "ElectionImpl.rs should retain clone_vec_crequest");
+    // Dead methods — all &mut self CElectionState methods
+    assert!(!election.contains("fn CElectionStateInit"), "ElectionImpl.rs should not contain dead CElectionStateInit");
+    assert!(!election.contains("fn CElectionStateProcessHeartbeat"), "ElectionImpl.rs should not contain dead CElectionStateProcessHeartbeat");
+    assert!(!election.contains("fn CElectionStateCheckForViewTimeout"), "ElectionImpl.rs should not contain dead CElectionStateCheckForViewTimeout");
+    assert!(!election.contains("fn CElectionStateCheckForQuorumOfViewSuspicions"), "ElectionImpl.rs should not contain dead CElectionStateCheckForQuorumOfViewSuspicions");
+    assert!(!election.contains("fn CComputeSuccessorView"), "ElectionImpl.rs should not contain dead CComputeSuccessorView");
+    assert!(!election.contains("fn CElectionStateReflectReceivedRequest"), "ElectionImpl.rs should not contain dead CElectionStateReflectReceivedRequest");
+    assert!(!election.contains("fn CElectionStateReflectExecutedRequestBatch"), "ElectionImpl.rs should not contain dead CElectionStateReflectExecutedRequestBatch");
+    assert!(!election.contains("fn CRemoveAllSatisfiedRequestsInSequence"), "ElectionImpl.rs should not contain dead CRemoveAllSatisfiedRequestsInSequence");
+    assert!(!election.contains("fn CRequestsMatch"), "ElectionImpl.rs should not contain dead CRequestsMatch");
+    assert!(!election.contains("fn FindEarlierRequests"), "ElectionImpl.rs should not contain dead FindEarlierRequests");
+
+    // === ProposerImpl.rs ===
+    // Should retain: Clone impl, 5 static helper methods + their internal helpers
+    let proposer = std::fs::read_to_string("../src/implementation/RSL/ProposerImpl.rs")
+        .expect("Failed to read ProposerImpl.rs");
+    assert!(proposer.contains("impl Clone for CProposer"), "ProposerImpl.rs should retain Clone impl");
+    assert!(proposer.contains("CSetOfMessage1bAboutBallot"), "ProposerImpl.rs should retain CSetOfMessage1bAboutBallot");
+    assert!(proposer.contains("CAllAcceptorsHadNoProposal"), "ProposerImpl.rs should retain CAllAcceptorsHadNoProposal");
+    assert!(proposer.contains("CExistsAcceptorHasProposalLargeThanOpn"), "ProposerImpl.rs should retain CExistsAcceptorHasProposalLargeThanOpn");
+    assert!(proposer.contains("CValIsHighestNumberedProposal"), "ProposerImpl.rs should retain CValIsHighestNumberedProposal");
+    assert!(proposer.contains("CProposerCanNominateUsingOperationNumber"), "ProposerImpl.rs should retain CProposerCanNominateUsingOperationNumber");
+    // Dead &mut self methods
+    assert!(!proposer.contains("fn CProposerInit("), "ProposerImpl.rs should not contain dead CProposerInit");
+    assert!(!proposer.contains("fn CProposerProcessRequest("), "ProposerImpl.rs should not contain dead CProposerProcessRequest");
+    assert!(!proposer.contains("fn CProposerProcess1b("), "ProposerImpl.rs should not contain dead CProposerProcess1b");
+    assert!(!proposer.contains("fn CProposerMaybeEnterNewViewAndSend1a("), "ProposerImpl.rs should not contain dead CProposerMaybeEnterNewViewAndSend1a");
+    assert!(!proposer.contains("fn CProposerMaybeEnterPhase2("), "ProposerImpl.rs should not contain dead CProposerMaybeEnterPhase2");
+    assert!(!proposer.contains("fn CProposerNominateNewValueAndSend2a("), "ProposerImpl.rs should not contain dead CProposerNominateNewValueAndSend2a");
+    assert!(!proposer.contains("fn CProposerNominateOldValueAndSend2a("), "ProposerImpl.rs should not contain dead CProposerNominateOldValueAndSend2a");
+    assert!(!proposer.contains("fn CProposerMaybeNominateValueAndSend2a("), "ProposerImpl.rs should not contain dead CProposerMaybeNominateValueAndSend2a");
+    assert!(!proposer.contains("fn CProposerProcessHeartbeat("), "ProposerImpl.rs should not contain dead CProposerProcessHeartbeat");
+    assert!(!proposer.contains("fn CProposerCheckForViewTimeout("), "ProposerImpl.rs should not contain dead CProposerCheckForViewTimeout");
+    assert!(!proposer.contains("fn CProposerCheckForQuorumOfViewSuspicions("), "ProposerImpl.rs should not contain dead CProposerCheckForQuorumOfViewSuspicions");
+    assert!(!proposer.contains("fn CProposerResetViewTimerDueToExecution("), "ProposerImpl.rs should not contain dead CProposerResetViewTimerDueToExecution");
+    // Dead test and helper functions
+    assert!(!proposer.contains("fn test("), "ProposerImpl.rs should not contain dead test functions");
+    assert!(!proposer.contains("fn test2("), "ProposerImpl.rs should not contain dead test2 function");
+    assert!(!proposer.contains("fn test3("), "ProposerImpl.rs should not contain dead test3 function");
+    assert!(!proposer.contains("lemma_hashset_insert"), "ProposerImpl.rs should not contain dead lemma_hashset_insert");
+}
+
+/// Phase 19.7: Verify impl files are significantly smaller after stripping.
+/// This catches accidental reintroduction of dead code.
+#[test]
+fn test_impl_files_size_after_stripping() {
+    let files_and_max_lines = [
+        ("../src/implementation/RSL/acceptorimpl.rs", 250),
+        ("../src/implementation/RSL/ExecutorImpl.rs", 300),
+        ("../src/implementation/RSL/ElectionImpl.rs", 200),
+        ("../src/implementation/RSL/ProposerImpl.rs", 500),
+    ];
+
+    for (path, max_lines) in files_and_max_lines {
+        let content = std::fs::read_to_string(path)
+            .unwrap_or_else(|_| panic!("Failed to read {}", path));
+        let line_count = content.lines().count();
+        assert!(
+            line_count <= max_lines,
+            "{} has {} lines, expected <= {} after dead code stripping",
+            path, line_count, max_lines
+        );
+    }
+}
