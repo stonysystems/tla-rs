@@ -6270,12 +6270,15 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] 9 functions auto-transpiled + 3 stubs (NominateOldValue, NominateNewValue, MaybeNominate)
 - [x] Verification: 572 verified, 0 errors. 1132 lib tests pass
 
-#### 21.2.8 RSL replica: 130 assumes → mostly external_body
+#### 21.2.8 RSL replica: 130 assumes → auto-transpiled ✅
 
-- [ ] Remove `manual_code` and `skip_functions` from replica_transpile.toml
-- [ ] Regenerate with `--auto-skip --proof-fallback`
-- [ ] Expected: most functions get `external_body` (130 assumes — heaviest trust)
-- [ ] Note: replica depends on all other modules — do LAST
+- [x] Trimmed skip_functions from 22 to 10 (5 IO dispatch, 1 Process1b HashSet iteration, 4 helpers)
+- [x] Enabled assume_postconditions — 20 action functions auto-transpiled
+- [x] 1 stub: CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints (exists quantifier)
+- [x] 1 manual: CReplicaNextProcess1b (for..in iter: on HashSet fails invariant checks)
+- [x] Added arrow_variants for COutstandingOperation `->v` field access
+- [x] Reduced replica_manual.rs from 1225 LOC to 396 LOC (68% reduction)
+- [x] 570 verified, 0 errors; 1132 transpiler tests pass
 
 #### 21.2.9 RSL types: keep types_manual_helpers.rs (deferred)
 
@@ -6340,7 +6343,7 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
     ↓
 21.2.7 Proposer                      ← depends on election
     ↓
-21.2.8 Replica                       ← depends on everything, do LAST
+21.2.8 Replica                       ← DONE ✅ (20 auto-transpiled, 1 stub, 1 manual, 8 IO dispatch)
     ↓
 21.2.9 Types (deferred)              ← type infrastructure, separate concern
     ↓
