@@ -26,6 +26,17 @@ skip_functions = [
     "LProposerNominateNewValueAndSend2a",
     # Calls skipped functions (OldValue/NewValue) whose manual impls have &mut self signatures
     "LProposerMaybeNominateValueAndSend2a",
+    # Phase 19.2.1: State-only functions — standalone in proposer_manual.rs
+    "LProposerInit",
+    "LProposerProcessRequest",
+    "LProposerProcess1b",
+    "LProposerProcessHeartbeat",
+    "LProposerCheckForViewTimeout",
+    "LProposerCheckForQuorumOfViewSuspicions",
+    "LProposerResetViewTimerDueToExecution",
+    # Phase 19.2.2: Packet-returning functions — delegates in proposer_manual.rs
+    "LProposerMaybeEnterNewViewAndSend1a",
+    "LProposerMaybeEnterPhase2",
 ]
 
 # Spec-only functions that should NOT get C-prefix
@@ -105,6 +116,8 @@ generate_loops_for_verification = true
 generate_proofs = true
 # CProposer comes from types_gen.rs (includes optimization fields)
 generate_inline_types = false
+# Path to manually-written complex functions (relative to this TOML file)
+manual_code = "proposer_manual.rs"
 # Custom imports for proposer module
 # Note: Still need implementation imports for shared infrastructure types.
 # CElectionState needed from ElectionImpl until election module is fully generated.
