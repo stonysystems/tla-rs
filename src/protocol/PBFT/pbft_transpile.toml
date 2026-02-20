@@ -5,43 +5,11 @@ skip_functions = [
     "LNext",
 ]
 
-# Fields that are HashSet types (Set) requiring clone_hashset()
-collection_fields = ["prepare_senders", "commit_senders"]
-
-# Fields that are Vec types (Seq) requiring .clone()
-vec_fields = []
-
-# Fields that are non-Copy types requiring .clone()
-clone_fields = ["phase"]
-
-# Maps clone_fields to their exec enum types for generating clone helpers
-[clone_field_types]
-"phase" = "CPhase"
-
-[clone_strategy]
-"CState" = "external_body"
-
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
 int_type = "u64"
 nat_type = "u64"
-
-[remapping]
-"LState" = "CState"
-"LConstants" = "CConstants"
-"LPhase" = "CPhase"
-"LPBFTMessage" = "CPBFTMessage"
-# Prevent C-prefixing of message variant names in LPBFTMessage::Variant paths
-"PrePrepare" = "PrePrepare"
-
-[variant_remapping]
-"PrePrepare" = "CPhase::PrePrepare"
-"Prepare" = "CPhase::Prepare"
-"Commit" = "CPhase::Commit"
-"Replied" = "CPhase::Replied"
-
-[method_calls]
 
 [output]
 generate_abstraction_fns = true

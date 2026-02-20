@@ -5,36 +5,11 @@ skip_functions = [
     "LNext",
 ]
 
-# Fields that are HashSet types (Set) requiring clone_hashset()
-collection_fields = ["promises_rcvd", "accepts_rcvd"]
-
-# Fields that are Vec types (Seq) requiring .clone()
-vec_fields = []
-
-# Fields that are non-Copy types requiring .clone()
-clone_fields = []
-
-[clone_strategy]
-"CState" = "external_body"
-
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
 int_type = "u64"
 nat_type = "u64"
-
-[remapping]
-"LState" = "CState"
-"LConstants" = "CConstants"
-"LVPMessage" = "CVPMessage"
-# Prevent C-prefixing of message variant names
-"Prepare" = "Prepare"
-"Promise" = "Promise"
-"Accept" = "Accept"
-
-[variant_remapping]
-
-[method_calls]
 
 [output]
 generate_abstraction_fns = true

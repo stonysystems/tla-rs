@@ -457,68 +457,62 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Load config for remappings, naming, imports, and type extensions if provided
-            let file_config = if let Some(config_path) = config {
+            let mut file_config = if let Some(config_path) = config {
                 if cli.verbose {
                     eprintln!("Loading config from: {}", config_path.display());
                 }
-                Some(
-                    FileConfig::from_file(config_path)
-                        .map_err(|e| miette::miette!("Failed to load config: {}", e))?,
-                )
+                FileConfig::from_file(config_path)
+                    .map_err(|e| miette::miette!("Failed to load config: {}", e))?
             } else {
-                None
+                FileConfig::default()
             };
 
-            let naming_config = file_config
-                .as_ref()
-                .map(|c| c.naming.clone())
-                .unwrap_or_default();
-            let remapping = file_config
-                .as_ref()
-                .map(|c| c.remapping.clone())
-                .unwrap_or_default();
-            let custom_imports = file_config
-                .as_ref()
-                .map(|c| c.output.custom_imports.clone())
-                .unwrap_or_default();
-            let validity_predicate_name = file_config
-                .as_ref()
-                .map(|c| c.output.validity_predicate_name.clone())
-                .unwrap_or_else(|| "well_formed".to_string());
-            let view_overrides = file_config
-                .as_ref()
-                .map(|c| c.view_overrides.clone())
-                .unwrap_or_default();
-            let extra_fields = file_config
-                .as_ref()
-                .map(|c| c.extra_fields.clone())
-                .unwrap_or_default();
-            let clone_strategy = file_config
-                .as_ref()
-                .map(|c| c.clone_strategy.clone())
-                .unwrap_or_default();
-            let skip_types = file_config
-                .as_ref()
-                .map(|c| c.skip_types.clone())
-                .unwrap_or_default();
-            let re_exports = file_config
-                .as_ref()
-                .map(|c| c.re_exports.clone())
-                .unwrap_or_default();
-            let custom_derives = file_config
-                .as_ref()
-                .map(|c| c.custom_derives.clone())
-                .unwrap_or_default();
-            let skip_fields = file_config
-                .as_ref()
-                .map(|c| c.skip_fields.clone())
-                .unwrap_or_default();
+            // Auto-infer config from input spec files (clone_strategy, etc.)
+            {
+                let spec_paths: Vec<&Path> = input.iter().map(|p| p.as_path()).collect();
+                let analysis_result = if spec_paths.len() > 1 {
+                    analyze_spec_files(&spec_paths)
+                } else {
+                    analyze_spec_file(&spec_paths[0])
+                };
+                match analysis_result {
+                    Ok(schema) => {
+                        let inferer = ConfigInferer::new(&schema, &file_config.naming);
+                        let inferred = inferer.infer();
+                        merge_configs(&mut file_config, &inferred);
+                        if cli.verbose {
+                            eprintln!(
+                                "Auto-inferred config from {} file(s): {} structs, {} enums",
+                                spec_paths.len(),
+                                schema.structs.len(),
+                                schema.enums.len()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        if cli.verbose {
+                            eprintln!("Note: spec analysis skipped ({})", e);
+                        }
+                    }
+                }
+            }
+
+            let naming_config = file_config.naming.clone();
+            let remapping = file_config.remapping.clone();
+            let custom_imports = file_config.output.custom_imports.clone();
+            let validity_predicate_name = file_config.output.validity_predicate_name.clone();
+            let view_overrides = file_config.view_overrides.clone();
+            let extra_fields = file_config.extra_fields.clone();
+            let clone_strategy = file_config.clone_strategy.clone();
+            let skip_types = file_config.skip_types.clone();
+            let re_exports = file_config.re_exports.clone();
+            let custom_derives = file_config.custom_derives.clone();
+            let skip_fields = file_config.skip_fields.clone();
             let manual_code = config
                 .as_ref()
                 .and_then(|config_path| {
                     file_config
-                        .as_ref()
-                        .and_then(|c| c.output.manual_code.as_ref())
+                        .output.manual_code.as_ref()
                         .map(|rel_path| (config_path, rel_path))
                 })
                 .and_then(|(config_path, rel_path)| {

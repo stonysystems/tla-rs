@@ -6168,7 +6168,7 @@ This file is different — it contains `impl` blocks, `clone_up_to_view` methods
 
 Strip all auto-derivable Tier 1 fields from the 9 non-RSL protocol TOMLs. The `test_minimal_toml_produces_identical_output` test already proves this produces identical output.
 
-- [ ] **21.1.1**: For each non-RSL protocol TOML, remove:
+- [x] **21.1.1**: For each non-RSL protocol TOML, remove:
   - `[remapping]` section (auto-derived from struct/enum names)
   - `[variant_remapping]` section (auto-derived from enum variants)
   - `[arrow_variants]` section (auto-derived from enum field→variant mapping — **only if test passes**)
@@ -6179,17 +6179,17 @@ Strip all auto-derivable Tier 1 fields from the 9 non-RSL protocol TOMLs. The `t
   - `primitive_types` (auto-derived from remap targets)
   - Default `[output]` flags that match the defaults
 
-- [ ] **21.1.2**: Regenerate all 9 non-RSL protocols with minimal TOMLs:
+- [x] **21.1.2**: Regenerate all 9 non-RSL protocols with minimal TOMLs:
   ```bash
   for each protocol P:
     verus-transpile --input P.rs --annotations P.automan --config P_transpile.toml --output P_gen.rs
     verus-transpile generate-types --input P/types.rs --config P_transpile.toml --output types_gen.rs
   ```
 
-- [ ] **21.1.3**: Diff generated output against current: must be byte-identical
+- [x] **21.1.3**: Diff generated output against current: must be byte-identical
 
-- [ ] **21.1.4**: Run Verus verification: `scons --verus-path=... liblib.so`
-  - Target: same verified count, 0 errors
+- [x] **21.1.4**: Run Verus verification: `scons --verus-path=... liblib.so`
+  - Target: same verified count, 0 errors (583 verified, 0 errors)
 
 - [ ] **21.1.5**: Handle Raft `manual_helpers.rs` (Cu64_inc, Cu64_dec):
   - These are trivial (`*x + 1`, `*x - 1`) — teach transpiler to generate them

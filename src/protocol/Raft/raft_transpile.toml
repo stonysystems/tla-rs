@@ -5,30 +5,6 @@ skip_functions = [
     "LNext",
 ]
 
-# Primitive types that don't need valid() predicates
-primitive_types = []
-
-# Fields that are HashSet types (Set) requiring clone_hashset()
-collection_fields = ["votes_granted", "servers"]
-
-# Fields that are Vec/HashMap types (Seq/Map) requiring .clone()
-vec_fields = ["match_index", "next_index"]
-
-# Fields that are HashMap-typed and need &key indexing (not abstractify helpers)
-hashmap_index_fields = ["match_index", "next_index"]
-
-# Fields that are non-Copy types requiring .clone() but not @ in view
-clone_fields = ["role"]
-
-# Maps clone_fields to their exec enum types for generating clone helpers
-[clone_field_types]
-"role" = "CServerRole"
-
-# Maps struct-typed Vec field names to [exec_element_type, spec_element_type]
-# Generates clone_log wrapper, lemma_empty_log_map, lemma_log_push_map_commute
-[struct_vec_fields]
-"log" = ["CLogEntry", "LLogEntry"]
-
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
 [extra_requires]
 "CClientRequest" = ["s.role is Leader"]
@@ -55,32 +31,11 @@ clone_fields = ["role"]
     "s.log@[*new_commit_index as int - 1].term == s.current_term",
 ]
 
-[clone_strategy]
-"CState" = "external_body"
-"CConstants" = "external_body"
-
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
 int_type = "u64"
 nat_type = "u64"
-
-[remapping]
-"LState" = "CState"
-"LConstants" = "CConstants"
-"LServerRole" = "CServerRole"
-"LLogEntry" = "CLogEntry"
-"LRaftMessage" = "CRaftMessage"
-# Prevent C-prefixing of message variant names
-"RequestVote" = "RequestVote"
-"VoteResponse" = "VoteResponse"
-"AppendEntries" = "AppendEntries"
-"AppendResponse" = "AppendResponse"
-
-[variant_remapping]
-"Follower" = "CServerRole::Follower"
-"Candidate" = "CServerRole::Candidate"
-"Leader" = "CServerRole::Leader"
 
 [output]
 manual_code = "manual_helpers.rs"

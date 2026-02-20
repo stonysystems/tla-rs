@@ -812,12 +812,7 @@ fn test_raft_config_loading() {
     assert_eq!(naming["exec_prefix"].as_str(), Some("C"));
     assert_eq!(naming["int_type"].as_str(), Some("u64"));
 
-    // Check remapping
-    let remapping = &config["remapping"];
-    assert_eq!(remapping["LState"].as_str(), Some("CState"));
-    assert_eq!(remapping["LConstants"].as_str(), Some("CConstants"));
-    assert_eq!(remapping["LServerRole"].as_str(), Some("CServerRole"));
-    assert_eq!(remapping["LLogEntry"].as_str(), Some("CLogEntry"));
+    // Remapping is now auto-inferred (Phase 21), not in TOML
 
     // Check output settings
     let output = &config["output"];
@@ -1063,11 +1058,7 @@ fn test_chain_replication_config_loading() {
     assert_eq!(naming["spec_prefix"].as_str(), Some("L"));
     assert_eq!(naming["exec_prefix"].as_str(), Some("C"));
 
-    // Check remapping
-    let remapping = &config["remapping"];
-    assert_eq!(remapping["LState"].as_str(), Some("CState"));
-    assert_eq!(remapping["LConstants"].as_str(), Some("CConstants"));
-    assert_eq!(remapping["LNodeRole"].as_str(), Some("CNodeRole"));
+    // Remapping is now auto-inferred (Phase 21), not in TOML
 }
 
 #[test]

@@ -2054,8 +2054,9 @@ verus! {
     }
 
     #[test]
-    fn test_migration_validation_all_protocols() {
-        // For each non-RSL protocol, compare auto-inferred config vs existing TOML
+    fn test_auto_inference_produces_valid_config_for_all_protocols() {
+        // Validate that auto-inference produces non-empty, correct results
+        // for all non-RSL protocols (Phase 21: TOMLs no longer contain Tier 1 fields)
         let protocols: Vec<(&str, &str, &str, &str)> = vec![
             ("TwoPhase", "types.rs", "twophase.rs", "twophase_transpile.toml"),
             ("Paxos", "types.rs", "paxos.rs", "paxos_transpile.toml"),
@@ -2068,15 +2069,13 @@ verus! {
             ("EPaxos", "types.rs", "epaxos.rs", "epaxos_transpile.toml"),
         ];
 
-        let mut total_remapping_covered = 0;
-        let mut total_remapping_missing = 0;
-        let mut total_collection_covered = 0;
-        let mut total_collection_missing = 0;
-        let mut total_vec_covered = 0;
-        let mut total_vec_missing = 0;
-        let mut total_clone_strategy_covered = 0;
-        let mut total_clone_strategy_missing = 0;
+        // Protocols known to have HashSet fields (need clone_strategy = "external_body")
+        let needs_clone_strategy: Vec<&str> = vec![
+            "TwoPhase", "Paxos", "LeaderElection", "Raft",
+            "ChainReplication", "PBFT", "VerticalPaxos", "EPaxos",
+        ];
 
+        let mut checked = 0;
         for (name, types_file, proto_file, toml_file) in &protocols {
             let base = format!("../src/protocol/{}", name);
             let types_path = std::path::PathBuf::from(format!("{}/{}", base, types_file));
@@ -2087,97 +2086,42 @@ verus! {
                 continue;
             }
 
-            // Load existing TOML
             let toml_config = load_file_config(&toml_path);
             let naming = &toml_config.naming;
 
-            // Analyze spec files
             let schema =
                 analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
             let inferer = ConfigInferer::new(&schema, naming);
             let inferred = inferer.infer();
 
-            // Check remapping coverage
-            let (rc, rm) = check_remapping_coverage(&inferred, &toml_config);
-            total_remapping_covered += rc;
-            total_remapping_missing += rm.len();
-            for m in &rm {
-                // Known acceptable mismatches: type aliases to primitives (e.g., "OperationNumber" = "u64")
-                // These are in TOML's [remapping] but not auto-derived because they require
-                // knowing that the type alias maps to a Rust primitive
-                if !m.contains("not inferred") || m.contains("OperationNumber") {
-                    // Expected — these are Tier 3 overrides
-                } else {
-                    eprintln!("[{}] Remapping mismatch: {}", name, m);
+            // Every protocol should have remappings inferred
+            assert!(
+                !inferred.remapping.is_empty(),
+                "[{}] Auto-inference produced no remappings",
+                name
+            );
+
+            // Protocols with HashSet fields should get clone_strategy
+            if needs_clone_strategy.contains(name) {
+                assert!(
+                    !inferred.clone_strategy.is_empty(),
+                    "[{}] Should have clone_strategy but auto-inference produced none",
+                    name
+                );
+                // All inferred clone strategies should be "external_body"
+                for (k, v) in &inferred.clone_strategy {
+                    assert_eq!(
+                        v, "external_body",
+                        "[{}] clone_strategy for {} should be external_body, got {}",
+                        name, k, v
+                    );
                 }
             }
 
-            // Check collection fields
-            let (cc, cm) = check_vec_coverage(&inferred.collection_fields, &toml_config.collection_fields);
-            total_collection_covered += cc;
-            total_collection_missing += cm.len();
-            for m in &cm {
-                eprintln!("[{}] Missing collection field: {}", name, m);
-            }
-
-            // Check vec fields
-            let (vc, vm) = check_vec_coverage(&inferred.vec_fields, &toml_config.vec_fields);
-            total_vec_covered += vc;
-            total_vec_missing += vm.len();
-            for m in &vm {
-                eprintln!("[{}] Missing vec field: {}", name, m);
-            }
-
-            // Check clone strategy
-            let mut cs_covered = 0;
-            let mut cs_missing = 0;
-            for (k, v) in &toml_config.clone_strategy {
-                if let Some(iv) = inferred.clone_strategy.get(k) {
-                    if iv == v {
-                        cs_covered += 1;
-                    } else {
-                        eprintln!("[{}] Clone strategy mismatch for {}: inferred={}, toml={}", name, k, iv, v);
-                    }
-                } else {
-                    eprintln!("[{}] Missing clone strategy: {}", name, k);
-                    cs_missing += 1;
-                }
-            }
-            total_clone_strategy_covered += cs_covered;
-            total_clone_strategy_missing += cs_missing;
+            checked += 1;
         }
 
-        // Summary: auto-inference should cover the vast majority
-        let total_checked = total_remapping_covered + total_remapping_missing
-            + total_collection_covered + total_collection_missing
-            + total_vec_covered + total_vec_missing
-            + total_clone_strategy_covered + total_clone_strategy_missing;
-        let total_covered = total_remapping_covered + total_collection_covered
-            + total_vec_covered + total_clone_strategy_covered;
-
-        assert!(
-            total_checked > 0,
-            "Should have checked at least one protocol"
-        );
-
-        // At least 80% coverage target for Tier 1 fields
-        let coverage_pct = (total_covered as f64 / total_checked as f64) * 100.0;
-        assert!(
-            coverage_pct >= 70.0,
-            "Auto-inference coverage too low: {:.1}% ({}/{}). \
-             Remapping: {}/{}, Collection: {}/{}, Vec: {}/{}, Clone: {}/{}",
-            coverage_pct,
-            total_covered,
-            total_checked,
-            total_remapping_covered,
-            total_remapping_covered + total_remapping_missing,
-            total_collection_covered,
-            total_collection_covered + total_collection_missing,
-            total_vec_covered,
-            total_vec_covered + total_vec_missing,
-            total_clone_strategy_covered,
-            total_clone_strategy_covered + total_clone_strategy_missing,
-        );
+        assert!(checked >= 9, "Should have checked all 9 protocols, only checked {}", checked);
     }
 
     #[test]
