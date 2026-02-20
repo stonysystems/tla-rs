@@ -25,7 +25,7 @@
 use clap::{Parser, Subcommand};
 use miette::Result;
 use std::path::{Path, PathBuf};
-use verus_transpiler::spec_analyzer::{analyze_spec_file, ConfigInferer, merge_configs};
+use verus_transpiler::spec_analyzer::{analyze_spec_file, analyze_spec_files, ConfigInferer, merge_configs};
 use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfig};
 
 /// Verus Spec-to-Implementation Transpiler
@@ -311,24 +311,43 @@ fn main() -> Result<()> {
         FileConfig::default()
     };
 
-    // Auto-infer config from spec file and merge with TOML overrides
-    match analyze_spec_file(input) {
-        Ok(schema) => {
-            let inferer = ConfigInferer::new(&schema, &file_config.naming);
-            let inferred = inferer.infer();
-            merge_configs(&mut file_config, &inferred);
-            if cli.verbose {
-                eprintln!(
-                    "Auto-inferred config from spec: {} structs, {} enums, {} type aliases",
-                    schema.structs.len(),
-                    schema.enums.len(),
-                    schema.aliases.len()
-                );
+    // Auto-infer config from spec file (+ sibling types.rs if present)
+    {
+        let mut spec_paths: Vec<&Path> = Vec::new();
+        // Check for sibling types.rs in the same directory as input
+        let types_path = input.parent().map(|dir| dir.join("types.rs"));
+        if let Some(ref tp) = types_path {
+            if tp.exists() && tp != input {
+                spec_paths.push(tp.as_path());
             }
         }
-        Err(e) => {
-            if cli.verbose {
-                eprintln!("Note: spec analysis skipped ({})", e);
+        spec_paths.push(input);
+
+        let analysis_result = if spec_paths.len() > 1 {
+            analyze_spec_files(&spec_paths)
+        } else {
+            analyze_spec_file(input)
+        };
+
+        match analysis_result {
+            Ok(schema) => {
+                let inferer = ConfigInferer::new(&schema, &file_config.naming);
+                let inferred = inferer.infer();
+                merge_configs(&mut file_config, &inferred);
+                if cli.verbose {
+                    eprintln!(
+                        "Auto-inferred config from {} file(s): {} structs, {} enums, {} type aliases",
+                        spec_paths.len(),
+                        schema.structs.len(),
+                        schema.enums.len(),
+                        schema.aliases.len()
+                    );
+                }
+            }
+            Err(e) => {
+                if cli.verbose {
+                    eprintln!("Note: spec analysis skipped ({})", e);
+                }
             }
         }
     }
@@ -1871,5 +1890,146 @@ validity_predicate_name = "valid"
         let config = convert_file_config(file_config, Path::new(".")).unwrap();
         assert_eq!(config.translator.spec_prefix, "L");
         assert_eq!(config.translator.exec_prefix, "C");
+    }
+
+    /// Strip Tier 1 auto-derivable fields from a FileConfig, keeping only
+    /// fields that require manual specification (Tier 3 overrides).
+    fn strip_auto_derivable(config: &FileConfig) -> FileConfig {
+        let mut minimal = config.clone();
+        // Clear Tier 1 auto-derivable fields
+        minimal.remapping.clear();
+        minimal.variant_remapping.clear();
+        minimal.collection_fields.clear();
+        minimal.vec_fields.clear();
+        minimal.clone_fields.clear();
+        minimal.clone_field_types.clear();
+        minimal.clone_strategy.clear();
+        minimal.arrow_variants.clear();
+        minimal.struct_vec_fields.clear();
+        minimal.hashmap_index_fields.clear();
+        minimal
+    }
+
+    /// Helper: run the transpiler on a spec file with a given FileConfig,
+    /// including auto-inference from sibling types.rs.
+    fn transpile_with_auto_inference(
+        input: &Path,
+        annotations: &Path,
+        file_config: FileConfig,
+        config_path: &Path,
+    ) -> String {
+        let mut fc = file_config;
+
+        // Auto-infer from spec + sibling types.rs (mirrors main() flow)
+        let mut spec_paths: Vec<&Path> = Vec::new();
+        let types_path = input.parent().map(|dir| dir.join("types.rs"));
+        let tp_ref; // to extend lifetime
+        if let Some(ref tp) = types_path {
+            if tp.exists() && tp != input {
+                tp_ref = tp.clone();
+                spec_paths.push(&tp_ref);
+            }
+        }
+        spec_paths.push(input);
+
+        let analysis_result = if spec_paths.len() > 1 {
+            analyze_spec_files(&spec_paths)
+        } else {
+            analyze_spec_file(input)
+        };
+
+        if let Ok(schema) = analysis_result {
+            let inferer = ConfigInferer::new(&schema, &fc.naming);
+            let inferred = inferer.infer();
+            merge_configs(&mut fc, &inferred);
+        }
+
+        let config = convert_file_config(fc, config_path).unwrap();
+        let transpiler = Transpiler::new(config);
+        transpiler
+            .transpile_file(input, annotations)
+            .unwrap_or_else(|e| panic!("transpilation failed: {}", e))
+    }
+
+    #[test]
+    fn test_minimal_toml_produces_identical_output() {
+        let protocols: Vec<(&str, &str, &str)> = vec![
+            ("TwoPhase", "twophase", "twophase_transpile"),
+            ("Paxos", "paxos", "paxos_transpile"),
+            ("LeaderElection", "election", "election_transpile"),
+            ("Raft", "raft", "raft_transpile"),
+            ("ChainReplication", "chain", "chain_transpile"),
+            ("PrimaryBackup", "primarybackup", "primarybackup_transpile"),
+            ("PBFT", "pbft", "pbft_transpile"),
+            ("VerticalPaxos", "vpaxos", "vpaxos_transpile"),
+            ("EPaxos", "epaxos", "epaxos_transpile"),
+        ];
+
+        let mut passed = 0;
+        let mut failed = Vec::new();
+
+        for (name, spec_name, toml_name) in &protocols {
+            let base = format!("../src/protocol/{}", name);
+            let input = PathBuf::from(format!("{}/{}.rs", base, spec_name));
+            let annot = PathBuf::from(format!("{}/{}.automan", base, spec_name));
+            let toml_path = PathBuf::from(format!("{}/{}.toml", base, toml_name));
+
+            if !input.exists() || !annot.exists() || !toml_path.exists() {
+                continue;
+            }
+
+            // Load full TOML config
+            let full_config = FileConfig::from_file(&toml_path)
+                .unwrap_or_else(|e| panic!("{}: failed to load TOML: {}", name, e));
+
+            // Generate with full TOML + auto-inference
+            let full_output = transpile_with_auto_inference(
+                &input, &annot, full_config.clone(), &toml_path,
+            );
+
+            // Create minimal TOML (strip Tier 1 fields)
+            let minimal_config = strip_auto_derivable(&full_config);
+
+            // Generate with minimal TOML + auto-inference
+            let minimal_output = transpile_with_auto_inference(
+                &input, &annot, minimal_config, &toml_path,
+            );
+
+            if full_output == minimal_output {
+                passed += 1;
+            } else {
+                // Find first difference for debugging
+                let full_lines: Vec<&str> = full_output.lines().collect();
+                let min_lines: Vec<&str> = minimal_output.lines().collect();
+                let first_diff = full_lines
+                    .iter()
+                    .zip(min_lines.iter())
+                    .enumerate()
+                    .find(|(_, (a, b))| a != b)
+                    .map(|(i, (a, b))| format!("line {}: full='{}' vs min='{}'", i + 1, a, b))
+                    .unwrap_or_else(|| {
+                        format!(
+                            "length diff: full={} vs min={}",
+                            full_lines.len(),
+                            min_lines.len()
+                        )
+                    });
+                failed.push(format!("{}: {}", name, first_diff));
+            }
+        }
+
+        assert!(
+            failed.is_empty(),
+            "Minimal TOML should produce identical output for all protocols.\n\
+             Passed: {}, Failed: {}\nFailures:\n{}",
+            passed,
+            failed.len(),
+            failed.join("\n")
+        );
+        assert!(
+            passed >= 9,
+            "Should have tested at least 9 protocols, got {}",
+            passed
+        );
     }
 }

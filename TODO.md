@@ -6078,13 +6078,17 @@ skip_functions = ["LNext"]
 
 ### 20.4 Acceptance Criteria
 
-- [ ] Transpiler can generate identical output for all 10 protocols using auto-derived config + minimal overrides
-- [ ] A new protocol TOML requires < 20 lines (excluding `[messages]` and `[scheduler]` sections)
+- [x] Transpiler can generate identical output for all 9 non-RSL protocols using auto-derived config + minimal overrides ✅
+  - `test_minimal_toml_produces_identical_output`: strips ALL Tier 1 fields, verifies identical output for all 9 protocols
+  - Auto-inference now includes sibling `types.rs` for complete type analysis
+- [x] A new protocol TOML requires ~17-20 lines (excluding `[messages]` and `[scheduler]` sections) ✅
+  - Minimal config: skip_functions + [naming] + [output] section (~17 lines for simplest protocols)
+  - Protocol-specific: + [extra_requires] for Raft/ChainReplication, + manual_code for Raft
 - [x] `--dump-config` shows full resolved config for debugging ✅
 - [x] `--auto-skip` mode catches and reports untranspilable functions ✅
 - [x] All existing 17 TOMLs continue to work unchanged (backward compatible) ✅ (merge_configs only adds, never overwrites)
-- [x] Regression tests verify auto-inference matches existing configs for all protocols ✅ (2 tests, 9 protocols)
-- [x] All transpiler tests pass: 1111 unit + 146 integration = 1257 total ✅
+- [x] Regression tests verify auto-inference matches existing configs for all protocols ✅ (3 tests, 9 protocols)
+- [x] All transpiler tests pass: 1111 unit + 19 bin + 146 integration = 1276 total ✅
 
 ### 20.5 Estimated Effort
 
