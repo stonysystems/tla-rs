@@ -5265,6 +5265,44 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
     assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
 }
 
+/// Phase 19.4: Verify acceptor_gen.rs is fully standalone with no clone-delegate patterns
+#[test]
+fn test_acceptor_gen_no_delegate_patterns() {
+    let source = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
+        .expect("Failed to read acceptor_gen.rs");
+
+    // No clone-delegate pattern: "let mut acc = s.clone_up_to_view()"
+    // followed by acc.CAcceptorProcess1a(pkt)
+    assert!(
+        !source.contains("acc.CAcceptorProcess1a"),
+        "acceptor_gen.rs should not delegate to CAcceptor::CAcceptorProcess1a method"
+    );
+
+    // No outbound_packets_to_vec calls in function bodies
+    let body_start = source.find("verus! {").unwrap_or(0);
+    let body = &source[body_start..];
+    let call_count = body.matches("outbound_packets_to_vec(").count();
+    assert!(
+        call_count == 0,
+        "acceptor_gen.rs should not call outbound_packets_to_vec (found {} calls) — all 7 functions should be standalone",
+        call_count
+    );
+
+    // Functions construct CAcceptor structs directly (5 explicit + clone_up_to_view for no-op branches)
+    let struct_constructions = source.matches("CAcceptor {").count();
+    assert!(
+        struct_constructions >= 5,
+        "acceptor_gen.rs should have >= 5 CAcceptor {{}} struct constructions, found {}",
+        struct_constructions
+    );
+
+    // CAcceptorProcess1a should build packets directly (vec![packet] pattern)
+    assert!(
+        source.contains("vec![packet]") || source.contains("Vec::new()"),
+        "CAcceptorProcess1a should construct packets directly"
+    );
+}
+
 /// Phase 19.7: Verify impl files have been stripped of dead code.
 /// After Phase 19 standalone conversions, most &mut self methods on component
 /// types are dead code. This test ensures the stripped files only contain
@@ -5272,13 +5310,14 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
 #[test]
 fn test_impl_files_stripped_of_dead_code() {
     // === acceptorimpl.rs ===
-    // Should retain: CAcceptorProcess1a (delegated from acceptor_manual.rs),
-    //   CIsLogTruncationPointValid, CCountLargerInSeq, CCountLargerOrEqualInSeq,
+    // Should retain: CIsLogTruncationPointValid, CCountLargerInSeq, CCountLargerOrEqualInSeq,
     //   CIsNthHighestValueInSequence
-    // Should NOT contain any other CAcceptor methods
+    // CAcceptorProcess1a moved to standalone in acceptor_manual.rs (Phase 19.4)
+    // Should NOT contain any CAcceptor impl methods
     let acceptor = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
         .expect("Failed to read acceptorimpl.rs");
-    assert!(acceptor.contains("CAcceptorProcess1a"), "acceptorimpl.rs should retain CAcceptorProcess1a");
+    assert!(!acceptor.contains("fn CAcceptorProcess1a"), "acceptorimpl.rs should not contain CAcceptorProcess1a (moved to standalone)");
+    assert!(!acceptor.contains("impl CAcceptor"), "acceptorimpl.rs should not have any impl CAcceptor block");
     assert!(acceptor.contains("CIsLogTruncationPointValid"), "acceptorimpl.rs should retain CIsLogTruncationPointValid");
     assert!(acceptor.contains("CCountLargerInSeq"), "acceptorimpl.rs should retain CCountLargerInSeq");
     // Dead methods that should be removed
@@ -5365,7 +5404,7 @@ fn test_impl_files_stripped_of_dead_code() {
 #[test]
 fn test_impl_files_size_after_stripping() {
     let files_and_max_lines = [
-        ("../src/implementation/RSL/acceptorimpl.rs", 250),
+        ("../src/implementation/RSL/acceptorimpl.rs", 130),
         ("../src/implementation/RSL/ExecutorImpl.rs", 300),
         ("../src/implementation/RSL/ElectionImpl.rs", 200),
         ("../src/implementation/RSL/ProposerImpl.rs", 500),

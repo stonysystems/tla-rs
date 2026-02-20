@@ -9,7 +9,6 @@ use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, outbound_packets_to_vec};
 use crate::implementation::RSL::types_i::{abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
@@ -151,11 +150,86 @@ ensures
     forall |i: int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LAcceptorProcess1a(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let mut acc = s.clone_up_to_view();
-    let pkt = clone_cpacket_preserving_validity(inp);
-    let sent = acc.CAcceptorProcess1a(pkt);
-    let packets = outbound_packets_to_vec(sent);
-    (acc, packets)
+    let bal = match &inp.msg {
+        CMessage::CMessage1a { bal_1a } => *bal_1a,
+        _ => {
+            proof { assert(false); }
+            unreachable_value()
+        },
+    };
+
+    if contains(&s.constants.all.config.replica_ids, &inp.src)
+        && CBalLt(&s.max_bal, &bal)
+    {
+        assert(s.constants.all.config.replica_ids@.contains(inp.src));
+        assert(BalLt(s@.max_bal, bal@));
+        assert(LReplicaConstantsValid(s@.constants));
+
+        let cloned_votes = clone_cvotes_up_to_view(&s.votes);
+        assert(cvotes_is_valid(&cloned_votes));
+
+        let response = CMessage::CMessage1b {
+            bal_1b: bal,
+            log_truncation_point: s.log_truncation_point,
+            votes: cloned_votes,
+        };
+        assert(response.valid());
+
+        let packet = CPacket {
+            src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone_up_to_view(),
+            dst: inp.src.clone_up_to_view(),
+            msg: response,
+        };
+        assert(packet.src.valid_public_key());
+        assert(packet.dst.valid_public_key());
+        assert(packet.msg.valid());
+        assert(packet.valid());
+
+        let sent_packets: Vec<CPacket> = vec![packet];
+
+        let new_s = CAcceptor {
+            constants: s.constants.clone_up_to_view(),
+            max_bal: bal,
+            votes: clone_cvotes_up_to_view(&s.votes),
+            last_checkpointed_operation: s.last_checkpointed_operation.clone(),
+            log_truncation_point: s.log_truncation_point,
+            min_vote_opn: 0u64,
+        };
+
+        proof {
+            let ghost ss = s@;
+            let ghost sinp = inp@;
+            let ghost expected_packet = RslPacket {
+                src: ss.constants.all.config.replica_ids.index(ss.constants.my_index),
+                dst: sinp.src,
+                msg: RslMessage::RslMessage1b {
+                    bal_1b: bal@,
+                    log_truncation_point: ss.log_truncation_point,
+                    votes: ss.votes,
+                },
+            };
+            assert(sent_packets@.map(|i, p: CPacket| p@) =~= seq![expected_packet]);
+            assert(new_s@ == LAcceptor {
+                constants: ss.constants,
+                max_bal: bal@,
+                votes: ss.votes,
+                last_checkpointed_operation: ss.last_checkpointed_operation,
+                log_truncation_point: ss.log_truncation_point,
+            });
+            assert(LAcceptorProcess1a(ss, new_s@, sinp, sent_packets@.map(|i, p: CPacket| p@)));
+        }
+        (new_s, sent_packets)
+    } else {
+        let new_s = s.clone_up_to_view();
+        let sent_packets: Vec<CPacket> = Vec::new();
+
+        proof {
+            assert(new_s@ == s@);
+            assert(sent_packets@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            assert(LAcceptorProcess1a(s@, new_s@, inp@, sent_packets@.map(|i, p: CPacket| p@)));
+        }
+        (new_s, sent_packets)
+    }
 }
 
 pub exec fn CAcceptorProcess2a(s: &CAcceptor, inp: &CPacket) -> (result: (CAcceptor, Vec<CPacket>))
