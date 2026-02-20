@@ -41,7 +41,8 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 - Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 **Next steps (priority order):**
-1. **Phase 20: Auto-infer TOML configuration from spec analysis** — Reduce manual TOML from ~2,600 LOC to minimal protocol-specific hints. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
+1. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
+2. **Phase 20: Auto-infer TOML configuration from spec analysis** — ✅ MOSTLY COMPLETE. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
 2. ~~**Phase 19: Eliminate all manual impl delegates from generated RSL code**~~ ✅ COMPLETE — All RSL gen modules fully standalone. election_gen.rs enabled, 0 delegates across all 7 gen modules. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
 2. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
 3. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
@@ -81,6 +82,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 17. [Phase 16: End-to-End Compile & Run Testing — ✅ COMPLETE](#phase-16-end-to-end-compile--run-testing--complete)
 18. [Phase 19: Eliminate Manual Impl Delegates from Generated RSL Code](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code)
 19. [Phase 20: Auto-Infer TOML Configuration from Spec Analysis](#phase-20-auto-infer-toml-configuration-from-spec-analysis)
+20. [Phase 21: Minimal TOML Regeneration and Eliminate manual_code](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code)
 
 ---
 
@@ -6101,3 +6103,270 @@ skip_functions = ["LNext"]
 | 20.2.5 Minimal TOML | ~150 | LOW | Config merging logic |
 | 20.2.6 Migration validation | ~200 | LOW | Test + diff infrastructure |
 | **Total** | **~1,850** | | |
+
+---
+
+## Phase 21: Minimal TOML Regeneration and Eliminate manual_code
+
+### 21.0 Problem Statement
+
+Phase 20 proved that auto-inference works (9 non-RSL protocols produce identical output with minimal TOMLs), but:
+
+1. **No TOML has been actually simplified** — all 17 TOMLs still contain hand-written Tier 1 fields that auto-inference can derive.
+2. **All RSL modules use `manual_code`** — 4,760 LOC of hand-written Rust in 7 `*_manual.rs` files, injected into generated output. This defeats the purpose of having a transpiler.
+3. **manual_code contains 204 `assume()` + 25 `external_body`** — these are unverified trust points hidden inside "generated" code.
+
+**Goal**: Eliminate `manual_code` entirely. The transpiler should generate all functions. Where it cannot produce a valid proof, it should:
+- Mark the function `#[verifier(external_body)]`
+- Add a `// PROOF-TODO: <reason>` comment explaining what failed
+- Log the function name to stderr during generation
+
+This makes the proof gap **explicit and auditable** instead of hidden in manual files.
+
+### 21.1 Current manual_code Inventory
+
+| Module | File | LOC | Functions | `assume()` | `external_body` | Proof status |
+|--------|------|-----|-----------|-----------|-----------------|-------------|
+| types | types_manual_helpers.rs | 1,115 | ~30 (impls, helpers) | 0 | 11 | Mostly proven; external_body on clone/view |
+| replica | replica_manual.rs | 1,225 | ~23 | 130 | 2 | Heavy assumes — IO dispatch trust |
+| executor | executor_manual.rs | 706 | 11 | 0 | 9 | external_body on HashMap/cache helpers |
+| proposer | proposer_manual.rs | 692 | 12 | 41 | 0 | Assumes in election state integration |
+| election | election_manual.rs | 377 | 11 | 33 | 0 | Assumes in view change/epoch proofs |
+| acceptor | acceptor_manual.rs | 352 | 7 | 0 | 3 | Mostly proven; external_body on HashMap |
+| learner | learner_manual.rs | 293 | 3 | 0 | 0 | Fully proven (no assumes, no external_body) |
+| **Total** | | **4,760** | **~97** | **204** | **25** | |
+
+Additionally: Raft has `manual_helpers.rs` (21 LOC, 2 trivial functions: `Cu64_inc`, `Cu64_dec`).
+
+### 21.2 Strategy
+
+#### Principle: transpiler generates everything, marks what it can't prove
+
+```
+For each function F in spec:
+  1. Transpiler attempts to generate exec code + proof
+  2. If proof generation succeeds → emit fully verified function
+  3. If proof generation fails → emit function body with #[verifier(external_body)]
+     and // PROOF-TODO: <reason> comment
+  4. Log to stderr: "PROOF-GAP: CFunction — <reason>"
+```
+
+This is strictly better than the current state because:
+- **Transparent**: every trust point is visible in the generated code
+- **Auditable**: `grep PROOF-TODO` shows all gaps
+- **Incremental**: as the transpiler improves, external_body annotations disappear automatically on regeneration
+- **No manual files**: `manual_code` is eliminated; all code comes from transpiler
+
+#### What about types_manual_helpers.rs?
+
+This file is different — it contains `impl` blocks, `clone_up_to_view` methods, and type extension code that isn't generated from spec functions. These are **type infrastructure** (not protocol functions) and should be handled separately:
+- Keep `types_manual_helpers.rs` for now (it's type infrastructure, not protocol logic)
+- Long-term: teach the type generator to produce these impl blocks automatically
+- Mark as Phase 21.7 (deferred)
+
+### 21.3 Phase 21.1: Simplify non-RSL TOMLs (9 protocols)
+
+Strip all auto-derivable Tier 1 fields from the 9 non-RSL protocol TOMLs. The `test_minimal_toml_produces_identical_output` test already proves this produces identical output.
+
+- [ ] **21.1.1**: For each non-RSL protocol TOML, remove:
+  - `[remapping]` section (auto-derived from struct/enum names)
+  - `[variant_remapping]` section (auto-derived from enum variants)
+  - `[arrow_variants]` section (auto-derived from enum field→variant mapping — **only if test passes**)
+  - `collection_fields`, `vec_fields`, `hashmap_index_fields` (auto-derived from struct field types)
+  - `clone_fields`, `[clone_field_types]` (auto-derived from enum-typed fields)
+  - `[clone_strategy]` (auto-derived from Set/Map fields)
+  - `[struct_vec_fields]` (auto-derived from Seq<StructType> fields)
+  - `primitive_types` (auto-derived from remap targets)
+  - Default `[output]` flags that match the defaults
+
+- [ ] **21.1.2**: Regenerate all 9 non-RSL protocols with minimal TOMLs:
+  ```bash
+  for each protocol P:
+    verus-transpile --input P.rs --annotations P.automan --config P_transpile.toml --output P_gen.rs
+    verus-transpile generate-types --input P/types.rs --config P_transpile.toml --output types_gen.rs
+  ```
+
+- [ ] **21.1.3**: Diff generated output against current: must be byte-identical
+
+- [ ] **21.1.4**: Run Verus verification: `scons --verus-path=... liblib.so`
+  - Target: same verified count, 0 errors
+
+- [ ] **21.1.5**: Handle Raft `manual_helpers.rs` (Cu64_inc, Cu64_dec):
+  - These are trivial (`*x + 1`, `*x - 1`) — teach transpiler to generate them
+  - Or: inline as `--auto-skip` fallback with `external_body`
+  - Remove `manual_code = "manual_helpers.rs"` from Raft TOML
+
+### 21.4 Phase 21.2: RSL — remove manual_code, use --auto-skip + external_body
+
+For each RSL module, remove `manual_code` and `skip_functions`, let the transpiler attempt to generate all functions. Functions that fail get `external_body`.
+
+#### 21.2.1 Transpiler enhancement: `--proof-fallback` mode
+
+- [ ] Add `--proof-fallback` CLI flag (combines with `--auto-skip`):
+  - When a function's **body** can be generated but **proof** fails verification:
+    - Wrap function with `#[verifier(external_body)]`
+    - Add `// PROOF-TODO: proof generation failed — <specific reason>`
+    - Emit the unverified body as a comment block for reference
+  - When a function **cannot be translated at all** (parse/translate error):
+    - Emit a stub: `#[verifier(external_body)] fn CFoo(...) -> ... { unimplemented!() }`
+    - Add `// TRANSLATE-TODO: translation failed — <specific reason>`
+  - Summary report to stderr:
+    ```
+    === Proof Gap Report ===
+    PROOF-GAP: CProposerProcessRequest — HashMap iteration invariant
+    PROOF-GAP: CReplicaNextProcess1a — IO packet extraction
+    TRANSLATE-GAP: CProposerNominateOldValueAndSend2a — existential quantifier
+    Total: 15 proof gaps, 3 translation gaps (out of 62 functions)
+    ```
+
+#### 21.2.2 RSL learner: zero manual code (already proven)
+
+- [ ] Remove `manual_code` and `skip_functions` from learner_transpile.toml
+- [ ] Regenerate learner_gen.rs
+- [ ] Verify: should pass with 0 errors (learner_manual.rs has 0 assumes, 0 external_body)
+- [ ] This is the easiest RSL module — validates the approach
+
+#### 21.2.3 RSL broadcast: no manual code needed
+
+- [ ] Remove `skip_functions = ["BuildLBroadcast"]` from broadcast_transpile.toml
+- [ ] Regenerate — BuildLBroadcast is a recursive helper, test if transpiler handles it
+- [ ] If not: `--auto-skip` will mark it `external_body`
+
+#### 21.2.4 RSL acceptor: 2 external_body + 5 proven functions
+
+- [ ] Remove `manual_code` and `skip_functions` from acceptor_transpile.toml
+- [ ] Regenerate with `--auto-skip --proof-fallback`
+- [ ] Expected: 5 functions pass proof, 2 HashMap helpers get `external_body` (same as current manual)
+- [ ] CAcceptorProcess1a: may need `external_body` due to packet map opacity (known Verus limitation)
+- [ ] Verify: ≥ current verified count
+
+#### 21.2.5 RSL election: 33 assumes → external_body or proven
+
+- [ ] Remove `manual_code` and `skip_functions` from election_transpile.toml
+- [ ] Regenerate with `--auto-skip --proof-fallback`
+- [ ] Expected: many functions get `external_body` (33 assumes in current manual code suggest proofs are hard)
+- [ ] Document which functions have proof gaps
+
+#### 21.2.6 RSL executor: 9 external_body helpers
+
+- [ ] Remove `manual_code` and `skip_functions` from executor_transpile.toml
+- [ ] Regenerate with `--auto-skip --proof-fallback`
+- [ ] Expected: HashMap/cache helpers stay `external_body`, others may pass
+- [ ] CGetPacketsFromReplies: recursive function — test if transpiler handles recursion
+
+#### 21.2.7 RSL proposer: 41 assumes → external_body
+
+- [ ] Remove `manual_code` and `skip_functions` from proposer_transpile.toml
+- [ ] Regenerate with `--auto-skip --proof-fallback`
+- [ ] Expected: many functions get `external_body` (41 assumes currently)
+- [ ] Note: proposer depends on election functions — election must be done first (21.2.5)
+
+#### 21.2.8 RSL replica: 130 assumes → mostly external_body
+
+- [ ] Remove `manual_code` and `skip_functions` from replica_transpile.toml
+- [ ] Regenerate with `--auto-skip --proof-fallback`
+- [ ] Expected: most functions get `external_body` (130 assumes — heaviest trust)
+- [ ] Note: replica depends on all other modules — do LAST
+
+#### 21.2.9 RSL types: keep types_manual_helpers.rs (deferred)
+
+- [ ] types_manual_helpers.rs is **type infrastructure** (impl blocks, clone methods, view traits), NOT protocol functions
+- [ ] Keep `manual_code = "types_manual_helpers.rs"` in types_transpile.toml
+- [ ] Long-term (Phase 21.7): teach type generator to produce these impl blocks
+- [ ] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle
+
+### 21.5 Phase 21.3: Verify full build
+
+- [ ] Run full Verus verification: `scons --verus-path=... liblib.so`
+- [ ] Record new baseline: X verified, 0 errors
+  - Verified count may **decrease** if some previously-proven manual functions become `external_body`
+  - This is acceptable — it makes the proof gap **honest** instead of hidden behind assumes
+- [ ] Run all transpiler tests: `cargo test --manifest-path transpiler/Cargo.toml`
+- [ ] Run Verus build for each non-RSL protocol: confirm no regressions
+
+### 21.6 Phase 21.4: Proof gap audit and documentation
+
+- [ ] Run transpiler with `--proof-fallback` on all RSL modules, collect gap report
+- [ ] Create `docs/dev/proof-gap-audit.md`:
+  - List every `PROOF-TODO` and `TRANSLATE-TODO` function
+  - Categorize by root cause:
+    - HashMap iteration invariants
+    - HashSet length/cardinality proofs
+    - Packet map opacity (`Seq<CPacket>.map(|i,p| p@)`)
+    - IO contract composition
+    - Existential quantifier elimination
+    - Complex conditional field assignment
+  - For each category, estimate: "if transpiler improvement X is done, Y functions would be proven"
+- [ ] Update TODO.md "What doesn't work yet" section with honest proof gap count
+
+### 21.7 Phase 21.5: Cleanup
+
+- [ ] Delete all `*_manual.rs` files except `types_manual_helpers.rs`:
+  - `acceptor_manual.rs` (352 LOC)
+  - `election_manual.rs` (377 LOC)
+  - `executor_manual.rs` (706 LOC)
+  - `learner_manual.rs` (293 LOC)
+  - `proposer_manual.rs` (692 LOC)
+  - `replica_manual.rs` (1,225 LOC)
+  - Raft `manual_helpers.rs` (21 LOC)
+- [ ] Remove `manual_code` from all TOMLs except types_transpile.toml
+- [ ] Git commit: "Phase 21: eliminate manual_code, transpiler generates all protocol functions"
+
+### 21.8 Execution Order
+
+```
+21.1 Non-RSL TOML simplification    ← safe, test-proven, do FIRST
+    ↓
+21.2.1 --proof-fallback transpiler   ← enable the approach
+    ↓
+21.2.2 Learner (easiest)             ← validate on zero-assume module
+    ↓
+21.2.3 Broadcast                     ← single function
+    ↓
+21.2.4 Acceptor                      ← few external_body
+    ↓
+21.2.5 Election                      ← many assumes
+    ↓
+21.2.6 Executor                      ← external_body helpers
+    ↓
+21.2.7 Proposer                      ← depends on election
+    ↓
+21.2.8 Replica                       ← depends on everything, do LAST
+    ↓
+21.2.9 Types (deferred)              ← type infrastructure, separate concern
+    ↓
+21.3 Full verification               ← validate everything
+    ↓
+21.4 Proof gap audit                 ← document gaps
+    ↓
+21.5 Cleanup                         ← delete manual files
+```
+
+### 21.9 Acceptance Criteria
+
+- [ ] All 9 non-RSL protocol TOMLs are minimal (auto-derivable fields removed)
+- [ ] Zero `manual_code` references in any TOML except types_transpile.toml
+- [ ] Zero `*_manual.rs` files except `types_manual_helpers.rs`
+- [ ] All generated code compiles with Verus (X verified, 0 errors)
+- [ ] Every unproven function has `#[verifier(external_body)]` + `// PROOF-TODO:` comment
+- [ ] `grep -r "PROOF-TODO\|TRANSLATE-TODO" src/generated/` produces a complete audit of all proof gaps
+- [ ] `docs/dev/proof-gap-audit.md` documents all gaps by category
+- [ ] All transpiler tests pass
+- [ ] Regeneration is fully reproducible: running transpiler again produces identical output
+
+### 21.10 Expected Proof Gap Outcome
+
+Based on current manual code analysis (204 assumes + 25 external_body):
+
+| Module | Total functions | Expected proven | Expected external_body | Reason |
+|--------|----------------|----------------|----------------------|--------|
+| learner | 4 | 4 | 0 | Already 0 assumes |
+| broadcast | 1 | 1 | 0 | Simple loop |
+| acceptor | 7 | 4-5 | 2-3 | HashMap helpers + packet map |
+| election | 11 | 3-5 | 6-8 | View change proofs, epoch logic |
+| executor | 8 | 4-5 | 3-4 | HashMap cache, recursive replies |
+| proposer | 12 | 3-5 | 7-9 | Election integration, HashMap |
+| replica | 23 | 0-3 | 20-23 | IO dispatch, heavy composition |
+| **Total** | **66** | **~19-28** | **~38-47** | |
+
+The verified function count may drop from 583 to ~540-560 as hidden assumes become honest `external_body`. This is a **net improvement in correctness** — the trust boundary becomes explicit and auditable.
