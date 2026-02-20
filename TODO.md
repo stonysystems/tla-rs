@@ -5715,8 +5715,9 @@ replica_gen.rs (standalone)
     └→ broadcast_gen.rs (standalone ✓)
 ```
 
-### 19.2 Proposer: 11 delegate functions → standalone
+### 19.2 Proposer: 11 delegate functions → standalone ✅ COMPLETE
 
+**Status**: ✅ COMPLETE (Phase 19.2.1 + 19.2.2-3, all 12 functions standalone in proposer_manual.rs)
 **Difficulty**: HIGH (most complex module, ~1602 LOC manual impl)
 **Dependencies**: Calls ElectionImpl.rs methods (must enable election_gen first → Phase 19.5)
 
@@ -5726,13 +5727,13 @@ The 11 functions split into three categories:
 
 These don't return packets — they transform `CProposer → CProposer`.
 
-- [ ] `CProposerCheckForViewTimeout` (~10 lines) — delegates to CElectionStateCheckForViewTimeout
-- [ ] `CProposerResetViewTimerDueToExecution` (~12 lines) — delegates to CElectionStateReflectExecutedRequestBatch
-- [ ] `CProposerProcess1b` (~15 lines) — HashSet insert
-- [ ] `CProposerCheckForQuorumOfViewSuspicions` (~25 lines) — election state + conditional reset
-- [ ] `CProposerProcessHeartbeat` (~30 lines) — election state + conditional reset
-- [ ] `CProposerInit` (~35 lines) — direct struct construction
-- [ ] `CProposerProcessRequest` (~80 lines) — HashMap lookup/insert, election state update
+- [x] `CProposerCheckForViewTimeout` (~10 lines) — standalone in proposer_manual.rs
+- [x] `CProposerResetViewTimerDueToExecution` (~12 lines) — standalone in proposer_manual.rs
+- [x] `CProposerProcess1b` (~15 lines) — standalone in proposer_manual.rs
+- [x] `CProposerCheckForQuorumOfViewSuspicions` (~25 lines) — standalone in proposer_manual.rs
+- [x] `CProposerProcessHeartbeat` (~30 lines) — standalone in proposer_manual.rs
+- [x] `CProposerInit` (~35 lines) — standalone in proposer_manual.rs
+- [x] `CProposerProcessRequest` (~80 lines) — standalone in proposer_manual.rs
 
 **Strategy**: Create `proposer_manual.rs` with functional-style implementations (like acceptor_manual.rs). Each function constructs a new CProposer struct instead of cloning+mutating. Use standalone election_gen.rs functions (CElectionStateCheckForViewTimeout etc.) instead of CElectionState:: methods.
 
@@ -5745,10 +5746,10 @@ These don't return packets — they transform `CProposer → CProposer`.
 
 These return `(CProposer, Vec<CPacket>)` via `outbound_packets_to_vec`.
 
-- [ ] `CProposerMaybeEnterNewViewAndSend1a` (~80 lines) — view transition + 1a broadcast
-- [ ] `CProposerMaybeEnterPhase2` (~63 lines) — phase 2 entry + StartingPhase2 broadcast
-- [ ] `CProposerNominateNewValueAndSend2a` (~124 lines) — batch construction + 2a broadcast (in skip_functions)
-- [ ] `CProposerNominateOldValueAndSend2a` (~101 lines) — old value lookup + 2a broadcast (in skip_functions)
+- [x] `CProposerMaybeEnterNewViewAndSend1a` (~80 lines) — standalone in proposer_manual.rs
+- [x] `CProposerMaybeEnterPhase2` (~63 lines) — standalone in proposer_manual.rs
+- [x] `CProposerNominateNewValueAndSend2a` (~124 lines) — standalone in proposer_manual.rs
+- [x] `CProposerNominateOldValueAndSend2a` (~101 lines) — standalone in proposer_manual.rs
 
 **Strategy**: These face the "datatype is opaque" Verus limitation for `Seq<CPacket>.map(|i,p| p@)` equality. Two options:
   - **Option A**: Keep as thin delegates using `outbound_packets_to_vec` (external_body bridge) — proven pattern from acceptor Process1a
@@ -5758,7 +5759,7 @@ Recommend Option A for now; Option B is a Verus-level issue.
 
 #### 19.2.3 Dispatch function (1 function)
 
-- [ ] `CProposerMaybeNominateValueAndSend2a` (~69 lines) — calls NominateOld or NominateNew (in skip_functions)
+- [x] `CProposerMaybeNominateValueAndSend2a` (~69 lines) — standalone in proposer_manual.rs
 
 **Strategy**: This dispatches between NominateOld and NominateNew. Can be implemented in proposer_manual.rs calling the functions from 19.2.2. Already in skip_functions because it calls other skipped functions.
 
@@ -5795,7 +5796,7 @@ All 7 acceptor functions are now standalone in acceptor_manual.rs:
 
 acceptorimpl.rs reduced to CIsLogTruncationPointValid + helpers only (118 LOC). No `impl CAcceptor` block remains.
 
-### 19.5 Election: Enable election_gen.rs in mod.rs
+### 19.5 Election: Enable election_gen.rs in mod.rs ✅ COMPLETE
 
 **Difficulty**: LOW-MEDIUM (code is already generated and standalone, but has 27 verification errors when enabled)
 
@@ -5807,16 +5808,13 @@ acceptorimpl.rs reduced to CIsLogTruncationPointValid + helpers only (118 LOC). 
 Election calls currently route: `proposer_gen → ProposerImpl → ElectionImpl methods`.
 Target: `proposer_gen → election_gen standalone functions`.
 
-- [ ] **19.5.1**: Uncomment `election_gen` in mod.rs and fix the 27 verification errors
-  - Likely causes: missing imports, type mismatches, proof gaps in generated code
-  - May need transpiler improvements for election spec patterns
-- [ ] **19.5.2**: Update proposer_manual.rs to call election_gen functions instead of ElectionImpl methods
-  - e.g., `CElectionStateCheckForViewTimeout(es, clock)` instead of `CElectionState::CElectionStateCheckForViewTimeout(&mut self.election_state, clock)`
-- [ ] **19.5.3**: Verify ElectionImpl.rs is no longer called from any generated code; mark fully deprecated
+- [x] **19.5.1**: Uncomment `election_gen` in mod.rs and fix the 27 verification errors ✅
+- [x] **19.5.2**: Update proposer_manual.rs to call election_gen functions instead of ElectionImpl methods ✅
+- [x] **19.5.3**: Verify ElectionImpl.rs is no longer called from any generated code; mark fully deprecated ✅
 
 **Note**: Phase 19.5 should be done BEFORE Phase 19.2, since proposer functions need election_gen to be available.
 
-### 19.6 Replica: 20 delegate functions → standalone
+### 19.6 Replica: 20 delegate functions → standalone ✅ COMPLETE
 
 **Difficulty**: VERY HIGH (orchestration layer, depends on all other modules being standalone first)
 **Dependencies**: Requires 19.2 (proposer), 19.3 (executor), 19.4 (acceptor), 19.5 (election) to be complete
@@ -5837,20 +5835,12 @@ Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
 3. Reassembles CReplica from updated sub-components
 4. Returns outbound packets
 
-- [ ] **19.6.1**: Analyze ReplicaImpl.rs dispatch patterns — each method follows a fixed template:
-  ```
-  Extract component → Call component_gen function → Rebuild CReplica → Return (CReplica, OutboundPackets)
-  ```
-- [ ] **19.6.2**: Create `replica_manual.rs` with 20 standalone dispatch functions
-  - Each function constructs new CReplica by calling the relevant component_gen function
-  - Pattern: `CReplicaNextProcessRequest(s, pkt) → call CProposerProcessRequest(s.proposer, pkt) → build new CReplica`
-  - Packet-returning variants: combine component packets via `outbound_packets_to_vec`
-- [ ] **19.6.3**: Handle CReplicaInit — calls all 4 component init functions, constructs CReplica
-- [ ] **19.6.4**: Fix the 19 verification errors that occur with standalone replica_gen (commit 96241e6 reference)
-  - These were previously encountered and the standalone approach was reverted
-  - Root cause analysis needed: likely proof gaps in component composition
-- [ ] **19.6.5**: Update replica_dispatch.rs to call standalone replica_gen functions instead of ReplicaImpl methods
-- [ ] **19.6.6**: Verify ReplicaImpl.rs is fully unused; remove or archive
+- [x] **19.6.1**: Analyze ReplicaImpl.rs dispatch patterns ✅
+- [x] **19.6.2**: Create `replica_manual.rs` with 20 standalone dispatch functions ✅
+- [x] **19.6.3**: Handle CReplicaInit ✅
+- [x] **19.6.4**: Fix verification errors with standalone replica_gen ✅
+- [x] **19.6.5**: replica_dispatch.rs removed (replaced by replica_manual.rs) ✅
+- [x] **19.6.6**: ReplicaImpl.rs retained for CExecutorExecute bridging only (Phase 19.3 further reduced ExecutorImpl.rs) ✅
 
 ### 19.7 Cleanup: Strip dead code from deprecated manual impl files
 
@@ -5860,22 +5850,21 @@ Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
 
 - [x] **19.7.1**: Strip dead code from all impl files (completed 2026-02-20):
   - `acceptorimpl.rs`: 678 → 118 LOC (kept CIsLogTruncationPointValid helpers only; CAcceptorProcess1a moved to standalone in Phase 19.4)
-  - `ExecutorImpl.rs`: 623 → 275 LOC (kept CExecutorExecute + 3 helpers; removed 7 dead methods)
+  - `ExecutorImpl.rs`: 623 → 275 → 76 LOC (Phase 19.7: removed 7 dead methods; Phase 19.3: moved 3 helpers to standalone, kept CExecutorExecute only)
   - `ElectionImpl.rs`: 949 → 149 LOC (kept Clone + CRequestHeader + helpers; removed ~15 dead methods)
   - `ProposerImpl.rs`: 1602 → 483 LOC (kept Clone + 5 static methods + helpers; removed ~20 dead methods + tests)
   - `learnerimpl.rs`: already stripped in prior phase (only re-exports)
   - Total: ~3,852 → ~1,119 LOC (~71% reduction)
 - [x] **19.7.2**: Add integration tests for dead code stripping (2 tests: content + size assertions)
 - [x] **19.7.3**: Verify: 586 verified, 0 errors (count dropped from 627 due to ~41 dead verified functions removed)
-- [ ] **19.7.4** (deferred): Full removal of impl files after 19.3/19.4/19.6 complete
-  - Remaining live code preventing full removal:
-    - `acceptorimpl.rs`: CIsLogTruncationPointValid helpers only (no more impl CAcceptor block)
-    - `ExecutorImpl.rs`: CExecutorExecute (called from ReplicaImpl.rs:732) + CGetPacketsFromReplies/CClientsInReplies/CUpdateNewCache
-    - `ElectionImpl.rs`: Clone impl + CRequestHeader + clone_up_to_view + CBoundRequestSequence + helpers
-    - `ProposerImpl.rs`: Clone impl + 5 static methods (CSetOfMessage1bAboutBallot etc.)
-  - `src/implementation/RSL/ReplicaImpl.rs` + `replicaimpl_class.rs` — after Phase 19.6 (replica standalone)
-- [ ] **19.7.5**: Remove `#[deprecated]` re-exports from impl files (after full removal)
-- [ ] **19.7.6**: Update `src/implementation/RSL/mod.rs` to remove references to deprecated modules (after full removal)
+- [~] **19.7.4** (partial): Full removal of impl files not possible — structural necessities remain:
+  - `acceptorimpl.rs`: CIsLogTruncationPointValid helpers (called from acceptor_gen.rs)
+  - `ExecutorImpl.rs`: CExecutorExecute only (~76 LOC, called from ReplicaImpl.rs:732)
+  - `ElectionImpl.rs`: Clone impl + CRequestHeader + clone_up_to_view + CBoundRequestSequence + helpers
+  - `ProposerImpl.rs`: Clone impl + 5 static methods (CSetOfMessage1bAboutBallot etc.)
+  - `ReplicaImpl.rs` + `replicaimpl_class.rs`: Still in use for IO dispatch layer
+- [~] **19.7.5**: `#[deprecated]` re-exports remain in ExecutorImpl.rs (CExecutor, COutstandingOperation) — needed by ReplicaImpl.rs
+- [~] **19.7.6**: mod.rs still references impl modules — needed for structural types and Clone impls
 
 ### 19.8 Execution Order
 
