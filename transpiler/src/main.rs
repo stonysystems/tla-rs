@@ -1339,7 +1339,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             clone_method: file_config.output.clone_method.clone(),
             vec_element_ensures: file_config.vec_element_ensures.clone(),
             set_fields: std::collections::HashSet::new(),
-            assume_postconditions: false,
+            assume_postconditions: file_config.output.assume_postconditions,
             spec_prefix: file_config.naming.spec_prefix.clone(),
             exec_prefix: file_config.naming.exec_prefix.clone(),
             generate_abstraction_fns: false,
@@ -1351,6 +1351,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
         generate_wrapper_methods: file_config.output.generate_wrapper_methods,
         wrapper_impl_type: file_config.output.wrapper_impl_type,
         skip_functions: file_config.skip_functions,
+        no_stub_functions: file_config.no_stub_functions,
         manual_code: file_config.output.manual_code.and_then(|rel_path| {
             let base_dir = config_path.parent().unwrap_or(Path::new("."));
             let manual_path = base_dir.join(&rel_path);

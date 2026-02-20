@@ -10,21 +10,16 @@ spec_only_functions = [
 # Type aliases that are really Vec<T> — skip valid() since Vec doesn't have it
 skip_valid_types = ["RequestBatch"]
 
-# All functions are in skip_functions — proofs too complex for auto-generation.
-# Manual implementations in election_manual.rs use assume-based proof pattern.
+# BoundRequestSequence uses enum `is`/`->` pattern matching on CUpperBound (trusted enum).
+# RemoveAllSatisfiedRequestsInSequence and RemoveExecutedRequestBatch are recursive
+# filter functions — the for-loop conversion loses assume(false) wrapping.
+# ElectionStateReflectReceivedRequest has `for ... in iter:` loops whose iterator
+# invariants are checked independently of assume(false).
 skip_functions = [
     "BoundRequestSequence",
-    "ComputeSuccessorView",
-    "RequestsMatch",
-    "RequestSatisfiedBy",
     "RemoveAllSatisfiedRequestsInSequence",
-    "ElectionStateInit",
-    "ElectionStateProcessHeartbeat",
-    "ElectionStateCheckForViewTimeout",
-    "ElectionStateCheckForQuorumOfViewSuspicions",
-    "ElectionStateReflectReceivedRequest",
     "RemoveExecutedRequestBatch",
-    "ElectionStateReflectExecutedRequestBatch",
+    "ElectionStateReflectReceivedRequest",
 ]
 
 # ElectionState collection fields used in set/seq expression lowering.
@@ -88,10 +83,11 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
+# Proofs not yet mature — trust postconditions via assume(false)
+assume_postconditions = true
 # CElectionState comes from types_gen.rs (includes optimization fields)
 generate_inline_types = false
-# Path to manually-written complex functions (relative to this TOML file)
-manual_code = "election_manual.rs"
+# manual_code removed — using --auto-skip --proof-fallback for untranslatable functions
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",

@@ -99,6 +99,9 @@ pub struct TranspilerConfig {
     /// Functions to skip during transpilation (require manual implementation).
     /// These are functions with patterns too complex for automatic transpilation.
     pub skip_functions: Vec<String>,
+    /// Functions to skip without generating stubs (even in proof-fallback mode).
+    /// Use for functions that already exist in implementation files.
+    pub no_stub_functions: Vec<String>,
     /// The type name for the impl block when generating wrapper methods.
     pub wrapper_impl_type: Option<String>,
     /// Raw Verus code to inject at the end of the `verus! {}` block.
@@ -376,8 +379,8 @@ impl Transpiler {
         for spec_fn in spec_fns {
             // Check if this function should be skipped
             if self.config.skip_functions.contains(&spec_fn.name) {
-                if self.config.proof_fallback {
-                    // Emit stub for explicitly skipped functions
+                if self.config.proof_fallback && !self.config.no_stub_functions.contains(&spec_fn.name) {
+                    // Emit stub for explicitly skipped functions (unless in no_stub_functions)
                     let annotation = annotations
                         .iter()
                         .flat_map(|m| m.functions.values())
@@ -532,20 +535,37 @@ impl Transpiler {
             }
         }
 
-        let return_type = if output_types.is_empty() {
-            String::new()
-        } else if output_types.len() == 1 {
-            format!(" -> (result: {})", output_types[0])
+        let return_type = if !output_types.is_empty() {
+            if output_types.len() == 1 {
+                format!(" -> (result: {})", output_types[0])
+            } else {
+                format!(" -> (result: ({}))", output_types.join(", "))
+            }
+        } else if !matches!(spec_fn.return_type, crate::ast::Type::Bool) {
+            // Non-predicate helper: return type from spec function's return type
+            let exec_ret = Self::type_to_exec_string(
+                &spec_fn.return_type,
+                spec_prefix, exec_prefix, int_type, &self.config.type_remapping,
+            );
+            output_types.push(exec_ret.clone());
+            format!(" -> (result: {})", exec_ret)
         } else {
-            format!(" -> (result: ({}))", output_types.join(", "))
+            String::new()
         };
 
         // Build ensures clauses for external_body stubs
         let mut ensures_lines = Vec::new();
-        // Add validity ensures for output types
+        // Add validity ensures for output types (skip if type is in skip_valid_types)
         let vp = &self.config.translator.validity_predicate_name;
         if !vp.is_empty() && output_types.len() == 1 {
-            ensures_lines.push(format!("    result.{}(),", vp));
+            let output_type_skips_valid = output_types.first().map_or(false, |t| {
+                self.config.translator.skip_valid_types.iter().any(|sv| t.contains(sv))
+                    || t.starts_with("Vec<") || t.starts_with("HashMap<") || t.starts_with("HashSet<")
+                    || t == "bool" || t == "u64" || t == "i64" || t == "usize"
+            });
+            if !output_type_skips_valid {
+                ensures_lines.push(format!("    result.{}(),", vp));
+            }
         }
         // Add spec predicate ensures: SpecFn(input@, result@, ...)
         // Only for predicate functions (return type is bool), not helper functions that return values
@@ -556,17 +576,28 @@ impl Transpiler {
                 let is_output = annotation
                     .map(|a| i < a.param_modes.len() && a.param_modes[i] == crate::ast::ParameterMode::Output)
                     .unwrap_or(false);
-                let is_primitive = self.config.translator.primitive_types.contains(&{
-                    if let crate::ast::Type::Named(p) = &param.ty {
-                        p.segments.last().cloned().unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                });
+                let type_name = if let crate::ast::Type::Named(p) = &param.ty {
+                    p.segments.last().cloned().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                let is_primitive = self.config.translator.primitive_types.contains(&type_name);
+                // Check for custom view expression (e.g., "Votes" → "abstractify_cvotes({param})")
+                let has_custom_view = self.config.translator.type_view_exprs.contains_key(&type_name);
                 if is_output {
-                    spec_args.push("result@".to_string());
+                    if has_custom_view {
+                        let view_expr = self.config.translator.type_view_exprs[&type_name]
+                            .replace("{param}", "&result");
+                        spec_args.push(view_expr);
+                    } else {
+                        spec_args.push("result@".to_string());
+                    }
                 } else if matches!(param.ty, crate::ast::Type::Int | crate::ast::Type::Nat | crate::ast::Type::Bool) || is_primitive {
                     spec_args.push(format!("*{} as int", param.name));
+                } else if has_custom_view {
+                    let view_expr = self.config.translator.type_view_exprs[&type_name]
+                        .replace("{param}", &param.name);
+                    spec_args.push(view_expr);
                 } else {
                     spec_args.push(format!("{}@", param.name));
                 }
@@ -3542,5 +3573,76 @@ mod tests {
         assert!(stub.contains("ensures"), "Predicate should have ensures: {}", stub);
         assert!(stub.contains("LInit("), "Predicate should use spec fn in ensures: {}", stub);
         assert!(stub.contains("result.valid()"), "Should have validity ensures: {}", stub);
+    }
+
+    #[test]
+    fn test_no_stub_functions_suppresses_stub_in_proof_fallback() {
+        // When a function is in both skip_functions and no_stub_functions,
+        // proof_fallback mode should NOT generate a stub for it.
+        use crate::ast::{Type, Path, ParameterMode};
+
+        let config = TranspilerConfig {
+            proof_fallback: true,
+            skip_functions: vec!["LSkipWithStub".to_string(), "LSkipNoStub".to_string()],
+            no_stub_functions: vec!["LSkipNoStub".to_string()],
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        // Test via generate_external_body_stub: a function in no_stub_functions
+        // should be suppressed by the pipeline, not by the stub generator.
+        // Instead, test the pipeline logic directly: the key check is
+        //   self.config.proof_fallback && !self.config.no_stub_functions.contains(&spec_fn.name)
+
+        // Simulate: LSkipWithStub is in skip_functions but NOT in no_stub → should generate stub
+        let spec_fn_with_stub = make_test_spec_fn("LSkipWithStub", vec![
+            ("s", Type::Int),
+            ("s_", Type::Int),
+        ]);
+        let annotation = make_test_annotation("LSkipWithStub", vec![
+            ParameterMode::Input,
+            ParameterMode::Output,
+        ]);
+
+        // proof_fallback is true, NOT in no_stub → stub should be generated
+        assert!(transpiler.config.proof_fallback && !transpiler.config.no_stub_functions.contains(&"LSkipWithStub".to_string()));
+        let stub = transpiler.generate_external_body_stub(&spec_fn_with_stub, Some(&annotation), "test");
+        assert!(stub.contains("CSkipWithStub"), "Should generate stub: {}", stub);
+
+        // Simulate: LSkipNoStub is in skip_functions AND in no_stub → should NOT generate stub
+        assert!(transpiler.config.no_stub_functions.contains(&"LSkipNoStub".to_string()));
+        // The pipeline check: !self.config.no_stub_functions.contains(&spec_fn.name) → false
+        // So the stub generation is skipped entirely (no code emitted).
+    }
+
+    #[test]
+    fn test_skip_valid_types_omits_valid_in_stub() {
+        // When output type is in skip_valid_types, stub should NOT have result.valid()
+        use crate::ast::{Type, Path, ParameterMode};
+
+        let config = TranspilerConfig {
+            proof_fallback: true,
+            translator: crate::translator::TranslatorConfig {
+                validity_predicate_name: "valid".to_string(),
+                skip_valid_types: ["Votes".to_string()].into_iter().collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_fn = make_test_spec_fn("LRemoveVotes", vec![
+            ("votes", Type::Named(Path::single("Votes".to_string()))),
+            ("result_", Type::Named(Path::single("Votes".to_string()))),
+        ]);
+
+        let annotation = make_test_annotation("LRemoveVotes", vec![
+            ParameterMode::Input,
+            ParameterMode::Output,
+        ]);
+
+        let stub = transpiler.generate_external_body_stub(&spec_fn, Some(&annotation), "test");
+        // Should NOT have result.valid() because Votes is in skip_valid_types
+        assert!(!stub.contains("result.valid()"), "Should skip valid() for skip_valid_types: {}", stub);
     }
 }

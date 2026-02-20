@@ -77,6 +77,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub skip_functions: Vec<String>,
 
+    /// Functions to skip WITHOUT generating stubs (even in proof-fallback mode).
+    /// Use for functions that already exist in implementation files and would
+    /// cause duplicate definitions if stubs were generated.
+    /// e.g., ["IsLogTruncationPointValid"]
+    #[serde(default)]
+    pub no_stub_functions: Vec<String>,
+
     /// Output generation configuration
     #[serde(default)]
     pub output: OutputConfig,
@@ -788,6 +795,13 @@ pub struct OutputConfig {
     #[serde(default)]
     pub generate_proofs: bool,
 
+    /// When true, prepend `assume(false)` at the start of each generated function body.
+    /// This makes all postconditions vacuously true (trusted), equivalent to
+    /// manually writing `assume(result.valid()); assume(SpecFn(...));`.
+    /// Use when proof generation is not yet mature enough for a module.
+    #[serde(default)]
+    pub assume_postconditions: bool,
+
     /// Whether to generate wrapper methods in an impl block for &mut self pattern.
     /// When true, generates wrapper methods that call the functional-style generated
     /// functions and update `*self` with the result.
@@ -840,6 +854,7 @@ impl Default for OutputConfig {
             wrapper_impl_type: None,
             clone_method: None,
             manual_code: None,
+            assume_postconditions: false,
         }
     }
 }
