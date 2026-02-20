@@ -1,5 +1,10 @@
-// Manual exec helper functions for Raft protocol
+// Exec helper functions for Raft protocol
 // These implement exec versions of spec helper functions u64_inc/u64_dec
+
+use vstd::prelude::*;
+use crate::protocol::Raft::raft::*;
+
+verus! {
 
 pub exec fn Cu64_inc(x: &u64) -> (result: u64)
 requires
@@ -18,3 +23,5 @@ ensures
 {
     *x - 1
 }
+
+} // verus!

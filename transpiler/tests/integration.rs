@@ -4485,6 +4485,45 @@ fn test_host_init_raft() {
     );
 }
 
+/// Verify Raft Cu64_inc/Cu64_dec helpers live in implementation/Raft/helpers.rs
+/// (not injected via manual_code into generated files)
+#[test]
+fn test_raft_helpers_not_in_generated() {
+    // Raft TOML should not have manual_code
+    let toml = std::fs::read_to_string("../src/protocol/Raft/raft_transpile.toml")
+        .expect("Failed to read raft_transpile.toml");
+    assert!(
+        !toml.contains("manual_code"),
+        "Raft TOML should not have manual_code (helpers moved to implementation/Raft/helpers.rs)"
+    );
+
+    // Generated files should NOT define Cu64_inc/Cu64_dec (only call them)
+    let types_gen = std::fs::read_to_string("../src/generated/Raft/types_gen.rs")
+        .expect("Failed to read types_gen.rs");
+    assert!(
+        !types_gen.contains("pub exec fn Cu64_inc"),
+        "types_gen.rs should not define Cu64_inc (moved to helpers.rs)"
+    );
+
+    let raft_gen = std::fs::read_to_string("../src/generated/Raft/raft_gen.rs")
+        .expect("Failed to read raft_gen.rs");
+    assert!(
+        !raft_gen.contains("pub exec fn Cu64_inc"),
+        "raft_gen.rs should not define Cu64_inc (moved to helpers.rs)"
+    );
+    // But raft_gen.rs should still call Cu64_inc
+    assert!(
+        raft_gen.contains("Cu64_inc("),
+        "raft_gen.rs should call Cu64_inc"
+    );
+
+    // helpers.rs should exist and define the functions
+    let helpers = std::fs::read_to_string("../src/implementation/Raft/helpers.rs")
+        .expect("Failed to read helpers.rs");
+    assert!(helpers.contains("pub exec fn Cu64_inc"), "helpers.rs should define Cu64_inc");
+    assert!(helpers.contains("pub exec fn Cu64_dec"), "helpers.rs should define Cu64_dec");
+}
+
 #[test]
 fn test_host_init_chain_replication() {
     run_host_init_test(

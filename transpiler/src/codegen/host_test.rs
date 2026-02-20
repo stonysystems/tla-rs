@@ -150,6 +150,7 @@ pub fn strip_verus_types(code: &str) -> String {
         if trimmed.starts_with("use vstd::")
             || trimmed.starts_with("use crate::protocol::")
             || trimmed.starts_with("use crate::generated::")
+            || trimmed.starts_with("use crate::implementation::")
             || trimmed.starts_with("use std::collections::")
             || trimmed == "verus! {"
             || trimmed == "} // verus!"
@@ -273,6 +274,13 @@ pub fn strip_verus_gen(code: &str, skip_fns: &[String]) -> String {
     // Only emit clone_log if the gen code actually uses it
     if code.contains("clone_log(") || code.contains("fn clone_log") {
         result.push_str("fn clone_log(v: &Vec<CLogEntry>) -> Vec<CLogEntry> where CLogEntry: Clone { v.clone() }\n");
+    }
+    // Emit u64 helper stubs if the gen code calls them (Raft protocol)
+    if code.contains("Cu64_inc(") && !code.contains("fn Cu64_inc") {
+        result.push_str("fn Cu64_inc(x: &u64) -> u64 { *x + 1 }\n");
+    }
+    if code.contains("Cu64_dec(") && !code.contains("fn Cu64_dec") {
+        result.push_str("fn Cu64_dec(x: &u64) -> u64 { *x - 1 }\n");
     }
     result.push('\n');
 

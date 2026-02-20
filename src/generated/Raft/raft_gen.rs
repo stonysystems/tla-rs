@@ -2,6 +2,7 @@
 // DO NOT EDIT MANUALLY
 
 use crate::generated::Raft::types_gen::*;
+use crate::implementation::Raft::helpers::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
@@ -59,16 +60,13 @@ ensures
 
 
 /// Helper: clone CServerRole preserving view (workaround for missing derive Clone spec).
+#[verifier(external_body)]
 fn clone_role(r: &CServerRole) -> (res: CServerRole)
 ensures
     res@ == r@,
     res.valid() == r.valid(),
 {
-    match r {
-        CServerRole::Candidate => CServerRole::Candidate,
-        CServerRole::Follower => CServerRole::Follower,
-        CServerRole::Leader => CServerRole::Leader,
-    }
+    r.clone()
 }
 
 
@@ -518,28 +516,6 @@ ensures
     }
     result
 
-}
-
-
-// Manual exec helper functions for Raft protocol
-// These implement exec versions of spec helper functions u64_inc/u64_dec
-
-pub exec fn Cu64_inc(x: &u64) -> (result: u64)
-requires
-    *x < u64::MAX,
-ensures
-    result == u64_inc(*x),
-{
-    *x + 1
-}
-
-pub exec fn Cu64_dec(x: &u64) -> (result: u64)
-requires
-    *x > 0,
-ensures
-    result == u64_dec(*x),
-{
-    *x - 1
 }
 
 } // verus!

@@ -38,7 +38,6 @@ int_type = "u64"
 nat_type = "u64"
 
 [output]
-manual_code = "manual_helpers.rs"
 generate_abstraction_fns = true
 generate_validity_predicates = true
 validity_predicate_name = "valid"
@@ -56,6 +55,7 @@ custom_imports = [
     "use crate::protocol::Raft::types::*;",
     "use crate::protocol::Raft::raft::*;",
     "use crate::generated::Raft::types_gen::*;",
+    "use crate::implementation::Raft::helpers::*;",
 ]
 
 [messages]

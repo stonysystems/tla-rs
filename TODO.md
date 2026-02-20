@@ -6191,11 +6191,13 @@ Strip all auto-derivable Tier 1 fields from the 9 non-RSL protocol TOMLs. The `t
 - [x] **21.1.4**: Run Verus verification: `scons --verus-path=... liblib.so`
   - Target: same verified count, 0 errors (583 verified, 0 errors)
 
-- [ ] **21.1.5** (deferred): Handle Raft `manual_helpers.rs` (Cu64_inc, Cu64_dec):
-  - These are trivial (`*x + 1`, `*x - 1`) — teach transpiler to generate them
-  - Or: inline as `--auto-skip` fallback with `external_body`
-  - Remove `manual_code = "manual_helpers.rs"` from Raft TOML
-  - Blocked: transpiler helper generator uses `result@`/`x@` instead of `result`/`*x` for u64, missing overflow requires. Keeping `manual_code` in Raft TOML for now (only 2 trivial functions).
+- [x] **21.1.5**: Handle Raft `manual_helpers.rs` (Cu64_inc, Cu64_dec) ✅
+  - Moved Cu64_inc/Cu64_dec from manual_code injection to `src/implementation/Raft/helpers.rs`
+  - Removed `manual_code = "manual_helpers.rs"` from Raft TOML
+  - Added `use crate::implementation::Raft::helpers::*;` to TOML custom_imports
+  - Eliminated duplicate definitions (was in both types_gen.rs + raft_gen.rs, now only helpers.rs)
+  - Fixed host_test strip to filter `use crate::implementation::` imports + emit Cu64_inc/Cu64_dec stubs
+  - 567 verified, 0 errors; 1132 unit + 147 integration tests pass
 
 ### 21.4 Phase 21.2: RSL — remove manual_code, use --auto-skip + external_body
 
