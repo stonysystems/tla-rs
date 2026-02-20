@@ -572,6 +572,31 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 
 **Root cause**: D1 (TLA+ → Verus) generates "TLA+-flavored Verus" that preserves TLA+ semantics but doesn't conform to the Verus parser's expectations. The D3→D1→D2 round-trip requires D1 output improvements (struct field inference, parameter dedup, record type elimination). The integrated D4 pipeline avoids these issues through internal type propagation.
 
+#### D3 TLC Model Checking: `transpiler_generated_tla_with_properties/` (Phase 16.8.2)
+
+TLC model checking of D3-generated TLA+ specs with manually written MC wrappers.
+MC wrappers add finite domains, explicit message channels, and safety invariants.
+
+| Protocol | TLC Result | States | Distinct | Depth | Invariants | Time | Notes |
+|----------|-----------|--------|----------|-------|------------|------|-------|
+| TwoPhase | ✅ PASS | 926 | 304 | 9 | 5 | 2s | Consistency, TMCommit/Abort implications |
+| Paxos | ✅ PASS | 64,853 | 11,729 | 27 | 4 | 2s | Agreement, Validity, AcceptorMonotonicity |
+| LeaderElection | ✅ PASS | 100,636 | 9,337 | 13 | 5 | 2s | TypeOK, LeaderValid, ElectingSubsetAlive |
+| PrimaryBackup | ✅ PASS | 786 | 438 | 20 | 6 | 1s | LogConsistency, NoSplitBrain, ViewBounded |
+| Raft | — | — | — | — | — | — | State space too large (Seq-based logs) |
+| ChainReplication | — | — | — | — | — | — | State space too large (Seq-based logs) |
+| PBFT | — | — | — | — | — | — | State space too large (9 actions + per-node) |
+| VerticalPaxos | — | — | — | — | — | — | State space too large (multi-ballot + views) |
+| EPaxos | — | — | — | — | — | — | State space too large (11 actions + deps) |
+
+**Model sizes used:** TwoPhase: 3 RMs. Paxos: 2 nodes, 4 ballots, 2 values (ballot ownership via modular assignment). LeaderElection: 3 nodes. PrimaryBackup: 3 values, max log 3, max view 2.
+
+**Key findings:**
+- Relational specs (s, s_, c) require MC wrappers with explicit VARIABLE state, finite domains, and message channels
+- Paxos needed ballot ownership (`BallotOwner(b) = ((b-1) % N) + 1`) to prevent multiple proposers on same ballot
+- Protocols with sequence-based state (Raft, ChainReplication) have state spaces too large for exhaustive model checking even with minimal finite domains
+- All 4 checked protocols' safety invariants hold across their complete reachable state spaces
+
 #### D1 on External TLA+ Corpora (Phase 16.8.5)
 
 Tests D1 parser robustness against TLA+ specs NOT produced by our D3 emitter.

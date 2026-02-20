@@ -5156,3 +5156,66 @@ fn test_marshalable_cli_stdout_mode() {
     let impl_count = stdout.matches("impl Marshalable for").count();
     assert_eq!(impl_count, 6, "Expected 6 impls in stdout, got {}", impl_count);
 }
+
+/// Test that TLC model-checking wrappers exist and are well-structured for all 4 feasible protocols.
+/// These wrappers live in `tla_test_workspace/transpiler_generated_tla_with_properties/` and
+/// augment D3-generated relational specs with VARIABLE state, finite domains, message channels,
+/// and safety invariants.
+#[test]
+fn test_tlc_mc_wrappers_exist_and_well_structured() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace/transpiler_generated_tla_with_properties");
+
+    let protocols = vec![
+        ("TwoPhase_MC", vec!["Consistency", "TMCommitImpliesNoAbort", "TMAbortImpliesNoCommit",
+                             "CommittedImpliesPrepared", "TMCommitRequiresAllPrepared"]),
+        ("Paxos_MC", vec!["Agreement", "Validity", "AcceptorMonotonicity", "DecidedEqualsProposed"]),
+        ("LeaderElection_MC", vec!["TypeOK", "LeaderIsAliveOrNone", "LeaderValid",
+                                   "ElectingSubsetAlive", "WaitingNodeAlive"]),
+        ("PrimaryBackup_MC", vec!["LogConsistencyAfterAck", "NoSplitBrain", "LogLengthBound",
+                                   "ViewBounded", "BackupLogCoherence", "PendingImpliesValidState"]),
+    ];
+
+    for (name, expected_invariants) in &protocols {
+        let tla_path = dir.join(format!("{}.tla", name));
+        let cfg_path = dir.join(format!("{}.cfg", name));
+
+        assert!(tla_path.exists(), "Missing {}.tla", name);
+        assert!(cfg_path.exists(), "Missing {}.cfg", name);
+
+        let tla_content = std::fs::read_to_string(&tla_path)
+            .unwrap_or_else(|e| panic!("Cannot read {}.tla: {}", name, e));
+        let cfg_content = std::fs::read_to_string(&cfg_path)
+            .unwrap_or_else(|e| panic!("Cannot read {}.cfg: {}", name, e));
+
+        // Check TLA+ module structure
+        assert!(tla_content.contains(&format!("---- MODULE {} ----", name)),
+                "{}.tla missing module header", name);
+        assert!(tla_content.contains("===="), "{}.tla missing module footer", name);
+        assert!(tla_content.contains("VARIABLE"), "{}.tla missing VARIABLE declaration", name);
+        assert!(tla_content.contains("StateInit"), "{}.tla missing StateInit", name);
+        assert!(tla_content.contains("StateNext"), "{}.tla missing StateNext", name);
+        assert!(tla_content.contains("Spec =="), "{}.tla missing Spec definition", name);
+
+        // Check cfg structure
+        assert!(cfg_content.contains("SPECIFICATION Spec"), "{}.cfg missing SPECIFICATION", name);
+        assert!(cfg_content.contains("CHECK_DEADLOCK FALSE"), "{}.cfg missing CHECK_DEADLOCK", name);
+        assert!(cfg_content.contains("INVARIANTS"), "{}.cfg missing INVARIANTS", name);
+
+        // Check each expected invariant exists in both files
+        for inv in expected_invariants {
+            assert!(tla_content.contains(inv),
+                    "{}.tla missing invariant definition: {}", name, inv);
+            assert!(cfg_content.contains(inv),
+                    "{}.cfg missing invariant: {}", name, inv);
+        }
+    }
+
+    // Verify we have exactly 4 MC wrappers
+    let mc_count = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().ends_with("_MC.tla"))
+        .count();
+    assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
+}
