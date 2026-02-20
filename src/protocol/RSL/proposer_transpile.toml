@@ -145,4 +145,5 @@ custom_imports = [
     "use crate::protocol::RSL::types::*;",
     "use crate::protocol::RSL::configuration::*;",
     "use crate::implementation::RSL::types_i::abstractify_crequestbatch;",
+    "use crate::implementation::RSL::types_i::clone_request_batch_up_to_view;",
 ]

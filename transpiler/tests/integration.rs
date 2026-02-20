@@ -1472,6 +1472,66 @@ fn test_generated_proposer_module_public_api() {
     );
 }
 
+/// Verify proposer_gen.rs is fully standalone with no clone-delegate patterns
+#[test]
+fn test_proposer_gen_no_delegate_patterns() {
+    let source = std::fs::read_to_string("../src/generated/RSL/proposer_gen.rs")
+        .expect("Failed to read proposer_gen.rs");
+
+    // No clone-delegate pattern: "let mut state = s.clone_up_to_view()"
+    assert!(
+        !source.contains("let mut state = s.clone_up_to_view()"),
+        "proposer_gen.rs should not use clone-delegate pattern (let mut state = s.clone_up_to_view())"
+    );
+
+    // No delegation to ProposerImpl methods: "state.CProposer"
+    assert!(
+        !source.contains("state.CProposer"),
+        "proposer_gen.rs should not delegate to ProposerImpl methods (state.CProposer*)"
+    );
+
+    // No outbound_packets_to_vec calls (used only in delegate pattern)
+    // Note: the import may remain for gen_helpers, but should not appear in function bodies
+    let body_start = source.find("verus! {").unwrap_or(0);
+    let body = &source[body_start..];
+    // Count actual call sites (not import lines)
+    let call_count = body.matches("outbound_packets_to_vec(").count();
+    assert!(
+        call_count == 0,
+        "proposer_gen.rs should not call outbound_packets_to_vec (found {} calls) — all 12 functions should be standalone",
+        call_count
+    );
+
+    // 4 of 5 packet-returning functions use CBroadcastToEveryone directly
+    // (MaybeNominateValueAndSend2a dispatches to NominateOld/NominateNew which call it)
+    let broadcast_calls = source.matches("CBroadcastToEveryone(").count();
+    assert!(
+        broadcast_calls >= 4,
+        "proposer_gen.rs should have >= 4 CBroadcastToEveryone calls, found {}",
+        broadcast_calls
+    );
+
+    // All 12 functions should construct CProposer structs directly
+    let struct_constructions = source.matches("CProposer {").count();
+    assert!(
+        struct_constructions >= 12,
+        "proposer_gen.rs should have >= 12 CProposer {{}} struct constructions (standalone functional style), found {}",
+        struct_constructions
+    );
+
+    // Verify clone_request_batch_up_to_view is imported (needed by NominateOldValueAndSend2a)
+    assert!(
+        source.contains("clone_request_batch_up_to_view"),
+        "proposer_gen.rs should import clone_request_batch_up_to_view for NominateOldValueAndSend2a"
+    );
+
+    // Verify hashset_to_vec usage (needed by NominateOldValueAndSend2a iteration)
+    assert!(
+        source.contains("hashset_to_vec"),
+        "proposer_gen.rs should use hashset_to_vec for HashSet iteration in NominateOldValueAndSend2a"
+    );
+}
+
 /// Verify replica_gen.rs has all expected public functions
 #[test]
 fn test_generated_replica_module_public_api() {
