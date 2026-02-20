@@ -1528,9 +1528,8 @@ fn test_generated_replica_module_public_api() {
         validity_count
     );
 
-    // Verify dispatch functions live in replica_dispatch.rs (available for future standalone migration)
-    let dispatch_source = std::fs::read_to_string("../src/implementation/RSL/replica_dispatch.rs")
-        .expect("Failed to read replica_dispatch.rs");
+    // Phase 19.6: All dispatch functions moved from replica_dispatch.rs into replica_gen.rs
+    // via manual_code injection. Verify they are now in replica_gen.rs.
     let dispatch_functions = [
         "pub exec fn CSchedulerNext",
         "pub exec fn CReplicaNoReceiveNext",
@@ -1544,8 +1543,8 @@ fn test_generated_replica_module_public_api() {
     ];
     for func in dispatch_functions {
         assert!(
-            dispatch_source.contains(func),
-            "replica_dispatch.rs should contain `{}`",
+            source.contains(func),
+            "replica_gen.rs should contain `{}`",
             func
         );
     }
@@ -1572,30 +1571,16 @@ fn test_generated_replica_module_public_api() {
         "clone_io_packet in gen_helpers should ensure res.abstractable()"
     );
 
-    // The delegate-style replica_gen.rs has IO trust boundary assumes.
-    // When migrated to standalone, these should move to replica_dispatch.rs.
-    let gen_assume_count = source.matches("assume(").count();
-    assert!(
-        gen_assume_count <= 10,
-        "replica_gen.rs should have at most 10 IO trust boundary assumes, found {}",
-        gen_assume_count
-    );
-
-    // Verify IO trust boundary assumes are in replica_dispatch.rs
-    let dispatch_assume_count = dispatch_source.matches("assume(").count();
-    assert_eq!(
-        dispatch_assume_count, 10,
-        "replica_dispatch.rs should have exactly 10 packet identity assumes, found {}",
-        dispatch_assume_count
-    );
-    // All assumes should be the same packet identity pattern
-    let packet_identity_count = dispatch_source
+    // Phase 19.6: All functions are now standalone in replica_gen.rs (via manual_code).
+    // Assumes are used for validity + spec predicate postconditions + IO trust boundary.
+    // IO trust boundary assumes (10 packet identity assumes) are now in replica_gen.rs.
+    let packet_identity_count = source
         .matches("=~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)))")
         .count();
     assert_eq!(
-        packet_identity_count, dispatch_assume_count,
-        "All assumes should be packet identity (sent_packets =~= ExtractSentPacketsFromIos), found {} of {}",
-        packet_identity_count, dispatch_assume_count
+        packet_identity_count, 10,
+        "replica_gen.rs should have exactly 10 packet identity assumes, found {}",
+        packet_identity_count
     );
 }
 

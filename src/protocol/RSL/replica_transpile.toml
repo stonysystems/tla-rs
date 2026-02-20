@@ -20,17 +20,35 @@ skip_functions = [
     "LReplicaNextProcessPacketWithoutReadingClock",
     "LReplicaNextProcessPacket",
     "SpontaneousClock",
-    # Complex existential with variable scope issues
-    "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
     # Also skip ExtractSentPacketsFromIos - filter with indexed access
     "ExtractSentPacketsFromIos",
-    # Calls skipped CExecutorExecute from executor module
-    "LReplicaNextSpontaneousMaybeExecute",
-    # Calls skipped CProposerMaybeNominateValueAndSend2a from proposer module
-    "LReplicaNextReadClockMaybeNominateValueAndSend2a",
     # Dispatch functions calling spec-only/skipped functions with complex arg patterns
     "LReplicaNoReceiveNext",
     "LSchedulerNext",
+    # Phase 19.6: All replica action functions in replica_manual.rs
+    "LReplicaInit",
+    "LReplicaNextProcessInvalid",
+    "LReplicaNextProcessRequest",
+    "LReplicaNextProcess1a",
+    "LReplicaNextProcess1b",
+    "LReplicaNextProcessStartingPhase2",
+    "LReplicaNextProcess2a",
+    "LReplicaNextProcess2b",
+    "LReplicaNextProcessReply",
+    "LReplicaNextProcessAppStateSupply",
+    "LReplicaNextProcessAppStateRequest",
+    "LReplicaNextProcessHeartbeat",
+    "LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a",
+    "LReplicaNextSpontaneousMaybeEnterPhase2",
+    "LReplicaNextReadClockMaybeNominateValueAndSend2a",
+    "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
+    "LReplicaNextSpontaneousMaybeMakeDecision",
+    "LReplicaNextSpontaneousMaybeExecute",
+    "LReplicaNextReadClockMaybeSendHeartbeat",
+    "LReplicaNextReadClockCheckForViewTimeout",
+    "LReplicaNextReadClockCheckForQuorumOfViewSuspicions",
+    "LSchedulerInit",
+    "LReplicaNumActions",
 ]
 
 # Spec-only functions that should NOT get C-prefix
@@ -123,6 +141,8 @@ generate_loops_for_verification = true
 generate_proofs = true
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false
+# Path to manually-written complex functions (relative to this TOML file)
+manual_code = "replica_manual.rs"
 # Custom imports for replica module
 # Note: Still need implementation imports for shared infrastructure types.
 # Sub-module state types (CProposer, CAcceptor, CLearner, CExecutor, CElectionState)
@@ -150,7 +170,9 @@ custom_imports = [
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::RSL::gen_helpers::{clone_cpacket_full, clone_io_packet, outbound_packets_to_vec};",
-    "use crate::implementation::RSL::replica_dispatch::*;",
+    "use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;",
+    "use crate::common::framework::environment_s::LIoOp;",
+    "use crate::protocol::RSL::environment::{RslIo, RslPacket};",
     "use crate::implementation::common::upper_bound_i::*;",
     "use crate::implementation::common::upper_bound::CUpperBoundedAddition;",
     "use crate::protocol::RSL::replica::*;",
