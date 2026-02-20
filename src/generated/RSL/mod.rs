@@ -1,12 +1,11 @@
 // Auto-generated RSL types and functions module
 // DO NOT EDIT MANUALLY
 
-// 6 of 7 function modules are enabled and wired into ReplicaImpl (Phases C-G).
-// election_gen is disabled: not yet referenced by ReplicaImpl (election calls
-// are routed through proposer_gen's delegate wrappers to manual ElectionImpl).
+// All 7 function modules are enabled.
+// election_gen contains standalone election functions (Phase 19.5).
 pub mod acceptor_gen;
 pub mod broadcast_gen;
-// pub mod election_gen;  // available but unused — enable when direct election wiring is added
+pub mod election_gen;
 pub mod executor_gen;
 pub mod learner_gen;
 pub mod proposer_gen;

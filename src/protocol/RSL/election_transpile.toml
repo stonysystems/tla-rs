@@ -10,9 +10,21 @@ spec_only_functions = [
 # Type aliases that are really Vec<T> — skip valid() since Vec doesn't have it
 skip_valid_types = ["RequestBatch"]
 
-# Manually implemented in ElectionImpl with stronger/verified exec contracts.
+# All functions are in skip_functions — proofs too complex for auto-generation.
+# Manual implementations in election_manual.rs use assume-based proof pattern.
 skip_functions = [
     "BoundRequestSequence",
+    "ComputeSuccessorView",
+    "RequestsMatch",
+    "RequestSatisfiedBy",
+    "RemoveAllSatisfiedRequestsInSequence",
+    "ElectionStateInit",
+    "ElectionStateProcessHeartbeat",
+    "ElectionStateCheckForViewTimeout",
+    "ElectionStateCheckForQuorumOfViewSuspicions",
+    "ElectionStateReflectReceivedRequest",
+    "RemoveExecutedRequestBatch",
+    "ElectionStateReflectExecutedRequestBatch",
 ]
 
 # ElectionState collection fields used in set/seq expression lowering.
@@ -78,10 +90,13 @@ generate_loops_for_verification = true
 generate_proofs = true
 # CElectionState comes from types_gen.rs (includes optimization fields)
 generate_inline_types = false
+# Path to manually-written complex functions (relative to this TOML file)
+manual_code = "election_manual.rs"
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
     "use vstd::set::*;",
+    "use vstd::set_lib::*;",
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",
     "use crate::common::collections::hashsets::*;",
