@@ -5160,12 +5160,12 @@ transpiler/tla_test_workspace/
 
 **TLC Results:**
 - TwoPhase: ✅ PASS — 926 states, 304 distinct, 5 invariants, 2s
-- Paxos: ✅ PASS — 64,853 states, 11,729 distinct, 4 invariants (Agreement+Validity), 2s
+- Paxos: ⚠️ PARTIAL — 3-node model (ballot=node-ID, quorum=2); 1.37B+ states explored, 198M+ distinct, 0 violations in 20min; exhaustive check infeasible
 - LeaderElection: ✅ PASS — 100,636 states, 9,337 distinct, 5 invariants, 2s
 - PrimaryBackup: ✅ PASS — 786 states, 438 distinct, 6 invariants, 1s
 - Raft, ChainReplication, PBFT, VerticalPaxos, EPaxos: Not feasible (state space too large for exhaustive TLC with sequence-based logs/multi-node state)
 
-**Key finding**: Paxos required ballot ownership (`BallotOwner(b) = ((b-1) % N) + 1`) to prevent multiple proposers on same ballot — without it, Agreement was correctly violated by TLC.
+**Key finding**: Paxos uses ballot=node-ID ownership (each node proposes with its own ID as ballot). The 3-node model is correct but the state space (~200M+ distinct states) is too large for exhaustive TLC checking. No invariant violations found during partial exploration (1.37B states).
 
 #### 16.8.3: D1 on real generated TLA+ (TLA+ -> Verus Spec)
 

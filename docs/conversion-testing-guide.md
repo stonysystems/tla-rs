@@ -580,7 +580,7 @@ MC wrappers add finite domains, explicit message channels, and safety invariants
 | Protocol | TLC Result | States | Distinct | Depth | Invariants | Time | Notes |
 |----------|-----------|--------|----------|-------|------------|------|-------|
 | TwoPhase | ✅ PASS | 926 | 304 | 9 | 5 | 2s | Consistency, TMCommit/Abort implications |
-| Paxos | ✅ PASS | 64,853 | 11,729 | 27 | 4 | 2s | Agreement, Validity, AcceptorMonotonicity |
+| Paxos | ⚠️ PARTIAL | 1.37B+ | 198M+ | 30 | 4 | 20min+ | No violation in 1.37B states; exhaustive check infeasible |
 | LeaderElection | ✅ PASS | 100,636 | 9,337 | 13 | 5 | 2s | TypeOK, LeaderValid, ElectingSubsetAlive |
 | PrimaryBackup | ✅ PASS | 786 | 438 | 20 | 6 | 1s | LogConsistency, NoSplitBrain, ViewBounded |
 | Raft | — | — | — | — | — | — | State space too large (Seq-based logs) |
@@ -589,13 +589,13 @@ MC wrappers add finite domains, explicit message channels, and safety invariants
 | VerticalPaxos | — | — | — | — | — | — | State space too large (multi-ballot + views) |
 | EPaxos | — | — | — | — | — | — | State space too large (11 actions + deps) |
 
-**Model sizes used:** TwoPhase: 3 RMs. Paxos: 2 nodes, 4 ballots, 2 values (ballot ownership via modular assignment). LeaderElection: 3 nodes. PrimaryBackup: 3 values, max log 3, max view 2.
+**Model sizes used:** TwoPhase: 3 RMs. Paxos: 3 nodes, ballot=node-ID, 2 values, quorum=2 (exhaustive check infeasible; 1.37B states explored with 0 violations). LeaderElection: 3 nodes. PrimaryBackup: 3 values, max log 3, max view 2.
 
 **Key findings:**
 - Relational specs (s, s_, c) require MC wrappers with explicit VARIABLE state, finite domains, and message channels
-- Paxos needed ballot ownership (`BallotOwner(b) = ((b-1) % N) + 1`) to prevent multiple proposers on same ballot
+- Paxos uses ballot=node-ID ownership to prevent multiple proposers on same ballot; 3-node model creates very large state space (~200M+ distinct states)
 - Protocols with sequence-based state (Raft, ChainReplication) have state spaces too large for exhaustive model checking even with minimal finite domains
-- All 4 checked protocols' safety invariants hold across their complete reachable state spaces
+- 3 protocols (TwoPhase, LeaderElection, PrimaryBackup) exhaustively checked with all invariants verified; Paxos partially checked (1.37B states, 0 violations found)
 
 #### D1 on External TLA+ Corpora (Phase 16.8.5)
 
