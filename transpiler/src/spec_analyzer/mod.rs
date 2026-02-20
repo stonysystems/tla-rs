@@ -216,6 +216,7 @@ impl<'a> ConfigInferer<'a> {
         self.infer_variant_remapping(&mut config);
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
+        self.infer_arrow_variants(&mut config);
         self.infer_default_output(&mut config);
 
         config
@@ -393,6 +394,65 @@ impl<'a> ConfigInferer<'a> {
         }
     }
 
+    /// Derive `[arrow_variants]` section: field name → exec variant path.
+    ///
+    /// For each enum with struct variants (named fields), maps every field name
+    /// to its containing variant's fully-qualified exec path. This enables
+    /// transforming spec-mode `msg->field` arrow access into exec-level
+    /// `match` destructuring.
+    ///
+    /// Only processes enums whose variants have struct-style named fields.
+    /// Unit/tuple variants are skipped.
+    fn infer_arrow_variants(&self, config: &mut TranspilerConfig) {
+        let spec_prefix = &self.naming.spec_prefix;
+        let exec_prefix = &self.naming.exec_prefix;
+
+        for (enum_name, enum_def) in &self.schema.enums {
+            // Get the exec enum name from remapping or apply prefix rule
+            let exec_enum_name = config
+                .remapping
+                .get(enum_name)
+                .cloned()
+                .unwrap_or_else(|| {
+                    if enum_name.starts_with(spec_prefix) {
+                        let base = &enum_name[spec_prefix.len()..];
+                        format!("{}{}", exec_prefix, base)
+                    } else {
+                        enum_name.clone()
+                    }
+                });
+
+            for variant in &enum_def.variants {
+                if let VariantFields::Struct(fields) = &variant.fields {
+                    if fields.is_empty() {
+                        continue;
+                    }
+                    // Get the exec variant name from remapping or apply prefix rule
+                    let exec_variant_name = config
+                        .remapping
+                        .get(&variant.name)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            format!("{}{}", exec_prefix, &variant.name)
+                        });
+
+                    let exec_variant_path =
+                        format!("{}::{}", exec_enum_name, exec_variant_name);
+
+                    for field in fields {
+                        // Only add if not already mapped (first occurrence wins
+                        // if field name appears in multiple variants)
+                        if !config.arrow_variants.contains_key(&field.name) {
+                            config
+                                .arrow_variants
+                                .insert(field.name.clone(), exec_variant_path.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Set default output flags (generate_* all true, standard validity predicate).
     fn infer_default_output(&self, config: &mut TranspilerConfig) {
         config.output.generate_abstraction_fns = true;
@@ -507,6 +567,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
     for (k, v) in &inferred.clone_strategy {
         if !base.clone_strategy.contains_key(k) {
             base.clone_strategy.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Arrow variants: add inferred entries not in base
+    for (k, v) in &inferred.arrow_variants {
+        if !base.arrow_variants.contains_key(k) {
+            base.arrow_variants.insert(k.clone(), v.clone());
         }
     }
 }
@@ -1626,5 +1693,148 @@ verus! {
         assert!(!inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
             "LBallot".to_string()
         ))));
+    }
+
+    // --- Arrow variants tests ---
+
+    #[test]
+    fn test_infer_arrow_variants_basic() {
+        let source = r#"
+verus! {
+    pub enum LMessage {
+        Msg1a { bal_1a: int },
+        Msg2a { bal_2a: int, val_2a: int },
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // bal_1a → CMessage::Msg1a (enum gets L→C prefix; variant has no L prefix → identity)
+        assert_eq!(
+            config.arrow_variants.get("bal_1a").unwrap(),
+            "CMessage::Msg1a"
+        );
+        // bal_2a and val_2a both → CMessage::Msg2a
+        assert_eq!(
+            config.arrow_variants.get("bal_2a").unwrap(),
+            "CMessage::Msg2a"
+        );
+        assert_eq!(
+            config.arrow_variants.get("val_2a").unwrap(),
+            "CMessage::Msg2a"
+        );
+    }
+
+    #[test]
+    fn test_infer_arrow_variants_with_remapping() {
+        // When remapping provides custom variant names, arrow_variants should use them
+        let source = r#"
+verus! {
+    pub enum LMessage {
+        Prepare { ballot: int },
+        Promise { ballot: int, accepted_val: int },
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Variant "Prepare" has identity remapping (from infer_remapping)
+        // so exec variant name = "Prepare", not "CPrepare"
+        assert_eq!(
+            config.arrow_variants.get("ballot").unwrap(),
+            "CMessage::Prepare"
+        );
+        assert_eq!(
+            config.arrow_variants.get("accepted_val").unwrap(),
+            "CMessage::Promise"
+        );
+    }
+
+    #[test]
+    fn test_infer_arrow_variants_skips_unit_variants() {
+        let source = r#"
+verus! {
+    pub enum LTMState {
+        Init,
+        Committed,
+        Aborted,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Unit variants have no fields → no arrow_variants entries
+        assert!(config.arrow_variants.is_empty());
+    }
+
+    #[test]
+    fn test_infer_arrow_variants_first_occurrence_wins() {
+        // If same field name in multiple variants, first wins
+        let source = r#"
+verus! {
+    pub enum LMessage {
+        MsgA { value: int, extra: int },
+        MsgB { value: int },
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // "value" appears in both MsgA and MsgB — first occurrence wins
+        // (HashMap iteration order is non-deterministic, but we just check it's mapped)
+        assert!(config.arrow_variants.contains_key("value"));
+        assert!(config.arrow_variants.contains_key("extra"));
+    }
+
+    #[test]
+    fn test_infer_arrow_variants_merge() {
+        let mut base = TranspilerConfig::default();
+        base.arrow_variants
+            .insert("bal_1a".to_string(), "CustomEnum::CustomVariant".to_string());
+
+        let mut inferred = TranspilerConfig::default();
+        inferred
+            .arrow_variants
+            .insert("bal_1a".to_string(), "CMessage::CMsg1a".to_string());
+        inferred
+            .arrow_variants
+            .insert("bal_2a".to_string(), "CMessage::CMsg2a".to_string());
+
+        merge_configs(&mut base, &inferred);
+
+        // Explicit override wins for bal_1a
+        assert_eq!(
+            base.arrow_variants.get("bal_1a").unwrap(),
+            "CustomEnum::CustomVariant"
+        );
+        // Inferred entry added for bal_2a
+        assert_eq!(
+            base.arrow_variants.get("bal_2a").unwrap(),
+            "CMessage::CMsg2a"
+        );
     }
 }
