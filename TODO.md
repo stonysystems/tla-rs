@@ -41,7 +41,8 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 - Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 **Next steps (priority order):**
-1. ~~**Phase 19: Eliminate all manual impl delegates from generated RSL code**~~ ✅ COMPLETE — All RSL gen modules fully standalone. election_gen.rs enabled, 0 delegates across all 7 gen modules. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
+1. **Phase 20: Auto-infer TOML configuration from spec analysis** — Reduce manual TOML from ~2,600 LOC to minimal protocol-specific hints. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
+2. ~~**Phase 19: Eliminate all manual impl delegates from generated RSL code**~~ ✅ COMPLETE — All RSL gen modules fully standalone. election_gen.rs enabled, 0 delegates across all 7 gen modules. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
 2. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
 3. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
 4. ~~**Phase 12: Generate proof code to eliminate assumes**~~ ✅ Phase 12.2.2 COMPLETE (12 executor assumes eliminated; 10 IO trust boundary assumes are irreducible). Phase 12.2.7 unreachable arms DONE. Remaining deferred items (12.2.3-12.2.6) are low priority.
@@ -79,6 +80,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 16. [Phase 15: Complete Protocol Specs and Regenerate Implementations](#phase-15-complete-protocol-specs-and-regenerate-implementations)
 17. [Phase 16: End-to-End Compile & Run Testing — ✅ COMPLETE](#phase-16-end-to-end-compile--run-testing--complete)
 18. [Phase 19: Eliminate Manual Impl Delegates from Generated RSL Code](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code)
+19. [Phase 20: Auto-Infer TOML Configuration from Spec Analysis](#phase-20-auto-infer-toml-configuration-from-spec-analysis)
 
 ---
 
@@ -5915,3 +5917,188 @@ The phases have dependencies:
 | 19.6 Replica dispatch | 20 | ~600 | VERY HIGH | Depends on everything else |
 | 19.7 Cleanup | 0 new | ~deletion | LOW | Remove unused files |
 | **Total** | **37** | **~1,470** | | |
+
+---
+
+## Phase 20: Auto-Infer TOML Configuration from Spec Analysis
+
+### 20.0 Problem Statement
+
+Every protocol module needs a hand-written TOML config (17 files, ~2,600 LOC total). Most content is mechanically derivable from the spec source files. A new protocol currently requires the user to:
+
+1. Write a spec (`.rs` with `spec fn`)
+2. Write an `.automan` annotation file
+3. **Hand-write a 100-200 line TOML** with type mappings, field classifications, variant paths, imports, etc.
+
+Goal: the transpiler should analyze the spec and auto-derive as much as possible, reducing a typical TOML to **< 20 lines** of genuinely protocol-specific decisions.
+
+### 20.1 Classification: What Can Be Auto-Inferred
+
+#### Tier 1: Fully auto-derivable (eliminate from TOML)
+
+| Config | Lines/protocol | Inference method |
+|--------|---------------|-----------------|
+| `[remapping]` L→C type maps | ~15 | Parse spec struct/enum names, apply `[naming].spec_prefix` → `exec_prefix` rule. `LState→CState`, `LConstants→CConstants`, etc. |
+| `[variant_remapping]` | ~5 | Enumerate all enum variants from spec, map to `CEnumName::Variant` |
+| `[arrow_variants]` field→variant | ~20 | For each `msg->field` in spec, look up which enum variant contains that field name |
+| `primitive_types` | ~3 | Any type remapped to `u64/bool/i64` is primitive |
+| `vec_fields` / `collection_fields` / `hashmap_index_fields` | ~5 | Parse struct definitions: `Seq<T>→vec_field`, `Set<T>→collection_field`, `Map<K,V>→hashmap_index_field` |
+| `skip_valid_types` | ~2 | Type aliases for `Seq<T>` or `Map<K,V>` don't have `.valid()` |
+| `spec_only_functions` | ~5 | Functions referenced in requires/ensures but not transpiled (no matching automan entry or no output-mode params) |
+| `[function_paths]` | ~3 | Search other generated modules' pub fn for matching names |
+| `custom_imports` (partial) | ~15 | Auto-collect: (1) `use vstd::prelude::*` always, (2) `use std::collections::*` if HashMap/HashSet fields, (3) `use crate::generated::P::types_gen::*` always, (4) `use crate::protocol::P::module::*` from spec path |
+| `generate_*` flags | ~8 | Defaults should be the common case; only override when different |
+| **Subtotal** | **~81** | |
+
+#### Tier 2: Derivable with heuristics (auto-derive with user override)
+
+| Config | Lines/protocol | Inference method | Why heuristic |
+|--------|---------------|-----------------|---------------|
+| `[method_calls]` | ~3 | If a spec fn takes a struct as first arg and a same-named method exists on the exec type → method call | Could have false positives |
+| `[eq_function_fields]` | ~3 | Fields whose spec type is a struct with custom equality (e.g., Ballot) need custom eq function | Need to know which types lack `PartialEq` derive in Verus |
+| `[clone_strategy]` | ~2 | If struct contains `HashSet`/`HashMap` field → `external_body` | Edge cases where derived Clone actually works |
+| `[struct_vec_fields]` | ~3 | Vec fields whose element type is a struct (not primitive) → generate clone/map helpers | Naming convention for helpers |
+| `[type_view_exprs]` | ~3 | Type aliases to `Map<K,V>` need `abstractify_*({param})` view | Need to find/generate the abstractify function |
+| `[extra_fields]` | ~2 | Optimization fields added to exec struct not in spec | Cannot be inferred — design decision |
+| **Subtotal** | **~16** | | |
+
+#### Tier 3: Cannot auto-infer (must remain in TOML)
+
+| Config | Lines/protocol | Reason |
+|--------|---------------|--------|
+| `skip_functions` | ~5 | Requires attempting transpilation and detecting failure (see 20.3) |
+| `manual_code` | ~1 | Points to hand-written fallback code — human decision |
+| `[extra_requires]` | ~10 | Exec-level preconditions for int→u64 overflow safety — requires semantic analysis |
+| `[messages]` variants+fields | ~30 | Wire format definition — protocol design decision |
+| `[scheduler]` actions | ~40 | Runtime dispatch semantics — protocol design decision |
+| `[naming]` int_type/nat_type | ~2 | u64 vs u32 — deployment decision |
+| **Subtotal** | **~88** | |
+
+#### Summary
+
+| Tier | Lines eliminated | % of total |
+|------|-----------------|-----------|
+| Tier 1 (auto) | ~81/protocol | ~55% |
+| Tier 2 (heuristic+override) | ~16/protocol | ~11% |
+| Tier 3 (keep) | ~88/protocol | ~34% |
+
+For a **typical non-RSL protocol** (no `[messages]`/`[scheduler]` since those are separate commands), Tier 3 drops to ~18 lines. The TOML would be essentially:
+```toml
+[naming]
+int_type = "u64"
+
+skip_functions = ["LNext"]
+
+[extra_requires]
+# ... overflow guards if any
+```
+
+### 20.2 Implementation Plan
+
+#### 20.2.1 Spec Analyzer: type/field/variant extraction
+
+- [ ] Add `SpecAnalyzer` module to transpiler that parses spec `.rs` files and extracts:
+  - All `struct` definitions with field names and types
+  - All `enum` definitions with variant names and field names
+  - All `spec fn` signatures (name, params, return type)
+  - All type aliases (`type Votes = Map<OperationNumber, Vote>`)
+- [ ] Build a `SpecSchema` data structure containing the above
+- [ ] Unit tests: parse each of the 10 protocol specs, verify extracted schema matches expectations
+
+#### 20.2.2 Auto-derive Tier 1 configs
+
+- [ ] **Remapping**: From `SpecSchema`, apply naming prefix rule (`L→C`, user-configurable) to all struct/enum names. Add known primitives (`OperationNumber→u64`, `AbstractEndPoint→EndPoint`).
+- [ ] **Variant remapping**: Enumerate enum variants, generate `"VariantName" = "CEnumName::VariantName"` entries.
+- [ ] **Arrow variants**: For each `msg->field` pattern in spec fn bodies, find which enum variant contains that field. Build `field→variant` map.
+- [ ] **Field classification**: From struct field types in SpecSchema:
+  - `Seq<T>` → `vec_fields`
+  - `Set<T>` → `collection_fields`
+  - `Map<K,V>` → `hashmap_index_fields`
+  - Primitive remap target → `primitive_types`
+- [ ] **Spec-only functions**: Functions in spec that have no output-mode param in `.automan` and are referenced in requires/ensures of other functions.
+- [ ] **Function paths**: Search already-generated modules for matching function names to build cross-module call paths.
+- [ ] **Default imports**: Auto-generate standard imports based on field types (HashMap→`std::collections::HashMap`, etc.)
+- [ ] **Default output flags**: Set all `generate_*` to sensible defaults (true), only require override in TOML.
+
+#### 20.2.3 Auto-derive Tier 2 configs (with override)
+
+- [ ] **Method calls**: If spec fn `F(s: LStruct, ...)` has first-arg type matching a struct, and exec type has method `CF(...)`, suggest method call mapping. Allow TOML override.
+- [ ] **Eq function fields**: Maintain a registry of types without `PartialEq` derive (e.g., CBallot). Any field of that type → needs custom eq function.
+- [ ] **Clone strategy**: If struct transitively contains `HashSet`/`HashMap` → `external_body` clone.
+- [ ] **Struct vec fields**: Vec fields with struct element type → generate clone helpers and map lemmas.
+- [ ] **Type view expressions**: Type aliases to `Map<K,V>` → look for `abstractify_*` function, generate view expr.
+
+#### 20.2.4 Try-and-fallback for `skip_functions`
+
+- [ ] Add `--auto-skip` mode to transpiler:
+  1. Attempt to transpile all functions
+  2. Catch transpilation errors (unsupported patterns, scoping failures, existential quantifiers)
+  3. Automatically add failed functions to `skip_functions`
+  4. Output a report: "Skipped N functions: [list with reasons]"
+  5. Optionally write updated TOML with auto-populated `skip_functions`
+- [ ] This replaces the current workflow of: try → see error → manually add to skip → retry
+
+#### 20.2.5 Minimal TOML format
+
+- [ ] Support a "minimal TOML" mode where only overrides and Tier 3 configs are needed:
+  ```toml
+  # Minimal config — everything else auto-derived from spec
+  [naming]
+  int_type = "u64"
+
+  # Only needed if auto-skip is not used
+  skip_functions = ["LNext"]
+
+  [extra_requires]
+  "CFollowerAppendEntries" = ["s.log@.len() < u64::MAX as int"]
+  ```
+- [ ] Existing full TOMLs continue to work (auto-derived values are overridden by explicit TOML entries)
+- [ ] Add `--dump-config` flag: show the fully-resolved config (auto-derived + overrides) for debugging
+
+#### 20.2.6 Migration: validate auto-inference against existing TOMLs
+
+- [ ] For each of the 17 existing TOMLs:
+  1. Run spec analyzer on the corresponding spec file
+  2. Auto-derive all Tier 1 + Tier 2 configs
+  3. Diff against existing TOML
+  4. Any mismatches → either fix the inference logic or document as intentional override
+- [ ] Goal: auto-derived config produces identical generated output for all 10 protocols
+- [ ] Add regression test: `test_auto_infer_matches_existing_toml` for each protocol
+
+### 20.3 Execution Order
+
+```
+20.2.1 Spec Analyzer          ← foundation, do FIRST
+    ↓
+20.2.2 Tier 1 auto-derive    ← biggest impact (~55% of config eliminated)
+    ↓
+20.2.3 Tier 2 auto-derive    ← heuristics with override
+    ↓
+20.2.4 Try-and-fallback       ← eliminates manual skip_functions discovery
+    ↓
+20.2.5 Minimal TOML format    ← user-facing simplification
+    ↓
+20.2.6 Migration validation   ← ensure nothing breaks
+```
+
+### 20.4 Acceptance Criteria
+
+- [ ] Transpiler can generate identical output for all 10 protocols using auto-derived config + minimal overrides
+- [ ] A new protocol TOML requires < 20 lines (excluding `[messages]` and `[scheduler]` sections)
+- [ ] `--dump-config` shows full resolved config for debugging
+- [ ] `--auto-skip` mode catches and reports untranspilable functions
+- [ ] All existing 17 TOMLs continue to work unchanged (backward compatible)
+- [ ] Regression tests verify auto-inference matches existing configs for all protocols
+- [ ] All transpiler tests pass (~1,400)
+
+### 20.5 Estimated Effort
+
+| Phase | Est. LOC | Difficulty | Notes |
+|-------|----------|-----------|-------|
+| 20.2.1 Spec Analyzer | ~400 | MEDIUM | Reuse existing parser, add schema extraction |
+| 20.2.2 Tier 1 auto-derive | ~600 | MEDIUM | Mechanical mapping rules |
+| 20.2.3 Tier 2 auto-derive | ~300 | MEDIUM | Heuristics + override mechanism |
+| 20.2.4 Try-and-fallback | ~200 | LOW | Error catching in existing transpile path |
+| 20.2.5 Minimal TOML | ~150 | LOW | Config merging logic |
+| 20.2.6 Migration validation | ~200 | LOW | Test + diff infrastructure |
+| **Total** | **~1,850** | | |
