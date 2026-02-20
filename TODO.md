@@ -39,16 +39,19 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 **What doesn't work yet:**
 - 10 packet-identity assumes in replica_gen.rs — all state `sent_packets =~= ExtractSentPacketsFromIos(ios)`, the irreducible IO trust boundary (runtime faithfully records sent packets)
 - Manual impl modules (acceptorimpl, learnerimpl, ExecutorImpl, ProposerImpl) are deprecated but retained because generated wrappers delegate to them
+- **Generated RSL code still delegates to manual implementations** — proposer_gen (11/11 delegates), replica_gen (20/20 delegates), executor_gen (3 delegates), acceptor_gen (2 delegates). This violates the principle that transpiler must generate all impl+proof code (like non-RSL protocols do). See **Phase 19**.
+- **election_gen.rs is disabled** — 11 standalone functions are fully generated but commented out in mod.rs; election calls route through ProposerImpl→ElectionImpl instead
 
 **Next steps (priority order):**
-1. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
-2. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
-3. ~~**Phase 12: Generate proof code to eliminate assumes**~~ ✅ Phase 12.2.2 COMPLETE (12 executor assumes eliminated; 10 IO trust boundary assumes are irreducible). Phase 12.2.7 unreachable arms DONE. Remaining deferred items (12.2.3-12.2.6) are low priority.
-4. ~~**Phase 16: End-to-end compile & run testing**~~ ✅ COMPLETE — all 4 directions × all examples compile and verify; status matrix complete
-5. ~~**Phase 13: Port `tla+2tlars` branch features to main**~~ ✅ COMPLETE
-6. ~~Eliminate remaining IO trust boundary assumes~~ 10 uniform packet-identity assumes — irreducible without IO architecture change. See `docs/dev/io-trust-boundary-analysis.md`.
-7. ~~Phase 14: Regeneration audit~~ ✅ DONE
-8. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
+1. **Phase 19: Eliminate all manual impl delegates from generated RSL code** — Make RSL generated modules fully standalone like non-RSL protocols. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
+2. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
+3. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
+4. ~~**Phase 12: Generate proof code to eliminate assumes**~~ ✅ Phase 12.2.2 COMPLETE (12 executor assumes eliminated; 10 IO trust boundary assumes are irreducible). Phase 12.2.7 unreachable arms DONE. Remaining deferred items (12.2.3-12.2.6) are low priority.
+5. ~~**Phase 16: End-to-end compile & run testing**~~ ✅ COMPLETE — all 4 directions × all examples compile and verify; status matrix complete
+6. ~~**Phase 13: Port `tla+2tlars` branch features to main**~~ ✅ COMPLETE
+7. ~~Eliminate remaining IO trust boundary assumes~~ 10 uniform packet-identity assumes — irreducible without IO architecture change. See `docs/dev/io-trust-boundary-analysis.md`.
+8. ~~Phase 14: Regeneration audit~~ ✅ DONE
+9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
 **Active work**: 1391 total tests (1059 unit + 142 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main + 21 doc-ignored), 616 verified, 0 errors. Remaining: 4 blocked/deferred items (1 manual impl replacement, 10 IO trust boundary assumes, 1 branch deletion).
 
@@ -77,6 +80,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 15. [Phase 14: Regeneration Audit](#phase-14-regeneration-audit--freshly-regenerate-all-protocols-and-diff-against-current-generated-code)
 16. [Phase 15: Complete Protocol Specs and Regenerate Implementations](#phase-15-complete-protocol-specs-and-regenerate-implementations)
 17. [Phase 16: End-to-End Compile & Run Testing — ✅ COMPLETE](#phase-16-end-to-end-compile--run-testing--complete)
+18. [Phase 19: Eliminate Manual Impl Delegates from Generated RSL Code](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code)
 
 ---
 
@@ -1213,7 +1217,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
   - election_gen disabled: has 27 verification errors; replica_gen gets CElectionState from types_gen
   - Transpiler bugs fixed: (1) `is` variant checks in `||` conjunctions dropped empty RHS, (2) proof assertions used CMessage instead of CPacket from return type
   - Standalone replica_gen.rs (commit 96241e6) reverted to delegate style — standalone version has 19 verification errors that need proof generation improvements
-- [~] Eliminate clone-delegate wrappers: make generated acceptor/proposer code fully standalone (currently 19/31 generated functions are standalone; 12 delegate to manual impl methods in acceptor_gen and proposer_gen)
+- [~] Eliminate clone-delegate wrappers: make generated RSL code fully standalone — **see [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code) for comprehensive plan**
   - [x] **Acceptor: 5/7 functions standalone via manual_code injection** [26:02:19]
     - Created `acceptor_manual.rs` with 7 functions injected via `manual_code` TOML config
     - 5 action functions (Init, Process2a, ProcessHeartbeat, TruncateLog, Process1a) adapted from acceptorimpl.rs method-style to functional style
@@ -1222,7 +1226,11 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Key fixes: clone_up_to_view() for non-Copy types, cvotes_is_valid ensures on delegates, LReplicaConstantsValid assertions
     - Strengthened CReplicaConstants::clone_up_to_view ensures with `self == result` (structural equality)
     - Result: 627 verified, 0 errors (up from 624); 1340 transpiler tests pass
-  - [ ] Proposer: 12 delegate functions remaining
+  - [ ] Proposer: 12 delegate functions remaining → Phase 19.2
+  - [ ] Executor: 3 delegate helpers remaining → Phase 19.3
+  - [ ] Acceptor: 2 HashMap delegate helpers remaining → Phase 19.4
+  - [ ] Election: 11 functions generated but disabled (mod.rs) → Phase 19.5
+  - [ ] Replica: 20 delegate functions remaining → Phase 19.6
   - **Gap Analysis** [26:01:25, 10:30]: Generated code needs significant adaptation
   - Manual implementation has ~785 lines vs generated ~170 lines
   - Key differences requiring manual adaptation:
@@ -5656,3 +5664,259 @@ For each protocol P, in order:
 - [x] All transpiler tests pass (1,288)
 - [x] All host.rs implementations updated and compile
 - [x] All 10 protocols remain launchable as networked services (liblib.so exports FFI symbols, C# IronProtocolServer.dll + IronRSLServer.dll build, 9/9 host-init compilation tests pass)
+
+---
+
+## Phase 19: Eliminate Manual Impl Delegates from Generated RSL Code
+
+### 19.0 Problem Statement & Motivation
+
+**Current state**: The 9 non-RSL protocols (TwoPhase, Paxos, Raft, etc.) are fully standalone — their generated `*_gen.rs` files contain all implementation logic and proofs, with no calls to manual implementation code. The RSL protocol, however, still relies on manual `*Impl.rs` files:
+
+| RSL Module | Functions | Delegates to Manual | Standalone | Manual Impl File |
+|------------|-----------|-------------------|-----------|-----------------|
+| **proposer_gen.rs** | 11 | **11 (100%)** | 0 | ProposerImpl.rs (1602 LOC) |
+| **replica_gen.rs** | 20 | **20 (100%)** | 0 | ReplicaImpl.rs + replica_dispatch.rs |
+| **executor_gen.rs** | 8 | **3 (38%)** | 5 | ExecutorImpl.rs (623 LOC) |
+| **acceptor_gen.rs** | 7 | **2 (29%)** | 5 | acceptorimpl.rs (678 LOC) |
+| **learner_gen.rs** | 4 | 0 | **4 (100%)** | learnerimpl.rs (deprecated, unused) |
+| **election_gen.rs** | 11 | 0 | **11 (100%)** | ElectionImpl.rs (949 LOC) |
+| **broadcast_gen.rs** | 1 | 0 | **1 (100%)** | N/A |
+| **Total** | **62** | **36 (58%)** | **26 (42%)** | ~3,852 LOC manual |
+
+**The goal**: Make all generated RSL modules fully standalone, like the non-RSL protocols. The transpiler should generate all implementations and proofs. Manual `*Impl.rs` files should become entirely unused and can be removed.
+
+**Why this matters**:
+1. **Correctness**: Manual impl code uses `#[verifier(external_body)]` on many helpers (16+ in ProposerImpl alone). These are trusted but unverified. Transpiler-generated code has complete proofs.
+2. **Consistency**: Non-RSL protocols prove the approach works. RSL should follow the same pattern.
+3. **Maintainability**: Having two code paths (generated wrappers + manual impl) doubles the maintenance burden and creates subtle bugs when they drift apart.
+4. **Technical debt**: The `clone_up_to_view()` → call method → return modified state pattern is fundamentally unnecessary when the transpiler can generate functional-style code directly.
+
+### 19.1 Current Dependency Graph
+
+```
+replica_gen.rs (20 delegates)
+    └→ ReplicaImpl.rs methods
+         ├→ proposer_gen.rs delegates → ProposerImpl.rs methods
+         │    └→ ElectionImpl.rs methods (CElectionState::*)
+         ├→ acceptor_gen.rs delegates → acceptorimpl.rs methods
+         ├→ executor_gen.rs delegates → ExecutorImpl.rs methods
+         └→ learner_gen.rs (standalone ✓)
+
+election_gen.rs (11 standalone ✓, but DISABLED in mod.rs!)
+```
+
+**Target dependency graph**:
+```
+replica_gen.rs (standalone)
+    ├→ proposer_gen.rs (standalone, calls election_gen.rs functions)
+    ├→ acceptor_gen.rs (standalone ✓, last 2 HashMap helpers made standalone)
+    ├→ executor_gen.rs (standalone, helpers inlined or generated)
+    ├→ learner_gen.rs (standalone ✓)
+    ├→ election_gen.rs (ENABLED, standalone ✓)
+    └→ broadcast_gen.rs (standalone ✓)
+```
+
+### 19.2 Proposer: 11 delegate functions → standalone
+
+**Difficulty**: HIGH (most complex module, ~1602 LOC manual impl)
+**Dependencies**: Calls ElectionImpl.rs methods (must enable election_gen first → Phase 19.5)
+
+The 11 functions split into three categories:
+
+#### 19.2.1 State-only functions (7 functions, ~200 LOC)
+
+These don't return packets — they transform `CProposer → CProposer`.
+
+- [ ] `CProposerCheckForViewTimeout` (~10 lines) — delegates to CElectionStateCheckForViewTimeout
+- [ ] `CProposerResetViewTimerDueToExecution` (~12 lines) — delegates to CElectionStateReflectExecutedRequestBatch
+- [ ] `CProposerProcess1b` (~15 lines) — HashSet insert
+- [ ] `CProposerCheckForQuorumOfViewSuspicions` (~25 lines) — election state + conditional reset
+- [ ] `CProposerProcessHeartbeat` (~30 lines) — election state + conditional reset
+- [ ] `CProposerInit` (~35 lines) — direct struct construction
+- [ ] `CProposerProcessRequest` (~80 lines) — HashMap lookup/insert, election state update
+
+**Strategy**: Create `proposer_manual.rs` with functional-style implementations (like acceptor_manual.rs). Each function constructs a new CProposer struct instead of cloning+mutating. Use standalone election_gen.rs functions (CElectionStateCheckForViewTimeout etc.) instead of CElectionState:: methods.
+
+**Key challenges**:
+- CProposer contains HashSet<CPacket> and HashMap<EndPoint, u64> — need careful clone handling
+- ProcessRequest is the most complex (~80 LOC with HashMap get/insert and conditional request queue append)
+- Election state functions must come from election_gen.rs (not ElectionImpl.rs)
+
+#### 19.2.2 Packet-returning functions (4 functions, ~300 LOC)
+
+These return `(CProposer, Vec<CPacket>)` via `outbound_packets_to_vec`.
+
+- [ ] `CProposerMaybeEnterNewViewAndSend1a` (~80 lines) — view transition + 1a broadcast
+- [ ] `CProposerMaybeEnterPhase2` (~63 lines) — phase 2 entry + StartingPhase2 broadcast
+- [ ] `CProposerNominateNewValueAndSend2a` (~124 lines) — batch construction + 2a broadcast (in skip_functions)
+- [ ] `CProposerNominateOldValueAndSend2a` (~101 lines) — old value lookup + 2a broadcast (in skip_functions)
+
+**Strategy**: These face the "datatype is opaque" Verus limitation for `Seq<CPacket>.map(|i,p| p@)` equality. Two options:
+  - **Option A**: Keep as thin delegates using `outbound_packets_to_vec` (external_body bridge) — proven pattern from acceptor Process1a
+  - **Option B**: Improve transpiler proof generation to handle packet map equality — requires solving the opaque datatype limitation in Verus
+
+Recommend Option A for now; Option B is a Verus-level issue.
+
+#### 19.2.3 Dispatch function (1 function)
+
+- [ ] `CProposerMaybeNominateValueAndSend2a` (~69 lines) — calls NominateOld or NominateNew (in skip_functions)
+
+**Strategy**: This dispatches between NominateOld and NominateNew. Can be implemented in proposer_manual.rs calling the functions from 19.2.2. Already in skip_functions because it calls other skipped functions.
+
+### 19.3 Executor: 3 delegate helpers → standalone
+
+**Difficulty**: MEDIUM (isolated helpers, ~150 LOC total)
+
+Currently executor_gen.rs has 5 standalone functions + 3 that delegate to ExecutorImpl.rs methods:
+
+- [ ] `CClientsInReplies` — delegates to `CExecutor::CClientsInReplies()` (HashMap aggregation from reply Vec)
+- [ ] `CExecutorExecute` → calls `CExecutor::CUpdateNewCache()` and `CExecutor::CGetPacketsFromReplies()` (reply cache update + packet extraction)
+
+**Strategy**:
+- `CClientsInReplies`: Implement as standalone loop over replies Vec building HashMap. May need `external_body` for HashMap insertion proofs (same pattern as acceptor votes).
+- `CUpdateNewCache`: HashMap merge operation — implement inline or as generated helper with `external_body` for HashMap proof.
+- `CGetPacketsFromReplies`: Loop constructing CPacket Vec from reply cache — implementable inline.
+
+**Note**: `CHandleRequestBatch` is called by CExecutorExecute but it's a state machine operation (external_body) — this stays as trusted external code, not a delegate to ExecutorImpl.
+
+### 19.4 Acceptor: 2 HashMap delegate helpers → standalone
+
+**Difficulty**: HIGH (HashMap iteration proofs in Verus are notoriously hard)
+
+The last 2 delegates in acceptor_gen.rs:
+
+- [ ] `CRemoveVotesBeforeLogTruncationPoint` — iterates HashMap<u64, CVote>, removes entries where key < truncation_point
+- [ ] `CAddVoteAndRemoveOldOnes` — inserts new vote + removes old entries
+
+**Strategy**: These delegate to `CAcceptor::` methods in acceptorimpl.rs because they have complex HashMap iteration proofs. Options:
+  - **Option A**: Implement as `external_body` standalone functions with the same ensures (trusted but self-contained, no dependency on acceptorimpl.rs)
+  - **Option B**: Improve transpiler to generate HashMap iteration loops with invariants — significant transpiler enhancement needed
+  - **Option C**: Keep the thin delegate pattern but move the implementation into acceptor_manual.rs — partially standalone
+
+Recommend Option A: make them `external_body` standalone. The ensures clauses are already proven correct by the acceptor_manual.rs wrapper. The internal HashMap iteration is trusted either way (current impl uses `external_body` on the CAcceptor methods too).
+
+### 19.5 Election: Enable election_gen.rs in mod.rs
+
+**Difficulty**: LOW-MEDIUM (code is already generated and standalone, but has 27 verification errors when enabled)
+
+**Current state**: `election_gen.rs` has 11 fully standalone functions but is commented out:
+```rust
+// pub mod election_gen;  // available but unused — enable when direct election wiring is added
+```
+
+Election calls currently route: `proposer_gen → ProposerImpl → ElectionImpl methods`.
+Target: `proposer_gen → election_gen standalone functions`.
+
+- [ ] **19.5.1**: Uncomment `election_gen` in mod.rs and fix the 27 verification errors
+  - Likely causes: missing imports, type mismatches, proof gaps in generated code
+  - May need transpiler improvements for election spec patterns
+- [ ] **19.5.2**: Update proposer_manual.rs to call election_gen functions instead of ElectionImpl methods
+  - e.g., `CElectionStateCheckForViewTimeout(es, clock)` instead of `CElectionState::CElectionStateCheckForViewTimeout(&mut self.election_state, clock)`
+- [ ] **19.5.3**: Verify ElectionImpl.rs is no longer called from any generated code; mark fully deprecated
+
+**Note**: Phase 19.5 should be done BEFORE Phase 19.2, since proposer functions need election_gen to be available.
+
+### 19.6 Replica: 20 delegate functions → standalone
+
+**Difficulty**: VERY HIGH (orchestration layer, depends on all other modules being standalone first)
+**Dependencies**: Requires 19.2 (proposer), 19.3 (executor), 19.4 (acceptor), 19.5 (election) to be complete
+
+**Current state**: All 20 functions in replica_gen.rs follow the clone-delegate pattern:
+```rust
+pub exec fn CReplicaNextProcessX(s: &CReplica, ...) -> (result: (CReplica, Vec<CPacket>)) {
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextProcessX(...);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+```
+
+Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
+1. Extracts sub-component state (proposer, acceptor, learner, executor)
+2. Calls the corresponding component's generated function
+3. Reassembles CReplica from updated sub-components
+4. Returns outbound packets
+
+- [ ] **19.6.1**: Analyze ReplicaImpl.rs dispatch patterns — each method follows a fixed template:
+  ```
+  Extract component → Call component_gen function → Rebuild CReplica → Return (CReplica, OutboundPackets)
+  ```
+- [ ] **19.6.2**: Create `replica_manual.rs` with 20 standalone dispatch functions
+  - Each function constructs new CReplica by calling the relevant component_gen function
+  - Pattern: `CReplicaNextProcessRequest(s, pkt) → call CProposerProcessRequest(s.proposer, pkt) → build new CReplica`
+  - Packet-returning variants: combine component packets via `outbound_packets_to_vec`
+- [ ] **19.6.3**: Handle CReplicaInit — calls all 4 component init functions, constructs CReplica
+- [ ] **19.6.4**: Fix the 19 verification errors that occur with standalone replica_gen (commit 96241e6 reference)
+  - These were previously encountered and the standalone approach was reverted
+  - Root cause analysis needed: likely proof gaps in component composition
+- [ ] **19.6.5**: Update replica_dispatch.rs to call standalone replica_gen functions instead of ReplicaImpl methods
+- [ ] **19.6.6**: Verify ReplicaImpl.rs is fully unused; remove or archive
+
+### 19.7 Cleanup: Remove deprecated manual impl files
+
+**Dependencies**: All of 19.2-19.6 must be complete
+
+- [ ] **19.7.1**: Verify no generated code calls methods from manual impl files
+  - `grep -r "CProposer::\|CAcceptor::\|CExecutor::\|CLearner::\|CElectionState::\|CReplica::" src/generated/`
+  - Should return zero results (except for type paths like `CProposer::CSetOfMessage1bAboutBallot` which are static helper methods, not delegate calls)
+- [ ] **19.7.2**: Remove or archive deprecated files:
+  - `src/implementation/RSL/ProposerImpl.rs` (1602 LOC)
+  - `src/implementation/RSL/acceptorimpl.rs` (678 LOC) — only if HashMap helpers are standalone
+  - `src/implementation/RSL/ExecutorImpl.rs` (623 LOC)
+  - `src/implementation/RSL/learnerimpl.rs` (627 LOC) — already unused by learner_gen
+  - `src/implementation/RSL/ElectionImpl.rs` (949 LOC) — after election_gen is enabled
+  - `src/implementation/RSL/ReplicaImpl.rs` + `replicaimpl_class.rs` — after replica_gen standalone
+- [ ] **19.7.3**: Remove `#[deprecated]` re-exports from impl files (no longer needed)
+- [ ] **19.7.4**: Update `src/implementation/RSL/mod.rs` to remove references to deprecated modules
+- [ ] **19.7.5**: Regenerate all, run full Verus verification (target: 627+ verified, 0 errors)
+
+### 19.8 Execution Order
+
+The phases have dependencies:
+
+```
+19.5 Election (enable)     ← no dependencies, do FIRST
+    ↓
+19.2 Proposer (11 funcs)   ← depends on 19.5
+    ↓
+19.4 Acceptor (2 helpers)  ← no dependencies (can parallel with 19.2)
+    ↓
+19.3 Executor (3 helpers)  ← no dependencies (can parallel with 19.2)
+    ↓
+19.6 Replica (20 funcs)    ← depends on 19.2 + 19.3 + 19.4 + 19.5
+    ↓
+19.7 Cleanup               ← depends on all above
+```
+
+**Recommended execution order**:
+1. **Phase 19.5**: Enable election_gen.rs, fix 27 verification errors
+2. **Phase 19.4**: Acceptor HashMap helpers → standalone (small, isolated)
+3. **Phase 19.2.1**: Proposer state-only functions (7 functions, ~200 LOC)
+4. **Phase 19.2.2-3**: Proposer packet-returning functions (4+1 functions, ~370 LOC)
+5. **Phase 19.3**: Executor helpers → standalone (~150 LOC)
+6. **Phase 19.6**: Replica dispatch → standalone (20 functions, largest task)
+7. **Phase 19.7**: Final cleanup and removal
+
+### 19.9 Acceptance Criteria
+
+- [ ] All 62 functions in generated RSL modules are standalone (0 delegates to manual impl)
+- [ ] `election_gen.rs` is enabled and verified in mod.rs
+- [ ] All manual impl files (`ProposerImpl.rs`, `acceptorimpl.rs`, `ExecutorImpl.rs`, `learnerimpl.rs`, `ElectionImpl.rs`, `ReplicaImpl.rs`) are unused and removable
+- [ ] `grep -r "state\.C(Replica|Proposer|Acceptor|Executor|Learner|ElectionState)" src/generated/RSL/` returns zero results
+- [ ] Verus verification: ≥627 verified, 0 errors
+- [ ] All transpiler tests pass
+- [ ] No new `assume` statements introduced (except the 10 irreducible IO trust boundary assumes)
+
+### 19.10 Estimated Effort
+
+| Phase | Functions | Est. LOC | Difficulty | Notes |
+|-------|-----------|----------|-----------|-------|
+| 19.5 Election enable | 0 new | ~100 fix | LOW-MED | Fix 27 verification errors |
+| 19.4 Acceptor helpers | 2 | ~50 | HIGH | HashMap iteration proofs |
+| 19.2.1 Proposer state | 7 | ~200 | MEDIUM | Functional adaptation |
+| 19.2.2-3 Proposer packets | 5 | ~370 | HIGH | Opaque datatype workaround |
+| 19.3 Executor helpers | 3 | ~150 | MEDIUM | HashMap/reply helpers |
+| 19.6 Replica dispatch | 20 | ~600 | VERY HIGH | Depends on everything else |
+| 19.7 Cleanup | 0 new | ~deletion | LOW | Remove unused files |
+| **Total** | **37** | **~1,470** | | |
