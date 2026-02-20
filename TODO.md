@@ -6223,11 +6223,21 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] Also fixed: HashMap.insert() semicolon bug in printer, type_remapping in stubs, ensures in stubs
 - [x] 1126 lib tests + 146 integration tests pass
 
-#### 21.2.3 RSL broadcast: no manual code needed
+#### 21.2.3 RSL broadcast: no manual code needed ✅ PARTIAL
 
-- [ ] Remove `skip_functions = ["BuildLBroadcast"]` from broadcast_transpile.toml
-- [ ] Regenerate — BuildLBroadcast is a recursive helper, test if transpiler handles it
-- [ ] If not: `--auto-skip` will mark it `external_body`
+- [x] Fixed ModeAnalyzer regression: `check_output_in_quantifier` now whitelists Seq comprehension pattern
+  - Pattern: `forall |idx| bounds ==> output[idx] == expr` (convertible to WhileLoop)
+  - Root cause: commit 657da57 added early rejection that blocked the translator's WhileLoop generator
+- [x] Fixed stub generator: non-predicate spec functions (return Seq/Map/etc) no longer get spec call in ensures
+- [x] Fixed broadcast remapping: `AbstractEndPoint` → `EndPoint` (was `CAbstractEndPoint` which doesn't exist)
+- [x] CBroadcastToEveryone now transpiles correctly via WhileLoop (moder no longer blocks it)
+- [ ] **BLOCKED**: Regenerated broadcast_gen.rs missing element-level validity ensures/proofs
+  - Callers (acceptor, proposer, executor, replica) depend on `forall |i| result@[i].valid()`
+  - Hand-tuned version has loop invariants + proof block for CPacket validity
+  - Transpiler's WhileLoop generator doesn't yet produce element-level validity proofs
+  - Committed hand-tuned version restored (581 verified, 0 errors)
+- [ ] Future: teach WhileLoop generator to emit `result@[j].valid()` invariants for constructed struct elements
+- 1130 lib tests + 146 integration tests pass (4 new tests added)
 
 #### 21.2.4 RSL acceptor: 2 external_body + 5 proven functions
 
@@ -6318,7 +6328,7 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
     ↓
 21.2.2 Learner (easiest)             ← DONE ✅ (3 stubs, 1 generated)
     ↓
-21.2.3 Broadcast                     ← single function
+21.2.3 Broadcast                     ← PARTIAL ✅ (moder fix + stub fix; validity proofs blocked)
     ↓
 21.2.4 Acceptor                      ← few external_body
     ↓

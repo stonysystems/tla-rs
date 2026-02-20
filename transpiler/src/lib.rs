@@ -548,7 +548,9 @@ impl Transpiler {
             ensures_lines.push(format!("    result.{}(),", vp));
         }
         // Add spec predicate ensures: SpecFn(input@, result@, ...)
-        if annotation.is_some() {
+        // Only for predicate functions (return type is bool), not helper functions that return values
+        let is_predicate = matches!(spec_fn.return_type, crate::ast::Type::Bool);
+        if annotation.is_some() && is_predicate {
             let mut spec_args = Vec::new();
             for (i, param) in spec_fn.params.iter().enumerate() {
                 let is_output = annotation
@@ -3485,5 +3487,60 @@ mod tests {
         // Default int_type is i64
         assert!(stub.contains("items: &Vec<i64>"), "Should have Vec input: {}", stub);
         assert!(stub.contains("-> (result: HashSet<i64>)"), "Should have HashSet output: {}", stub);
+    }
+
+    #[test]
+    fn test_generate_external_body_stub_non_predicate_no_spec_ensures() {
+        // A spec function that returns Seq<T> (not bool) should NOT get
+        // SpecFn(args...) in ensures — it's not a predicate.
+        use crate::ast::{Type, Path, ParameterMode};
+
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+
+        // Create spec fn with non-bool return type
+        let mut spec_fn = make_test_spec_fn("LBuildBroadcast", vec![
+            ("src", Type::Named(Path::single("LEndPoint".to_string()))),
+            ("dsts", Type::Seq(Box::new(Type::Named(Path::single("LEndPoint".to_string()))))),
+            ("m", Type::Named(Path::single("LMessage".to_string()))),
+        ]);
+        // Override return type to Seq<LPacket> (non-bool)
+        spec_fn.return_type = Type::Seq(Box::new(Type::Named(Path::single("LPacket".to_string()))));
+
+        // No annotation (all params are inputs, no output)
+        let stub = transpiler.generate_external_body_stub(&spec_fn, None, "recursive helper");
+        // Should NOT contain the spec function name as an ensures predicate
+        assert!(!stub.contains("ensures"), "Non-predicate function should not have ensures: {}", stub);
+        assert!(!stub.contains("LBuildBroadcast("), "Should not use non-predicate as ensures: {}", stub);
+    }
+
+    #[test]
+    fn test_generate_external_body_stub_predicate_has_spec_ensures() {
+        // A spec function that returns bool SHOULD get SpecFn(args...) in ensures.
+        use crate::ast::{Type, Path, ParameterMode};
+
+        let config = TranspilerConfig {
+            translator: crate::translator::TranslatorConfig {
+                validity_predicate_name: "valid".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_fn = make_test_spec_fn("LInit", vec![
+            ("c", Type::Named(Path::single("LConstants".to_string()))),
+            ("s_", Type::Named(Path::single("LState".to_string()))),
+        ]);
+
+        let annotation = make_test_annotation("LInit", vec![
+            ParameterMode::Input,
+            ParameterMode::Output,
+        ]);
+
+        let stub = transpiler.generate_external_body_stub(&spec_fn, Some(&annotation), "test");
+        assert!(stub.contains("ensures"), "Predicate should have ensures: {}", stub);
+        assert!(stub.contains("LInit("), "Predicate should use spec fn in ensures: {}", stub);
+        assert!(stub.contains("result.valid()"), "Should have validity ensures: {}", stub);
     }
 }

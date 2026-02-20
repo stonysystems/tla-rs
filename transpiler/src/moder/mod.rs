@@ -282,7 +282,21 @@ impl ModeAnalyzer {
             }
 
             // Quantifiers: recurse with inside_quantifier = true
-            Expr::Forall { body, .. } | Expr::Exists { body, .. } => {
+            // But first check for the Seq comprehension pattern which IS convertible:
+            //   forall |idx| bounds ==> output[idx] == element_expr
+            // This pattern is handled by the translator's WhileLoop generator.
+            Expr::Forall { vars, body, .. } => {
+                if vars.len() == 1 {
+                    if let Expr::Implies(_, assign_expr) = body.as_ref() {
+                        if Self::is_seq_comprehension_assignment(assign_expr, output_names, &vars[0].name_string()) {
+                            // This is a convertible Seq comprehension — allow it
+                            return None;
+                        }
+                    }
+                }
+                Self::check_output_in_quantifier(body, output_names, true)
+            }
+            Expr::Exists { body, .. } => {
                 Self::check_output_in_quantifier(body, output_names, true)
             }
 
@@ -339,6 +353,34 @@ impl ModeAnalyzer {
 
             // Terminals and other expressions: no quantifier issues
             _ => None,
+        }
+    }
+
+    /// Check if an expression is a Seq comprehension assignment pattern:
+    ///   output[idx] == element_expr  (or output[idx] =~= element_expr)
+    /// where `output` is an output parameter and `idx` is the forall variable.
+    /// This pattern is convertible to a WhileLoop by the translator.
+    fn is_seq_comprehension_assignment(
+        expr: &Expr,
+        output_names: &HashSet<String>,
+        forall_var: &str,
+    ) -> bool {
+        match expr {
+            Expr::Eq(left, _right) => {
+                // Check: left is output[idx] where output is DIRECTLY an output param
+                // (not output.field[idx]) and idx is the forall var.
+                if let Expr::Index(base, index) = left.as_ref() {
+                    if let Expr::Ident(name) = base.as_ref() {
+                        if output_names.contains(name) {
+                            if let Expr::Ident(idx_name) = index.as_ref() {
+                                return idx_name == forall_var;
+                            }
+                        }
+                    }
+                }
+                false
+            }
+            _ => false,
         }
     }
 
@@ -1638,6 +1680,94 @@ mod tests {
         assert_eq!(
             ModeAnalyzer::extract_root_ident(&Expr::Literal(Literal::Int(42))),
             None
+        );
+    }
+
+    #[test]
+    fn test_functionalizable_seq_comprehension_allowed() {
+        // Seq comprehension pattern SHOULD be allowed:
+        // forall |idx| 0 <= idx < sent_packets.len() ==> sent_packets[idx] == expr
+        // This is convertible to a WhileLoop by the translator.
+        let body = Expr::Conjunction(vec![
+            // sent_packets.len() == c.replica_ids.len()
+            Expr::Eq(
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Ident("sent_packets".to_string())),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+                Box::new(Expr::MethodCall {
+                    receiver: Box::new(Expr::Field(
+                        Box::new(Expr::Ident("c".to_string())),
+                        "ids".to_string(),
+                    )),
+                    method: "len".to_string(),
+                    args: vec![],
+                }),
+            ),
+            // forall |idx| 0 <= idx < sent_packets.len() ==> sent_packets[idx] == SomeExpr
+            Expr::Forall {
+                vars: vec![make_binding("idx")],
+                triggers: vec![],
+                body: Box::new(Expr::Implies(
+                    // bounds
+                    Box::new(Expr::Conjunction(vec![
+                        Expr::Le(
+                            Box::new(Expr::Literal(Literal::Int(0))),
+                            Box::new(Expr::Ident("idx".to_string())),
+                        ),
+                    ])),
+                    // sent_packets[idx] == some_expr
+                    Box::new(Expr::Eq(
+                        Box::new(Expr::Index(
+                            Box::new(Expr::Ident("sent_packets".to_string())),
+                            Box::new(Expr::Ident("idx".to_string())),
+                        )),
+                        Box::new(Expr::Ident("some_value".to_string())),
+                    )),
+                )),
+            },
+        ]);
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            is_func,
+            "Seq comprehension pattern should be functionalizable, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_functionalizable_output_in_forall_not_seq_comprehension() {
+        // Output inside forall but NOT a seq comprehension pattern:
+        // forall |i| s1_.field[i] == s0.field[i]
+        // Here the index is on s1_.field (a field access), not s1_[i] directly
+        // This should still be rejected.
+        let body = Expr::Forall {
+            vars: vec![make_binding("i")],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Le(
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                    Box::new(Expr::Ident("i".to_string())),
+                )),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s1_".to_string())),
+                            "field".to_string(),
+                        )),
+                        Box::new(Expr::Ident("i".to_string())),
+                    )),
+                    Box::new(Expr::Ident("value".to_string())),
+                )),
+            )),
+        };
+        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(!is_func, "Output.field[i] pattern should not be a seq comprehension");
+        assert!(
+            reason.as_ref().unwrap().contains("inside a quantifier"),
+            "Expected quantifier message, got: {:?}",
+            reason
         );
     }
 
