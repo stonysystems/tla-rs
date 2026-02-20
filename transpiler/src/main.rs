@@ -73,6 +73,11 @@ struct Cli {
     /// Dry run - show what would be generated without writing
     #[arg(long)]
     dry_run: bool,
+
+    /// Auto-skip mode: catch transpilation errors per-function and continue.
+    /// Skipped functions are reported to stderr. Use with --verbose for details.
+    #[arg(long)]
+    auto_skip: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -292,19 +297,35 @@ fn main() -> Result<()> {
     }
 
     // Load configuration if provided
-    let config = if let Some(config_path) = &cli.config {
+    let mut config = if let Some(config_path) = &cli.config {
         load_config(config_path)?
     } else {
         TranspilerConfig::default()
     };
 
+    // Apply --auto-skip flag
+    if cli.auto_skip {
+        config.auto_skip = true;
+    }
+
     // Create transpiler
     let transpiler = Transpiler::new(config);
 
     // Run transpilation
-    let result = transpiler
-        .transpile_file(input, annotations)
+    let (result, skipped) = transpiler
+        .transpile_file_with_report(input, annotations)
         .map_err(|e| miette::miette!("{}", e))?;
+
+    // Report auto-skipped functions
+    if !skipped.is_empty() {
+        eprintln!(
+            "Auto-skipped {} function(s):",
+            skipped.len()
+        );
+        for sf in &skipped {
+            eprintln!("  - {}: {}", sf.name, sf.reason);
+        }
+    }
 
     // Output result
     if cli.stdout || cli.output.is_none() {
@@ -1249,6 +1270,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             let manual_path = base_dir.join(&rel_path);
             std::fs::read_to_string(&manual_path).ok()
         }),
+        auto_skip: false,
         printer: verus_transpiler::PrinterConfig {
             extra_fields: file_config.extra_fields,
             ..Default::default()
@@ -1592,6 +1614,7 @@ manual_code = "manual_helpers.rs"
             stdout: false,
             verbose: false,
             dry_run: false,
+            auto_skip: false,
         };
 
         handle_command(&command, &cli).unwrap();
@@ -1706,5 +1729,52 @@ validity_predicate_name = "valid"
 
         let config = load_config(&config_path).unwrap();
         assert!(!config.translator.generate_proofs);
+    }
+
+    #[test]
+    fn test_auto_skip_cli_flag() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "--input",
+            "test.rs",
+            "--annotations",
+            "test.automan",
+            "--auto-skip",
+        ]);
+        assert!(cli.auto_skip, "auto_skip flag should be set");
+    }
+
+    #[test]
+    fn test_auto_skip_default_off() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "--input",
+            "test.rs",
+            "--annotations",
+            "test.automan",
+        ]);
+        assert!(!cli.auto_skip, "auto_skip should default to false");
+    }
+
+    #[test]
+    fn test_load_config_auto_skip_defaults_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("test.toml");
+        std::fs::write(
+            &config_path,
+            r#"
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[output]
+generate_proofs = false
+validity_predicate_name = "valid"
+"#,
+        )
+        .unwrap();
+
+        let config = load_config(&config_path).unwrap();
+        assert!(!config.auto_skip, "auto_skip should default to false from TOML");
     }
 }

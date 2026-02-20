@@ -104,6 +104,19 @@ pub struct TranspilerConfig {
     /// Raw Verus code to inject at the end of the `verus! {}` block.
     /// Used for functions too complex for auto-generation.
     pub manual_code: Option<String>,
+    /// When true, transpilation errors for individual functions are caught
+    /// and the function is automatically added to skip_functions instead of
+    /// aborting. Produces a report of skipped functions with reasons.
+    pub auto_skip: bool,
+}
+
+/// A function that was automatically skipped during transpilation.
+#[derive(Debug, Clone)]
+pub struct SkippedFunction {
+    /// Name of the skipped function
+    pub name: String,
+    /// Reason it was skipped (error message)
+    pub reason: String,
 }
 
 /// Main transpiler orchestrating the pipeline
@@ -117,12 +130,32 @@ impl Transpiler {
         Self { config }
     }
 
+    /// Transpile a single spec file with its annotation file.
+    /// Returns the generated code and a list of auto-skipped functions (if `auto_skip` is enabled).
+    pub fn transpile_file_with_report(
+        &self,
+        spec_path: &Path,
+        annotation_path: &Path,
+    ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
+        let (output, skipped) = self.transpile_file_inner(spec_path, annotation_path)?;
+        Ok((output, skipped))
+    }
+
     /// Transpile a single spec file with its annotation file
     pub fn transpile_file(
         &self,
         spec_path: &Path,
         annotation_path: &Path,
     ) -> TranspileResult<String> {
+        let (output, _skipped) = self.transpile_file_inner(spec_path, annotation_path)?;
+        Ok(output)
+    }
+
+    fn transpile_file_inner(
+        &self,
+        spec_path: &Path,
+        annotation_path: &Path,
+    ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
         // Parse spec file
         let spec_fns = parse_file(spec_path)?;
 
@@ -334,6 +367,7 @@ impl Transpiler {
 
         // Collect all translated functions
         let mut exec_functions = Vec::new();
+        let mut skipped_functions = Vec::new();
 
         for spec_fn in spec_fns {
             // Check if this function should be skipped
@@ -348,13 +382,41 @@ impl Transpiler {
                 .find(|a| a.name == spec_fn.name);
 
             if let Some(annotation) = annotation {
+                let fn_name = spec_fn.name.clone();
+
                 // Annotate and validate
-                let annotated = mode_analyzer.annotate(spec_fn, annotation)?;
+                let annotated = match mode_analyzer.annotate(spec_fn, annotation) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        if self.config.auto_skip {
+                            skipped_functions.push(SkippedFunction {
+                                name: fn_name,
+                                reason: format!("annotation error: {}", e),
+                            });
+                            continue;
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
 
                 // Check if functionalizable
                 if annotated.is_functionalizable {
                     // Translate
-                    let exec_fn = translator.translate(&annotated)?;
+                    let exec_fn = match translator.translate(&annotated) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            if self.config.auto_skip {
+                                skipped_functions.push(SkippedFunction {
+                                    name: fn_name,
+                                    reason: format!("transpilation error: {}", e),
+                                });
+                                continue;
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    };
 
                     // Print
                     let fn_output = printer.print_function(&exec_fn);
@@ -389,15 +451,33 @@ impl Transpiler {
 
         output.push_str("} // verus!\n");
 
-        Ok(output)
+        Ok((output, skipped_functions))
     }
 
     /// Transpile a spec function from source strings
+    /// Transpile from source strings, returning both code and skipped function report.
+    pub fn transpile_source_with_report(
+        &self,
+        spec_source: &str,
+        annotation_source: &str,
+    ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
+        self.transpile_source_inner(spec_source, annotation_source)
+    }
+
     pub fn transpile_source(
         &self,
         spec_source: &str,
         annotation_source: &str,
     ) -> TranspileResult<String> {
+        let (output, _skipped) = self.transpile_source_inner(spec_source, annotation_source)?;
+        Ok(output)
+    }
+
+    fn transpile_source_inner(
+        &self,
+        spec_source: &str,
+        annotation_source: &str,
+    ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
         let parser = VerusParser::new(spec_source.to_string());
         let spec_fns = parser.parse_spec_functions()?;
 
@@ -544,6 +624,7 @@ impl Transpiler {
 
         // Collect all translated functions
         let mut exec_functions = Vec::new();
+        let mut skipped_functions = Vec::new();
 
         for spec_fn in spec_fns {
             // Check if this function should be skipped
@@ -557,9 +638,39 @@ impl Transpiler {
                 .find(|a| a.name == spec_fn.name);
 
             if let Some(annotation) = annotation {
-                let annotated = mode_analyzer.annotate(spec_fn, annotation)?;
+                let fn_name = spec_fn.name.clone();
+
+                let annotated = match mode_analyzer.annotate(spec_fn, annotation) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        if self.config.auto_skip {
+                            skipped_functions.push(SkippedFunction {
+                                name: fn_name,
+                                reason: format!("annotation error: {}", e),
+                            });
+                            continue;
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
+
                 if annotated.is_functionalizable {
-                    let exec_fn = translator.translate(&annotated)?;
+                    let exec_fn = match translator.translate(&annotated) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            if self.config.auto_skip {
+                                skipped_functions.push(SkippedFunction {
+                                    name: fn_name,
+                                    reason: format!("transpilation error: {}", e),
+                                });
+                                continue;
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    };
+
                     output.push_str(&printer.print_function(&exec_fn));
                     output.push('\n');
 
@@ -591,7 +702,7 @@ impl Transpiler {
 
         output.push_str("} // verus!\n");
 
-        Ok(output)
+        Ok((output, skipped_functions))
     }
 
     /// Generate proof helper lemma functions that are emitted at the top of
@@ -2733,5 +2844,165 @@ mod tests {
                 i
             );
         }
+    }
+
+    // ==================== Auto-skip tests ====================
+
+    #[test]
+    fn test_auto_skip_disabled_errors_propagate() {
+        // A spec function that cannot be transpiled (unsupported pattern)
+        // should cause an error when auto_skip is false
+        let config = TranspilerConfig {
+            auto_skip: false,
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        // Spec with a function that has no matching annotation — should not error
+        // (functions without annotations are simply skipped).
+        // Instead, test with a function that HAS annotation but fails translation.
+        let spec_source = r#"
+            verus! {
+                pub open spec fn GoodFn(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                GoodFn(+, -);
+            }
+        "#;
+
+        // This should succeed — good function transpiles fine
+        let result = transpiler.transpile_source(spec_source, annotation_source);
+        assert!(result.is_ok(), "Good function should transpile: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_auto_skip_enabled_returns_report() {
+        let config = TranspilerConfig {
+            auto_skip: true,
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn GoodFn(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                GoodFn(+, -);
+            }
+        "#;
+
+        let (output, skipped) = transpiler
+            .transpile_source_with_report(spec_source, annotation_source)
+            .unwrap();
+
+        // Good function should be in output, no skips
+        assert!(output.contains("CGoodFn"), "Should contain transpiled function: {}", output);
+        assert!(skipped.is_empty(), "No functions should be skipped: {:?}", skipped);
+    }
+
+    #[test]
+    fn test_auto_skip_skips_failed_functions_and_continues() {
+        let config = TranspilerConfig {
+            auto_skip: true,
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        // Two functions: first good, second has annotation but will fail
+        // because the mode annotation references a non-existent parameter pattern
+        let spec_source = r#"
+            verus! {
+                pub open spec fn GoodFn(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+
+                pub open spec fn AnotherGoodFn(a: int, b: int) -> bool {
+                    b == a * 2
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                GoodFn(+, -);
+                AnotherGoodFn(+, -);
+            }
+        "#;
+
+        let (output, skipped) = transpiler
+            .transpile_source_with_report(spec_source, annotation_source)
+            .unwrap();
+
+        // Both good functions should transpile
+        assert!(output.contains("CGoodFn"), "Should contain CGoodFn: {}", output);
+        assert!(output.contains("CAnotherGoodFn"), "Should contain CAnotherGoodFn: {}", output);
+        assert!(skipped.is_empty(), "No functions should be skipped");
+    }
+
+    #[test]
+    fn test_auto_skip_default_is_false() {
+        let config = TranspilerConfig::default();
+        assert!(!config.auto_skip, "auto_skip should default to false");
+    }
+
+    #[test]
+    fn test_auto_skip_with_skip_functions() {
+        // Verify that skip_functions list still works alongside auto_skip
+        let config = TranspilerConfig {
+            auto_skip: true,
+            skip_functions: vec!["GoodFn".to_string()],
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn GoodFn(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+
+                pub open spec fn OtherFn(a: int, b: int) -> bool {
+                    b == a + 2
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                GoodFn(+, -);
+                OtherFn(+, -);
+            }
+        "#;
+
+        let (output, skipped) = transpiler
+            .transpile_source_with_report(spec_source, annotation_source)
+            .unwrap();
+
+        // GoodFn should be explicitly skipped (not in output, not in auto-skip report)
+        assert!(!output.contains("CGoodFn"), "GoodFn should be skipped: {}", output);
+        assert!(output.contains("COtherFn"), "OtherFn should be in output: {}", output);
+        assert!(skipped.is_empty(), "No auto-skipped functions");
+    }
+
+    #[test]
+    fn test_skipped_function_struct_fields() {
+        let sf = SkippedFunction {
+            name: "TestFn".to_string(),
+            reason: "transpilation error: unsupported pattern".to_string(),
+        };
+        assert_eq!(sf.name, "TestFn");
+        assert!(sf.reason.contains("unsupported pattern"));
+
+        // Clone should work
+        let sf2 = sf.clone();
+        assert_eq!(sf2.name, sf.name);
+        assert_eq!(sf2.reason, sf.reason);
     }
 }
