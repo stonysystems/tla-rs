@@ -6296,20 +6296,14 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] Transpiler integration tests: 146 passed, 1 pre-existing TLA conversion failure (broadcast.rs)
 - [x] Updated Phase 19 test thresholds for Phase 21 auto-transpiled style
 
-### 21.6 Phase 21.4: Proof gap audit and documentation
+### 21.6 Phase 21.4: Proof gap audit and documentation ✅
 
-- [ ] Run transpiler with `--proof-fallback` on all RSL modules, collect gap report
-- [ ] Create `docs/dev/proof-gap-audit.md`:
-  - List every `PROOF-TODO` and `TRANSLATE-TODO` function
-  - Categorize by root cause:
-    - HashMap iteration invariants
-    - HashSet length/cardinality proofs
-    - Packet map opacity (`Seq<CPacket>.map(|i,p| p@)`)
-    - IO contract composition
-    - Existential quantifier elimination
-    - Complex conditional field assignment
-  - For each category, estimate: "if transpiler improvement X is done, Y functions would be proven"
-- [ ] Update TODO.md "What doesn't work yet" section with honest proof gap count
+- [x] Ran transpiler with `--proof-fallback` on all 7 RSL modules
+- [x] Created `docs/dev/proof-gap-audit.md` with full categorization
+- [x] Results: **31 total gaps** (28 proof + 3 translation)
+  - 18 functions (acceptor+executor) have fully verified hand-written proofs — not gaps, just manual
+  - 10 functions need transpiler improvements (trusted enum, recursive, quantifier, scoping)
+  - 3 translation gaps (quantifier body assignment, pure predicate)
 
 ### 21.7 Phase 21.5: Cleanup
 
