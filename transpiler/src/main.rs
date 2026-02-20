@@ -80,6 +80,11 @@ struct Cli {
     #[arg(long)]
     auto_skip: bool,
 
+    /// Proof-fallback mode: instead of skipping untranslatable functions,
+    /// emit them as #[verifier(external_body)] stubs. Implies --auto-skip.
+    #[arg(long)]
+    proof_fallback: bool,
+
     /// Dump the fully-resolved configuration (auto-derived + TOML overrides) as TOML.
     /// Useful for debugging what config the transpiler will use.
     #[arg(long)]
@@ -364,9 +369,12 @@ fn main() -> Result<()> {
     let effective_config_path = config_path.unwrap_or(Path::new("."));
     let mut config = convert_file_config(file_config, effective_config_path)?;
 
-    // Apply --auto-skip flag
-    if cli.auto_skip {
+    // Apply --auto-skip and --proof-fallback flags
+    if cli.auto_skip || cli.proof_fallback {
         config.auto_skip = true;
+    }
+    if cli.proof_fallback {
+        config.proof_fallback = true;
     }
 
     // Create transpiler
@@ -377,14 +385,33 @@ fn main() -> Result<()> {
         .transpile_file_with_report(input, annotations)
         .map_err(|e| miette::miette!("{}", e))?;
 
-    // Report auto-skipped functions
+    // Report auto-skipped / proof-fallback functions
     if !skipped.is_empty() {
-        eprintln!(
-            "Auto-skipped {} function(s):",
-            skipped.len()
-        );
-        for sf in &skipped {
-            eprintln!("  - {}: {}", sf.name, sf.reason);
+        if cli.proof_fallback {
+            eprintln!("\n=== Proof Gap Report ===");
+            let mut translate_gaps = 0;
+            let mut proof_gaps = 0;
+            for sf in &skipped {
+                if sf.reason.starts_with("transpilation error") || sf.reason.starts_with("annotation error") || sf.reason.starts_with("not functionalizable") {
+                    eprintln!("TRANSLATE-GAP: {} — {}", sf.name, sf.reason);
+                    translate_gaps += 1;
+                } else {
+                    eprintln!("PROOF-GAP: {} — {}", sf.name, sf.reason);
+                    proof_gaps += 1;
+                }
+            }
+            eprintln!(
+                "Total: {} proof gaps, {} translation gaps",
+                proof_gaps, translate_gaps
+            );
+        } else {
+            eprintln!(
+                "Auto-skipped {} function(s):",
+                skipped.len()
+            );
+            for sf in &skipped {
+                eprintln!("  - {}: {}", sf.name, sf.reason);
+            }
         }
     }
 
@@ -1330,6 +1357,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             std::fs::read_to_string(&manual_path).ok()
         }),
         auto_skip: false,
+        proof_fallback: false,
         printer: verus_transpiler::PrinterConfig {
             extra_fields: file_config.extra_fields,
             ..Default::default()
@@ -1674,6 +1702,7 @@ manual_code = "manual_helpers.rs"
             verbose: false,
             dry_run: false,
             auto_skip: false,
+            proof_fallback: false,
             dump_config: false,
         };
 

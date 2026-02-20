@@ -108,6 +108,10 @@ pub struct TranspilerConfig {
     /// and the function is automatically added to skip_functions instead of
     /// aborting. Produces a report of skipped functions with reasons.
     pub auto_skip: bool,
+    /// When true (implies auto_skip), untranslatable functions are emitted as
+    /// `#[verifier(external_body)]` stubs instead of being silently skipped.
+    /// Each stub includes a `// TRANSLATE-TODO:` or `// PROOF-TODO:` comment.
+    pub proof_fallback: bool,
 }
 
 /// A function that was automatically skipped during transpilation.
@@ -383,15 +387,23 @@ impl Transpiler {
 
             if let Some(annotation) = annotation {
                 let fn_name = spec_fn.name.clone();
+                // Save spec_fn for stub generation if proof_fallback and annotation fails
+                let spec_fn_backup = if self.config.proof_fallback { Some(spec_fn.clone()) } else { None };
 
                 // Annotate and validate
                 let annotated = match mode_analyzer.annotate(spec_fn, annotation) {
                     Ok(a) => a,
                     Err(e) => {
+                        let reason = format!("annotation error: {}", e);
+                        if self.config.proof_fallback {
+                            let stub = self.generate_external_body_stub(spec_fn_backup.as_ref().unwrap(), Some(annotation), &reason);
+                            output.push_str(&stub);
+                            output.push('\n');
+                        }
                         if self.config.auto_skip {
                             skipped_functions.push(SkippedFunction {
                                 name: fn_name,
-                                reason: format!("annotation error: {}", e),
+                                reason,
                             });
                             continue;
                         } else {
@@ -406,10 +418,16 @@ impl Transpiler {
                     let exec_fn = match translator.translate(&annotated) {
                         Ok(f) => f,
                         Err(e) => {
+                            let reason = format!("transpilation error: {}", e);
+                            if self.config.proof_fallback {
+                                let stub = self.generate_external_body_stub(&annotated.spec_fn, Some(annotation), &reason);
+                                output.push_str(&stub);
+                                output.push('\n');
+                            }
                             if self.config.auto_skip {
                                 skipped_functions.push(SkippedFunction {
                                     name: fn_name,
-                                    reason: format!("transpilation error: {}", e),
+                                    reason,
                                 });
                                 continue;
                             } else {
@@ -427,6 +445,22 @@ impl Transpiler {
                     if self.config.generate_wrapper_methods {
                         exec_functions.push(exec_fn);
                     }
+                } else if self.config.proof_fallback {
+                    // Function exists but can't be functionalized — emit stub
+                    let reason = annotated.non_functionalizable_reason
+                        .as_deref()
+                        .unwrap_or("not functionalizable");
+                    let stub = self.generate_external_body_stub(
+                        &annotated.spec_fn,
+                        Some(annotation),
+                        &format!("not functionalizable: {}", reason),
+                    );
+                    output.push_str(&stub);
+                    output.push('\n');
+                    skipped_functions.push(SkippedFunction {
+                        name: fn_name,
+                        reason: format!("not functionalizable: {}", reason),
+                    });
                 }
             }
         }
@@ -452,6 +486,120 @@ impl Transpiler {
         output.push_str("} // verus!\n");
 
         Ok((output, skipped_functions))
+    }
+
+    /// Generate an `#[verifier(external_body)]` stub for a function that failed translation.
+    /// Used in proof-fallback mode to emit placeholders instead of silently skipping.
+    fn generate_external_body_stub(
+        &self,
+        spec_fn: &crate::ast::SpecFunction,
+        annotation: Option<&crate::annotation::FunctionAnnotation>,
+        reason: &str,
+    ) -> String {
+        let spec_prefix = &self.config.translator.spec_prefix;
+        let exec_prefix = &self.config.translator.exec_prefix;
+        let int_type = &self.config.translator.int_type;
+
+        let exec_name = Self::spec_to_exec_name(&spec_fn.name, spec_prefix, exec_prefix);
+
+        // Build parameter list: input params get &type, output params become return types
+        let mut input_params = Vec::new();
+        let mut output_types = Vec::new();
+        for (i, param) in spec_fn.params.iter().enumerate() {
+            let is_output = annotation
+                .map(|a| i < a.param_modes.len() && a.param_modes[i] == crate::ast::ParameterMode::Output)
+                .unwrap_or(false);
+            let type_str = Self::type_to_exec_string(&param.ty, spec_prefix, exec_prefix, int_type);
+            if is_output {
+                output_types.push(type_str);
+            } else {
+                input_params.push(format!("{}: &{}", param.name, type_str));
+            }
+        }
+
+        let return_type = if output_types.is_empty() {
+            String::new()
+        } else if output_types.len() == 1 {
+            format!(" -> (result: {})", output_types[0])
+        } else {
+            format!(" -> (result: ({}))", output_types.join(", "))
+        };
+
+        format!(
+            "// TRANSLATE-TODO: {}\n\
+             #[verifier(external_body)]\n\
+             pub exec fn {}({}){}\n{{\n    unimplemented!()\n}}\n",
+            reason,
+            exec_name,
+            input_params.join(", "),
+            return_type,
+        )
+    }
+
+    /// Convert spec name to exec name (e.g., LInit → CInit)
+    fn spec_to_exec_name(spec_name: &str, spec_prefix: &str, exec_prefix: &str) -> String {
+        if spec_name.starts_with(spec_prefix) {
+            let rest = &spec_name[spec_prefix.len()..];
+            if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                return format!("{}{}", exec_prefix, rest);
+            }
+        }
+        format!("{}{}", exec_prefix, spec_name)
+    }
+
+    /// Convert AST Type to exec type string for stub generation
+    fn type_to_exec_string(
+        ty: &crate::ast::Type,
+        spec_prefix: &str,
+        exec_prefix: &str,
+        int_type: &str,
+    ) -> String {
+        use crate::ast::Type;
+        match ty {
+            Type::Int => int_type.to_string(),
+            Type::Nat => int_type.to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::Named(path) => {
+                let name = path.segments.last().cloned().unwrap_or_default();
+                Self::spec_to_exec_name(&name, spec_prefix, exec_prefix)
+            }
+            Type::Generic(path, args) => {
+                let name = path.segments.last().cloned().unwrap_or_default();
+                let exec_name = Self::spec_to_exec_name(&name, spec_prefix, exec_prefix);
+                let args_str: Vec<String> = args
+                    .iter()
+                    .map(|a| Self::type_to_exec_string(a, spec_prefix, exec_prefix, int_type))
+                    .collect();
+                format!("{}<{}>", exec_name, args_str.join(", "))
+            }
+            Type::Seq(inner) => {
+                format!(
+                    "Vec<{}>",
+                    Self::type_to_exec_string(inner, spec_prefix, exec_prefix, int_type)
+                )
+            }
+            Type::Set(inner) => {
+                format!(
+                    "HashSet<{}>",
+                    Self::type_to_exec_string(inner, spec_prefix, exec_prefix, int_type)
+                )
+            }
+            Type::Map(k, v) => {
+                format!(
+                    "HashMap<{}, {}>",
+                    Self::type_to_exec_string(k, spec_prefix, exec_prefix, int_type),
+                    Self::type_to_exec_string(v, spec_prefix, exec_prefix, int_type)
+                )
+            }
+            Type::Tuple(inner) => {
+                let parts: Vec<String> = inner
+                    .iter()
+                    .map(|t| Self::type_to_exec_string(t, spec_prefix, exec_prefix, int_type))
+                    .collect();
+                format!("({})", parts.join(", "))
+            }
+            _ => "/* unknown type */".to_string(),
+        }
     }
 
     /// Transpile a spec function from source strings
@@ -2854,6 +3002,7 @@ mod tests {
         // should cause an error when auto_skip is false
         let config = TranspilerConfig {
             auto_skip: false,
+            proof_fallback: false,
             ..Default::default()
         };
         let transpiler = Transpiler::new(config);
@@ -2883,6 +3032,7 @@ mod tests {
     fn test_auto_skip_enabled_returns_report() {
         let config = TranspilerConfig {
             auto_skip: true,
+            proof_fallback: false,
             ..Default::default()
         };
         let transpiler = Transpiler::new(config);
@@ -2913,6 +3063,7 @@ mod tests {
     fn test_auto_skip_skips_failed_functions_and_continues() {
         let config = TranspilerConfig {
             auto_skip: true,
+            proof_fallback: false,
             ..Default::default()
         };
         let transpiler = Transpiler::new(config);
@@ -2958,6 +3109,7 @@ mod tests {
         // Verify that skip_functions list still works alongside auto_skip
         let config = TranspilerConfig {
             auto_skip: true,
+            proof_fallback: false,
             skip_functions: vec!["GoodFn".to_string()],
             ..Default::default()
         };
@@ -3004,5 +3156,255 @@ mod tests {
         let sf2 = sf.clone();
         assert_eq!(sf2.name, sf.name);
         assert_eq!(sf2.reason, sf.reason);
+    }
+
+    // ─── proof-fallback tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_proof_fallback_default_is_false() {
+        let config = TranspilerConfig::default();
+        assert!(!config.proof_fallback, "proof_fallback should default to false");
+    }
+
+    #[test]
+    fn test_spec_to_exec_name_basic() {
+        assert_eq!(Transpiler::spec_to_exec_name("LInit", "L", "C"), "CInit");
+        assert_eq!(Transpiler::spec_to_exec_name("LFoo", "L", "C"), "CFoo");
+        assert_eq!(Transpiler::spec_to_exec_name("Init", "L", "C"), "CInit");
+        assert_eq!(Transpiler::spec_to_exec_name("LInit", "L", "Exec"), "ExecInit");
+    }
+
+    #[test]
+    fn test_spec_to_exec_name_no_prefix_match() {
+        assert_eq!(Transpiler::spec_to_exec_name("Foo", "L", "C"), "CFoo");
+        assert_eq!(Transpiler::spec_to_exec_name("MyFunc", "L", "C"), "CMyFunc");
+    }
+
+    #[test]
+    fn test_spec_to_exec_name_lowercase_after_prefix() {
+        assert_eq!(Transpiler::spec_to_exec_name("Llow", "L", "C"), "CLlow");
+    }
+
+    #[test]
+    fn test_type_to_exec_string_primitives() {
+        use crate::ast::Type;
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Int, "L", "C", "u64"), "u64");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Nat, "L", "C", "u64"), "u64");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Bool, "L", "C", "u64"), "bool");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Int, "L", "C", "i64"), "i64");
+    }
+
+    #[test]
+    fn test_type_to_exec_string_collections() {
+        use crate::ast::Type;
+        let int_ty = Type::Int;
+        let seq_ty = Type::Seq(Box::new(int_ty.clone()));
+        assert_eq!(Transpiler::type_to_exec_string(&seq_ty, "L", "C", "u64"), "Vec<u64>");
+
+        let set_ty = Type::Set(Box::new(int_ty.clone()));
+        assert_eq!(Transpiler::type_to_exec_string(&set_ty, "L", "C", "u64"), "HashSet<u64>");
+
+        let map_ty = Type::Map(Box::new(int_ty.clone()), Box::new(int_ty.clone()));
+        assert_eq!(Transpiler::type_to_exec_string(&map_ty, "L", "C", "u64"), "HashMap<u64, u64>");
+    }
+
+    #[test]
+    fn test_type_to_exec_string_named() {
+        use crate::ast::{Type, Path};
+        let named = Type::Named(Path { segments: vec!["LState".to_string()] });
+        assert_eq!(Transpiler::type_to_exec_string(&named, "L", "C", "u64"), "CState");
+    }
+
+    #[test]
+    fn test_type_to_exec_string_nested_seq() {
+        use crate::ast::{Type, Path};
+        let inner = Type::Named(Path { segments: vec!["LMessage".to_string()] });
+        let seq_ty = Type::Seq(Box::new(inner));
+        assert_eq!(Transpiler::type_to_exec_string(&seq_ty, "L", "C", "u64"), "Vec<CMessage>");
+    }
+
+    #[test]
+    fn test_proof_fallback_emits_stub_for_good_function() {
+        let config = TranspilerConfig {
+            auto_skip: true,
+            proof_fallback: true,
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn GoodFn(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                GoodFn(+, -);
+            }
+        "#;
+
+        let (output, skipped) = transpiler
+            .transpile_source_with_report(spec_source, annotation_source)
+            .unwrap();
+
+        assert!(output.contains("CGoodFn"), "Good function should still transpile normally: {}", output);
+        assert!(skipped.is_empty(), "No functions should be skipped: {:?}", skipped);
+        assert!(!output.contains("external_body"), "Good function should not be a stub: {}", output);
+    }
+
+    #[test]
+    fn test_proof_fallback_implies_auto_skip() {
+        let config = TranspilerConfig {
+            auto_skip: true,
+            proof_fallback: true,
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_source = r#"
+            verus! {
+                pub open spec fn GoodFn(x: int, y: int) -> bool {
+                    y == x + 1
+                }
+            }
+        "#;
+        let annotation_source = r#"
+            module test {
+                GoodFn(+, -);
+            }
+        "#;
+
+        let (output, _skipped) = transpiler
+            .transpile_source_with_report(spec_source, annotation_source)
+            .unwrap();
+        assert!(output.contains("CGoodFn"), "Should transpile: {}", output);
+    }
+
+    fn make_test_spec_fn(name: &str, params: Vec<(&str, crate::ast::Type)>) -> crate::ast::SpecFunction {
+        use crate::ast::*;
+        SpecFunction {
+            name: name.to_string(),
+            generics: Generics::default(),
+            params: params.into_iter().map(|(n, ty)| Parameter {
+                name: n.to_string(),
+                ty,
+                mode: None,
+                variable_mode: VariableMode::Exec,
+                span: None,
+            }).collect(),
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        }
+    }
+
+    fn make_test_annotation(name: &str, modes: Vec<crate::ast::ParameterMode>) -> crate::annotation::FunctionAnnotation {
+        crate::annotation::FunctionAnnotation {
+            name: name.to_string(),
+            param_modes: modes,
+            kind: crate::ast::FunctionKind::Predicate,
+            return_type: None,
+        }
+    }
+
+    #[test]
+    fn test_generate_external_body_stub_basic() {
+        use crate::ast::{Type, Path, ParameterMode};
+
+        let config = TranspilerConfig {
+            proof_fallback: true,
+            ..Default::default()
+        };
+        let transpiler = Transpiler::new(config);
+
+        let spec_fn = make_test_spec_fn("LInit", vec![
+            ("c", Type::Named(Path::single("LConstants".to_string()))),
+            ("s_", Type::Named(Path::single("LState".to_string()))),
+        ]);
+
+        let annotation = make_test_annotation("LInit", vec![
+            ParameterMode::Input,
+            ParameterMode::Output,
+        ]);
+
+        let stub = transpiler.generate_external_body_stub(&spec_fn, Some(&annotation), "test reason");
+        assert!(stub.contains("#[verifier(external_body)]"), "Should have external_body: {}", stub);
+        assert!(stub.contains("pub exec fn CInit"), "Should have exec name: {}", stub);
+        assert!(stub.contains("c: &CConstants"), "Should have input param: {}", stub);
+        assert!(stub.contains("-> (result: CState)"), "Should have output return: {}", stub);
+        assert!(stub.contains("TRANSLATE-TODO: test reason"), "Should have reason comment: {}", stub);
+        assert!(stub.contains("unimplemented!()"), "Should have unimplemented body: {}", stub);
+    }
+
+    #[test]
+    fn test_generate_external_body_stub_multiple_outputs() {
+        use crate::ast::{Type, ParameterMode};
+
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+
+        let spec_fn = make_test_spec_fn("LFoo", vec![
+            ("x", Type::Int),
+            ("y", Type::Int),
+            ("z", Type::Int),
+        ]);
+
+        let annotation = make_test_annotation("LFoo", vec![
+            ParameterMode::Input,
+            ParameterMode::Output,
+            ParameterMode::Output,
+        ]);
+
+        let stub = transpiler.generate_external_body_stub(&spec_fn, Some(&annotation), "multi-output");
+        // Default int_type is i64
+        assert!(stub.contains("-> (result: (i64, i64))"), "Should have tuple return: {}", stub);
+    }
+
+    #[test]
+    fn test_generate_external_body_stub_no_annotation() {
+        use crate::ast::Type;
+
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+
+        let spec_fn = make_test_spec_fn("LHelper", vec![
+            ("a", Type::Int),
+            ("b", Type::Int),
+        ]);
+
+        let stub = transpiler.generate_external_body_stub(&spec_fn, None, "no annotation");
+        // Default int_type is i64
+        assert!(stub.contains("a: &i64"), "Should have param a: {}", stub);
+        assert!(stub.contains("b: &i64"), "Should have param b: {}", stub);
+        assert!(!stub.contains("->"), "Should not have return type: {}", stub);
+    }
+
+    #[test]
+    fn test_generate_external_body_stub_collection_types() {
+        use crate::ast::{Type, ParameterMode};
+
+        let config = TranspilerConfig::default();
+        let transpiler = Transpiler::new(config);
+
+        let spec_fn = make_test_spec_fn("LProcess", vec![
+            ("items", Type::Seq(Box::new(Type::Int))),
+            ("result", Type::Set(Box::new(Type::Int))),
+        ]);
+
+        let annotation = make_test_annotation("LProcess", vec![
+            ParameterMode::Input,
+            ParameterMode::Output,
+        ]);
+
+        let stub = transpiler.generate_external_body_stub(&spec_fn, Some(&annotation), "collections");
+        // Default int_type is i64
+        assert!(stub.contains("items: &Vec<i64>"), "Should have Vec input: {}", stub);
+        assert!(stub.contains("-> (result: HashSet<i64>)"), "Should have HashSet output: {}", stub);
     }
 }
