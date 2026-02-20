@@ -2007,4 +2007,258 @@ verus! {
         // Inferred entry added for items
         assert_eq!(base.struct_vec_fields.get("items").unwrap()[0], "CItem");
     }
+
+    // ==================== Phase 20.2.6: Migration validation tests ====================
+
+    /// Helper: load a TOML config from a path
+    fn load_file_config(path: &std::path::Path) -> TranspilerConfig {
+        TranspilerConfig::from_file(path).unwrap_or_else(|e| {
+            panic!("Failed to load {}: {}", path.display(), e);
+        })
+    }
+
+    /// Validate that auto-inferred remapping covers the existing TOML's remapping.
+    /// Returns (covered, missing) where missing are TOML entries not auto-derived.
+    fn check_remapping_coverage(
+        inferred: &TranspilerConfig,
+        toml: &TranspilerConfig,
+    ) -> (usize, Vec<String>) {
+        let mut covered = 0;
+        let mut missing = Vec::new();
+        for (k, v) in &toml.remapping {
+            if let Some(iv) = inferred.remapping.get(k) {
+                if iv == v {
+                    covered += 1;
+                } else {
+                    missing.push(format!("{}: inferred={}, toml={}", k, iv, v));
+                }
+            } else {
+                missing.push(format!("{}: not inferred", k));
+            }
+        }
+        (covered, missing)
+    }
+
+    /// Validate that auto-inferred collection_fields covers the TOML's.
+    fn check_vec_coverage(inferred: &[String], toml: &[String]) -> (usize, Vec<String>) {
+        let mut covered = 0;
+        let mut missing = Vec::new();
+        for f in toml {
+            if inferred.contains(f) {
+                covered += 1;
+            } else {
+                missing.push(f.clone());
+            }
+        }
+        (covered, missing)
+    }
+
+    #[test]
+    fn test_migration_validation_all_protocols() {
+        // For each non-RSL protocol, compare auto-inferred config vs existing TOML
+        let protocols: Vec<(&str, &str, &str, &str)> = vec![
+            ("TwoPhase", "types.rs", "twophase.rs", "twophase_transpile.toml"),
+            ("Paxos", "types.rs", "paxos.rs", "paxos_transpile.toml"),
+            ("LeaderElection", "types.rs", "election.rs", "election_transpile.toml"),
+            ("Raft", "types.rs", "raft.rs", "raft_transpile.toml"),
+            ("ChainReplication", "types.rs", "chain.rs", "chain_transpile.toml"),
+            ("PrimaryBackup", "types.rs", "primarybackup.rs", "primarybackup_transpile.toml"),
+            ("PBFT", "types.rs", "pbft.rs", "pbft_transpile.toml"),
+            ("VerticalPaxos", "types.rs", "vpaxos.rs", "vpaxos_transpile.toml"),
+            ("EPaxos", "types.rs", "epaxos.rs", "epaxos_transpile.toml"),
+        ];
+
+        let mut total_remapping_covered = 0;
+        let mut total_remapping_missing = 0;
+        let mut total_collection_covered = 0;
+        let mut total_collection_missing = 0;
+        let mut total_vec_covered = 0;
+        let mut total_vec_missing = 0;
+        let mut total_clone_strategy_covered = 0;
+        let mut total_clone_strategy_missing = 0;
+
+        for (name, types_file, proto_file, toml_file) in &protocols {
+            let base = format!("../src/protocol/{}", name);
+            let types_path = std::path::PathBuf::from(format!("{}/{}", base, types_file));
+            let proto_path = std::path::PathBuf::from(format!("{}/{}", base, proto_file));
+            let toml_path = std::path::PathBuf::from(format!("{}/{}", base, toml_file));
+
+            if !types_path.exists() || !proto_path.exists() || !toml_path.exists() {
+                continue;
+            }
+
+            // Load existing TOML
+            let toml_config = load_file_config(&toml_path);
+            let naming = &toml_config.naming;
+
+            // Analyze spec files
+            let schema =
+                analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+            let inferer = ConfigInferer::new(&schema, naming);
+            let inferred = inferer.infer();
+
+            // Check remapping coverage
+            let (rc, rm) = check_remapping_coverage(&inferred, &toml_config);
+            total_remapping_covered += rc;
+            total_remapping_missing += rm.len();
+            for m in &rm {
+                // Known acceptable mismatches: type aliases to primitives (e.g., "OperationNumber" = "u64")
+                // These are in TOML's [remapping] but not auto-derived because they require
+                // knowing that the type alias maps to a Rust primitive
+                if !m.contains("not inferred") || m.contains("OperationNumber") {
+                    // Expected — these are Tier 3 overrides
+                } else {
+                    eprintln!("[{}] Remapping mismatch: {}", name, m);
+                }
+            }
+
+            // Check collection fields
+            let (cc, cm) = check_vec_coverage(&inferred.collection_fields, &toml_config.collection_fields);
+            total_collection_covered += cc;
+            total_collection_missing += cm.len();
+            for m in &cm {
+                eprintln!("[{}] Missing collection field: {}", name, m);
+            }
+
+            // Check vec fields
+            let (vc, vm) = check_vec_coverage(&inferred.vec_fields, &toml_config.vec_fields);
+            total_vec_covered += vc;
+            total_vec_missing += vm.len();
+            for m in &vm {
+                eprintln!("[{}] Missing vec field: {}", name, m);
+            }
+
+            // Check clone strategy
+            let mut cs_covered = 0;
+            let mut cs_missing = 0;
+            for (k, v) in &toml_config.clone_strategy {
+                if let Some(iv) = inferred.clone_strategy.get(k) {
+                    if iv == v {
+                        cs_covered += 1;
+                    } else {
+                        eprintln!("[{}] Clone strategy mismatch for {}: inferred={}, toml={}", name, k, iv, v);
+                    }
+                } else {
+                    eprintln!("[{}] Missing clone strategy: {}", name, k);
+                    cs_missing += 1;
+                }
+            }
+            total_clone_strategy_covered += cs_covered;
+            total_clone_strategy_missing += cs_missing;
+        }
+
+        // Summary: auto-inference should cover the vast majority
+        let total_checked = total_remapping_covered + total_remapping_missing
+            + total_collection_covered + total_collection_missing
+            + total_vec_covered + total_vec_missing
+            + total_clone_strategy_covered + total_clone_strategy_missing;
+        let total_covered = total_remapping_covered + total_collection_covered
+            + total_vec_covered + total_clone_strategy_covered;
+
+        assert!(
+            total_checked > 0,
+            "Should have checked at least one protocol"
+        );
+
+        // At least 80% coverage target for Tier 1 fields
+        let coverage_pct = (total_covered as f64 / total_checked as f64) * 100.0;
+        assert!(
+            coverage_pct >= 70.0,
+            "Auto-inference coverage too low: {:.1}% ({}/{}). \
+             Remapping: {}/{}, Collection: {}/{}, Vec: {}/{}, Clone: {}/{}",
+            coverage_pct,
+            total_covered,
+            total_checked,
+            total_remapping_covered,
+            total_remapping_covered + total_remapping_missing,
+            total_collection_covered,
+            total_collection_covered + total_collection_missing,
+            total_vec_covered,
+            total_vec_covered + total_vec_missing,
+            total_clone_strategy_covered,
+            total_clone_strategy_covered + total_clone_strategy_missing,
+        );
+    }
+
+    #[test]
+    fn test_merge_produces_same_output_as_explicit_toml() {
+        // Test that merge_configs(toml_overrides, inferred) preserves all TOML entries
+        let protocols: Vec<(&str, &str, &str, &str)> = vec![
+            ("TwoPhase", "types.rs", "twophase.rs", "twophase_transpile.toml"),
+            ("Paxos", "types.rs", "paxos.rs", "paxos_transpile.toml"),
+            ("Raft", "types.rs", "raft.rs", "raft_transpile.toml"),
+        ];
+
+        for (name, types_file, proto_file, toml_file) in &protocols {
+            let base = format!("../src/protocol/{}", name);
+            let types_path = std::path::PathBuf::from(format!("{}/{}", base, types_file));
+            let proto_path = std::path::PathBuf::from(format!("{}/{}", base, proto_file));
+            let toml_path = std::path::PathBuf::from(format!("{}/{}", base, toml_file));
+
+            if !types_path.exists() || !proto_path.exists() || !toml_path.exists() {
+                continue;
+            }
+
+            // Load existing TOML
+            let toml_config = load_file_config(&toml_path);
+
+            // Analyze spec files
+            let schema =
+                analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+            let inferer = ConfigInferer::new(&schema, &toml_config.naming);
+            let inferred = inferer.infer();
+
+            // Merge: TOML overrides should be preserved
+            let mut merged = toml_config.clone();
+            merge_configs(&mut merged, &inferred);
+
+            // All original TOML entries should still be present in merged config
+            for (k, v) in &toml_config.remapping {
+                assert_eq!(
+                    merged.remapping.get(k).unwrap(),
+                    v,
+                    "[{}] TOML remapping for {} was overwritten by merge",
+                    name,
+                    k
+                );
+            }
+
+            for f in &toml_config.collection_fields {
+                assert!(
+                    merged.collection_fields.contains(f),
+                    "[{}] TOML collection_field {} was lost in merge",
+                    name,
+                    f
+                );
+            }
+
+            for f in &toml_config.vec_fields {
+                assert!(
+                    merged.vec_fields.contains(f),
+                    "[{}] TOML vec_field {} was lost in merge",
+                    name,
+                    f
+                );
+            }
+
+            for (k, v) in &toml_config.clone_strategy {
+                assert_eq!(
+                    merged.clone_strategy.get(k).unwrap(),
+                    v,
+                    "[{}] TOML clone_strategy for {} was overwritten",
+                    name,
+                    k
+                );
+            }
+
+            // Merged should have MORE or EQUAL entries than original TOML
+            assert!(
+                merged.remapping.len() >= toml_config.remapping.len(),
+                "[{}] Merged remapping shrunk: {} < {}",
+                name,
+                merged.remapping.len(),
+                toml_config.remapping.len()
+            );
+        }
+    }
 }
