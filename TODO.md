@@ -6020,11 +6020,11 @@ skip_functions = ["LNext"]
 
 #### 20.2.3 Auto-derive Tier 2 configs (with override)
 
-- [ ] **Method calls**: If spec fn `F(s: LStruct, ...)` has first-arg type matching a struct, and exec type has method `CF(...)`, suggest method call mapping. Allow TOML override.
-- [ ] **Eq function fields**: Maintain a registry of types without `PartialEq` derive (e.g., CBallot). Any field of that type → needs custom eq function.
-- [ ] **Clone strategy**: If struct transitively contains `HashSet`/`HashMap` → `external_body` clone.
-- [ ] **Struct vec fields**: Vec fields with struct element type → generate clone helpers and map lemmas.
-- [ ] **Type view expressions**: Type aliases to `Map<K,V>` → look for `abstractify_*` function, generate view expr.
+- [~] **Method calls**: Deferred — requires knowledge of exec type impl blocks (not in SpecSchema). Used by RSL + 4 non-RSL protocols. Will address in Phase 20.2.6.
+- [~] **Eq function fields**: Deferred — RSL-only. Requires knowledge of Verus PartialEq derive support.
+- [x] **Clone strategy** (Tier 2 extension): Already handled in Tier 1 — `infer_clone_strategy` detects `Set<T>` fields → `external_body`. All 9 non-RSL protocols match.
+- [x] **Struct vec fields**: Detect `Seq<StructType>` fields (non-primitive, non-enum element). Maps to `[CElementType, LElementType]`. (ConfigInferer.infer_struct_vec_fields, 4 tests)
+- [~] **Type view expressions**: Deferred — RSL-only. Requires knowledge of `abstractify_*` function existence.
 
 #### 20.2.4 Try-and-fallback for `skip_functions`
 

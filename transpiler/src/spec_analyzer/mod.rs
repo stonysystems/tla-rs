@@ -217,6 +217,7 @@ impl<'a> ConfigInferer<'a> {
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
         self.infer_arrow_variants(&mut config);
+        self.infer_struct_vec_fields(&mut config);
         self.infer_default_output(&mut config);
 
         config
@@ -453,6 +454,58 @@ impl<'a> ConfigInferer<'a> {
         }
     }
 
+    /// Derive `[struct_vec_fields]` section.
+    ///
+    /// Detects `Seq<StructType>` fields where the element type is a struct
+    /// (not primitive, not enum). Maps field name → `[CElementType, LElementType]`.
+    /// These generate `clone_<field>()` and View-mapped proof helpers.
+    fn infer_struct_vec_fields(&self, config: &mut TranspilerConfig) {
+        let spec_prefix = &self.naming.spec_prefix;
+        let exec_prefix = &self.naming.exec_prefix;
+
+        for struct_def in self.schema.structs.values() {
+            for field in &struct_def.fields {
+                if let Type::Seq(inner) = &field.ty {
+                    // Only for non-primitive struct element types
+                    if let Type::Named(path) = inner.as_ref() {
+                        let type_name =
+                            path.segments.last().unwrap_or(&String::new()).clone();
+
+                        // Skip if primitive
+                        if self.is_primitive_inner_type(inner) {
+                            continue;
+                        }
+
+                        // Skip if enum
+                        if self.schema.enums.contains_key(&type_name) {
+                            continue;
+                        }
+
+                        // It's a struct element type — add to struct_vec_fields
+                        if !config.struct_vec_fields.contains_key(&field.name) {
+                            let exec_type_name = config
+                                .remapping
+                                .get(&type_name)
+                                .cloned()
+                                .unwrap_or_else(|| {
+                                    if type_name.starts_with(spec_prefix) {
+                                        let base = &type_name[spec_prefix.len()..];
+                                        format!("{}{}", exec_prefix, base)
+                                    } else {
+                                        format!("{}{}", exec_prefix, &type_name)
+                                    }
+                                });
+                            config.struct_vec_fields.insert(
+                                field.name.clone(),
+                                vec![exec_type_name, type_name],
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Set default output flags (generate_* all true, standard validity predicate).
     fn infer_default_output(&self, config: &mut TranspilerConfig) {
         config.output.generate_abstraction_fns = true;
@@ -574,6 +627,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
     for (k, v) in &inferred.arrow_variants {
         if !base.arrow_variants.contains_key(k) {
             base.arrow_variants.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Struct vec fields: add inferred entries not in base
+    for (k, v) in &inferred.struct_vec_fields {
+        if !base.struct_vec_fields.contains_key(k) {
+            base.struct_vec_fields.insert(k.clone(), v.clone());
         }
     }
 }
@@ -1836,5 +1896,115 @@ verus! {
             base.arrow_variants.get("bal_2a").unwrap(),
             "CMessage::CMsg2a"
         );
+    }
+
+    // --- Struct vec fields tests ---
+
+    #[test]
+    fn test_infer_struct_vec_fields_basic() {
+        let source = r#"
+verus! {
+    pub struct LLogEntry {
+        pub term: int,
+        pub value: int,
+    }
+
+    pub struct LState {
+        pub log: Seq<LLogEntry>,
+        pub history: Seq<int>,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Seq<LLogEntry> → struct_vec_fields: "log" = ["CLogEntry", "LLogEntry"]
+        assert!(config.struct_vec_fields.contains_key("log"));
+        let log_entry = config.struct_vec_fields.get("log").unwrap();
+        assert_eq!(log_entry[0], "CLogEntry"); // exec type
+        assert_eq!(log_entry[1], "LLogEntry"); // spec type
+
+        // Seq<int> → vec_fields, NOT struct_vec_fields
+        assert!(!config.struct_vec_fields.contains_key("history"));
+        assert!(config.vec_fields.contains(&"history".to_string()));
+    }
+
+    #[test]
+    fn test_infer_struct_vec_fields_skips_enum() {
+        let source = r#"
+verus! {
+    pub enum LPhase {
+        Idle,
+        Active,
+    }
+
+    pub struct LState {
+        pub phases: Seq<LPhase>,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Seq<LPhase> where LPhase is an enum → NOT struct_vec_fields
+        assert!(!config.struct_vec_fields.contains_key("phases"));
+    }
+
+    #[test]
+    fn test_infer_struct_vec_fields_raft() {
+        let types_path = std::path::Path::new("../src/protocol/Raft/types.rs");
+        let proto_path = std::path::Path::new("../src/protocol/Raft/raft.rs");
+        if !types_path.exists() || !proto_path.exists() {
+            return;
+        }
+        let schema = analyze_spec_files(&[types_path, proto_path]).unwrap();
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Raft has log: Seq<LLogEntry> → struct_vec_fields
+        assert!(
+            config.struct_vec_fields.contains_key("log"),
+            "Raft should have 'log' in struct_vec_fields"
+        );
+        let log_entry = config.struct_vec_fields.get("log").unwrap();
+        assert_eq!(log_entry[0], "CLogEntry");
+        assert_eq!(log_entry[1], "LLogEntry");
+    }
+
+    #[test]
+    fn test_infer_struct_vec_fields_merge() {
+        let mut base = TranspilerConfig::default();
+        base.struct_vec_fields.insert(
+            "log".to_string(),
+            vec!["CustomEntry".to_string(), "LEntry".to_string()],
+        );
+
+        let mut inferred = TranspilerConfig::default();
+        inferred.struct_vec_fields.insert(
+            "log".to_string(),
+            vec!["CLogEntry".to_string(), "LLogEntry".to_string()],
+        );
+        inferred.struct_vec_fields.insert(
+            "items".to_string(),
+            vec!["CItem".to_string(), "LItem".to_string()],
+        );
+
+        merge_configs(&mut base, &inferred);
+
+        // Explicit override wins for log
+        assert_eq!(base.struct_vec_fields.get("log").unwrap()[0], "CustomEntry");
+        // Inferred entry added for items
+        assert_eq!(base.struct_vec_fields.get("items").unwrap()[0], "CItem");
     }
 }
