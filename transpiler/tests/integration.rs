@@ -5329,14 +5329,15 @@ fn test_impl_files_stripped_of_dead_code() {
     assert!(!acceptor.contains("lemma_voteLen"), "acceptorimpl.rs should not contain dead lemma_voteLen");
 
     // === ExecutorImpl.rs ===
-    // Should retain: CExecutorExecute (called from ReplicaImpl.rs:732),
-    //   CGetPacketsFromReplies, CClientsInReplies, CUpdateNewCache
+    // Should retain: CExecutorExecute (called from ReplicaImpl.rs:732)
+    // CGetPacketsFromReplies, CClientsInReplies, CUpdateNewCache moved to standalone (Phase 19.3.1)
     let executor = std::fs::read_to_string("../src/implementation/RSL/ExecutorImpl.rs")
         .expect("Failed to read ExecutorImpl.rs");
     assert!(executor.contains("CExecutorExecute"), "ExecutorImpl.rs should retain CExecutorExecute");
-    assert!(executor.contains("CGetPacketsFromReplies"), "ExecutorImpl.rs should retain CGetPacketsFromReplies");
-    assert!(executor.contains("CClientsInReplies"), "ExecutorImpl.rs should retain CClientsInReplies");
-    assert!(executor.contains("CUpdateNewCache"), "ExecutorImpl.rs should retain CUpdateNewCache");
+    // Standalone functions now imported from executor_gen, not defined here
+    assert!(!executor.contains("fn CGetPacketsFromReplies"), "ExecutorImpl.rs should not define CGetPacketsFromReplies (moved to standalone)");
+    assert!(!executor.contains("fn CClientsInReplies"), "ExecutorImpl.rs should not define CClientsInReplies (moved to standalone)");
+    assert!(!executor.contains("fn CUpdateNewCache"), "ExecutorImpl.rs should not define CUpdateNewCache (moved to standalone)");
     // Dead methods
     assert!(!executor.contains("fn CExecutorInit"), "ExecutorImpl.rs should not contain dead CExecutorInit");
     assert!(!executor.contains("fn CExecutorGetDecision"), "ExecutorImpl.rs should not contain dead CExecutorGetDecision");
@@ -5399,13 +5400,59 @@ fn test_impl_files_stripped_of_dead_code() {
     assert!(!proposer.contains("lemma_hashset_insert"), "ProposerImpl.rs should not contain dead lemma_hashset_insert");
 }
 
+/// Phase 19.3.1: Verify executor_gen.rs has no delegate patterns.
+/// All 10 executor functions should be standalone — no CExecutor::method() calls.
+#[test]
+fn test_executor_gen_no_delegate_patterns() {
+    let source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
+        .expect("Failed to read executor_gen.rs");
+
+    // No delegate calls to CExecutor::CGetPacketsFromReplies
+    assert!(
+        !source.contains("CExecutor::CGetPacketsFromReplies"),
+        "executor_gen.rs should not delegate to CExecutor::CGetPacketsFromReplies"
+    );
+
+    // No delegate calls to CExecutor::CClientsInReplies
+    assert!(
+        !source.contains("CExecutor::CClientsInReplies"),
+        "executor_gen.rs should not delegate to CExecutor::CClientsInReplies"
+    );
+
+    // No delegate calls to CExecutor::CUpdateNewCache
+    assert!(
+        !source.contains("CExecutor::CUpdateNewCache"),
+        "executor_gen.rs should not delegate to CExecutor::CUpdateNewCache"
+    );
+
+    // No outbound_packets_to_vec calls
+    assert!(
+        !source.contains("outbound_packets_to_vec"),
+        "executor_gen.rs should not call outbound_packets_to_vec"
+    );
+
+    // CGetPacketsFromReplies should be standalone with decreases clause (recursive)
+    assert!(
+        source.contains("decreases requests.len()"),
+        "CGetPacketsFromReplies should have decreases clause (standalone recursive)"
+    );
+
+    // CExecutor struct constructions (standalone functions construct directly; some branches use clone_up_to_view)
+    let struct_constructions = source.matches("CExecutor {").count();
+    assert!(
+        struct_constructions >= 4,
+        "executor_gen.rs should have >= 4 CExecutor {{}} struct constructions, found {}",
+        struct_constructions
+    );
+}
+
 /// Phase 19.7: Verify impl files are significantly smaller after stripping.
 /// This catches accidental reintroduction of dead code.
 #[test]
 fn test_impl_files_size_after_stripping() {
     let files_and_max_lines = [
         ("../src/implementation/RSL/acceptorimpl.rs", 130),
-        ("../src/implementation/RSL/ExecutorImpl.rs", 300),
+        ("../src/implementation/RSL/ExecutorImpl.rs", 100),
         ("../src/implementation/RSL/ElectionImpl.rs", 200),
         ("../src/implementation/RSL/ProposerImpl.rs", 500),
     ];

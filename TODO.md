@@ -38,8 +38,8 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 
 **What doesn't work yet:**
 - 10 packet-identity assumes in replica_gen.rs — all state `sent_packets =~= ExtractSentPacketsFromIos(ios)`, the irreducible IO trust boundary (runtime faithfully records sent packets)
-- Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CAcceptorProcess1a (acceptorimpl), CExecutorExecute + helpers (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
-- **Generated RSL code still delegates to manual implementations** — proposer_gen (0/12, all standalone), acceptor_gen (0/7, all standalone), replica_gen (20/20 delegates), executor_gen (3 delegates). Phases 19.2/19.4 COMPLETE, Phase 19.7 partial (dead code stripped).
+- Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
+- **Generated RSL code still delegates to manual implementations** — proposer_gen (0/12, all standalone), acceptor_gen (0/7, all standalone), executor_gen (0/10, all standalone), replica_gen (20/20 delegates). Phases 19.2/19.3/19.4 COMPLETE, Phase 19.7 partial (dead code stripped).
 - **election_gen.rs is disabled** — 11 standalone functions are fully generated but commented out in mod.rs; election calls route through ProposerImpl→ElectionImpl instead
 
 **Next steps (priority order):**
@@ -53,7 +53,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1395 total tests (1059 unit + 146 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main + 21 doc-ignored), 585 verified, 0 errors. Phase 19.2 (proposer), 19.4 (acceptor), 19.5 (election), 19.6 (replica), 19.7 (dead code) COMPLETE. Remaining: Phase 19.3 (executor standalone), 10 IO trust boundary assumes.
+**Active work**: 1396 total tests (1059 unit + 147 integration + 53 tla_examples + 43 roundtrip + 38 roundtrip_test + 19 regression + 14 negative + 12 pipeline_e2e + 11 main + 21 doc-ignored), 583 verified, 0 errors. Phase 19.2 (proposer), 19.3 (executor), 19.4 (acceptor), 19.5 (election), 19.6 (replica), 19.7 (dead code) COMPLETE. Remaining: 10 IO trust boundary assumes, replica_gen.rs 20 delegates.
 
 ## Reference
 
@@ -1227,7 +1227,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Strengthened CReplicaConstants::clone_up_to_view ensures with `self == result` (structural equality)
     - Result: 627 verified, 0 errors (up from 624); 1340 transpiler tests pass
   - [ ] Proposer: 12 delegate functions remaining → Phase 19.2
-  - [ ] Executor: 3 delegate helpers remaining → Phase 19.3
+  - [x] Executor: 0 delegates remaining (Phase 19.3 COMPLETE — CGetPacketsFromReplies moved to standalone recursive)
   - [ ] Acceptor: 2 HashMap delegate helpers remaining → Phase 19.4
   - [ ] Election: 11 functions generated but disabled (mod.rs) → Phase 19.5
   - [ ] Replica: 20 delegate functions remaining → Phase 19.6
@@ -5766,19 +5766,21 @@ Recommend Option A for now; Option B is a Verus-level issue.
 
 ### 19.3 Executor: 3 delegate helpers → standalone
 
-**Difficulty**: MEDIUM (isolated helpers, ~150 LOC total)
+**Status**: ✅ COMPLETE (2026-02-20)
 
-Currently executor_gen.rs has 5 standalone functions + 3 that delegate to ExecutorImpl.rs methods:
+All 10 executor functions are now standalone in executor_manual.rs:
+- [x] `CExecutorInit` — standalone with proof block
+- [x] `CExecutorGetDecision` — standalone functional
+- [x] `CClientsInReplies` — external_body standalone (HashMap aggregation)
+- [x] `CUpdateNewCache` — external_body standalone (HashMap merge)
+- [x] `CGetPacketsFromReplies` — standalone recursive (was last delegate, converted from CExecutor::CGetPacketsFromReplies)
+- [x] `CExecutorExecute` — standalone with verified proof block
+- [x] `CExecutorProcessAppStateSupply` — standalone functional
+- [x] `CExecutorProcessAppStateRequest` — standalone functional
+- [x] `CExecutorProcessStartingPhase2` — standalone functional
+- [x] `CExecutorProcessRequest` — standalone functional
 
-- [ ] `CClientsInReplies` — delegates to `CExecutor::CClientsInReplies()` (HashMap aggregation from reply Vec)
-- [ ] `CExecutorExecute` → calls `CExecutor::CUpdateNewCache()` and `CExecutor::CGetPacketsFromReplies()` (reply cache update + packet extraction)
-
-**Strategy**:
-- `CClientsInReplies`: Implement as standalone loop over replies Vec building HashMap. May need `external_body` for HashMap insertion proofs (same pattern as acceptor votes).
-- `CUpdateNewCache`: HashMap merge operation — implement inline or as generated helper with `external_body` for HashMap proof.
-- `CGetPacketsFromReplies`: Loop constructing CPacket Vec from reply cache — implementable inline.
-
-**Note**: `CHandleRequestBatch` is called by CExecutorExecute but it's a state machine operation (external_body) — this stays as trusted external code, not a delegate to ExecutorImpl.
+ExecutorImpl.rs reduced to CExecutorExecute only (~76 LOC, external_body `&mut self` method still called from ReplicaImpl.rs:732). Helper functions (CGetPacketsFromReplies, CClientsInReplies, CUpdateNewCache) removed — CExecutorExecute now calls standalone versions from executor_gen.
 
 ### 19.4 Acceptor: All delegates → standalone ✅ COMPLETE
 
@@ -5896,13 +5898,13 @@ The phases have dependencies:
 ```
 
 **Recommended execution order**:
-1. **Phase 19.5**: Enable election_gen.rs, fix 27 verification errors
-2. **Phase 19.4**: Acceptor HashMap helpers → standalone (small, isolated)
-3. **Phase 19.2.1**: Proposer state-only functions (7 functions, ~200 LOC)
-4. **Phase 19.2.2-3**: Proposer packet-returning functions (4+1 functions, ~370 LOC)
-5. **Phase 19.3**: Executor helpers → standalone (~150 LOC)
-6. **Phase 19.6**: Replica dispatch → standalone (20 functions, largest task)
-7. **Phase 19.7**: Final cleanup and removal
+1. ✅ **Phase 19.5**: Enable election_gen.rs, fix 27 verification errors — COMPLETE
+2. ✅ **Phase 19.4**: Acceptor → all standalone — COMPLETE
+3. ✅ **Phase 19.2.1**: Proposer state-only functions (7 functions) — COMPLETE
+4. ✅ **Phase 19.2.2-3**: Proposer packet-returning functions (5 functions) — COMPLETE
+5. ✅ **Phase 19.3**: Executor → all standalone — COMPLETE
+6. ✅ **Phase 19.6**: Replica dispatch → standalone (20 functions) — COMPLETE
+7. ✅ **Phase 19.7**: Dead code stripping — COMPLETE
 
 ### 19.9 Acceptance Criteria
 
