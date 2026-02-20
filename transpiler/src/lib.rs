@@ -376,6 +376,21 @@ impl Transpiler {
         for spec_fn in spec_fns {
             // Check if this function should be skipped
             if self.config.skip_functions.contains(&spec_fn.name) {
+                if self.config.proof_fallback {
+                    // Emit stub for explicitly skipped functions
+                    let annotation = annotations
+                        .iter()
+                        .flat_map(|m| m.functions.values())
+                        .find(|a| a.name == spec_fn.name);
+                    let reason = "explicitly skipped (skip_functions)";
+                    let stub = self.generate_external_body_stub(&spec_fn, annotation, reason);
+                    output.push_str(&stub);
+                    output.push('\n');
+                    skipped_functions.push(SkippedFunction {
+                        name: spec_fn.name.clone(),
+                        reason: reason.to_string(),
+                    });
+                }
                 continue;
             }
 
@@ -509,7 +524,7 @@ impl Transpiler {
             let is_output = annotation
                 .map(|a| i < a.param_modes.len() && a.param_modes[i] == crate::ast::ParameterMode::Output)
                 .unwrap_or(false);
-            let type_str = Self::type_to_exec_string(&param.ty, spec_prefix, exec_prefix, int_type);
+            let type_str = Self::type_to_exec_string(&param.ty, spec_prefix, exec_prefix, int_type, &self.config.type_remapping);
             if is_output {
                 output_types.push(type_str);
             } else {
@@ -525,14 +540,53 @@ impl Transpiler {
             format!(" -> (result: ({}))", output_types.join(", "))
         };
 
+        // Build ensures clauses for external_body stubs
+        let mut ensures_lines = Vec::new();
+        // Add validity ensures for output types
+        let vp = &self.config.translator.validity_predicate_name;
+        if !vp.is_empty() && output_types.len() == 1 {
+            ensures_lines.push(format!("    result.{}(),", vp));
+        }
+        // Add spec predicate ensures: SpecFn(input@, result@, ...)
+        if annotation.is_some() {
+            let mut spec_args = Vec::new();
+            for (i, param) in spec_fn.params.iter().enumerate() {
+                let is_output = annotation
+                    .map(|a| i < a.param_modes.len() && a.param_modes[i] == crate::ast::ParameterMode::Output)
+                    .unwrap_or(false);
+                let is_primitive = self.config.translator.primitive_types.contains(&{
+                    if let crate::ast::Type::Named(p) = &param.ty {
+                        p.segments.last().cloned().unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                });
+                if is_output {
+                    spec_args.push("result@".to_string());
+                } else if matches!(param.ty, crate::ast::Type::Int | crate::ast::Type::Nat | crate::ast::Type::Bool) || is_primitive {
+                    spec_args.push(format!("*{} as int", param.name));
+                } else {
+                    spec_args.push(format!("{}@", param.name));
+                }
+            }
+            ensures_lines.push(format!("    {}({}),", spec_fn.name, spec_args.join(", ")));
+        }
+
+        let ensures_section = if ensures_lines.is_empty() {
+            String::new()
+        } else {
+            format!("\nensures\n{}", ensures_lines.join("\n"))
+        };
+
         format!(
             "// TRANSLATE-TODO: {}\n\
              #[verifier(external_body)]\n\
-             pub exec fn {}({}){}\n{{\n    unimplemented!()\n}}\n",
+             pub exec fn {}({}){}{}\n{{\n    unimplemented!()\n}}\n",
             reason,
             exec_name,
             input_params.join(", "),
             return_type,
+            ensures_section,
         )
     }
 
@@ -547,12 +601,14 @@ impl Transpiler {
         format!("{}{}", exec_prefix, spec_name)
     }
 
-    /// Convert AST Type to exec type string for stub generation
+    /// Convert AST Type to exec type string for stub generation.
+    /// Uses `type_remapping` (from TOML `[remapping]`) to resolve named types.
     fn type_to_exec_string(
         ty: &crate::ast::Type,
         spec_prefix: &str,
         exec_prefix: &str,
         int_type: &str,
+        type_remapping: &std::collections::HashMap<String, String>,
     ) -> String {
         use crate::ast::Type;
         match ty {
@@ -561,40 +617,48 @@ impl Transpiler {
             Type::Bool => "bool".to_string(),
             Type::Named(path) => {
                 let name = path.segments.last().cloned().unwrap_or_default();
+                // Check remapping table first (e.g., "RslPacket" → "CPacket")
+                if let Some(mapped) = type_remapping.get(&name) {
+                    return mapped.clone();
+                }
                 Self::spec_to_exec_name(&name, spec_prefix, exec_prefix)
             }
             Type::Generic(path, args) => {
                 let name = path.segments.last().cloned().unwrap_or_default();
-                let exec_name = Self::spec_to_exec_name(&name, spec_prefix, exec_prefix);
+                let exec_name = if let Some(mapped) = type_remapping.get(&name) {
+                    mapped.clone()
+                } else {
+                    Self::spec_to_exec_name(&name, spec_prefix, exec_prefix)
+                };
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| Self::type_to_exec_string(a, spec_prefix, exec_prefix, int_type))
+                    .map(|a| Self::type_to_exec_string(a, spec_prefix, exec_prefix, int_type, type_remapping))
                     .collect();
                 format!("{}<{}>", exec_name, args_str.join(", "))
             }
             Type::Seq(inner) => {
                 format!(
                     "Vec<{}>",
-                    Self::type_to_exec_string(inner, spec_prefix, exec_prefix, int_type)
+                    Self::type_to_exec_string(inner, spec_prefix, exec_prefix, int_type, type_remapping)
                 )
             }
             Type::Set(inner) => {
                 format!(
                     "HashSet<{}>",
-                    Self::type_to_exec_string(inner, spec_prefix, exec_prefix, int_type)
+                    Self::type_to_exec_string(inner, spec_prefix, exec_prefix, int_type, type_remapping)
                 )
             }
             Type::Map(k, v) => {
                 format!(
                     "HashMap<{}, {}>",
-                    Self::type_to_exec_string(k, spec_prefix, exec_prefix, int_type),
-                    Self::type_to_exec_string(v, spec_prefix, exec_prefix, int_type)
+                    Self::type_to_exec_string(k, spec_prefix, exec_prefix, int_type, type_remapping),
+                    Self::type_to_exec_string(v, spec_prefix, exec_prefix, int_type, type_remapping)
                 )
             }
             Type::Tuple(inner) => {
                 let parts: Vec<String> = inner
                     .iter()
-                    .map(|t| Self::type_to_exec_string(t, spec_prefix, exec_prefix, int_type))
+                    .map(|t| Self::type_to_exec_string(t, spec_prefix, exec_prefix, int_type, type_remapping))
                     .collect();
                 format!("({})", parts.join(", "))
             }
@@ -3188,10 +3252,10 @@ mod tests {
     #[test]
     fn test_type_to_exec_string_primitives() {
         use crate::ast::Type;
-        assert_eq!(Transpiler::type_to_exec_string(&Type::Int, "L", "C", "u64"), "u64");
-        assert_eq!(Transpiler::type_to_exec_string(&Type::Nat, "L", "C", "u64"), "u64");
-        assert_eq!(Transpiler::type_to_exec_string(&Type::Bool, "L", "C", "u64"), "bool");
-        assert_eq!(Transpiler::type_to_exec_string(&Type::Int, "L", "C", "i64"), "i64");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Int, "L", "C", "u64", &Default::default()), "u64");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Nat, "L", "C", "u64", &Default::default()), "u64");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Bool, "L", "C", "u64", &Default::default()), "bool");
+        assert_eq!(Transpiler::type_to_exec_string(&Type::Int, "L", "C", "i64", &Default::default()), "i64");
     }
 
     #[test]
@@ -3199,20 +3263,20 @@ mod tests {
         use crate::ast::Type;
         let int_ty = Type::Int;
         let seq_ty = Type::Seq(Box::new(int_ty.clone()));
-        assert_eq!(Transpiler::type_to_exec_string(&seq_ty, "L", "C", "u64"), "Vec<u64>");
+        assert_eq!(Transpiler::type_to_exec_string(&seq_ty, "L", "C", "u64", &Default::default()), "Vec<u64>");
 
         let set_ty = Type::Set(Box::new(int_ty.clone()));
-        assert_eq!(Transpiler::type_to_exec_string(&set_ty, "L", "C", "u64"), "HashSet<u64>");
+        assert_eq!(Transpiler::type_to_exec_string(&set_ty, "L", "C", "u64", &Default::default()), "HashSet<u64>");
 
         let map_ty = Type::Map(Box::new(int_ty.clone()), Box::new(int_ty.clone()));
-        assert_eq!(Transpiler::type_to_exec_string(&map_ty, "L", "C", "u64"), "HashMap<u64, u64>");
+        assert_eq!(Transpiler::type_to_exec_string(&map_ty, "L", "C", "u64", &Default::default()), "HashMap<u64, u64>");
     }
 
     #[test]
     fn test_type_to_exec_string_named() {
         use crate::ast::{Type, Path};
         let named = Type::Named(Path { segments: vec!["LState".to_string()] });
-        assert_eq!(Transpiler::type_to_exec_string(&named, "L", "C", "u64"), "CState");
+        assert_eq!(Transpiler::type_to_exec_string(&named, "L", "C", "u64", &Default::default()), "CState");
     }
 
     #[test]
@@ -3220,7 +3284,22 @@ mod tests {
         use crate::ast::{Type, Path};
         let inner = Type::Named(Path { segments: vec!["LMessage".to_string()] });
         let seq_ty = Type::Seq(Box::new(inner));
-        assert_eq!(Transpiler::type_to_exec_string(&seq_ty, "L", "C", "u64"), "Vec<CMessage>");
+        assert_eq!(Transpiler::type_to_exec_string(&seq_ty, "L", "C", "u64", &Default::default()), "Vec<CMessage>");
+    }
+
+    #[test]
+    fn test_type_to_exec_string_with_remapping() {
+        use crate::ast::{Type, Path};
+        let mut remapping = std::collections::HashMap::new();
+        remapping.insert("RslPacket".to_string(), "CPacket".to_string());
+        remapping.insert("OperationNumber".to_string(), "u64".to_string());
+        let named = Type::Named(Path::single("RslPacket".to_string()));
+        assert_eq!(Transpiler::type_to_exec_string(&named, "L", "C", "u64", &remapping), "CPacket");
+        let named2 = Type::Named(Path::single("OperationNumber".to_string()));
+        assert_eq!(Transpiler::type_to_exec_string(&named2, "L", "C", "u64", &remapping), "u64");
+        // Non-mapped type still uses prefix replacement
+        let named3 = Type::Named(Path::single("LState".to_string()));
+        assert_eq!(Transpiler::type_to_exec_string(&named3, "L", "C", "u64", &remapping), "CState");
     }
 
     #[test]

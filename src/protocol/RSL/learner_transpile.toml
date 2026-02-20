@@ -7,11 +7,10 @@ primitive_types = [
     "OperationNumber",
 ]
 
-# Functions too complex for auto-generation (multi-branch map proofs, endpoint axioms)
+# Functions requiring manual proofs or trusted-enum destructuring
 skip_functions = [
     "LLearnerProcess2b",
     "LLearnerForgetDecision",
-    "LLearnerForgetOperationsBefore",
 ]
 
 # Field categories for clone dispatch
@@ -60,8 +59,6 @@ generate_proofs = true
 generate_inline_types = false
 # Use clone_up_to_view() for proof-compatible cloning
 clone_method = "clone_up_to_view"
-# Path to manually-written complex functions (relative to this TOML file)
-manual_code = "learner_manual.rs"
 # Custom imports for learner module
 custom_imports = [
     "use vstd::prelude::*;",

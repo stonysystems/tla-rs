@@ -160,8 +160,27 @@ impl Printer {
                     if let ExecExpr::Block(inner) = stmt {
                         if !inner.is_empty() {
                             self.write("{ ");
-                            self.print_expr(stmt);
-                            self.write(" }");
+                            for (j, inner_stmt) in inner.iter().enumerate() {
+                                self.print_expr(inner_stmt);
+                                // Add semicolons after MethodCall statements to discard
+                                // return values (e.g., HashMap::insert returns Option<V>).
+                                // Let/Assume/etc. already print their own semicolons.
+                                let inner_has_own_semi = matches!(
+                                    inner_stmt,
+                                    ExecExpr::Let { .. }
+                                        | ExecExpr::Assume(_)
+                                        | ExecExpr::Assert(_)
+                                        | ExecExpr::BroadcastUse(_)
+                                        | ExecExpr::GhostVar { .. }
+                                );
+                                let inner_is_last = j == inner.len() - 1;
+                                if !inner_has_own_semi && (!inner_is_last || matches!(inner_stmt, ExecExpr::MethodCall { .. })) {
+                                    self.write("; ");
+                                } else {
+                                    self.write(" ");
+                                }
+                            }
+                            self.write("}");
                         }
                     } else {
                         self.print_expr(stmt);
