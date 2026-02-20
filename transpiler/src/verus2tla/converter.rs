@@ -135,6 +135,9 @@ impl Verus2TlaConverter {
                     self.type_mapper
                         .add_mapping(&name, &target_type.to_tla_type());
                 }
+                TypeDef::Function(_) => {
+                    // Function signatures don't need type registration
+                }
             }
         }
     }
@@ -1483,6 +1486,9 @@ verus! {
                 }
                 crate::types::TypeDef::Alias(a) => {
                     println!("  Alias: {}", a.name);
+                }
+                crate::types::TypeDef::Function(f) => {
+                    println!("  Function: {} ({} params)", f.name, f.params.len());
                 }
             }
         }

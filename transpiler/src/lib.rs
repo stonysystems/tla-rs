@@ -41,6 +41,7 @@ pub mod parser;
 pub mod printer;
 pub mod roundtrip;
 pub mod runtime;
+pub mod spec_analyzer;
 pub mod templates;
 pub mod tla;
 pub mod translator;

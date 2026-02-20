@@ -300,6 +300,12 @@ impl<'a> TypeParser<'a> {
                 continue;
             }
 
+            // Try to parse a spec function signature
+            if let Some(f) = self.try_parse_spec_fn()? {
+                types.push(TypeDef::Function(f));
+                continue;
+            }
+
             // Skip other items
             self.skip_item();
         }
@@ -375,7 +381,13 @@ impl<'a> TypeParser<'a> {
                 continue;
             }
 
-            // Skip other items (functions, etc.) while tracking braces
+            // Try to parse a spec function signature
+            if let Some(f) = self.try_parse_spec_fn()? {
+                types.push(TypeDef::Function(f));
+                continue;
+            }
+
+            // Skip other items while tracking braces
             self.skip_verus_item(&mut brace_depth);
         }
 
@@ -641,6 +653,175 @@ impl<'a> TypeParser<'a> {
         self.try_consume(";");
 
         Ok(Some(TypeAlias { name, generics, ty }))
+    }
+
+    /// Try to parse a spec function signature: `pub open spec fn name(params) -> RetType`
+    /// Only extracts the signature (name, params, return type), skips the body.
+    fn try_parse_spec_fn(&mut self) -> TranspileResult<Option<FunctionSig>> {
+        let start_pos = self.pos;
+
+        // Skip visibility: pub
+        if self.try_consume("pub") {
+            self.skip_whitespace();
+        }
+
+        // Look for "open spec fn" or just "spec fn"
+        let has_open = self.try_consume("open");
+        if has_open {
+            self.skip_whitespace();
+        }
+
+        if !self.try_consume("spec") {
+            self.pos = start_pos;
+            return Ok(None);
+        }
+        self.skip_whitespace();
+
+        if !self.try_consume("fn") {
+            self.pos = start_pos;
+            return Ok(None);
+        }
+        self.skip_whitespace();
+
+        // Parse function name
+        let name = match self.parse_identifier() {
+            Ok(n) => n,
+            Err(_) => {
+                self.pos = start_pos;
+                return Ok(None);
+            }
+        };
+        self.skip_whitespace();
+
+        // Parse generics (optional)
+        let generics = if self.peek() == Some('<') {
+            self.parse_generics()?
+        } else {
+            Generics::default()
+        };
+        self.skip_whitespace();
+
+        // Parse parameter list
+        if self.peek() != Some('(') {
+            self.pos = start_pos;
+            return Ok(None);
+        }
+        self.advance(); // consume '('
+
+        let mut params = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if self.peek() == Some(')') {
+                break;
+            }
+
+            let param_name = self.parse_identifier()?;
+            self.skip_whitespace();
+            self.expect(':')?;
+            self.skip_whitespace();
+            let param_ty = self.parse_type()?;
+            self.skip_whitespace();
+
+            params.push(ParamSig {
+                name: param_name,
+                ty: param_ty,
+            });
+
+            self.try_consume(",");
+        }
+        self.expect(')')?;
+        self.skip_whitespace();
+
+        // Parse return type: -> Type
+        let return_type = if self.try_consume("->") {
+            self.skip_whitespace();
+            self.parse_type()?
+        } else {
+            Type::Bool // default for predicates
+        };
+        self.skip_whitespace();
+
+        // Skip the rest: recommends/requires/ensures clauses and body
+        // We need to find the body block { ... } and skip past it
+        // First skip any clauses before the body block
+        let mut found_body = false;
+        while self.pos < self.content.len() {
+            self.skip_whitespace();
+            if self.peek() == Some('{') {
+                // Found the function body — skip it
+                self.advance(); // consume '{'
+                let mut depth = 1;
+                while depth > 0 && self.pos < self.content.len() {
+                    match self.peek() {
+                        Some('{') => {
+                            depth += 1;
+                            self.advance();
+                        }
+                        Some('}') => {
+                            depth -= 1;
+                            self.advance();
+                        }
+                        Some('/') => {
+                            // Skip comments inside function body
+                            if self.peek_str(2) == Some("//") {
+                                self.skip_until_pattern("\n");
+                            } else if self.peek_str(2) == Some("/*") {
+                                self.advance();
+                                self.advance();
+                                let mut cdepth = 1;
+                                while cdepth > 0 && self.pos < self.content.len() {
+                                    if self.peek_str(2) == Some("/*") {
+                                        cdepth += 1;
+                                        self.advance();
+                                    } else if self.peek_str(2) == Some("*/") {
+                                        cdepth -= 1;
+                                        self.advance();
+                                    }
+                                    self.advance();
+                                }
+                            } else {
+                                self.advance();
+                            }
+                        }
+                        Some('"') => {
+                            // Skip string literals
+                            self.advance();
+                            while self.pos < self.content.len() {
+                                if self.peek() == Some('\\') {
+                                    self.advance();
+                                    self.advance();
+                                } else if self.peek() == Some('"') {
+                                    self.advance();
+                                    break;
+                                } else {
+                                    self.advance();
+                                }
+                            }
+                        }
+                        Some(_) => {
+                            self.advance();
+                        }
+                        None => break,
+                    }
+                }
+                found_body = true;
+                break;
+            }
+            // Skip clause keywords and their content
+            self.advance();
+        }
+
+        if !found_body {
+            // No body found — probably a declaration without body, still valid
+        }
+
+        Ok(Some(FunctionSig {
+            name,
+            generics,
+            params,
+            return_type,
+            is_spec: true,
+        }))
     }
 
     // Helper methods (similar to parser/mod.rs but for type parsing)
@@ -959,6 +1140,7 @@ pub enum TypeDef {
     Struct(StructDef),
     Enum(EnumDef),
     Alias(TypeAlias),
+    Function(FunctionSig),
 }
 
 /// Parse types from a file
@@ -977,6 +1159,7 @@ pub fn build_registry(types: Vec<TypeDef>) -> TypeRegistry {
             TypeDef::Struct(s) => registry.register_struct(s),
             TypeDef::Enum(e) => registry.register_enum(e),
             TypeDef::Alias(a) => registry.register_alias(a),
+            TypeDef::Function(f) => registry.register_function(f),
         }
     }
 
@@ -1186,8 +1369,8 @@ mod tests {
         let mut parser = TypeParser::new(source);
         let types = parser.parse_types().unwrap();
 
-        // Should parse the struct from inside the verus! block
-        assert_eq!(types.len(), 1);
+        // Should parse the struct + function from inside the verus! block
+        assert_eq!(types.len(), 2);
         match &types[0] {
             TypeDef::Struct(s) => {
                 assert_eq!(s.name, "LAcceptor");
@@ -1200,6 +1383,13 @@ mod tests {
                 assert_eq!(s.fields[4].name, "log_truncation_point");
             }
             _ => panic!("Expected struct"),
+        }
+        match &types[1] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "LAcceptorInit");
+                assert_eq!(f.params.len(), 1);
+            }
+            _ => panic!("Expected function"),
         }
     }
 
@@ -1227,8 +1417,8 @@ mod tests {
         let mut parser = TypeParser::new(source);
         let types = parser.parse_types().unwrap();
 
-        // Should parse struct, type alias, and enum from inside verus! block
-        assert_eq!(types.len(), 3);
+        // Should parse struct, type alias, enum, and function from inside verus! block
+        assert_eq!(types.len(), 4);
 
         // Check struct
         match &types[0] {
@@ -1253,6 +1443,15 @@ mod tests {
                 assert_eq!(e.variants.len(), 2);
             }
             _ => panic!("Expected enum at index 2"),
+        }
+
+        // Check function
+        match &types[3] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "some_pred");
+                assert_eq!(f.params.len(), 1);
+            }
+            _ => panic!("Expected function at index 3"),
         }
     }
 
@@ -1285,14 +1484,28 @@ mod tests {
         let mut parser = TypeParser::new(source);
         let types = parser.parse_types().unwrap();
 
-        // Should only parse the struct, skipping the functions
-        assert_eq!(types.len(), 1);
+        // Should parse the struct + 2 functions
+        assert_eq!(types.len(), 3);
         match &types[0] {
             TypeDef::Struct(s) => {
                 assert_eq!(s.name, "LState");
                 assert_eq!(s.fields.len(), 1);
             }
             _ => panic!("Expected struct"),
+        }
+        match &types[1] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "complex_pred");
+                assert_eq!(f.params.len(), 2);
+            }
+            _ => panic!("Expected function complex_pred"),
+        }
+        match &types[2] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "another_fn");
+                assert_eq!(f.params.len(), 2);
+            }
+            _ => panic!("Expected function another_fn"),
         }
     }
 
@@ -1326,7 +1539,8 @@ verus! {
         let mut parser = TypeParser::new(source);
         let types = parser.parse_types().unwrap();
 
-        assert_eq!(types.len(), 1);
+        // Struct + 2 functions
+        assert_eq!(types.len(), 3);
         match &types[0] {
             TypeDef::Struct(s) => {
                 assert_eq!(s.name, "LAcceptor");
@@ -1354,6 +1568,21 @@ verus! {
                 }
             }
             _ => panic!("Expected struct"),
+        }
+        // Check functions parsed from no-space-after-colon format
+        match &types[1] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "IsLogTruncationPointValid");
+                assert_eq!(f.params.len(), 3);
+            }
+            _ => panic!("Expected function IsLogTruncationPointValid"),
+        }
+        match &types[2] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "RemoveVotesBeforeLogTruncationPoint");
+                assert_eq!(f.params.len(), 3);
+            }
+            _ => panic!("Expected function RemoveVotesBeforeLogTruncationPoint"),
         }
     }
 

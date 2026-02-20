@@ -480,6 +480,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             }
                             registry.register_alias(alias);
                         }
+                        TypeDef::Function(func) => {
+                            if cli.verbose {
+                                eprintln!("  Found spec function: {}", func.name);
+                            }
+                            registry.register_function(func);
+                        }
                     }
                 }
             }
