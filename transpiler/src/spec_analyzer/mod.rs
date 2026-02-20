@@ -23,6 +23,8 @@
 //! assert!(schema.functions.contains_key("LInit"));
 //! ```
 
+use crate::ast::Type;
+use crate::config::{NamingConfig, TranspilerConfig};
 use crate::error::TranspileResult;
 use crate::types::{
     build_registry, parse_types_from_file, EnumDef, FieldDef, FunctionSig, StructDef, TypeAlias,
@@ -180,6 +182,333 @@ pub fn analyze_spec_files<P: AsRef<Path>>(paths: &[P]) -> TranspileResult<SpecSc
         schema.merge(file_schema);
     }
     Ok(schema)
+}
+
+/// Infers `TranspilerConfig` fields from a `SpecSchema`.
+///
+/// Given a spec schema (types + functions) and naming conventions, derives
+/// Tier 1 config sections that are mechanically determinable:
+/// - `[remapping]`: L→C type name mappings
+/// - `[variant_remapping]`: enum variant → qualified exec path
+/// - Field classification: `collection_fields`, `vec_fields`, `clone_fields`, etc.
+/// - `clone_field_types`: maps clone_fields to their exec enum type
+/// - `clone_strategy`: `external_body` for structs with HashSet fields
+/// - `spec_only_functions`: functions with no output-mode params
+///
+/// The returned config is partial — callers should merge it with explicit TOML
+/// overrides (explicit entries take precedence over auto-derived ones).
+pub struct ConfigInferer<'a> {
+    schema: &'a SpecSchema,
+    naming: &'a NamingConfig,
+}
+
+impl<'a> ConfigInferer<'a> {
+    pub fn new(schema: &'a SpecSchema, naming: &'a NamingConfig) -> Self {
+        Self { schema, naming }
+    }
+
+    /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
+    pub fn infer(&self) -> TranspilerConfig {
+        let mut config = TranspilerConfig::default();
+        config.naming = self.naming.clone();
+
+        self.infer_remapping(&mut config);
+        self.infer_variant_remapping(&mut config);
+        self.infer_field_classification(&mut config);
+        self.infer_clone_strategy(&mut config);
+        self.infer_default_output(&mut config);
+
+        config
+    }
+
+    /// Derive `[remapping]` section: L→C type name mappings.
+    ///
+    /// Rules:
+    /// 1. Every struct/enum with `spec_prefix` gets mapped to `exec_prefix` equivalent
+    /// 2. Message enum variants get identity mappings (prevent double-prefixing)
+    fn infer_remapping(&self, config: &mut TranspilerConfig) {
+        let spec_prefix = &self.naming.spec_prefix;
+        let exec_prefix = &self.naming.exec_prefix;
+
+        // Map all struct names
+        for name in &self.schema.struct_order {
+            if name.starts_with(spec_prefix) {
+                let base = &name[spec_prefix.len()..];
+                let exec_name = format!("{}{}", exec_prefix, base);
+                config.remapping.insert(name.clone(), exec_name);
+            }
+        }
+
+        // Map all enum names + add identity mappings for variants
+        for name in &self.schema.enum_order {
+            if name.starts_with(spec_prefix) {
+                let base = &name[spec_prefix.len()..];
+                let exec_name = format!("{}{}", exec_prefix, base);
+                config.remapping.insert(name.clone(), exec_name);
+            }
+
+            // Add identity mappings for all enum variants to prevent double-prefixing
+            if let Some(enum_def) = self.schema.enums.get(name) {
+                for variant in &enum_def.variants {
+                    // Only add if not already mapped and variant name doesn't start with prefix
+                    if !config.remapping.contains_key(&variant.name) {
+                        config
+                            .remapping
+                            .insert(variant.name.clone(), variant.name.clone());
+                    }
+                }
+            }
+        }
+
+        // Map type aliases
+        for name in &self.schema.alias_order {
+            if name.starts_with(spec_prefix) {
+                let base = &name[spec_prefix.len()..];
+                let exec_name = format!("{}{}", exec_prefix, base);
+                config.remapping.insert(name.clone(), exec_name);
+            }
+        }
+    }
+
+    /// Derive `[variant_remapping]` section: bare variant → `CEnum::Variant`.
+    ///
+    /// For each enum that has a field in a state struct (LState/LConstants),
+    /// map each variant to its fully-qualified C-prefixed enum path.
+    fn infer_variant_remapping(&self, config: &mut TranspilerConfig) {
+        let spec_prefix = &self.naming.spec_prefix;
+        let exec_prefix = &self.naming.exec_prefix;
+
+        // Find which enums are used as fields in state structs
+        let field_enum_types = self.collect_field_enum_types();
+
+        for enum_name in &field_enum_types {
+            let exec_enum_name = if enum_name.starts_with(spec_prefix) {
+                let base = &enum_name[spec_prefix.len()..];
+                format!("{}{}", exec_prefix, base)
+            } else {
+                format!("{}{}", exec_prefix, enum_name)
+            };
+
+            if let Some(enum_def) = self.schema.enums.get(enum_name) {
+                for variant in &enum_def.variants {
+                    config.variant_remapping.insert(
+                        variant.name.clone(),
+                        format!("{}::{}", exec_enum_name, variant.name),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Derive field classification from struct field types.
+    ///
+    /// Examines all fields across all structs (primarily LState and LConstants):
+    /// - `Set<T>` → `collection_fields`
+    /// - `Seq<T>` where T is primitive (int/nat/u64) → `vec_fields`
+    /// - `Map<K,V>` where both K,V are primitive → `hashmap_index_fields`
+    /// - Enum-typed fields → `clone_fields` + `clone_field_types`
+    fn infer_field_classification(&self, config: &mut TranspilerConfig) {
+        let spec_prefix = &self.naming.spec_prefix;
+        let exec_prefix = &self.naming.exec_prefix;
+
+        // Collect all enum names for detecting enum-typed fields
+        let enum_names: Vec<String> = self.schema.enums.keys().cloned().collect();
+
+        for struct_def in self.schema.structs.values() {
+            for field in &struct_def.fields {
+                match &field.ty {
+                    Type::Set(_) => {
+                        if !config.collection_fields.contains(&field.name) {
+                            config.collection_fields.push(field.name.clone());
+                        }
+                    }
+                    Type::Seq(inner) => {
+                        if self.is_primitive_inner_type(inner) {
+                            if !config.vec_fields.contains(&field.name) {
+                                config.vec_fields.push(field.name.clone());
+                            }
+                        }
+                        // Seq<StructType> → struct_vec_fields handled in Tier 2
+                    }
+                    Type::Map(key_ty, val_ty) => {
+                        if self.is_primitive_inner_type(key_ty)
+                            && self.is_primitive_inner_type(val_ty)
+                        {
+                            if !config.hashmap_index_fields.contains(&field.name) {
+                                config.hashmap_index_fields.push(field.name.clone());
+                            }
+                        }
+                        // Map with complex value types → map_fields handled in Tier 2
+                    }
+                    Type::Named(path) => {
+                        let type_name = path.segments.last().unwrap_or(&String::new()).clone();
+                        // Check if this is an enum type → clone_fields
+                        if enum_names.contains(&type_name) {
+                            if !config.clone_fields.contains(&field.name) {
+                                config.clone_fields.push(field.name.clone());
+                            }
+                            // Derive clone_field_types: field → CEnumName
+                            let exec_enum_name = if type_name.starts_with(spec_prefix) {
+                                let base = &type_name[spec_prefix.len()..];
+                                format!("{}{}", exec_prefix, base)
+                            } else {
+                                format!("{}{}", exec_prefix, &type_name)
+                            };
+                            config
+                                .clone_field_types
+                                .insert(field.name.clone(), exec_enum_name);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Derive `[clone_strategy]` section.
+    ///
+    /// Any exec struct that contains a `Set<T>` field (becomes `HashSet` in exec)
+    /// needs `external_body` clone strategy.
+    fn infer_clone_strategy(&self, config: &mut TranspilerConfig) {
+        let spec_prefix = &self.naming.spec_prefix;
+        let exec_prefix = &self.naming.exec_prefix;
+
+        for (struct_name, struct_def) in &self.schema.structs {
+            let has_set_field = struct_def
+                .fields
+                .iter()
+                .any(|f| matches!(&f.ty, Type::Set(_)));
+
+            if has_set_field {
+                let exec_name = if struct_name.starts_with(spec_prefix) {
+                    let base = &struct_name[spec_prefix.len()..];
+                    format!("{}{}", exec_prefix, base)
+                } else {
+                    struct_name.clone()
+                };
+                config
+                    .clone_strategy
+                    .insert(exec_name, "external_body".to_string());
+            }
+        }
+    }
+
+    /// Set default output flags (generate_* all true, standard validity predicate).
+    fn infer_default_output(&self, config: &mut TranspilerConfig) {
+        config.output.generate_abstraction_fns = true;
+        config.output.generate_validity_predicates = true;
+        config.output.validity_predicate_name = "valid".to_string();
+        config.output.generate_clone = true;
+        config.output.generate_loops_for_verification = true;
+        config.output.generate_proofs = true;
+        config.output.generate_inline_types = false;
+    }
+
+    /// Collect enum type names that appear as struct fields.
+    fn collect_field_enum_types(&self) -> Vec<String> {
+        let mut result = Vec::new();
+        let enum_names: Vec<String> = self.schema.enums.keys().cloned().collect();
+
+        for struct_def in self.schema.structs.values() {
+            for field in &struct_def.fields {
+                if let Type::Named(path) = &field.ty {
+                    if let Some(last) = path.segments.last() {
+                        if enum_names.contains(last) && !result.contains(last) {
+                            result.push(last.clone());
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Check if a type is "primitive" for field classification purposes.
+    /// Primitive means: int, nat, bool, or a named type that resolves to a
+    /// primitive via type alias (e.g., `OperationNumber = u64`).
+    fn is_primitive_inner_type(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Int | Type::Nat | Type::Bool => true,
+            Type::Named(path) => {
+                let name = path.segments.last().unwrap_or(&String::new()).clone();
+                // Check well-known primitives
+                if matches!(
+                    name.as_str(),
+                    "int" | "nat" | "u64" | "i64" | "u32" | "i32" | "usize" | "bool"
+                ) {
+                    return true;
+                }
+                // Check if it's a type alias to a primitive
+                if let Some(alias) = self.schema.aliases.get(&name) {
+                    return self.is_primitive_inner_type(&alias.ty);
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Merge an auto-inferred config with a manually-written one.
+///
+/// Explicit TOML entries take precedence over auto-derived values.
+/// Only empty/default fields in `base` get filled from `inferred`.
+pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
+    // Remapping: add inferred entries that aren't already in base
+    for (k, v) in &inferred.remapping {
+        if !base.remapping.contains_key(k) {
+            base.remapping.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Variant remapping: add inferred entries not in base
+    for (k, v) in &inferred.variant_remapping {
+        if !base.variant_remapping.contains_key(k) {
+            base.variant_remapping.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Collection fields: add inferred entries not in base
+    for f in &inferred.collection_fields {
+        if !base.collection_fields.contains(f) {
+            base.collection_fields.push(f.clone());
+        }
+    }
+
+    // Vec fields: add inferred entries not in base
+    for f in &inferred.vec_fields {
+        if !base.vec_fields.contains(f) {
+            base.vec_fields.push(f.clone());
+        }
+    }
+
+    // Hashmap index fields: add inferred entries not in base
+    for f in &inferred.hashmap_index_fields {
+        if !base.hashmap_index_fields.contains(f) {
+            base.hashmap_index_fields.push(f.clone());
+        }
+    }
+
+    // Clone fields: add inferred entries not in base
+    for f in &inferred.clone_fields {
+        if !base.clone_fields.contains(f) {
+            base.clone_fields.push(f.clone());
+        }
+    }
+
+    // Clone field types: add inferred entries not in base
+    for (k, v) in &inferred.clone_field_types {
+        if !base.clone_field_types.contains_key(k) {
+            base.clone_field_types.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Clone strategy: add inferred entries not in base
+    for (k, v) in &inferred.clone_strategy {
+        if !base.clone_strategy.contains_key(k) {
+            base.clone_strategy.insert(k.clone(), v.clone());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -714,5 +1043,588 @@ verus! {
                 }
             }
         }
+    }
+
+    // --- ConfigInferer tests ---
+
+    fn default_naming() -> NamingConfig {
+        NamingConfig {
+            spec_prefix: "L".to_string(),
+            exec_prefix: "C".to_string(),
+            int_type: "u64".to_string(),
+            nat_type: "u64".to_string(),
+            ..NamingConfig::default()
+        }
+    }
+
+    #[test]
+    fn test_infer_remapping_basic() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub value: int,
+    }
+
+    pub struct LConstants {
+        pub num_rms: int,
+    }
+
+    pub enum LTMState {
+        Init,
+        Committed,
+        Aborted,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Struct remappings
+        assert_eq!(config.remapping.get("LState").unwrap(), "CState");
+        assert_eq!(config.remapping.get("LConstants").unwrap(), "CConstants");
+
+        // Enum remapping
+        assert_eq!(config.remapping.get("LTMState").unwrap(), "CTMState");
+
+        // Variant identity mappings (prevent double-prefixing)
+        assert_eq!(config.remapping.get("Init").unwrap(), "Init");
+        assert_eq!(config.remapping.get("Committed").unwrap(), "Committed");
+        assert_eq!(config.remapping.get("Aborted").unwrap(), "Aborted");
+    }
+
+    #[test]
+    fn test_infer_variant_remapping() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub tm_state: LTMState,
+    }
+
+    pub enum LTMState {
+        Init,
+        Committed,
+        Aborted,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Variant remapping: bare name → CEnumName::Variant
+        assert_eq!(
+            config.variant_remapping.get("Init").unwrap(),
+            "CTMState::Init"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Committed").unwrap(),
+            "CTMState::Committed"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Aborted").unwrap(),
+            "CTMState::Aborted"
+        );
+    }
+
+    #[test]
+    fn test_infer_variant_remapping_only_field_enums() {
+        // Enums NOT used as struct fields should NOT get variant remapping
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub value: int,
+    }
+
+    pub enum LUnusedEnum {
+        A,
+        B,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // No variant remapping since the enum is not used as a field
+        assert!(config.variant_remapping.is_empty());
+    }
+
+    #[test]
+    fn test_infer_collection_fields() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub prepared: Set<int>,
+        pub committed: Set<int>,
+        pub value: int,
+    }
+
+    pub struct LConstants {
+        pub nodes: Set<int>,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Set<T> fields → collection_fields
+        assert!(config.collection_fields.contains(&"prepared".to_string()));
+        assert!(config.collection_fields.contains(&"committed".to_string()));
+        assert!(config.collection_fields.contains(&"nodes".to_string()));
+        assert_eq!(config.collection_fields.len(), 3);
+    }
+
+    #[test]
+    fn test_infer_vec_fields() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub history: Seq<int>,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        assert!(config.vec_fields.contains(&"history".to_string()));
+    }
+
+    #[test]
+    fn test_infer_hashmap_index_fields() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub match_index: Map<u64, u64>,
+        pub next_index: Map<u64, u64>,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        assert!(
+            config
+                .hashmap_index_fields
+                .contains(&"match_index".to_string())
+        );
+        assert!(
+            config
+                .hashmap_index_fields
+                .contains(&"next_index".to_string())
+        );
+    }
+
+    #[test]
+    fn test_infer_clone_fields_and_types() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub role: LServerRole,
+        pub term: int,
+    }
+
+    pub enum LServerRole {
+        Follower,
+        Candidate,
+        Leader,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Enum-typed fields → clone_fields
+        assert!(config.clone_fields.contains(&"role".to_string()));
+        assert_eq!(config.clone_fields.len(), 1);
+
+        // clone_field_types: field → CEnumName
+        assert_eq!(
+            config.clone_field_types.get("role").unwrap(),
+            "CServerRole"
+        );
+    }
+
+    #[test]
+    fn test_infer_clone_strategy() {
+        let source = r#"
+verus! {
+    pub struct LState {
+        pub prepared: Set<int>,
+        pub value: int,
+    }
+
+    pub struct LConstants {
+        pub nodes: Set<int>,
+    }
+
+    pub struct LConfig {
+        pub count: int,
+    }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Structs with Set fields need external_body clone
+        assert_eq!(
+            config.clone_strategy.get("CState").unwrap(),
+            "external_body"
+        );
+        assert_eq!(
+            config.clone_strategy.get("CConstants").unwrap(),
+            "external_body"
+        );
+        // Structs without Set fields should NOT have external_body
+        assert!(!config.clone_strategy.contains_key("CConfig"));
+    }
+
+    #[test]
+    fn test_infer_default_output_flags() {
+        let schema = SpecSchema::new();
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        assert!(config.output.generate_abstraction_fns);
+        assert!(config.output.generate_validity_predicates);
+        assert_eq!(config.output.validity_predicate_name, "valid");
+        assert!(config.output.generate_clone);
+        assert!(config.output.generate_loops_for_verification);
+        assert!(config.output.generate_proofs);
+        assert!(!config.output.generate_inline_types);
+    }
+
+    #[test]
+    fn test_merge_configs_explicit_overrides_inferred() {
+        let mut base = TranspilerConfig::default();
+        base.remapping
+            .insert("LState".to_string(), "MyCustomState".to_string());
+
+        let mut inferred = TranspilerConfig::default();
+        inferred
+            .remapping
+            .insert("LState".to_string(), "CState".to_string());
+        inferred
+            .remapping
+            .insert("LConstants".to_string(), "CConstants".to_string());
+        inferred.collection_fields.push("prepared".to_string());
+
+        merge_configs(&mut base, &inferred);
+
+        // Explicit override wins
+        assert_eq!(base.remapping.get("LState").unwrap(), "MyCustomState");
+        // Inferred entry added where base was empty
+        assert_eq!(base.remapping.get("LConstants").unwrap(), "CConstants");
+        assert!(base.collection_fields.contains(&"prepared".to_string()));
+    }
+
+    #[test]
+    fn test_infer_twophase_matches_toml() {
+        let types_path = std::path::Path::new("../src/protocol/TwoPhase/types.rs");
+        let proto_path = std::path::Path::new("../src/protocol/TwoPhase/twophase.rs");
+        if !types_path.exists() || !proto_path.exists() {
+            return;
+        }
+        let schema = analyze_spec_files(&[types_path, proto_path]).unwrap();
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Check remappings match what the existing TOML has
+        assert_eq!(config.remapping.get("LState").unwrap(), "CState");
+        assert_eq!(config.remapping.get("LConstants").unwrap(), "CConstants");
+        assert_eq!(config.remapping.get("LTMState").unwrap(), "CTMState");
+        assert_eq!(config.remapping.get("LRMState").unwrap(), "CRMState");
+        assert_eq!(
+            config.remapping.get("LTPCMessage").unwrap(),
+            "CTPCMessage"
+        );
+
+        // Variant identity mappings
+        assert_eq!(config.remapping.get("Prepare").unwrap(), "Prepare");
+        assert_eq!(config.remapping.get("Commit").unwrap(), "Commit");
+
+        // Variant remapping (LTMState is used as field in LState)
+        assert_eq!(
+            config.variant_remapping.get("Init").unwrap(),
+            "CTMState::Init"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Committed").unwrap(),
+            "CTMState::Committed"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Aborted").unwrap(),
+            "CTMState::Aborted"
+        );
+
+        // Collection fields (Set<int> fields)
+        assert!(config.collection_fields.contains(&"tm_prepared".to_string()));
+        assert!(config.collection_fields.contains(&"rm_prepared".to_string()));
+        assert!(
+            config
+                .collection_fields
+                .contains(&"rm_committed".to_string())
+        );
+        assert!(config.collection_fields.contains(&"rm_aborted".to_string()));
+        assert!(config.collection_fields.contains(&"rm".to_string()));
+
+        // Clone fields (enum-typed)
+        assert!(config.clone_fields.contains(&"tm_state".to_string()));
+        assert_eq!(
+            config.clone_field_types.get("tm_state").unwrap(),
+            "CTMState"
+        );
+
+        // Clone strategy (LState has Set fields)
+        assert_eq!(
+            config.clone_strategy.get("CState").unwrap(),
+            "external_body"
+        );
+    }
+
+    #[test]
+    fn test_infer_paxos_matches_toml() {
+        let types_path = std::path::Path::new("../src/protocol/Paxos/types.rs");
+        let proto_path = std::path::Path::new("../src/protocol/Paxos/paxos.rs");
+        if !types_path.exists() || !proto_path.exists() {
+            return;
+        }
+        let schema = analyze_spec_files(&[types_path, proto_path]).unwrap();
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Remappings
+        assert_eq!(config.remapping.get("LState").unwrap(), "CState");
+        assert_eq!(config.remapping.get("LPhase").unwrap(), "CPhase");
+
+        // Variant remapping (LPhase used as field in LState)
+        assert_eq!(
+            config.variant_remapping.get("Idle").unwrap(),
+            "CPhase::Idle"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Phase1").unwrap(),
+            "CPhase::Phase1"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Phase2").unwrap(),
+            "CPhase::Phase2"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Decided").unwrap(),
+            "CPhase::Decided"
+        );
+
+        // Collection fields
+        assert!(
+            config
+                .collection_fields
+                .contains(&"promises_rcvd".to_string())
+        );
+        assert!(
+            config
+                .collection_fields
+                .contains(&"accepts_rcvd".to_string())
+        );
+
+        // Clone fields
+        assert!(config.clone_fields.contains(&"phase".to_string()));
+        assert_eq!(
+            config.clone_field_types.get("phase").unwrap(),
+            "CPhase"
+        );
+    }
+
+    #[test]
+    fn test_infer_raft_matches_toml() {
+        let types_path = std::path::Path::new("../src/protocol/Raft/types.rs");
+        let proto_path = std::path::Path::new("../src/protocol/Raft/raft.rs");
+        if !types_path.exists() || !proto_path.exists() {
+            return;
+        }
+        let schema = analyze_spec_files(&[types_path, proto_path]).unwrap();
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Remappings
+        assert_eq!(config.remapping.get("LState").unwrap(), "CState");
+        assert_eq!(config.remapping.get("LServerRole").unwrap(), "CServerRole");
+        assert_eq!(config.remapping.get("LLogEntry").unwrap(), "CLogEntry");
+
+        // Variant remapping
+        assert_eq!(
+            config.variant_remapping.get("Follower").unwrap(),
+            "CServerRole::Follower"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Candidate").unwrap(),
+            "CServerRole::Candidate"
+        );
+        assert_eq!(
+            config.variant_remapping.get("Leader").unwrap(),
+            "CServerRole::Leader"
+        );
+
+        // Collection fields
+        assert!(
+            config
+                .collection_fields
+                .contains(&"votes_granted".to_string())
+        );
+
+        // Clone fields
+        assert!(config.clone_fields.contains(&"role".to_string()));
+        assert_eq!(
+            config.clone_field_types.get("role").unwrap(),
+            "CServerRole"
+        );
+
+        // Clone strategy
+        assert_eq!(
+            config.clone_strategy.get("CState").unwrap(),
+            "external_body"
+        );
+    }
+
+    #[test]
+    fn test_infer_leaderelection_matches_toml() {
+        let types_path = std::path::Path::new("../src/protocol/LeaderElection/types.rs");
+        let proto_path = std::path::Path::new("../src/protocol/LeaderElection/election.rs");
+        if !types_path.exists() || !proto_path.exists() {
+            return;
+        }
+        let schema = analyze_spec_files(&[types_path, proto_path]).unwrap();
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        // Collection fields
+        assert!(config.collection_fields.contains(&"electing".to_string()));
+        assert!(config.collection_fields.contains(&"alive".to_string()));
+        assert!(config.collection_fields.contains(&"nodes".to_string()));
+    }
+
+    #[test]
+    fn test_infer_all_protocols() {
+        // Verify ConfigInferer doesn't panic for any protocol
+        let protocols = vec![
+            ("TwoPhase", "types.rs", "twophase.rs"),
+            ("Paxos", "types.rs", "paxos.rs"),
+            ("LeaderElection", "types.rs", "election.rs"),
+            ("Raft", "types.rs", "raft.rs"),
+            ("ChainReplication", "types.rs", "chain.rs"),
+            ("PrimaryBackup", "types.rs", "primarybackup.rs"),
+            ("PBFT", "types.rs", "pbft.rs"),
+            ("VerticalPaxos", "types.rs", "vpaxos.rs"),
+            ("EPaxos", "types.rs", "epaxos.rs"),
+        ];
+
+        let naming = default_naming();
+        for (name, types_file, proto_file) in &protocols {
+            let types_path =
+                std::path::PathBuf::from(format!("../src/protocol/{}/{}", name, types_file));
+            let proto_path =
+                std::path::PathBuf::from(format!("../src/protocol/{}/{}", name, proto_file));
+
+            if !types_path.exists() || !proto_path.exists() {
+                continue;
+            }
+
+            let schema =
+                analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+            let inferer = ConfigInferer::new(&schema, &naming);
+            let config = inferer.infer();
+
+            // Every protocol should have LState→CState mapping
+            assert!(
+                config.remapping.contains_key("LState"),
+                "{}: missing LState remapping",
+                name
+            );
+            assert_eq!(
+                config.remapping.get("LState").unwrap(),
+                "CState",
+                "{}: wrong LState remapping",
+                name
+            );
+
+            // Every protocol should have LConstants→CConstants mapping
+            assert!(
+                config.remapping.contains_key("LConstants"),
+                "{}: missing LConstants remapping",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_primitive_inner_type() {
+        let mut schema = SpecSchema::new();
+        // Add a type alias that resolves to a primitive
+        schema.aliases.insert(
+            "OperationNumber".to_string(),
+            TypeAlias {
+                name: "OperationNumber".to_string(),
+                generics: Generics::default(),
+                ty: Type::Int,
+            },
+        );
+
+        let naming = default_naming();
+        let inferer = ConfigInferer::new(&schema, &naming);
+
+        assert!(inferer.is_primitive_inner_type(&Type::Int));
+        assert!(inferer.is_primitive_inner_type(&Type::Nat));
+        assert!(inferer.is_primitive_inner_type(&Type::Bool));
+        assert!(inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
+            "u64".to_string()
+        ))));
+        assert!(inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
+            "OperationNumber".to_string()
+        ))));
+        assert!(!inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
+            "LBallot".to_string()
+        ))));
     }
 }

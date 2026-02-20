@@ -5997,28 +5997,26 @@ skip_functions = ["LNext"]
 
 #### 20.2.1 Spec Analyzer: type/field/variant extraction
 
-- [ ] Add `SpecAnalyzer` module to transpiler that parses spec `.rs` files and extracts:
+- [x] Add `SpecAnalyzer` module to transpiler that parses spec `.rs` files and extracts:
   - All `struct` definitions with field names and types
   - All `enum` definitions with variant names and field names
   - All `spec fn` signatures (name, params, return type)
   - All type aliases (`type Votes = Map<OperationNumber, Vote>`)
-- [ ] Build a `SpecSchema` data structure containing the above
-- [ ] Unit tests: parse each of the 10 protocol specs, verify extracted schema matches expectations
+- [x] Build a `SpecSchema` data structure containing the above
+- [x] Unit tests: parse each of the 10 protocol specs, verify extracted schema matches expectations (20 tests, 1078 total)
 
 #### 20.2.2 Auto-derive Tier 1 configs
 
-- [ ] **Remapping**: From `SpecSchema`, apply naming prefix rule (`L→C`, user-configurable) to all struct/enum names. Add known primitives (`OperationNumber→u64`, `AbstractEndPoint→EndPoint`).
-- [ ] **Variant remapping**: Enumerate enum variants, generate `"VariantName" = "CEnumName::VariantName"` entries.
+- [x] **Remapping**: From `SpecSchema`, apply naming prefix rule (`L→C`, user-configurable) to all struct/enum names. Includes enum variant identity mappings to prevent double-prefixing. (ConfigInferer.infer_remapping, 15 tests)
+- [x] **Variant remapping**: Enumerate enum variants used as struct fields, generate `"VariantName" = "CEnumName::VariantName"` entries. Only maps enums that appear as struct field types. (ConfigInferer.infer_variant_remapping)
 - [ ] **Arrow variants**: For each `msg->field` pattern in spec fn bodies, find which enum variant contains that field. Build `field→variant` map.
-- [ ] **Field classification**: From struct field types in SpecSchema:
-  - `Seq<T>` → `vec_fields`
-  - `Set<T>` → `collection_fields`
-  - `Map<K,V>` → `hashmap_index_fields`
-  - Primitive remap target → `primitive_types`
+- [x] **Field classification**: From struct field types in SpecSchema: `Set<T>` → `collection_fields`, `Seq<primitive>` → `vec_fields`, `Map<prim,prim>` → `hashmap_index_fields`, enum-typed → `clone_fields` + `clone_field_types`. (ConfigInferer.infer_field_classification)
 - [ ] **Spec-only functions**: Functions in spec that have no output-mode param in `.automan` and are referenced in requires/ensures of other functions.
 - [ ] **Function paths**: Search already-generated modules for matching function names to build cross-module call paths.
-- [ ] **Default imports**: Auto-generate standard imports based on field types (HashMap→`std::collections::HashMap`, etc.)
-- [ ] **Default output flags**: Set all `generate_*` to sensible defaults (true), only require override in TOML.
+- [x] **Default imports**: Auto-generate standard imports based on field types (HashMap→`std::collections::HashMap`, etc.)
+- [x] **Default output flags**: Set all `generate_*` to sensible defaults (true), only require override in TOML. (ConfigInferer.infer_default_output)
+- [x] **Clone strategy**: Auto-derive `external_body` for structs with `Set<T>` fields. (ConfigInferer.infer_clone_strategy)
+- [x] **Config merge**: `merge_configs()` function merges auto-inferred config with manual TOML — explicit entries take precedence.
 
 #### 20.2.3 Auto-derive Tier 2 configs (with override)
 

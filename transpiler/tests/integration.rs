@@ -555,6 +555,7 @@ fn test_raft_type_generation() {
                 TypeDef::Struct(s) => format!("struct {}", s.name),
                 TypeDef::Enum(e) => format!("enum {}", e.name),
                 TypeDef::Alias(a) => format!("alias {}", a.name),
+                TypeDef::Function(f) => format!("fn {}", f.name),
             })
             .collect::<Vec<_>>()
     );
@@ -852,6 +853,7 @@ fn test_chain_replication_type_generation() {
                 TypeDef::Struct(s) => format!("struct {}", s.name),
                 TypeDef::Enum(e) => format!("enum {}", e.name),
                 TypeDef::Alias(a) => format!("alias {}", a.name),
+                TypeDef::Function(f) => format!("fn {}", f.name),
             })
             .collect::<Vec<_>>()
     );
