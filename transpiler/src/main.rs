@@ -25,6 +25,7 @@
 use clap::{Parser, Subcommand};
 use miette::Result;
 use std::path::{Path, PathBuf};
+use verus_transpiler::spec_analyzer::{analyze_spec_file, ConfigInferer, merge_configs};
 use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfig};
 
 /// Verus Spec-to-Implementation Transpiler
@@ -78,6 +79,11 @@ struct Cli {
     /// Skipped functions are reported to stderr. Use with --verbose for details.
     #[arg(long)]
     auto_skip: bool,
+
+    /// Dump the fully-resolved configuration (auto-derived + TOML overrides) as TOML.
+    /// Useful for debugging what config the transpiler will use.
+    #[arg(long)]
+    dump_config: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -296,12 +302,48 @@ fn main() -> Result<()> {
         }
     }
 
-    // Load configuration if provided
-    let mut config = if let Some(config_path) = &cli.config {
-        load_config(config_path)?
+    // Load TOML configuration (user overrides)
+    let config_path = cli.config.as_deref();
+    let mut file_config = if let Some(cfg_path) = config_path {
+        FileConfig::from_file(cfg_path)
+            .map_err(|e| miette::miette!("Failed to load config: {}", e))?
     } else {
-        TranspilerConfig::default()
+        FileConfig::default()
     };
+
+    // Auto-infer config from spec file and merge with TOML overrides
+    match analyze_spec_file(input) {
+        Ok(schema) => {
+            let inferer = ConfigInferer::new(&schema, &file_config.naming);
+            let inferred = inferer.infer();
+            merge_configs(&mut file_config, &inferred);
+            if cli.verbose {
+                eprintln!(
+                    "Auto-inferred config from spec: {} structs, {} enums, {} type aliases",
+                    schema.structs.len(),
+                    schema.enums.len(),
+                    schema.aliases.len()
+                );
+            }
+        }
+        Err(e) => {
+            if cli.verbose {
+                eprintln!("Note: spec analysis skipped ({})", e);
+            }
+        }
+    }
+
+    // --dump-config: print the resolved config and exit
+    if cli.dump_config {
+        let toml_str = toml::to_string_pretty(&file_config)
+            .map_err(|e| miette::miette!("Failed to serialize config: {}", e))?;
+        println!("{}", toml_str);
+        return Ok(());
+    }
+
+    // Convert FileConfig to internal TranspilerConfig
+    let effective_config_path = config_path.unwrap_or(Path::new("."));
+    let mut config = convert_file_config(file_config, effective_config_path)?;
 
     // Apply --auto-skip flag
     if cli.auto_skip {
@@ -1203,8 +1245,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 fn load_config(path: &Path) -> Result<TranspilerConfig> {
     let file_config =
         FileConfig::from_file(path).map_err(|e| miette::miette!("Failed to load config: {}", e))?;
+    convert_file_config(file_config, path)
+}
 
-    // Convert FileConfig to internal TranspilerConfig
+/// Convert a FileConfig to internal TranspilerConfig.
+/// `config_path` is used for resolving relative paths (e.g., manual_code).
+fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<TranspilerConfig> {
     Ok(TranspilerConfig {
         translator: TranslatorConfig {
             validity_predicate_name: file_config.output.validity_predicate_name,
@@ -1254,8 +1300,8 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
             vec_element_ensures: file_config.vec_element_ensures.clone(),
             set_fields: std::collections::HashSet::new(),
             assume_postconditions: false,
-            spec_prefix: "L".to_string(),
-            exec_prefix: "C".to_string(),
+            spec_prefix: file_config.naming.spec_prefix.clone(),
+            exec_prefix: file_config.naming.exec_prefix.clone(),
             generate_abstraction_fns: false,
             generate_validity_predicates: false,
         },
@@ -1266,7 +1312,7 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
         wrapper_impl_type: file_config.output.wrapper_impl_type,
         skip_functions: file_config.skip_functions,
         manual_code: file_config.output.manual_code.and_then(|rel_path| {
-            let base_dir = path.parent().unwrap_or(Path::new("."));
+            let base_dir = config_path.parent().unwrap_or(Path::new("."));
             let manual_path = base_dir.join(&rel_path);
             std::fs::read_to_string(&manual_path).ok()
         }),
@@ -1615,6 +1661,7 @@ manual_code = "manual_helpers.rs"
             verbose: false,
             dry_run: false,
             auto_skip: false,
+            dump_config: false,
         };
 
         handle_command(&command, &cli).unwrap();
@@ -1776,5 +1823,53 @@ validity_predicate_name = "valid"
 
         let config = load_config(&config_path).unwrap();
         assert!(!config.auto_skip, "auto_skip should default to false from TOML");
+    }
+
+    #[test]
+    fn test_dump_config_cli_flag() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "--input",
+            "test.rs",
+            "--annotations",
+            "test.automan",
+            "--dump-config",
+        ]);
+        assert!(cli.dump_config, "dump_config flag should be set");
+    }
+
+    #[test]
+    fn test_dump_config_default_off() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "--input",
+            "test.rs",
+            "--annotations",
+            "test.automan",
+        ]);
+        assert!(!cli.dump_config, "dump_config should default to false");
+    }
+
+    #[test]
+    fn test_convert_file_config_uses_naming_prefixes() {
+        let file_config = FileConfig {
+            naming: verus_transpiler::config::NamingConfig {
+                spec_prefix: "Spec".to_string(),
+                exec_prefix: "Exec".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let config = convert_file_config(file_config, Path::new(".")).unwrap();
+        assert_eq!(config.translator.spec_prefix, "Spec");
+        assert_eq!(config.translator.exec_prefix, "Exec");
+    }
+
+    #[test]
+    fn test_convert_file_config_default_prefixes() {
+        let file_config = FileConfig::default();
+        let config = convert_file_config(file_config, Path::new(".")).unwrap();
+        assert_eq!(config.translator.spec_prefix, "L");
+        assert_eq!(config.translator.exec_prefix, "C");
     }
 }

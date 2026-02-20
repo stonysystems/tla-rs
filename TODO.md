@@ -6028,13 +6028,16 @@ skip_functions = ["LNext"]
 
 #### 20.2.4 Try-and-fallback for `skip_functions`
 
-- [ ] Add `--auto-skip` mode to transpiler:
-  1. Attempt to transpile all functions
-  2. Catch transpilation errors (unsupported patterns, scoping failures, existential quantifiers)
-  3. Automatically add failed functions to `skip_functions`
-  4. Output a report: "Skipped N functions: [list with reasons]"
-  5. Optionally write updated TOML with auto-populated `skip_functions`
-- [ ] This replaces the current workflow of: try → see error → manually add to skip → retry
+- [x] Add `--auto-skip` mode to transpiler: ✅ **DONE** (da49ccd)
+  1. ✅ Attempt to transpile all functions (per-function error catching in both `transpile_file_inner` and `transpile_source_inner`)
+  2. ✅ Catch transpilation errors (annotation errors + translation errors)
+  3. ✅ Automatically skip failed functions and continue
+  4. ✅ Output a report: "Auto-skipped N function(s): [list with reasons]" to stderr
+  5. ~Deferred: write updated TOML with auto-populated `skip_functions`~ (not needed with auto-skip mode)
+- [x] This replaces the current workflow of: try → see error → manually add to skip → retry
+  - `TranspilerConfig.auto_skip: bool` (default false), `SkippedFunction { name, reason }`
+  - `transpile_source_with_report()` + `transpile_file_with_report()` APIs
+  - `--auto-skip` CLI flag; 8 tests (5 lib.rs + 3 main.rs)
 
 #### 20.2.5 Minimal TOML format
 
@@ -6084,7 +6087,7 @@ skip_functions = ["LNext"]
 - [ ] Transpiler can generate identical output for all 10 protocols using auto-derived config + minimal overrides
 - [ ] A new protocol TOML requires < 20 lines (excluding `[messages]` and `[scheduler]` sections)
 - [ ] `--dump-config` shows full resolved config for debugging
-- [ ] `--auto-skip` mode catches and reports untranspilable functions
+- [x] `--auto-skip` mode catches and reports untranspilable functions ✅
 - [ ] All existing 17 TOMLs continue to work unchanged (backward compatible)
 - [ ] Regression tests verify auto-inference matches existing configs for all protocols
 - [ ] All transpiler tests pass (~1,400)
