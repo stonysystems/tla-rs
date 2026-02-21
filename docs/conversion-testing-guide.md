@@ -547,7 +547,7 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
-#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3b-2)
+#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3b-3)
 
 Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <file>`), captured by
 `test_d1_generated_verus_spec_compile_baseline`.
@@ -557,20 +557,20 @@ Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <fi
 | Total generated D1 spec files | 33 |
 | Compile pass | 2 |
 | Compile fail | 31 |
-| `E0425` unresolved symbol | 5 |
-| `E0423` value/type constructor misuse | 20 |
-| `E0609` unknown field on scalar | 2 |
+| `E0425` unresolved symbol | 0 |
+| `E0423` value/type constructor misuse | 21 |
+| `E0609` unknown field on scalar | 5 |
 | `E0599` missing method on scalar | 3 |
-| `E0308` mismatched types | 1 |
+| `E0308` mismatched types | 2 |
 | `E0618` call on non-function | 0 |
 | Other categories | 0 |
 
 Current pass files: `RSL/Environment.rs`, `RSL/Message.rs`.
 
-Update after `16.8.3b-2` (helper-op lowering + call-head/quantifier normalization):
-- helper unresolveds (`update`, `skip`, `drop_first`) are eliminated
+Update after `16.8.3b-3` (operator/import normalization for residual unresolveds):
+- unresolved-symbol failures (`E0425`) are eliminated
 - compile pass remains `2/33` (`RSL/Environment.rs`, `RSL/Message.rs`)
-- current first-error mix is: `5` `E0425`, `20` `E0423`, `2` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`
+- current first-error mix is: `0` `E0425`, `21` `E0423`, `5` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618`
 
 This compile gate is currently blocked by codegen quality in D1 output (symbol/value emission shape),
 not by D1 parsing coverage (which is already 33/33).

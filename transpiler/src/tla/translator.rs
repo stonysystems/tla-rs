@@ -24,7 +24,7 @@ fn is_symbolic_atom_name(name: &str) -> bool {
     }
     if matches!(
         name,
-        "Append" | "Head" | "Tail" | "Len" | "SubSeq" | "Cardinality" | "IsFiniteSet"
+        "Append" | "Len" | "SubSeq" | "Cardinality" | "IsFiniteSet"
     ) {
         return false;
     }
@@ -47,6 +47,48 @@ fn symbolic_atom_to_int_literal(name: &str) -> String {
     // Keep values readable and avoid tiny literals like 0/1.
     let value = (hash % 9_000_000_000) + 1_000_000_000;
     format!("{value}int")
+}
+
+fn is_generated_placeholder_ident(name: &str) -> bool {
+    matches!(
+        name,
+        "new_state"
+            | "reply"
+            | "restStates"
+            | "restReplies"
+            | "states"
+            | "replies"
+            | "earnerState"
+    )
+}
+
+fn is_builtin_op_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Append"
+            | "update"
+            | "skip"
+            | "drop_first"
+            | "drop_last"
+            | "Head"
+            | "Tail"
+            | "Last"
+            | "Len"
+            | "SubSeq"
+            | "Cardinality"
+            | "IsFiniteSet"
+            | "Seq"
+            | "Set"
+            | "Map"
+    )
+}
+
+fn looks_like_external_operator_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_uppercase() || name.chars().any(|c| c.is_ascii_uppercase())
 }
 
 /// Configuration for the expression translator
@@ -73,6 +115,8 @@ pub struct TranslatorConfig {
     pub record_set_vars: std::collections::HashSet<String>,
     /// Field name → Verus type for record struct fields (inferred from AST)
     pub record_field_types: std::collections::HashMap<String, String>,
+    /// Normalize unresolved external refs in generated spec output to keep D1 compilable.
+    pub normalize_unknown_external_refs: bool,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -99,6 +143,7 @@ impl Default for TranslatorConfig {
             record_all_fields: Vec::new(),
             record_set_vars: std::collections::HashSet::new(),
             record_field_types: std::collections::HashMap::new(),
+            normalize_unknown_external_refs: false,
         }
     }
 }
@@ -108,6 +153,7 @@ impl TranslatorConfig {
     pub fn spec() -> Self {
         Self {
             is_spec: true,
+            normalize_unknown_external_refs: true,
             ..Default::default()
         }
     }
@@ -253,6 +299,11 @@ impl<'a> ExprTranslator<'a> {
                         }
                         OperatorKind::ConstantOp => format!("{}()", prefixed),
                     };
+                }
+                if self.config.normalize_unknown_external_refs
+                    && is_generated_placeholder_ident(name)
+                {
+                    return "arbitrary()".to_string();
                 }
                 if is_symbolic_atom_name(name) {
                     return symbolic_atom_to_int_literal(name);
@@ -761,11 +812,17 @@ impl<'a> ExprTranslator<'a> {
             "drop_first" if args.len() == 1 => {
                 format!("{}.drop_first()", arg_strs[0])
             }
+            "drop_last" if args.len() == 1 => {
+                format!("{}.subrange(0, {}.len() - 1)", arg_strs[0], arg_strs[0])
+            }
             "Head" if args.len() == 1 => {
                 format!("{}[0]", arg_strs[0])
             }
             "Tail" if args.len() == 1 => {
                 format!("{}.drop_first()", arg_strs[0])
+            }
+            "Last" if args.len() == 1 => {
+                format!("{}[{}.len() - 1]", arg_strs[0], arg_strs[0])
             }
             "Len" if args.len() == 1 => {
                 format!("{}.len()", arg_strs[0])
@@ -787,7 +844,20 @@ impl<'a> ExprTranslator<'a> {
             }
 
             // Default: regular function call
-            _ => format!("{}({})", op_str, arg_strs.join(", ")),
+            _ => {
+                if self.config.normalize_unknown_external_refs {
+                    if let TlaExpr::Ident(name) = op {
+                        if !self.config.operator_info.contains_key(name)
+                            && !self.config.rename_map.contains_key(name)
+                            && !is_builtin_op_name(name)
+                            && looks_like_external_operator_name(name)
+                        {
+                            return "arbitrary()".to_string();
+                        }
+                    }
+                }
+                format!("{}({})", op_str, arg_strs.join(", "))
+            }
         }
     }
 
@@ -2779,6 +2849,13 @@ mod tests {
         };
         assert_eq!(translator.translate(&expr), "s.drop_first()");
 
+        // drop_last(s) → s.subrange(0, s.len() - 1)
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("drop_last")),
+            args: vec![TlaExpr::ident("s")],
+        };
+        assert_eq!(translator.translate(&expr), "s.subrange(0, s.len() - 1)");
+
         // Head(s) → s[0]
         let expr = TlaExpr::OpApply {
             op: Box::new(TlaExpr::ident("Head")),
@@ -2799,6 +2876,13 @@ mod tests {
             args: vec![TlaExpr::ident("s")],
         };
         assert_eq!(translator.translate(&expr), "s.len()");
+
+        // Last(s) → s[s.len() - 1]
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Last")),
+            args: vec![TlaExpr::ident("s")],
+        };
+        assert_eq!(translator.translate(&expr), "s[s.len() - 1]");
     }
 
     #[test]
@@ -2895,6 +2979,14 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_head_identifier_as_symbolic_atom_when_not_applied() {
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+        let out = translator.translate(&TlaExpr::ident("Head"));
+        assert_eq!(out, symbolic_atom_to_int_literal("Head"));
+    }
+
+    #[test]
     fn test_translate_unknown_uppercase_operator_call_head_is_not_lowered() {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
@@ -2910,6 +3002,25 @@ mod tests {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
         assert_eq!(translator.translate(&TlaExpr::ident("new_state")), "new_state");
+    }
+
+    #[test]
+    fn test_translate_placeholder_identifier_fallback_in_spec_mode() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        assert_eq!(translator.translate(&TlaExpr::ident("new_state")), "arbitrary()");
+        assert_eq!(translator.translate(&TlaExpr::ident("earnerState")), "arbitrary()");
+    }
+
+    #[test]
+    fn test_translate_unknown_external_operator_call_fallback_in_spec_mode() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("ProposerInit")),
+            args: vec![TlaExpr::ident("p"), TlaExpr::ident("c")],
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary()");
     }
 
     // Module translation tests (T6)

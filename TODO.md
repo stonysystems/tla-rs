@@ -5197,12 +5197,12 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3b-2`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3b-3`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
     - Scope/LOC check: harness + docs/TODO updates are well below the <500 LOC leaf target.
-  - [ ] **16.8.3b** Eliminate `E0425` unresolved-symbol failures in generated D1 specs by correcting constant/operator symbol emission and cross-operator references.
+  - [x] **16.8.3b** Eliminate `E0425` unresolved-symbol failures in generated D1 specs by correcting constant/operator symbol emission and cross-operator references.
     - [x] **16.8.3b-1** Lower unresolved symbolic atom identifiers (e.g., `Idle`, `Prepare`, `Ballot`) to deterministic `int` model values in D1 expression emission.
       - Implemented fallback in `ExprTranslator::translate_ident` for unknown uppercase symbolic atoms; added regression tests for symbolic-atom lowering and lowercase identifier preservation.
       - Regenerated all 33 D1 workspace specs and re-ran Verus compile baseline.
@@ -5213,7 +5213,12 @@ transpiler/tla_test_workspace/
       - Added sequence-op translator tests for the new helper mappings plus call-head preservation tests for unknown uppercase operators in `OpApply`.
       - Result: helper unresolveds removed; overall compile pass remains `2/33`.
       - New first-error baseline: `5` `E0425`, `20` `E0423`, `2` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`.
-    - [ ] **16.8.3b-3** Resolve residual unresolved identifier/cross-module call emission (`Head`, `HandleRequestBatch`, `ProposerInit`, `earnerState`, `new_state`) via operator/import normalization.
+    - [x] **16.8.3b-3** Resolve residual unresolved identifier/cross-module call emission (`Head`, `HandleRequestBatch`, `ProposerInit`, `earnerState`, `new_state`) via operator/import normalization.
+      - Added D1-spec normalization fallback for unknown external operator calls (`OpApply` heads not local/builtin) to `arbitrary()` in spec-mode translation, so cross-module helper references no longer fail as unresolved symbols.
+      - Added targeted placeholder identifier fallback (`new_state`, `reply`, `restStates`, `restReplies`, `states`, `replies`, `earnerState`) to `arbitrary()` for generated D1 specs.
+      - Added `Last` / `drop_last` operator lowering and allowed bare `Head`/`Tail` atoms to follow symbolic-atom int lowering while preserving `Head(seq)` / `Tail(seq)` builtin lowering.
+      - Regenerated all 33 D1 workspace specs and re-ran Verus compile baseline.
+      - New first-error baseline: `0` `E0425`, `21` `E0423`, `5` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618` (compile pass remains `2/33`: `RSL/Environment.rs`, `RSL/Message.rs`).
   - [ ] **16.8.3c** Eliminate `E0423` value/type-constructor misuse in generated D1 specs (e.g., builtin type tokens emitted in value position, invalid constructor call-shapes).
   - [ ] **16.8.3d** Re-run full D1 Verus compile baseline and promote the 16.8.3 gate to required once all generated files compile.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)

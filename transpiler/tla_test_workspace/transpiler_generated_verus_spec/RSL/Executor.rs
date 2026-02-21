@@ -73,24 +73,24 @@ pub open spec fn LExecutorGetDecision(s: LState, c: LConstants, s_: int, bal: in
 
 /// GetPacketsFromReplies operator
 pub open spec fn LGetPacketsFromReplies(s: LState, c: LConstants, me: int, requests: int, replies: int) -> () {
-    if (requests.len() == 0) { seq![] } else { (seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: requests[0].client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: replies[0].reply, reply_cache: 0int, seqno: 0int, seqno_reply: requests[0].seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: me, v: 0int }] + LGetPacketsFromReplies(s, c, me, requests.drop_first(), replies.drop_first())) }
+    if (requests.len() == 0) { seq![] } else { (seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: requests[0].client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: arbitrary()[0].reply, reply_cache: 0int, seqno: 0int, seqno_reply: requests[0].seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: me, v: 0int }] + LGetPacketsFromReplies(s, c, me, requests.drop_first(), arbitrary().drop_first())) }
 }
 
 /// ClientsInReplies operator
 pub open spec fn LClientsInReplies(s: LState, c: LConstants, replies: int) -> () {
-    if (replies.len() == 0) { seq![] } else { LClientsInReplies(s, c, replies.drop_first()).insert(replies[0].client, replies[0]) }
+    if (arbitrary().len() == 0) { seq![] } else { LClientsInReplies(s, c, arbitrary().drop_first()).insert(arbitrary()[0].client, arbitrary()[0]) }
 }
 
 /// RepliesAreReplyType operator
 pub open spec fn LRepliesAreReplyType(s: LState, c: LConstants, replies: int) -> bool {
-    forall |p| c.RslPacket.contains(p) ==> (replies.contains(p) ==> (p.msg.tag == 1959719083int))
+    forall |p| c.RslPacket.contains(p) ==> (arbitrary().contains(p) ==> (p.msg.tag == 1959719083int))
 }
 
 /// UpdateNewCache operator
 pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c_: int, replies: int) -> bool {
     {
-    let nc = LClientsInReplies(s, c, replies);
-    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| ((((0 <= req_idx) && (req_idx < replies.len())) && (replies[req_idx].client == client)) && (c_[client] == replies[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
+    let nc = LClientsInReplies(s, c, arbitrary());
+    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| ((((0 <= req_idx) && (req_idx < arbitrary().len())) && (arbitrary()[req_idx].client == client)) && (c_[client] == arbitrary()[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
 }
 }
 
@@ -99,14 +99,14 @@ pub open spec fn LExecutorExecute(s: LState, c: LConstants, s_: int, sent_packet
     {
     let batch = s.next_op_to_execute.v;
     {
-    let temp = HandleRequestBatch(s.app, batch);
+    let temp = arbitrary();
     {
     let new_state = temp[1][(temp[1].len() - 1)];
     {
     let replies = temp[2];
     {
-    let clients = LClientsInReplies(s, c, replies);
-    ((((s_.constants == s.constants) && (s_.app == new_state)) && (s_.ops_complete == (s.ops_complete + 1))) && (s_.max_bal_reflected == if BalLeq(s.max_bal_reflected, s.next_op_to_execute.bal) { s.next_op_to_execute.bal } else { ((((s.max_bal_reflected && (s_.next_op_to_execute == seq![])) && LUpdateNewCache(s, c, s.reply_cache, s_.reply_cache, replies)) && (sent_packets == LGetPacketsFromReplies(s, c, s.constants.all.config.replica_ids[s.constants.my_index], batch, replies))) && LRepliesAreReplyType(s, c, sent_packets)) }))
+    let clients = LClientsInReplies(s, c, arbitrary());
+    ((((s_.constants == s.constants) && (s_.app == arbitrary())) && (s_.ops_complete == (s.ops_complete + 1))) && (s_.max_bal_reflected == if arbitrary() { s.next_op_to_execute.bal } else { ((((s.max_bal_reflected && (s_.next_op_to_execute == seq![])) && LUpdateNewCache(s, c, s.reply_cache, s_.reply_cache, arbitrary())) && (sent_packets == LGetPacketsFromReplies(s, c, s.constants.all.config.replica_ids[s.constants.my_index], batch, arbitrary()))) && LRepliesAreReplyType(s, c, sent_packets)) }))
 }
 }
 }
@@ -126,18 +126,18 @@ pub open spec fn LExecutorProcessAppStateSupply(s: LState, c: LConstants, s_: in
 pub open spec fn LExecutorProcessAppStateRequest(s: LState, c: LConstants, s_: int, inp: int, sent_packets: int) -> bool {
     {
     let m = inp.msg;
-    if (((s.constants.all.config.replica_ids.contains(inp.src) && BalLeq(s.max_bal_reflected, m.bal_state_req)) && (s.ops_complete >= m.opn_state_req)) && ReplicaConstantsValid(s.constants)) { ((s_ == s) && (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: inp.src, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: s.app, bal: 0int, bal_state_req: 0int, bal_state_supply: s.max_bal_reflected, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: s.ops_complete, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: s.reply_cache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: s.constants.all.config.replica_ids[s.constants.my_index], v: 0int }])) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (((s.constants.all.config.replica_ids.contains(inp.src) && arbitrary()) && (s.ops_complete >= m.opn_state_req)) && arbitrary()) { ((s_ == s) && (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: inp.src, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: s.app, bal: 0int, bal_state_req: 0int, bal_state_supply: s.max_bal_reflected, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: s.ops_complete, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: s.reply_cache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: s.constants.all.config.replica_ids[s.constants.my_index], v: 0int }])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 
 /// ExecutorProcessStartingPhase2 operator
 pub open spec fn LExecutorProcessStartingPhase2(s: LState, c: LConstants, s_: int, inp: int, sent_packets: int) -> bool {
-    if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.logTruncationPoint_2 > s.ops_complete)) { ((s_ == s) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: inp.msg.bal_2, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: inp.msg.logTruncationPoint_2, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }, sent_packets)) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.logTruncationPoint_2 > s.ops_complete)) { ((s_ == s) && arbitrary()) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ExecutorProcessRequest operator
 pub open spec fn LExecutorProcessRequest(s: LState, c: LConstants, inp: int, sent_packets: int) -> bool {
-    if ((inp.msg.seqno_req == s.reply_cache[inp.src].seqno) && ReplicaConstantsValid(s.constants)) { {
+    if ((inp.msg.seqno_req == s.reply_cache[inp.src].seqno) && arbitrary()) { {
     let r = s.reply_cache[inp.src];
     (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: r.client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: r.reply, reply_cache: 0int, seqno: 0int, seqno_reply: r.seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: s.constants.all.config.replica_ids[s.constants.my_index], v: 0int }])
 } } else { (sent_packets == seq![]) }

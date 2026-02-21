@@ -34,7 +34,7 @@ pub struct LConstants {
 
 /// Learner operator
 pub open spec fn LLearner(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, constants: c.ReplicaConstants, max_ballot_seen: 8530703455int, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: earnerState }
+    LRecord { candidate_learned_value: 0int, constants: c.ReplicaConstants, max_ballot_seen: 8530703455int, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: arbitrary() }
 }
 
 /// LearnerInit operator
@@ -48,7 +48,7 @@ pub open spec fn LLearnerProcess2b(s: LState, c: LConstants, s_: int, packet: in
     let m = packet.msg;
     {
     let opn = m.opn_2b;
-    if (s.constants.all.config.replica_ids.contains(!(packet.src)) || BalLt(m.bal_2b, s.max_ballot_seen)) { (s_ == s) } else { if BalLt(s.max_ballot_seen, m.bal_2b) { {
+    if (s.constants.all.config.replica_ids.contains(!(packet.src)) || arbitrary()) { (s_ == s) } else { if arbitrary() { {
     let tup_ = LRecord { candidate_learned_value: m.val_2b, constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: set![packet.src], seqno: 0int, unexecuted_learner_state: 0int };
     (s_ == LRecord { candidate_learned_value: 0int, constants: s.constants, max_ballot_seen: m.bal_2b, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: set![seq![opn, tup_]] })
 } } else { if s.unexecuted_learner_state.dom().contains(!(opn)) { {

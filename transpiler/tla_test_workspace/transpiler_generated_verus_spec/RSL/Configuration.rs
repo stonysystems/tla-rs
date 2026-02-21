@@ -57,7 +57,7 @@ pub open spec fn LIsReplicaIndex(s: LState, c: LConstants, idx: int, id: int) ->
 
 /// GetReplicaIndex operator
 pub open spec fn LGetReplicaIndex(s: LState, c: LConstants, id: int) -> int {
-    FindIndexInSeq(c.replica_ids, id)
+    arbitrary()
 }
 
 } // verus!

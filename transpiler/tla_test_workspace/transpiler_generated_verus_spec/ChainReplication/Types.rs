@@ -46,7 +46,7 @@ pub open spec fn LCRMessage() -> Set<int> {
 
 /// NodeRole operator
 pub open spec fn LNodeRole() -> Set<int> {
-    set![Head, 9863251288int, Tail]
+    set![3419909347int, 9863251288int, 8736718595int]
 }
 
 } // verus!

@@ -50,17 +50,17 @@ pub open spec fn LRslConstantsUnchanged(s: LState, c: LConstants, ps: int, ps_: 
 
 /// RslInit operator
 pub open spec fn LRslInit(s: LState, c: LConstants, con: int, ps: int) -> bool {
-    (((((WellFormedLConfiguration(con.config) && WFLParameters(con.params)) && (ps.constants == con)) && Environment_Init(ps.environment)) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < con.config.replica_ids.len())) ==> SchedulerInit(ps.replicas[i], LRecord { actor: 0int, all: con, clients: 0int, constants: 0int, environment: 0int, ios: 0int, my_index: i, replicas: 0int })))
+    (((((arbitrary() && arbitrary()) && (ps.constants == con)) && arbitrary()) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < con.config.replica_ids.len())) ==> arbitrary()))
 }
 
 /// RslNextCommon operator
 pub open spec fn LRslNextCommon(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslMapsComplete(s, c, ps) && LRslConstantsUnchanged(s, c, ps, ps_)) && Environment_Next(ps.environment, ps_.environment))
+    ((LRslMapsComplete(s, c, ps) && LRslConstantsUnchanged(s, c, ps, ps_)) && arbitrary())
 }
 
 /// RslNextOneReplica operator
 pub open spec fn LRslNextOneReplica(s: LState, c: LConstants, ps: int, ps_: int, idx: int, ios: int) -> bool {
-    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < ps.constants.config.replica_ids.len())) && SchedulerNext(ps.replicas[idx], ps_.replicas[idx], ios)) && (ps.environment.nextStep == LRecord { actor: ps.constants.config.replica_ids[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (ps_.replicas == ps.replicas.update(idx, ps_.replicas[idx])))
+    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < ps.constants.config.replica_ids.len())) && arbitrary()) && (ps.environment.nextStep == LRecord { actor: ps.constants.config.replica_ids[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (ps_.replicas == ps.replicas.update(idx, ps_.replicas[idx])))
 }
 
 /// RslNextEnvironment operator

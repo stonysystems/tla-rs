@@ -76,10 +76,10 @@ pub open spec fn LElectionStateInit(s: LState, c: LConstants, es: int) -> bool {
 /// ElectionStateProcessHeartbeat operator
 pub open spec fn LElectionStateProcessHeartbeat(s: LState, c: LConstants, es: int, es_: int, p: int, clock: int) -> bool {
     if es.constants.all.config.replica_ids.contains(!(p.src)) { (es_ == es) } else { {
-    let sender_index = GetReplicaIndex(p.src, es.constants.all.config);
-    if ((p.msg.bal_heartbeat == es.current_view) && p.msg.suspicious) { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: (es.current_view_suspectors + set![sender_index]), epoch_end_time: es.epoch_end_time, epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_prev_epochs, requests_received_this_epoch: es.requests_received_this_epoch, seqno: 0int }) } else { if BalLt(es.current_view, p.msg.bal_heartbeat) { {
-    let new_epoch_length = UpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
-    (es_ == LRecord { constants: es.constants, current_view: p.msg.bal_heartbeat, current_view_suspectors: if p.msg.suspicious { set![sender_index] } else { Set::<int>::empty() }, epoch_end_time: UpperBoundedAddition(clock, new_epoch_length, es.constants.all.params.max_integer_val), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), es.constants.all.params.max_integer_val), requests_received_this_epoch: seq![], seqno: 0int })
+    let sender_index = arbitrary();
+    if ((p.msg.bal_heartbeat == es.current_view) && p.msg.suspicious) { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: (es.current_view_suspectors + set![sender_index]), epoch_end_time: es.epoch_end_time, epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_prev_epochs, requests_received_this_epoch: es.requests_received_this_epoch, seqno: 0int }) } else { if arbitrary() { {
+    let new_epoch_length = arbitrary();
+    (es_ == LRecord { constants: es.constants, current_view: p.msg.bal_heartbeat, current_view_suspectors: if p.msg.suspicious { set![sender_index] } else { Set::<int>::empty() }, epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), es.constants.all.params.max_integer_val), requests_received_this_epoch: seq![], seqno: 0int })
 } } else { (es_ == es) } }
 } }
 }
@@ -88,15 +88,15 @@ pub open spec fn LElectionStateProcessHeartbeat(s: LState, c: LConstants, es: in
 pub open spec fn LElectionStateCheckForViewTimeout(s: LState, c: LConstants, es: int, es_: int, clock: int) -> bool {
     if (clock < es.epoch_end_time) { (es_ == es) } else { if (es.requests_received_prev_epochs.len() == 0) { {
     let new_epoch_length = es.constants.all.params.baseline_view_timeout_period;
-    (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: es.current_view_suspectors, epoch_end_time: UpperBoundedAddition(clock, new_epoch_length, es.constants.all.params.max_integer_val), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_this_epoch, requests_received_this_epoch: seq![], seqno: 0int })
-} } else { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: (es.current_view_suspectors + set![es.constants.my_index]), epoch_end_time: UpperBoundedAddition(clock, es.epoch_length, es.constants.all.params.max_integer_val), epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), es.constants.all.params.max_integer_val), requests_received_this_epoch: seq![], seqno: 0int }) } }
+    (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: es.current_view_suspectors, epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_this_epoch, requests_received_this_epoch: seq![], seqno: 0int })
+} } else { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: (es.current_view_suspectors + set![es.constants.my_index]), epoch_end_time: arbitrary(), epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), es.constants.all.params.max_integer_val), requests_received_this_epoch: seq![], seqno: 0int }) } }
 }
 
 /// ElectionStateCheckForQuorumOfViewSuspicions operator
 pub open spec fn LElectionStateCheckForQuorumOfViewSuspicions(s: LState, c: LConstants, es: int, es_: int, clock: int) -> bool {
-    if ((es.current_view_suspectors.len() < MinQuorumSize(es.constants.all.config)) || !(LtUpperBound(es.current_view.seqno, es.constants.all.params.max_integer_val))) { (es_ == es) } else { {
-    let new_epoch_length = UpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
-    (es_ == LRecord { constants: es.constants, current_view: LComputeSuccessorView(s, c, es.current_view, es.constants.all), current_view_suspectors: Set::<int>::empty(), epoch_end_time: UpperBoundedAddition(clock, new_epoch_length, es.constants.all.params.max_integer_val), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), es.constants.all.params.max_integer_val), requests_received_this_epoch: seq![], seqno: 0int })
+    if ((es.current_view_suspectors.len() < arbitrary()) || !(arbitrary())) { (es_ == es) } else { {
+    let new_epoch_length = arbitrary();
+    (es_ == LRecord { constants: es.constants, current_view: LComputeSuccessorView(s, c, es.current_view, es.constants.all), current_view_suspectors: Set::<int>::empty(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), es.constants.all.params.max_integer_val), requests_received_this_epoch: seq![], seqno: 0int })
 } }
 }
 

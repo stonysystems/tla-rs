@@ -51,7 +51,7 @@ pub open spec fn LScheduler(c: LConstants) -> LRecord {
 
 /// ReplicaInit operator
 pub open spec fn LReplicaInit(s: LState, c: LConstants, r: int) -> bool {
-    ((((((r.constants == c) && (r.nextHeartbeatTime == 0)) && ProposerInit(r.proposer, c)) && AcceptorInit(r.acceptor, c)) && LearnerInit(r.learner, c)) && ExecutorInit(r.executor, c))
+    ((((((r.constants == c) && (r.nextHeartbeatTime == 0)) && arbitrary()) && arbitrary()) && arbitrary()) && arbitrary())
 }
 
 /// ReplicaNextProcessInvalid operator
@@ -61,29 +61,29 @@ pub open spec fn LReplicaNextProcessInvalid(s: LState, c: LConstants, s_: int, r
 
 /// ReplicaNextProcessRequest operator
 pub open spec fn LReplicaNextProcessRequest(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
-    if (s.executor.reply_cache.dom().contains(received_packet.src) && (received_packet.msg.seqno_req <= s.executor.reply_cache[received_packet.src].seqno)) { (ExecutorProcessRequest(s.executor, received_packet, sent_packets) && (s_ == s)) } else { ((ProposerProcessRequest(s.proposer, s_.proposer, received_packet) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) }
+    if (s.executor.reply_cache.dom().contains(received_packet.src) && (received_packet.msg.seqno_req <= s.executor.reply_cache[received_packet.src].seqno)) { (arbitrary() && (s_ == s)) } else { ((arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) }
 }
 
 /// ReplicaNextProcess1a operator
 pub open spec fn LReplicaNextProcess1a(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
-    (AcceptorProcess1a(s.acceptor, s_.acceptor, received_packet, sent_packets) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (arbitrary() && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 }
 
 /// ReplicaNextProcess1b operator
 pub open spec fn LReplicaNextProcess1b(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
-    if (((s.proposer.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg.bal_1b == s.proposer.max_ballot_i_sent_1a)) && (s.proposer.current_state == 1)) && forall |other_packet| c.RslPacket.contains(other_packet) ==> (s.proposer.received_1b_packets.contains(other_packet) ==> (other_packet.src != received_packet.src))) { (((ProposerProcess1b(s.proposer, s_.proposer, received_packet) && AcceptorTruncateLog(s.acceptor, s_.acceptor, received_packet.msg.log_truncation_point)) && (sent_packets == seq![])) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (((s.proposer.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg.bal_1b == s.proposer.max_ballot_i_sent_1a)) && (s.proposer.current_state == 1)) && forall |other_packet| c.RslPacket.contains(other_packet) ==> (s.proposer.received_1b_packets.contains(other_packet) ==> (other_packet.src != received_packet.src))) { (((arbitrary() && arbitrary()) && (sent_packets == seq![])) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ReplicaNextProcessStartingPhase2 operator
 pub open spec fn LReplicaNextProcessStartingPhase2(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
-    (ExecutorProcessStartingPhase2(s.executor, s_.executor, received_packet, sent_packets) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 }
 
 /// ReplicaNextProcess2a operator
 pub open spec fn LReplicaNextProcess2a(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
     {
     let m = received_packet.msg;
-    if ((s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && BalLeq(s.acceptor.max_bal, m.bal_2a)) && LeqUpperBound(m.opn_2a, s.acceptor.constants.all.params.max_integer_val)) { (AcceptorProcess2a(s.acceptor, s_.acceptor, received_packet, sent_packets) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if ((s.acceptor.constants.all.config.replica_ids.contains(received_packet.src) && arbitrary()) && arbitrary()) { (arbitrary() && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 
@@ -93,7 +93,7 @@ pub open spec fn LReplicaNextProcess2b(s: LState, c: LConstants, s_: int, receiv
     let opn = received_packet.msg.opn_2b;
     {
     let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && (s.executor.next_op_to_execute.tag == 4689272130int)));
-    if op_learnable { ((LearnerProcess2b(s.learner, s_.learner, received_packet) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if op_learnable { ((arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 }
@@ -105,68 +105,68 @@ pub open spec fn LReplicaNextProcessReply(s: LState, c: LConstants, s_: int, rec
 
 /// ReplicaNextProcessAppStateSupply operator
 pub open spec fn LReplicaNextProcessAppStateSupply(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
-    if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg.opn_state_supply > s.executor.ops_complete)) { (((LearnerForgetOperationsBefore(s.learner, s_.learner, received_packet.msg.opn_state_supply) && ExecutorProcessAppStateSupply(s.executor, s_.executor, received_packet)) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (s.executor.constants.all.config.replica_ids.contains(received_packet.src) && (received_packet.msg.opn_state_supply > s.executor.ops_complete)) { (((arbitrary() && arbitrary()) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ReplicaNextProcessAppStateRequest operator
 pub open spec fn LReplicaNextProcessAppStateRequest(s: LState, c: LConstants, s_: int, received_packet: int, sent_packets: int) -> bool {
-    (ExecutorProcessAppStateRequest(s.executor, s_.executor, received_packet, sent_packets) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 }
 
 /// ReplicaNextProcessHeartbeat operator
 pub open spec fn LReplicaNextProcessHeartbeat(s: LState, c: LConstants, s_: int, received_packet: int, clock: int, sent_packets: int) -> bool {
-    (((ProposerProcessHeartbeat(s.proposer, s_.proposer, received_packet, clock) && AcceptorProcessHeartbeat(s.acceptor, s_.acceptor, received_packet)) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![]))
+    (((arbitrary() && arbitrary()) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![]))
 }
 
 /// ReplicaNextSpontaneousMaybeEnterNewViewAndSend1a operator
 pub open spec fn LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (ProposerMaybeEnterNewViewAndSend1a(s.proposer, s_.proposer, sent_packets) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 }
 
 /// ReplicaNextSpontaneousMaybeEnterPhase2 operator
 pub open spec fn LReplicaNextSpontaneousMaybeEnterPhase2(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (ProposerMaybeEnterPhase2(s.proposer, s_.proposer, s.acceptor.log_truncation_point, sent_packets) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 }
 
 /// ReplicaNextReadClockMaybeNominateValueAndSend2a operator
 pub open spec fn LReplicaNextReadClockMaybeNominateValueAndSend2a(s: LState, c: LConstants, s_: int, clock: int, sent_packets: int) -> bool {
-    (ProposerMaybeNominateValueAndSend2a(s.proposer, s_.proposer, clock.t, s.acceptor.log_truncation_point, sent_packets) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 }
 
 /// ReplicaNextSpontaneousTruncateLogBasedOnCheckpoints operator
 pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    exists |opn| 6996286291int.contains(opn) && ((s.acceptor.last_checkpointed_operation.contains(opn) && IsLogTruncationPointValid(opn, s.acceptor.last_checkpointed_operation, s.constants.all.config)) && if (opn > s.acceptor.log_truncation_point) { ((AcceptorTruncateLog(s.acceptor, s_.acceptor, opn) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) })
+    exists |opn| 6996286291int.contains(opn) && ((s.acceptor.last_checkpointed_operation.contains(opn) && arbitrary()) && if (opn > s.acceptor.log_truncation_point) { ((arbitrary() && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) })
 }
 
 /// ReplicaNextSpontaneousMaybeMakeDecision operator
 pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     {
     let opn = s.executor.ops_complete;
-    if (((s.executor.next_op_to_execute.tag == 4689272130int) && s.learner.unexecuted_learner_state.dom().contains(opn)) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= MinQuorumSize(s.learner.constants.all.config))) { ((ExecutorGetDecision(s.executor, s_.executor, s.learner.max_ballot_seen, opn, s.learner.unexecuted_learner_state[opn].candidate_learned_value) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (((s.executor.next_op_to_execute.tag == 4689272130int) && s.learner.unexecuted_learner_state.dom().contains(opn)) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= arbitrary())) { ((arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 
 /// ReplicaNextSpontaneousMaybeExecute operator
 pub open spec fn LReplicaNextSpontaneousMaybeExecute(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    if (((s.executor.next_op_to_execute.tag == 6764822447int) && LtUpperBound(s.executor.ops_complete, s.executor.constants.all.params.max_integer_val)) && ReplicaConstantsValid(s.executor.constants)) { {
+    if (((s.executor.next_op_to_execute.tag == 6764822447int) && arbitrary()) && arbitrary()) { {
     let v = s.executor.next_op_to_execute.v;
-    (((ProposerResetViewTimerDueToExecution(s.proposer, s_.proposer, v) && LearnerForgetDecision(s.learner, s_.learner, s.executor.ops_complete)) && ExecutorExecute(s.executor, s_.executor, sent_packets)) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
+    (((arbitrary() && arbitrary()) && arbitrary()) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 } } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ReplicaNextReadClockMaybeSendHeartbeat operator
 pub open spec fn LReplicaNextReadClockMaybeSendHeartbeat(s: LState, c: LConstants, s_: int, clock: int, sent_packets: int) -> bool {
-    if (clock.t < s.nextHeartbeatTime) { ((s_ == s) && (sent_packets == seq![])) } else { (((s_.nextHeartbeatTime == UpperBoundedAddition(clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val)) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, LRecord { acceptor: 0int, bal_heartbeat: s.proposer.election_state.current_view, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: s.executor.ops_complete, proposer: 0int, replica: 0int, suspicious: s.proposer.election_state.current_view_suspectors.contains(s.constants.my_index), t: 0int }, sent_packets)) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s_.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) }
+    if (clock.t < s.nextHeartbeatTime) { ((s_ == s) && (sent_packets == seq![])) } else { (((s_.nextHeartbeatTime == arbitrary()) && arbitrary()) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s_.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) }
 }
 
 /// ReplicaNextReadClockCheckForViewTimeout operator
 pub open spec fn LReplicaNextReadClockCheckForViewTimeout(s: LState, c: LConstants, s_: int, clock: int, sent_packets: int) -> bool {
-    ((ProposerCheckForViewTimeout(s.proposer, s_.proposer, clock.t) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![]))
+    ((arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![]))
 }
 
 /// ReplicaNextReadClockCheckForQuorumOfViewSuspicions operator
 pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: LState, c: LConstants, s_: int, clock: int, sent_packets: int) -> bool {
-    ((ProposerCheckForQuorumOfViewSuspicions(s.proposer, s_.proposer, clock.t) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![]))
+    ((arbitrary() && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![]))
 }
 
 /// ExtractSentPacketsFromIos operator

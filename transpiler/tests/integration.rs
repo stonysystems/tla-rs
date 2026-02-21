@@ -3205,32 +3205,32 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3b-2 helper-op lowering + operator-head preservation:
-    // two files compile and remaining failures cluster into known first-error classes.
+    // Baseline after 16.8.3b-3 operator/import normalization:
+    // unresolved-symbol failures are eliminated and remaining blockers are type-shape issues.
     assert_eq!(
         passed, 2,
         "Expected exactly two D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
-        cat_e0425, 5,
-        "Expected 5 unresolved-symbol (E0425) failures at baseline"
+        cat_e0425, 0,
+        "Expected 0 unresolved-symbol (E0425) failures at baseline"
     );
     assert_eq!(
-        cat_e0423, 20,
-        "Expected 20 value/type-shape (E0423) failures at baseline"
+        cat_e0423, 21,
+        "Expected 21 value/type-shape (E0423) failures at baseline"
     );
     assert_eq!(
-        cat_e0609, 2,
-        "Expected 2 unknown-field (E0609) failures at baseline"
+        cat_e0609, 5,
+        "Expected 5 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
         cat_e0599, 3,
         "Expected 3 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 1,
-        "Expected 1 mismatched-types (E0308) failure at baseline"
+        cat_e0308, 2,
+        "Expected 2 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0618, 0,

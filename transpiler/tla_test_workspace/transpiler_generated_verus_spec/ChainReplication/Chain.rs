@@ -27,37 +27,37 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    (((((((((s.history == seq![]) && (s.pending_sent == Set::<int>::empty())) && (s.committed_count == 0)) && (s.obj_value == 0)) && ((c.node_id == 0) ==> (s.role.tag == Head))) && ((c.node_id == (c.chain_len - 1)) ==> (s.role.tag == Tail))) && (((c.node_id > 0) && (c.node_id < (c.chain_len - 1))) ==> (s.role.tag == 9863251288int))) && (s.has_predecessor == (c.node_id > 0))) && (s.predecessor == if (c.node_id > 0) { (c.node_id - 1) } else { ((0 && (s.has_successor == (c.node_id < (c.chain_len - 1)))) && (s.successor == if (c.node_id < (c.chain_len - 1)) { (c.node_id + 1) } else { (0 && (s.alive == true)) })) }))
+    (((((((((s.history == seq![]) && (s.pending_sent == Set::<int>::empty())) && (s.committed_count == 0)) && (s.obj_value == 0)) && ((c.node_id == 0) ==> (s.role.tag == 3419909347int))) && ((c.node_id == (c.chain_len - 1)) ==> (s.role.tag == 8736718595int))) && (((c.node_id > 0) && (c.node_id < (c.chain_len - 1))) ==> (s.role.tag == 9863251288int))) && (s.has_predecessor == (c.node_id > 0))) && (s.predecessor == if (c.node_id > 0) { (c.node_id - 1) } else { ((0 && (s.has_successor == (c.node_id < (c.chain_len - 1)))) && (s.successor == if (c.node_id < (c.chain_len - 1)) { (c.node_id + 1) } else { (0 && (s.alive == true)) })) }))
 }
 
 /// HeadReceiveWrite operator
 pub open spec fn LHeadReceiveWrite(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((((((((((((((s.role.tag == Head) && (s.alive == true)) && s.pending_sent.contains(!(value))) && (s_.role == s.role)) && (s_.history == s.history.push(value))) && (s_.pending_sent == s.pending_sent.union(set![value]))) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
+    ((((((((((((((s.role.tag == 3419909347int) && (s.alive == true)) && s.pending_sent.contains(!(value))) && (s_.role == s.role)) && (s_.history == s.history.push(value))) && (s_.pending_sent == s.pending_sent.union(set![value]))) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
 }
 
 /// ForwardToSuccessor operator
 pub open spec fn LForwardToSuccessor(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((s.role.tag == Head) || (((((((((((((((s.role.tag == 9863251288int) && (s.alive == true)) && s.pending_sent.contains(value)) && (s.has_successor == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![LRecord { value: value }])))
+    ((s.role.tag == 3419909347int) || (((((((((((((((s.role.tag == 9863251288int) && (s.alive == true)) && s.pending_sent.contains(value)) && (s.has_successor == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![LRecord { value: value }])))
 }
 
 /// ReceiveUpdate operator
 pub open spec fn LReceiveUpdate(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((s.role.tag == 9863251288int) || ((((((s.role.tag == Tail) && (s.alive == true)) && s.history.contains(!(value))) && (s_.role == s.role)) && (s_.history == s.history.push(value))) && if (s.role.tag == 9863251288int) { (s_.pending_sent == s.pending_sent.union(set![value])) } else { (((((((((s_.pending_sent == s.pending_sent) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![])) }))
+    ((s.role.tag == 9863251288int) || ((((((s.role.tag == 8736718595int) && (s.alive == true)) && s.history.contains(!(value))) && (s_.role == s.role)) && (s_.history == s.history.push(value))) && if (s.role.tag == 9863251288int) { (s_.pending_sent == s.pending_sent.union(set![value])) } else { (((((((((s_.pending_sent == s.pending_sent) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![])) }))
 }
 
 /// TailCommit operator
 pub open spec fn LTailCommit(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((((((((((((((s.role.tag == Tail) && (s.alive == true)) && s.history.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == (s.committed_count + 1))) && (s_.obj_value == value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![LRecord { value: value }]))
+    ((((((((((((((s.role.tag == 8736718595int) && (s.alive == true)) && s.history.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == (s.committed_count + 1))) && (s_.obj_value == value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![LRecord { value: value }]))
 }
 
 /// ReceiveAck operator
 pub open spec fn LReceiveAck(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((s.role.tag == Head) || ((((((((((((((s.role.tag == 9863251288int) && (s.alive == true)) && s.pending_sent.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent.difference(set![value]))) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![])))
+    ((s.role.tag == 3419909347int) || ((((((((((((((s.role.tag == 9863251288int) && (s.alive == true)) && s.pending_sent.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent.difference(set![value]))) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![])))
 }
 
 /// ClientRead operator
 pub open spec fn LClientRead(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((((((((s.role.tag == Tail) && (s.alive == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
+    (((((((((((((s.role.tag == 8736718595int) && (s.alive == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator

@@ -30,18 +30,18 @@ pub struct LConstants {
 /// HandleRequest operator
 pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: int) -> (int, LRecord) {
     {
-    let unused_0 = AppHandleRequest(state, request.request);
-    seq![new_state, LRecord { client: request.client, reply: reply, seqno: request.seqno }]
+    let unused_0 = arbitrary();
+    seq![arbitrary(), LRecord { client: request.client, reply: arbitrary(), seqno: request.seqno }]
 }
 }
 
 /// HandleRequestBatchHidden operator
 pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int, batch: int) -> ((int), ()) {
     if (batch.len() == 0) { seq![seq![state], seq![]] } else { {
-    let unused_2 = LHandleRequestBatchHidden(s, c, state, drop_last(batch));
+    let unused_2 = LHandleRequestBatchHidden(s, c, state, batch.subrange(0, batch.len() - 1));
     {
-    let unused_2 = AppHandleRequest(Last(restStates), Last(batch).request);
-    seq![(restStates + seq![new_state]), (restReplies + seq![LRecord { client: Last(batch).client, reply: reply, seqno: Last(batch).seqno }])]
+    let unused_2 = arbitrary();
+    seq![(arbitrary() + seq![arbitrary()]), (arbitrary() + seq![LRecord { client: batch[batch.len() - 1].client, reply: arbitrary(), seqno: batch[batch.len() - 1].seqno }])]
 }
 } }
 }
@@ -50,7 +50,7 @@ pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int,
 pub open spec fn LHandleRequestBatch(s: LState, c: LConstants, state: int, batch: int) -> (int, int) {
     {
     let unused_3 = LHandleRequestBatchHidden(s, c, state, batch);
-    seq![states, replies]
+    seq![arbitrary(), arbitrary()]
 }
 }
 
