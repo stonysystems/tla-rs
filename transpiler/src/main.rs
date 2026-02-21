@@ -1735,40 +1735,19 @@ manual_code = "manual_helpers.rs"
     }
 
     #[test]
-    fn test_rsl_types_config_loads_manual_helpers() {
+    fn test_rsl_types_config_has_no_manual_helpers() {
         let config_path = PathBuf::from("../src/protocol/RSL/types_transpile.toml");
         let config = load_config(&config_path).expect("RSL type config should load");
-        let manual = config
-            .manual_code
-            .expect("RSL type config should load output.manual_code file");
-
         assert!(
-            manual.contains("impl CParameters"),
-            "loaded manual helper block should include CParameters infrastructure"
-        );
-        for removed in [
-            "pub struct CExecutor",
-            "pub enum CIncompleteBatchTimer",
-            "pub struct CProposer",
-            "pub struct CReplica",
-            "pub struct CScheduler",
-        ] {
-            assert!(
-                !manual.contains(removed),
-                "loaded manual helper block should no longer include `{}`",
-                removed
-            );
-        }
-        assert!(
-            !manual.contains("pub fn unreachable_value<T>()"),
-            "loaded manual helper block should no longer include unreachable_value helper"
-        );
-        assert!(
-            !manual.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
-            "loaded manual helper block should no longer define CRslIo alias"
+            config.manual_code.is_none(),
+            "RSL type config should not load output.manual_code"
         );
 
         let file_config = FileConfig::from_file(&config_path).expect("RSL file config should load");
+        assert!(
+            file_config.output.manual_code.is_none(),
+            "RSL file config output.manual_code should be removed"
+        );
         assert!(
             file_config.output.generate_clone_up_to_view_simple,
             "RSL file config should enable output.generate_clone_up_to_view_simple"

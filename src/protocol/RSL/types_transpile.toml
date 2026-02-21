@@ -25,7 +25,7 @@ skip_types = [
     "LLearner",
     "ElectionState",
     "OutstandingOperation",
-    # Types still supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
+    # Component block B is supplied by implementation modules via re_exports.
     "LExecutor",
     "IncompleteBatchTimer",
     "LProposer",
@@ -138,7 +138,6 @@ include_debug_comments = false
 generate_proofs = true
 generate_clone_up_to_view_simple = true
 generate_unreachable_value_helper = true
-manual_code = "types_manual_helpers.rs"
 # Custom imports for RSL types
 custom_imports = [
     "use vstd::prelude::*;",

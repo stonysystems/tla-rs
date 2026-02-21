@@ -6287,9 +6287,9 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 
 - [x] types_manual_helpers.rs is **type infrastructure** (impl blocks, clone methods, view traits), NOT protocol functions
   - Added regression test `test_rsl_types_manual_helpers_contains_only_type_infrastructure` to guard against protocol exec/action functions being injected into this file.
-- [x] Keep `manual_code = "types_manual_helpers.rs"` in types_transpile.toml
-  - Added regression test `test_rsl_types_transpile_toml_keeps_manual_helpers_binding` to enforce `output.manual_code` stays pinned to `types_manual_helpers.rs`.
-- [ ] Long-term (Phase 21.7): teach type generator to produce these impl blocks
+- [x] Initially kept `manual_code = "types_manual_helpers.rs"` in types_transpile.toml
+  - Superseded by `21.7.5.5`: removed `output.manual_code` and flipped regression coverage to enforce no manual helper injection.
+- [x] Long-term (Phase 21.7): teach type generator to produce these impl blocks
   - [x] 21.7.1 Generate shared `unreachable_value<T>()` from the type generator (`output.generate_unreachable_value_helper`) and remove it from `types_manual_helpers.rs`.
     - Added codegen/config regression tests and RSL TOML guard; manual helper no longer defines `unreachable_value`.
   - [x] 21.7.2 Generate `CRslIo` alias from type-generation inputs/config instead of manual helper injection.
@@ -6308,7 +6308,7 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
     - [x] 21.7.4.3 Re-home or generate replica-constants helpers (`CReplicaConstantsValid`, `InitReplicaConstants`) and keep parity tests green.
       - Re-homed `CReplicaConstantsValid` + `InitReplicaConstants` to `src/implementation/RSL/cconstants.rs`.
       - Removed helper bodies from `types_manual_helpers.rs`, regenerated `types_gen.rs`, and extended integration tests to enforce the new helper location.
-  - [ ] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.
+  - [x] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.
     - [x] 21.7.5.1 Analyze remaining `types_manual_helpers.rs` surface and document migration order/scope in `docs/dev/`.
     - [x] 21.7.5.2 Re-home foundational type blocks (`CConfiguration`, `CConstants`, `CReplicaConstants`) out of manual injection and keep generated public API/tests green.
       - Moved foundational struct/impl blocks into `src/implementation/RSL/cconfiguration.rs` and `src/implementation/RSL/cconstants.rs`.
@@ -6322,7 +6322,10 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
       - Moved block-B struct/enum + type infrastructure impls into `src/implementation/RSL/ExecutorImpl.rs`, `src/implementation/RSL/ProposerImpl.rs`, and `src/implementation/RSL/ReplicaImpl.rs` (including `abstractify_clpacket`/`abstractify_crslio` helpers).
       - Updated `types_transpile.toml` re-exports for block B, regenerated `src/generated/RSL/types_gen.rs`, and removed block-B definitions from `src/protocol/RSL/types_manual_helpers.rs`.
       - Updated transpiler integration/config tests for the new ownership boundary, then re-ran `cargo test --all-features` in `transpiler/` and full Verus build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus -c liblib.so && scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`.
-    - [ ] 21.7.5.5 Remove `output.manual_code` from `types_transpile.toml`, regenerate `types_gen.rs`, and update parity/regression tests.
+    - [x] 21.7.5.5 Remove `output.manual_code` from `types_transpile.toml`, regenerate `types_gen.rs`, and update parity/regression tests.
+      - Moved remaining manual CParameters `valid`/`View` semantics to `src/implementation/RSL/cparameters.rs` and kept generated `CParameters::clone_up_to_view` in `types_gen.rs`.
+      - Removed `output.manual_code` from `src/protocol/RSL/types_transpile.toml`, regenerated `src/generated/RSL/types_gen.rs` with the full multi-input RSL type command, and converted manual-helper regression checks to assert no manual binding.
+      - Kept `skip_validity_types`/`skip_view_types` for `CParameters`, updated transpiler config/integration tests for the new ownership boundary, and re-ran full gates: `cd transpiler && cargo test --all-features` and `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus -c liblib.so && scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`.
 - [x] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle
 
 ### 21.5 Phase 21.3: Verify full build ✅
@@ -6349,12 +6352,12 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
   - `learner_manual.rs` (293 LOC) -- TOML no longer references it
   - `proposer_manual.rs` (692 LOC) -- TOML no longer references it
   - `election_manual.rs` (377 LOC) -- TOML no longer references it
-- [x] Remaining manual files still actively used via `manual_code`:
+- [x] Remaining manual files still actively used via `manual_code` (at Phase 21.5 cleanup time):
   - `acceptor_manual.rs` -- fully verified proofs (deferred 21.2.4)
   - `executor_manual.rs` -- fully verified proofs (deferred 21.2.6)
   - `replica_manual.rs` -- IO dispatch functions (21.2.8)
-  - `types_manual_helpers.rs` -- type infrastructure (21.2.9)
-  - Raft `manual_helpers.rs` -- clone helper
+  - `types_manual_helpers.rs` -- type infrastructure (21.2.9, later removed in 21.7.5.5)
+  - Raft `manual_helpers.rs` -- clone helper (removed from TOML in Phase 21.1)
 - [x] 570 verified, 0 errors after cleanup
 
 ### 21.8 Execution Order

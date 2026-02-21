@@ -1,10 +1,10 @@
-// Manual helper code for RSL concrete types generation.
+// Legacy helper notes for RSL concrete types generation.
 //
-// This file is intended to be injected by transpiler generate-types via
-// `output.manual_code` in `types_transpile.toml`.
+// As of Phase 21.7.5.5, `types_transpile.toml` no longer uses
+// `output.manual_code`, so this file is not injected into generated output.
 //
-// IMPORTANT: Contents here live inside an existing `verus! { ... }` block in
-// generated output. Do not add `use` statements or a nested `verus!` block.
+// Historical note: this file previously required body-only snippets intended for
+// insertion inside an existing `verus! { ... }` block.
 //
 // Helper functions shared with types_i.rs (COperationNumber helpers, CBalLt/Leq/Eq,
 // CRequestBatch helpers, CReplyCache helpers, CVotes helpers, CLearnerTuple,
@@ -15,47 +15,14 @@
 // CRslIo is generated via [extra_type_aliases] in types_transpile.toml.
 
 // =============================================================================
-// CParameters (manual validity/view + static defaults)
+// Legacy manual-helper note
 // =============================================================================
-
-impl CParameters{
-    pub open spec fn valid(self) -> bool
-    {
-        &&& self.max_integer_val > self.max_log_length > 0
-        &&& self.max_integer_val > self.max_batch_delay
-        &&& self.max_integer_val < 0x8000_0000_0000_0000
-        &&& self.baseline_view_timeout_period > 0
-        &&& self.max_integer_val > self.heartbeat_period > 0
-        &&& self.max_batch_size > 0
-    }
-
-    pub open spec fn view(self) -> LParameters
-    {
-        LParameters{
-            max_log_length: self.max_log_length as int,
-            baseline_view_timeout_period: self.baseline_view_timeout_period as int,
-            heartbeat_period: self.heartbeat_period as int,
-            max_integer_val: UpperBound::UpperBoundFinite{n: self.max_integer_val as int},
-            max_batch_size: self.max_batch_size as int,
-            max_batch_delay: self.max_batch_delay as int,
-        }
-    }
-}
-
-impl View for CParameters {
-    type V = LParameters;
-
-    open spec fn view(&self) -> LParameters {
-        LParameters {
-            max_log_length: self.max_log_length as int,
-            baseline_view_timeout_period: self.baseline_view_timeout_period as int,
-            heartbeat_period: self.heartbeat_period as int,
-            max_integer_val: UpperBound::UpperBoundFinite{n: self.max_integer_val as int},
-            max_batch_size: self.max_batch_size as int,
-            max_batch_delay: self.max_batch_delay as int,
-        }
-    }
-}
+//
+// As of Phase 21.7.5.5, types generation no longer injects `output.manual_code`.
+// Remaining CParameters validity/view semantics moved to:
+//   src/implementation/RSL/cparameters.rs
+//
+// This file is intentionally retained as migration documentation only.
 
 // Foundational type blocks (`CConfiguration`, `CConstants`, `CReplicaConstants`)
 // have been re-homed to implementation/RSL/{cconfiguration,cconstants}.rs.
