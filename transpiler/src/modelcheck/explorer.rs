@@ -118,6 +118,10 @@ pub struct ExplorationStats {
     ///
     /// Non-zero only when `state_dedup = "hash_compaction64"`.
     pub hash_compaction_collisions: usize,
+    /// Number of distinct raw states merged by symmetry normalization.
+    ///
+    /// Non-zero only when symmetry fields are configured.
+    pub symmetry_collapses: usize,
 }
 
 /// Result of running a bounded BFS/DFS exploration.
@@ -268,10 +272,22 @@ where
     let symmetry_field_set: BTreeSet<&str> = symmetry_fields.iter().map(String::as_str).collect();
     let mut visited = BTreeSet::new();
     let mut hash_representatives = std::collections::BTreeMap::<String, String>::new();
+    let mut symmetry_representatives =
+        std::collections::BTreeMap::<String, BTreeSet<String>>::new();
     let mut frontier = VecDeque::new();
     let mut states_by_key = std::collections::BTreeMap::new();
+    let mut stats = ExplorationStats::default();
     for state in initial_states {
         let dedup_canonical = canonical_dedup_key(state, &symmetry_field_set);
+        if !symmetry_field_set.is_empty()
+            && record_symmetry_collapse(
+                &mut symmetry_representatives,
+                &dedup_canonical,
+                &state.canonical_key(),
+            )
+        {
+            stats.symmetry_collapses += 1;
+        }
         let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
         if visited.insert(key.clone()) {
             if matches!(state_dedup, StateDedupMode::HashCompaction64) {
@@ -286,11 +302,8 @@ where
         }
     }
 
-    let mut stats = ExplorationStats {
-        initial_states: frontier.len(),
-        max_frontier_size: frontier.len(),
-        ..ExplorationStats::default()
-    };
+    stats.initial_states = frontier.len();
+    stats.max_frontier_size = frontier.len();
     let mut explored = Vec::new();
     let mut parents = std::collections::BTreeMap::<String, TraceParent>::new();
     while let Some(item) = pop_frontier(&mut frontier, mode) {
@@ -356,6 +369,15 @@ where
             }
 
             let dedup_canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
+            if !symmetry_field_set.is_empty()
+                && record_symmetry_collapse(
+                    &mut symmetry_representatives,
+                    &dedup_canonical,
+                    &successor.state.canonical_key(),
+                )
+            {
+                stats.symmetry_collapses += 1;
+            }
             let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
             if visited.insert(key.clone()) {
                 if matches!(state_dedup, StateDedupMode::HashCompaction64) {
@@ -538,6 +560,16 @@ fn is_hash_collision(
         .get(key)
         .map(|existing| existing != canonical)
         .unwrap_or(false)
+}
+
+fn record_symmetry_collapse(
+    representatives: &mut std::collections::BTreeMap<String, BTreeSet<String>>,
+    symmetry_key: &str,
+    raw_key: &str,
+) -> bool {
+    let raw_keys = representatives.entry(symmetry_key.to_string()).or_default();
+    let inserted = raw_keys.insert(raw_key.to_string());
+    inserted && raw_keys.len() > 1
 }
 
 fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -> String {
@@ -1434,6 +1466,7 @@ mod tests {
         assert_eq!(ids(&result), vec![0, 1]);
         assert_eq!(result.stats.duplicate_successors, 1);
         assert_eq!(result.stats.hash_compaction_collisions, 0);
+        assert_eq!(result.stats.symmetry_collapses, 0);
     }
 
     #[test]
@@ -1456,6 +1489,7 @@ mod tests {
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
         assert_eq!(result.stats.initial_states, 1);
         assert_eq!(result.stats.visited_states, 1);
+        assert_eq!(result.stats.symmetry_collapses, 1);
         assert_eq!(ids(&result), vec![1]);
     }
 
@@ -1479,6 +1513,7 @@ mod tests {
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
         assert_eq!(result.stats.initial_states, 2);
         assert_eq!(result.stats.visited_states, 2);
+        assert_eq!(result.stats.symmetry_collapses, 0);
         assert_eq!(ids(&result), vec![1, 2]);
     }
 }

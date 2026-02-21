@@ -1456,7 +1456,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "transitions": execution.summary.transitions,
                         "depth": execution.summary.depth,
                         "elapsed_ms": execution.summary.elapsed_ms,
+                        "pruned_by_por": execution.por_pruned_branches.len(),
                         "hash_compaction_collisions": execution.exploration.stats.hash_compaction_collisions,
+                        "symmetry_collapses": execution.exploration.stats.symmetry_collapses,
                     },
                     "stop_reason": format!("{:?}", execution.exploration.stop_reason),
                     "invariant_violation": execution.exploration.invariant_violation.as_ref().map(|violation| serde_json::json!({
@@ -1505,12 +1507,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
             println!("  result: {}", execution.summary.result);
             println!(
-                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}, hash_compaction_collisions={}",
+                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}, pruned_by_por={}, hash_compaction_collisions={}, symmetry_collapses={}",
                 execution.summary.states,
                 execution.summary.transitions,
                 execution.summary.depth,
                 execution.summary.elapsed_ms,
-                execution.exploration.stats.hash_compaction_collisions
+                execution.por_pruned_branches.len(),
+                execution.exploration.stats.hash_compaction_collisions,
+                execution.exploration.stats.symmetry_collapses,
             );
             if let Some(violation) = &execution.exploration.invariant_violation {
                 println!(
@@ -3702,6 +3706,7 @@ symmetry_fields = ["value"]
         );
         assert_eq!(execution.summary.result, "ok");
         assert_eq!(execution.summary.states, 1);
+        assert_eq!(execution.exploration.stats.symmetry_collapses, 1);
     }
 
     #[test]
@@ -3791,6 +3796,7 @@ invariants = ["LVisibleBound"]
         assert_eq!(execution.por_pruned_branches, vec!["branch_0".to_string()]);
         assert_eq!(execution.summary.result, "ok");
         assert_eq!(execution.summary.states, 2);
+        assert_eq!(execution.por_pruned_branches.len(), 1);
     }
 
     #[test]

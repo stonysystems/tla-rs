@@ -6610,5 +6610,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added `[search].por_heuristic = "none" | "invisible_branch"` model config support and validation that forbids POR with `properties.check_deadlock = true` (`transpiler/src/modelcheck/config.rs`).
     - Wired branch-pruning into source-first exploration (`transpiler/src/main.rs`) and surfaced POR mode/pruned branches in JSON and human `model-check` reporting.
     - Added focused unit tests for POR analysis and execution-level wiring, plus config parse/validation coverage.
-  - [ ] Leaf 22.10.8 (<500 LOC): add reduction telemetry summary (`pruned_by_por`, `symmetry_collapses`) and docs on when each mode is safe to use.
+  - [x] Leaf 22.10.8 (<500 LOC): add reduction telemetry summary (`pruned_by_por`, `symmetry_collapses`) and docs on when each mode is safe to use.
+    - Added `symmetry_collapses` to exploration telemetry (`transpiler/src/modelcheck/explorer.rs`) by tracking distinct raw states merged under configured symmetry-normalized dedup keys.
+    - Surfaced reduction telemetry in model-check reports (`transpiler/src/main.rs`): JSON/human summary now includes `pruned_by_por`, `symmetry_collapses`, and `hash_compaction_collisions`.
+    - Added focused assertions for symmetry-collapse/POR telemetry in explorer and model-check execution tests.
+    - Updated `docs/model-checking-source-first.md` with reduction telemetry fields and explicit “safe to use” guidance for canonical/hash/symmetry/POR modes.
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.

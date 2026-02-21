@@ -92,6 +92,7 @@ With `--json-report`, output includes:
 - `summary.transitions`
 - `summary.depth`
 - `summary.elapsed_ms`
+- reduction telemetry (`summary.pruned_by_por`, `summary.symmetry_collapses`, `summary.hash_compaction_collisions`)
 - stop metadata and violation payloads (when present)
 
 For iterative tuning, adjust search and domain bounds first (`max_depth`, `max_states`, and quantifier/type domains).
@@ -184,6 +185,11 @@ Finite-domain expansion and runtime values currently cover:
 - POR heuristic caveat:
   - `search.por_heuristic = "invisible_branch"` prunes branches only when writes are syntactically proven invisible to other branches/invariants.
   - Keep it disabled for deadlock checking (`properties.check_deadlock = true`) and treat it as reduction-for-search, not proof of transition completeness.
+- Reduction safety guide:
+  - `state_dedup = "canonical"`: safe for exact safety exploration (default).
+  - `state_dedup = "hash_compaction64"`: lossy bug-finding mode only; collisions can hide behaviors.
+  - `symmetry_fields = [...]`: safe only when those fields are truly permutation-symmetric by protocol design.
+  - `por_heuristic = "invisible_branch"`: safe only for safety checks under its conservative syntactic predicate; keep deadlock checking off.
 - Helper-call limitations:
   - helper predicates/functions must resolve unambiguously from ingested sources.
   - recursive helper evaluation has a bounded recursion depth.
