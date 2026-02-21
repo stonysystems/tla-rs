@@ -46,7 +46,7 @@ pub struct LConstants {
 
 /// Acceptor operator
 pub open spec fn LAcceptor(c: LConstants) -> LRecord {
-    LRecord { bal_1b: 0int, bal_2b: 0int, constants: c.ReplicaConstants, dst: 0int, last_checkpointed_operation: Seq(c.OperationNumber), log_truncation_point: c.OperationNumber, max_bal: 8530703455int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: c.Votes }
+    LRecord { bal_1b: 0int, bal_2b: 0int, constants: c.ReplicaConstants, dst: 0int, last_checkpointed_operation: arbitrary(), log_truncation_point: c.OperationNumber, max_bal: 8530703455int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: c.Votes }
 }
 
 /// IsLogTruncationPointValid operator

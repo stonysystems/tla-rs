@@ -40,7 +40,7 @@ pub struct LConstants {
 
 /// ElectionState operator
 pub open spec fn LElectionState(c: LConstants) -> LRecord {
-    LRecord { constants: c.ReplicaConstants, current_view: c.Ballot, current_view_suspectors: int.powerset(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: Seq(c.Request), requests_received_this_epoch: Seq(c.Request), seqno: 0int }
+    LRecord { constants: c.ReplicaConstants, current_view: c.Ballot, current_view_suspectors: int.powerset(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int }
 }
 
 /// ComputeSuccessorView operator

@@ -547,7 +547,7 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
-#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3c-2)
+#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3c-3)
 
 Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <file>`), captured by
 `test_d1_generated_verus_spec_compile_baseline`.
@@ -558,19 +558,19 @@ Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <fi
 | Compile pass | 2 |
 | Compile fail | 31 |
 | `E0425` unresolved symbol | 0 |
-| `E0423` value/type constructor misuse | 8 |
-| `E0609` unknown field on scalar | 13 |
-| `E0599` missing method on scalar | 7 |
-| `E0308` mismatched types | 3 |
+| `E0423` value/type constructor misuse | 0 |
+| `E0609` unknown field on scalar | 14 |
+| `E0599` missing method on scalar | 12 |
+| `E0308` mismatched types | 5 |
 | `E0618` call on non-function | 0 |
 | Other categories | 0 |
 
 Current pass files: `RSL/Environment.rs`, `RSL/Message.rs`.
 
-Update after `16.8.3c-2` (builtin type-token value normalization in record/value contexts):
-- raw builtin type tokens in D1 value-position record fields (`BOOLEAN`/`Int`/`Nat`) are normalized to typed placeholders
+Update after `16.8.3c-3` (residual constructor/value call-shape normalization):
+- constructor-style type-set value emissions in record/value contexts (`Seq(...)`, `Set(...)`, `Map(...)`, `[D -> R]`) are normalized to placeholders
 - compile pass remains `2/33` (`RSL/Environment.rs`, `RSL/Message.rs`)
-- current first-error mix is: `0` `E0425`, `8` `E0423`, `13` `E0609`, `7` `E0599`, `3` `E0308`, `0` `E0618`
+- current first-error mix is: `0` `E0425`, `0` `E0423`, `14` `E0609`, `12` `E0599`, `5` `E0308`, `0` `E0618`
 
 This compile gate is currently blocked by codegen quality in D1 output (symbol/value emission shape),
 not by D1 parsing coverage (which is already 33/33).

@@ -49,12 +49,12 @@ pub open spec fn LReply(c: LConstants) -> LRecord {
 
 /// LearnerTuple operator
 pub open spec fn LLearnerTuple(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: Seq(LRequest(c)), client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 3338869814int.powerset(), reply: 0int, request: 0int, seqno: 0int, t: 0int }
+    LRecord { candidate_learned_value: arbitrary(), client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 3338869814int.powerset(), reply: 0int, request: 0int, seqno: 0int, t: 0int }
 }
 
 /// Vote operator
 pub open spec fn LVote(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, client: 0int, max_val: Seq(LRequest(c)), max_value_bal: c.Ballot, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: 0int, t: 0int }
+    LRecord { candidate_learned_value: 0int, client: 0int, max_val: arbitrary(), max_value_bal: c.Ballot, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: 0int, t: 0int }
 }
 
 /// ClockReading operator

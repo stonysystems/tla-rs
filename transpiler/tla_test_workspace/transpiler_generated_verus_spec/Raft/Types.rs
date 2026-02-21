@@ -33,7 +33,7 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState(s: LState) -> LRecord {
-    LRecord { commit_index: arbitrary(), current_term: arbitrary(), has_voted: arbitrary(), log: Seq(LLogEntry()), match_index: Map::<u64, u64>, my_id: 0int, next_index: Map::<u64, u64>, quorum_size: 0int, role: LServerRole(), servers: 0int, term: 0int, value: 0int, voted_for: arbitrary(), votes_granted: int.powerset() }
+    LRecord { commit_index: arbitrary(), current_term: arbitrary(), has_voted: arbitrary(), log: arbitrary(), match_index: arbitrary(), my_id: 0int, next_index: arbitrary(), quorum_size: 0int, role: LServerRole(), servers: 0int, term: 0int, value: 0int, voted_for: arbitrary(), votes_granted: int.powerset() }
 }
 
 /// Constants operator

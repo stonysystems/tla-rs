@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3c-2`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3c-3`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5230,7 +5230,11 @@ transpiler/tla_test_workspace/
       - Added translator regression coverage for record-field builtin token normalization in spec mode.
       - Re-generated all `33` D1 workspace specs and re-ran D1 Verus compile baseline.
       - Result: compile pass remains `2/33`, first-error `E0423` reduced `13 -> 8`; new first-error baseline: `0` `E0425`, `8` `E0423`, `13` `E0609`, `7` `E0599`, `3` `E0308`, `0` `E0618`.
-    - [ ] **16.8.3c-3** Normalize residual constructor/value call-shapes (`Map`/function-set style) that still emit type constructors in value position.
+    - [x] **16.8.3c-3** Normalize residual constructor/value call-shapes (`Map`/function-set style) that still emit type constructors in value position.
+      - Extended value-context normalization in `ExprTranslator` for D1 spec-mode record/value emission so constructor-style type-set expressions (`Seq(...)`, `Set(...)`, `Map(...)`, `[D -> R]`) no longer emit value-position constructor/type call-shapes.
+      - Added translator regression coverage for constructor-style value-context normalization in record fields (`Seq`, `Map`, and function-set forms).
+      - Re-generated all `33` D1 workspace specs and re-ran D1 Verus compile baseline.
+      - Result: compile pass remains `2/33`, first-error `E0423` reduced `8 -> 0`; new first-error baseline: `0` `E0425`, `0` `E0423`, `14` `E0609`, `12` `E0599`, `5` `E0308`, `0` `E0618`.
   - [ ] **16.8.3d** Re-run full D1 Verus compile baseline and promote the 16.8.3 gate to required once all generated files compile.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

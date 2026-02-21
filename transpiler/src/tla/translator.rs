@@ -279,6 +279,9 @@ impl<'a> ExprTranslator<'a> {
                     return "arbitrary()".to_string();
                 }
             }
+            if is_constructor_style_type_set_expr(expr) {
+                return "arbitrary()".to_string();
+            }
         }
         self.translate(expr)
     }
@@ -3084,6 +3087,42 @@ mod tests {
         assert!(!out.contains("a: int"));
         assert!(!out.contains("b: nat"));
         assert!(!out.contains("c: bool"));
+    }
+
+    #[test]
+    fn test_translate_record_normalizes_constructor_style_type_sets_in_value_context_spec_mode() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![
+            (
+                "seq_field".to_string(),
+                TlaExpr::OpApply {
+                    op: Box::new(TlaExpr::ident("Seq")),
+                    args: vec![TlaExpr::ident("T")],
+                },
+            ),
+            (
+                "map_field".to_string(),
+                TlaExpr::OpApply {
+                    op: Box::new(TlaExpr::ident("Map")),
+                    args: vec![TlaExpr::ident("K"), TlaExpr::ident("V")],
+                },
+            ),
+            (
+                "fnset_field".to_string(),
+                TlaExpr::FnSet {
+                    domain: Box::new(TlaExpr::ident("D")),
+                    range: Box::new(TlaExpr::ident("R")),
+                },
+            ),
+        ]);
+        let out = translator.translate(&expr);
+        assert!(out.contains("seq_field: arbitrary()"));
+        assert!(out.contains("map_field: arbitrary()"));
+        assert!(out.contains("fnset_field: arbitrary()"));
+        assert!(!out.contains("seq_field: Seq("));
+        assert!(!out.contains("map_field: Map("));
+        assert!(!out.contains("fnset_field: Map::<"));
     }
 
     #[test]
