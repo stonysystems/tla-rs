@@ -52,6 +52,23 @@ impl ExploredGraphIndex {
     }
 }
 
+/// One strongly-connected component with an optional cycle witness edge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SccComponent {
+    /// Canonical state keys in this SCC.
+    pub members: BTreeSet<String>,
+    /// Representative edge that witnesses a cycle in this SCC.
+    ///
+    /// `None` means the SCC is acyclic (single node without self-loop).
+    pub representative_cycle_edge: Option<GraphEdgeKey>,
+}
+
+impl SccComponent {
+    pub fn is_cyclic(&self) -> bool {
+        self.representative_cycle_edge.is_some()
+    }
+}
+
 /// Build a reusable adjacency index from explored states and traced successors.
 ///
 /// Only transitions that stay within the explored-node set are indexed. Edges to
@@ -136,6 +153,144 @@ where
     })
 }
 
+/// Run Tarjan SCC decomposition over the explored graph and attach cycle witnesses.
+pub fn detect_sccs_with_witness(index: &ExploredGraphIndex) -> Vec<SccComponent> {
+    let mut search = TarjanSearch::new(index);
+    let node_keys: Vec<String> = index.nodes.keys().cloned().collect();
+    for key in node_keys {
+        if !search.indices.contains_key(&key) {
+            search.strong_connect(key);
+        }
+    }
+
+    let mut components: Vec<SccComponent> = search
+        .components
+        .into_iter()
+        .map(|members| SccComponent {
+            representative_cycle_edge: representative_cycle_edge(index, &members),
+            members,
+        })
+        .collect();
+    components.sort_by_key(component_sort_key);
+    components
+}
+
+/// SCCs that contain at least one cycle (self-loop or multi-node cycle).
+pub fn detect_cyclic_sccs_with_witness(index: &ExploredGraphIndex) -> Vec<SccComponent> {
+    detect_sccs_with_witness(index)
+        .into_iter()
+        .filter(SccComponent::is_cyclic)
+        .collect()
+}
+
+#[derive(Debug)]
+struct TarjanSearch<'a> {
+    graph: &'a ExploredGraphIndex,
+    next_index: usize,
+    indices: BTreeMap<String, usize>,
+    lowlinks: BTreeMap<String, usize>,
+    stack: Vec<String>,
+    on_stack: BTreeSet<String>,
+    components: Vec<BTreeSet<String>>,
+}
+
+impl<'a> TarjanSearch<'a> {
+    fn new(graph: &'a ExploredGraphIndex) -> Self {
+        Self {
+            graph,
+            next_index: 0,
+            indices: BTreeMap::new(),
+            lowlinks: BTreeMap::new(),
+            stack: Vec::new(),
+            on_stack: BTreeSet::new(),
+            components: Vec::new(),
+        }
+    }
+
+    fn strong_connect(&mut self, key: String) {
+        let current = self.next_index;
+        self.next_index += 1;
+        self.indices.insert(key.clone(), current);
+        self.lowlinks.insert(key.clone(), current);
+        self.stack.push(key.clone());
+        self.on_stack.insert(key.clone());
+
+        let successors: Vec<String> = self
+            .graph
+            .successors
+            .get(&key)
+            .map(|set| set.iter().cloned().collect())
+            .unwrap_or_default();
+        for successor in successors {
+            if !self.indices.contains_key(&successor) {
+                self.strong_connect(successor.clone());
+                let child_lowlink = self.lowlinks[&successor];
+                let my_lowlink = self.lowlinks[&key];
+                self.lowlinks
+                    .insert(key.clone(), my_lowlink.min(child_lowlink));
+            } else if self.on_stack.contains(&successor) {
+                let succ_index = self.indices[&successor];
+                let my_lowlink = self.lowlinks[&key];
+                self.lowlinks
+                    .insert(key.clone(), my_lowlink.min(succ_index));
+            }
+        }
+
+        if self.lowlinks[&key] == self.indices[&key] {
+            let mut component = BTreeSet::new();
+            while let Some(candidate) = self.stack.pop() {
+                self.on_stack.remove(&candidate);
+                component.insert(candidate.clone());
+                if candidate == key {
+                    break;
+                }
+            }
+            self.components.push(component);
+        }
+    }
+}
+
+fn representative_cycle_edge(
+    index: &ExploredGraphIndex,
+    members: &BTreeSet<String>,
+) -> Option<GraphEdgeKey> {
+    if members.is_empty() {
+        return None;
+    }
+
+    if members.len() == 1 {
+        let key = members.iter().next().unwrap();
+        let has_self_loop = index
+            .successors
+            .get(key)
+            .map(|out| out.contains(key))
+            .unwrap_or(false);
+        return has_self_loop.then(|| GraphEdgeKey {
+            from_key: key.clone(),
+            to_key: key.clone(),
+        });
+    }
+
+    for from_key in members {
+        if let Some(out) = index.successors.get(from_key) {
+            for to_key in out {
+                if members.contains(to_key) {
+                    return Some(GraphEdgeKey {
+                        from_key: from_key.clone(),
+                        to_key: to_key.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn component_sort_key(component: &SccComponent) -> String {
+    component.members.iter().next().cloned().unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +304,34 @@ mod tests {
             from_key: int_state(from).canonical_key(),
             to_key: int_state(to).canonical_key(),
         }
+    }
+
+    fn index_from_edges(nodes: &[i128], edges: &[(i128, i128, &str)]) -> ExploredGraphIndex {
+        let explored: Vec<ExploredState> = nodes
+            .iter()
+            .enumerate()
+            .map(|(depth, value)| ExploredState {
+                state: int_state(*value),
+                depth,
+            })
+            .collect();
+
+        build_explored_graph_index(&explored, |state| {
+            let from = match state {
+                RuntimeValue::Int(v) => *v,
+                _ => return Ok(Vec::new()),
+            };
+            let successors = edges
+                .iter()
+                .filter(|(edge_from, _, _)| *edge_from == from)
+                .map(|(_, to, label)| TracedSuccessor {
+                    action_branch: (*label).to_string(),
+                    state: int_state(*to),
+                })
+                .collect();
+            Ok(successors)
+        })
+        .unwrap()
     }
 
     #[test]
@@ -297,5 +480,56 @@ mod tests {
         let index = build_explored_graph_index(&explored, |_| Ok(Vec::new())).unwrap();
         let k1 = int_state(1).canonical_key();
         assert_eq!(index.nodes.get(&k1).unwrap().depth, 2);
+    }
+
+    #[test]
+    fn test_detect_sccs_with_witness_marks_acyclic_singletons_without_witness() {
+        let index = index_from_edges(&[0, 1, 2], &[(0, 1, "b01"), (1, 2, "b12")]);
+        let sccs = detect_sccs_with_witness(&index);
+        assert_eq!(sccs.len(), 3);
+        assert!(sccs.iter().all(|component| !component.is_cyclic()));
+    }
+
+    #[test]
+    fn test_detect_sccs_with_witness_reports_self_loop_witness() {
+        let index = index_from_edges(&[0, 1], &[(0, 0, "self"), (0, 1, "forward")]);
+        let sccs = detect_sccs_with_witness(&index);
+        let self_component = sccs
+            .iter()
+            .find(|component| component.members == BTreeSet::from([int_state(0).canonical_key()]))
+            .unwrap();
+        assert!(self_component.is_cyclic());
+        assert_eq!(
+            self_component.representative_cycle_edge.as_ref().unwrap(),
+            &edge_key(0, 0)
+        );
+    }
+
+    #[test]
+    fn test_detect_sccs_with_witness_reports_multi_node_cycle_and_cyclic_filter() {
+        let index = index_from_edges(
+            &[0, 1, 2, 3],
+            &[(0, 1, "b01"), (1, 2, "b12"), (2, 0, "b20"), (2, 3, "b23")],
+        );
+        let sccs = detect_sccs_with_witness(&index);
+        let cycle_component = sccs
+            .iter()
+            .find(|component| {
+                component.members
+                    == BTreeSet::from([
+                        int_state(0).canonical_key(),
+                        int_state(1).canonical_key(),
+                        int_state(2).canonical_key(),
+                    ])
+            })
+            .unwrap();
+        assert!(cycle_component.is_cyclic());
+        let witness = cycle_component.representative_cycle_edge.as_ref().unwrap();
+        assert!(cycle_component.members.contains(&witness.from_key));
+        assert!(cycle_component.members.contains(&witness.to_key));
+
+        let cyclic_only = detect_cyclic_sccs_with_witness(&index);
+        assert_eq!(cyclic_only.len(), 1);
+        assert_eq!(cyclic_only[0], *cycle_component);
     }
 }

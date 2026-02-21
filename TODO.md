@@ -6629,7 +6629,12 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
       - build stats for within-explored vs dropped-to-unexplored edges
     - Exported graph utilities via `transpiler/src/modelcheck/mod.rs` for upcoming SCC/fairness leaves.
     - Added focused unit coverage for adjacency correctness, edge dropping to unexplored states, multi-label edge merging, and duplicate-node depth normalization.
-  - [ ] Leaf 22.x.3 (<500 LOC): add SCC detection utility with witness extraction (component members + representative cycle edge) and focused unit tests.
+  - [x] Leaf 22.x.3 (<500 LOC): add SCC detection utility with witness extraction (component members + representative cycle edge) and focused unit tests.
+    - Added Tarjan-based SCC utilities in `transpiler/src/modelcheck/graph.rs`:
+      - `detect_sccs_with_witness(...)` returns SCC membership + optional representative cycle edge witness.
+      - `detect_cyclic_sccs_with_witness(...)` filters to cycle-bearing SCCs for downstream liveness checks.
+    - Added reusable SCC data model (`SccComponent`) with `is_cyclic()` helper.
+    - Added focused tests for acyclic singleton SCCs, self-loop witness extraction, and multi-node cycle witness extraction + cyclic-only filtering.
   - [ ] Leaf 22.x.4 (<500 LOC): implement `leads_to` checking on explored graphs by searching SCCs that contain `from` states but can avoid `to` forever; emit counterexample traces.
   - [ ] Leaf 22.x.5 (<500 LOC): add fairness filtering (`WF`/`SF`) over candidate SCC cycles using branch-label visitation conditions.
   - [ ] Leaf 22.x.6 (<500 LOC): integrate liveness/fairness results into `model-check` JSON/human reports and document the finalized workflow/caveats.
