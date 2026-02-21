@@ -536,6 +536,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let extra_type_aliases = file_config.extra_type_aliases.clone();
             let custom_derives = file_config.custom_derives.clone();
             let skip_fields = file_config.skip_fields.clone();
+            let generate_clone_up_to_view_simple =
+                file_config.output.generate_clone_up_to_view_simple;
             let generate_unreachable_value_helper =
                 file_config.output.generate_unreachable_value_helper;
             let manual_code = config
@@ -619,6 +621,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     extra_type_aliases: &extra_type_aliases,
                     custom_derives: &custom_derives,
                     skip_fields: &skip_fields,
+                    generate_clone_up_to_view_simple,
                     generate_unreachable_value_helper,
                     manual_code: manual_code.as_deref(),
                 },
@@ -1749,6 +1752,10 @@ manual_code = "manual_helpers.rs"
         );
 
         let file_config = FileConfig::from_file(&config_path).expect("RSL file config should load");
+        assert!(
+            file_config.output.generate_clone_up_to_view_simple,
+            "RSL file config should enable output.generate_clone_up_to_view_simple"
+        );
         assert!(
             file_config.output.generate_unreachable_value_helper,
             "RSL file config should enable output.generate_unreachable_value_helper"

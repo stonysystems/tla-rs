@@ -826,6 +826,11 @@ pub struct OutputConfig {
     #[serde(default)]
     pub clone_method: Option<String>,
 
+    /// Whether to generate `clone_up_to_view()` for primitive-only generated structs.
+    /// This is a migration aid for moving simple helper methods out of manual type code.
+    #[serde(default)]
+    pub generate_clone_up_to_view_simple: bool,
+
     /// Whether to generate a shared `unreachable_value<T>()` helper in generated type files.
     /// Useful when generated/manual RSL modules rely on this trusted helper and we want
     /// to migrate it out of manual helper code.
@@ -865,6 +870,7 @@ impl Default for OutputConfig {
             generate_wrapper_methods: false,
             wrapper_impl_type: None,
             clone_method: None,
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
             assume_postconditions: false,
@@ -1191,6 +1197,23 @@ mod tests {
     fn test_generate_unreachable_value_helper_default_false() {
         let config = TranspilerConfig::default();
         assert!(!config.output.generate_unreachable_value_helper);
+    }
+
+    #[test]
+    fn test_generate_clone_up_to_view_simple_default_false() {
+        let config = TranspilerConfig::default();
+        assert!(!config.output.generate_clone_up_to_view_simple);
+    }
+
+    #[test]
+    fn test_generate_clone_up_to_view_simple_from_toml() {
+        let toml = r#"
+            [output]
+            generate_clone_up_to_view_simple = true
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(config.output.generate_clone_up_to_view_simple);
     }
 
     #[test]

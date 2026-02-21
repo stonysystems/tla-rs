@@ -54,6 +54,17 @@ pub struct CClockReading {
 }
 
 impl CClockReading {
+    pub fn clone_up_to_view(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+    {
+        CClockReading {
+            t: self.t,
+        }
+    }
+}
+
+impl CClockReading {
     pub open spec fn valid(&self) -> bool {
         true
     }

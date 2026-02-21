@@ -59,6 +59,8 @@ pub struct TypeGenerator {
     custom_derives: HashMap<String, Vec<String>>,
     /// Fields to skip per exec type during generation
     skip_fields: HashMap<String, Vec<String>>,
+    /// Generate clone_up_to_view for primitive-only generated structs.
+    generate_clone_up_to_view_simple: bool,
     /// Exec type names that are stored inside HashSet<T> and need Hash+Eq impls.
     /// These get `#[verifier(external_body)]` Hash/PartialEq/Eq impls since
     /// Verus doesn't verify these trait implementations.
@@ -82,6 +84,7 @@ impl TypeGenerator {
             clone_strategy: HashMap::new(),
             custom_derives: HashMap::new(),
             skip_fields: HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             hashset_element_types: HashSet::new(),
         }
     }
@@ -127,6 +130,11 @@ impl TypeGenerator {
     /// Set fields to skip per exec type
     pub fn set_skip_fields(&mut self, fields: HashMap<String, Vec<String>>) {
         self.skip_fields = fields;
+    }
+
+    /// Enable generation of clone_up_to_view methods for primitive-only structs.
+    pub fn set_generate_clone_up_to_view_simple(&mut self, enabled: bool) {
+        self.generate_clone_up_to_view_simple = enabled;
     }
 
     /// Set types that are stored inside HashSet<T> and need Hash+Eq impls
@@ -176,6 +184,75 @@ impl TypeGenerator {
         code.push_str("}\n\n");
     }
 
+    fn is_copy_scalar_type_for_clone_up_to_view(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Bool | Type::Int | Type::Nat | Type::Unit => true,
+            Type::Named(path) => {
+                let name = path.last().unwrap_or("Unknown");
+                if self.primitive_types.contains(&name.to_string()) {
+                    return true;
+                }
+                if is_copy_scalar_primitive_type(name) {
+                    return true;
+                }
+                if let Some(remapped) = self.remapping.get(name) {
+                    if self.primitive_types.contains(remapped) {
+                        return true;
+                    }
+                    return is_copy_scalar_primitive_type(remapped);
+                }
+                false
+            }
+            Type::Reference { .. }
+            | Type::Generic(_, _)
+            | Type::Seq(_)
+            | Type::Set(_)
+            | Type::Map(_, _)
+            | Type::Tuple(_) => false,
+        }
+    }
+
+    fn generate_clone_up_to_view_simple_method(
+        &self,
+        exec_name: &str,
+        fields: &[&FieldDef],
+    ) -> Option<String> {
+        if !self.generate_clone_up_to_view_simple {
+            return None;
+        }
+        if fields.is_empty() {
+            return None;
+        }
+        if !fields
+            .iter()
+            .all(|field| self.is_copy_scalar_type_for_clone_up_to_view(&field.ty))
+        {
+            return None;
+        }
+
+        let mut code = format!("impl {} {{\n", exec_name);
+        code.push_str(&format!(
+            "{}pub fn clone_up_to_view(&self) -> (result: Self)\n",
+            self.indent
+        ));
+        code.push_str(&format!(
+            "{}ensures\n{}    result@ == self@,\n",
+            self.indent, self.indent
+        ));
+        code.push_str(&format!("{}{{\n", self.indent));
+        code.push_str(&format!("{}    {} {{\n", self.indent, exec_name));
+        for field in fields {
+            code.push_str(&format!(
+                "{}        {}: self.{},\n",
+                self.indent, field.name, field.name
+            ));
+        }
+        code.push_str(&format!("{}    }}\n", self.indent));
+        code.push_str(&format!("{}}}\n", self.indent));
+        code.push_str("}\n\n");
+        Some(code)
+    }
+
     /// Generate an exec struct from a spec struct
     pub fn generate_struct(&self, spec: &StructDef) -> GeneratedCode {
         let mut code = String::new();
@@ -186,16 +263,18 @@ impl TypeGenerator {
 
         // Get skip fields for this type
         let skip_fields = self.skip_fields.get(&exec_name);
+        let generated_fields: Vec<&FieldDef> = spec
+            .fields
+            .iter()
+            .filter(|field| {
+                !skip_fields
+                    .is_some_and(|skips| skips.contains(&field.name))
+            })
+            .collect();
 
         // Generate struct definition
         code.push_str(&format!("pub struct {} {{\n", exec_name));
-        for field in &spec.fields {
-            // Skip fields configured to be omitted
-            if let Some(skips) = skip_fields {
-                if skips.contains(&field.name) {
-                    continue;
-                }
-            }
+        for field in &generated_fields {
             let exec_type = self.translate_type(&field.ty);
             let vis = if field.is_public { "pub " } else { "" };
             code.push_str(&format!(
@@ -215,6 +294,12 @@ impl TypeGenerator {
             }
         }
         code.push_str("}\n\n");
+
+        if let Some(clone_up_to_view_impl) =
+            self.generate_clone_up_to_view_simple_method(&exec_name, &generated_fields)
+        {
+            code.push_str(&clone_up_to_view_impl);
+        }
 
         if clone_strat == "external_body" {
             self.generate_external_body_clone(&exec_name, &mut code);
@@ -843,6 +928,28 @@ fn is_rust_primitive_type(name: &str) -> bool {
     )
 }
 
+/// Check if a type name is a Copy scalar primitive in Rust.
+/// Excludes non-Copy types such as `String`.
+fn is_copy_scalar_primitive_type(name: &str) -> bool {
+    matches!(
+        name,
+        "bool"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "char"
+    )
+}
+
 /// Check if a type name represents a primitive or stdlib type that doesn't have valid()
 fn is_primitive_or_stdlib_type(type_name: &str) -> bool {
     // Primitive types
@@ -947,6 +1054,7 @@ pub fn generate_all_types_with_options(
         extra_type_aliases: &HashMap::new(),
         custom_derives: &HashMap::new(),
         skip_fields: &HashMap::new(),
+        generate_clone_up_to_view_simple: false,
         generate_unreachable_value_helper: false,
         manual_code: None,
     })
@@ -967,6 +1075,7 @@ pub struct TypeGenConfig<'a> {
     pub extra_type_aliases: &'a HashMap<String, String>,
     pub custom_derives: &'a HashMap<String, Vec<String>>,
     pub skip_fields: &'a HashMap<String, Vec<String>>,
+    pub generate_clone_up_to_view_simple: bool,
     pub generate_unreachable_value_helper: bool,
     pub manual_code: Option<&'a str>,
 }
@@ -993,6 +1102,7 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     generator.set_clone_strategy(cfg.clone_strategy.clone());
     generator.set_custom_derives(cfg.custom_derives.clone());
     generator.set_skip_fields(cfg.skip_fields.clone());
+    generator.set_generate_clone_up_to_view_simple(cfg.generate_clone_up_to_view_simple);
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
 
@@ -2035,6 +2145,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
         };
@@ -2078,6 +2189,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
         };
@@ -2126,6 +2238,7 @@ mod tests {
             extra_type_aliases: &extra_aliases,
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
         };
@@ -2139,6 +2252,99 @@ mod tests {
         assert!(
             result.code.contains("pub type CReplyMap = HashMap<EndPoint, CReply>;"),
             "Should include configured CReplyMap alias: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_generate_clone_up_to_view_simple_for_primitive_struct() {
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "LClockReading".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "t".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "valid",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: true,
+            generate_unreachable_value_helper: false,
+            manual_code: None,
+        };
+        let result = generate_all_types_full(&cfg);
+        assert!(
+            result
+                .code
+                .contains("pub fn clone_up_to_view(&self) -> (result: Self)"),
+            "primitive-only struct should get clone_up_to_view: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("t: self.t"),
+            "clone_up_to_view should copy primitive fields: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_generate_clone_up_to_view_simple_skips_non_primitive_struct() {
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "LState".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "bal".to_string(),
+                ty: Type::Named(Path::single("Ballot".to_string())),
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "valid",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: true,
+            generate_unreachable_value_helper: false,
+            manual_code: None,
+        };
+        let result = generate_all_types_full(&cfg);
+        assert!(
+            !result
+                .code
+                .contains("pub fn clone_up_to_view(&self) -> (result: Self)"),
+            "non-primitive struct should not get auto clone_up_to_view: {}",
             result.code
         );
     }
@@ -2540,6 +2746,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &custom_derives,
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
         };
@@ -2594,6 +2801,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &skip_fields,
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
         };
@@ -2633,6 +2841,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: Some(manual),
         };
@@ -2671,6 +2880,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: true,
             manual_code: None,
         };
@@ -2704,6 +2914,7 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: true,
             manual_code: Some(manual),
         };

@@ -120,6 +120,7 @@ validity_predicate_name = "valid"
 generate_clone = true
 include_debug_comments = false
 generate_proofs = true
+generate_clone_up_to_view_simple = true
 generate_unreachable_value_helper = true
 manual_code = "types_manual_helpers.rs"
 # Custom imports for RSL types
