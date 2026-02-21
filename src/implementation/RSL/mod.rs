@@ -1,10 +1,10 @@
 pub mod CStateMachine;
 pub mod ElectionImpl;
-/// Deprecated: use `crate::generated::RSL::executor_gen` for functional wrappers.
-/// Retained for type re-exports and impl methods still called by generated wrappers.
+/// Generated wrappers live in `crate::generated::RSL::executor_gen`.
+/// This module owns CExecutor/CIncompleteBatchTimer type infrastructure and CExecutorExecute.
 pub mod ExecutorImpl;
-/// Deprecated: use `crate::generated::RSL::proposer_gen` for functional wrappers.
-/// Retained for impl methods still called by generated wrappers (clone-delegate pattern).
+/// Generated wrappers live in `crate::generated::RSL::proposer_gen`.
+/// This module owns CProposer type infrastructure and proposer helper methods.
 pub mod ProposerImpl;
 pub mod ReplicaImpl;
 /// Generated wrappers live in `crate::generated::RSL::acceptor_gen`.

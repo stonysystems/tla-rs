@@ -6318,7 +6318,10 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
       - Moved `CAcceptor` to `src/implementation/RSL/acceptorimpl.rs`, `CLearner` to `src/implementation/RSL/learnerimpl.rs`, and `CElectionState`/`COutstandingOperation` to `src/implementation/RSL/ElectionImpl.rs`.
       - Updated `types_transpile.toml` to source component block A via `re_exports` and kept those spec types in `skip_types`.
       - Removed component block A definitions from `types_manual_helpers.rs`, regenerated `types_gen.rs`, and updated integration tests to enforce new module ownership.
-    - [ ] 21.7.5.4 Re-home component type block B (`CExecutor`, `CIncompleteBatchTimer`, `CProposer`, `CReplica`, `CScheduler`) out of manual injection.
+    - [x] 21.7.5.4 Re-home component type block B (`CExecutor`, `CIncompleteBatchTimer`, `CProposer`, `CReplica`, `CScheduler`) out of manual injection.
+      - Moved block-B struct/enum + type infrastructure impls into `src/implementation/RSL/ExecutorImpl.rs`, `src/implementation/RSL/ProposerImpl.rs`, and `src/implementation/RSL/ReplicaImpl.rs` (including `abstractify_clpacket`/`abstractify_crslio` helpers).
+      - Updated `types_transpile.toml` re-exports for block B, regenerated `src/generated/RSL/types_gen.rs`, and removed block-B definitions from `src/protocol/RSL/types_manual_helpers.rs`.
+      - Updated transpiler integration/config tests for the new ownership boundary, then re-ran `cargo test --all-features` in `transpiler/` and full Verus build `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus -c liblib.so && scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so`.
     - [ ] 21.7.5.5 Remove `output.manual_code` from `types_transpile.toml`, regenerate `types_gen.rs`, and update parity/regression tests.
 - [x] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle
 

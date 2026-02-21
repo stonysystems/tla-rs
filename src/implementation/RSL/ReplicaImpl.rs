@@ -1,9 +1,12 @@
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
+use crate::common::framework::environment_s::{LIoOp, LPacket};
+use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::acceptor_gen as generated_acceptor;
 use crate::generated::RSL::executor_gen as generated_executor;
 use crate::generated::RSL::learner_gen as generated_learner;
 use crate::generated::RSL::proposer_gen as generated_proposer;
+use crate::generated::RSL::types_gen::CRslIo;
 use crate::implementation::RSL::types_i::*;
 use vstd::prelude::*;
 use crate::implementation::RSL::acceptorimpl::*;
@@ -11,6 +14,7 @@ use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::learnerimpl::*;
+use crate::implementation::RSL::ElectionImpl::COutstandingOperation;
 use crate::implementation::RSL::ExecutorImpl::*;
 use crate::implementation::RSL::ProposerImpl::*;
 use crate::implementation::RSL::{cconfiguration::*, ProposerImpl::*};
@@ -24,11 +28,144 @@ use crate::protocol::RSL::{
 use std::collections::*;
 use vstd::std_specs::hash::*;
 use vstd::{map::*, map_lib::*, prelude::*, seq::*};
-// CReplica struct and valid(), view(), abstractable(), clone_up_to_view() are in types_gen.rs
-pub use crate::generated::RSL::types_gen::CReplica;
 
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+
+#[derive(Clone)]
+pub struct CReplica {
+    pub constants: CReplicaConstants,
+    pub nextHeartbeatTime: u64,
+    pub proposer: CProposer,
+    pub acceptor: CAcceptor,
+    pub learner: CLearner,
+    pub executor: CExecutor,
+}
+
+impl CReplica{
+    pub open spec fn valid(self) -> bool {
+        self.abstractable()
+        &&
+        self.constants.valid()
+        &&
+        self.proposer.valid()
+        &&
+        self.acceptor.valid()
+        &&
+        self.learner.valid()
+        &&
+        self.executor.valid()
+        &&
+        self.constants@ == self.acceptor.constants@
+        &&
+        self.constants@ == self.proposer.constants@
+        &&
+        self.constants@ == self.learner.constants@
+        &&
+        self.constants@ == self.executor.constants@
+    }
+
+    pub open spec fn abstractable(self) -> bool{
+        self.constants.abstractable()
+        &&
+        self.proposer.abstractable()
+        &&
+        self.acceptor.abstractable()
+        &&
+        self.learner.abstractable()
+        &&
+        self.executor.abstractable()
+    }
+
+    pub open spec fn view(self) -> LReplica
+    recommends
+        self.abstractable()
+    {
+        LReplica{
+            constants:self.constants@,
+            nextHeartbeatTime:self.nextHeartbeatTime as int,
+            proposer:self.proposer@,
+            acceptor:self.acceptor@,
+            learner:self.learner@,
+            executor:self.executor@
+        }
+    }
+}
+
+impl CReplica {
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            self == result,
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CReplica {
+    type V = LReplica;
+
+    open spec fn view(&self) -> LReplica {
+        LReplica{
+            constants:self.constants@,
+            nextHeartbeatTime:self.nextHeartbeatTime as int,
+            proposer:self.proposer@,
+            acceptor:self.acceptor@,
+            learner:self.learner@,
+            executor:self.executor@
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CScheduler {
+    pub replica: CReplica,
+    pub nextActionIndex: u64,
+}
+
+impl CScheduler {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.replica.valid()
+        &&& 0 <= self.nextActionIndex < 10  // LReplicaNumActions() == 10
+    }
+}
+
+impl View for CScheduler {
+    type V = LScheduler;
+
+    open spec fn view(&self) -> LScheduler {
+        LScheduler {
+            replica: self.replica@,
+            nextActionIndex: self.nextActionIndex as int,
+        }
+    }
+}
+
+/// Convert a concrete LPacket<EndPoint, CMessage> to spec RslPacket
+pub open spec fn abstractify_clpacket(p: LPacket<EndPoint, CMessage>) -> RslPacket {
+    LPacket {
+        dst: p.dst@,
+        src: p.src@,
+        msg: p.msg.view(),
+    }
+}
+
+/// Convert a concrete CRslIo to spec RslIo
+pub open spec fn abstractify_crslio(io: CRslIo) -> RslIo {
+    match io {
+        LIoOp::Send{s} => LIoOp::Send{s: abstractify_clpacket(s)},
+        LIoOp::Receive{r} => LIoOp::Receive{r: abstractify_clpacket(r)},
+        LIoOp::TimeoutReceive => LIoOp::TimeoutReceive,
+        LIoOp::ReadClock{t} => LIoOp::ReadClock{t: t},
+    }
+}
+
+/// Convert a sequence of CRslIo to Seq<RslIo>
+pub open spec fn abstractify_crslio_seq(ios: Seq<CRslIo>) -> Seq<RslIo> {
+    ios.map(|i, io: CRslIo| abstractify_crslio(io))
+}
 
 impl CReplica{
 

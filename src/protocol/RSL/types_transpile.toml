@@ -60,6 +60,10 @@ re_exports = [
     "crate::implementation::RSL::acceptorimpl::CAcceptor",
     "crate::implementation::RSL::learnerimpl::CLearner",
     "crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation, CRequestHeader}",
+    # Component block B moved out of manual injection
+    "crate::implementation::RSL::ExecutorImpl::{CExecutor, CIncompleteBatchTimer}",
+    "crate::implementation::RSL::ProposerImpl::CProposer",
+    "crate::implementation::RSL::ReplicaImpl::{CReplica, CScheduler, abstractify_clpacket, abstractify_crslio, abstractify_crslio_seq}",
     # Broadcast helpers (CBroadcast, OutboundPackets with verified loops)
     "crate::implementation::RSL::cbroadcast::*",
     # Upper bound helpers (CUpperBound has spec int field, CUpperBoundedAddition)

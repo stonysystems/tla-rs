@@ -1743,9 +1743,22 @@ manual_code = "manual_helpers.rs"
             .expect("RSL type config should load output.manual_code file");
 
         assert!(
-            manual.contains("pub struct CProposer"),
-            "loaded manual helper block should include extracted proposer section"
+            manual.contains("impl CParameters"),
+            "loaded manual helper block should include CParameters infrastructure"
         );
+        for removed in [
+            "pub struct CExecutor",
+            "pub enum CIncompleteBatchTimer",
+            "pub struct CProposer",
+            "pub struct CReplica",
+            "pub struct CScheduler",
+        ] {
+            assert!(
+                !manual.contains(removed),
+                "loaded manual helper block should no longer include `{}`",
+                removed
+            );
+        }
         assert!(
             !manual.contains("pub fn unreachable_value<T>()"),
             "loaded manual helper block should no longer include unreachable_value helper"

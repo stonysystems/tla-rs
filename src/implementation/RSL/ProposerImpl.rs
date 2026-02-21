@@ -5,6 +5,7 @@ use crate::implementation::common::generic_refinement::*;
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::RSL::{
     cbroadcast::*, cconfiguration::*, cconstants::*, cmessage::*, types_i::*, ElectionImpl::*,
+    ExecutorImpl::CIncompleteBatchTimer,
 };
 use crate::protocol::common::upper_bound::UpperBoundedAddition;
 use crate::protocol::RSL::broadcast::*;
@@ -20,16 +21,102 @@ use vstd::invariant;
 use vstd::prelude::*;
 use vstd::std_specs::hash::*;
 use vstd::{hash_map::*, map::*, prelude::*, seq::*, set::*};
-// DEPRECATED: Use `crate::generated::RSL::proposer_gen` for functional wrappers
-// and `crate::generated::RSL::types_gen::{CProposer, CIncompleteBatchTimer}` for types directly.
-// This module retains only the Clone impl and 5 static helper methods called from
-// generated proposer code (CSetOfMessage1bAboutBallot, CAllAcceptorsHadNoProposal,
-// CExistsAcceptorHasProposalLargeThanOpn, CValIsHighestNumberedProposal,
-// CProposerCanNominateUsingOperationNumber) and their internal helpers.
-#[deprecated(note = "Import CProposer, CIncompleteBatchTimer from crate::generated::RSL::types_gen instead")]
-pub use crate::generated::RSL::types_gen::{CProposer, CIncompleteBatchTimer};
+// Generated wrappers live in `crate::generated::RSL::proposer_gen`.
+// This module owns CProposer type infrastructure, Clone impl, and static helpers.
 
 verus! {
+pub struct CProposer {
+    pub constants: CReplicaConstants,
+    pub current_state: u64,
+    pub request_queue: Vec<CRequest>,
+    pub max_ballot_i_sent_1a: CBallot,
+    pub next_operation_number_to_propose: u64,
+    pub received_1b_packets: HashSet<CPacket>,
+    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>,
+    pub incomplete_batch_timer: CIncompleteBatchTimer,
+    pub election_state: CElectionState,
+    pub max_log_truncation_point: COperationNumber,
+    pub max_opn_with_proposal: COperationNumber,
+}
+
+impl CProposer{
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& (forall |i:int| 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].abstractable())
+        &&& self.max_ballot_i_sent_1a.abstractable()
+        &&& (forall |p:CPacket| self.received_1b_packets@.contains(p) ==> p.abstractable())
+        &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.abstractable())
+        &&& self.incomplete_batch_timer.abstractable()
+        &&& self.election_state.abstractable()
+    }
+
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& (forall |i:int| 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].valid())
+        &&& self.max_ballot_i_sent_1a.valid()
+        &&& (forall |p:CPacket| self.received_1b_packets@.contains(p) ==> p.valid())
+        &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.valid_public_key())
+        &&& self.incomplete_batch_timer.valid()
+        &&& self.election_state.valid()
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            self == result,
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+
+    pub open spec fn view(self) -> LProposer
+    recommends self.valid(),
+    {
+        LProposer{
+            constants: self.constants.view(),
+            current_state: self.current_state as int,
+            request_queue: self.request_queue@.map(|i, r:CRequest| r.view()),
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a.view(),
+            next_operation_number_to_propose: self.next_operation_number_to_propose as int,
+            received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
+            highest_seqno_requested_by_client_this_view: Map::new(
+                |ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak,
+                |ak: AbstractEndPoint| {
+                    let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
+                    self.highest_seqno_requested_by_client_this_view@[k] as int
+                }
+            ),
+            incomplete_batch_timer: self.incomplete_batch_timer.view(),
+            election_state: self.election_state.view(),
+        }
+    }
+}
+
+impl View for CProposer {
+    type V = LProposer;
+
+    open spec fn view(&self) -> LProposer {
+        LProposer{
+            constants: self.constants.view(),
+            current_state: self.current_state as int,
+            request_queue: self.request_queue@.map(|i, r:CRequest| r.view()),
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a.view(),
+            next_operation_number_to_propose: self.next_operation_number_to_propose as int,
+            received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
+            highest_seqno_requested_by_client_this_view: Map::new(
+                |ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak,
+                |ak: AbstractEndPoint| {
+                    let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
+                    self.highest_seqno_requested_by_client_this_view@[k] as int
+                }
+            ),
+            incomplete_batch_timer: self.incomplete_batch_timer.view(),
+            election_state: self.election_state.view(),
+        }
+    }
+}
 
 // CProposer contains HashSet<CPacket> and HashMap<EndPoint, u64>, so Clone can't be derived by Verus.
 impl Clone for CProposer {

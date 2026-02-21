@@ -1,21 +1,135 @@
 use crate::implementation::RSL::types_i::*;
+use crate::implementation::RSL::appinterface::*;
 use crate::implementation::RSL::cbroadcast::OutboundPackets;
 use crate::implementation::RSL::cbroadcast::OutboundPackets::PacketSequence;
+use crate::implementation::RSL::cconstants::*;
 use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
+use crate::implementation::RSL::ElectionImpl::COutstandingOperation;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::executor::*;
+use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::constants::*;
 use crate::generated::RSL::executor_gen::{CGetPacketsFromReplies, CUpdateNewCache};
-// DEPRECATED: Use `crate::generated::RSL::executor_gen` for functional wrappers
-// and `crate::generated::RSL::types_gen::{CExecutor, COutstandingOperation}` for types directly.
-// This module retains only CExecutorExecute (called from ReplicaImpl.rs).
-#[deprecated(note = "Import CExecutor, COutstandingOperation from crate::generated::RSL::types_gen instead")]
-pub use crate::generated::RSL::types_gen::{CExecutor, COutstandingOperation};
+// Generated wrappers live in `crate::generated::RSL::executor_gen`.
+// This module owns CExecutor/CIncompleteBatchTimer type infrastructure
+// and CExecutorExecute, which is still called from ReplicaImpl.rs.
 
 verus! {
+#[derive(Clone)]
+pub struct CExecutor {
+    pub constants: CReplicaConstants,
+    pub app: CAppState,
+    pub ops_complete: u64,
+    pub max_bal_reflected: CBallot,
+    pub next_op_to_execute: COutstandingOperation,
+    pub reply_cache: CReplyCache,
+}
+
+impl CExecutor {
+    pub open spec fn valid(&self) -> bool {
+        self.abstractable()
+            && self.constants.valid()
+            && CAppStateIsValid(&self.app)
+            && self.max_bal_reflected.valid()
+            && self.next_op_to_execute.valid()
+            && creplycache_is_valid(&self.reply_cache)
+    }
+
+    pub open spec fn abstractable(&self) -> bool {
+        self.constants.abstractable()
+            && CAppStateIsAbstractable(&self.app)
+            && self.max_bal_reflected.abstractable()
+            && self.next_op_to_execute.abstractable()
+            && creplycache_is_abstractable(&self.reply_cache)
+    }
+
+    pub open spec fn view(&self) -> LExecutor
+        recommends
+            self.abstractable(){
+        let res = LExecutor {
+            constants: self.constants.view(),
+            app: self.app,
+            ops_complete: self.ops_complete as int,
+            max_bal_reflected: self.max_bal_reflected.view(),
+            next_op_to_execute: self.next_op_to_execute.view(),
+            reply_cache: abstractify_creplycache(&self.reply_cache),
+        };
+        res
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CExecutor {
+    type V = LExecutor;
+
+    open spec fn view(&self) -> LExecutor {
+        let res = LExecutor {
+            constants: self.constants.view(),
+            app: self.app,
+            ops_complete: self.ops_complete as int,
+            max_bal_reflected: self.max_bal_reflected.view(),
+            next_op_to_execute: self.next_op_to_execute.view(),
+            reply_cache: abstractify_creplycache(&self.reply_cache),
+        };
+        res
+    }
+}
+
+#[derive(Clone)]
+pub enum CIncompleteBatchTimer {
+    CIncompleteBatchTimerOn {
+        when: u64,
+    },
+    CIncompleteBatchTimerOff,
+}
+
+impl CIncompleteBatchTimer{
+    pub open spec fn abstractable(self) -> bool {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => true,
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => true,
+        }
+    }
+
+    pub open spec fn valid(self) -> bool {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => self.abstractable(),
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => self.abstractable(),
+        }
+    }
+
+    pub open spec fn view(self) -> IncompleteBatchTimer
+        recommends
+        self.abstractable(),
+    {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => IncompleteBatchTimer::IncompleteBatchTimerOn {when:when as int},
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => IncompleteBatchTimer::IncompleteBatchTimerOff{},
+        }
+    }
+}
+
+impl View for CIncompleteBatchTimer {
+    type V = IncompleteBatchTimer;
+
+    open spec fn view(&self) -> IncompleteBatchTimer {
+        match self {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn {when} => IncompleteBatchTimer::IncompleteBatchTimerOn {when:*when as int},
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => IncompleteBatchTimer::IncompleteBatchTimerOff{},
+        }
+    }
+}
 
 impl CExecutor{
 
