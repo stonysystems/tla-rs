@@ -748,12 +748,18 @@ fn value_matches_domain_spec(
     field_name: &str,
 ) -> Result<bool> {
     use verus_transpiler::modelcheck::config::DomainSpec;
+    use verus_transpiler::modelcheck::config::ModelValue;
     use verus_transpiler::modelcheck::value::RuntimeValue;
 
     match domain {
-        DomainSpec::Values { values } => Ok(values
-            .iter()
-            .any(|candidate| value == &RuntimeValue::from(candidate))),
+        DomainSpec::Values { values } => Ok(values.iter().any(|candidate| {
+            if value == &RuntimeValue::from(candidate) {
+                return true;
+            }
+            // For structured constants (Set/Seq/Map/Struct), allow matching by canonical key.
+            // Example: values = ["set:{int:0}"] for a Set<int> constant field.
+            matches!(candidate, ModelValue::String(raw) if value.canonical_key() == *raw)
+        })),
         DomainSpec::IntRange { min, max } => match value {
             RuntimeValue::Int(v) => Ok((*min as i128..=*max as i128).contains(v)),
             RuntimeValue::Nat(v) => Ok((*min as i128..=*max as i128).contains(&i128::from(*v))),
@@ -3350,6 +3356,29 @@ max = 1
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_value_domain_values_accepts_structured_canonical_key() {
+        use verus_transpiler::modelcheck::config::{DomainSpec, ModelValue};
+        use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+
+        let bounds = RuntimeCollectionBounds {
+            max_seq_len: 1,
+            max_set_len: 1,
+            max_map_len: 1,
+        };
+        let value = RuntimeValue::set_bounded([RuntimeValue::Int(0)].into_iter(), &bounds)
+            .expect("set runtime value should construct");
+        let domain = DomainSpec::Values {
+            values: vec![ModelValue::String("set:{int:0}".to_string())],
+        };
+
+        assert!(
+            value_matches_domain_spec(&value, &domain, "rm")
+                .expect("canonical-key matching should evaluate"),
+            "values-domain canonical key should match structured runtime constants"
+        );
     }
 
     #[test]

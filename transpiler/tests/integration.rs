@@ -5788,6 +5788,102 @@ successor_semantics = "deadlock"
 }
 
 #[test]
+fn test_model_check_twophase_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let input = repo_root.join("src/protocol/TwoPhase/twophase.rs");
+    let types = repo_root.join("src/protocol/TwoPhase/types.rs");
+    assert!(input.exists(), "Missing input spec: {}", input.display());
+    assert!(types.exists(), "Missing types spec: {}", types.display());
+
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock should be after epoch")
+        .as_nanos();
+    let model_path = std::env::temp_dir().join(format!(
+        "twophase_modelcheck_{}_{}.toml",
+        std::process::id(),
+        stamp
+    ));
+    let model = r#"
+[constants.domains.rm]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LTPCMessage]
+kind = "enum_subset"
+variants = ["Prepare", "Commit", "Abort"]
+
+[collections]
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
+"#;
+    std::fs::write(&model_path, model).expect("Failed to write temporary model.toml");
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "model-check",
+            "--input",
+            input.to_str().unwrap(),
+            "--types",
+            types.to_str().unwrap(),
+            "--model",
+            model_path.to_str().unwrap(),
+            "--search",
+            "bfs",
+            "--json-report",
+        ])
+        .output()
+        .expect("Failed to run model-check command");
+    let _ = std::fs::remove_file(&model_path);
+
+    assert!(
+        output.status.success(),
+        "TwoPhase bounded model-check should succeed. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        states > 0,
+        "expected at least one reached state in bounded TwoPhase run: {}",
+        stdout
+    );
+    assert!(
+        transitions > 0,
+        "expected at least one transition in bounded TwoPhase run: {}",
+        stdout
+    );
+}
+
+#[test]
 fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
     let source = std::fs::read_to_string("../docs/dev/phase22-mvp-scope.md")
         .expect("Failed to read Phase 22 MVP scope doc");

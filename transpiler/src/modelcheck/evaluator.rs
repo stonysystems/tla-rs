@@ -376,6 +376,25 @@ fn eval_builtin_method(
             };
             Ok(Some(RuntimeValue::Bool(present)))
         }
+        "insert" => {
+            if args.len() != 1 {
+                return Err(type_error("`.insert(...)` expects one argument."));
+            }
+            match receiver {
+                RuntimeValue::Set(items) => {
+                    let mut next = items.clone();
+                    next.insert(args[0].clone());
+                    Ok(Some(RuntimeValue::Set(next)))
+                }
+                other => Err(type_error(
+                    format!(
+                        "`.insert(...)` currently expects Set receiver, got `{}`.",
+                        other.canonical_key()
+                    )
+                    .as_str(),
+                )),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -647,6 +666,21 @@ mod tests {
         };
         let contains = eval_expr(&contains_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(contains, RuntimeValue::Bool(true));
+
+        let insert_expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SetLit(vec![Expr::Literal(Literal::Int(3))])),
+            method: "insert".to_string(),
+            args: vec![Expr::Literal(Literal::Int(4))],
+        };
+        let insert_out = eval_expr(&insert_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(
+            insert_out,
+            RuntimeValue::Set(
+                [RuntimeValue::Int(3), RuntimeValue::Int(4)]
+                    .into_iter()
+                    .collect()
+            )
+        );
     }
 
     #[test]

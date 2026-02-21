@@ -6553,7 +6553,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] PrimaryBackup helper-call `LNext` branch support regression: solve predicate-only helper branches by evaluating branch predicates over candidate `s_` states (instead of requiring direct `s_.field == ...` assignments).
   - [x] PrimaryBackup success-path bounded run.
     - Added bounded integration coverage in `transpiler/tests/integration.rs` to assert `model-check` succeeds with helper-call `LNext` branches and reports non-zero states/transitions.
-  - [ ] TwoPhase (bounded run)
+  - [x] TwoPhase (bounded run)
+    - Added bounded integration coverage in `transpiler/tests/integration.rs` using a finite `c.rm` constants domain (`values = ["set:{int:0}"]`) and an `LTPCMessage` enum subset (`Prepare/Commit/Abort`) for current payload-enum-domain limitations, asserting successful JSON run with non-zero states/transitions.
   - [ ] LeaderElection (bounded run)
   - [ ] Paxos (bounded run)
 - [ ] Add differential checks against existing TLC wrapper outcomes for shared small models.
