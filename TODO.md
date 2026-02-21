@@ -6635,7 +6635,14 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
       - `detect_cyclic_sccs_with_witness(...)` filters to cycle-bearing SCCs for downstream liveness checks.
     - Added reusable SCC data model (`SccComponent`) with `is_cyclic()` helper.
     - Added focused tests for acyclic singleton SCCs, self-loop witness extraction, and multi-node cycle witness extraction + cyclic-only filtering.
-  - [ ] Leaf 22.x.4 (<500 LOC): implement `leads_to` checking on explored graphs by searching SCCs that contain `from` states but can avoid `to` forever; emit counterexample traces.
+  - [x] Leaf 22.x.4 (<500 LOC): implement `leads_to` checking on explored graphs by searching SCCs that contain `from` states but can avoid `to` forever; emit counterexample traces.
+    - Added `transpiler/src/modelcheck/liveness.rs` with:
+      - `resolve_leads_to_obligations(...)` for config-to-spec resolution and predicate signature checks.
+      - `check_leads_to_violations(...)` that evaluates configured `from`/`to` predicates over explored graph nodes and flags cyclic SCCs that can avoid `to`.
+      - counterexample reconstruction (`CounterexampleTrace`) from depth-0 seeds to violating cycle witness edges.
+    - Wired leads-to evaluation into `execute_model_check` (`transpiler/src/main.rs`) for fully explored runs; summary result now reports `leads_to_violated` when a violating SCC is found.
+    - Relaxed command guard to allow `properties.leads_to` now, while still rejecting fairness config until leaf 22.x.5.
+    - Added focused unit tests in `liveness.rs` and execution-level tests in `main.rs` for both violation and satisfaction scenarios.
   - [ ] Leaf 22.x.5 (<500 LOC): add fairness filtering (`WF`/`SF`) over candidate SCC cycles using branch-label visitation conditions.
   - [ ] Leaf 22.x.6 (<500 LOC): integrate liveness/fairness results into `model-check` JSON/human reports and document the finalized workflow/caveats.
   - [ ] Leaf 22.x.7 (<500 LOC): add integration fixtures/tests for small protocols covering satisfied and violated `leads_to` obligations under fairness and non-fairness settings.

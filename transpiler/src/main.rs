@@ -615,6 +615,7 @@ struct ModelCheckExecution {
     summary: ModelCheckExecutionSummary,
     exploration: verus_transpiler::modelcheck::explorer::ExplorationResult,
     por_pruned_branches: Vec<String>,
+    leads_to_violation: Option<verus_transpiler::modelcheck::liveness::LeadsToViolation>,
 }
 
 fn model_check_result_label(
@@ -1061,11 +1062,16 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::config::PorHeuristic;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
     use verus_transpiler::modelcheck::explorer::{
-        explore_state_space_with_traces_and_dedup, ExplorationLimits, TracedSuccessor,
+        explore_state_space_with_traces_and_dedup, ExplorationLimits, ExplorationStopReason,
+        TracedSuccessor,
     };
+    use verus_transpiler::modelcheck::graph::build_explored_graph_index;
     use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
     use verus_transpiler::modelcheck::invariant::{first_invariant_violation, InvariantHooks};
     use verus_transpiler::modelcheck::ir::build_transition_ir;
+    use verus_transpiler::modelcheck::liveness::{
+        check_leads_to_violations, resolve_leads_to_obligations, LivenessHooks,
+    };
     use verus_transpiler::modelcheck::por::infer_invisible_branch_pruning;
     use verus_transpiler::modelcheck::solver::{
         solve_branch_successors_with_candidates, SolverHooks,
@@ -1238,8 +1244,106 @@ fn execute_model_check(
     )
     .map_err(|e| miette::miette!("{}", e))?;
 
+    let mut leads_to_violation = None;
+    if !model_config.properties.leads_to.is_empty()
+        && matches!(
+            exploration.stop_reason,
+            ExplorationStopReason::FrontierExhausted
+        )
+    {
+        let explored_graph = build_explored_graph_index(
+            &exploration.explored,
+            |state| -> verus_transpiler::error::TranspileResult<_> {
+                let mut traced_successors = Vec::new();
+                for branch in &transition.branches {
+                    if por_pruned_branch_labels.contains(&branch.label) {
+                        continue;
+                    }
+                    let branch_assignments = assignments_by_branch
+                        .get(&branch.label)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]);
+                    let call_evaluator =
+                        |func_path: &verus_transpiler::ast::Path,
+                         args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
+                            eval_spec_function_call_recursive(
+                                &bundle.spec_functions,
+                                func_path,
+                                args,
+                                bounds,
+                                0,
+                            )
+                        };
+                    let successors = solve_branch_successors_with_candidates(
+                        &transition,
+                        branch,
+                        state,
+                        Some(&constants_value),
+                        branch_assignments,
+                        Some(&state_candidates),
+                        bounds,
+                        SolverHooks {
+                            call_evaluator: Some(&call_evaluator),
+                            method_evaluator: None,
+                        },
+                    )?;
+                    for successor in successors {
+                        traced_successors.push(TracedSuccessor {
+                            action_branch: branch.label.clone(),
+                            state: successor,
+                        });
+                    }
+                }
+
+                if traced_successors.is_empty()
+                    && matches!(
+                        empty_successor_semantics,
+                        verus_transpiler::modelcheck::solver::EmptySuccessorSemantics::Stuttering
+                    )
+                {
+                    traced_successors.push(TracedSuccessor {
+                        action_branch: "stutter".to_string(),
+                        state: state.clone(),
+                    });
+                }
+
+                Ok(traced_successors)
+            },
+        )
+        .map_err(|e| miette::miette!("{}", e))?;
+
+        let resolved_leads_to =
+            resolve_leads_to_obligations(&bundle.spec_functions, &model_config.properties.leads_to)
+                .map_err(|e| miette::miette!("{}", e))?;
+        leads_to_violation = check_leads_to_violations(
+            &explored_graph,
+            &resolved_leads_to,
+            Some(&constants_value),
+            bounds,
+            LivenessHooks {
+                call_evaluator: Some(&|func_path, args| {
+                    eval_spec_function_call_recursive(
+                        &bundle.spec_functions,
+                        func_path,
+                        args,
+                        bounds,
+                        0,
+                    )
+                }),
+                method_evaluator: None,
+            },
+        )
+        .map_err(|e| miette::miette!("{}", e))?;
+    }
+
+    let result = if leads_to_violation.is_some() {
+        "leads_to_violated".to_string()
+    } else {
+        model_check_result_label(exploration.stop_reason).to_string()
+    };
+
     let summary = ModelCheckExecutionSummary {
-        result: model_check_result_label(exploration.stop_reason).to_string(),
+        result,
         states: exploration.stats.visited_states,
         transitions: exploration.stats.successors_considered,
         depth: exploration
@@ -1255,6 +1359,7 @@ fn execute_model_check(
         summary,
         exploration,
         por_pruned_branches: por_pruned_branch_labels.into_iter().collect(),
+        leads_to_violation,
     })
 }
 
@@ -1408,11 +1513,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
                 model_config.properties.invariants = normalized;
             }
-            if model_config.properties.has_temporal_requirements() {
+            if !model_config.properties.fairness.weak.is_empty()
+                || !model_config.properties.fairness.strong.is_empty()
+            {
                 return Err(miette::miette!(
-                    "Source-first liveness checking is not implemented yet: \
-                     `properties.leads_to`/`properties.fairness` are parsed for forward compatibility \
-                     but cannot be used with `model-check` yet."
+                    "Source-first fairness checking is not implemented yet: \
+                     `properties.fairness` cannot be used with `model-check` yet."
                 ));
             }
             let selected_search = (*search).unwrap_or(CliSearchMode::Bfs);
@@ -1477,6 +1583,28 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "depth": deadlock.depth,
                         "state": deadlock.state.canonical_key(),
                     })),
+                    "leads_to_violation": execution.leads_to_violation.as_ref().map(|violation| serde_json::json!({
+                        "obligation": violation.obligation_name,
+                        "from": violation.from_name,
+                        "to": violation.to_name,
+                        "component_size": violation.violating_component.len(),
+                        "cycle_edge": {
+                            "from": violation.representative_cycle_edge.from_key,
+                            "to": violation.representative_cycle_edge.to_key,
+                        },
+                        "counterexample": {
+                            "initial_state": violation.counterexample.initial_state.canonical_key(),
+                            "steps": violation.counterexample.steps.iter().map(|step| serde_json::json!({
+                                "action_branch": step.action_branch,
+                                "state": step.state.canonical_key(),
+                                "diffs": step.diffs.iter().map(|diff| serde_json::json!({
+                                    "path": diff.path,
+                                    "before": diff.before,
+                                    "after": diff.after,
+                                })).collect::<Vec<_>>(),
+                            })).collect::<Vec<_>>(),
+                        },
+                    })),
                 });
                 let rendered = serde_json::to_string_pretty(&report).map_err(|e| {
                     miette::miette!("Failed to serialize model-check JSON report: {}", e)
@@ -1531,6 +1659,15 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
             if let Some(deadlock) = &execution.exploration.deadlock {
                 println!("  deadlock: depth={}", deadlock.depth);
+            }
+            if let Some(violation) = &execution.leads_to_violation {
+                println!(
+                    "  leads_to_violation: obligation=`{}` ({} ~> {}), component_size={}",
+                    violation.obligation_name,
+                    violation.from_name,
+                    violation.to_name,
+                    violation.violating_component.len()
+                );
             }
 
             Ok(())
@@ -3249,7 +3386,7 @@ invariants = ["LInv"]
     }
 
     #[test]
-    fn test_model_check_command_rejects_temporal_properties_until_supported() {
+    fn test_model_check_command_rejects_fairness_until_supported() {
         let dir = tempfile::tempdir().unwrap();
         let types_path = dir.path().join("types.rs");
         let proto_path = dir.path().join("demo.rs");
@@ -3293,7 +3430,7 @@ max = 1
 
 [properties]
 invariants = ["LInv"]
-leads_to = [{ from = "LInv", to = "LInv" }]
+fairness = { weak = ["branch_0"] }
 "#,
         )
         .unwrap();
@@ -3330,7 +3467,7 @@ leads_to = [{ from = "LInv", to = "LInv" }]
         let err = handle_command(&command, &cli).unwrap_err();
         assert!(err
             .to_string()
-            .contains("liveness checking is not implemented yet"));
+            .contains("fairness checking is not implemented yet"));
     }
 
     #[test]
@@ -3640,6 +3777,170 @@ invariants = ["LInvBad"]
             Some("LInvBad")
         );
         assert_eq!(execution.summary.states, 2);
+    }
+
+    #[test]
+    fn test_execute_model_check_reports_leads_to_violation_on_avoidable_cycle() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 0)
+        || (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 1 && s_.value <= c.limit)
+    }
+
+    pub open spec fn LFrom(s: LState, c: LConstants) -> bool { s.value == 0 && 0 <= c.limit }
+    pub open spec fn LTo(s: LState, c: LConstants) -> bool { s.value == 1 && 0 <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[properties]
+leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "leads_to_violated");
+        let violation = execution
+            .leads_to_violation
+            .as_ref()
+            .expect("expected leads-to violation");
+        assert_eq!(violation.obligation_name, "eventual_one");
+        assert_eq!(violation.from_name, "LFrom");
+        assert_eq!(violation.to_name, "LTo");
+        assert!(!violation.counterexample.steps.is_empty());
+    }
+
+    #[test]
+    fn test_execute_model_check_accepts_leads_to_when_destination_is_eventually_forced() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 1 && s_.value <= c.limit)
+    }
+
+    pub open spec fn LFrom(s: LState, c: LConstants) -> bool { s.value == 0 && 0 <= c.limit }
+    pub open spec fn LTo(s: LState, c: LConstants) -> bool { s.value == 1 && 0 <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[properties]
+leads_to = [{ from = "LFrom", to = "LTo" }]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert!(execution.leads_to_violation.is_none());
     }
 
     #[test]
