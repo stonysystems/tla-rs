@@ -963,10 +963,29 @@ impl<'a> ExprTranslator<'a> {
             for all_field in &self.config.record_all_fields {
                 let safe_name = safe_field_name(all_field);
                 if let Some((_, value)) = fields.iter().find(|(n, _)| n == all_field) {
+                    let expected_ty = self
+                        .config
+                        .record_field_types
+                        .get(all_field)
+                        .map(|s| s.as_str())
+                        .unwrap_or("int");
+                    let rendered_value = if self.is_generated_d1_context()
+                        && expected_ty == "int"
+                        && matches!(
+                            value,
+                            TlaExpr::RecordAccess {
+                                record,
+                                field: _,
+                            } if matches!(record.as_ref(), TlaExpr::Ident(root) if root == "c")
+                        ) {
+                        "arbitrary::<int>()".to_string()
+                    } else {
+                        self.translate_value_context_expr(value)
+                    };
                     all_field_strs.push(format!(
                         "{}: {}",
                         safe_name,
-                        self.translate_value_context_expr(value)
+                        rendered_value
                     ));
                 } else if !present.contains(all_field.as_str()) {
                     // Default value for missing fields (type-aware)
@@ -1533,6 +1552,7 @@ struct UsageHintEvidence {
     seq_index_like: bool,
     map_domain: bool,
     map_index_like: bool,
+    scalar_usage: bool,
 }
 
 impl UsageHintEvidence {
@@ -1543,13 +1563,14 @@ impl UsageHintEvidence {
             seq_index_like: self.seq_index_like || other.seq_index_like,
             map_domain: self.map_domain || other.map_domain,
             map_index_like: self.map_index_like || other.map_index_like,
+            scalar_usage: self.scalar_usage || other.scalar_usage,
         }
     }
 
     fn to_hint(self) -> Option<&'static str> {
-        if self.map_domain && self.map_index_like {
+        if self.map_domain && self.map_index_like && !self.scalar_usage {
             Some("Map<int, int>")
-        } else if self.seq_len && self.seq_index_like {
+        } else if self.seq_len && self.seq_index_like && !self.scalar_usage {
             Some("Seq<int>")
         } else if self.set_membership {
             Some("Set<int>")
@@ -2715,8 +2736,39 @@ impl ModuleTranslator {
                 let mut evidence = self
                     .collect_identifier_usage_evidence(left, ident_name)
                     .merge(self.collect_identifier_usage_evidence(right, ident_name));
+                let left_is_target = is_target_ident(left);
+                let right_is_target = is_target_ident(right);
                 if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(right) {
                     evidence.set_membership = true;
+                }
+                if left_is_target || right_is_target {
+                    match op {
+                        TlaBinOp::Plus
+                        | TlaBinOp::Minus
+                        | TlaBinOp::Times
+                        | TlaBinOp::Div
+                        | TlaBinOp::Mod
+                        | TlaBinOp::Lt
+                        | TlaBinOp::Leq
+                        | TlaBinOp::Gt
+                        | TlaBinOp::Geq => {
+                            evidence.scalar_usage = true;
+                        }
+                        TlaBinOp::Eq | TlaBinOp::Neq => {
+                            let other = if left_is_target {
+                                right.as_ref()
+                            } else {
+                                left.as_ref()
+                            };
+                            if matches!(
+                                other,
+                                TlaExpr::Number(_) | TlaExpr::Bool(_) | TlaExpr::String(_)
+                            ) {
+                                evidence.scalar_usage = true;
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 evidence
             }
@@ -2724,6 +2776,8 @@ impl ModuleTranslator {
                 let mut evidence = self.collect_identifier_usage_evidence(operand, ident_name);
                 if matches!(op, TlaUnaryOp::Domain) && is_target_ident(operand) {
                     evidence.map_domain = true;
+                } else if matches!(op, TlaUnaryOp::Neg) && is_target_ident(operand) {
+                    evidence.scalar_usage = true;
                 }
                 evidence
             }
@@ -2863,6 +2917,9 @@ impl ModuleTranslator {
             TlaExpr::Record(fields) => {
                 let mut evidence = UsageHintEvidence::default();
                 for (_, value) in fields {
+                    if is_target_ident(value) {
+                        evidence.scalar_usage = true;
+                    }
                     evidence = evidence.merge(self.collect_identifier_usage_evidence(value, ident_name));
                 }
                 evidence
@@ -4988,6 +5045,63 @@ mod tests {
         assert!(
             output.contains("pub S: Set<int>,"),
             "Expected Set hint for constant S from membership usage, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_constant_type_hint_keeps_set_membership_hint_with_scalar_conflict() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            Foo(x) == /\ x \in N
+                      /\ N = 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub N: Set<int>,"),
+            "Expected set-membership hint to win even with scalar conflict, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_record_int_field_normalizes_c_field_value_to_arbitrary_int() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo == [log_truncation_point |-> c.OperationNumber]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("log_truncation_point: arbitrary::<int>()"),
+            "Expected generated-D1 int field to normalize c.field value to arbitrary::<int>(), got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_non_generated_record_preserves_c_field_value_for_int_field() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Foo == [log_truncation_point |-> c.OperationNumber]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("log_truncation_point: c.OperationNumber"),
+            "Expected non-generated context to preserve c.field value, got:\n{}",
             output
         );
     }

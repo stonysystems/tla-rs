@@ -5308,7 +5308,7 @@ transpiler/tla_test_workspace/
           - Measured first-error baseline after `16.8.3d-2c-7`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `0` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
           - Net effect: no aggregate metric change versus `2c-6`, but new normalization is regression-covered and avoids the transient `12/33` regression observed with over-aggressive seq/map parameter hinting.
       - [x] **16.8.3d-2d** Reduce residual method-on-scalar `E0599` first-error blockers by tightening generated-D1 fallback type hints for constants/parameters in method contexts.
-        - [x] **16.8.3d-2d-1** Add conservative generated-D1 hinting for set/seq/map method contexts (`contains`, `len`, `dom`, index/skip/update`) when fallback currently emits `int`, then regenerate and re-measure baseline.
+      - [x] **16.8.3d-2d-1** Add conservative generated-D1 hinting for set/seq/map method contexts (`contains`, `len`, `dom`, index/skip/update`) when fallback currently emits `int`, then regenerate and re-measure baseline.
           - Scope/LOC check: implemented in `ModuleTranslator` fallback typing path with focused translator regressions + baseline/docs updates; stayed under the ~500 LOC target for this leaf.
           - Added usage-evidence-based fallback hinting:
             - constants: module-wide hint aggregation for unresolved `int` constants in generated-D1 context.
@@ -5317,6 +5317,17 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-1`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
           - Net effect: method-on-scalar first-error class eliminated (`E0599: 3 -> 0`), with class shift to type/inference (`E0308: 0 -> 2`, `E0282: 17 -> 18`); compile pass count unchanged (`13/33`).
+        - [x] **16.8.3d-2d-2** Reduce post-`2d-1` type-shape regressions by tightening constant hint conflict handling and generated-D1 record int-field fallback.
+          - Scope/LOC check: implemented as focused `ModuleTranslator` usage-evidence refinement + `ExprTranslator` generated-D1 record value normalization + targeted regressions; stayed under the <500 LOC target.
+          - Added `scalar_usage` conflict tracking to usage evidence and gated `Map<int, int>` / `Seq<int>` fallback hints on non-scalar usage while preserving set-membership hinting.
+          - Added generated-D1 normalization for int-typed record fields with `c.<field>` value roots to emit `arbitrary::<int>()` instead of propagating mixed-shape constants into scalar slots.
+          - Added regressions:
+            - `test_constant_type_hint_keeps_set_membership_hint_with_scalar_conflict`
+            - `test_generated_d1_record_int_field_normalizes_c_field_value_to_arbitrary_int`
+            - `test_non_generated_record_preserves_c_field_value_for_int_field`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-2`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
+          - Net effect: no aggregate metric change versus `2d-1`; normalization is now regression-covered and narrows a specific generated-D1 int-field mismatch path without reintroducing `E0599`.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
