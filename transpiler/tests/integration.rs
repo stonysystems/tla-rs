@@ -3126,6 +3126,9 @@ fn first_verus_error_code(stderr: &str) -> Option<&str> {
         if line.starts_with("error: mismatched types") {
             return Some("E0308");
         }
+        if line.starts_with("error: recursive function must have a decreases clause") {
+            return Some("REC_DECREASES");
+        }
     }
     None
 }
@@ -3161,6 +3164,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     let mut cat_e0277 = 0; // trait bound failure
     let mut cat_e0061 = 0; // wrong number of arguments
     let mut cat_e0282 = 0; // type annotations needed
+    let mut cat_rec_decreases = 0; // recursive function lacks decreases clause
     let mut pass_files: Vec<String> = Vec::new();
     let mut other_fails: Vec<String> = Vec::new();
 
@@ -3198,6 +3202,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
             Some("E0277") => cat_e0277 += 1,
             Some("E0061") => cat_e0061 += 1,
             Some("E0282") => cat_e0282 += 1,
+            Some("REC_DECREASES") => cat_rec_decreases += 1,
             Some(code) => {
                 other_fails.push(format!("{rel}: error[{code}]"));
             }
@@ -3216,9 +3221,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3a:
-    // Generated-D1 `+` fallback now normalizes set/seq-shaped peers
-    // (using expression/type hints) before scalar coercion.
+    // Baseline after 16.8.3d-3b-1:
+    // Generated-D1 usage hints now infer Seq<LRecord> parameter shape when an indexed
+    // parameter is directly compared against a record literal.
     assert_eq!(
         passed, 22,
         "Expected exactly twenty-two D1 files to compile at current baseline; pass files: {:?}",
@@ -3241,8 +3246,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 8,
-        "Expected 8 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 7,
+        "Expected 7 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3264,6 +3269,10 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         cat_e0282, 3,
         "Expected 3 type-inference (E0282) failures at baseline"
     );
+    assert_eq!(
+        cat_rec_decreases, 1,
+        "Expected 1 recursive-missing-decreases first-error at baseline"
+    );
     assert!(
         other_fails.is_empty(),
         "Expected no uncategorized D1 compile failures, got:\n{}",
@@ -3274,7 +3283,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "D1 Verus compile baseline: {passed}/{total} pass, \
 {cat_e0425} E0425, {cat_e0423} E0423, {cat_e0609} E0609, \
 {cat_e0599} E0599, {cat_e0308} E0308, {cat_e0600} E0600, {cat_e0618} E0618, \
-{cat_e0277} E0277, {cat_e0061} E0061, {cat_e0282} E0282"
+{cat_e0277} E0277, {cat_e0061} E0061, {cat_e0282} E0282, {cat_rec_decreases} REC_DECREASES"
     );
 }
 

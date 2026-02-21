@@ -29,7 +29,7 @@ pub struct LConstants {
 
 
 /// BroadcastToEveryone operator
-pub open spec fn LBroadcastToEveryone(c: LConstants, myidx: int, m: int, sent_packets: Seq<int>) -> bool {
+pub open spec fn LBroadcastToEveryone(c: LConstants, myidx: int, m: int, sent_packets: Seq<LRecord>) -> bool {
     (((((sent_packets.len() as int) == (arbitrary::<Seq<int>>().len() as int)) && (0 <= myidx)) && (myidx < (arbitrary::<Seq<int>>().len() as int))) && forall |idx: int| (((0 <= idx) && (idx < (sent_packets.len() as int))) ==> (sent_packets[idx] == LRecord { dst: arbitrary::<Seq<int>>()[idx], msg: m, src: arbitrary::<Seq<int>>()[myidx] })))
 }
 

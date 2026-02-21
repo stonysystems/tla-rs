@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `22/33` files compile with Verus after `16.8.3d-3a`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `22/33` files compile with Verus after `16.8.3d-3b-1`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5518,6 +5518,16 @@ transpiler/tla_test_workspace/
         - Measured first-error baseline after `16.8.3d-3a`: `22/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `8` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `3` `E0282`.
         - Net effect: trait-bound class eliminated (`E0277: 2 -> 0`) with unchanged compile pass count (`22 -> 22`) and surfaced type-shape mismatches (`E0308: 6 -> 8`) for follow-up leaves.
       - [ ] **16.8.3d-3b** Reduce post-`3a` `E0308` mismatched-type blockers (dominant class) while preserving `E0277=0`.
+        - [x] **16.8.3d-3b-1** Infer `Seq<LRecord>` generated-D1 parameter shape when an indexed parameter value is directly compared against a record literal.
+          - Scope/LOC check: implemented as focused usage-hint refinement + one translator regression + workspace regeneration; stayed under the <500 LOC leaf target.
+          - Added `UsageHintEvidence` support for indexed-record comparison evidence and promoted this pattern to `Seq<LRecord>` parameter hinting in generated-D1 parameter typing fallback.
+          - Added regression:
+            - `test_generated_d1_param_type_infers_seq_record_from_indexed_record_comparison`
+          - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-3b-1`: `22/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `7` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `3` `E0282`, `1` `REC_DECREASES` (recursive fn missing decreases).
+          - Net effect: mismatched-type class reduced (`E0308: 8 -> 7`) with compile pass count unchanged (`22 -> 22`) and one surfaced recursive-decreases first-error for follow-up leaves.
+        - [ ] **16.8.3d-3b-2** Reduce remaining generated-D1 operator parameter/signature shape mismatches (seq/set/map/bool vs scalar `int`) using usage/call-site hints where inference returns unresolved scalar placeholders.
+        - [ ] **16.8.3d-3b-3** Reduce residual control-flow/function-call `E0308` mismatches in generated D1 specs (including mixed branch/call argument shape drift) and refresh D1 baseline expectations.
       - [ ] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

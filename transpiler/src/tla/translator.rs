@@ -1957,6 +1957,7 @@ struct UsageHintEvidence {
     set_element_usage: bool,
     seq_len: bool,
     seq_index_like: bool,
+    seq_record_element_usage: bool,
     map_domain: bool,
     map_index_like: bool,
     scalar_usage: bool,
@@ -1969,6 +1970,7 @@ impl UsageHintEvidence {
             set_element_usage: self.set_element_usage || other.set_element_usage,
             seq_len: self.seq_len || other.seq_len,
             seq_index_like: self.seq_index_like || other.seq_index_like,
+            seq_record_element_usage: self.seq_record_element_usage || other.seq_record_element_usage,
             map_domain: self.map_domain || other.map_domain,
             map_index_like: self.map_index_like || other.map_index_like,
             scalar_usage: self.scalar_usage || other.scalar_usage,
@@ -1976,7 +1978,9 @@ impl UsageHintEvidence {
     }
 
     fn to_hint(self) -> Option<&'static str> {
-        if self.map_domain && self.map_index_like && !self.scalar_usage {
+        if self.seq_record_element_usage && self.seq_index_like && !self.scalar_usage {
+            Some("Seq<LRecord>")
+        } else if self.map_domain && self.map_index_like && !self.scalar_usage {
             Some("Map<int, int>")
         } else if self.seq_len && self.seq_index_like && !self.scalar_usage {
             Some("Seq<int>")
@@ -3267,6 +3271,22 @@ impl ModuleTranslator {
                 }
                 if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(left) {
                     evidence.set_element_usage = true;
+                }
+                if matches!(op, TlaBinOp::Eq | TlaBinOp::Neq) {
+                    let left_targets_indexed = matches!(
+                        left.as_ref(),
+                        TlaExpr::FnApply { func, .. } if is_target_ident(func)
+                    );
+                    let right_targets_indexed = matches!(
+                        right.as_ref(),
+                        TlaExpr::FnApply { func, .. } if is_target_ident(func)
+                    );
+                    if (left_targets_indexed && matches!(right.as_ref(), TlaExpr::Record(_)))
+                        || (right_targets_indexed && matches!(left.as_ref(), TlaExpr::Record(_)))
+                    {
+                        evidence.seq_index_like = true;
+                        evidence.seq_record_element_usage = true;
+                    }
                 }
                 if left_is_target || right_is_target {
                     match op {
@@ -6545,6 +6565,24 @@ mod tests {
         assert!(
             output.contains("log_truncation_point: arbitrary()"),
             "Expected generated-D1 reserved-root fallback to normalize c.field value to arbitrary(), got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_infers_seq_record_from_indexed_record_comparison() {
+        let source = r"
+            ---- MODULE Test ----
+            SendAll(sent_packets) == \A idx \in {0}: sent_packets[idx] = [src |-> idx]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LSendAll(sent_packets: Seq<LRecord>) -> bool"),
+            "Expected indexed-record comparison to infer Seq<LRecord> parameter type, got:\n{}",
             output
         );
     }
