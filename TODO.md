@@ -5671,7 +5671,18 @@ transpiler/tla_test_workspace/
             - `transpiler/tla_test_workspace/transpiler_generated_verus_spec/RSL/Election.rs`
           - Verification result: both files now compile under Verus with no `REC_DECREASES` first error.
           - Re-measured D1 first-error baseline after `16.8.3d-3d-4`: `31/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `0` `REC_DECREASES`.
-        - [ ] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.
+        - [x] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.
+          - Scope/LOC check: baseline re-run + assertion/docs refresh only; completed well under the <500 LOC leaf target.
+          - Re-ran full D1 baseline gate:
+            - `cargo test --manifest-path transpiler/Cargo.toml --test integration test_d1_generated_verus_spec_compile_baseline -- --nocapture`
+            - Result: `31/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `0` `REC_DECREASES`.
+          - Residual first-error files (manual per-file confirmation): `RSL/Executor.rs` (`E0308`) and `RSL/Replica.rs` (`E0599`).
+          - Refreshed baseline enforcement in `transpiler/tests/integration.rs`:
+            - kept class-count assertions at the new baseline,
+            - added explicit residual-file assertions for `E0308`/`E0599` to pin blocker location.
+          - Refreshed docs in `docs/conversion-testing-guide.md` with the current D1 baseline table and blocker summary.
+          - Promotion decision: keep `16.8.3d-3` open; criteria are not met yet (`31/33` vs required `33/33`).
+        - [ ] **16.8.3d-3d-6** Eliminate the remaining two D1 first-error blockers (`RSL/Executor.rs` `E0308`, `RSL/Replica.rs` `E0599`) and re-measure for potential `16.8.3d-3` promotion.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)

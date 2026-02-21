@@ -3165,6 +3165,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     let mut cat_e0061 = 0; // wrong number of arguments
     let mut cat_e0282 = 0; // type annotations needed
     let mut cat_rec_decreases = 0; // recursive function lacks decreases clause
+    let mut files_e0599: Vec<String> = Vec::new();
+    let mut files_e0308: Vec<String> = Vec::new();
     let mut pass_files: Vec<String> = Vec::new();
     let mut other_fails: Vec<String> = Vec::new();
 
@@ -3195,8 +3197,14 @@ fn test_d1_generated_verus_spec_compile_baseline() {
             Some("E0425") => cat_e0425 += 1,
             Some("E0423") => cat_e0423 += 1,
             Some("E0609") => cat_e0609 += 1,
-            Some("E0599") => cat_e0599 += 1,
-            Some("E0308") => cat_e0308 += 1,
+            Some("E0599") => {
+                cat_e0599 += 1;
+                files_e0599.push(rel.clone());
+            }
+            Some("E0308") => {
+                cat_e0308 += 1;
+                files_e0308.push(rel.clone());
+            }
             Some("E0600") => cat_e0600 += 1,
             Some("E0618") => cat_e0618 += 1,
             Some("E0277") => cat_e0277 += 1,
@@ -3287,6 +3295,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     assert_eq!(
         cat_rec_decreases, 0,
         "Expected 0 recursive-missing-decreases first-errors at baseline"
+    );
+    assert_eq!(
+        files_e0599,
+        vec!["RSL/Replica.rs".to_string()],
+        "Expected only RSL/Replica.rs to fail with E0599 at baseline"
+    );
+    assert_eq!(
+        files_e0308,
+        vec!["RSL/Executor.rs".to_string()],
+        "Expected only RSL/Executor.rs to fail with E0308 at baseline"
     );
     assert!(
         other_fails.is_empty(),
