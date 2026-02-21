@@ -33,12 +33,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { accepted_bal: arbitrary(), accepted_val: arbitrary(), acceptors: 0int, accepts_rcvd: int.powerset(), decided_val: arbitrary(), highest_accepted_bal: arbitrary(), highest_accepted_val: arbitrary(), node_id: 0int, phase: LPhase(), promised_bal: arbitrary(), promises_rcvd: int.powerset(), proposed_val: arbitrary(), proposer_bal: arbitrary(), quorum_size: 0int }
+    LRecord { accepted_bal: arbitrary(), accepted_val: arbitrary(), acceptors: 0int, accepts_rcvd: arbitrary(), decided_val: arbitrary(), highest_accepted_bal: arbitrary(), highest_accepted_val: arbitrary(), node_id: 0int, phase: arbitrary(), promised_bal: arbitrary(), promises_rcvd: arbitrary(), proposed_val: arbitrary(), proposer_bal: arbitrary(), quorum_size: 0int }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { accepted_bal: 0int, accepted_val: 0int, acceptors: int.powerset(), accepts_rcvd: 0int, decided_val: 0int, highest_accepted_bal: 0int, highest_accepted_val: 0int, node_id: arbitrary(), phase: 0int, promised_bal: 0int, promises_rcvd: 0int, proposed_val: 0int, proposer_bal: 0int, quorum_size: arbitrary() }
+    LRecord { accepted_bal: 0int, accepted_val: 0int, acceptors: arbitrary(), accepts_rcvd: 0int, decided_val: 0int, highest_accepted_bal: 0int, highest_accepted_val: 0int, node_id: arbitrary(), phase: 0int, promised_bal: 0int, promises_rcvd: 0int, proposed_val: 0int, proposer_bal: 0int, quorum_size: arbitrary() }
 }
 
 /// Phase operator

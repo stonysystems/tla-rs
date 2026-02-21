@@ -39,7 +39,7 @@ pub open spec fn LConstants() -> LRecord {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { accepts_rcvd: int.powerset(), committed: arbitrary(), committed_val: arbitrary(), config_num: arbitrary(), has_voted: arbitrary(), has_witness: arbitrary(), is_active: arbitrary(), max_bal: arbitrary(), max_v_bal: arbitrary(), max_val: arbitrary(), node_id: 0int, num_nodes: 0int, promises_rcvd: int.powerset(), quorum_size: 0int, witness_val: arbitrary() }
+    LRecord { accepts_rcvd: arbitrary(), committed: arbitrary(), committed_val: arbitrary(), config_num: arbitrary(), has_voted: arbitrary(), has_witness: arbitrary(), is_active: arbitrary(), max_bal: arbitrary(), max_v_bal: arbitrary(), max_val: arbitrary(), node_id: 0int, num_nodes: 0int, promises_rcvd: arbitrary(), quorum_size: 0int, witness_val: arbitrary() }
 }
 
 /// VPMessage operator

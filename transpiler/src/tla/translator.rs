@@ -277,10 +277,43 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_value_context_expr(&self, expr: &TlaExpr) -> String {
         if self.config.normalize_unknown_external_refs {
-            if let TlaExpr::Ident(name) = expr {
-                if is_builtin_type_token_ident(name) {
-                    return "arbitrary()".to_string();
+            let is_generated_d1_context = self.config.variable_names.is_empty();
+            match expr {
+                TlaExpr::Ident(name) => {
+                    if is_builtin_type_token_ident(name) {
+                        return "arbitrary()".to_string();
+                    }
+                    if is_generated_d1_context && self.config.operator_info.contains_key(name) {
+                        return "arbitrary()".to_string();
+                    }
                 }
+                TlaExpr::OpApply { op, .. } => {
+                    if is_generated_d1_context {
+                        if let TlaExpr::Ident(name) = op.as_ref() {
+                            if self.config.operator_info.contains_key(name) {
+                                return "arbitrary()".to_string();
+                            }
+                        }
+                    }
+                }
+                TlaExpr::SetEnum(_)
+                | TlaExpr::SetFilter { .. }
+                | TlaExpr::SetMap { .. }
+                | TlaExpr::FnConstruct { .. }
+                | TlaExpr::FnSet { .. }
+                | TlaExpr::Tuple(_) => {
+                    if is_generated_d1_context {
+                        return "arbitrary()".to_string();
+                    }
+                }
+                TlaExpr::UnaryOp { op, .. }
+                    if matches!(op, TlaUnaryOp::Subset | TlaUnaryOp::Union | TlaUnaryOp::Domain) =>
+                {
+                    if is_generated_d1_context {
+                        return "arbitrary()".to_string();
+                    }
+                }
+                _ => {}
             }
             if is_constructor_style_type_set_expr(expr) {
                 return "arbitrary()".to_string();
@@ -3216,6 +3249,79 @@ mod tests {
         assert!(!out.contains("seq_field: Seq("));
         assert!(!out.contains("map_field: Map("));
         assert!(!out.contains("fnset_field: Map::<"));
+    }
+
+    #[test]
+    fn test_translate_record_normalizes_module_operator_calls_in_value_context_spec_mode() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .operator_info
+            .insert("OutstandingOperation".to_string(), OperatorKind::Predicate);
+        config
+            .operator_arity
+            .insert("OutstandingOperation".to_string(), 1);
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "outstanding".to_string(),
+            TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("OutstandingOperation")),
+                args: vec![TlaExpr::ident("c")],
+            },
+        )]);
+        let out = translator.translate(&expr);
+        assert!(out.contains("outstanding: arbitrary()"));
+        assert!(!out.contains("OutstandingOperation("));
+    }
+
+    #[test]
+    fn test_translate_record_normalizes_module_operator_ident_in_value_context_spec_mode() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .operator_info
+            .insert("Phase".to_string(), OperatorKind::ConstantOp);
+        config.operator_arity.insert("Phase".to_string(), 0);
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "phase".to_string(),
+            TlaExpr::ident("Phase"),
+        )]);
+        let out = translator.translate(&expr);
+        assert!(out.contains("phase: arbitrary()"));
+        assert!(!out.contains("LPhase"));
+    }
+
+    #[test]
+    fn test_translate_record_preserves_module_operator_ident_when_module_has_state_vars() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("x".to_string());
+        config
+            .operator_info
+            .insert("Phase".to_string(), OperatorKind::ConstantOp);
+        config.operator_arity.insert("Phase".to_string(), 0);
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "phase".to_string(),
+            TlaExpr::ident("Phase"),
+        )]);
+        let out = translator.translate(&expr);
+        assert!(out.contains("phase: Phase()"));
+        assert!(!out.contains("phase: arbitrary()"));
+    }
+
+    #[test]
+    fn test_translate_record_normalizes_subset_unary_in_value_context_spec_mode() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "domain".to_string(),
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Subset,
+                operand: Box::new(TlaExpr::ident("Int")),
+            },
+        )]);
+        let out = translator.translate(&expr);
+        assert!(out.contains("domain: arbitrary()"));
+        assert!(!out.contains(".powerset()"));
     }
 
     #[test]

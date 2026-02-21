@@ -34,7 +34,7 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { checkpoint_digest: arbitrary(), checkpoint_interval: 0int, checkpoint_seq: arbitrary(), commit_senders: int.powerset(), f: 0int, high_watermark: arbitrary(), is_primary: arbitrary(), low_watermark: arbitrary(), n: 0int, node_id: 0int, phase: LPhase(), prepare_senders: int.powerset(), request_digest: arbitrary(), seq_num: arbitrary(), view: arbitrary() }
+    LRecord { checkpoint_digest: arbitrary(), checkpoint_interval: 0int, checkpoint_seq: arbitrary(), commit_senders: arbitrary(), f: 0int, high_watermark: arbitrary(), is_primary: arbitrary(), low_watermark: arbitrary(), n: 0int, node_id: 0int, phase: arbitrary(), prepare_senders: arbitrary(), request_digest: arbitrary(), seq_num: arbitrary(), view: arbitrary() }
 }
 
 /// Constants operator

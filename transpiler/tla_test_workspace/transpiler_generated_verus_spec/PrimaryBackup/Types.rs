@@ -30,7 +30,7 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { acked: arbitrary(), backup_last_value: arbitrary(), backup_log_length: arbitrary(), backup_synced: arbitrary(), has_pending: arbitrary(), last_value: arbitrary(), log_length: arbitrary(), max_log_len: 0int, pending_value: arbitrary(), role: LNodeRole(), view: arbitrary() }
+    LRecord { acked: arbitrary(), backup_last_value: arbitrary(), backup_log_length: arbitrary(), backup_synced: arbitrary(), has_pending: arbitrary(), last_value: arbitrary(), log_length: arbitrary(), max_log_len: 0int, pending_value: arbitrary(), role: arbitrary(), view: arbitrary() }
 }
 
 /// Constants operator

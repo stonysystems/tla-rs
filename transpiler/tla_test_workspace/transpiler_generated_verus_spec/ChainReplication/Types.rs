@@ -31,7 +31,7 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { alive: arbitrary(), chain_len: 0int, committed_count: arbitrary(), has_predecessor: arbitrary(), has_successor: arbitrary(), history: arbitrary(), node_id: 0int, obj_value: arbitrary(), pending_sent: int.powerset(), predecessor: arbitrary(), role: LNodeRole(), successor: arbitrary() }
+    LRecord { alive: arbitrary(), chain_len: 0int, committed_count: arbitrary(), has_predecessor: arbitrary(), has_successor: arbitrary(), history: arbitrary(), node_id: 0int, obj_value: arbitrary(), pending_sent: arbitrary(), predecessor: arbitrary(), role: arbitrary(), successor: arbitrary() }
 }
 
 /// Constants operator

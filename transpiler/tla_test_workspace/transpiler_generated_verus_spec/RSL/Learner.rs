@@ -49,10 +49,10 @@ pub open spec fn LLearnerProcess2b(s: LState, s_: LState, c: LConstants, packet:
     {
     let opn = arbitrary();
     if (arbitrary().contains(!(arbitrary())) || arbitrary()) { (s_ == s) } else { if arbitrary() { {
-    let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: set![arbitrary()], seqno: 0int, unexecuted_learner_state: 0int };
-    (s_ == LRecord { candidate_learned_value: 0int, constants: arbitrary(), max_ballot_seen: arbitrary(), proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: set![seq![opn, tup_]] })
+    let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: arbitrary(), seqno: 0int, unexecuted_learner_state: 0int };
+    (s_ == LRecord { candidate_learned_value: 0int, constants: arbitrary(), max_ballot_seen: arbitrary(), proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: arbitrary() })
 } } else { if arbitrary().dom().contains(!(opn)) { {
-    let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: set![arbitrary()], seqno: 0int, unexecuted_learner_state: 0int };
+    let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: arbitrary(), seqno: 0int, unexecuted_learner_state: 0int };
     (s_ == LRecord { candidate_learned_value: 0int, constants: arbitrary(), max_ballot_seen: arbitrary(), proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: arbitrary().insert(opn, tup_) })
 } } else { if arbitrary()[opn].received_2b_message_senders.contains(arbitrary()) { (s_ == s) } else { {
     let tup = arbitrary()[opn];

@@ -46,7 +46,7 @@ pub open spec fn LReplica(c: LConstants) -> LRecord {
 
 /// Scheduler operator
 pub open spec fn LScheduler(c: LConstants) -> LRecord {
-    LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: arbitrary(), nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: c.Replica, suspicious: 0int, t: 0int }
+    LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: arbitrary(), nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: arbitrary(), suspicious: 0int, t: 0int }
 }
 
 /// ReplicaInit operator

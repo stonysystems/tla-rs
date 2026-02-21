@@ -3211,12 +3211,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2c-1 action/operator arity normalization:
-    // explicit-s_ operators are classified as actions and parameterized operator
-    // identifiers in value position are no longer auto-called.
+    // Baseline after 16.8.3d-2c-2 value-context operator normalization:
+    // module-operator identifiers/calls in record value context are normalized
+    // to placeholders to avoid mismatched scalar/container shape emission.
     assert_eq!(
-        passed, 2,
-        "Expected exactly two D1 files to compile at current baseline; pass files: {:?}",
+        passed, 11,
+        "Expected exactly eleven D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3232,12 +3232,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 12,
-        "Expected 12 method-missing (E0599) failures at baseline"
+        cat_e0599, 3,
+        "Expected 3 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 6,
-        "Expected 6 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 1,
+        "Expected 1 mismatched-types (E0308) failure at baseline"
     );
     assert_eq!(
         cat_e0618, 0,
@@ -3252,8 +3252,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 13,
-        "Expected 13 type-inference (E0282) failures at baseline"
+        cat_e0282, 18,
+        "Expected 18 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

@@ -5263,7 +5263,13 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2c-1`: `2/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `12` `E0599`, `6` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `13` `E0282`.
           - Net effect: wrong-arity blocker eliminated (`E0061: 1 -> 0`) with expected shift into inference (`E0282: 12 -> 13`).
-        - [ ] **16.8.3d-2c-2** Reduce `E0308` mismatched-type first errors in D1 generated specs.
+        - [x] **16.8.3d-2c-2** Reduce `E0308` mismatched-type first errors in D1 generated specs.
+          - Scope/LOC check: implemented as targeted value-context normalization in expression translation plus focused regressions; kept well under the <500 LOC leaf target.
+          - Extended D1 spec-mode value-context fallback so record field values that reference module operators (both bare identifiers and call forms) normalize to `arbitrary()` instead of emitting mismatched set/record call-shapes into inferred scalar fields.
+          - Added regressions for module-operator identifier and call normalization in value-context record emission.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2c-2`: `11/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
+          - Net effect: mismatched-type first errors reduced (`E0308: 6 -> 1`) and compile passes increased (`2 -> 11`), with remaining blockers now dominated by inference (`E0282`) for `16.8.3d-2c-3`.
         - [ ] **16.8.3d-2c-3** Reduce remaining `E0282` inference blockers after `2c-2`.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)

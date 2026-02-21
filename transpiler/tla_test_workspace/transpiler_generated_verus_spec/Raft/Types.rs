@@ -33,12 +33,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState(s: LState) -> LRecord {
-    LRecord { commit_index: arbitrary(), current_term: arbitrary(), has_voted: arbitrary(), log: arbitrary(), match_index: arbitrary(), my_id: 0int, next_index: arbitrary(), quorum_size: 0int, role: LServerRole(), servers: 0int, term: 0int, value: 0int, voted_for: arbitrary(), votes_granted: int.powerset() }
+    LRecord { commit_index: arbitrary(), current_term: arbitrary(), has_voted: arbitrary(), log: arbitrary(), match_index: arbitrary(), my_id: 0int, next_index: arbitrary(), quorum_size: 0int, role: arbitrary(), servers: 0int, term: 0int, value: 0int, voted_for: arbitrary(), votes_granted: arbitrary() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: arbitrary(), next_index: 0int, quorum_size: arbitrary(), role: 0int, servers: int.powerset(), term: 0int, value: 0int, voted_for: 0int, votes_granted: 0int }
+    LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: arbitrary(), next_index: 0int, quorum_size: arbitrary(), role: 0int, servers: arbitrary(), term: 0int, value: 0int, voted_for: 0int, votes_granted: 0int }
 }
 
 /// LogEntry operator

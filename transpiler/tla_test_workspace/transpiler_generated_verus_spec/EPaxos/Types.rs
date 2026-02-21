@@ -40,7 +40,7 @@ pub open spec fn LConstants() -> LRecord {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { accept_senders: int.powerset(), ballot: arbitrary(), cmd: arbitrary(), committed_count: arbitrary(), dep_count: arbitrary(), executed_count: arbitrary(), fast_quorum_size: 0int, has_conflict: arbitrary(), is_leader: arbitrary(), max_resp_seq: arbitrary(), my_id: 0int, num_replicas: 0int, phase: LInstancePhase(), preaccept_senders: int.powerset(), quorum_size: 0int, seq: arbitrary() }
+    LRecord { accept_senders: arbitrary(), ballot: arbitrary(), cmd: arbitrary(), committed_count: arbitrary(), dep_count: arbitrary(), executed_count: arbitrary(), fast_quorum_size: 0int, has_conflict: arbitrary(), is_leader: arbitrary(), max_resp_seq: arbitrary(), my_id: 0int, num_replicas: 0int, phase: arbitrary(), preaccept_senders: arbitrary(), quorum_size: 0int, seq: arbitrary() }
 }
 
 /// InstancePhase operator

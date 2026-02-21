@@ -25,12 +25,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { rm: 0int, rm_aborted: int.powerset(), rm_committed: int.powerset(), rm_prepared: int.powerset(), tm_prepared: int.powerset(), tm_state: LTMState() }
+    LRecord { rm: 0int, rm_aborted: arbitrary(), rm_committed: arbitrary(), rm_prepared: arbitrary(), tm_prepared: arbitrary(), tm_state: arbitrary() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { rm: int.powerset(), rm_aborted: 0int, rm_committed: 0int, rm_prepared: 0int, tm_prepared: 0int, tm_state: 0int }
+    LRecord { rm: arbitrary(), rm_aborted: 0int, rm_committed: 0int, rm_prepared: 0int, tm_prepared: 0int, tm_state: 0int }
 }
 
 /// TMState operator

@@ -49,7 +49,7 @@ pub struct LConstants {
 
 /// Proposer operator
 pub open spec fn LProposer(s: LState, c: LConstants) -> LRecord {
-    LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: c.ReplicaConstants, current_state: arbitrary(), election_state: 6986500239int, highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: LIncompleteBatchTimer(c), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: c.Ballot, next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: c.RslPacket.powerset(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int }
+    LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: c.ReplicaConstants, current_state: arbitrary(), election_state: 6986500239int, highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: c.Ballot, next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int }
 }
 
 /// IncompleteBatchTimer operator
@@ -127,7 +127,7 @@ pub open spec fn LProposerProcessRequest(s: LState, s_: LState, c: LConstants, p
 
 /// ProposerMaybeEnterNewViewAndSend1a operator
 pub open spec fn LProposerMaybeEnterNewViewAndSend1a(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
-    if ((arbitrary() == arbitrary()) && arbitrary()) { ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: 1, election_state: arbitrary(), highest_seqno_requested_by_client_this_view: seq![], incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: Set::<int>::empty(), request: 0int, request_queue: (arbitrary() + arbitrary()), seqno: 0int, val_2a: 0int, when: 0int }) && arbitrary()) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if ((arbitrary() == arbitrary()) && arbitrary()) { ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: 1, election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: (arbitrary() + arbitrary()), seqno: 0int, val_2a: 0int, when: 0int }) && arbitrary()) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ProposerProcess1b operator

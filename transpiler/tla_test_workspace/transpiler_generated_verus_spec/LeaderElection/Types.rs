@@ -29,12 +29,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { alive: int.powerset(), electing: int.powerset(), has_highest: arbitrary(), has_leader: arbitrary(), highest_heard: arbitrary(), leader: arbitrary(), nodes: 0int, num_nodes: 0int, waiting_answer: arbitrary(), waiting_node: arbitrary() }
+    LRecord { alive: arbitrary(), electing: arbitrary(), has_highest: arbitrary(), has_leader: arbitrary(), highest_heard: arbitrary(), leader: arbitrary(), nodes: 0int, num_nodes: 0int, waiting_answer: arbitrary(), waiting_node: arbitrary() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { alive: 0int, electing: 0int, has_highest: 0int, has_leader: 0int, highest_heard: 0int, leader: 0int, nodes: int.powerset(), num_nodes: arbitrary(), waiting_answer: 0int, waiting_node: 0int }
+    LRecord { alive: 0int, electing: 0int, has_highest: 0int, has_leader: 0int, highest_heard: 0int, leader: 0int, nodes: arbitrary(), num_nodes: arbitrary(), waiting_answer: 0int, waiting_node: 0int }
 }
 
 /// ElectionMessage operator
