@@ -1,0 +1,456 @@
+use crate::error::{TranspileError, TranspileResult};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+/// Parsed `model.toml` configuration for source-first model checking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ModelConfig {
+    #[serde(default)]
+    pub constants: ConstantConfig,
+    #[serde(default)]
+    pub quantifiers: QuantifierConfig,
+    #[serde(default)]
+    pub collections: CollectionBounds,
+    #[serde(default)]
+    pub search: SearchLimits,
+    #[serde(default)]
+    pub properties: PropertyConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ConstantConfig {
+    /// Concrete assignments for `LConstants` fields.
+    #[serde(default)]
+    pub assignments: HashMap<String, ModelValue>,
+    /// Finite domains for fields not explicitly assigned.
+    #[serde(default)]
+    pub domains: HashMap<String, DomainSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct QuantifierConfig {
+    /// Fallback finite domain for `int`.
+    pub int: Option<IntDomain>,
+    /// Fallback finite domain for `nat`.
+    pub nat: Option<NatDomain>,
+    /// Type-specific finite domains (e.g. `NodeId`, `Role`, `Phase`).
+    #[serde(default)]
+    pub types: HashMap<String, DomainSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollectionBounds {
+    #[serde(default = "default_seq_bound")]
+    pub max_seq_len: usize,
+    #[serde(default = "default_set_bound")]
+    pub max_set_len: usize,
+    #[serde(default = "default_map_bound")]
+    pub max_map_len: usize,
+}
+
+impl Default for CollectionBounds {
+    fn default() -> Self {
+        Self {
+            max_seq_len: default_seq_bound(),
+            max_set_len: default_set_bound(),
+            max_map_len: default_map_bound(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchLimits {
+    #[serde(default = "default_max_depth")]
+    pub max_depth: usize,
+    #[serde(default = "default_max_states")]
+    pub max_states: usize,
+    #[serde(default = "default_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+impl Default for SearchLimits {
+    fn default() -> Self {
+        Self {
+            max_depth: default_max_depth(),
+            max_states: default_max_states(),
+            timeout_ms: default_timeout_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct PropertyConfig {
+    /// Invariant spec function names (e.g. `LTypeOK`, `LSafety`).
+    #[serde(default)]
+    pub invariants: Vec<String>,
+    /// Whether to report deadlock states (no successors).
+    #[serde(default)]
+    pub check_deadlock: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntDomain {
+    pub min: i64,
+    pub max: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NatDomain {
+    pub max: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DomainSpec {
+    /// Explicit finite values for primitive-like domains.
+    Values { values: Vec<ModelValue> },
+    /// Finite signed integer range.
+    IntRange { min: i64, max: i64 },
+    /// Finite natural-number range [0, max].
+    NatRange { max: u64 },
+    /// Subset of enum variants by name.
+    EnumSubset { variants: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ModelValue {
+    Bool(bool),
+    Int(i64),
+    String(String),
+}
+
+/// Parse and validate `model.toml` from a string.
+pub fn parse_model_config_str(source: &str) -> TranspileResult<ModelConfig> {
+    let config: ModelConfig = toml::from_str(source).map_err(|e| TranspileError::Config {
+        message: format!("Failed to parse model.toml: {}", e),
+    })?;
+    validate_model_config(&config)?;
+    Ok(config)
+}
+
+/// Parse and validate `model.toml` from disk.
+pub fn parse_model_config_file<P: AsRef<Path>>(path: P) -> TranspileResult<ModelConfig> {
+    let path = path.as_ref();
+    let source = std::fs::read_to_string(path).map_err(|e| TranspileError::Config {
+        message: format!("Failed to read model.toml `{}`: {}", path.display(), e),
+    })?;
+    parse_model_config_str(&source).map_err(|e| match e {
+        TranspileError::Config { message } => TranspileError::Config {
+            message: format!("In `{}`: {}", path.display(), message),
+        },
+        other => other,
+    })
+}
+
+/// Validate a parsed `model.toml`.
+pub fn validate_model_config(config: &ModelConfig) -> TranspileResult<()> {
+    for key in config.constants.assignments.keys() {
+        validate_non_empty_key(key, "constants.assignments")?;
+    }
+    for key in config.constants.domains.keys() {
+        validate_non_empty_key(key, "constants.domains")?;
+    }
+    for key in config.quantifiers.types.keys() {
+        validate_non_empty_key(key, "quantifiers.types")?;
+    }
+
+    for key in config.constants.assignments.keys() {
+        if config.constants.domains.contains_key(key) {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Invalid model.toml: constants field `{}` appears in both \
+                     `[constants.assignments]` and `[constants.domains]`.",
+                    key
+                ),
+            });
+        }
+    }
+
+    if let Some(int_domain) = &config.quantifiers.int {
+        if int_domain.min > int_domain.max {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Invalid model.toml: `quantifiers.int.min` ({}) must be <= \
+                     `quantifiers.int.max` ({}).",
+                    int_domain.min, int_domain.max
+                ),
+            });
+        }
+    }
+
+    validate_domain_map(&config.constants.domains, "constants.domains")?;
+    validate_domain_map(&config.quantifiers.types, "quantifiers.types")?;
+
+    if config.collections.max_seq_len == 0
+        || config.collections.max_set_len == 0
+        || config.collections.max_map_len == 0
+    {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Invalid model.toml: collection bounds must be > 0 (got seq={}, set={}, map={}).",
+                config.collections.max_seq_len,
+                config.collections.max_set_len,
+                config.collections.max_map_len
+            ),
+        });
+    }
+
+    if config.search.max_depth == 0
+        || config.search.max_states == 0
+        || config.search.timeout_ms == 0
+    {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Invalid model.toml: search limits must be > 0 (got max_depth={}, max_states={}, timeout_ms={}).",
+                config.search.max_depth, config.search.max_states, config.search.timeout_ms
+            ),
+        });
+    }
+
+    let mut seen = HashSet::new();
+    for name in &config.properties.invariants {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(TranspileError::Config {
+                message: "Invalid model.toml: `properties.invariants` cannot contain empty names."
+                    .to_string(),
+            });
+        }
+        if !seen.insert(trimmed.to_string()) {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Invalid model.toml: duplicate invariant `{}` in `properties.invariants`.",
+                    trimmed
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_domain_map(
+    domains: &HashMap<String, DomainSpec>,
+    section: &str,
+) -> TranspileResult<()> {
+    for (key, domain) in domains {
+        match domain {
+            DomainSpec::Values { values } => {
+                if values.is_empty() {
+                    return Err(TranspileError::Config {
+                        message: format!(
+                            "Invalid model.toml: `{}` for key `{}` must have at least one value.",
+                            section, key
+                        ),
+                    });
+                }
+            }
+            DomainSpec::IntRange { min, max } => {
+                if min > max {
+                    return Err(TranspileError::Config {
+                        message: format!(
+                            "Invalid model.toml: `{}` key `{}` has invalid int_range (min={} > max={}).",
+                            section, key, min, max
+                        ),
+                    });
+                }
+            }
+            DomainSpec::NatRange { .. } => {}
+            DomainSpec::EnumSubset { variants } => {
+                if variants.is_empty() {
+                    return Err(TranspileError::Config {
+                        message: format!(
+                            "Invalid model.toml: `{}` key `{}` must have at least one enum variant.",
+                            section, key
+                        ),
+                    });
+                }
+                for variant in variants {
+                    if variant.trim().is_empty() {
+                        return Err(TranspileError::Config {
+                            message: format!(
+                                "Invalid model.toml: `{}` key `{}` contains an empty enum variant name.",
+                                section, key
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_non_empty_key(key: &str, section: &str) -> TranspileResult<()> {
+    if key.trim().is_empty() {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Invalid model.toml: `{}` contains an empty field/type key.",
+                section
+            ),
+        });
+    }
+    Ok(())
+}
+
+const fn default_seq_bound() -> usize {
+    4
+}
+const fn default_set_bound() -> usize {
+    4
+}
+const fn default_map_bound() -> usize {
+    4
+}
+const fn default_max_depth() -> usize {
+    30
+}
+const fn default_max_states() -> usize {
+    100_000
+}
+const fn default_timeout_ms() -> u64 {
+    30_000
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_model_config_full_valid() {
+        let source = r#"
+[constants.assignments]
+quorum = 2
+leader = "n1"
+
+[constants.domains.node_id]
+kind = "values"
+values = ["n1", "n2", "n3"]
+
+[constants.domains.role]
+kind = "enum_subset"
+variants = ["Follower", "Leader"]
+
+[quantifiers.int]
+min = -1
+max = 3
+
+[quantifiers.nat]
+max = 5
+
+[quantifiers.types.node_id]
+kind = "values"
+values = ["n1", "n2", "n3"]
+
+[collections]
+max_seq_len = 3
+max_set_len = 2
+max_map_len = 4
+
+[search]
+max_depth = 12
+max_states = 5000
+timeout_ms = 1000
+
+[properties]
+invariants = ["LTypeOK", "LSafety"]
+check_deadlock = true
+"#;
+        let config = parse_model_config_str(source).unwrap();
+        assert_eq!(config.constants.assignments.len(), 2);
+        assert_eq!(config.constants.domains.len(), 2);
+        assert_eq!(config.quantifiers.types.len(), 1);
+        assert_eq!(config.properties.invariants.len(), 2);
+        assert!(config.properties.check_deadlock);
+    }
+
+    #[test]
+    fn test_parse_model_config_defaults() {
+        let source = r#"
+[properties]
+invariants = ["LTypeOK"]
+"#;
+        let config = parse_model_config_str(source).unwrap();
+        assert_eq!(config.collections.max_seq_len, 4);
+        assert_eq!(config.search.max_depth, 30);
+        assert_eq!(config.search.max_states, 100_000);
+        assert_eq!(config.search.timeout_ms, 30_000);
+        assert_eq!(config.properties.invariants, vec!["LTypeOK".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_assignment_domain_overlap() {
+        let source = r#"
+[constants.assignments]
+node_count = 3
+
+[constants.domains.node_count]
+kind = "int_range"
+min = 1
+max = 5
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("appears in both `[constants.assignments]` and `[constants.domains]`"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_bad_int_range() {
+        let source = r#"
+[quantifiers.int]
+min = 4
+max = 3
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("must be <= `quantifiers.int.max`"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_empty_values_domain() {
+        let source = r#"
+[constants.domains.node_id]
+kind = "values"
+values = []
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("must have at least one value"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_empty_enum_subset() {
+        let source = r#"
+[quantifiers.types.role]
+kind = "enum_subset"
+variants = []
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("must have at least one enum variant"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_invalid_search_limits() {
+        let source = r#"
+[search]
+max_depth = 0
+max_states = 10
+timeout_ms = 100
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("search limits must be > 0"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_duplicate_invariants() {
+        let source = r#"
+[properties]
+invariants = ["LSafety", "LSafety"]
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("duplicate invariant `LSafety`"));
+    }
+}

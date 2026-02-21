@@ -6445,12 +6445,14 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.3 Finite Model Configuration (`model.toml`)
 
-- [ ] Design a finite-domain config format for model checking:
+- [x] Design a finite-domain config format for model checking:
   - Constant assignments/domains (`LConstants` fields)
   - Quantifier domains (`int`, `nat`, enum subsets, bounded seq/set/map sizes)
   - Search limits (`max_depth`, `max_states`, timeout)
   - Property list (`invariants`, deadlock toggle)
-- [ ] Implement parser + validation for `model.toml`.
+  - Documented MVP format in `docs/dev/phase22-model-toml-format.md` and encoded as `ModelConfig` in `transpiler/src/modelcheck/config.rs`.
+- [x] Implement parser + validation for `model.toml`.
+  - Added `parse_model_config_str`, `parse_model_config_file`, and `validate_model_config` with unit tests covering valid and invalid domain/search/property cases.
 - [ ] Support CLI overrides for key limits/domains.
 
 ### 22.4 Model Checking IR and Evaluator

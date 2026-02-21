@@ -36,6 +36,7 @@ pub mod checker;
 pub mod codegen;
 pub mod config;
 pub mod error;
+pub mod modelcheck;
 pub mod moder;
 pub mod parser;
 pub mod printer;
