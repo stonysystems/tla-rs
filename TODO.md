@@ -6650,5 +6650,12 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
       - `SF`: when a fairness branch label is enabled in SCC states, it must appear on an internal SCC edge.
     - Wired fairness config through `execute_model_check` and removed the command-level fairness rejection in `transpiler/src/main.rs`.
     - Added focused fairness tests in `liveness.rs` (weak/strong filtering + weak non-continuous enablement case) and execution/command-level tests in `main.rs`.
-  - [ ] Leaf 22.x.6 (<500 LOC): integrate liveness/fairness results into `model-check` JSON/human reports and document the finalized workflow/caveats.
+  - [x] Leaf 22.x.6 (<500 LOC): integrate liveness/fairness results into `model-check` JSON/human reports and document the finalized workflow/caveats.
+    - Added `ModelCheckLivenessSummary` in `transpiler/src/main.rs` and wired it into `ModelCheckExecutionSummary` to report:
+      - obligation count, fairness weak/strong counts
+      - whether liveness was checked for this run
+      - violation flag and skip reason (`no_leads_to_obligations` / `incomplete_exploration`)
+    - Extended JSON output with `liveness` section and fairness labels, and human output with a `liveness:` summary line.
+    - Added execution-level assertions for liveness summary fields (violated/satisfied/fairness-filtered cases) plus an incomplete-exploration skip test (`max_states_reached`).
+    - Updated `docs/model-checking-source-first.md` result/limitations sections to document current leads-to/fairness behavior and caveats.
   - [ ] Leaf 22.x.7 (<500 LOC): add integration fixtures/tests for small protocols covering satisfied and violated `leads_to` obligations under fairness and non-fairness settings.

@@ -608,6 +608,17 @@ struct ModelCheckExecutionSummary {
     transitions: usize,
     depth: usize,
     elapsed_ms: u128,
+    liveness: Option<ModelCheckLivenessSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelCheckLivenessSummary {
+    obligations: usize,
+    fairness_weak: usize,
+    fairness_strong: usize,
+    checked: bool,
+    violation_found: bool,
+    skipped_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1343,6 +1354,35 @@ fn execute_model_check(
         model_check_result_label(exploration.stop_reason).to_string()
     };
 
+    let liveness_summary = if !model_config.properties.leads_to.is_empty()
+        || !model_config.properties.fairness.weak.is_empty()
+        || !model_config.properties.fairness.strong.is_empty()
+    {
+        let checked = !model_config.properties.leads_to.is_empty()
+            && matches!(
+                exploration.stop_reason,
+                ExplorationStopReason::FrontierExhausted
+            );
+        let skipped_reason = if checked {
+            None
+        } else if model_config.properties.leads_to.is_empty() {
+            Some("no_leads_to_obligations".to_string())
+        } else {
+            Some("incomplete_exploration".to_string())
+        };
+
+        Some(ModelCheckLivenessSummary {
+            obligations: model_config.properties.leads_to.len(),
+            fairness_weak: model_config.properties.fairness.weak.len(),
+            fairness_strong: model_config.properties.fairness.strong.len(),
+            checked,
+            violation_found: leads_to_violation.is_some(),
+            skipped_reason,
+        })
+    } else {
+        None
+    };
+
     let summary = ModelCheckExecutionSummary {
         result,
         states: exploration.stats.visited_states,
@@ -1354,6 +1394,7 @@ fn execute_model_check(
             .max()
             .unwrap_or(0),
         elapsed_ms: started.elapsed().as_millis(),
+        liveness: liveness_summary,
     };
 
     Ok(ModelCheckExecution {
@@ -1566,6 +1607,18 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "hash_compaction_collisions": execution.exploration.stats.hash_compaction_collisions,
                         "symmetry_collapses": execution.exploration.stats.symmetry_collapses,
                     },
+                    "liveness": execution.summary.liveness.as_ref().map(|liveness| serde_json::json!({
+                        "obligations": liveness.obligations,
+                        "checked": liveness.checked,
+                        "violation_found": liveness.violation_found,
+                        "skipped_reason": liveness.skipped_reason,
+                        "fairness": {
+                            "weak_count": liveness.fairness_weak,
+                            "strong_count": liveness.fairness_strong,
+                            "weak": model_config.properties.fairness.weak,
+                            "strong": model_config.properties.fairness.strong,
+                        },
+                    })),
                     "stop_reason": format!("{:?}", execution.exploration.stop_reason),
                     "invariant_violation": execution.exploration.invariant_violation.as_ref().map(|violation| serde_json::json!({
                         "invariant": violation.invariant,
@@ -1644,6 +1697,17 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 execution.exploration.stats.hash_compaction_collisions,
                 execution.exploration.stats.symmetry_collapses,
             );
+            if let Some(liveness) = &execution.summary.liveness {
+                println!(
+                    "  liveness: obligations={}, fairness_weak={}, fairness_strong={}, checked={}, violation_found={}, skipped_reason={}",
+                    liveness.obligations,
+                    liveness.fairness_weak,
+                    liveness.fairness_strong,
+                    liveness.checked,
+                    liveness.violation_found,
+                    liveness.skipped_reason.as_deref().unwrap_or("<none>")
+                );
+            }
             if let Some(violation) = &execution.exploration.invariant_violation {
                 println!(
                     "  invariant_violation: invariant=`{}`, depth={}",
@@ -3853,6 +3917,17 @@ leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
         assert_eq!(violation.from_name, "LFrom");
         assert_eq!(violation.to_name, "LTo");
         assert!(!violation.counterexample.steps.is_empty());
+        let liveness = execution
+            .summary
+            .liveness
+            .as_ref()
+            .expect("expected liveness summary");
+        assert!(liveness.checked);
+        assert!(liveness.violation_found);
+        assert_eq!(liveness.obligations, 1);
+        assert_eq!(liveness.fairness_weak, 0);
+        assert_eq!(liveness.fairness_strong, 0);
+        assert!(liveness.skipped_reason.is_none());
     }
 
     #[test]
@@ -3931,6 +4006,15 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
 
         assert_eq!(execution.summary.result, "ok");
         assert!(execution.leads_to_violation.is_none());
+        let liveness = execution
+            .summary
+            .liveness
+            .as_ref()
+            .expect("expected liveness summary");
+        assert!(liveness.checked);
+        assert!(!liveness.violation_found);
+        assert_eq!(liveness.obligations, 1);
+        assert!(liveness.skipped_reason.is_none());
     }
 
     #[test]
@@ -4013,6 +4097,109 @@ fairness = { strong = ["branch_2", "branch_3"] }
 
         assert_eq!(execution.summary.result, "ok");
         assert!(execution.leads_to_violation.is_none());
+        let liveness = execution
+            .summary
+            .liveness
+            .as_ref()
+            .expect("expected liveness summary");
+        assert!(liveness.checked);
+        assert!(!liveness.violation_found);
+        assert_eq!(liveness.obligations, 1);
+        assert_eq!(liveness.fairness_weak, 0);
+        assert_eq!(liveness.fairness_strong, 2);
+        assert!(liveness.skipped_reason.is_none());
+    }
+
+    #[test]
+    fn test_execute_model_check_marks_liveness_skipped_when_exploration_is_incomplete() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 1 && s_.value <= c.limit)
+    }
+
+    pub open spec fn LFrom(s: LState, c: LConstants) -> bool { s.value == 0 && 0 <= c.limit }
+    pub open spec fn LTo(s: LState, c: LConstants) -> bool { s.value == 1 && 0 <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+max_states = 2
+
+[properties]
+leads_to = [{ from = "LFrom", to = "LTo" }]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "max_states_reached");
+        assert!(execution.leads_to_violation.is_none());
+        let liveness = execution
+            .summary
+            .liveness
+            .as_ref()
+            .expect("expected liveness summary");
+        assert!(!liveness.checked);
+        assert!(!liveness.violation_found);
+        assert_eq!(
+            liveness.skipped_reason.as_deref(),
+            Some("incomplete_exploration")
+        );
     }
 
     #[test]

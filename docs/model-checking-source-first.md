@@ -93,7 +93,10 @@ With `--json-report`, output includes:
 - `summary.depth`
 - `summary.elapsed_ms`
 - reduction telemetry (`summary.pruned_by_por`, `summary.symmetry_collapses`, `summary.hash_compaction_collisions`)
-- stop metadata and violation payloads (when present)
+- `liveness` summary (when temporal config is present):
+  - `obligations`, `checked`, `violation_found`, `skipped_reason`
+  - configured fairness labels (`fairness.weak` / `fairness.strong`) and counts
+- stop metadata and violation payloads (when present), including `leads_to_violation` counterexample traces
 
 For iterative tuning, adjust search and domain bounds first (`max_depth`, `max_states`, and quantifier/type domains).
 
@@ -160,9 +163,12 @@ Finite-domain expansion and runtime values currently cover:
 
 ### 9.3 Current Limitations (MVP)
 
-- Safety-only scope in Phase 22 MVP:
-  - liveness/fairness operators (`[]<>`, `WF`, `SF`, `~>`) are out of scope.
-  - `properties.leads_to` and `properties.fairness` are accepted by `model.toml` parsing for forward compatibility, but `model-check` currently rejects runs that configure them.
+- Temporal scope (current Phase 22 status):
+  - Safety-only scope in Phase 22 MVP was the initial baseline; bounded liveness (`leads_to`) support is now available with the caveats below.
+  - `properties.leads_to` is executable and reports violations via SCC/cycle analysis.
+  - `properties.fairness.{weak,strong}` participates in liveness cycle filtering.
+  - Liveness evaluation currently runs only on fully explored graphs (`stop_reason = FrontierExhausted`); otherwise report field `liveness.skipped_reason = "incomplete_exploration"`.
+  - Fairness filtering is branch-label based over candidate SCCs and should be treated as a bounded-model diagnostic aid rather than a complete temporal proof procedure.
 - Current entrypoint assumptions:
   - model-check execution currently assumes `LInit(s, c)` and `LNext(s, s_, c)` style signatures.
   - constants resolution currently requires exactly one concrete `LConstants` valuation after applying assignments/domains.
