@@ -2135,6 +2135,41 @@ fn test_replica_dispatch_assume_drift_guard() {
     );
 }
 
+/// h3 prototype guard: action-1 isolated contract propagation did not eliminate
+/// the trust-boundary assume and must remain documented as a failed local approach.
+#[test]
+fn test_replica_action1_contract_prototype_is_documented_and_assume_remains() {
+    let source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+    let (fn_start_line, fn_source) = slice_exec_fn(&source, "CReplicaNoReceiveNext");
+    let assume_lines = collect_assume_lines(fn_start_line, fn_source);
+    let action1_assume_fragment =
+        "_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))";
+
+    assert_eq!(
+        assume_lines.len(),
+        9,
+        "CReplicaNoReceiveNext should still contain 9 trust-boundary assumes after the h3 prototype"
+    );
+    assert!(
+        assume_lines
+            .iter()
+            .any(|(_, line)| line.contains(action1_assume_fragment)),
+        "action-1 trust-boundary assume should still be present after h3 prototype"
+    );
+
+    let doc = std::fs::read_to_string("../docs/dev/io-trust-boundary-analysis.md")
+        .expect("Failed to read io-trust-boundary-analysis.md");
+    assert!(
+        doc.contains("Action-1 Contract Propagation Prototype (2026-02-21)"),
+        "prototype section missing from io trust-boundary analysis doc"
+    );
+    assert!(
+        doc.contains("failed for isolated action-1 elimination"),
+        "prototype outcome should explicitly state isolated elimination failed"
+    );
+}
+
 /// Verify gen_helpers.rs contains all shared helper functions for generated modules
 #[test]
 fn test_gen_helpers_shared_module() {

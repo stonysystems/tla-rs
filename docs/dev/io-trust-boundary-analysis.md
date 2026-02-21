@@ -89,6 +89,18 @@ assume(_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstracti
 
 This catches accidental introduction of new `assume(...)` statements in replica dispatch code.
 
+### Action-1 Contract Propagation Prototype (2026-02-21)
+
+Prototype target: remove the action-1 assume in `CReplicaNoReceiveNext` by adding an action-specific packet-shape precondition linking `ExtractSentPacketsFromIos(...)` to the `RslMessage1a` broadcast pattern.
+
+Result: **failed for isolated action-1 elimination**.
+
+- The local action-1 contract can be expressed, but Verus then requires that contract at the call site.
+- `CSchedulerNext -> CReplicaNoReceiveNext` could not discharge the stronger action-1 precondition without propagating additional packet-shape contracts through upstream dispatch.
+- This confirms the original architecture conclusion: eliminating even one of these packet-identity assumes requires broader end-to-end IO contract propagation, not just local branch strengthening.
+
+The experimental code change was reverted, and the trust-boundary assume count remains 10.
+
 ## Why This Is Irreducible
 
 The packet identity `exec_output =~= ExtractSentPacketsFromIos(io_log)` cannot be proven because:
