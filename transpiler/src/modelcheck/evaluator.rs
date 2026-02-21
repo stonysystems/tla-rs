@@ -395,6 +395,25 @@ fn eval_builtin_method(
                 )),
             }
         }
+        "remove" => {
+            if args.len() != 1 {
+                return Err(type_error("`.remove(...)` expects one argument."));
+            }
+            match receiver {
+                RuntimeValue::Set(items) => {
+                    let mut next = items.clone();
+                    next.remove(&args[0]);
+                    Ok(Some(RuntimeValue::Set(next)))
+                }
+                other => Err(type_error(
+                    format!(
+                        "`.remove(...)` currently expects Set receiver, got `{}`.",
+                        other.canonical_key()
+                    )
+                    .as_str(),
+                )),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -680,6 +699,20 @@ mod tests {
                     .into_iter()
                     .collect()
             )
+        );
+
+        let remove_expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SetLit(vec![
+                Expr::Literal(Literal::Int(3)),
+                Expr::Literal(Literal::Int(4)),
+            ])),
+            method: "remove".to_string(),
+            args: vec![Expr::Literal(Literal::Int(3))],
+        };
+        let remove_out = eval_expr(&remove_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(
+            remove_out,
+            RuntimeValue::Set([RuntimeValue::Int(4)].into_iter().collect())
         );
     }
 

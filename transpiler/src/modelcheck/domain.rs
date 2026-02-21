@@ -264,7 +264,15 @@ fn expand_named_type_domain(
 ) -> TranspileResult<Vec<RuntimeValue>> {
     let candidates = type_name_candidates(path);
     if let Some(domain) = find_quantifier_domain(model, &candidates) {
-        return expand_named_domain_override(path, schema, domain, model, bounds, expansion_limit);
+        return expand_named_domain_override(
+            path,
+            schema,
+            domain,
+            model,
+            bounds,
+            expansion_limit,
+            recursion_depth,
+        );
     }
 
     if let Some(alias_ty) = find_alias_type(schema, &candidates) {
@@ -279,7 +287,16 @@ fn expand_named_type_domain(
     }
 
     if let Some((enum_name, enum_def)) = find_enum(schema, &candidates) {
-        return expand_enum_variants(&enum_name, enum_def, None, model, bounds, expansion_limit);
+        return expand_enum_variants(
+            &enum_name,
+            enum_def,
+            None,
+            schema,
+            model,
+            bounds,
+            expansion_limit,
+            recursion_depth,
+        );
     }
 
     Err(TranspileError::Config {
@@ -298,15 +315,18 @@ fn expand_named_domain_override(
     model: &ModelConfig,
     bounds: &RuntimeCollectionBounds,
     expansion_limit: usize,
+    recursion_depth: usize,
 ) -> TranspileResult<Vec<RuntimeValue>> {
     if let Some((enum_name, enum_def)) = find_enum(schema, &type_name_candidates(path)) {
         return expand_enum_variants(
             &enum_name,
             enum_def,
             Some(domain),
+            schema,
             model,
             bounds,
             expansion_limit,
+            recursion_depth,
         );
     }
 
@@ -347,9 +367,11 @@ fn expand_enum_variants(
     enum_name: &str,
     enum_def: &EnumDef,
     override_domain: Option<&DomainSpec>,
+    schema: &SpecSchema,
     model: &ModelConfig,
     bounds: &RuntimeCollectionBounds,
     expansion_limit: usize,
+    recursion_depth: usize,
 ) -> TranspileResult<Vec<RuntimeValue>> {
     let variant_names: Vec<String> = match override_domain {
         Some(DomainSpec::EnumSubset { variants }) => variants.clone(),
@@ -394,37 +416,85 @@ fn expand_enum_variants(
                 ),
             })?;
 
-        let value = match &variant.fields {
-            VariantFields::Unit => RuntimeValue::enum_value(
-                enum_name.to_string(),
-                variant.name.clone(),
-                Vec::<(String, RuntimeValue)>::new(),
-            )?,
-            VariantFields::Struct(fields) if fields.is_empty() => RuntimeValue::enum_value(
-                enum_name.to_string(),
-                variant.name.clone(),
-                Vec::<(String, RuntimeValue)>::new(),
-            )?,
-            VariantFields::Tuple(fields) if fields.is_empty() => RuntimeValue::enum_value(
-                enum_name.to_string(),
-                variant.name.clone(),
-                Vec::<(String, RuntimeValue)>::new(),
-            )?,
-            _ => {
-                return Err(TranspileError::UnsupportedPattern {
-                    message: format!(
-                        "existential enum expansion for `{}` variant `{}` with payload fields",
-                        enum_name, variant.name
-                    ),
-                    span: None,
-                    help: Some(
-                        "Use payload-free enum variants for existential domains in MVP."
-                            .to_string(),
-                    ),
-                });
+        match &variant.fields {
+            VariantFields::Unit => {
+                out.push(RuntimeValue::enum_value(
+                    enum_name.to_string(),
+                    variant.name.clone(),
+                    Vec::<(String, RuntimeValue)>::new(),
+                )?);
             }
-        };
-        out.push(value);
+            VariantFields::Struct(fields) if fields.is_empty() => {
+                out.push(RuntimeValue::enum_value(
+                    enum_name.to_string(),
+                    variant.name.clone(),
+                    Vec::<(String, RuntimeValue)>::new(),
+                )?);
+            }
+            VariantFields::Tuple(fields) if fields.is_empty() => {
+                out.push(RuntimeValue::enum_value(
+                    enum_name.to_string(),
+                    variant.name.clone(),
+                    Vec::<(String, RuntimeValue)>::new(),
+                )?);
+            }
+            VariantFields::Struct(fields) => {
+                let field_domains = fields
+                    .iter()
+                    .map(|field| {
+                        expand_type_domain(
+                            &field.ty,
+                            schema,
+                            model,
+                            bounds,
+                            expansion_limit,
+                            recursion_depth + 1,
+                        )
+                    })
+                    .collect::<TranspileResult<Vec<_>>>()?;
+
+                for tuple in cartesian_values(&field_domains, expansion_limit)? {
+                    let named_fields = fields
+                        .iter()
+                        .zip(tuple.into_iter())
+                        .map(|(field, value)| (field.name.clone(), value))
+                        .collect::<Vec<_>>();
+                    out.push(RuntimeValue::enum_value(
+                        enum_name.to_string(),
+                        variant.name.clone(),
+                        named_fields,
+                    )?);
+                }
+            }
+            VariantFields::Tuple(fields) => {
+                let field_domains = fields
+                    .iter()
+                    .map(|field_ty| {
+                        expand_type_domain(
+                            field_ty,
+                            schema,
+                            model,
+                            bounds,
+                            expansion_limit,
+                            recursion_depth + 1,
+                        )
+                    })
+                    .collect::<TranspileResult<Vec<_>>>()?;
+
+                for tuple in cartesian_values(&field_domains, expansion_limit)? {
+                    let indexed_fields = tuple
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, value)| (format!("_{idx}"), value))
+                        .collect::<Vec<_>>();
+                    out.push(RuntimeValue::enum_value(
+                        enum_name.to_string(),
+                        variant.name.clone(),
+                        indexed_fields,
+                    )?);
+                }
+            }
+        }
         if out.len() > expansion_limit {
             return Err(TranspileError::Config {
                 message: format!(
@@ -442,8 +512,6 @@ fn expand_enum_variants(
         });
     }
 
-    // Touch arguments so future payload-aware enum support can compose bounds/model.
-    let _ = (model, bounds);
     Ok(out)
 }
 
@@ -1043,8 +1111,9 @@ mod tests {
     }
 
     #[test]
-    fn test_expand_branch_existentials_rejects_payload_enum_variants() {
+    fn test_expand_branch_existentials_supports_payload_enum_variants() {
         let mut model = base_model();
+        model.quantifiers.int = Some(IntDomain { min: 0, max: 1 });
         model.quantifiers.types.insert(
             "LRole".to_string(),
             DomainSpec::EnumSubset {
@@ -1072,7 +1141,29 @@ mod tests {
             ty: Some(Type::Named(Path::single("LRole".to_string()))),
         }]);
 
-        let err = expand_branch_existentials(&branch, &schema, &model).unwrap_err();
-        assert!(err.to_string().contains("payload fields"));
+        let assignments = expand_branch_existentials(&branch, &schema, &model).unwrap();
+        assert_eq!(assignments.len(), 2);
+        assert!(assignments.iter().any(|a| {
+            a.get("role")
+                == Some(
+                    &RuntimeValue::enum_value(
+                        "LRole".to_string(),
+                        "Leader".to_string(),
+                        vec![("_0".to_string(), RuntimeValue::Int(0))],
+                    )
+                    .unwrap(),
+                )
+        }));
+        assert!(assignments.iter().any(|a| {
+            a.get("role")
+                == Some(
+                    &RuntimeValue::enum_value(
+                        "LRole".to_string(),
+                        "Leader".to_string(),
+                        vec![("_0".to_string(), RuntimeValue::Int(1))],
+                    )
+                    .unwrap(),
+                )
+        }));
     }
 }

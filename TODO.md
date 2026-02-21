@@ -6554,8 +6554,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] PrimaryBackup success-path bounded run.
     - Added bounded integration coverage in `transpiler/tests/integration.rs` to assert `model-check` succeeds with helper-call `LNext` branches and reports non-zero states/transitions.
   - [x] TwoPhase (bounded run)
-    - Added bounded integration coverage in `transpiler/tests/integration.rs` using a finite `c.rm` constants domain (`values = ["set:{int:0}"]`) and an `LTPCMessage` enum subset (`Prepare/Commit/Abort`) for current payload-enum-domain limitations, asserting successful JSON run with non-zero states/transitions.
-  - [ ] LeaderElection (bounded run)
+    - Added bounded integration coverage in `transpiler/tests/integration.rs` using a finite `c.rm` constants domain (`values = ["set:{int:0}"]`) and a small `LTPCMessage` enum subset (`Prepare/Commit/Abort`) to keep the fixture bounded, asserting successful JSON run with non-zero states/transitions.
+  - [x] LeaderElection (bounded run)
+    - Added bounded integration coverage in `transpiler/tests/integration.rs` with finite `LConstants` domains and `LElectionMessage` payload-variant enum subset; run asserts successful JSON report with non-zero states/transitions.
   - [ ] Paxos (bounded run)
 - [ ] Add differential checks against existing TLC wrapper outcomes for shared small models.
 - [ ] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
