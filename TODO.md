@@ -1230,7 +1230,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Key fixes: clone_up_to_view() for non-Copy types, cvotes_is_valid ensures on delegates, LReplicaConstantsValid assertions
     - Strengthened CReplicaConstants::clone_up_to_view ensures with `self == result` (structural equality)
     - Result: 627 verified, 0 errors (up from 624); 1340 transpiler tests pass
-  - [ ] Proposer: 12 delegate functions remaining → Phase 19.2
+  - [x] Proposer: 12 delegate functions remaining → Phase 19.2
   - [x] Executor: 0 delegates remaining (Phase 19.3 COMPLETE — CGetPacketsFromReplies moved to standalone recursive)
   - [ ] Acceptor: 2 HashMap delegate helpers remaining → Phase 19.4
   - [ ] Election: 11 functions generated but disabled (mod.rs) → Phase 19.5
@@ -6515,7 +6515,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Add new CLI subcommand: `verus-transpile model-check`.
   - Added `Commands::ModelCheck` in `transpiler/src/main.rs` with a real preflight execution path that validates protocol source ingestion (`types.rs` + protocol), required `LInit`/`LNext` entrypoints, `model.toml` parsing, and configured invariant name resolution.
   - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
-- [ ] Proposed flags:
+- [x] Proposed flags:
   - [x] `--input` + `--model` required inputs
   - [x] `--types` (types file; optional if inferable)
     - Added `--types` to `verus-transpile model-check` and wired explicit-types ingestion via `ingest_protocol_sources_with_types`, with default sibling `types.rs` inference preserved when the flag is omitted.
@@ -6580,7 +6580,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.10 Follow-Up (Post-MVP)
 
-- [ ] Auto-generate model-check wrappers from relational spec patterns where needed.
+- [x] Auto-generate model-check wrappers from relational spec patterns where needed.
   - [x] Leaf 22.10.1 (<500 LOC): add generic relational wrapper generator command (`verus-transpile generate-mc-wrapper`) that emits `<Module>_MC.tla` and `.cfg` skeleton from `Init/Next` operator patterns.
     - Added reusable generator logic in `transpiler/src/tla/mc_wrapper.rs` with pattern validation (`Init(s,c)` + `Next(s,s_,c)`), deterministic wrapper rendering, and cfg invariant injection.
     - Wired CLI command in `transpiler/src/main.rs` and added focused command/unit coverage plus integration coverage against `Twophase.tla`.
@@ -6594,7 +6594,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added `docs/model-checking-wrapper-workflow.md` with `generate-mc-wrapper` command workflow, packet projection options, and explicit wrapper-vs-source-first selection guidance.
     - Linked wrapper guidance from `docs/model-checking-source-first.md` and `docs/model-checking-migration.md`.
     - Added integration coverage in `transpiler/tests/integration.rs` to lock required guide markers and cross-doc links.
-- [ ] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
+- [x] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
   - [x] Leaf 22.10.5 (<500 LOC): add configurable hash-compaction state dedup mode for source-first exploration.
     - Added `[search].state_dedup` with `canonical` (default, exact) and `hash_compaction64` (lossy) in `model.toml` parsing (`transpiler/src/modelcheck/config.rs`).
     - Wired dedup mode into trace-capable exploration (`explore_state_space_with_traces_and_dedup`) and added `hash_compaction_collisions` diagnostics in exploration stats (`transpiler/src/modelcheck/explorer.rs`).
@@ -6615,7 +6615,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Surfaced reduction telemetry in model-check reports (`transpiler/src/main.rs`): JSON/human summary now includes `pruned_by_por`, `symmetry_collapses`, and `hash_compaction_collisions`.
     - Added focused assertions for symmetry-collapse/POR telemetry in explorer and model-check execution tests.
     - Updated `docs/model-checking-source-first.md` with reduction telemetry fields and explicit “safe to use” guidance for canonical/hash/symmetry/POR modes.
-- [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.
+- [x] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.
   - [x] Leaf 22.x.1 (<500 LOC): extend `model.toml` schema for temporal obligations and fail fast when configured liveness is not yet executable.
     - Added `properties.leads_to` and `properties.fairness.{weak,strong}` parsing/validation in `transpiler/src/modelcheck/config.rs` (non-empty checks and duplicate rejection).
     - Added `PropertyConfig::has_temporal_requirements()` and an explicit `model-check` guard in `transpiler/src/main.rs` so temporal properties are never silently ignored before the SCC-based engine lands.
