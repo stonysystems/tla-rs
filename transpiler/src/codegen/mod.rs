@@ -59,6 +59,10 @@ pub struct TypeGenerator {
     custom_derives: HashMap<String, Vec<String>>,
     /// Fields to skip per exec type during generation
     skip_fields: HashMap<String, Vec<String>>,
+    /// Exec type names that should NOT get auto-generated validity predicates.
+    skip_validity_types: HashSet<String>,
+    /// Exec type names that should NOT get auto-generated View trait impls.
+    skip_view_types: HashSet<String>,
     /// Generate clone_up_to_view for primitive-only generated structs.
     generate_clone_up_to_view_simple: bool,
     /// Exec type names that are stored inside HashSet<T> and need Hash+Eq impls.
@@ -84,6 +88,8 @@ impl TypeGenerator {
             clone_strategy: HashMap::new(),
             custom_derives: HashMap::new(),
             skip_fields: HashMap::new(),
+            skip_validity_types: HashSet::new(),
+            skip_view_types: HashSet::new(),
             generate_clone_up_to_view_simple: false,
             hashset_element_types: HashSet::new(),
         }
@@ -130,6 +136,16 @@ impl TypeGenerator {
     /// Set fields to skip per exec type
     pub fn set_skip_fields(&mut self, fields: HashMap<String, Vec<String>>) {
         self.skip_fields = fields;
+    }
+
+    /// Set exec types whose validity predicates should be supplied manually.
+    pub fn set_skip_validity_types(&mut self, types: HashSet<String>) {
+        self.skip_validity_types = types;
+    }
+
+    /// Set exec types whose View impls should be supplied manually.
+    pub fn set_skip_view_types(&mut self, types: HashSet<String>) {
+        self.skip_view_types = types;
     }
 
     /// Enable generation of clone_up_to_view methods for primitive-only structs.
@@ -324,12 +340,16 @@ impl TypeGenerator {
             code.push_str(&format!("impl Eq for {} {{}}\n\n", exec_name));
         }
 
-        // Generate well_formed predicate
-        code.push_str(&self.generate_well_formed_struct(&exec_name, &spec.fields));
-        code.push('\n');
+        // Generate well_formed predicate unless this type is configured for manual validity impl.
+        if !self.skip_validity_types.contains(&exec_name) {
+            code.push_str(&self.generate_well_formed_struct(&exec_name, &spec.fields));
+            code.push('\n');
+        }
 
-        // Generate View implementation
-        code.push_str(&self.generate_view_impl(&spec.name, &exec_name, &spec.fields));
+        // Generate View implementation unless this type is configured for manual View impl.
+        if !self.skip_view_types.contains(&exec_name) {
+            code.push_str(&self.generate_view_impl(&spec.name, &exec_name, &spec.fields));
+        }
 
         GeneratedCode { code, warnings }
     }
@@ -353,12 +373,16 @@ impl TypeGenerator {
             self.generate_external_body_clone(&exec_name, &mut code);
         }
 
-        // Generate well_formed predicate
-        code.push_str(&self.generate_well_formed_enum(&exec_name, &spec.variants));
-        code.push('\n');
+        // Generate well_formed predicate unless this type is configured for manual validity impl.
+        if !self.skip_validity_types.contains(&exec_name) {
+            code.push_str(&self.generate_well_formed_enum(&exec_name, &spec.variants));
+            code.push('\n');
+        }
 
-        // Generate View implementation
-        code.push_str(&self.generate_view_impl_enum(&spec.name, &exec_name, &spec.variants));
+        // Generate View implementation unless this type is configured for manual View impl.
+        if !self.skip_view_types.contains(&exec_name) {
+            code.push_str(&self.generate_view_impl_enum(&spec.name, &exec_name, &spec.variants));
+        }
 
         GeneratedCode { code, warnings }
     }
@@ -1054,6 +1078,8 @@ pub fn generate_all_types_with_options(
         extra_type_aliases: &HashMap::new(),
         custom_derives: &HashMap::new(),
         skip_fields: &HashMap::new(),
+        skip_validity_types: &[],
+        skip_view_types: &[],
         generate_clone_up_to_view_simple: false,
         generate_unreachable_value_helper: false,
         manual_code: None,
@@ -1075,6 +1101,8 @@ pub struct TypeGenConfig<'a> {
     pub extra_type_aliases: &'a HashMap<String, String>,
     pub custom_derives: &'a HashMap<String, Vec<String>>,
     pub skip_fields: &'a HashMap<String, Vec<String>>,
+    pub skip_validity_types: &'a [String],
+    pub skip_view_types: &'a [String],
     pub generate_clone_up_to_view_simple: bool,
     pub generate_unreachable_value_helper: bool,
     pub manual_code: Option<&'a str>,
@@ -1102,6 +1130,8 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     generator.set_clone_strategy(cfg.clone_strategy.clone());
     generator.set_custom_derives(cfg.custom_derives.clone());
     generator.set_skip_fields(cfg.skip_fields.clone());
+    generator.set_skip_validity_types(cfg.skip_validity_types.iter().cloned().collect());
+    generator.set_skip_view_types(cfg.skip_view_types.iter().cloned().collect());
     generator.set_generate_clone_up_to_view_simple(cfg.generate_clone_up_to_view_simple);
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
@@ -2145,6 +2175,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2189,6 +2221,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2238,6 +2272,8 @@ mod tests {
             extra_type_aliases: &extra_aliases,
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2286,6 +2322,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: true,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2335,6 +2373,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: true,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2345,6 +2385,106 @@ mod tests {
                 .code
                 .contains("pub fn clone_up_to_view(&self) -> (result: Self)"),
             "non-primitive struct should not get auto clone_up_to_view: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_validity_types_suppresses_validity_generation() {
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "LClockReading".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "t".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let skip_validity_types = vec!["CClockReading".to_string()];
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "valid",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            skip_validity_types: &skip_validity_types,
+            skip_view_types: &[],
+            generate_clone_up_to_view_simple: false,
+            generate_unreachable_value_helper: false,
+            manual_code: None,
+        };
+        let result = generate_all_types_full(&cfg);
+        assert!(
+            !result.code.contains("pub open spec fn valid(&self) -> bool"),
+            "CClockReading valid() should be skipped: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("impl View for CClockReading"),
+            "View impl should still be generated when only validity is skipped: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_skip_view_types_suppresses_view_generation() {
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(StructDef {
+            name: "LClockReading".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "t".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            }],
+            is_spec: true,
+        });
+
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let skip_view_types = vec!["CClockReading".to_string()];
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "valid",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &skip_view_types,
+            generate_clone_up_to_view_simple: false,
+            generate_unreachable_value_helper: false,
+            manual_code: None,
+        };
+        let result = generate_all_types_full(&cfg);
+        assert!(
+            result.code.contains("pub open spec fn valid(&self) -> bool"),
+            "valid() should still be generated when only View impl is skipped: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("impl View for CClockReading"),
+            "CClockReading View impl should be skipped: {}",
             result.code
         );
     }
@@ -2746,6 +2886,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &custom_derives,
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2801,6 +2943,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &skip_fields,
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
@@ -2841,6 +2985,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: Some(manual),
@@ -2880,6 +3026,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: true,
             manual_code: None,
@@ -2914,6 +3062,8 @@ mod tests {
             extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            skip_validity_types: &[],
+            skip_view_types: &[],
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: true,
             manual_code: Some(manual),

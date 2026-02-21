@@ -536,6 +536,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let extra_type_aliases = file_config.extra_type_aliases.clone();
             let custom_derives = file_config.custom_derives.clone();
             let skip_fields = file_config.skip_fields.clone();
+            let skip_validity_types = file_config.skip_validity_types.clone();
+            let skip_view_types = file_config.skip_view_types.clone();
             let generate_clone_up_to_view_simple =
                 file_config.output.generate_clone_up_to_view_simple;
             let generate_unreachable_value_helper =
@@ -621,6 +623,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     extra_type_aliases: &extra_type_aliases,
                     custom_derives: &custom_derives,
                     skip_fields: &skip_fields,
+                    skip_validity_types: &skip_validity_types,
+                    skip_view_types: &skip_view_types,
                     generate_clone_up_to_view_simple,
                     generate_unreachable_value_helper,
                     manual_code: manual_code.as_deref(),
@@ -1783,6 +1787,24 @@ manual_code = "manual_helpers.rs"
                 name
             );
         }
+        assert!(
+            !file_config.skip_types.iter().any(|n| n == "LParameters"),
+            "skip_types should no longer include LParameters"
+        );
+        assert!(
+            file_config
+                .skip_validity_types
+                .iter()
+                .any(|n| n == "CParameters"),
+            "skip_validity_types should include CParameters"
+        );
+        assert!(
+            file_config
+                .skip_view_types
+                .iter()
+                .any(|n| n == "CParameters"),
+            "skip_view_types should include CParameters"
+        );
         assert!(
             file_config
                 .re_exports

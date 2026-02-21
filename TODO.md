@@ -6294,10 +6294,12 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
     - Added codegen/config regression tests and RSL TOML guard; manual helper no longer defines `unreachable_value`.
   - [x] 21.7.2 Generate `CRslIo` alias from type-generation inputs/config instead of manual helper injection.
     - Added `[extra_type_aliases]` support to typegen and moved `CRslIo` there (`types_manual_helpers.rs` no longer defines the alias).
-  - [ ] 21.7.3 Generate `clone_up_to_view` methods for simple RSL structs (start with primitive-only structs).
+  - [x] 21.7.3 Generate `clone_up_to_view` methods for simple RSL structs (start with primitive-only structs).
     - [x] 21.7.3.1 Add typegen/config support (`output.generate_clone_up_to_view_simple`) so primitive-only generated structs get an auto `clone_up_to_view`.
     - [x] 21.7.3.2 Enable the flag in `types_transpile.toml` and regenerate `types_gen.rs` (now emits `CClockReading::clone_up_to_view`).
-    - [ ] 21.7.3.3 Migrate primitive-only structs still sourced from `types_manual_helpers.rs` (for example `CParameters`) after helper split work in 21.7.4.
+    - [x] 21.7.3.3 Migrate primitive-only structs still sourced from `types_manual_helpers.rs` (for example `CParameters`) by generating the struct/`clone_up_to_view` and keeping manual `valid`/`View` semantics.
+      - Added `skip_validity_types` + `skip_view_types` typegen config to avoid duplicate manual impls during incremental migration.
+      - Removed manual `CParameters` struct and `clone_up_to_view` from `types_manual_helpers.rs`; these now come from generated type output.
   - [ ] 21.7.4 Generate remaining structural helper methods (`StaticParams`, quorum/index helpers) or re-home them outside manual type injection.
   - [ ] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.
 - [x] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle

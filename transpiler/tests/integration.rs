@@ -1070,7 +1070,7 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
     // are sourced from types_i.rs via `pub use types_i::*` re-export.
     // CRslIo alias is generated via types_transpile.toml [extra_type_aliases].
     let expected_symbols = [
-        "pub struct CParameters",
+        "impl CParameters",
         "pub struct CConfiguration",
         "pub struct CConstants",
         "pub struct CReplicaConstants",
@@ -1173,6 +1173,36 @@ fn test_rsl_types_transpile_toml_keeps_manual_helpers_binding() {
         io_alias, "LIoOp<EndPoint, CMessage>",
         "CRslIo should be generated via extra_type_aliases"
     );
+    let skip_validity_types = config
+        .get("skip_validity_types")
+        .and_then(|v| v.as_array())
+        .expect("types_transpile.toml should define skip_validity_types");
+    assert!(
+        skip_validity_types
+            .iter()
+            .any(|v| v.as_str() == Some("CParameters")),
+        "types_transpile.toml should keep CParameters in skip_validity_types"
+    );
+    let skip_view_types = config
+        .get("skip_view_types")
+        .and_then(|v| v.as_array())
+        .expect("types_transpile.toml should define skip_view_types");
+    assert!(
+        skip_view_types
+            .iter()
+            .any(|v| v.as_str() == Some("CParameters")),
+        "types_transpile.toml should keep CParameters in skip_view_types"
+    );
+    let skip_types = config
+        .get("skip_types")
+        .and_then(|v| v.as_array())
+        .expect("types_transpile.toml should define skip_types");
+    assert!(
+        !skip_types
+            .iter()
+            .any(|v| v.as_str() == Some("LParameters")),
+        "LParameters should no longer be skipped so CParameters can be generated"
+    );
 
     let helper_path = std::path::Path::new("../src/protocol/RSL").join(manual_code);
     let helper_source =
@@ -1200,6 +1230,17 @@ fn test_rsl_generated_types_include_simple_clone_up_to_view() {
         source.contains("impl CClockReading {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
         "generated CClockReading should include clone_up_to_view helper for primitive-only structs"
     );
+    assert!(
+        source.contains("impl CParameters {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
+        "generated CParameters should include clone_up_to_view helper for primitive-only structs"
+    );
+
+    let helper_source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
+        .expect("Failed to read RSL types manual helpers");
+    assert!(
+        !helper_source.contains("impl CParameters{\n    pub fn clone_up_to_view"),
+        "types_manual_helpers.rs should no longer define CParameters::clone_up_to_view"
+    );
 }
 
 #[test]
@@ -1208,7 +1249,7 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         .expect("Failed to read RSL types manual helpers");
 
     let expected_symbols = [
-        "pub struct CParameters",
+        "impl CParameters",
         "StaticParams()",
         "pub struct CConfiguration",
         "CGetReplicaIndex(",

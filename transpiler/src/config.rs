@@ -127,6 +127,18 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub skip_types: Vec<String>,
 
+    /// Exec type names whose validity predicates are provided manually.
+    /// These types are still generated, but no `validity_predicate_name()` method is emitted.
+    /// e.g., ["CParameters"]
+    #[serde(default)]
+    pub skip_validity_types: Vec<String>,
+
+    /// Exec type names whose `View` trait implementations are provided manually.
+    /// These types are still generated, but no `impl View for ...` block is emitted.
+    /// e.g., ["CParameters"]
+    #[serde(default)]
+    pub skip_view_types: Vec<String>,
+
     /// Re-export statements to include at the top of the generated file.
     /// Each entry is a full `use` path (without the `use` keyword or semicolon).
     /// e.g., ["crate::implementation::RSL::types_i::*"]
@@ -1116,6 +1128,24 @@ mod tests {
         assert_eq!(config.skip_types.len(), 3);
         assert!(config.skip_types.contains(&"Ballot".to_string()));
         assert!(config.skip_types.contains(&"Request".to_string()));
+    }
+
+    #[test]
+    fn test_skip_validity_and_view_types_config() {
+        let toml = r#"
+            skip_validity_types = ["CParameters", "CConfiguration"]
+            skip_view_types = ["CParameters"]
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.skip_validity_types.len(), 2);
+        assert!(config
+            .skip_validity_types
+            .contains(&"CParameters".to_string()));
+        assert!(config
+            .skip_validity_types
+            .contains(&"CConfiguration".to_string()));
+        assert_eq!(config.skip_view_types, vec!["CParameters".to_string()]);
     }
 
     #[test]

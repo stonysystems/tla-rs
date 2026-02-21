@@ -17,7 +17,6 @@ skip_types = [
     "Reply",
     "Vote",
     # Types supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
-    "LParameters",
     "LConfiguration",
     "LConstants",
     "LReplicaConstants",
@@ -33,6 +32,11 @@ skip_types = [
     # Helper-owned type with custom clone_up_to_view/abstractable methods
     "LearnerTuple",
 ]
+
+# Types with hand-written valid/view semantics kept in types_manual_helpers.rs.
+# Generate the struct/clone body, but keep these impl blocks manual for now.
+skip_validity_types = ["CParameters"]
+skip_view_types = ["CParameters"]
 
 # Re-export statements for types that cannot be auto-generated.
 # These are types defined via macros, with custom Hash/axiom/FFI logic,

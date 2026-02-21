@@ -15,33 +15,10 @@
 // CRslIo is generated via [extra_type_aliases] in types_transpile.toml.
 
 // =============================================================================
-// CParameters (generated + impl methods)
+// CParameters (manual validity/view + static defaults)
 // =============================================================================
 
-#[derive(Clone, Copy)]
-pub struct CParameters {
-    pub max_log_length: u64,
-    pub baseline_view_timeout_period: u64,
-    pub heartbeat_period: u64,
-    pub max_integer_val: u64,
-    pub max_batch_size: u64,
-    pub max_batch_delay: u64,
-}
-
 impl CParameters{
-    pub fn clone_up_to_view(&self) -> (result:Self)
-    ensures self@ == result@
-    {
-        CParameters {
-            max_log_length: self.max_log_length,
-            baseline_view_timeout_period: self.baseline_view_timeout_period,
-            heartbeat_period: self.heartbeat_period,
-            max_integer_val: self.max_integer_val,
-            max_batch_size: self.max_batch_size,
-            max_batch_delay: self.max_batch_delay,
-        }
-    }
-
     pub open spec fn valid(self) -> bool
     {
         &&& self.max_integer_val > self.max_log_length > 0
