@@ -29,6 +29,16 @@ Deferred items include:
 - fairness constraints (`WF`, `SF`)
 - leads-to (`~>`) obligations and cycle/SCC-style algorithms
 
+## Phase 22 MVP Pass Criteria
+
+Phase 22 MVP is considered complete when:
+
+- Exhaustive finite-model safety checks run successfully for small models of:
+  - TwoPhase
+  - LeaderElection
+  - PrimaryBackup
+- Bounded/partial exploration mode is available for larger-state protocols (for example Paxos) with explicit limits (`max_depth`, `max_states`, timeout).
+
 ## Why This Boundary
 
 This keeps initial implementation complexity bounded while enabling direct verification workflows for existing tla-rs protocol specs without requiring an intermediate TLA+ conversion step.

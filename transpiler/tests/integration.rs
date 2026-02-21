@@ -5670,6 +5670,12 @@ fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
         "outside MVP scope",
         "deferred to **Phase 22.10 Follow-Up**",
         "not required for Phase 22 MVP acceptance",
+        "Phase 22 MVP Pass Criteria",
+        "TwoPhase",
+        "LeaderElection",
+        "PrimaryBackup",
+        "max_depth",
+        "max_states",
     ] {
         assert!(
             source.contains(marker),
