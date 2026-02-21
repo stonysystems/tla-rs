@@ -68,7 +68,7 @@ pub open spec fn LExecutorInit(c: LConstants, s: int) -> bool {
 
 /// ExecutorGetDecision operator
 pub open spec fn LExecutorGetDecision(s: LState, s_: LState, c: LConstants, bal: int, opn: int, v: int) -> bool {
-    (s_ == LRecord { app: arbitrary(), app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary(), dst: 0int, max_bal_reflected: arbitrary(), msg: 0int, next_op_to_execute: LRecord { app: 0int, app_state: 0int, bal: bal, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: 0int, v: v }, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
+    (s_ == LRecord { app: arbitrary(), app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary(), dst: 0int, max_bal_reflected: arbitrary(), msg: 0int, next_op_to_execute: arbitrary::<int>(), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
 }
 
 /// GetPacketsFromReplies operator
@@ -90,7 +90,7 @@ pub open spec fn LRepliesAreReplyType(c: LConstants, replies: Set<int>) -> bool 
 pub open spec fn LUpdateNewCache(c: LConstants, c_: Map<int, int>, replies: Seq<int>) -> bool {
     {
     let nc = LClientsInReplies(c, arbitrary::<Seq<int>>());
-    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx: int| ((((0 <= req_idx) && (req_idx < (arbitrary::<Seq<int>>().len() as int))) && (arbitrary() == client)) && (c_[client] == arbitrary::<Seq<int>>()[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
+    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || arbitrary::<bool>())) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
 }
 }
 
@@ -118,7 +118,7 @@ pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_pac
 pub open spec fn LExecutorProcessAppStateSupply(s: LState, s_: LState, c: LConstants, inp: int) -> bool {
     {
     let m: int = arbitrary();
-    (s_ == LRecord { app: arbitrary(), app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary(), dst: 0int, max_bal_reflected: arbitrary(), msg: 0int, next_op_to_execute: arbitrary(), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
+    (s_ == LRecord { app: arbitrary(), app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary(), dst: 0int, max_bal_reflected: arbitrary(), msg: 0int, next_op_to_execute: arbitrary::<int>(), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
 }
 }
 

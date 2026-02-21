@@ -135,7 +135,7 @@ pub open spec fn LReplicaNextReadClockMaybeNominateValueAndSend2a(s: LState, s_:
 
 /// ReplicaNextSpontaneousTruncateLogBasedOnCheckpoints operator
 pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
-    exists |opn| 6996286291int.contains(opn) && ((Set::<int>::empty().contains(opn) && arbitrary()) && if (opn > arbitrary::<int>()) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) })
+    arbitrary::<bool>()
 }
 
 /// ReplicaNextSpontaneousMaybeMakeDecision operator
@@ -176,14 +176,14 @@ pub open spec fn LExtractSentPacketsFromIos(c: LConstants, ios: Seq<int>) -> Seq
 
 /// ReplicaNextReadClockAndProcessPacket operator
 pub open spec fn LReplicaNextReadClockAndProcessPacket(s: LState, s_: LState, c: LConstants, ios: Seq<int>) -> bool {
-    ((((ios.len() as int) > 1) && (arbitrary::<int>() == 9416806621int)) && forall |io| c.RslIo.contains(io) ==> ((ios.subrange(2 - 1, (ios.len() as int)).contains(io) ==> (arbitrary::<int>() == 5308382735int)) && LReplicaNextProcessHeartbeat(s, s_, c, s, s_, arbitrary::<Seq<int>>(), arbitrary(), LExtractSentPacketsFromIos(c, ios))))
+    ((((ios.len() as int) > 1) && (arbitrary::<int>() == 9416806621int)) && arbitrary::<bool>())
 }
 
 /// ReplicaNextProcessPacketWithoutReadingClock operator
 pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s: LState, s_: LState, c: LConstants, ios: int) -> bool {
     {
     let sent_packets = LExtractSentPacketsFromIos(c, ios);
-    forall |io| c.RslIo.contains(io) ==> ((ios.drop_first().contains(io) ==> (arbitrary::<int>() == 5308382735int)) && LReplicaNextProcessInvalid(s, s_, c, s, s_, arbitrary(), sent_packets))
+    arbitrary::<bool>()
 }
 }
 

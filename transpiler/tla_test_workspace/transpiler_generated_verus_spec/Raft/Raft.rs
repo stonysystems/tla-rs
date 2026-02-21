@@ -77,7 +77,7 @@ pub open spec fn LBecomeLeader(s: LState, s_: LState, c: LConstants, sent_packet
 
 /// ClientRequest operator
 pub open spec fn LClientRequest(s: LState, s_: LState, c: LConstants, value: int, sent_packets: Seq<int>) -> bool {
-    (((((((((((arbitrary::<int>() == 4100380100int) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<Seq<int>>() == arbitrary::<Seq<int>>().push(LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: arbitrary(), value: value, voter: 0int }))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
+    (((((((((((arbitrary::<int>() == 4100380100int) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<Seq<int>>() == arbitrary::<Seq<int>>().push(arbitrary::<int>()))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// SendAppendEntries operator

@@ -3221,12 +3221,14 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3b-1:
-    // Generated-D1 usage hints now infer Seq<LRecord> parameter shape when an indexed
-    // parameter is directly compared against a record literal.
+    // Baseline after 16.8.3d-3b-2:
+    // Generated-D1 normalization now:
+    // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
+    // - infers bool quantifier binders from operator call-site parameter hints,
+    // - coerces non-int structured placeholders in int-typed record/map/seq contexts.
     assert_eq!(
-        passed, 22,
-        "Expected exactly twenty-two D1 files to compile at current baseline; pass files: {:?}",
+        passed, 23,
+        "Expected exactly twenty-three D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3246,8 +3248,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 7,
-        "Expected 7 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 5,
+        "Expected 5 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3266,8 +3268,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 3,
-        "Expected 3 type-inference (E0282) failures at baseline"
+        cat_e0282, 4,
+        "Expected 4 type-inference (E0282) failures at baseline"
     );
     assert_eq!(
         cat_rec_decreases, 1,

@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `22/33` files compile with Verus after `16.8.3d-3b-1`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `23/33` files compile with Verus after `16.8.3d-3b-2`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5526,7 +5526,24 @@ transpiler/tla_test_workspace/
           - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-3b-1`: `22/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `7` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `3` `E0282`, `1` `REC_DECREASES` (recursive fn missing decreases).
           - Net effect: mismatched-type class reduced (`E0308: 8 -> 7`) with compile pass count unchanged (`22 -> 22`) and one surfaced recursive-decreases first-error for follow-up leaves.
-        - [ ] **16.8.3d-3b-2** Reduce remaining generated-D1 operator parameter/signature shape mismatches (seq/set/map/bool vs scalar `int`) using usage/call-site hints where inference returns unresolved scalar placeholders.
+        - [x] **16.8.3d-3b-2** Reduce remaining generated-D1 operator parameter/signature shape mismatches (seq/set/map/bool vs scalar `int`) using usage/call-site hints where inference returns unresolved scalar placeholders.
+          - Scope/LOC check: implemented as focused `ExprTranslator`/`ModuleTranslator` hint propagation + scalar-shape normalization refinements + targeted regressions + workspace regeneration; stayed under the <500 LOC leaf target.
+          - Extended generated-D1 parameter typing to use usage hints whenever unknown-ref normalization is enabled (not only no-variable modules), including negated-membership usage (`~x \in S`) so scalar element parameters no longer remain inferred `bool`.
+          - Added quantifier binder call-site typing from operator parameter hints (e.g., unbounded `exists` vars now adopt `bool` when passed to bool-typed operator parameters), and fallback collapse for quantifiers whose body remains unresolved placeholder shape.
+          - Added generated-D1 scalar-context coercions for unresolved structured placeholders:
+            - int-typed record fields with non-int set/record shapes;
+            - `Append`/`update` on unresolved `Seq<int>` receivers;
+            - `FnExcept` updates on unresolved `Map<int, int>` receivers.
+          - Added regressions:
+            - `test_generated_d1_exists_unbounded_var_uses_bool_call_site_hint`
+            - `test_generated_d1_forall_arbitrary_body_falls_back_to_bool_placeholder`
+            - `test_generated_d1_append_coerces_record_element_to_int_for_untyped_seq`
+            - `test_generated_d1_fn_except_coerces_record_value_to_int_for_int_map`
+            - `test_generated_d1_param_type_overrides_inferred_bool_for_negated_set_membership_usage`
+            - `test_generated_d1_record_int_field_normalizes_set_shape_value_to_arbitrary_int`
+          - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-3b-2`: `23/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `4` `E0282`, `1` `REC_DECREASES`.
+          - Net effect: compile passes improved (`22 -> 23`) and mismatched-type blockers reduced (`E0308: 7 -> 5`) while preserving `E0277=0`; one former mismatched-type file now leads with inference (`E0282: 3 -> 4`).
         - [ ] **16.8.3d-3b-3** Reduce residual control-flow/function-call `E0308` mismatches in generated D1 specs (including mixed branch/call argument shape drift) and refresh D1 baseline expectations.
       - [ ] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)

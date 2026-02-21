@@ -50,7 +50,7 @@ pub open spec fn LRslConstantsUnchanged(c: LConstants, ps: int, ps_: int) -> boo
 
 /// RslInit operator
 pub open spec fn LRslInit(c: LConstants, con: int, ps: int) -> bool {
-    (((((arbitrary() && arbitrary()) && (arbitrary::<int>() == con)) && arbitrary()) && LRslMapsComplete(c, ps)) && forall |i: int| (((0 <= i) && (i < (arbitrary::<Seq<int>>().len() as int))) ==> arbitrary()))
+    (((((arbitrary() && arbitrary()) && (arbitrary::<int>() == con)) && arbitrary()) && LRslMapsComplete(c, ps)) && arbitrary::<bool>())
 }
 
 /// RslNextCommon operator
@@ -65,7 +65,7 @@ pub open spec fn LRslNextOneReplica(c: LConstants, ps: int, ps_: int, idx: int, 
 
 /// RslNextEnvironment operator
 pub open spec fn LRslNextEnvironment(c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslNextCommon(c, ps, ps_) && (!(arbitrary::<bool>()) == 2375175031int)) && (arbitrary::<int>() == arbitrary::<int>()))
+    ((LRslNextCommon(c, ps, ps_) && (arbitrary::<int>() == 2375175031int)) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslNextOneExternal operator
