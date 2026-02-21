@@ -6458,12 +6458,14 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.4 Model Checking IR and Evaluator
 
-- [ ] Create `transpiler/src/modelcheck/` module.
-- [ ] Define normalized transition IR:
+- [x] Create `transpiler/src/modelcheck/` module.
+  - Module exists with `config` and `ir` submodules (`transpiler/src/modelcheck/mod.rs`).
+- [x] Define normalized transition IR:
   - Current state `s`
   - Next state `s_`
   - Constants `c`
   - Branch-level constraints from `LNext`
+  - Added `modelcheck::ir` with `TransitionIr`, per-branch existential bindings, and normalized equality/predicate constraints extracted from `LNext`.
 - [ ] Implement runtime value model for supported spec types:
   - primitives, enums, tuples, structs, Seq/Set/Map (bounded)
 - [ ] Implement evaluator for the required `Expr` subset used in protocol specs.
