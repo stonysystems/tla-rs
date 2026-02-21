@@ -1576,6 +1576,7 @@ pub struct ModuleTranslator {
 #[derive(Debug, Default, Clone, Copy)]
 struct UsageHintEvidence {
     set_membership: bool,
+    set_element_usage: bool,
     seq_len: bool,
     seq_index_like: bool,
     map_domain: bool,
@@ -1587,6 +1588,7 @@ impl UsageHintEvidence {
     fn merge(self, other: Self) -> Self {
         Self {
             set_membership: self.set_membership || other.set_membership,
+            set_element_usage: self.set_element_usage || other.set_element_usage,
             seq_len: self.seq_len || other.seq_len,
             seq_index_like: self.seq_index_like || other.seq_index_like,
             map_domain: self.map_domain || other.map_domain,
@@ -1602,6 +1604,8 @@ impl UsageHintEvidence {
             Some("Seq<int>")
         } else if self.set_membership {
             Some("Set<int>")
+        } else if self.set_element_usage {
+            Some("int")
         } else {
             None
         }
@@ -2711,6 +2715,12 @@ impl ModuleTranslator {
                     let inferred =
                         param_ty.to_verus_type_with_records(&self.expr_config.record_structs);
                     if inferred != "int" {
+                        if generated_d1_context
+                            && inferred == "bool"
+                            && usage_hint == Some("int")
+                        {
+                            return "int".to_string();
+                        }
                         return inferred;
                     }
                     if let Some(hint) = usage_hint {
@@ -2768,6 +2778,9 @@ impl ModuleTranslator {
                 let right_is_target = is_target_ident(right);
                 if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(right) {
                     evidence.set_membership = true;
+                }
+                if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(left) {
+                    evidence.set_element_usage = true;
                 }
                 if left_is_target || right_is_target {
                     match op {
@@ -2937,6 +2950,9 @@ impl ModuleTranslator {
             TlaExpr::SetEnum(elements) | TlaExpr::Tuple(elements) | TlaExpr::Unchanged(elements) => {
                 let mut evidence = UsageHintEvidence::default();
                 for element in elements {
+                    if is_target_ident(element) {
+                        evidence.set_element_usage = true;
+                    }
                     evidence =
                         evidence.merge(self.collect_identifier_usage_evidence(element, ident_name));
                 }
@@ -5116,6 +5132,55 @@ mod tests {
             "Expected Map hint from combined domain/index usage, got:\n{}",
             output
         );
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_overrides_inferred_bool_for_set_element_usage() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(TlaBinOp::In, TlaExpr::ident("x"), TlaExpr::ident("S")),
+        )
+        .with_params(vec![
+            crate::tla::ast::TlaParam::new("x"),
+            crate::tla::ast::TlaParam::new("S"),
+        ]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator(
+            "Foo",
+            TlaType::function(
+                TlaType::tuple(vec![TlaType::Bool, TlaType::set(TlaType::Int)]),
+                TlaType::Bool,
+            ),
+        );
+        translator.type_env = Some(env);
+
+        assert_eq!(translator.get_param_type(&op, 0, "x", true), "int");
+        assert_eq!(translator.get_param_type(&op, 1, "S", true), "Set<int>");
+    }
+
+    #[test]
+    fn test_non_generated_param_type_keeps_inferred_bool_without_override() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(TlaBinOp::In, TlaExpr::ident("x"), TlaExpr::ident("S")),
+        )
+        .with_params(vec![
+            crate::tla::ast::TlaParam::new("x"),
+            crate::tla::ast::TlaParam::new("S"),
+        ]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator(
+            "Foo",
+            TlaType::function(
+                TlaType::tuple(vec![TlaType::Bool, TlaType::set(TlaType::Int)]),
+                TlaType::Bool,
+            ),
+        );
+        translator.type_env = Some(env);
+
+        assert_eq!(translator.get_param_type(&op, 0, "x", false), "bool");
     }
 
     #[test]

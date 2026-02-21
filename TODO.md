@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `14/33` files compile with Verus after `16.8.3d-2d-5`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `14/33` files compile with Verus after `16.8.3d-2d-6`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5357,6 +5357,16 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-5`: `14/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
           - Net effect: compile passes increased (`13 -> 14`) and inference blockers reduced (`E0282: 20 -> 17`) with surfaced mismatched-type first-error class (`E0308: 0 -> 2`), now tracked under `16.8.3d-2`/`16.8.3d-3`.
+        - [x] **16.8.3d-2d-6** Eliminate residual generated-D1 set-element mismatched types (`E0308`) by prioritizing element-usage fallback when inferred parameter type drifts to `bool`.
+          - Scope/LOC check: implemented as a focused `ModuleTranslator` usage-evidence refinement + parameter-type fallback override (generated-D1 only) with targeted regressions and baseline/docs updates; stayed under the <500 LOC target.
+          - Added a dedicated usage signal for identifier positions used as set elements (`x \in S`, `{x}`), mapping generated-D1 fallback to `int` for that usage.
+          - In generated-D1 context, if inferred parameter type is `bool` but usage evidence strongly indicates set-element shape, fallback now normalizes that parameter to `int`.
+          - Added regressions:
+            - `test_generated_d1_param_type_overrides_inferred_bool_for_set_element_usage`
+            - `test_non_generated_param_type_keeps_inferred_bool_without_override`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-6`: `14/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `19` `E0282`.
+          - Net effect: mismatched-type first-error class eliminated (`E0308: 2 -> 0`) with expected shift into inference (`E0282: 17 -> 19`); compile pass count unchanged (`14/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

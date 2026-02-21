@@ -43,7 +43,7 @@ pub open spec fn LStartElection(s: LState, s_: LState, c: LConstants, node: int,
 }
 
 /// SendAnswer operator
-pub open spec fn LSendAnswer(s: LState, s_: LState, c: LConstants, node: bool, sender: int, sent_packets: (LRecord)) -> bool {
+pub open spec fn LSendAnswer(s: LState, s_: LState, c: LConstants, node: int, sender: int, sent_packets: (LRecord)) -> bool {
     ((((Set::<int>::empty().contains(node) && (node > sender)) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary::<bool>() == true)) && (arbitrary() == if (!(arbitrary()) || (node > arbitrary::<int>())) { node } else { ((((((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary())) }))
 }
 

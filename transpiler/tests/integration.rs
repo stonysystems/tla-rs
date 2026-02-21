@@ -3213,9 +3213,10 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-5:
-    // D1 spec translation now additionally coerces generated placeholder equality
-    // shape `(arbitrary() == arbitrary())` to typed int equality in Eq/Neq.
+    // Baseline after 16.8.3d-2d-6:
+    // D1 spec translation now also treats generated-D1 set-element usage as a
+    // stronger int fallback signal for parameters, which removes the surfaced
+    // E0308 set-element mismatches.
     assert_eq!(
         passed, 14,
         "Expected exactly fourteen D1 files to compile at current baseline; pass files: {:?}",
@@ -3238,8 +3239,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 2,
-        "Expected 2 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 0,
+        "Expected 0 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3258,8 +3259,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 17,
-        "Expected 17 type-inference (E0282) failures at baseline"
+        cat_e0282, 19,
+        "Expected 19 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

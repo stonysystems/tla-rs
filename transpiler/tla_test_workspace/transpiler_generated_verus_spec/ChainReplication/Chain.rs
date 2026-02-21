@@ -31,7 +31,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// HeadReceiveWrite operator
-pub open spec fn LHeadReceiveWrite(s: LState, s_: LState, c: LConstants, value: bool, sent_packets: ()) -> bool {
+pub open spec fn LHeadReceiveWrite(s: LState, s_: LState, c: LConstants, value: int, sent_packets: ()) -> bool {
     ((((((((((((((arbitrary::<int>() == 3419909347int) && (arbitrary::<bool>() == true)) && !Set::<int>::empty().contains(value)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary() == arbitrary().push(value))) && (arbitrary() == Set::<int>::empty().union(set![value]))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
 }
 
@@ -41,7 +41,7 @@ pub open spec fn LForwardToSuccessor(s: LState, s_: LState, c: LConstants, value
 }
 
 /// ReceiveUpdate operator
-pub open spec fn LReceiveUpdate(s: LState, s_: LState, c: LConstants, value: bool, sent_packets: ()) -> bool {
+pub open spec fn LReceiveUpdate(s: LState, s_: LState, c: LConstants, value: int, sent_packets: ()) -> bool {
     ((arbitrary::<int>() == 9863251288int) || ((((((arbitrary::<int>() == 8736718595int) && (arbitrary::<bool>() == true)) && !Set::<int>::empty().contains(value)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary() == arbitrary().push(value))) && if (arbitrary::<int>() == 9863251288int) { (arbitrary() == Set::<int>::empty().union(set![value])) } else { (((((((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty())) }))
 }
 

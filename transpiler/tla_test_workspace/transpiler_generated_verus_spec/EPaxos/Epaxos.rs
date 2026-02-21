@@ -45,7 +45,7 @@ pub open spec fn LSendPreAcceptOk(s: LState, s_: LState, c: LConstants, local_co
 }
 
 /// ReceivePreAcceptOk operator
-pub open spec fn LReceivePreAcceptOk(s: LState, s_: LState, c: LConstants, pa_sender: bool, pa_seq: bool, pa_conflict: bool, sent_packets: ()) -> bool {
+pub open spec fn LReceivePreAcceptOk(s: LState, s_: LState, c: LConstants, pa_sender: int, pa_seq: bool, pa_conflict: bool, sent_packets: ()) -> bool {
     (((((arbitrary::<int>() == 6635974839int) && (arbitrary::<bool>() == true)) && !Set::<int>::empty().contains(pa_sender)) && (arbitrary() == Set::<int>::empty().union(set![pa_sender]))) && (arbitrary::<bool>() == if pa_conflict { true } else { (arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) }))
 }
 
@@ -65,7 +65,7 @@ pub open spec fn LSendAcceptOk(s: LState, s_: LState, c: LConstants, sent_packet
 }
 
 /// ReceiveAcceptOk operator
-pub open spec fn LReceiveAcceptOk(s: LState, s_: LState, c: LConstants, ao_sender: bool, sent_packets: ()) -> bool {
+pub open spec fn LReceiveAcceptOk(s: LState, s_: LState, c: LConstants, ao_sender: int, sent_packets: ()) -> bool {
     ((((((((((((((((arbitrary::<int>() == 5046330240int) && (arbitrary::<bool>() == true)) && !Set::<int>::empty().contains(ao_sender)) && (arbitrary() == Set::<int>::empty().union(set![ao_sender]))) && (sent_packets == Seq::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
