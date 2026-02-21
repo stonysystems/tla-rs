@@ -6309,6 +6309,11 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
       - Re-homed `CReplicaConstantsValid` + `InitReplicaConstants` to `src/implementation/RSL/cconstants.rs`.
       - Removed helper bodies from `types_manual_helpers.rs`, regenerated `types_gen.rs`, and extended integration tests to enforce the new helper location.
   - [ ] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.
+    - [x] 21.7.5.1 Analyze remaining `types_manual_helpers.rs` surface and document migration order/scope in `docs/dev/`.
+    - [ ] 21.7.5.2 Re-home foundational type blocks (`CConfiguration`, `CConstants`, `CReplicaConstants`) out of manual injection and keep generated public API/tests green.
+    - [ ] 21.7.5.3 Re-home component type block A (`CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`) out of manual injection.
+    - [ ] 21.7.5.4 Re-home component type block B (`CExecutor`, `CIncompleteBatchTimer`, `CProposer`, `CReplica`, `CScheduler`) out of manual injection.
+    - [ ] 21.7.5.5 Remove `output.manual_code` from `types_transpile.toml`, regenerate `types_gen.rs`, and update parity/regression tests.
 - [x] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle
 
 ### 21.5 Phase 21.3: Verify full build ✅
