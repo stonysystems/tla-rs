@@ -45,11 +45,33 @@ pub enum ExplorationStopReason {
     MaxStatesReached,
 }
 
+/// Summary statistics collected while exploring the state space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ExplorationStats {
+    /// Number of unique initial states seeded into the frontier.
+    pub initial_states: usize,
+    /// Number of states popped/explored from the frontier.
+    pub explored_states: usize,
+    /// Number of unique states ever recorded in the visited set.
+    pub visited_states: usize,
+    /// Maximum number of states present in the frontier at any point.
+    pub max_frontier_size: usize,
+    /// Frontier size at the moment exploration stopped.
+    pub frontier_size_at_stop: usize,
+    /// Number of successor candidates returned by `successor_fn`.
+    pub successors_considered: usize,
+    /// Number of unique successors enqueued into the frontier.
+    pub successors_enqueued: usize,
+    /// Number of successor candidates dropped due to deduplication.
+    pub duplicate_successors: usize,
+}
+
 /// Result of running a bounded BFS/DFS exploration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExplorationResult {
     pub explored: Vec<ExploredState>,
     pub stop_reason: ExplorationStopReason,
+    pub stats: ExplorationStats,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +108,11 @@ where
         }
     }
 
+    let mut stats = ExplorationStats {
+        initial_states: frontier.len(),
+        max_frontier_size: frontier.len(),
+        ..ExplorationStats::default()
+    };
     let mut explored = Vec::new();
     while let Some(item) = pop_frontier(&mut frontier, mode) {
         explored.push(ExploredState {
@@ -100,11 +127,15 @@ where
         let successors = successor_fn(&item.state)?;
         let mut to_enqueue = Vec::new();
         for successor in successors {
+            stats.successors_considered += 1;
             if visited.len() >= limits.max_states {
-                return Ok(ExplorationResult {
+                return Ok(finalize_result(
                     explored,
-                    stop_reason: ExplorationStopReason::MaxStatesReached,
-                });
+                    ExplorationStopReason::MaxStatesReached,
+                    visited.len(),
+                    frontier.len(),
+                    stats,
+                ));
             }
 
             let key = successor.canonical_key();
@@ -113,15 +144,39 @@ where
                     state: successor,
                     depth: item.depth + 1,
                 });
+                stats.successors_enqueued += 1;
+            } else {
+                stats.duplicate_successors += 1;
             }
         }
         push_successors(&mut frontier, mode, to_enqueue);
+        stats.max_frontier_size = stats.max_frontier_size.max(frontier.len());
     }
 
-    Ok(ExplorationResult {
+    Ok(finalize_result(
         explored,
-        stop_reason: ExplorationStopReason::FrontierExhausted,
-    })
+        ExplorationStopReason::FrontierExhausted,
+        visited.len(),
+        frontier.len(),
+        stats,
+    ))
+}
+
+fn finalize_result(
+    explored: Vec<ExploredState>,
+    stop_reason: ExplorationStopReason,
+    visited_len: usize,
+    frontier_len: usize,
+    mut stats: ExplorationStats,
+) -> ExplorationResult {
+    stats.explored_states = explored.len();
+    stats.visited_states = visited_len;
+    stats.frontier_size_at_stop = frontier_len;
+    ExplorationResult {
+        explored,
+        stop_reason,
+        stats,
+    }
 }
 
 fn validate_limits(limits: ExplorationLimits) -> TranspileResult<()> {
@@ -334,5 +389,71 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("max_states"));
+    }
+
+    #[test]
+    fn test_explore_state_space_reports_statistics() {
+        let graph = BTreeMap::from([(0, vec![1, 2]), (1, vec![2]), (2, vec![])]);
+        let result = explore_state_space(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(result.stats.initial_states, 1);
+        assert_eq!(result.stats.explored_states, 3);
+        assert_eq!(result.stats.visited_states, 3);
+        assert_eq!(result.stats.max_frontier_size, 2);
+        assert_eq!(result.stats.frontier_size_at_stop, 0);
+        assert_eq!(result.stats.successors_considered, 3);
+        assert_eq!(result.stats.successors_enqueued, 2);
+        assert_eq!(result.stats.duplicate_successors, 1);
+    }
+
+    #[test]
+    fn test_explore_state_space_reports_statistics_on_max_states_stop() {
+        let graph = BTreeMap::from([(0, vec![1, 2, 3]), (1, vec![]), (2, vec![]), (3, vec![])]);
+        let result = explore_state_space(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 2,
+            },
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::MaxStatesReached);
+        assert_eq!(result.stats.initial_states, 1);
+        assert_eq!(result.stats.explored_states, 1);
+        assert_eq!(result.stats.visited_states, 2);
+        assert_eq!(result.stats.max_frontier_size, 1);
+        assert_eq!(result.stats.frontier_size_at_stop, 0);
+        assert_eq!(result.stats.successors_considered, 2);
+        assert_eq!(result.stats.successors_enqueued, 1);
+        assert_eq!(result.stats.duplicate_successors, 0);
     }
 }

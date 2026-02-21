@@ -6492,7 +6492,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Implement BFS and DFS exploration modes.
   - Added `modelcheck::explorer` (`transpiler/src/modelcheck/explorer.rs`) with bounded deterministic BFS/DFS traversal over canonical-key deduplicated `RuntimeValue` states, including configurable depth/state limits and explicit stop reasons (`FrontierExhausted` / `MaxStatesReached`).
   - Scope check: implemented as a small leaf task (`<500` LOC total, including focused unit tests).
-- [ ] Maintain visited-set and frontier statistics.
+- [x] Maintain visited-set and frontier statistics.
+  - Extended `modelcheck::explorer` with `ExplorationStats` in `ExplorationResult`, tracking visited/explored counts, frontier peak/final sizes, and successor considered/enqueued/deduplicated metrics for bounded BFS/DFS runs.
+  - Scope check: implemented as a small leaf task (`<500` LOC including tests).
 - [ ] Check:
   - `LInit` for initial-state construction
   - User-selected invariants on every reached state
