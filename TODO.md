@@ -6437,10 +6437,11 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Added `spec_analyzer::ingest_protocol_sources(<proto>.rs)` to pair `<proto>.rs` with sibling `types.rs` and return merged schema + parsed spec AST (`SpecFunction`).
 - [x] Reuse existing parser/AST (`parse_file`, `SpecFunction`, `Expr`) as the canonical input path.
   - `spec_analyzer` now derives function signatures from `parse_file` (`SpecFunction`) and exposes `analyze_spec_files_with_ast()` so source-first ingestion uses a single parser/AST path for function-level semantics.
-- [ ] Resolve and validate required entrypoints:
+- [x] Resolve and validate required entrypoints:
   - `LInit(s, c) -> bool`
   - `LNext(s, s_, c) -> bool`
-- [ ] Add diagnostics for missing or incompatible signatures (clear “what to rename/fix” guidance).
+- [x] Add diagnostics for missing or incompatible signatures (clear “what to rename/fix” guidance).
+  - Added `resolve_required_entrypoints()` in `spec_analyzer` and enforced validation during `ingest_protocol_sources()`, with actionable errors for missing `LInit`/`LNext` or incompatible parameter names/types/arity.
 
 ### 22.3 Finite Model Configuration (`model.toml`)
 
