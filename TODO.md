@@ -6469,8 +6469,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Implement runtime value model for supported spec types:
   - primitives, enums, tuples, structs, Seq/Set/Map (bounded)
   - Added `modelcheck::value` (`transpiler/src/modelcheck/value.rs`) with `RuntimeValue`, bounded Seq/Set/Map constructors tied to `CollectionBounds`, and deterministic canonical keys for future state hashing.
-- [ ] Implement evaluator for the required `Expr` subset used in protocol specs.
-- [ ] Add explicit unsupported-construct errors (no silent fallback).
+- [x] Implement evaluator for the required `Expr` subset used in protocol specs.
+  - Added `modelcheck::evaluator` (`transpiler/src/modelcheck/evaluator.rs`) with `eval_expr` + `EvalContext`, covering bool/int/nat/string literals, logical/comparison/arithmetic operators, `if`/`let`, field/index access, struct/seq/set/map literals, and builtin method calls (`len`, `contains`, `contains_key`).
+- [x] Add explicit unsupported-construct errors (no silent fallback).
+  - Evaluator now returns `UnsupportedPattern` for unsupported constructs (`forall`/`exists`/`match`, unhooked calls/methods, unsupported casts/updates) instead of silently evaluating or skipping.
 
 ### 22.5 Successor Generation from `LNext`
 
