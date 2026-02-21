@@ -6314,7 +6314,10 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
       - Moved foundational struct/impl blocks into `src/implementation/RSL/cconfiguration.rs` and `src/implementation/RSL/cconstants.rs`.
       - Updated `types_transpile.toml` to re-export those modules and keep the foundational spec types in `skip_types`.
       - Removed foundational definitions from `types_manual_helpers.rs`, regenerated `types_gen.rs` using the full multi-input RSL type command, and extended integration assertions for the new ownership boundary.
-    - [ ] 21.7.5.3 Re-home component type block A (`CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`) out of manual injection.
+    - [x] 21.7.5.3 Re-home component type block A (`CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`) out of manual injection.
+      - Moved `CAcceptor` to `src/implementation/RSL/acceptorimpl.rs`, `CLearner` to `src/implementation/RSL/learnerimpl.rs`, and `CElectionState`/`COutstandingOperation` to `src/implementation/RSL/ElectionImpl.rs`.
+      - Updated `types_transpile.toml` to source component block A via `re_exports` and kept those spec types in `skip_types`.
+      - Removed component block A definitions from `types_manual_helpers.rs`, regenerated `types_gen.rs`, and updated integration tests to enforce new module ownership.
     - [ ] 21.7.5.4 Re-home component type block B (`CExecutor`, `CIncompleteBatchTimer`, `CProposer`, `CReplica`, `CScheduler`) out of manual injection.
     - [ ] 21.7.5.5 Remove `output.manual_code` from `types_transpile.toml`, regenerate `types_gen.rs`, and update parity/regression tests.
 - [x] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle

@@ -20,11 +20,12 @@ skip_types = [
     "LConfiguration",
     "LConstants",
     "LReplicaConstants",
-    # Types still supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
+    # Component block A is supplied by implementation modules via re_exports.
     "LAcceptor",
     "LLearner",
     "ElectionState",
     "OutstandingOperation",
+    # Types still supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
     "LExecutor",
     "IncompleteBatchTimer",
     "LProposer",
@@ -55,13 +56,16 @@ re_exports = [
     # Foundational concrete type blocks moved out of manual injection
     "crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid}",
     "crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants}",
+    # Component block A moved out of manual injection
+    "crate::implementation::RSL::acceptorimpl::CAcceptor",
+    "crate::implementation::RSL::learnerimpl::CLearner",
+    "crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation, CRequestHeader}",
     # Broadcast helpers (CBroadcast, OutboundPackets with verified loops)
     "crate::implementation::RSL::cbroadcast::*",
     # Upper bound helpers (CUpperBound has spec int field, CUpperBoundedAddition)
     "crate::implementation::common::upper_bound::*",
     "crate::implementation::common::upper_bound_i::*",
-    # CRequestHeader: concrete-only type with custom PartialEq, no spec equivalent
-    "crate::implementation::RSL::ElectionImpl::CRequestHeader",
+    # CRequestHeader comes from ElectionImpl re-export above
 ]
 
 [extra_type_aliases]

@@ -7,8 +7,8 @@ pub mod ExecutorImpl;
 /// Retained for impl methods still called by generated wrappers (clone-delegate pattern).
 pub mod ProposerImpl;
 pub mod ReplicaImpl;
-/// Deprecated: use `crate::generated::RSL::acceptor_gen` for functional wrappers.
-/// Retained for CIsLogTruncationPointValid and impl methods still called by generated wrappers.
+/// Generated wrappers live in `crate::generated::RSL::acceptor_gen`.
+/// This module owns CAcceptor type infrastructure and log-truncation helper logic.
 pub mod acceptorimpl;
 pub mod appinterface;
 pub mod cbroadcast;
@@ -19,8 +19,8 @@ pub mod cparameters;
 /// Shared helper functions (clone_cpacket_*, outbound_packets_to_vec) used by
 /// generated RSL dispatch wrappers. Centralizes duplicated helpers from *_gen.rs files.
 pub mod gen_helpers;
-/// Deprecated: use `crate::generated::RSL::learner_gen` for functional wrappers.
-/// Retained for type re-export only (all methods replaced by standalone functions).
+/// Generated wrappers live in `crate::generated::RSL::learner_gen`.
+/// This module owns CLearner type infrastructure.
 pub mod learnerimpl;
 pub mod replicaimpl_class;
 pub mod cmd_line_parser;

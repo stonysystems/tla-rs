@@ -1,5 +1,49 @@
-// learnerimpl.rs — Retained for type re-export only.
-// Protocol logic is in crate::generated::RSL::learner_gen (standalone functions).
-// Type is defined in crate::generated::RSL::types_gen::CLearner.
-#[deprecated(note = "Import CLearner from crate::generated::RSL::types_gen instead")]
-pub use crate::generated::RSL::types_gen::CLearner;
+use crate::implementation::RSL::cconstants::*;
+use crate::implementation::RSL::types_i::*;
+use crate::protocol::RSL::learner::*;
+use vstd::prelude::*;
+
+verus! {
+#[derive(Clone)]
+pub struct CLearner {
+    pub constants: CReplicaConstants,
+    pub max_ballot_seen: CBallot,
+    pub unexecuted_learner_state: CLearnerState,
+}
+
+impl CLearner {
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& self.max_ballot_seen.abstractable()
+        &&& clearnerstate_is_abstractable(self.unexecuted_learner_state)
+    }
+
+    pub open spec fn valid(&self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.max_ballot_seen.valid()
+        &&& clearnerstate_is_valid(self.unexecuted_learner_state)
+    }
+
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (res: CLearner)
+    ensures
+        res@ == self@,
+        res.valid() == self.valid(),
+    {
+        self.clone()
+    }
+}
+
+impl View for CLearner {
+    type V = LLearner;
+
+    open spec fn view(&self) -> LLearner {
+        LLearner {
+            constants: self.constants@,
+            max_ballot_seen: self.max_ballot_seen@,
+            unexecuted_learner_state: abstractify_clearnerstate(self.unexecuted_learner_state),
+        }
+    }
+}
+}

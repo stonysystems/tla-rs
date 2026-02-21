@@ -1071,9 +1071,6 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
     // CRslIo alias is generated via types_transpile.toml [extra_type_aliases].
     let expected_symbols = [
         "impl CParameters",
-        "pub struct CAcceptor",
-        "pub struct CLearner",
-        "pub struct CElectionState",
         "pub struct CExecutor",
         "pub struct CProposer",
         "pub struct CReplica",
@@ -1095,10 +1092,14 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
         "pub struct CConfiguration",
         "pub struct CConstants",
         "pub struct CReplicaConstants",
+        "pub struct CAcceptor",
+        "pub struct CLearner",
+        "pub struct CElectionState",
+        "pub enum COutstandingOperation",
     ] {
         assert!(
             !source.contains(symbol),
-            "foundational symbol `{}` should be re-homed out of manual helper injection",
+            "re-homed symbol `{}` should be absent from manual helper injection",
             symbol
         );
     }
@@ -1220,6 +1221,33 @@ fn test_rsl_types_transpile_toml_keeps_manual_helpers_binding() {
             ty
         );
     }
+    for ty in ["LAcceptor", "LLearner", "ElectionState", "OutstandingOperation"] {
+        assert!(
+            skip_types
+                .iter()
+                .any(|v| v.as_str() == Some(ty)),
+            "{} should stay in skip_types while component block A is re-exported from implementation modules",
+            ty
+        );
+    }
+
+    let re_exports = config
+        .get("re_exports")
+        .and_then(|v| v.as_array())
+        .expect("types_transpile.toml should define re_exports");
+    for re_export in [
+        "crate::implementation::RSL::acceptorimpl::CAcceptor",
+        "crate::implementation::RSL::learnerimpl::CLearner",
+        "crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation, CRequestHeader}",
+    ] {
+        assert!(
+            re_exports
+                .iter()
+                .any(|v| v.as_str() == Some(re_export)),
+            "types_transpile.toml should re-export `{}`",
+            re_export
+        );
+    }
 
     let helper_path = std::path::Path::new("../src/protocol/RSL").join(manual_code);
     let helper_source =
@@ -1310,10 +1338,14 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         "pub struct CConstants",
         "pub struct CReplicaConstants",
         "pub open spec fn ReplicaIndexValid(index:u64, config:CConfiguration) -> bool",
+        "pub struct CAcceptor",
+        "pub struct CLearner",
+        "pub struct CElectionState",
+        "pub enum COutstandingOperation",
     ] {
         assert!(
             !source.contains(symbol),
-            "foundational symbol `{}` should be re-homed out of manual helper injection",
+            "re-homed symbol `{}` should be absent from manual helper injection",
             symbol
         );
     }
@@ -1363,6 +1395,51 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
             symbol
         );
     }
+
+    let acceptor_source = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
+        .expect("Failed to read RSL acceptorimpl module");
+    for symbol in [
+        "pub struct CAcceptor",
+        "impl CAcceptor",
+        "impl View for CAcceptor",
+    ] {
+        assert!(
+            acceptor_source.contains(symbol),
+            "missing symbol `{}` in re-homed acceptorimpl module",
+            symbol
+        );
+    }
+
+    let learner_source = std::fs::read_to_string("../src/implementation/RSL/learnerimpl.rs")
+        .expect("Failed to read RSL learnerimpl module");
+    for symbol in [
+        "pub struct CLearner",
+        "impl CLearner",
+        "impl View for CLearner",
+    ] {
+        assert!(
+            learner_source.contains(symbol),
+            "missing symbol `{}` in re-homed learnerimpl module",
+            symbol
+        );
+    }
+
+    let election_source = std::fs::read_to_string("../src/implementation/RSL/ElectionImpl.rs")
+        .expect("Failed to read RSL ElectionImpl module");
+    for symbol in [
+        "pub struct CElectionState",
+        "impl CElectionState",
+        "impl View for CElectionState",
+        "pub enum COutstandingOperation",
+        "impl COutstandingOperation",
+        "impl View for COutstandingOperation",
+    ] {
+        assert!(
+            election_source.contains(symbol),
+            "missing symbol `{}` in re-homed ElectionImpl module",
+            symbol
+        );
+    }
 }
 
 #[test]
@@ -1370,7 +1447,7 @@ fn test_rsl_types_manual_helpers_component_part1_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
         .expect("Failed to read RSL types manual helpers");
 
-    let expected_symbols = [
+    let removed_symbols = [
         "pub struct CAcceptor",
         "pub min_vote_opn: COperationNumber",
         "pub struct CLearner",
@@ -1378,15 +1455,47 @@ fn test_rsl_types_manual_helpers_component_part1_symbols_present() {
         "pub cur_req_set: HashSet<CRequestHeader>",
         "pub enum COutstandingOperation",
         "COutstandingOpKnown",
-        "pub struct CExecutor",
-        "pub enum CIncompleteBatchTimer",
-        "CIncompleteBatchTimerOn",
     ];
 
-    for symbol in expected_symbols {
+    for symbol in removed_symbols {
         assert!(
-            source.contains(symbol),
-            "missing symbol `{}` in extracted helper file",
+            !source.contains(symbol),
+            "symbol `{}` should be re-homed out of types_manual_helpers.rs",
+            symbol
+        );
+    }
+
+    let acceptor_source = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
+        .expect("Failed to read acceptorimpl.rs");
+    for symbol in [
+        "pub struct CAcceptor",
+        "pub min_vote_opn: COperationNumber",
+    ] {
+        assert!(
+            acceptor_source.contains(symbol),
+            "missing symbol `{}` in acceptorimpl.rs",
+            symbol
+        );
+    }
+
+    let learner_source = std::fs::read_to_string("../src/implementation/RSL/learnerimpl.rs")
+        .expect("Failed to read learnerimpl.rs");
+    assert!(
+        learner_source.contains("pub struct CLearner"),
+        "missing CLearner in learnerimpl.rs"
+    );
+
+    let election_source = std::fs::read_to_string("../src/implementation/RSL/ElectionImpl.rs")
+        .expect("Failed to read ElectionImpl.rs");
+    for symbol in [
+        "pub struct CElectionState",
+        "pub cur_req_set: HashSet<CRequestHeader>",
+        "pub enum COutstandingOperation",
+        "COutstandingOpKnown",
+    ] {
+        assert!(
+            election_source.contains(symbol),
+            "missing symbol `{}` in ElectionImpl.rs",
             symbol
         );
     }
@@ -1934,14 +2043,13 @@ fn test_generated_types_module_public_api() {
         "pub struct CParameters",
         "pub use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};",
         "pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};",
-        "pub struct CAcceptor",
-        "pub struct CLearner",
-        "pub struct CElectionState",
+        "pub use crate::implementation::RSL::acceptorimpl::CAcceptor;",
+        "pub use crate::implementation::RSL::learnerimpl::CLearner;",
+        "pub use crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation, CRequestHeader};",
         "pub struct CExecutor",
         "pub struct CProposer",
         "pub struct CReplica",
         "pub struct CScheduler",
-        "pub enum COutstandingOperation",
         "pub enum CIncompleteBatchTimer",
     ];
 
@@ -1970,15 +2078,15 @@ fn test_generated_types_module_public_api() {
     // Verify each struct has valid() and View implementations
     let valid_count = source.matches("pub open spec fn valid").count();
     assert!(
-        valid_count >= 8,
-        "types_gen.rs should have >= 8 valid() definitions, found {}",
+        valid_count >= 6,
+        "types_gen.rs should have >= 6 valid() definitions, found {}",
         valid_count
     );
 
     let view_count = source.matches("impl View for").count();
     assert!(
-        view_count >= 8,
-        "types_gen.rs should have >= 8 View implementations, found {}",
+        view_count >= 6,
+        "types_gen.rs should have >= 6 View implementations, found {}",
         view_count
     );
 }
@@ -2109,14 +2217,6 @@ fn test_replica_impl_no_direct_subcomponent_method_calls() {
 fn test_manual_impl_modules_have_deprecation_notices() {
     let modules = [
         (
-            "../src/implementation/RSL/acceptorimpl.rs",
-            "Import CAcceptor from crate::generated::RSL::types_gen instead",
-        ),
-        (
-            "../src/implementation/RSL/learnerimpl.rs",
-            "Import CLearner from crate::generated::RSL::types_gen instead",
-        ),
-        (
             "../src/implementation/RSL/ExecutorImpl.rs",
             "Import CExecutor, COutstandingOperation from crate::generated::RSL::types_gen instead",
         ),
@@ -2145,12 +2245,7 @@ fn test_manual_impl_modules_have_deprecation_notices() {
     // mod.rs should have deprecation doc comments
     let mod_rs =
         std::fs::read_to_string("../src/implementation/RSL/mod.rs").expect("Failed to read mod.rs");
-    for module in [
-        "ExecutorImpl",
-        "ProposerImpl",
-        "acceptorimpl",
-        "learnerimpl",
-    ] {
+    for module in ["ExecutorImpl", "ProposerImpl"] {
         assert!(
             mod_rs.contains(&"/// Deprecated: use `crate::generated::RSL::".to_string()),
             "mod.rs should have deprecation doc comment for {}",
@@ -5576,14 +5671,14 @@ fn test_acceptor_gen_no_delegate_patterns() {
 #[test]
 fn test_impl_files_stripped_of_dead_code() {
     // === acceptorimpl.rs ===
-    // Should retain: CIsLogTruncationPointValid, CCountLargerInSeq, CCountLargerOrEqualInSeq,
-    //   CIsNthHighestValueInSequence
-    // CAcceptorProcess1a moved to standalone in acceptor_manual.rs (Phase 19.4)
-    // Should NOT contain any CAcceptor impl methods
+    // Should retain: CAcceptor type infrastructure + standalone helper functions
+    // (CIsLogTruncationPointValid, CCountLargerInSeq, CCountLargerOrEqualInSeq,
+    //  CIsNthHighestValueInSequence). It should NOT reintroduce protocol action methods.
     let acceptor = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
         .expect("Failed to read acceptorimpl.rs");
     assert!(!acceptor.contains("fn CAcceptorProcess1a"), "acceptorimpl.rs should not contain CAcceptorProcess1a (moved to standalone)");
-    assert!(!acceptor.contains("impl CAcceptor"), "acceptorimpl.rs should not have any impl CAcceptor block");
+    assert!(acceptor.contains("pub struct CAcceptor"), "acceptorimpl.rs should define CAcceptor");
+    assert!(acceptor.contains("impl CAcceptor"), "acceptorimpl.rs should contain impl CAcceptor block");
     assert!(acceptor.contains("CIsLogTruncationPointValid"), "acceptorimpl.rs should retain CIsLogTruncationPointValid");
     assert!(acceptor.contains("CCountLargerInSeq"), "acceptorimpl.rs should retain CCountLargerInSeq");
     // Dead methods that should be removed
@@ -5614,10 +5709,13 @@ fn test_impl_files_stripped_of_dead_code() {
     assert!(!executor.contains("lemma_ReplyCacheLen"), "ExecutorImpl.rs should not contain dead lemma_ReplyCacheLen");
 
     // === ElectionImpl.rs ===
-    // Should retain: Clone impl, CRequestHeader, clone_up_to_view, CBoundRequestSequence,
-    //   clone_hashset_u64, clone_vec_crequest
+    // Should retain: CElectionState/COutstandingOperation type infrastructure,
+    // Clone impl, CRequestHeader, clone_up_to_view, CBoundRequestSequence,
+    // clone_hashset_u64, clone_vec_crequest.
     let election = std::fs::read_to_string("../src/implementation/RSL/ElectionImpl.rs")
         .expect("Failed to read ElectionImpl.rs");
+    assert!(election.contains("pub struct CElectionState"), "ElectionImpl.rs should define CElectionState");
+    assert!(election.contains("pub enum COutstandingOperation"), "ElectionImpl.rs should define COutstandingOperation");
     assert!(election.contains("impl Clone for CElectionState"), "ElectionImpl.rs should retain Clone impl");
     assert!(election.contains("struct CRequestHeader"), "ElectionImpl.rs should retain CRequestHeader");
     assert!(election.contains("clone_up_to_view"), "ElectionImpl.rs should retain clone_up_to_view");
@@ -5717,9 +5815,9 @@ fn test_executor_gen_no_delegate_patterns() {
 #[test]
 fn test_impl_files_size_after_stripping() {
     let files_and_max_lines = [
-        ("../src/implementation/RSL/acceptorimpl.rs", 130),
+        ("../src/implementation/RSL/acceptorimpl.rs", 200),
         ("../src/implementation/RSL/ExecutorImpl.rs", 100),
-        ("../src/implementation/RSL/ElectionImpl.rs", 200),
+        ("../src/implementation/RSL/ElectionImpl.rs", 300),
         ("../src/implementation/RSL/ProposerImpl.rs", 500),
     ];
 

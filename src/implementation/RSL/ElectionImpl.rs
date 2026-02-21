@@ -7,7 +7,7 @@ use crate::implementation::common::{generic_refinement::*, upper_bound::*, upper
 use crate::implementation::RSL::{cconfiguration::*, cconstants::*, cmessage::*, types_i::*};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::{
-    configuration::*, constants::*, election::*, environment::*, message::*, types::*,
+    configuration::*, constants::*, election::*, environment::*, executor::*, message::*, types::*,
 };
 use std::collections::hash_set::Iter;
 use std::collections::HashSet;
@@ -18,13 +18,132 @@ use vstd::invariant;
 use vstd::prelude::*;
 use vstd::std_specs::hash::*;
 use vstd::{hash_map::*, map::*, prelude::*, seq::*, set::*};
-// DEPRECATED: Use `crate::generated::RSL::election_gen` for functional wrappers
-// and `crate::generated::RSL::types_gen::CElectionState` for the type directly.
-// This module retains only Clone impl, clone_up_to_view, CBoundRequestSequence,
-// CRequestHeader, and helper functions (clone_hashset_u64, clone_vec_crequest).
-pub use crate::generated::RSL::types_gen::CElectionState;
+// Generated wrappers live in `crate::generated::RSL::election_gen`.
+// This module owns concrete election-side type infrastructure:
+// CElectionState/COutstandingOperation plus clone/hashset helper functions.
 
 verus! {
+pub struct CElectionState {
+    pub constants: CReplicaConstants,
+    pub current_view: CBallot,
+    pub current_view_suspectors: HashSet<u64>,
+    pub epoch_end_time: u64,
+    pub epoch_length: u64,
+    pub requests_received_this_epoch: Vec<CRequest>,
+    pub requests_received_prev_epochs: Vec<CRequest>,
+    pub cur_req_set: HashSet<CRequestHeader>,
+    pub prev_req_set: HashSet<CRequestHeader>,
+}
+
+impl CElectionState {
+    pub open spec fn abstractable(self) -> bool {
+        &&& self.constants.abstractable()
+        &&& self.current_view.abstractable()
+        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].abstractable())
+        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].abstractable())
+    }
+
+    pub open spec fn valid(self) -> bool {
+        &&& self.abstractable()
+        &&& self.constants.valid()
+        &&& self.current_view.valid()
+        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].valid())
+        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].valid())
+    }
+
+    pub open spec fn view(self) -> ElectionState
+        recommends self.abstractable()
+    {
+        ElectionState{
+            constants: self.constants@,
+            current_view: self.current_view@,
+            current_view_suspectors: self.current_view_suspectors@.map(|x:u64| x as int),
+            epoch_end_time: self.epoch_end_time as int,
+            epoch_length: self.epoch_length as int,
+            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i, r:CRequest| r@),
+            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i, r:CRequest| r@)
+        }
+    }
+}
+
+impl View for CElectionState {
+    type V = ElectionState;
+
+    open spec fn view(&self) -> ElectionState {
+        ElectionState {
+            constants: self.constants@,
+            current_view: self.current_view@,
+            current_view_suspectors: self.current_view_suspectors@.map(|u:u64| u as int),
+            epoch_end_time: self.epoch_end_time as int,
+            epoch_length: self.epoch_length as int,
+            requests_received_this_epoch: self.requests_received_this_epoch@.map(|i, r:CRequest| r.view()),
+            requests_received_prev_epochs: self.requests_received_prev_epochs@.map(|i, r:CRequest| r.view()),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum COutstandingOperation {
+    COutstandingOpKnown {
+        v: CRequestBatch,
+        bal: CBallot,
+    },
+    COutstandingOpUnknown {
+    },
+}
+
+impl COutstandingOperation {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                self.abstractable()
+                    && crequestbatch_is_valid(v)
+                    && bal.valid()
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => self.abstractable()
+        }
+    }
+
+    pub open spec fn abstractable(&self) -> bool {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                crequestbatch_is_abstractable(v) && bal.abstractable()
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => true
+        }
+    }
+
+    pub open spec fn view(self) -> OutstandingOperation
+        recommends
+            self.abstractable()
+    {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v,bal} => {
+                OutstandingOperation::OutstandingOpKnown{
+                    v: abstractify_crequestbatch(&v),
+                    bal: bal@,
+                }
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => {
+                OutstandingOperation::OutstandingOpUnknown{}
+            }
+        }
+    }
+}
+
+impl View for COutstandingOperation {
+    type V = OutstandingOperation;
+
+    open spec fn view(&self) -> OutstandingOperation {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => OutstandingOperation::OutstandingOpKnown {
+                v: abstractify_crequestbatch(v),
+                bal: bal@,
+            },
+            COutstandingOperation::COutstandingOpUnknown{} => OutstandingOperation::OutstandingOpUnknown{},
+        }
+    }
+}
 
 // CElectionState contains HashSet<u64> and HashSet<CRequestHeader>, so Clone can't be derived by Verus.
 impl Clone for CElectionState {
