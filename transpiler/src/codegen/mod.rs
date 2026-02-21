@@ -944,6 +944,7 @@ pub fn generate_all_types_with_options(
         clone_strategy: &HashMap::new(),
         skip_types: &[],
         re_exports: &[],
+        extra_type_aliases: &HashMap::new(),
         custom_derives: &HashMap::new(),
         skip_fields: &HashMap::new(),
         generate_unreachable_value_helper: false,
@@ -963,6 +964,7 @@ pub struct TypeGenConfig<'a> {
     pub clone_strategy: &'a HashMap<String, String>,
     pub skip_types: &'a [String],
     pub re_exports: &'a [String],
+    pub extra_type_aliases: &'a HashMap<String, String>,
     pub custom_derives: &'a HashMap<String, Vec<String>>,
     pub skip_fields: &'a HashMap<String, Vec<String>>,
     pub generate_unreachable_value_helper: bool,
@@ -1031,6 +1033,7 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     all_code.push_str("verus! {\n\n");
 
     // Generate type aliases (in insertion order, skip those in skip_types)
+    let mut emitted_alias_names: HashSet<String> = HashSet::new();
     for alias_name in &cfg.registry.alias_order {
         if cfg.skip_types.contains(alias_name) {
             continue;
@@ -1039,9 +1042,24 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
             let exec_name = generator.get_exec_alias_name(&alias.name);
             let exec_type = generator.translate_alias_type(&alias.ty);
             all_code.push_str(&format!("pub type {} = {};\n", exec_name, exec_type));
+            emitted_alias_names.insert(exec_name);
         }
     }
-    if !cfg.registry.aliases.is_empty() {
+    // Extra aliases from config (sorted for deterministic output).
+    let mut extra_alias_entries: Vec<(&String, &String)> = cfg.extra_type_aliases.iter().collect();
+    extra_alias_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+    for (alias_name, alias_target) in extra_alias_entries {
+        if emitted_alias_names.contains(alias_name.as_str()) {
+            all_warnings.push(format!(
+                "extra_type_aliases contains duplicate alias `{}`; skipping",
+                alias_name
+            ));
+            continue;
+        }
+        all_code.push_str(&format!("pub type {} = {};\n", alias_name, alias_target));
+        emitted_alias_names.insert(alias_name.clone());
+    }
+    if !cfg.registry.aliases.is_empty() || !cfg.extra_type_aliases.is_empty() {
         all_code.push('\n');
     }
 
@@ -2014,6 +2032,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &skip_types,
             re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
             generate_unreachable_value_helper: false,
@@ -2056,6 +2075,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &re_exports,
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
             generate_unreachable_value_helper: false,
@@ -2076,6 +2096,49 @@ mod tests {
                 .code
                 .contains("pub use crate::implementation::RSL::cmessage::CPacket;"),
             "Should contain re-export: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_extra_type_aliases_generated() {
+        let registry = TypeRegistry::new();
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let mut extra_aliases = HashMap::new();
+        extra_aliases.insert("CRslIo".to_string(), "LIoOp<EndPoint, CMessage>".to_string());
+        extra_aliases.insert(
+            "CReplyMap".to_string(),
+            "HashMap<EndPoint, CReply>".to_string(),
+        );
+
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            extra_type_aliases: &extra_aliases,
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: false,
+            manual_code: None,
+        };
+
+        let result = generate_all_types_full(&cfg);
+        assert!(
+            result.code.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
+            "Should include configured CRslIo alias: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("pub type CReplyMap = HashMap<EndPoint, CReply>;"),
+            "Should include configured CReplyMap alias: {}",
             result.code
         );
     }
@@ -2474,6 +2537,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &custom_derives,
             skip_fields: &HashMap::new(),
             generate_unreachable_value_helper: false,
@@ -2527,6 +2591,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &skip_fields,
             generate_unreachable_value_helper: false,
@@ -2565,6 +2630,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
             generate_unreachable_value_helper: false,
@@ -2602,6 +2668,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
             generate_unreachable_value_helper: true,
@@ -2634,6 +2701,7 @@ mod tests {
             clone_strategy: &HashMap::new(),
             skip_types: &[],
             re_exports: &[],
+            extra_type_aliases: &HashMap::new(),
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
             generate_unreachable_value_helper: true,

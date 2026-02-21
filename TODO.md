@@ -6292,7 +6292,8 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [ ] Long-term (Phase 21.7): teach type generator to produce these impl blocks
   - [x] 21.7.1 Generate shared `unreachable_value<T>()` from the type generator (`output.generate_unreachable_value_helper`) and remove it from `types_manual_helpers.rs`.
     - Added codegen/config regression tests and RSL TOML guard; manual helper no longer defines `unreachable_value`.
-  - [ ] 21.7.2 Generate `CRslIo` alias from type-generation inputs/config instead of manual helper injection.
+  - [x] 21.7.2 Generate `CRslIo` alias from type-generation inputs/config instead of manual helper injection.
+    - Added `[extra_type_aliases]` support to typegen and moved `CRslIo` there (`types_manual_helpers.rs` no longer defines the alias).
   - [ ] 21.7.3 Generate `clone_up_to_view` methods for simple RSL structs (start with primitive-only structs).
   - [ ] 21.7.4 Generate remaining structural helper methods (`StaticParams`, quorum/index helpers) or re-home them outside manual type injection.
   - [ ] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.

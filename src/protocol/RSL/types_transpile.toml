@@ -56,6 +56,10 @@ re_exports = [
     "crate::implementation::RSL::ElectionImpl::CRequestHeader",
 ]
 
+[extra_type_aliases]
+# Shared concrete I/O alias consumed by generated/manual RSL modules.
+"CRslIo" = "LIoOp<EndPoint, CMessage>"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
@@ -73,6 +77,7 @@ nat_type = "u64"
 "OperationNumber" = "COperationNumber"
 "Votes" = "CVotes"
 "LearnerState" = "CLearnerState"
+"LearnerTuple" = "CLearnerTuple"
 # Enums without L-prefix
 "Ballot" = "CBallot"
 "Request" = "CRequest"

@@ -133,6 +133,12 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub re_exports: Vec<String>,
 
+    /// Extra type aliases to emit in generated type files.
+    /// Key: alias name (e.g., "CRslIo")
+    /// Value: target type expression (e.g., "LIoOp<EndPoint, CMessage>")
+    #[serde(default)]
+    pub extra_type_aliases: HashMap<String, String>,
+
     /// Custom derives per exec type.
     /// These are ADDITIONAL derives beyond what clone_strategy provides.
     /// Key: exec type name (e.g., "CBallot")
@@ -1120,6 +1126,25 @@ mod tests {
         assert!(config
             .re_exports
             .contains(&"crate::implementation::RSL::types_i::*".to_string()));
+    }
+
+    #[test]
+    fn test_extra_type_aliases_config() {
+        let toml = r#"
+            [extra_type_aliases]
+            "CRslIo" = "LIoOp<EndPoint, CMessage>"
+            "CReplyMap" = "HashMap<EndPoint, CReply>"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(
+            config.extra_type_aliases.get("CRslIo"),
+            Some(&"LIoOp<EndPoint, CMessage>".to_string())
+        );
+        assert_eq!(
+            config.extra_type_aliases.get("CReplyMap"),
+            Some(&"HashMap<EndPoint, CReply>".to_string())
+        );
     }
 
     #[test]

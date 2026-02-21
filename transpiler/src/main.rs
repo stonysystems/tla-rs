@@ -533,6 +533,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let clone_strategy = file_config.clone_strategy.clone();
             let skip_types = file_config.skip_types.clone();
             let re_exports = file_config.re_exports.clone();
+            let extra_type_aliases = file_config.extra_type_aliases.clone();
             let custom_derives = file_config.custom_derives.clone();
             let skip_fields = file_config.skip_fields.clone();
             let generate_unreachable_value_helper =
@@ -615,6 +616,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     clone_strategy: &clone_strategy,
                     skip_types: &skip_types,
                     re_exports: &re_exports,
+                    extra_type_aliases: &extra_type_aliases,
                     custom_derives: &custom_derives,
                     skip_fields: &skip_fields,
                     generate_unreachable_value_helper,
@@ -1742,14 +1744,19 @@ manual_code = "manual_helpers.rs"
             "loaded manual helper block should no longer include unreachable_value helper"
         );
         assert!(
-            manual.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
-            "loaded manual helper block should define CRslIo alias expected by generated function modules"
+            !manual.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
+            "loaded manual helper block should no longer define CRslIo alias"
         );
 
         let file_config = FileConfig::from_file(&config_path).expect("RSL file config should load");
         assert!(
             file_config.output.generate_unreachable_value_helper,
             "RSL file config should enable output.generate_unreachable_value_helper"
+        );
+        assert_eq!(
+            file_config.extra_type_aliases.get("CRslIo"),
+            Some(&"LIoOp<EndPoint, CMessage>".to_string()),
+            "RSL file config should define CRslIo in extra_type_aliases"
         );
         let required_skips = [
             "Ballot",

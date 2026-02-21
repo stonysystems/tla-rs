@@ -46,6 +46,7 @@ pub type CRequestBatch = Vec<CRequest>;
 pub type CReplyCache = HashMap<EndPoint, CReply>;
 pub type CVotes = HashMap<COperationNumber, CVote>;
 pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
+pub type CRslIo = LIoOp<EndPoint, CMessage>;
 
 #[derive(Clone, Copy)]
 pub struct CClockReading {
@@ -69,6 +70,15 @@ impl View for CClockReading {
 }
 
 
+/// Helper for match arms that are provably unreachable.
+/// The requires clause is `false`, so Verus verifies this can never be called.
+#[verifier(external_body)]
+pub fn unreachable_value<T>() -> (result: T)
+    requires false,
+{
+    panic!("unreachable")
+}
+
 // Manual helper code for RSL concrete types generation.
 //
 // This file is intended to be injected by transpiler generate-types via
@@ -82,9 +92,8 @@ impl View for CClockReading {
 // CLearnerState helpers) are defined in types_i.rs and bulk re-exported via:
 //   pub use crate::implementation::RSL::types_i::*;
 // in the re_exports section of types_transpile.toml.
-
-// Concrete RSL I/O alias used by generated function modules.
-pub type CRslIo = LIoOp<EndPoint, CMessage>;
+//
+// CRslIo is generated via [extra_type_aliases] in types_transpile.toml.
 
 // =============================================================================
 // CParameters (generated + impl methods)
@@ -1170,18 +1179,5 @@ pub open spec fn abstractify_crslio(io: CRslIo) -> RslIo {
 /// Convert a sequence of CRslIo to Seq<RslIo>
 pub open spec fn abstractify_crslio_seq(ios: Seq<CRslIo>) -> Seq<RslIo> {
     ios.map(|i, io: CRslIo| abstractify_crslio(io))
-}
-
-// =============================================================================
-// unreachable_value helper
-// =============================================================================
-
-/// Helper for match arms that are provably unreachable.
-/// The requires clause is `false`, so Verus verifies this can never be called.
-#[verifier(external_body)]
-pub fn unreachable_value<T>() -> (result: T)
-    requires false,
-{
-    panic!("unreachable")
 }
 } // verus!

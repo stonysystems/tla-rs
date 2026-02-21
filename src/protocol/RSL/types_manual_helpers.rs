@@ -11,9 +11,8 @@
 // CLearnerState helpers) are defined in types_i.rs and bulk re-exported via:
 //   pub use crate::implementation::RSL::types_i::*;
 // in the re_exports section of types_transpile.toml.
-
-// Concrete RSL I/O alias used by generated function modules.
-pub type CRslIo = LIoOp<EndPoint, CMessage>;
+//
+// CRslIo is generated via [extra_type_aliases] in types_transpile.toml.
 
 // =============================================================================
 // CParameters (generated + impl methods)
