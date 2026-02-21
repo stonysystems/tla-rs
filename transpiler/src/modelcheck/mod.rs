@@ -12,6 +12,7 @@
 //! - bounded BFS/DFS state-space exploration
 //! - `LInit`-based initial-state construction over finite candidate sets
 //! - user-selected invariant evaluation on reached states
+//! - optional deadlock detection while exploring reached states
 
 pub mod config;
 pub mod domain;

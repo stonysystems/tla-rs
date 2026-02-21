@@ -45,12 +45,21 @@ pub enum ExplorationStopReason {
     MaxStatesReached,
     /// A user-selected invariant evaluated to false on a reached state.
     InvariantViolated,
+    /// Deadlock detected: a reached state (below depth bound) has no successors.
+    DeadlockDetected,
 }
 
 /// Invariant failure metadata captured at exploration stop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvariantViolation {
     pub invariant: String,
+    pub state: RuntimeValue,
+    pub depth: usize,
+}
+
+/// Deadlock metadata captured at exploration stop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeadlockDetection {
     pub state: RuntimeValue,
     pub depth: usize,
 }
@@ -83,6 +92,7 @@ pub struct ExplorationResult {
     pub stop_reason: ExplorationStopReason,
     pub stats: ExplorationStats,
     pub invariant_violation: Option<InvariantViolation>,
+    pub deadlock: Option<DeadlockDetection>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +115,14 @@ pub fn explore_state_space<F>(
 where
     F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
 {
-    explore_state_space_internal(initial_states, mode, limits, successor_fn, |_, _| Ok(None))
+    explore_state_space_internal(
+        initial_states,
+        mode,
+        limits,
+        successor_fn,
+        |_, _| Ok(None),
+        false,
+    )
 }
 
 /// Explore the state space while checking user-selected invariants on every reached state.
@@ -123,7 +140,40 @@ where
     F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
     I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
 {
-    explore_state_space_internal(initial_states, mode, limits, successor_fn, invariant_checker)
+    explore_state_space_internal(
+        initial_states,
+        mode,
+        limits,
+        successor_fn,
+        invariant_checker,
+        false,
+    )
+}
+
+/// Explore the state space while checking invariants and deadlocks.
+///
+/// When `check_deadlock` is true, exploration stops on the first reached state
+/// (below `max_depth`) whose successor set is empty.
+pub fn explore_state_space_with_checks<F, I>(
+    initial_states: &[RuntimeValue],
+    mode: SearchMode,
+    limits: ExplorationLimits,
+    check_deadlock: bool,
+    successor_fn: F,
+    invariant_checker: I,
+) -> TranspileResult<ExplorationResult>
+where
+    F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
+    I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
+{
+    explore_state_space_internal(
+        initial_states,
+        mode,
+        limits,
+        successor_fn,
+        invariant_checker,
+        check_deadlock,
+    )
 }
 
 fn explore_state_space_internal<F, I>(
@@ -132,6 +182,7 @@ fn explore_state_space_internal<F, I>(
     limits: ExplorationLimits,
     mut successor_fn: F,
     mut invariant_checker: I,
+    check_deadlock: bool,
 ) -> TranspileResult<ExplorationResult>
 where
     F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
@@ -175,6 +226,7 @@ where
                     state: item.state.clone(),
                     depth: item.depth,
                 }),
+                None,
             ));
         }
 
@@ -183,6 +235,20 @@ where
         }
 
         let successors = successor_fn(&item.state)?;
+        if check_deadlock && successors.is_empty() {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::DeadlockDetected,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                Some(DeadlockDetection {
+                    state: item.state.clone(),
+                    depth: item.depth,
+                }),
+            ));
+        }
         let mut to_enqueue = Vec::new();
         for successor in successors {
             stats.successors_considered += 1;
@@ -193,6 +259,7 @@ where
                     visited.len(),
                     frontier.len(),
                     stats,
+                    None,
                     None,
                 ));
             }
@@ -219,6 +286,7 @@ where
         frontier.len(),
         stats,
         None,
+        None,
     ))
 }
 
@@ -229,6 +297,7 @@ fn finalize_result(
     frontier_len: usize,
     mut stats: ExplorationStats,
     invariant_violation: Option<InvariantViolation>,
+    deadlock: Option<DeadlockDetection>,
 ) -> ExplorationResult {
     stats.explored_states = explored.len();
     stats.visited_states = visited_len;
@@ -238,6 +307,7 @@ fn finalize_result(
         stop_reason,
         stats,
         invariant_violation,
+        deadlock,
     }
 }
 
@@ -617,5 +687,99 @@ mod tests {
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
         assert_eq!(ids(&result), vec![0, 1]);
         assert_eq!(result.invariant_violation, None);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_checks_detects_deadlock_when_enabled() {
+        let graph = BTreeMap::from([(0, vec![1]), (1, vec![])]);
+        let result = explore_state_space_with_checks(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            true,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+            |_s, _depth| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::DeadlockDetected);
+        assert_eq!(ids(&result), vec![0, 1]);
+        assert_eq!(
+            result.deadlock,
+            Some(DeadlockDetection {
+                state: state(1),
+                depth: 1,
+            })
+        );
+        assert_eq!(result.invariant_violation, None);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_checks_ignores_deadlock_when_disabled() {
+        let graph = BTreeMap::from([(0, vec![1]), (1, vec![])]);
+        let result = explore_state_space_with_checks(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            false,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+            |_s, _depth| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(ids(&result), vec![0, 1]);
+        assert_eq!(result.deadlock, None);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_checks_does_not_treat_depth_bound_as_deadlock() {
+        let graph = BTreeMap::from([(0, vec![1]), (1, vec![])]);
+        let result = explore_state_space_with_checks(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 1,
+                max_states: 20,
+            },
+            true,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+            |_s, _depth| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(ids(&result), vec![0, 1]);
+        assert_eq!(result.deadlock, None);
     }
 }
