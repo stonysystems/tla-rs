@@ -169,6 +169,8 @@ pub struct TranslatorConfig {
     pub constant_field_type_hints: std::collections::HashMap<String, String>,
     /// Per-operator parameter type hints (excluding auto-injected `s`/`s_`/`c`).
     pub operator_param_type_hints: std::collections::HashMap<String, Vec<String>>,
+    /// Per-operator return type hints for expression-shape coercion.
+    pub operator_return_type_hints: std::collections::HashMap<String, String>,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -200,6 +202,7 @@ impl Default for TranslatorConfig {
             identifier_type_hints: std::collections::HashMap::new(),
             constant_field_type_hints: std::collections::HashMap::new(),
             operator_param_type_hints: std::collections::HashMap::new(),
+            operator_return_type_hints: std::collections::HashMap::new(),
         }
     }
 }
@@ -448,6 +451,20 @@ impl<'a> ExprTranslator<'a> {
         matches!(hint.trim(), "int" | "nat")
     }
 
+    fn type_hint_is_set(hint: &str) -> bool {
+        hint.chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .starts_with("Set<")
+    }
+
+    fn type_hint_is_seq(hint: &str) -> bool {
+        hint.chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .starts_with("Seq<")
+    }
+
     fn record_struct_hint_from_expr(&self, expr: &TlaExpr) -> Option<String> {
         let TlaExpr::Record(fields) = expr else {
             return None;
@@ -497,6 +514,103 @@ impl<'a> ExprTranslator<'a> {
             .constant_field_type_hints
             .get(field_name)
             .map(|s| s.as_str())
+    }
+
+    fn expr_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
+        match expr {
+            TlaExpr::Ident(name) => self
+                .identifier_type_hint(name)
+                .or_else(|| self.config.operator_return_type_hints.get(name).map(|s| s.as_str()))
+                .or_else(|| self.constant_field_type_hint(expr)),
+            TlaExpr::OpApply { op, .. } => {
+                if let TlaExpr::Ident(name) = op.as_ref() {
+                    self.config
+                        .operator_return_type_hints
+                        .get(name)
+                        .map(|s| s.as_str())
+                } else {
+                    None
+                }
+            }
+            TlaExpr::RecordAccess { .. } => self.constant_field_type_hint(expr),
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => self
+                .expr_type_hint(then_expr)
+                .filter(|hint| self.expr_type_hint(else_expr) == Some(*hint)),
+            TlaExpr::LetIn { body, .. } => self.expr_type_hint(body),
+            _ => None,
+        }
+    }
+
+    fn expr_is_setish(&self, expr: &TlaExpr, rendered: &str) -> bool {
+        if rendered.trim_start().starts_with("set![") || rendered_looks_like_set_int(rendered) {
+            return true;
+        }
+        if self
+            .expr_type_hint(expr)
+            .is_some_and(Self::type_hint_is_set)
+        {
+            return true;
+        }
+        match expr {
+            TlaExpr::SetEnum(_) | TlaExpr::SetFilter { .. } | TlaExpr::SetMap { .. } => true,
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Subset | TlaUnaryOp::Union,
+                ..
+            } => true,
+            TlaExpr::BinOp { op, .. } => matches!(
+                op,
+                TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus | TlaBinOp::CrossProd
+            ),
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                self.expr_is_setish(then_expr, &self.translate(then_expr))
+                    && self.expr_is_setish(else_expr, &self.translate(else_expr))
+            }
+            TlaExpr::LetIn { body, .. } => self.expr_is_setish(body, &self.translate(body)),
+            _ => false,
+        }
+    }
+
+    fn expr_is_seqish(&self, expr: &TlaExpr, rendered: &str) -> bool {
+        if rendered.trim_start().starts_with("seq![") || rendered_looks_like_seq_int(rendered) {
+            return true;
+        }
+        if self
+            .expr_type_hint(expr)
+            .is_some_and(Self::type_hint_is_seq)
+        {
+            return true;
+        }
+        match expr {
+            TlaExpr::Tuple(_) => true,
+            TlaExpr::OpApply { op, .. } => matches!(
+                op.as_ref(),
+                TlaExpr::Ident(name)
+                    if name == "Append"
+                        || name == "update"
+                        || name == "skip"
+                        || name == "drop_first"
+                        || name == "drop_last"
+                        || name == "SubSeq"
+            ),
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                self.expr_is_seqish(then_expr, &self.translate(then_expr))
+                    && self.expr_is_seqish(else_expr, &self.translate(else_expr))
+            }
+            TlaExpr::LetIn { body, .. } => self.expr_is_seqish(body, &self.translate(body)),
+            _ => false,
+        }
     }
 
     fn coerce_boolish_numeric_literal(&self, rendered: &str, expr: &TlaExpr) -> String {
@@ -979,11 +1093,34 @@ impl<'a> ExprTranslator<'a> {
             ),
 
             // Arithmetic
-            TlaBinOp::Plus => format!(
-                "({} + {})",
-                self.coerce_untyped_arbitrary_int(&left_str),
-                self.coerce_untyped_arbitrary_int(&right_str)
-            ),
+            TlaBinOp::Plus => {
+                if self.is_generated_d1_context() {
+                    let left_is_setish = self.expr_is_setish(left, &left_str);
+                    let right_is_setish = self.expr_is_setish(right, &right_str);
+                    if left_is_setish || right_is_setish {
+                        return format!(
+                            "{}.union({})",
+                            self.coerce_untyped_arbitrary_set_int(&left_str),
+                            self.coerce_untyped_arbitrary_set_int(&right_str)
+                        );
+                    }
+
+                    let left_is_seqish = self.expr_is_seqish(left, &left_str);
+                    let right_is_seqish = self.expr_is_seqish(right, &right_str);
+                    if left_is_seqish || right_is_seqish {
+                        return format!(
+                            "({} + {})",
+                            self.coerce_untyped_arbitrary_seq_int(&left_str),
+                            self.coerce_untyped_arbitrary_seq_int(&right_str)
+                        );
+                    }
+                }
+                format!(
+                    "({} + {})",
+                    self.coerce_untyped_arbitrary_int(&left_str),
+                    self.coerce_untyped_arbitrary_int(&right_str)
+                )
+            }
             TlaBinOp::Minus => format!(
                 "({} - {})",
                 self.coerce_untyped_arbitrary_int(&left_str),
@@ -2595,6 +2732,13 @@ impl ModuleTranslator {
             config
                 .operator_param_type_hints
                 .insert(op.name.clone(), param_type_hints);
+        }
+        // Pass 4: collect per-operator return type hints for expression-shape coercion.
+        for op in &module.operators {
+            let return_type = self.get_operator_return_type(&op.name);
+            config
+                .operator_return_type_hints
+                .insert(op.name.clone(), return_type);
         }
         let expr_translator = ExprTranslator::new(&config);
 
@@ -4748,6 +4892,56 @@ mod tests {
             TlaExpr::number(1),
         );
         assert_eq!(translator.translate(&expr), "(arbitrary::<int>() + 1)");
+    }
+
+    #[test]
+    fn test_generated_d1_binop_plus_coerces_to_set_union_when_peer_is_setish() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Plus,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("state")),
+                field: "pending".to_string(),
+            },
+            TlaExpr::SetEnum(vec![TlaExpr::ident("sender_index")]),
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "Set::<int>::empty().union(set![sender_index])"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_binop_plus_coerces_to_seq_concat_from_operator_return_hint() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .operator_info
+            .insert("BuildLBroadcast".to_string(), OperatorKind::ConstantOp);
+        config.operator_arity.insert("BuildLBroadcast".to_string(), 4);
+        config
+            .operator_return_type_hints
+            .insert("BuildLBroadcast".to_string(), "Seq<int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Plus,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("head")),
+                field: "packet".to_string(),
+            },
+            TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("BuildLBroadcast")),
+                args: vec![
+                    TlaExpr::ident("src"),
+                    TlaExpr::ident("dsts"),
+                    TlaExpr::ident("m"),
+                ],
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Seq<int>>() + BuildLBroadcast(src, dsts, m))"
+        );
     }
 
     #[test]

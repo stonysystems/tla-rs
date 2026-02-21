@@ -35,7 +35,7 @@ pub open spec fn LBroadcastToEveryone(c: LConstants, myidx: int, m: int, sent_pa
 
 /// BuildLBroadcast operator
 pub open spec fn LBuildLBroadcast(c: LConstants, src: int, dsts: Seq<int>, m: int) -> Seq<int> {
-    if ((dsts.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LBuildLBroadcast(c, src, dsts.skip(1), m)) }
+    if ((dsts.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<Seq<int>>() + LBuildLBroadcast(c, src, dsts.skip(1), m)) }
 }
 
 } // verus!

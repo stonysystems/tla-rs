@@ -57,7 +57,7 @@ pub open spec fn LLearnerProcess2b(s: LState, s_: LState, c: LConstants, packet:
 } } else { if Set::<int>::empty().contains(arbitrary::<int>()) { (s_ == s) } else { {
     let tup = arbitrary::<Seq<int>>()[opn];
     {
-    let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: (arbitrary::<int>() + set![arbitrary()]), seqno: 0int, unexecuted_learner_state: 0int };
+    let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: Set::<int>::empty().union(set![arbitrary()]), seqno: 0int, unexecuted_learner_state: 0int };
     (s_ == LRecord { candidate_learned_value: 0int, constants: arbitrary(), max_ballot_seen: arbitrary(), proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: arbitrary::<Map<int, int>>().insert(opn, tup_) })
 }
 } } } } }

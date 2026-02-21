@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `22/33` files compile with Verus after `16.8.3d-2d-18`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `22/33` files compile with Verus after `16.8.3d-3a`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5504,6 +5504,21 @@ transpiler/tla_test_workspace/
           - Measured first-error baseline after `16.8.3d-2d-18`: `22/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `6` `E0308`, `0` `E0600`, `0` `E0618`, `2` `E0277`, `0` `E0061`, `3` `E0282`.
           - Net effect: residual unknown-field class eliminated (`E0609: 1 -> 0`) with unchanged compile pass count (`22 -> 22`) and expected shift into inference (`E0282: 2 -> 3`) for follow-up leaves.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
+      - [x] **16.8.3d-3a** Eliminate residual generated-D1 trait-bound (`E0277`) first-error class by normalizing `+` fallback around set/seq-shaped peers before scalar coercion.
+        - Scope/LOC check: implemented as focused `ExprTranslator` generated-D1 `+` shape normalization + return-type hint plumbing + targeted regressions + workspace regeneration; stayed under the <500 LOC leaf target.
+        - Added generated-D1 expression-shape helpers (`expr_is_setish`/`expr_is_seqish`) and `operator_return_type_hints` so module-operator calls with known sequence return type can be coerced safely in `+` fallback.
+        - Updated generated-D1 `TlaBinOp::Plus` fallback ordering:
+          - set-shaped peers normalize to set-union form;
+          - seq-shaped peers normalize to seq-concat form;
+          - scalar-int coercion remains the fallback when no collection shape is known.
+        - Added regressions:
+          - `test_generated_d1_binop_plus_coerces_to_set_union_when_peer_is_setish`
+          - `test_generated_d1_binop_plus_coerces_to_seq_concat_from_operator_return_hint`
+        - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+        - Measured first-error baseline after `16.8.3d-3a`: `22/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `8` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `3` `E0282`.
+        - Net effect: trait-bound class eliminated (`E0277: 2 -> 0`) with unchanged compile pass count (`22 -> 22`) and surfaced type-shape mismatches (`E0308: 6 -> 8`) for follow-up leaves.
+      - [ ] **16.8.3d-3b** Reduce post-`3a` `E0308` mismatched-type blockers (dominant class) while preserving `E0277=0`.
+      - [ ] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)

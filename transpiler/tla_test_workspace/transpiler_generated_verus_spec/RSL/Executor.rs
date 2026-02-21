@@ -73,7 +73,7 @@ pub open spec fn LExecutorGetDecision(s: LState, s_: LState, c: LConstants, bal:
 
 /// GetPacketsFromReplies operator
 pub open spec fn LGetPacketsFromReplies(c: LConstants, me: int, requests: Seq<int>, replies: int) -> Seq<int> {
-    if ((requests.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LGetPacketsFromReplies(c, me, requests.drop_first(), arbitrary::<Seq<int>>().drop_first())) }
+    if ((requests.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<Seq<int>>() + LGetPacketsFromReplies(c, me, requests.drop_first(), arbitrary::<Seq<int>>().drop_first())) }
 }
 
 /// ClientsInReplies operator
