@@ -6478,7 +6478,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 - [x] Reuse/discover `LNext` disjunction branches (including `exists`-quantified branches).
   - Extended `modelcheck::ir` branch discovery to recursively split `LNext` disjunctions (including `||` and `|||`) while preserving branch-scoped `exists` binders, including `exists` wrappers around disjunctions (`exists |x| (A ||| B)`), and added focused unit tests for nested/distributed forms.
-- [ ] Expand existential variables using configured finite domains.
+- [x] Expand existential variables using configured finite domains.
+  - Added `modelcheck::domain` (`transpiler/src/modelcheck/domain.rs`) with `expand_branch_existentials`, including typed finite-domain expansion for primitive/alias/enum/unit/tuple/Seq/Set/Map existentials from `model.toml` quantifier domains + collection bounds, deterministic Cartesian assignment generation, and explicit errors for missing/unsupported domains.
 - [ ] Solve branch constraints to produce concrete successor states.
 - [ ] Deduplicate equivalent successor states via canonical state hashing.
 - [ ] Add optional stuttering/deadlock semantics toggle.
