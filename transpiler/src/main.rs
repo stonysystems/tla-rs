@@ -216,6 +216,39 @@ enum Commands {
         model: PathBuf,
     },
 
+    /// Generate a generic TLC wrapper from a relational TLA+ module (`Init/Next`).
+    ///
+    /// Produces `<module><suffix>.tla` and a matching `.cfg` skeleton.
+    GenerateMcWrapper {
+        /// Input relational TLA+ module
+        #[arg(long)]
+        input: PathBuf,
+
+        /// Output wrapper file (.tla)
+        #[arg(long)]
+        output: PathBuf,
+
+        /// Optional explicit cfg output path (defaults to output with .cfg extension)
+        #[arg(long)]
+        cfg_output: Option<PathBuf>,
+
+        /// Init operator name (default: Init)
+        #[arg(long, default_value = "Init")]
+        init: String,
+
+        /// Next operator name (default: Next)
+        #[arg(long, default_value = "Next")]
+        next: String,
+
+        /// Wrapper module suffix (default: _MC)
+        #[arg(long, default_value = "_MC")]
+        module_suffix: String,
+
+        /// Invariant names to include in generated cfg (repeatable)
+        #[arg(long, action = clap::ArgAction::Append)]
+        invariant: Vec<String>,
+    },
+
     /// Generate type definitions from spec types
     GenerateTypes {
         /// Input spec file(s) - can be specified multiple times for multi-file generation.
@@ -1432,6 +1465,73 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
             Ok(())
         }
+        Commands::GenerateMcWrapper {
+            input,
+            output,
+            cfg_output,
+            init,
+            next,
+            module_suffix,
+            invariant,
+        } => {
+            use verus_transpiler::tla::{generate_relational_mc_wrapper, McWrapperOptions};
+
+            if cli.verbose {
+                eprintln!("Generating model-check wrapper from {}", input.display());
+                eprintln!("  output: {}", output.display());
+                eprintln!("  init/next: {}/{}", init, next);
+            }
+
+            let source = std::fs::read_to_string(input)
+                .map_err(|e| miette::miette!("Failed to read input module: {}", e))?;
+            let options = McWrapperOptions {
+                init_operator: init.clone(),
+                next_operator: next.clone(),
+                wrapper_suffix: module_suffix.clone(),
+                invariants: invariant.clone(),
+            };
+            let artifacts = generate_relational_mc_wrapper(&source, &options)
+                .map_err(|e| miette::miette!("{}", e))?;
+
+            if let Some(parent) = output.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        miette::miette!(
+                            "Failed to create output directory `{}`: {}",
+                            parent.display(),
+                            e
+                        )
+                    })?;
+                }
+            }
+            std::fs::write(output, artifacts.wrapper_tla)
+                .map_err(|e| miette::miette!("Failed to write wrapper output: {}", e))?;
+
+            let cfg_path = cfg_output
+                .clone()
+                .unwrap_or_else(|| output.with_extension("cfg"));
+            if let Some(parent) = cfg_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        miette::miette!(
+                            "Failed to create cfg output directory `{}`: {}",
+                            parent.display(),
+                            e
+                        )
+                    })?;
+                }
+            }
+            std::fs::write(&cfg_path, artifacts.cfg)
+                .map_err(|e| miette::miette!("Failed to write cfg output: {}", e))?;
+
+            println!(
+                "Generated wrapper module `{}` at {}",
+                artifacts.wrapper_module_name,
+                output.display()
+            );
+            println!("Generated cfg at {}", cfg_path.display());
+            Ok(())
+        }
         Commands::GenerateTypes {
             input,
             output,
@@ -2628,6 +2728,114 @@ Next == count' = count + N
             }
             _ => panic!("Expected Pipeline command"),
         }
+    }
+
+    #[test]
+    fn test_generate_mc_wrapper_cli_parsing() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "generate-mc-wrapper",
+            "--input",
+            "Demo.tla",
+            "--output",
+            "Demo_MC.tla",
+            "--cfg-output",
+            "Demo_MC.cfg",
+            "--init",
+            "InitCustom",
+            "--next",
+            "NextCustom",
+            "--module-suffix",
+            "_WRAP",
+            "--invariant",
+            "TypeOK",
+            "--invariant",
+            "Safety",
+        ]);
+
+        match cli.command {
+            Some(Commands::GenerateMcWrapper {
+                input,
+                output,
+                cfg_output,
+                init,
+                next,
+                module_suffix,
+                invariant,
+            }) => {
+                assert_eq!(input, PathBuf::from("Demo.tla"));
+                assert_eq!(output, PathBuf::from("Demo_MC.tla"));
+                assert_eq!(cfg_output, Some(PathBuf::from("Demo_MC.cfg")));
+                assert_eq!(init, "InitCustom");
+                assert_eq!(next, "NextCustom");
+                assert_eq!(module_suffix, "_WRAP");
+                assert_eq!(invariant, vec!["TypeOK".to_string(), "Safety".to_string()]);
+            }
+            _ => panic!("Expected GenerateMcWrapper command"),
+        }
+    }
+
+    #[test]
+    fn test_generate_mc_wrapper_command_writes_wrapper_and_cfg() {
+        let dir = tempfile::tempdir().unwrap();
+        let input_path = dir.path().join("Demo.tla");
+        let output_path = dir.path().join("Demo_MC.tla");
+        let cfg_path = dir.path().join("Demo_MC.cfg");
+
+        std::fs::write(
+            &input_path,
+            r#"
+---- MODULE Demo ----
+EXTENDS Integers
+
+CONSTANTS Constants, State
+
+Init(s, c) == s \in State /\ c \in Constants
+Next(s, s_, c) == s_ = s
+
+====
+"#,
+        )
+        .unwrap();
+
+        let command = Commands::GenerateMcWrapper {
+            input: input_path,
+            output: output_path.clone(),
+            cfg_output: Some(cfg_path.clone()),
+            init: "Init".to_string(),
+            next: "Next".to_string(),
+            module_suffix: "_MC".to_string(),
+            invariant: vec!["TypeOK".to_string()],
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+
+        let generated_wrapper = std::fs::read_to_string(&output_path).unwrap();
+        assert!(generated_wrapper.contains("---- MODULE Demo_MC ----"));
+        assert!(generated_wrapper.contains("EXTENDS Demo"));
+        assert!(generated_wrapper.contains("Init(state, constants)"));
+        assert!(generated_wrapper.contains("Next(state, state_, constants)"));
+
+        let generated_cfg = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(generated_cfg.contains("SPECIFICATION Spec"));
+        assert!(generated_cfg.contains("CHECK_DEADLOCK FALSE"));
+        assert!(generated_cfg.contains("INVARIANTS"));
+        assert!(generated_cfg.contains("TypeOK"));
     }
 
     #[test]

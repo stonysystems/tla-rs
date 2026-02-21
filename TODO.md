@@ -6581,5 +6581,11 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 ### 22.10 Follow-Up (Post-MVP)
 
 - [ ] Auto-generate model-check wrappers from relational spec patterns where needed.
+  - [x] Leaf 22.10.1 (<500 LOC): add generic relational wrapper generator command (`verus-transpile generate-mc-wrapper`) that emits `<Module>_MC.tla` and `.cfg` skeleton from `Init/Next` operator patterns.
+    - Added reusable generator logic in `transpiler/src/tla/mc_wrapper.rs` with pattern validation (`Init(s,c)` + `Next(s,s_,c)`), deterministic wrapper rendering, and cfg invariant injection.
+    - Wired CLI command in `transpiler/src/main.rs` and added focused command/unit coverage plus integration coverage against `Twophase.tla`.
+  - [ ] Leaf 22.10.2 (<500 LOC): add optional pattern adapters for explicit message-channel lift helpers (`sent_packets` projection modes) when a protocol needs packet observability in TLC.
+  - [ ] Leaf 22.10.3 (<500 LOC): add fixture-driven golden tests for generated wrapper/cfg pairs across the four shared small protocols.
+  - [ ] Leaf 22.10.4 (<500 LOC): document wrapper-generation workflow and selection guidance vs source-first `model-check`.
 - [ ] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.

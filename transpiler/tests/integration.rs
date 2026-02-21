@@ -2075,6 +2075,7 @@ fn test_gen_helpers_shared_module() {
 fn test_generated_types_module_public_api() {
     let source = std::fs::read_to_string("../src/generated/RSL/types_gen.rs")
         .expect("Failed to read types_gen.rs");
+    let normalized_source: String = source.split_whitespace().collect();
 
     let expected_types = [
         "pub struct CParameters",
@@ -2082,14 +2083,27 @@ fn test_generated_types_module_public_api() {
         "pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};",
         "pub use crate::implementation::RSL::acceptorimpl::CAcceptor;",
         "pub use crate::implementation::RSL::learnerimpl::CLearner;",
-        "pub use crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation, CRequestHeader};",
+        "pub use crate::implementation::RSL::ElectionImpl::{",
+        "CElectionState",
+        "COutstandingOperation",
+        "CRequestHeader",
         "pub use crate::implementation::RSL::ExecutorImpl::{CExecutor, CIncompleteBatchTimer};",
         "pub use crate::implementation::RSL::ProposerImpl::CProposer;",
-        "pub use crate::implementation::RSL::ReplicaImpl::{CReplica, CScheduler, abstractify_clpacket, abstractify_crslio, abstractify_crslio_seq};",
+        "pub use crate::implementation::RSL::ReplicaImpl::{",
+        "CReplica",
+        "CScheduler",
+        "abstractify_clpacket",
+        "abstractify_crslio",
+        "abstractify_crslio_seq",
     ];
 
     for ty in expected_types {
-        assert!(source.contains(ty), "types_gen.rs should contain `{}`", ty);
+        let normalized_expected: String = ty.split_whitespace().collect();
+        assert!(
+            normalized_source.contains(&normalized_expected),
+            "types_gen.rs should contain `{}`",
+            ty
+        );
     }
 
     // Verify type aliases
@@ -5653,6 +5667,70 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
         .filter(|e| e.file_name().to_string_lossy().ends_with("_MC.tla"))
         .count();
     assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
+}
+
+#[test]
+fn test_generate_mc_wrapper_from_relational_module() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = manifest_dir.join("tla_test_workspace/transpiler_generated_tla/TwoPhase/Twophase.tla");
+    assert!(
+        input.exists(),
+        "Expected relational input module at {}",
+        input.display()
+    );
+
+    let temp = tempfile::tempdir().expect("tempdir should create");
+    let wrapper_out = temp.path().join("Twophase_MC.tla");
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "generate-mc-wrapper",
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            wrapper_out.to_str().unwrap(),
+            "--invariant",
+            "Consistency",
+        ])
+        .output()
+        .expect("Failed to run generate-mc-wrapper command");
+
+    assert!(
+        output.status.success(),
+        "generate-mc-wrapper should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let wrapper_content =
+        std::fs::read_to_string(&wrapper_out).expect("wrapper output should be readable");
+    assert!(
+        wrapper_content.contains("---- MODULE Twophase_MC ----"),
+        "wrapper should use source module name with _MC suffix"
+    );
+    assert!(
+        wrapper_content.contains("EXTENDS Twophase"),
+        "wrapper should extend source module"
+    );
+    assert!(
+        wrapper_content.contains("Init(state, constants)"),
+        "wrapper should call relational Init operator"
+    );
+    assert!(
+        wrapper_content.contains("Next(state, state_, constants)"),
+        "wrapper should call relational Next operator"
+    );
+    assert!(
+        wrapper_content.contains("Spec == StateInit /\\ [][StateNext]_vars"),
+        "wrapper should define Spec"
+    );
+
+    let cfg_out = wrapper_out.with_extension("cfg");
+    let cfg_content = std::fs::read_to_string(&cfg_out).expect("cfg output should be readable");
+    assert!(cfg_content.contains("SPECIFICATION Spec"));
+    assert!(cfg_content.contains("CHECK_DEADLOCK FALSE"));
+    assert!(cfg_content.contains("INVARIANTS"));
+    assert!(cfg_content.contains("Consistency"));
 }
 
 fn resolve_transpiler_binary_for_integration() -> std::path::PathBuf {

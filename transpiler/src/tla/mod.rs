@@ -4,6 +4,7 @@
 //! them to Verus/TLA-rs code.
 
 pub mod ast;
+pub mod mc_wrapper;
 pub mod parser;
 pub mod tokenizer;
 pub mod translator;
@@ -13,6 +14,7 @@ pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,
     TlaNumber, TlaOperator, TlaParam, TlaQuantBound, TlaTheorem, TlaUnaryOp,
 };
+pub use mc_wrapper::{generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions};
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};
 pub use translator::{
