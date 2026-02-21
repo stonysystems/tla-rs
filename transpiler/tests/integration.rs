@@ -1907,6 +1907,34 @@ fn test_proposer_gen_no_delegate_patterns() {
     // no clone-delegate pattern (checked above), and functions still exist.
 }
 
+fn slice_exec_fn<'a>(source: &'a str, fn_name: &str) -> (usize, &'a str) {
+    let marker = format!("pub exec fn {}(", fn_name);
+    let start = source
+        .find(&marker)
+        .unwrap_or_else(|| panic!("missing function `{}` in replica_gen.rs", fn_name));
+    let after_start = &source[start + 1..];
+    let end = after_start
+        .find("\npub exec fn ")
+        .map(|offset| start + 1 + offset)
+        .unwrap_or(source.len());
+    let start_line = source[..start].lines().count() + 1;
+    (start_line, &source[start..end])
+}
+
+fn collect_assume_lines(fn_start_line: usize, fn_source: &str) -> Vec<(usize, String)> {
+    fn_source
+        .lines()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            if line.contains("assume(") {
+                Some((fn_start_line + idx, line.trim().to_string()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Verify replica_gen.rs has all expected public functions
 #[test]
 fn test_generated_replica_module_public_api() {
@@ -2016,6 +2044,94 @@ fn test_generated_replica_module_public_api() {
         packet_identity_count, 10,
         "replica_gen.rs should have exactly 10 packet identity assumes, found {}",
         packet_identity_count
+    );
+}
+
+/// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
+///
+/// This ensures:
+/// - Exactly 10 trust-boundary assumes remain (9 + 1 split).
+/// - They only appear in the two known dispatch functions.
+/// - No new assume sites appear in other replica dispatch functions.
+#[test]
+fn test_replica_dispatch_assume_drift_guard() {
+    let source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+
+    let sent_packets_fragment =
+        "_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))";
+    let packets_fragment =
+        "_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))";
+
+    let dispatch_fns = [
+        ("CSchedulerNext", 0usize),
+        ("CReplicaNoReceiveNext", 9usize),
+        ("CReplicaNextProcessPacket", 0usize),
+        ("CReplicaNextProcessPacketWithoutReadingClock", 1usize),
+        ("CReplicaNextReadClockAndProcessPacket", 0usize),
+        ("CExtractSentPacketsFromIos", 0usize),
+    ];
+
+    let mut no_receive_count = 0usize;
+    let mut without_clock_count = 0usize;
+    let mut all_dispatch_assumes: Vec<(String, usize, String)> = Vec::new();
+
+    for (fn_name, expected_assumes) in dispatch_fns {
+        let (fn_start_line, fn_source) = slice_exec_fn(&source, fn_name);
+        let assume_lines = collect_assume_lines(fn_start_line, fn_source);
+
+        assert_eq!(
+            assume_lines.len(),
+            expected_assumes,
+            "{} should contain {} assume(...) sites, found {}: {:?}",
+            fn_name,
+            expected_assumes,
+            assume_lines.len(),
+            assume_lines
+        );
+
+        for (line_no, line_text) in assume_lines {
+            all_dispatch_assumes.push((fn_name.to_string(), line_no, line_text.clone()));
+            if fn_name == "CReplicaNoReceiveNext" {
+                assert!(
+                    line_text.contains(sent_packets_fragment),
+                    "unexpected assume in {}:{}: {}",
+                    fn_name,
+                    line_no,
+                    line_text
+                );
+                no_receive_count += 1;
+            } else if fn_name == "CReplicaNextProcessPacketWithoutReadingClock" {
+                assert!(
+                    line_text.contains(packets_fragment),
+                    "unexpected assume in {}:{}: {}",
+                    fn_name,
+                    line_no,
+                    line_text
+                );
+                without_clock_count += 1;
+            } else {
+                panic!(
+                    "unexpected assume in replica dispatch function {}:{}: {}",
+                    fn_name, line_no, line_text
+                );
+            }
+        }
+    }
+
+    assert_eq!(
+        no_receive_count, 9,
+        "CReplicaNoReceiveNext should contain exactly 9 trust-boundary assumes"
+    );
+    assert_eq!(
+        without_clock_count, 1,
+        "CReplicaNextProcessPacketWithoutReadingClock should contain exactly 1 trust-boundary assume"
+    );
+    assert_eq!(
+        all_dispatch_assumes.len(),
+        10,
+        "replica dispatch path should contain exactly 10 trust-boundary assumes, found {:?}",
+        all_dispatch_assumes
     );
 }
 

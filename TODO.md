@@ -2406,6 +2406,11 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 - [x] Replaced `assume(false)` in dead non-Receive branch with `assert(false)` + IO contract requires
 - [x] Added IO contract preconditions to CReplicaNextProcessPacket and CSchedulerNext
 - [ ] Remaining 10 are irreducible IO trust boundary assumes (all identical pattern):
+  - [x] **12.5.7h1** Inventory all 10 assume sites (function + line) and sync `docs/dev/io-trust-boundary-analysis.md` with current generated code location.
+  - [x] **12.5.7h2** Add a drift check (script/test) that asserts exactly these 10 trust-boundary assumes remain and flags unexpected new `assume(...)` sites in replica dispatch paths.
+    - Implemented in `transpiler/tests/integration.rs::test_replica_dispatch_assume_drift_guard` (enforces 9+1 split, exact assume form, and no new assume sites in other replica dispatch fns).
+  - [ ] **12.5.7h3** Prototype one-path contract propagation (NoReceive action 1) to test whether one packet-identity assume can be eliminated without IO architecture changes.
+  - [ ] **12.5.7h4** If 12.5.7h3 fails, formalize these 10 as deferred architecture-bound assumptions with explicit guardrails and ownership in docs + TODO acceptance criteria.
   - All 10 state: `_sent_packets@.map(|i, p| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))`
   - This asserts that the runtime faithfully records sent packets matching the IO spec
   - Cannot be proven without full IO contract propagation through CReplica dispatch

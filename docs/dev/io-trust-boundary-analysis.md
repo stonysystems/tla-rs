@@ -49,6 +49,46 @@ Each sub-function (e.g., `CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a`) re
 ### In `CReplicaNextProcessPacketWithoutReadingClock` (1 assume):
 The packet-processing sub-function (e.g., `CReplicaNextProcessRequest`) returns `(new_replica, packets)`. The assume states that `packets@.map(...)` equals `ExtractSentPacketsFromIos(ios_abs)`.
 
+### Exact site inventory (validated on 2026-02-21)
+
+Source: `src/generated/RSL/replica_gen.rs`
+
+| # | Function | Branch / action | Assume line |
+|---|---|---|---|
+| 1 | `CReplicaNoReceiveNext` | `nextActionIndex == 1` (`CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a`) | `821` |
+| 2 | `CReplicaNoReceiveNext` | `nextActionIndex == 2` (`CReplicaNextSpontaneousMaybeEnterPhase2`) | `825` |
+| 3 | `CReplicaNoReceiveNext` | `nextActionIndex == 3` (`CReplicaNextReadClockMaybeNominateValueAndSend2a`) | `830` |
+| 4 | `CReplicaNoReceiveNext` | `nextActionIndex == 4` (`CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`) | `834` |
+| 5 | `CReplicaNoReceiveNext` | `nextActionIndex == 5` (`CReplicaNextSpontaneousMaybeMakeDecision`) | `838` |
+| 6 | `CReplicaNoReceiveNext` | `nextActionIndex == 6` (`CReplicaNextSpontaneousMaybeExecute`) | `842` |
+| 7 | `CReplicaNoReceiveNext` | `nextActionIndex == 7` (`CReplicaNextReadClockCheckForViewTimeout`) | `847` |
+| 8 | `CReplicaNoReceiveNext` | `nextActionIndex == 8` (`CReplicaNextReadClockCheckForQuorumOfViewSuspicions`) | `852` |
+| 9 | `CReplicaNoReceiveNext` | `nextActionIndex == 9` (`CReplicaNextReadClockMaybeSendHeartbeat`) | `857` |
+| 10 | `CReplicaNextProcessPacketWithoutReadingClock` | message dispatch result `_packets` | `967` |
+
+All 10 sites assert the same trust-boundary statement:
+
+```rust
+assume(_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+```
+
+or (single non-receive variant):
+
+```rust
+assume(_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)));
+```
+
+### Automated drift guard
+
+`transpiler/tests/integration.rs::test_replica_dispatch_assume_drift_guard` enforces all of the following:
+
+- exactly 10 trust-boundary assumes in replica dispatch paths,
+- exact 9 + 1 split across `CReplicaNoReceiveNext` and `CReplicaNextProcessPacketWithoutReadingClock`,
+- no `assume(...)` sites in other replica dispatch functions,
+- both sites match only the two known packet-identity assume forms above.
+
+This catches accidental introduction of new `assume(...)` statements in replica dispatch code.
+
 ## Why This Is Irreducible
 
 The packet identity `exec_output =~= ExtractSentPacketsFromIos(io_log)` cannot be proven because:
