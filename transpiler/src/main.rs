@@ -45,6 +45,24 @@ impl CliSearchMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum CliPacketProjectionMode {
+    None,
+    AppendSeq,
+    ReplaceSeq,
+}
+
+impl CliPacketProjectionMode {
+    fn as_internal(self) -> verus_transpiler::tla::PacketProjectionMode {
+        use verus_transpiler::tla::PacketProjectionMode;
+        match self {
+            Self::None => PacketProjectionMode::None,
+            Self::AppendSeq => PacketProjectionMode::AppendSeq,
+            Self::ReplaceSeq => PacketProjectionMode::ReplaceSeq,
+        }
+    }
+}
+
 /// Verus Spec-to-Implementation Transpiler
 ///
 /// Transforms Verus spec functions into verified exec implementations
@@ -243,6 +261,14 @@ enum Commands {
         /// Wrapper module suffix (default: _MC)
         #[arg(long, default_value = "_MC")]
         module_suffix: String,
+
+        /// Packet projection mode for relational `sent_packets`-style branches.
+        #[arg(long, value_enum, default_value = "none")]
+        packet_mode: CliPacketProjectionMode,
+
+        /// Packet variable name used in Next-branch quantifiers.
+        #[arg(long, default_value = "sent_packets")]
+        packet_var: String,
 
         /// Invariant names to include in generated cfg (repeatable)
         #[arg(long, action = clap::ArgAction::Append)]
@@ -917,12 +943,13 @@ fn resolve_called_spec_function<'a>(
     use verus_transpiler::error::TranspileError;
 
     let normalized = normalize_call_path(path);
-    let short_name = normalized.rsplit("::").next().unwrap_or(normalized.as_str());
+    let short_name = normalized
+        .rsplit("::")
+        .next()
+        .unwrap_or(normalized.as_str());
 
-    let exact_matches: Vec<&verus_transpiler::ast::SpecFunction> = functions
-        .iter()
-        .filter(|f| f.name == normalized)
-        .collect();
+    let exact_matches: Vec<&verus_transpiler::ast::SpecFunction> =
+        functions.iter().filter(|f| f.name == normalized).collect();
     if exact_matches.len() == 1 {
         return Ok(exact_matches[0]);
     }
@@ -935,10 +962,8 @@ fn resolve_called_spec_function<'a>(
         });
     }
 
-    let short_matches: Vec<&verus_transpiler::ast::SpecFunction> = functions
-        .iter()
-        .filter(|f| f.name == short_name)
-        .collect();
+    let short_matches: Vec<&verus_transpiler::ast::SpecFunction> =
+        functions.iter().filter(|f| f.name == short_name).collect();
     if short_matches.len() == 1 {
         return Ok(short_matches[0]);
     }
@@ -1098,7 +1123,13 @@ fn execute_model_check(
         bounds,
         InitHooks {
             call_evaluator: Some(&|func_path, args| {
-                eval_spec_function_call_recursive(&bundle.spec_functions, func_path, args, bounds, 0)
+                eval_spec_function_call_recursive(
+                    &bundle.spec_functions,
+                    func_path,
+                    args,
+                    bounds,
+                    0,
+                )
             }),
             method_evaluator: None,
         },
@@ -1472,6 +1503,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             init,
             next,
             module_suffix,
+            packet_mode,
+            packet_var,
             invariant,
         } => {
             use verus_transpiler::tla::{generate_relational_mc_wrapper, McWrapperOptions};
@@ -1488,6 +1521,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 init_operator: init.clone(),
                 next_operator: next.clone(),
                 wrapper_suffix: module_suffix.clone(),
+                packet_projection: packet_mode.as_internal(),
+                packet_var: packet_var.clone(),
                 invariants: invariant.clone(),
             };
             let artifacts = generate_relational_mc_wrapper(&source, &options)
@@ -2747,6 +2782,10 @@ Next == count' = count + N
             "NextCustom",
             "--module-suffix",
             "_WRAP",
+            "--packet-mode",
+            "append-seq",
+            "--packet-var",
+            "packets",
             "--invariant",
             "TypeOK",
             "--invariant",
@@ -2761,6 +2800,8 @@ Next == count' = count + N
                 init,
                 next,
                 module_suffix,
+                packet_mode,
+                packet_var,
                 invariant,
             }) => {
                 assert_eq!(input, PathBuf::from("Demo.tla"));
@@ -2769,6 +2810,8 @@ Next == count' = count + N
                 assert_eq!(init, "InitCustom");
                 assert_eq!(next, "NextCustom");
                 assert_eq!(module_suffix, "_WRAP");
+                assert_eq!(packet_mode, CliPacketProjectionMode::AppendSeq);
+                assert_eq!(packet_var, "packets");
                 assert_eq!(invariant, vec!["TypeOK".to_string(), "Safety".to_string()]);
             }
             _ => panic!("Expected GenerateMcWrapper command"),
@@ -2805,6 +2848,8 @@ Next(s, s_, c) == s_ = s
             init: "Init".to_string(),
             next: "Next".to_string(),
             module_suffix: "_MC".to_string(),
+            packet_mode: CliPacketProjectionMode::None,
+            packet_var: "sent_packets".to_string(),
             invariant: vec!["TypeOK".to_string()],
         };
         let cli = Cli {
@@ -2836,6 +2881,61 @@ Next(s, s_, c) == s_ = s
         assert!(generated_cfg.contains("CHECK_DEADLOCK FALSE"));
         assert!(generated_cfg.contains("INVARIANTS"));
         assert!(generated_cfg.contains("TypeOK"));
+    }
+
+    #[test]
+    fn test_generate_mc_wrapper_command_with_packet_projection_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let input_path = dir.path().join("Demo.tla");
+        let output_path = dir.path().join("Demo_MC.tla");
+
+        std::fs::write(
+            &input_path,
+            r#"
+---- MODULE Demo ----
+EXTENDS Integers, Sequences
+CONSTANTS Constants, Msg
+Init(s, c) == TRUE
+Step(s, s_, c, sent_packets) == sent_packets = <<>>
+Next(s, s_, c) ==
+    \E sent_packets \in Seq(Msg) : Step(s, s_, c, sent_packets)
+====
+"#,
+        )
+        .unwrap();
+
+        let command = Commands::GenerateMcWrapper {
+            input: input_path,
+            output: output_path.clone(),
+            cfg_output: None,
+            init: "Init".to_string(),
+            next: "Next".to_string(),
+            module_suffix: "_MC".to_string(),
+            packet_mode: CliPacketProjectionMode::AppendSeq,
+            packet_var: "sent_packets".to_string(),
+            invariant: vec![],
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+        let generated = std::fs::read_to_string(&output_path).unwrap();
+        assert!(generated.contains("VARIABLE state, constants, msgs"));
+        assert!(generated.contains("msgs' = msgs \\o sent_packets"));
+        assert!(generated.contains("vars == <<state, constants, msgs>>"));
     }
 
     #[test]

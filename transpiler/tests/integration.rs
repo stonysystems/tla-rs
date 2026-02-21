@@ -1208,9 +1208,7 @@ fn test_rsl_types_transpile_toml_has_no_manual_helpers_binding() {
         .and_then(|v| v.as_array())
         .expect("types_transpile.toml should define skip_types");
     assert!(
-        !skip_types
-            .iter()
-            .any(|v| v.as_str() == Some("LParameters")),
+        !skip_types.iter().any(|v| v.as_str() == Some("LParameters")),
         "LParameters should no longer be skipped so CParameters can be generated"
     );
     for ty in ["LConfiguration", "LConstants", "LReplicaConstants"] {
@@ -1222,7 +1220,12 @@ fn test_rsl_types_transpile_toml_has_no_manual_helpers_binding() {
             ty
         );
     }
-    for ty in ["LAcceptor", "LLearner", "ElectionState", "OutstandingOperation"] {
+    for ty in [
+        "LAcceptor",
+        "LLearner",
+        "ElectionState",
+        "OutstandingOperation",
+    ] {
         assert!(
             skip_types
                 .iter()
@@ -1270,7 +1273,8 @@ fn test_rsl_generated_types_include_simple_clone_up_to_view() {
         .expect("Failed to read generated RSL types");
 
     assert!(
-        source.contains("impl CClockReading {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
+        source
+            .contains("impl CClockReading {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
         "generated CClockReading should include clone_up_to_view helper for primitive-only structs"
     );
     assert!(
@@ -1355,8 +1359,9 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         );
     }
 
-    let cconfiguration_source = std::fs::read_to_string("../src/implementation/RSL/cconfiguration.rs")
-        .expect("Failed to read RSL cconfiguration module");
+    let cconfiguration_source =
+        std::fs::read_to_string("../src/implementation/RSL/cconfiguration.rs")
+            .expect("Failed to read RSL cconfiguration module");
     for symbol in [
         "pub fn clone_up_to_view(&self) -> (res:CConfiguration)",
         "pub open spec fn abstractable(self) -> bool",
@@ -1465,10 +1470,7 @@ fn test_rsl_types_manual_helpers_component_part1_symbols_present() {
 
     let acceptor_source = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
         .expect("Failed to read acceptorimpl.rs");
-    for symbol in [
-        "pub struct CAcceptor",
-        "pub min_vote_opn: COperationNumber",
-    ] {
+    for symbol in ["pub struct CAcceptor", "pub min_vote_opn: COperationNumber"] {
         assert!(
             acceptor_source.contains(symbol),
             "missing symbol `{}` in acceptorimpl.rs",
@@ -2056,7 +2058,11 @@ fn test_gen_helpers_shared_module() {
     let replica = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
 
-    for (name, src) in [("acceptor_gen", &acceptor), ("proposer_gen", &proposer), ("replica_gen", &replica)] {
+    for (name, src) in [
+        ("acceptor_gen", &acceptor),
+        ("proposer_gen", &proposer),
+        ("replica_gen", &replica),
+    ] {
         assert!(
             !src.contains("fn clone_cpacket_preserving_validity"),
             "{} should not define clone_cpacket_preserving_validity locally (use gen_helpers)",
@@ -2778,8 +2784,9 @@ fn test_d3_real_protocol_specs_to_tla() {
             let input = protocol_dir.join(proto_name).join(spec_file);
             assert!(input.exists(), "{}/{} should exist", proto_name, spec_file);
 
-            let mut converter =
-                verus_transpiler::verus2tla::Verus2TlaConverter::with_config(converter_config.clone());
+            let mut converter = verus_transpiler::verus2tla::Verus2TlaConverter::with_config(
+                converter_config.clone(),
+            );
             match converter.convert_file(&input) {
                 Ok(module) => {
                     let output = printer.print_module(&module);
@@ -2828,8 +2835,14 @@ fn test_d3_real_protocol_specs_to_tla() {
         }
     }
 
-    assert_eq!(passed, total, "All {total} protocol spec files should convert successfully");
-    assert!(total >= 33, "Should convert at least 33 spec files, got {total}");
+    assert_eq!(
+        passed, total,
+        "All {total} protocol spec files should convert successfully"
+    );
+    assert!(
+        total >= 33,
+        "Should convert at least 33 spec files, got {total}"
+    );
 }
 
 /// Phase 16.8.3: D1 round-trip on generated TLA+ workspace
@@ -2891,7 +2904,10 @@ fn test_d1_translate_tla_on_generated_workspace() {
     }
 
     assert_eq!(passed, total);
-    assert!(total >= 33, "Should process at least 33 .tla files, got {total}");
+    assert!(
+        total >= 33,
+        "Should process at least 33 .tla files, got {total}"
+    );
 }
 
 /// Walk a directory recursively and return all file paths as strings.
@@ -2927,7 +2943,7 @@ fn walkdir(dir: &str) -> Vec<String> {
 /// These are fundamental D1→D2 pipeline gaps, not D2 bugs.
 #[test]
 fn test_d2_spec_to_exec_on_generated_workspace() {
-    use verus_transpiler::{Transpiler, TranspilerConfig, TranslatorConfig};
+    use verus_transpiler::{TranslatorConfig, Transpiler, TranspilerConfig};
 
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tla_test_workspace/transpiler_generated_verus_spec");
@@ -2970,10 +2986,9 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
         }
 
         let transpiler = Transpiler::new(config.clone());
-        match transpiler.transpile_file(
-            std::path::Path::new(&entry),
-            std::path::Path::new(&automan),
-        ) {
+        match transpiler
+            .transpile_file(std::path::Path::new(&entry), std::path::Path::new(&automan))
+        {
             Ok(_) => {
                 passed += 1;
             }
@@ -2986,7 +3001,9 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
                 } else {
                     other_fails.push(format!(
                         "{}: {}",
-                        entry.strip_prefix(workspace.to_str().unwrap()).unwrap_or(&entry),
+                        entry
+                            .strip_prefix(workspace.to_str().unwrap())
+                            .unwrap_or(&entry),
                         msg
                     ));
                 }
@@ -2995,10 +3012,22 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
     }
 
     // Document the expected state: 2 pass, 31 fail
-    assert!(total >= 33, "Should process at least 33 .rs files, got {total}");
-    assert!(passed >= 2, "At least 2 trivial files should pass D2, got {passed}");
-    assert!(cat_a_fails >= 20, "Expected ~21 Category A failures (record return types), got {cat_a_fails}");
-    assert!(cat_b_fails >= 9, "Expected ~10 Category B failures (duplicate params), got {cat_b_fails}");
+    assert!(
+        total >= 33,
+        "Should process at least 33 .rs files, got {total}"
+    );
+    assert!(
+        passed >= 2,
+        "At least 2 trivial files should pass D2, got {passed}"
+    );
+    assert!(
+        cat_a_fails >= 20,
+        "Expected ~21 Category A failures (record return types), got {cat_a_fails}"
+    );
+    assert!(
+        cat_b_fails >= 9,
+        "Expected ~10 Category B failures (duplicate params), got {cat_b_fails}"
+    );
     eprintln!(
         "D2 workspace results: {passed}/{total} pass, {cat_a_fails} Cat-A, {cat_b_fails} Cat-B, {} other",
         other_fails.len()
@@ -3075,10 +3104,22 @@ fn test_d1_on_llm_tla_specs() {
         other_fails.len()
     );
 
-    assert!(total >= 12, "Should process at least 12 .tla files, got {total}");
-    assert!(passed >= 3, "At least 3 simple specs should pass, got {passed}");
-    assert!(range_fails >= 4, "Expected >= 4 range operator failures, got {range_fails}");
-    assert!(temporal_fails >= 3, "Expected >= 3 temporal subscript failures, got {temporal_fails}");
+    assert!(
+        total >= 12,
+        "Should process at least 12 .tla files, got {total}"
+    );
+    assert!(
+        passed >= 3,
+        "At least 3 simple specs should pass, got {passed}"
+    );
+    assert!(
+        range_fails >= 4,
+        "Expected >= 4 range operator failures, got {range_fails}"
+    );
+    assert!(
+        temporal_fails >= 3,
+        "Expected >= 3 temporal subscript failures, got {temporal_fails}"
+    );
     if !other_fails.is_empty() {
         eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));
     }
@@ -3137,8 +3178,14 @@ fn test_d1_on_community_tla_specs() {
     );
 
     // 3 pass (EPaxos, Paxos, Raft), 1 fail (TwoPhase — record set constructor)
-    assert!(total >= 4, "Should process at least 4 .tla files, got {total}");
-    assert!(passed >= 3, "At least 3 community specs should parse, got {passed}");
+    assert!(
+        total >= 4,
+        "Should process at least 4 .tla files, got {total}"
+    );
+    assert!(
+        passed >= 3,
+        "At least 3 community specs should parse, got {passed}"
+    );
     // TwoPhase_community.tla fails on record set constructor [type : {"Prepared"}, rm : RM]
     assert!(
         failures.len() >= 1,
@@ -3312,8 +3359,7 @@ fn test_generate_messages_paxos_toml() {
 
 #[test]
 fn test_generate_messages_leader_election_toml() {
-    let code =
-        load_and_generate_messages("../src/protocol/LeaderElection/election_transpile.toml");
+    let code = load_and_generate_messages("../src/protocol/LeaderElection/election_transpile.toml");
     assert!(code.contains("pub enum LeaderElectionMessage"));
     assert!(code.contains("Election {"));
     assert!(code.contains("Answer {"));
@@ -3324,9 +3370,8 @@ fn test_generate_messages_leader_election_toml() {
 
 #[test]
 fn test_generate_messages_primarybackup_toml() {
-    let code = load_and_generate_messages(
-        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
-    );
+    let code =
+        load_and_generate_messages("../src/protocol/PrimaryBackup/primarybackup_transpile.toml");
     assert!(code.contains("pub enum PrimaryBackupMessage"));
     assert!(code.contains("Replicate {"));
     assert!(code.contains("Ack,"));
@@ -3336,8 +3381,7 @@ fn test_generate_messages_primarybackup_toml() {
 
 #[test]
 fn test_generate_messages_chain_replication_toml() {
-    let code =
-        load_and_generate_messages("../src/protocol/ChainReplication/chain_transpile.toml");
+    let code = load_and_generate_messages("../src/protocol/ChainReplication/chain_transpile.toml");
     assert!(code.contains("pub enum ChainMessage"));
     assert!(code.contains("Forward {"));
     assert!(code.contains("Ack {"));
@@ -3348,8 +3392,7 @@ fn test_generate_messages_chain_replication_toml() {
 
 #[test]
 fn test_generate_messages_vertical_paxos_toml() {
-    let code =
-        load_and_generate_messages("../src/protocol/VerticalPaxos/vpaxos_transpile.toml");
+    let code = load_and_generate_messages("../src/protocol/VerticalPaxos/vpaxos_transpile.toml");
     assert!(code.contains("pub enum VerticalPaxosMessage"));
     assert!(code.contains("Prepare {"));
     assert!(code.contains("Promise {"));
@@ -3438,7 +3481,11 @@ fn run_roundtrip_test(toml_path: &str) {
                 let fname = &field[0];
                 let ftype = &field[1];
                 let val = if ftype == "bool" {
-                    if fi % 2 == 0 { "true" } else { "false" }
+                    if fi % 2 == 0 {
+                        "true"
+                    } else {
+                        "false"
+                    }
                 } else {
                     // Use i*100 + fi to get unique non-zero values
                     &format!("{}u64", i * 100 + fi + 1)
@@ -3521,9 +3568,7 @@ fn main() {{
     println!("All round-trip tests passed for {}");
 }}
 "#,
-        cleaned_code,
-        test_body,
-        enum_name,
+        cleaned_code, test_body, enum_name,
     );
 
     // Write to temp file, compile, and run
@@ -3631,8 +3676,16 @@ fn test_analyze_lnext_twophase() {
     assert_eq!(config.params, vec!["s", "s_", "c"]);
     // All 8 actions have sent_packets as existential param
     // 3 have only sent_packets, 5 have sent_packets + another param (rm/r)
-    let with_one: Vec<_> = config.actions.iter().filter(|a| a.existential_params.len() == 1).collect();
-    let with_two: Vec<_> = config.actions.iter().filter(|a| a.existential_params.len() == 2).collect();
+    let with_one: Vec<_> = config
+        .actions
+        .iter()
+        .filter(|a| a.existential_params.len() == 1)
+        .collect();
+    let with_two: Vec<_> = config
+        .actions
+        .iter()
+        .filter(|a| a.existential_params.len() == 2)
+        .collect();
     assert_eq!(with_one.len(), 3, "3 actions with only sent_packets");
     assert_eq!(with_two.len(), 5, "5 actions with sent_packets + rm/r");
 }
@@ -3641,7 +3694,11 @@ fn test_analyze_lnext_twophase() {
 fn test_analyze_lnext_paxos() {
     let config = analyze_lnext("../src/protocol/Paxos/paxos.rs");
     assert_eq!(config.actions.len(), 7, "Paxos has 7 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LSend1a"));
     assert!(names.contains(&"LSend1b"));
     assert!(names.contains(&"LSend2a"));
@@ -3654,15 +3711,24 @@ fn test_analyze_lnext_leader_election() {
     let config = analyze_lnext("../src/protocol/LeaderElection/election.rs");
     assert_eq!(config.actions.len(), 7, "LeaderElection has 7 actions");
     // All branches have existential |node: int|
-    assert!(config.actions.iter().all(|a| !a.existential_params.is_empty()),
-        "All LeaderElection actions have existential params");
+    assert!(
+        config
+            .actions
+            .iter()
+            .all(|a| !a.existential_params.is_empty()),
+        "All LeaderElection actions have existential params"
+    );
 }
 
 #[test]
 fn test_analyze_lnext_raft() {
     let config = analyze_lnext("../src/protocol/Raft/raft.rs");
     assert_eq!(config.actions.len(), 11, "Raft has 11 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LTimeout"));
     assert!(names.contains(&"LBecomeLeader"));
     assert!(names.contains(&"LGrantVote"));
@@ -3675,7 +3741,11 @@ fn test_analyze_lnext_raft() {
 fn test_analyze_lnext_chain_replication() {
     let config = analyze_lnext("../src/protocol/ChainReplication/chain.rs");
     assert_eq!(config.actions.len(), 8, "ChainReplication has 8 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LHeadReceiveWrite"));
     assert!(names.contains(&"LTailCommit"));
     assert!(names.contains(&"LClientRead"));
@@ -3686,7 +3756,11 @@ fn test_analyze_lnext_chain_replication() {
 fn test_analyze_lnext_primarybackup() {
     let config = analyze_lnext("../src/protocol/PrimaryBackup/primarybackup.rs");
     assert_eq!(config.actions.len(), 8, "PrimaryBackup has 8 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LPrimaryWrite"));
     assert!(names.contains(&"LPrimaryCommit"));
     assert!(names.contains(&"LBackupPromote"));
@@ -3696,7 +3770,11 @@ fn test_analyze_lnext_primarybackup() {
 fn test_analyze_lnext_pbft() {
     let config = analyze_lnext("../src/protocol/PBFT/pbft.rs");
     assert_eq!(config.actions.len(), 9, "PBFT has 9 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LPrePrepare"));
     assert!(names.contains(&"LReceivePrepare"));
     assert!(names.contains(&"LReceiveCommit"));
@@ -3707,7 +3785,11 @@ fn test_analyze_lnext_pbft() {
 fn test_analyze_lnext_vertical_paxos() {
     let config = analyze_lnext("../src/protocol/VerticalPaxos/vpaxos.rs");
     assert_eq!(config.actions.len(), 10, "VerticalPaxos has 10 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LPrepare"));
     assert!(names.contains(&"LReceivePromise"));
     assert!(names.contains(&"LCommit"));
@@ -3718,7 +3800,11 @@ fn test_analyze_lnext_vertical_paxos() {
 fn test_analyze_lnext_epaxos() {
     let config = analyze_lnext("../src/protocol/EPaxos/epaxos.rs");
     assert_eq!(config.actions.len(), 11, "EPaxos has 11 actions");
-    let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+    let names: Vec<&str> = config
+        .actions
+        .iter()
+        .map(|a| a.spec_name.as_str())
+        .collect();
     assert!(names.contains(&"LPropose"));
     assert!(names.contains(&"LSendPreAcceptOk"));
     assert!(names.contains(&"LFastCommit"));
@@ -3736,7 +3822,9 @@ fn test_analyze_lnext_toml_output() {
     assert!(toml.contains("exec_name = \"CTMSendPrepare\""));
     // All actions now have sent_packets; some also have rm
     assert!(toml.contains("existential_params = [[\"sent_packets\", \"Seq<LTPCMessage>\"]]"));
-    assert!(toml.contains("existential_params = [[\"rm\", \"int\"], [\"sent_packets\", \"Seq<LTPCMessage>\"]]"));
+    assert!(toml.contains(
+        "existential_params = [[\"rm\", \"int\"], [\"sent_packets\", \"Seq<LTPCMessage>\"]]"
+    ));
 }
 
 // --- Classification integration tests ---
@@ -3744,18 +3832,32 @@ fn test_analyze_lnext_toml_output() {
 #[test]
 fn test_classify_twophase_integration() {
     let mut config = analyze_lnext("../src/protocol/TwoPhase/twophase.rs");
-    let variants = vec!["Prepare".to_string(), "PreparedVote".to_string(),
-                        "Commit".to_string(), "Abort".to_string()];
+    let variants = vec![
+        "Prepare".to_string(),
+        "PreparedVote".to_string(),
+        "Commit".to_string(),
+        "Abort".to_string(),
+    ];
     verus_transpiler::classify_actions(&mut config, &variants);
 
-    let msg_count = config.actions.iter()
+    let msg_count = config
+        .actions
+        .iter()
         .filter(|a| a.kind == verus_transpiler::ActionKind::MessageDriven)
         .count();
     let timer_count = config.actions.len() - msg_count;
     // TwoPhase: 4 message-driven (RMReceivePrepare, TMRcvPrepared, RMReceiveCommit, RMReceiveAbort)
     //           + 1 timer with "Receive" keyword = actually RMAbort is timer, so 4 msg
-    assert!(msg_count >= 4, "TwoPhase should have at least 4 message-driven actions, got {}", msg_count);
-    assert!(timer_count >= 3, "TwoPhase should have at least 3 timer-driven actions, got {}", timer_count);
+    assert!(
+        msg_count >= 4,
+        "TwoPhase should have at least 4 message-driven actions, got {}",
+        msg_count
+    );
+    assert!(
+        timer_count >= 3,
+        "TwoPhase should have at least 3 timer-driven actions, got {}",
+        timer_count
+    );
 
     // TOML output includes kind field
     let toml = verus_transpiler::scheduler_config_to_toml(&config);
@@ -3767,24 +3869,53 @@ fn test_classify_twophase_integration() {
 #[test]
 fn test_classify_all_protocols_have_both_kinds() {
     let protocols = [
-        ("../src/protocol/TwoPhase/twophase.rs",
-         vec!["Prepare", "PreparedVote", "Commit", "Abort"]),
-        ("../src/protocol/Paxos/paxos.rs",
-         vec!["Prepare", "Promise", "Accept", "Accepted"]),
-        ("../src/protocol/LeaderElection/election.rs",
-         vec!["Election", "Answer", "Coordinator"]),
-        ("../src/protocol/PrimaryBackup/primarybackup.rs",
-         vec!["Replicate", "Ack", "ClientRequest"]),
-        ("../src/protocol/ChainReplication/chain.rs",
-         vec!["Forward", "Ack", "ClientWrite", "ClientRead"]),
-        ("../src/protocol/Raft/raft.rs",
-         vec!["RequestVote", "VoteResponse", "AppendEntries", "AppendResponse"]),
-        ("../src/protocol/PBFT/pbft.rs",
-         vec!["PrePrepare", "Prepare", "Commit", "ClientRequest"]),
-        ("../src/protocol/VerticalPaxos/vpaxos.rs",
-         vec!["Prepare", "Promise", "Accept", "AcceptOk", "Commit", "Sync"]),
-        ("../src/protocol/EPaxos/epaxos.rs",
-         vec!["PreAccept", "PreAcceptOk", "Accept", "AcceptOk", "CommitMsg"]),
+        (
+            "../src/protocol/TwoPhase/twophase.rs",
+            vec!["Prepare", "PreparedVote", "Commit", "Abort"],
+        ),
+        (
+            "../src/protocol/Paxos/paxos.rs",
+            vec!["Prepare", "Promise", "Accept", "Accepted"],
+        ),
+        (
+            "../src/protocol/LeaderElection/election.rs",
+            vec!["Election", "Answer", "Coordinator"],
+        ),
+        (
+            "../src/protocol/PrimaryBackup/primarybackup.rs",
+            vec!["Replicate", "Ack", "ClientRequest"],
+        ),
+        (
+            "../src/protocol/ChainReplication/chain.rs",
+            vec!["Forward", "Ack", "ClientWrite", "ClientRead"],
+        ),
+        (
+            "../src/protocol/Raft/raft.rs",
+            vec![
+                "RequestVote",
+                "VoteResponse",
+                "AppendEntries",
+                "AppendResponse",
+            ],
+        ),
+        (
+            "../src/protocol/PBFT/pbft.rs",
+            vec!["PrePrepare", "Prepare", "Commit", "ClientRequest"],
+        ),
+        (
+            "../src/protocol/VerticalPaxos/vpaxos.rs",
+            vec!["Prepare", "Promise", "Accept", "AcceptOk", "Commit", "Sync"],
+        ),
+        (
+            "../src/protocol/EPaxos/epaxos.rs",
+            vec![
+                "PreAccept",
+                "PreAcceptOk",
+                "Accept",
+                "AcceptOk",
+                "CommitMsg",
+            ],
+        ),
     ];
 
     for (spec_path, variant_strs) in &protocols {
@@ -3792,32 +3923,48 @@ fn test_classify_all_protocols_have_both_kinds() {
         let variants: Vec<String> = variant_strs.iter().map(|s| s.to_string()).collect();
         verus_transpiler::classify_actions(&mut config, &variants);
 
-        let msg_count = config.actions.iter()
+        let msg_count = config
+            .actions
+            .iter()
             .filter(|a| a.kind == verus_transpiler::ActionKind::MessageDriven)
             .count();
         let timer_count = config.actions.len() - msg_count;
 
-        assert!(msg_count > 0,
-            "{}: should have at least 1 message-driven action", spec_path);
-        assert!(timer_count > 0,
-            "{}: should have at least 1 timer-driven action", spec_path);
+        assert!(
+            msg_count > 0,
+            "{}: should have at least 1 message-driven action",
+            spec_path
+        );
+        assert!(
+            timer_count > 0,
+            "{}: should have at least 1 timer-driven action",
+            spec_path
+        );
     }
 }
 
 #[test]
 fn test_classify_toml_output_has_variants() {
     let mut config = analyze_lnext("../src/protocol/Paxos/paxos.rs");
-    let variants = vec!["Prepare".to_string(), "Promise".to_string(),
-                        "Accept".to_string(), "Accepted".to_string()];
+    let variants = vec![
+        "Prepare".to_string(),
+        "Promise".to_string(),
+        "Accept".to_string(),
+        "Accepted".to_string(),
+    ];
     verus_transpiler::classify_actions(&mut config, &variants);
 
     let toml = verus_transpiler::scheduler_config_to_toml(&config);
     // RecvPromise should have message_variant = "Promise"
-    assert!(toml.contains("message_variant = \"Promise\""),
-        "Paxos TOML should contain message_variant for RecvPromise");
+    assert!(
+        toml.contains("message_variant = \"Promise\""),
+        "Paxos TOML should contain message_variant for RecvPromise"
+    );
     // RecvAccepted should have message_variant = "Accepted"
-    assert!(toml.contains("message_variant = \"Accepted\""),
-        "Paxos TOML should contain message_variant for RecvAccepted");
+    assert!(
+        toml.contains("message_variant = \"Accepted\""),
+        "Paxos TOML should contain message_variant for RecvAccepted"
+    );
 }
 
 // ---------------------------------------------------------------
@@ -3866,10 +4013,7 @@ fn assert_scaffold_structure(code: &str, protocol: &str, msg_enum: &str) {
         protocol
     );
     assert!(
-        code.contains(&format!(
-            "impl ProtocolHost for {}Host {{",
-            protocol
-        )),
+        code.contains(&format!("impl ProtocolHost for {}Host {{", protocol)),
         "{} scaffold missing ProtocolHost impl",
         protocol
     );
@@ -3892,16 +4036,22 @@ fn assert_scaffold_structure(code: &str, protocol: &str, msg_enum: &str) {
 
 #[test]
 fn test_generate_scaffold_paxos() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/Paxos/paxos_transpile.toml",
-        "Paxos",
-    );
+    let code = load_and_generate_scaffold("../src/protocol/Paxos/paxos_transpile.toml", "Paxos");
     assert_scaffold_structure(&code, "Paxos", "PaxosMessage");
     // Paxos has 4 message-driven and 3 timer-driven actions
-    assert!(code.contains("fn handle_"), "Paxos should have message handlers");
+    assert!(
+        code.contains("fn handle_"),
+        "Paxos should have message handlers"
+    );
     assert!(code.contains("fn try_"), "Paxos should have timer handlers");
-    assert!(code.contains("PaxosMessage::Promise"), "should dispatch Promise");
-    assert!(code.contains("PaxosMessage::Accepted"), "should dispatch Accepted");
+    assert!(
+        code.contains("PaxosMessage::Promise"),
+        "should dispatch Promise"
+    );
+    assert!(
+        code.contains("PaxosMessage::Accepted"),
+        "should dispatch Accepted"
+    );
 }
 
 #[test]
@@ -3911,8 +4061,14 @@ fn test_generate_scaffold_twophase() {
         "TwoPhase",
     );
     assert_scaffold_structure(&code, "TwoPhase", "TwoPhaseMessage");
-    assert!(code.contains("fn handle_"), "TwoPhase should have message handlers");
-    assert!(code.contains("fn try_"), "TwoPhase should have timer handlers");
+    assert!(
+        code.contains("fn handle_"),
+        "TwoPhase should have message handlers"
+    );
+    assert!(
+        code.contains("fn try_"),
+        "TwoPhase should have timer handlers"
+    );
 }
 
 #[test]
@@ -3926,12 +4082,12 @@ fn test_generate_scaffold_leader_election() {
 
 #[test]
 fn test_generate_scaffold_raft() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/Raft/raft_transpile.toml",
-        "Raft",
-    );
+    let code = load_and_generate_scaffold("../src/protocol/Raft/raft_transpile.toml", "Raft");
     assert_scaffold_structure(&code, "Raft", "RaftMessage");
-    assert!(code.contains("fn handle_"), "Raft should have message handlers");
+    assert!(
+        code.contains("fn handle_"),
+        "Raft should have message handlers"
+    );
     assert!(code.contains("fn try_"), "Raft should have timer handlers");
 }
 
@@ -3955,10 +4111,7 @@ fn test_generate_scaffold_primary_backup() {
 
 #[test]
 fn test_generate_scaffold_pbft() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/PBFT/pbft_transpile.toml",
-        "PBFT",
-    );
+    let code = load_and_generate_scaffold("../src/protocol/PBFT/pbft_transpile.toml", "PBFT");
     assert_scaffold_structure(&code, "PBFT", "PBFTMessage");
 }
 
@@ -3973,10 +4126,7 @@ fn test_generate_scaffold_vertical_paxos() {
 
 #[test]
 fn test_generate_scaffold_epaxos() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/EPaxos/epaxos_transpile.toml",
-        "EPaxos",
-    );
+    let code = load_and_generate_scaffold("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos");
     assert_scaffold_structure(&code, "EPaxos", "EPaxosMessage");
 }
 
@@ -3998,28 +4148,37 @@ fn test_scaffold_flag_injections_leader_election() {
     // CReceiveCoordinator now takes leader as explicit parameter.
     assert!(!code.contains("Flag injection"),
         "LeaderElection scaffold should have no flag injection comments after sent_packets migration");
-    assert!(!code.contains("self.state.msgs_answer"),
-        "LeaderElection scaffold should not reference msgs_answer after sent_packets migration");
+    assert!(
+        !code.contains("self.state.msgs_answer"),
+        "LeaderElection scaffold should not reference msgs_answer after sent_packets migration"
+    );
     assert!(!code.contains("self.state.msgs_coordinator"),
         "LeaderElection scaffold should not reference msgs_coordinator after sent_packets migration");
 }
 
 #[test]
 fn test_scaffold_no_flag_injections_raft() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/Raft/raft_transpile.toml",
-        "Raft",
+    let code = load_and_generate_scaffold("../src/protocol/Raft/raft_transpile.toml", "Raft");
+    assert!(
+        !code.contains("Flag injection"),
+        "Raft scaffold should have no flag injection comments after sent_packets migration"
     );
-    assert!(!code.contains("Flag injection"),
-        "Raft scaffold should have no flag injection comments after sent_packets migration");
-    assert!(!code.contains("self.state.msgs_request_vote"),
-        "Raft scaffold should not reference msgs_request_vote after sent_packets migration");
-    assert!(!code.contains("self.state.msgs_vote_response"),
-        "Raft scaffold should not reference msgs_vote_response after sent_packets migration");
-    assert!(!code.contains("self.state.msgs_append_entries"),
-        "Raft scaffold should not reference msgs_append_entries after sent_packets migration");
-    assert!(!code.contains("self.state.msgs_append_response"),
-        "Raft scaffold should not reference msgs_append_response after sent_packets migration");
+    assert!(
+        !code.contains("self.state.msgs_request_vote"),
+        "Raft scaffold should not reference msgs_request_vote after sent_packets migration"
+    );
+    assert!(
+        !code.contains("self.state.msgs_vote_response"),
+        "Raft scaffold should not reference msgs_vote_response after sent_packets migration"
+    );
+    assert!(
+        !code.contains("self.state.msgs_append_entries"),
+        "Raft scaffold should not reference msgs_append_entries after sent_packets migration"
+    );
+    assert!(
+        !code.contains("self.state.msgs_append_response"),
+        "Raft scaffold should not reference msgs_append_response after sent_packets migration"
+    );
 }
 
 #[test]
@@ -4030,49 +4189,56 @@ fn test_scaffold_flag_injections_chain_replication() {
     );
     // After sent_packets migration, ChainReplication no longer uses flag_injections.
     // Verify no msgs_* flag injections appear in the scaffold.
-    assert!(!code.contains("self.state.msgs_forward"),
-        "ChainReplication scaffold should not inject msgs_forward (migrated to sent_packets)");
-    assert!(!code.contains("self.state.msgs_ack"),
-        "ChainReplication scaffold should not inject msgs_ack (migrated to sent_packets)");
+    assert!(
+        !code.contains("self.state.msgs_forward"),
+        "ChainReplication scaffold should not inject msgs_forward (migrated to sent_packets)"
+    );
+    assert!(
+        !code.contains("self.state.msgs_ack"),
+        "ChainReplication scaffold should not inject msgs_ack (migrated to sent_packets)"
+    );
 }
 
 #[test]
 fn test_scaffold_flag_injections_pbft() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/PBFT/pbft_transpile.toml",
-        "PBFT",
-    );
+    let code = load_and_generate_scaffold("../src/protocol/PBFT/pbft_transpile.toml", "PBFT");
     // After sent_packets migration, PBFT no longer has flag_injections.
     // CReceivePrePrepare now takes view, seq, digest as explicit parameters.
-    assert!(!code.contains("Flag injection"),
-        "PBFT scaffold should have no flag injection comments after sent_packets migration");
-    assert!(!code.contains("self.state.msgs_preprepare"),
-        "PBFT scaffold should not reference msgs_preprepare after sent_packets migration");
+    assert!(
+        !code.contains("Flag injection"),
+        "PBFT scaffold should have no flag injection comments after sent_packets migration"
+    );
+    assert!(
+        !code.contains("self.state.msgs_preprepare"),
+        "PBFT scaffold should not reference msgs_preprepare after sent_packets migration"
+    );
 }
 
 #[test]
 fn test_scaffold_no_flag_injections_epaxos() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/EPaxos/epaxos_transpile.toml",
-        "EPaxos",
+    let code = load_and_generate_scaffold("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos");
+    assert!(
+        !code.contains("Flag injection"),
+        "EPaxos scaffold should have no flag injection comments"
     );
-    assert!(!code.contains("Flag injection"),
-        "EPaxos scaffold should have no flag injection comments");
-    assert!(!code.contains("msgs_preaccept_ok"),
-        "EPaxos scaffold should not reference msgs_preaccept_ok");
-    assert!(!code.contains("msgs_accept_ok"),
-        "EPaxos scaffold should not reference msgs_accept_ok");
+    assert!(
+        !code.contains("msgs_preaccept_ok"),
+        "EPaxos scaffold should not reference msgs_preaccept_ok"
+    );
+    assert!(
+        !code.contains("msgs_accept_ok"),
+        "EPaxos scaffold should not reference msgs_accept_ok"
+    );
 }
 
 // Negative tests: protocols with NO flag injections should have no injection code
 #[test]
 fn test_scaffold_no_flag_injections_paxos() {
-    let code = load_and_generate_scaffold(
-        "../src/protocol/Paxos/paxos_transpile.toml",
-        "Paxos",
+    let code = load_and_generate_scaffold("../src/protocol/Paxos/paxos_transpile.toml", "Paxos");
+    assert!(
+        !code.contains("Flag injection"),
+        "Paxos scaffold should have no flag injection comments"
     );
-    assert!(!code.contains("Flag injection"),
-        "Paxos scaffold should have no flag injection comments");
 }
 
 #[test]
@@ -4081,8 +4247,10 @@ fn test_scaffold_no_flag_injections_twophase() {
         "../src/protocol/TwoPhase/twophase_transpile.toml",
         "TwoPhase",
     );
-    assert!(!code.contains("Flag injection"),
-        "TwoPhase scaffold should have no flag injection comments");
+    assert!(
+        !code.contains("Flag injection"),
+        "TwoPhase scaffold should have no flag injection comments"
+    );
 }
 
 #[test]
@@ -4091,8 +4259,10 @@ fn test_scaffold_no_flag_injections_primarybackup() {
         "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
         "PrimaryBackup",
     );
-    assert!(!code.contains("Flag injection"),
-        "PrimaryBackup scaffold should have no flag injection comments");
+    assert!(
+        !code.contains("Flag injection"),
+        "PrimaryBackup scaffold should have no flag injection comments"
+    );
 }
 
 #[test]
@@ -4101,8 +4271,10 @@ fn test_scaffold_no_flag_injections_verticalpaxos() {
         "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
         "VerticalPaxos",
     );
-    assert!(!code.contains("Flag injection"),
-        "VerticalPaxos scaffold should have no flag injection comments");
+    assert!(
+        !code.contains("Flag injection"),
+        "VerticalPaxos scaffold should have no flag injection comments"
+    );
 }
 
 // ============================================================
@@ -4134,8 +4306,8 @@ fn test_scheduler_toml_roundtrip() {
     );
 
     // Parse it back
-    let parsed =
-        verus_transpiler::FileConfig::from_toml(&full_toml).expect("Failed to parse roundtrip TOML");
+    let parsed = verus_transpiler::FileConfig::from_toml(&full_toml)
+        .expect("Failed to parse roundtrip TOML");
     let sched = parsed
         .scheduler
         .expect("Parsed TOML should have [scheduler] section");
@@ -4191,14 +4363,29 @@ fn test_scheduler_toml_roundtrip() {
 fn test_scheduler_toml_roundtrip_all_protocols() {
     // Verify TOML roundtrip for all 9 protocols by loading their existing TOMLs
     let protocols: &[(&str, &str)] = &[
-        ("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase"),
+        (
+            "../src/protocol/TwoPhase/twophase_transpile.toml",
+            "TwoPhase",
+        ),
         ("../src/protocol/Paxos/paxos_transpile.toml", "Paxos"),
-        ("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection"),
+        (
+            "../src/protocol/LeaderElection/election_transpile.toml",
+            "LeaderElection",
+        ),
         ("../src/protocol/Raft/raft_transpile.toml", "Raft"),
-        ("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication"),
-        ("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup"),
+        (
+            "../src/protocol/ChainReplication/chain_transpile.toml",
+            "ChainReplication",
+        ),
+        (
+            "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+            "PrimaryBackup",
+        ),
         ("../src/protocol/PBFT/pbft_transpile.toml", "PBFT"),
-        ("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos"),
+        (
+            "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+            "VerticalPaxos",
+        ),
         ("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos"),
     ];
 
@@ -4231,7 +4418,12 @@ fn test_scheduler_toml_roundtrip_all_protocols() {
             "{}: actions count changed on roundtrip",
             protocol
         );
-        for (i, (orig, rt)) in sched.actions.iter().zip(reparsed_sched.actions.iter()).enumerate() {
+        for (i, (orig, rt)) in sched
+            .actions
+            .iter()
+            .zip(reparsed_sched.actions.iter())
+            .enumerate()
+        {
             assert_eq!(
                 orig.spec_name, rt.spec_name,
                 "{} action[{}]: spec_name changed",
@@ -4351,7 +4543,11 @@ fn test_exact_action_counts_per_protocol() {
             e.protocol
         );
 
-        let msg_count = sched.actions.iter().filter(|a| a.is_message_driven()).count();
+        let msg_count = sched
+            .actions
+            .iter()
+            .filter(|a| a.is_message_driven())
+            .count();
         let timer_count = sched.actions.len() - msg_count;
 
         assert_eq!(
@@ -4404,14 +4600,29 @@ fn test_action_count_field_consistency() {
 #[test]
 fn test_message_driven_actions_have_variants_or_heuristic() {
     let protocols: &[(&str, &str)] = &[
-        ("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase"),
+        (
+            "../src/protocol/TwoPhase/twophase_transpile.toml",
+            "TwoPhase",
+        ),
         ("../src/protocol/Paxos/paxos_transpile.toml", "Paxos"),
-        ("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection"),
+        (
+            "../src/protocol/LeaderElection/election_transpile.toml",
+            "LeaderElection",
+        ),
         ("../src/protocol/Raft/raft_transpile.toml", "Raft"),
-        ("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication"),
-        ("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup"),
+        (
+            "../src/protocol/ChainReplication/chain_transpile.toml",
+            "ChainReplication",
+        ),
+        (
+            "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+            "PrimaryBackup",
+        ),
         ("../src/protocol/PBFT/pbft_transpile.toml", "PBFT"),
-        ("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos"),
+        (
+            "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+            "VerticalPaxos",
+        ),
         ("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos"),
     ];
 
@@ -4431,10 +4642,20 @@ fn test_message_driven_actions_have_variants_or_heuristic() {
                     .iter()
                     .any(|kw| name_lower.contains(kw));
                 let has_response_pattern = [
-                    "Send1b", "Send2b", "SendAnswer", "GrantVote",
-                    "FollowerAppendEntries", "SendPreAcceptOk", "SendAcceptOk",
-                    "SendPromise", "WitnessSync", "Sync", "ClientRead",
-                ].iter().any(|p| name.contains(p));
+                    "Send1b",
+                    "Send2b",
+                    "SendAnswer",
+                    "GrantVote",
+                    "FollowerAppendEntries",
+                    "SendPreAcceptOk",
+                    "SendAcceptOk",
+                    "SendPromise",
+                    "WitnessSync",
+                    "Sync",
+                    "ClientRead",
+                ]
+                .iter()
+                .any(|p| name.contains(p));
                 // Actions with an explicit message_variant in TOML are valid
                 // message-driven actions even without a keyword (e.g. LPrimaryWrite).
                 let has_explicit_variant = action.message_variant.is_some();
@@ -4454,14 +4675,29 @@ fn test_message_driven_actions_have_variants_or_heuristic() {
 #[test]
 fn test_message_driven_actions_have_valid_variant() {
     let protocols: &[(&str, &str)] = &[
-        ("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase"),
+        (
+            "../src/protocol/TwoPhase/twophase_transpile.toml",
+            "TwoPhase",
+        ),
         ("../src/protocol/Paxos/paxos_transpile.toml", "Paxos"),
-        ("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection"),
+        (
+            "../src/protocol/LeaderElection/election_transpile.toml",
+            "LeaderElection",
+        ),
         ("../src/protocol/Raft/raft_transpile.toml", "Raft"),
-        ("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication"),
-        ("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup"),
+        (
+            "../src/protocol/ChainReplication/chain_transpile.toml",
+            "ChainReplication",
+        ),
+        (
+            "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+            "PrimaryBackup",
+        ),
         ("../src/protocol/PBFT/pbft_transpile.toml", "PBFT"),
-        ("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos"),
+        (
+            "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+            "VerticalPaxos",
+        ),
         ("../src/protocol/EPaxos/epaxos_transpile.toml", "EPaxos"),
     ];
 
@@ -4482,7 +4718,8 @@ fn test_message_driven_actions_have_valid_variant() {
                 assert!(
                     action.message_variant.is_some(),
                     "{}: message_driven action '{}' has no message_variant",
-                    protocol, action.spec_name
+                    protocol,
+                    action.spec_name
                 );
                 // The message_variant MUST reference an existing variant
                 let variant = action.message_variant.as_deref().unwrap();
@@ -4508,21 +4745,35 @@ fn compile_scaffold(toml_path: &str, protocol: &str) {
         .expect("load toml");
     let msg = config.messages.as_ref().expect("messages");
     let msg_enum = msg.enum_name.clone();
-    let msg_variants = msg.variants.iter().map(|v| {
-        if v.fields.is_empty() {
-            format!("    {},", v.name)
-        } else {
-            let fields: Vec<String> = v.fields.iter()
-                .filter_map(|f| if f.len() >= 2 { Some(format!("{}: {}", f[0], f[1])) } else { None })
-                .collect();
-            format!("    {} {{ {} }},", v.name, fields.join(", "))
-        }
-    }).collect::<Vec<_>>().join("\n                    ");
+    let msg_variants = msg
+        .variants
+        .iter()
+        .map(|v| {
+            if v.fields.is_empty() {
+                format!("    {},", v.name)
+            } else {
+                let fields: Vec<String> = v
+                    .fields
+                    .iter()
+                    .filter_map(|f| {
+                        if f.len() >= 2 {
+                            Some(format!("{}: {}", f[0], f[1]))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                format!("    {} {{ {} }},", v.name, fields.join(", "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n                    ");
 
     // Collect flag_injection state fields so CState stub compiles with injection assignments.
     // Each flag_injection is [state_field, value]; the state_field becomes a pub field on CState.
     // Build a map of message variant field name → type for cross-referencing.
-    let mut variant_field_types: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut variant_field_types: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     if let Some(ref messages) = config.messages {
         for variant in &messages.variants {
             for field in &variant.fields {
@@ -4553,26 +4804,39 @@ fn compile_scaffold(toml_path: &str, protocol: &str) {
 
     // Build CState struct: unit struct if no fields, regular struct with pub fields otherwise
     let (cstate_def, cstate_init) = if state_fields.is_empty() {
-        ("pub struct CState;".to_string(), "pub fn CInit(_c: &CConstants) -> CState {{ CState }}".to_string())
+        (
+            "pub struct CState;".to_string(),
+            "pub fn CInit(_c: &CConstants) -> CState {{ CState }}".to_string(),
+        )
     } else {
-        let fields_str: Vec<String> = state_fields.iter()
+        let fields_str: Vec<String> = state_fields
+            .iter()
             .map(|(name, ty)| format!("pub {}: {},", name, ty))
             .collect();
-        let init_fields: Vec<String> = state_fields.iter()
+        let init_fields: Vec<String> = state_fields
+            .iter()
             .map(|(name, ty)| {
-                if ty == "bool" { format!("{}: false,", name) } else { format!("{}: 0,", name) }
+                if ty == "bool" {
+                    format!("{}: false,", name)
+                } else {
+                    format!("{}: 0,", name)
+                }
             })
             .collect();
         (
             format!("pub struct CState {{ {} }}", fields_str.join(" ")),
-            format!("pub fn CInit(_c: &CConstants) -> CState {{ CState {{ {} }} }}", init_fields.join(" ")),
+            format!(
+                "pub fn CInit(_c: &CConstants) -> CState {{ CState {{ {} }} }}",
+                init_fields.join(" ")
+            ),
         )
     };
 
     // Provide minimal stubs so the scaffold compiles as standalone Rust.
     // The scaffold imports from: args_t::*, protocol_trait::*, io_s::*, types_gen::*, gen_module, message::*
     // io_s re-exports protocol_trait so we must avoid duplicate definitions.
-    let stubs = format!(r#"
+    let stubs = format!(
+        r#"
 #![allow(dead_code, unused_variables, unused_imports)]
 
 pub mod crate_stub {{
@@ -4682,7 +4946,10 @@ pub mod crate_stub {{
 
 #[test]
 fn test_scaffold_compiles_twophase() {
-    compile_scaffold("../src/protocol/TwoPhase/twophase_transpile.toml", "TwoPhase");
+    compile_scaffold(
+        "../src/protocol/TwoPhase/twophase_transpile.toml",
+        "TwoPhase",
+    );
 }
 
 #[test]
@@ -4692,7 +4959,10 @@ fn test_scaffold_compiles_paxos() {
 
 #[test]
 fn test_scaffold_compiles_leader_election() {
-    compile_scaffold("../src/protocol/LeaderElection/election_transpile.toml", "LeaderElection");
+    compile_scaffold(
+        "../src/protocol/LeaderElection/election_transpile.toml",
+        "LeaderElection",
+    );
 }
 
 #[test]
@@ -4702,12 +4972,18 @@ fn test_scaffold_compiles_raft() {
 
 #[test]
 fn test_scaffold_compiles_chain_replication() {
-    compile_scaffold("../src/protocol/ChainReplication/chain_transpile.toml", "ChainReplication");
+    compile_scaffold(
+        "../src/protocol/ChainReplication/chain_transpile.toml",
+        "ChainReplication",
+    );
 }
 
 #[test]
 fn test_scaffold_compiles_primary_backup() {
-    compile_scaffold("../src/protocol/PrimaryBackup/primarybackup_transpile.toml", "PrimaryBackup");
+    compile_scaffold(
+        "../src/protocol/PrimaryBackup/primarybackup_transpile.toml",
+        "PrimaryBackup",
+    );
 }
 
 #[test]
@@ -4717,7 +4993,10 @@ fn test_scaffold_compiles_pbft() {
 
 #[test]
 fn test_scaffold_compiles_vertical_paxos() {
-    compile_scaffold("../src/protocol/VerticalPaxos/vpaxos_transpile.toml", "VerticalPaxos");
+    compile_scaffold(
+        "../src/protocol/VerticalPaxos/vpaxos_transpile.toml",
+        "VerticalPaxos",
+    );
 }
 
 #[test]
@@ -4798,10 +5077,7 @@ fn run_host_init_test(
             eprintln!("{:4}: {}", i + 1, line);
         }
         eprintln!("=== End generated program ===");
-        panic!(
-            "Compilation failed for {}:\n{}",
-            protocol, stderr
-        );
+        panic!("Compilation failed for {}:\n{}", protocol, stderr);
     }
 
     // Run
@@ -4900,8 +5176,14 @@ fn test_raft_helpers_not_in_generated() {
     // helpers.rs should exist and define the functions
     let helpers = std::fs::read_to_string("../src/implementation/Raft/helpers.rs")
         .expect("Failed to read helpers.rs");
-    assert!(helpers.contains("pub exec fn Cu64_inc"), "helpers.rs should define Cu64_inc");
-    assert!(helpers.contains("pub exec fn Cu64_dec"), "helpers.rs should define Cu64_dec");
+    assert!(
+        helpers.contains("pub exec fn Cu64_inc"),
+        "helpers.rs should define Cu64_inc"
+    );
+    assert!(
+        helpers.contains("pub exec fn Cu64_dec"),
+        "helpers.rs should define Cu64_dec"
+    );
 }
 
 #[test]
@@ -5103,7 +5385,8 @@ fn test_generate_marshalable_proof_structure() {
     assert!(code.contains("assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize());"));
 
     // deserialize proof block
-    assert!(code.contains("assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());"));
+    assert!(code
+        .contains("assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());"));
 
     // prefix lemma: divergence pattern for both fields
     assert!(code.contains("if !self.a.view_equal(&other.a) {"));
@@ -5113,7 +5396,9 @@ fn test_generate_marshalable_proof_structure() {
 
     // injective lemma
     assert!(code.contains("self.lemma_serialization_is_not_a_prefix_of(other);"));
-    assert!(code.contains("assert(other.ghost_serialize().subrange(0, self.ghost_serialize().len() as int)"));
+    assert!(code.contains(
+        "assert(other.ghost_serialize().subrange(0, self.ghost_serialize().len() as int)"
+    ));
 }
 
 #[test]
@@ -5153,8 +5438,7 @@ fn load_and_generate_marshalable(toml_path: &str) -> String {
 
 #[test]
 fn test_generate_marshalable_rsl_types_toml() {
-    let code =
-        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+    let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // All 4 RSL types should have impls
     assert!(code.contains("impl Marshalable for CBallot {"));
@@ -5184,8 +5468,7 @@ fn test_generate_marshalable_rsl_types_toml() {
 
 #[test]
 fn test_generate_marshalable_rsl_cballot_detail() {
-    let code =
-        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+    let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // Extract just the CBallot impl (it's the first one)
     let ballot_start = code.find("impl Marshalable for CBallot {").unwrap();
@@ -5207,17 +5490,21 @@ fn test_generate_marshalable_rsl_cballot_detail() {
     assert!(ballot_code.contains("proposer_id,"));
 
     // proof blocks present
-    assert!(ballot_code.contains("assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());"));
+    assert!(ballot_code
+        .contains("assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());"));
 }
 
 #[test]
 fn test_generate_marshalable_rsl_type_count() {
-    let code =
-        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+    let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // 4 struct + 2 enum = 6 impl blocks
     let impl_count = code.matches("impl Marshalable for").count();
-    assert_eq!(impl_count, 6, "Expected 6 Marshalable impls (4 struct + 2 enum), got {}", impl_count);
+    assert_eq!(
+        impl_count, 6,
+        "Expected 6 Marshalable impls (4 struct + 2 enum), got {}",
+        impl_count
+    );
 
     // Each has all 11 trait methods
     for type_name in &["CBallot", "CRequest", "CReply", "CVote"] {
@@ -5306,8 +5593,7 @@ fn test_generate_marshalable_rsl_type_count() {
 
 #[test]
 fn test_generate_marshalable_enum_cappMessage_from_toml() {
-    let code =
-        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+    let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // CAppMessage enum impl should be generated
     assert!(code.contains("impl Marshalable for CAppMessage {"));
@@ -5330,17 +5616,24 @@ fn test_generate_marshalable_enum_cappMessage_from_toml() {
 
 #[test]
 fn test_generate_marshalable_enum_cmessage_from_toml() {
-    let code =
-        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+    let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // CMessage enum impl should be generated
     assert!(code.contains("impl Marshalable for CMessage {"));
 
     // All 11 variants present
     for variant in &[
-        "CMessageInvalid", "CMessageRequest", "CMessage1a", "CMessage1b",
-        "CMessage2a", "CMessage2b", "CMessageHeartbeat", "CMessageReply",
-        "CMessageAppStateRequest", "CMessageAppStateSupply", "CMessageStartingPhase2",
+        "CMessageInvalid",
+        "CMessageRequest",
+        "CMessage1a",
+        "CMessage1b",
+        "CMessage2a",
+        "CMessage2b",
+        "CMessageHeartbeat",
+        "CMessageReply",
+        "CMessageAppStateRequest",
+        "CMessageAppStateSupply",
+        "CMessageStartingPhase2",
     ] {
         assert!(
             code.contains(&format!("CMessage::{}", variant)),
@@ -5366,12 +5659,15 @@ fn test_generate_marshalable_enum_cmessage_from_toml() {
 
 #[test]
 fn test_generate_marshalable_enum_count_from_toml() {
-    let code =
-        load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
+    let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // 4 struct impls + 2 enum impls = 6 total
     let impl_count = code.matches("impl Marshalable for").count();
-    assert_eq!(impl_count, 6, "Expected 6 Marshalable impls (4 struct + 2 enum), got {}", impl_count);
+    assert_eq!(
+        impl_count, 6,
+        "Expected 6 Marshalable impls (4 struct + 2 enum), got {}",
+        impl_count
+    );
 
     // CAppMessage and CMessage have all 11 trait methods
     for type_name in &["CAppMessage", "CMessage"] {
@@ -5411,7 +5707,8 @@ fn test_generate_marshalable_enum_count_from_toml() {
             assert!(
                 block.contains(method),
                 "{} missing method: {}",
-                type_name, method
+                type_name,
+                method
             );
         }
     }
@@ -5552,10 +5849,7 @@ fn test_marshalable_cli_deterministic_output() {
         run1, run2,
         "generate-marshalable output should be deterministic"
     );
-    assert!(
-        !run1.is_empty(),
-        "Generated output should not be empty"
-    );
+    assert!(!run1.is_empty(), "Generated output should not be empty");
 }
 
 /// Test that generate-marshalable CLI stdout mode works (no --output flag).
@@ -5603,7 +5897,11 @@ fn test_marshalable_cli_stdout_mode() {
     );
     // 6 impls in stdout
     let impl_count = stdout.matches("impl Marshalable for").count();
-    assert_eq!(impl_count, 6, "Expected 6 impls in stdout, got {}", impl_count);
+    assert_eq!(
+        impl_count, 6,
+        "Expected 6 impls in stdout, got {}",
+        impl_count
+    );
 }
 
 /// Test that TLC model-checking wrappers exist and are well-structured for all 4 feasible protocols.
@@ -5616,13 +5914,46 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
         .join("tla_test_workspace/transpiler_generated_tla_with_properties");
 
     let protocols = vec![
-        ("TwoPhase_MC", vec!["Consistency", "TMCommitImpliesNoAbort", "TMAbortImpliesNoCommit",
-                             "CommittedImpliesPrepared", "TMCommitRequiresAllPrepared"]),
-        ("Paxos_MC", vec!["Agreement", "Validity", "AcceptorMonotonicity", "DecidedEqualsProposed"]),
-        ("LeaderElection_MC", vec!["TypeOK", "LeaderIsAliveOrNone", "LeaderValid",
-                                   "ElectingSubsetAlive", "WaitingNodeAlive"]),
-        ("PrimaryBackup_MC", vec!["LogConsistencyAfterAck", "NoSplitBrain", "LogLengthBound",
-                                   "ViewBounded", "BackupLogCoherence", "PendingImpliesValidState"]),
+        (
+            "TwoPhase_MC",
+            vec![
+                "Consistency",
+                "TMCommitImpliesNoAbort",
+                "TMAbortImpliesNoCommit",
+                "CommittedImpliesPrepared",
+                "TMCommitRequiresAllPrepared",
+            ],
+        ),
+        (
+            "Paxos_MC",
+            vec![
+                "Agreement",
+                "Validity",
+                "AcceptorMonotonicity",
+                "DecidedEqualsProposed",
+            ],
+        ),
+        (
+            "LeaderElection_MC",
+            vec![
+                "TypeOK",
+                "LeaderIsAliveOrNone",
+                "LeaderValid",
+                "ElectingSubsetAlive",
+                "WaitingNodeAlive",
+            ],
+        ),
+        (
+            "PrimaryBackup_MC",
+            vec![
+                "LogConsistencyAfterAck",
+                "NoSplitBrain",
+                "LogLengthBound",
+                "ViewBounded",
+                "BackupLogCoherence",
+                "PendingImpliesValidState",
+            ],
+        ),
     ];
 
     for (name, expected_invariants) in &protocols {
@@ -5638,25 +5969,68 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
             .unwrap_or_else(|e| panic!("Cannot read {}.cfg: {}", name, e));
 
         // Check TLA+ module structure
-        assert!(tla_content.contains(&format!("---- MODULE {} ----", name)),
-                "{}.tla missing module header", name);
-        assert!(tla_content.contains("===="), "{}.tla missing module footer", name);
-        assert!(tla_content.contains("VARIABLE"), "{}.tla missing VARIABLE declaration", name);
-        assert!(tla_content.contains("StateInit"), "{}.tla missing StateInit", name);
-        assert!(tla_content.contains("StateNext"), "{}.tla missing StateNext", name);
-        assert!(tla_content.contains("Spec =="), "{}.tla missing Spec definition", name);
+        assert!(
+            tla_content.contains(&format!("---- MODULE {} ----", name)),
+            "{}.tla missing module header",
+            name
+        );
+        assert!(
+            tla_content.contains("===="),
+            "{}.tla missing module footer",
+            name
+        );
+        assert!(
+            tla_content.contains("VARIABLE"),
+            "{}.tla missing VARIABLE declaration",
+            name
+        );
+        assert!(
+            tla_content.contains("StateInit"),
+            "{}.tla missing StateInit",
+            name
+        );
+        assert!(
+            tla_content.contains("StateNext"),
+            "{}.tla missing StateNext",
+            name
+        );
+        assert!(
+            tla_content.contains("Spec =="),
+            "{}.tla missing Spec definition",
+            name
+        );
 
         // Check cfg structure
-        assert!(cfg_content.contains("SPECIFICATION Spec"), "{}.cfg missing SPECIFICATION", name);
-        assert!(cfg_content.contains("CHECK_DEADLOCK FALSE"), "{}.cfg missing CHECK_DEADLOCK", name);
-        assert!(cfg_content.contains("INVARIANTS"), "{}.cfg missing INVARIANTS", name);
+        assert!(
+            cfg_content.contains("SPECIFICATION Spec"),
+            "{}.cfg missing SPECIFICATION",
+            name
+        );
+        assert!(
+            cfg_content.contains("CHECK_DEADLOCK FALSE"),
+            "{}.cfg missing CHECK_DEADLOCK",
+            name
+        );
+        assert!(
+            cfg_content.contains("INVARIANTS"),
+            "{}.cfg missing INVARIANTS",
+            name
+        );
 
         // Check each expected invariant exists in both files
         for inv in expected_invariants {
-            assert!(tla_content.contains(inv),
-                    "{}.tla missing invariant definition: {}", name, inv);
-            assert!(cfg_content.contains(inv),
-                    "{}.cfg missing invariant: {}", name, inv);
+            assert!(
+                tla_content.contains(inv),
+                "{}.tla missing invariant definition: {}",
+                name,
+                inv
+            );
+            assert!(
+                cfg_content.contains(inv),
+                "{}.cfg missing invariant: {}",
+                name,
+                inv
+            );
         }
     }
 
@@ -5666,14 +6040,19 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().ends_with("_MC.tla"))
         .count();
-    assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
+    assert_eq!(
+        mc_count, 4,
+        "Expected 4 MC wrapper TLA+ files, got {}",
+        mc_count
+    );
 }
 
 #[test]
 fn test_generate_mc_wrapper_from_relational_module() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let input = manifest_dir.join("tla_test_workspace/transpiler_generated_tla/TwoPhase/Twophase.tla");
+    let input =
+        manifest_dir.join("tla_test_workspace/transpiler_generated_tla/TwoPhase/Twophase.tla");
     assert!(
         input.exists(),
         "Expected relational input module at {}",
@@ -5733,8 +6112,177 @@ fn test_generate_mc_wrapper_from_relational_module() {
     assert!(cfg_content.contains("Consistency"));
 }
 
+#[test]
+fn test_generate_mc_wrapper_from_relational_module_with_packet_projection() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input =
+        manifest_dir.join("tla_test_workspace/transpiler_generated_tla/TwoPhase/Twophase.tla");
+    assert!(
+        input.exists(),
+        "Expected relational input module at {}",
+        input.display()
+    );
+
+    let temp = tempfile::tempdir().expect("tempdir should create");
+    let wrapper_out = temp.path().join("Twophase_MC_lifted.tla");
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "generate-mc-wrapper",
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            wrapper_out.to_str().unwrap(),
+            "--packet-mode",
+            "append-seq",
+            "--packet-var",
+            "sent_packets",
+        ])
+        .output()
+        .expect("Failed to run generate-mc-wrapper command");
+
+    assert!(
+        output.status.success(),
+        "generate-mc-wrapper (packet projection) should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let wrapper_content =
+        std::fs::read_to_string(&wrapper_out).expect("wrapper output should be readable");
+    assert!(
+        wrapper_content.contains("VARIABLE state, constants, msgs"),
+        "packet projection wrapper should include msgs variable"
+    );
+    assert!(
+        wrapper_content.contains("msgs' = msgs \\o sent_packets"),
+        "packet projection wrapper should append sent_packets into msgs"
+    );
+    assert!(
+        wrapper_content.contains("vars == <<state, constants, msgs>>"),
+        "packet projection wrapper should include msgs in vars tuple"
+    );
+}
+
+#[test]
+fn test_generate_mc_wrapper_matches_golden_fixtures_for_shared_small_protocols() {
+    fn normalize_newlines(content: &str) -> String {
+        content.replace("\r\n", "\n")
+    }
+
+    struct FixtureCase {
+        label: &'static str,
+        input_rel: &'static str,
+        output_stem: &'static str,
+        invariant: &'static str,
+    }
+
+    let cases = [
+        FixtureCase {
+            label: "TwoPhase",
+            input_rel: "tla_test_workspace/transpiler_generated_tla/TwoPhase/Twophase.tla",
+            output_stem: "Twophase_MC",
+            invariant: "Consistency",
+        },
+        FixtureCase {
+            label: "LeaderElection",
+            input_rel: "tla_test_workspace/transpiler_generated_tla/LeaderElection/Election.tla",
+            output_stem: "Election_MC",
+            invariant: "LeaderValid",
+        },
+        FixtureCase {
+            label: "Paxos",
+            input_rel: "tla_test_workspace/transpiler_generated_tla/Paxos/Paxos.tla",
+            output_stem: "Paxos_MC",
+            invariant: "Agreement",
+        },
+        FixtureCase {
+            label: "PrimaryBackup",
+            input_rel:
+                "tla_test_workspace/transpiler_generated_tla/PrimaryBackup/Primarybackup.tla",
+            output_stem: "Primarybackup_MC",
+            invariant: "NoSplitBrain",
+        },
+    ];
+
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fixture_dir = manifest_dir.join("tests/mc_wrapper_fixtures");
+
+    for case in cases {
+        let input = manifest_dir.join(case.input_rel);
+        assert!(
+            input.exists(),
+            "[{}] expected relational input module at {}",
+            case.label,
+            input.display()
+        );
+
+        let temp = tempfile::tempdir().expect("tempdir should create");
+        let wrapper_out = temp.path().join(format!("{}.tla", case.output_stem));
+
+        let output = std::process::Command::new(&transpiler_bin)
+            .args([
+                "generate-mc-wrapper",
+                "--input",
+                input.to_str().unwrap(),
+                "--output",
+                wrapper_out.to_str().unwrap(),
+                "--invariant",
+                case.invariant,
+            ])
+            .output()
+            .expect("failed to run generate-mc-wrapper command");
+
+        assert!(
+            output.status.success(),
+            "[{}] generate-mc-wrapper should succeed: {}",
+            case.label,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let generated_tla =
+            std::fs::read_to_string(&wrapper_out).expect("generated wrapper should be readable");
+        let generated_cfg = std::fs::read_to_string(wrapper_out.with_extension("cfg"))
+            .expect("generated cfg should be readable");
+
+        let golden_tla =
+            std::fs::read_to_string(fixture_dir.join(format!("{}.golden.tla", case.output_stem)))
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "[{}] failed to read golden tla fixture: {}",
+                        case.label, err
+                    )
+                });
+        let golden_cfg =
+            std::fs::read_to_string(fixture_dir.join(format!("{}.golden.cfg", case.output_stem)))
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "[{}] failed to read golden cfg fixture: {}",
+                        case.label, err
+                    )
+                });
+
+        assert_eq!(
+            normalize_newlines(&generated_tla),
+            normalize_newlines(&golden_tla),
+            "[{}] generated wrapper does not match golden fixture",
+            case.label
+        );
+        assert_eq!(
+            normalize_newlines(&generated_cfg),
+            normalize_newlines(&golden_cfg),
+            "[{}] generated cfg does not match golden fixture",
+            case.label
+        );
+    }
+}
+
 fn resolve_transpiler_binary_for_integration() -> std::path::PathBuf {
-    for key in ["CARGO_BIN_EXE_verus-transpile", "CARGO_BIN_EXE_verus_transpile"] {
+    for key in [
+        "CARGO_BIN_EXE_verus-transpile",
+        "CARGO_BIN_EXE_verus_transpile",
+    ] {
         if let Some(path) = std::env::var_os(key) {
             let bin = std::path::PathBuf::from(path);
             if bin.exists() {
@@ -5785,7 +6333,11 @@ fn resolve_model_check_fixture_path(name: &str) -> std::path::PathBuf {
         .join("tests")
         .join("model_check_fixtures")
         .join(name);
-    assert!(path.exists(), "Missing model-check fixture: {}", path.display());
+    assert!(
+        path.exists(),
+        "Missing model-check fixture: {}",
+        path.display()
+    );
     path
 }
 
@@ -6351,39 +6903,111 @@ fn test_impl_files_stripped_of_dead_code() {
     //  CIsNthHighestValueInSequence). It should NOT reintroduce protocol action methods.
     let acceptor = std::fs::read_to_string("../src/implementation/RSL/acceptorimpl.rs")
         .expect("Failed to read acceptorimpl.rs");
-    assert!(!acceptor.contains("fn CAcceptorProcess1a"), "acceptorimpl.rs should not contain CAcceptorProcess1a (moved to standalone)");
-    assert!(acceptor.contains("pub struct CAcceptor"), "acceptorimpl.rs should define CAcceptor");
-    assert!(acceptor.contains("impl CAcceptor"), "acceptorimpl.rs should contain impl CAcceptor block");
-    assert!(acceptor.contains("CIsLogTruncationPointValid"), "acceptorimpl.rs should retain CIsLogTruncationPointValid");
-    assert!(acceptor.contains("CCountLargerInSeq"), "acceptorimpl.rs should retain CCountLargerInSeq");
+    assert!(
+        !acceptor.contains("fn CAcceptorProcess1a"),
+        "acceptorimpl.rs should not contain CAcceptorProcess1a (moved to standalone)"
+    );
+    assert!(
+        acceptor.contains("pub struct CAcceptor"),
+        "acceptorimpl.rs should define CAcceptor"
+    );
+    assert!(
+        acceptor.contains("impl CAcceptor"),
+        "acceptorimpl.rs should contain impl CAcceptor block"
+    );
+    assert!(
+        acceptor.contains("CIsLogTruncationPointValid"),
+        "acceptorimpl.rs should retain CIsLogTruncationPointValid"
+    );
+    assert!(
+        acceptor.contains("CCountLargerInSeq"),
+        "acceptorimpl.rs should retain CCountLargerInSeq"
+    );
     // Dead methods that should be removed
-    assert!(!acceptor.contains("fn CAcceptorInit"), "acceptorimpl.rs should not contain dead CAcceptorInit");
-    assert!(!acceptor.contains("fn CAcceptorProcess2a"), "acceptorimpl.rs should not contain dead CAcceptorProcess2a");
-    assert!(!acceptor.contains("fn CRemoveVotesBeforeLogTruncationPoint"), "acceptorimpl.rs should not contain dead CRemoveVotesBeforeLogTruncationPoint");
-    assert!(!acceptor.contains("fn CAddVoteAndRemoveOldOnes"), "acceptorimpl.rs should not contain dead CAddVoteAndRemoveOldOnes");
-    assert!(!acceptor.contains("fn CAcceptorTruncateLog"), "acceptorimpl.rs should not contain dead CAcceptorTruncateLog");
-    assert!(!acceptor.contains("lemma_voteLen"), "acceptorimpl.rs should not contain dead lemma_voteLen");
+    assert!(
+        !acceptor.contains("fn CAcceptorInit"),
+        "acceptorimpl.rs should not contain dead CAcceptorInit"
+    );
+    assert!(
+        !acceptor.contains("fn CAcceptorProcess2a"),
+        "acceptorimpl.rs should not contain dead CAcceptorProcess2a"
+    );
+    assert!(
+        !acceptor.contains("fn CRemoveVotesBeforeLogTruncationPoint"),
+        "acceptorimpl.rs should not contain dead CRemoveVotesBeforeLogTruncationPoint"
+    );
+    assert!(
+        !acceptor.contains("fn CAddVoteAndRemoveOldOnes"),
+        "acceptorimpl.rs should not contain dead CAddVoteAndRemoveOldOnes"
+    );
+    assert!(
+        !acceptor.contains("fn CAcceptorTruncateLog"),
+        "acceptorimpl.rs should not contain dead CAcceptorTruncateLog"
+    );
+    assert!(
+        !acceptor.contains("lemma_voteLen"),
+        "acceptorimpl.rs should not contain dead lemma_voteLen"
+    );
 
     // === ExecutorImpl.rs ===
     // Should retain: CExecutorExecute (called from ReplicaImpl.rs:732)
     // CGetPacketsFromReplies, CClientsInReplies, CUpdateNewCache moved to standalone (Phase 19.3.1)
     let executor = std::fs::read_to_string("../src/implementation/RSL/ExecutorImpl.rs")
         .expect("Failed to read ExecutorImpl.rs");
-    assert!(executor.contains("pub struct CExecutor"), "ExecutorImpl.rs should define CExecutor");
-    assert!(executor.contains("pub enum CIncompleteBatchTimer"), "ExecutorImpl.rs should define CIncompleteBatchTimer");
-    assert!(executor.contains("CExecutorExecute"), "ExecutorImpl.rs should retain CExecutorExecute");
+    assert!(
+        executor.contains("pub struct CExecutor"),
+        "ExecutorImpl.rs should define CExecutor"
+    );
+    assert!(
+        executor.contains("pub enum CIncompleteBatchTimer"),
+        "ExecutorImpl.rs should define CIncompleteBatchTimer"
+    );
+    assert!(
+        executor.contains("CExecutorExecute"),
+        "ExecutorImpl.rs should retain CExecutorExecute"
+    );
     // Standalone functions now imported from executor_gen, not defined here
-    assert!(!executor.contains("fn CGetPacketsFromReplies"), "ExecutorImpl.rs should not define CGetPacketsFromReplies (moved to standalone)");
-    assert!(!executor.contains("fn CClientsInReplies"), "ExecutorImpl.rs should not define CClientsInReplies (moved to standalone)");
-    assert!(!executor.contains("fn CUpdateNewCache"), "ExecutorImpl.rs should not define CUpdateNewCache (moved to standalone)");
+    assert!(
+        !executor.contains("fn CGetPacketsFromReplies"),
+        "ExecutorImpl.rs should not define CGetPacketsFromReplies (moved to standalone)"
+    );
+    assert!(
+        !executor.contains("fn CClientsInReplies"),
+        "ExecutorImpl.rs should not define CClientsInReplies (moved to standalone)"
+    );
+    assert!(
+        !executor.contains("fn CUpdateNewCache"),
+        "ExecutorImpl.rs should not define CUpdateNewCache (moved to standalone)"
+    );
     // Dead methods
-    assert!(!executor.contains("fn CExecutorInit"), "ExecutorImpl.rs should not contain dead CExecutorInit");
-    assert!(!executor.contains("fn CExecutorGetDecision"), "ExecutorImpl.rs should not contain dead CExecutorGetDecision");
-    assert!(!executor.contains("fn CExecutorProcessAppStateSupply"), "ExecutorImpl.rs should not contain dead CExecutorProcessAppStateSupply");
-    assert!(!executor.contains("fn CExecutorProcessAppStateRequest"), "ExecutorImpl.rs should not contain dead CExecutorProcessAppStateRequest");
-    assert!(!executor.contains("fn CExecutorProcessStartingPhase2"), "ExecutorImpl.rs should not contain dead CExecutorProcessStartingPhase2");
-    assert!(!executor.contains("fn CExecutorProcessRequest"), "ExecutorImpl.rs should not contain dead CExecutorProcessRequest");
-    assert!(!executor.contains("lemma_ReplyCacheLen"), "ExecutorImpl.rs should not contain dead lemma_ReplyCacheLen");
+    assert!(
+        !executor.contains("fn CExecutorInit"),
+        "ExecutorImpl.rs should not contain dead CExecutorInit"
+    );
+    assert!(
+        !executor.contains("fn CExecutorGetDecision"),
+        "ExecutorImpl.rs should not contain dead CExecutorGetDecision"
+    );
+    assert!(
+        !executor.contains("fn CExecutorProcessAppStateSupply"),
+        "ExecutorImpl.rs should not contain dead CExecutorProcessAppStateSupply"
+    );
+    assert!(
+        !executor.contains("fn CExecutorProcessAppStateRequest"),
+        "ExecutorImpl.rs should not contain dead CExecutorProcessAppStateRequest"
+    );
+    assert!(
+        !executor.contains("fn CExecutorProcessStartingPhase2"),
+        "ExecutorImpl.rs should not contain dead CExecutorProcessStartingPhase2"
+    );
+    assert!(
+        !executor.contains("fn CExecutorProcessRequest"),
+        "ExecutorImpl.rs should not contain dead CExecutorProcessRequest"
+    );
+    assert!(
+        !executor.contains("lemma_ReplyCacheLen"),
+        "ExecutorImpl.rs should not contain dead lemma_ReplyCacheLen"
+    );
 
     // === ElectionImpl.rs ===
     // Should retain: CElectionState/COutstandingOperation type infrastructure,
@@ -6391,55 +7015,178 @@ fn test_impl_files_stripped_of_dead_code() {
     // clone_hashset_u64, clone_vec_crequest.
     let election = std::fs::read_to_string("../src/implementation/RSL/ElectionImpl.rs")
         .expect("Failed to read ElectionImpl.rs");
-    assert!(election.contains("pub struct CElectionState"), "ElectionImpl.rs should define CElectionState");
-    assert!(election.contains("pub enum COutstandingOperation"), "ElectionImpl.rs should define COutstandingOperation");
-    assert!(election.contains("impl Clone for CElectionState"), "ElectionImpl.rs should retain Clone impl");
-    assert!(election.contains("struct CRequestHeader"), "ElectionImpl.rs should retain CRequestHeader");
-    assert!(election.contains("clone_up_to_view"), "ElectionImpl.rs should retain clone_up_to_view");
-    assert!(election.contains("CBoundRequestSequence"), "ElectionImpl.rs should retain CBoundRequestSequence");
-    assert!(election.contains("clone_hashset_u64"), "ElectionImpl.rs should retain clone_hashset_u64");
-    assert!(election.contains("clone_vec_crequest"), "ElectionImpl.rs should retain clone_vec_crequest");
+    assert!(
+        election.contains("pub struct CElectionState"),
+        "ElectionImpl.rs should define CElectionState"
+    );
+    assert!(
+        election.contains("pub enum COutstandingOperation"),
+        "ElectionImpl.rs should define COutstandingOperation"
+    );
+    assert!(
+        election.contains("impl Clone for CElectionState"),
+        "ElectionImpl.rs should retain Clone impl"
+    );
+    assert!(
+        election.contains("struct CRequestHeader"),
+        "ElectionImpl.rs should retain CRequestHeader"
+    );
+    assert!(
+        election.contains("clone_up_to_view"),
+        "ElectionImpl.rs should retain clone_up_to_view"
+    );
+    assert!(
+        election.contains("CBoundRequestSequence"),
+        "ElectionImpl.rs should retain CBoundRequestSequence"
+    );
+    assert!(
+        election.contains("clone_hashset_u64"),
+        "ElectionImpl.rs should retain clone_hashset_u64"
+    );
+    assert!(
+        election.contains("clone_vec_crequest"),
+        "ElectionImpl.rs should retain clone_vec_crequest"
+    );
     // Dead methods — all &mut self CElectionState methods
-    assert!(!election.contains("fn CElectionStateInit"), "ElectionImpl.rs should not contain dead CElectionStateInit");
-    assert!(!election.contains("fn CElectionStateProcessHeartbeat"), "ElectionImpl.rs should not contain dead CElectionStateProcessHeartbeat");
-    assert!(!election.contains("fn CElectionStateCheckForViewTimeout"), "ElectionImpl.rs should not contain dead CElectionStateCheckForViewTimeout");
-    assert!(!election.contains("fn CElectionStateCheckForQuorumOfViewSuspicions"), "ElectionImpl.rs should not contain dead CElectionStateCheckForQuorumOfViewSuspicions");
-    assert!(!election.contains("fn CComputeSuccessorView"), "ElectionImpl.rs should not contain dead CComputeSuccessorView");
-    assert!(!election.contains("fn CElectionStateReflectReceivedRequest"), "ElectionImpl.rs should not contain dead CElectionStateReflectReceivedRequest");
-    assert!(!election.contains("fn CElectionStateReflectExecutedRequestBatch"), "ElectionImpl.rs should not contain dead CElectionStateReflectExecutedRequestBatch");
-    assert!(!election.contains("fn CRemoveAllSatisfiedRequestsInSequence"), "ElectionImpl.rs should not contain dead CRemoveAllSatisfiedRequestsInSequence");
-    assert!(!election.contains("fn CRequestsMatch"), "ElectionImpl.rs should not contain dead CRequestsMatch");
-    assert!(!election.contains("fn FindEarlierRequests"), "ElectionImpl.rs should not contain dead FindEarlierRequests");
+    assert!(
+        !election.contains("fn CElectionStateInit"),
+        "ElectionImpl.rs should not contain dead CElectionStateInit"
+    );
+    assert!(
+        !election.contains("fn CElectionStateProcessHeartbeat"),
+        "ElectionImpl.rs should not contain dead CElectionStateProcessHeartbeat"
+    );
+    assert!(
+        !election.contains("fn CElectionStateCheckForViewTimeout"),
+        "ElectionImpl.rs should not contain dead CElectionStateCheckForViewTimeout"
+    );
+    assert!(
+        !election.contains("fn CElectionStateCheckForQuorumOfViewSuspicions"),
+        "ElectionImpl.rs should not contain dead CElectionStateCheckForQuorumOfViewSuspicions"
+    );
+    assert!(
+        !election.contains("fn CComputeSuccessorView"),
+        "ElectionImpl.rs should not contain dead CComputeSuccessorView"
+    );
+    assert!(
+        !election.contains("fn CElectionStateReflectReceivedRequest"),
+        "ElectionImpl.rs should not contain dead CElectionStateReflectReceivedRequest"
+    );
+    assert!(
+        !election.contains("fn CElectionStateReflectExecutedRequestBatch"),
+        "ElectionImpl.rs should not contain dead CElectionStateReflectExecutedRequestBatch"
+    );
+    assert!(
+        !election.contains("fn CRemoveAllSatisfiedRequestsInSequence"),
+        "ElectionImpl.rs should not contain dead CRemoveAllSatisfiedRequestsInSequence"
+    );
+    assert!(
+        !election.contains("fn CRequestsMatch"),
+        "ElectionImpl.rs should not contain dead CRequestsMatch"
+    );
+    assert!(
+        !election.contains("fn FindEarlierRequests"),
+        "ElectionImpl.rs should not contain dead FindEarlierRequests"
+    );
 
     // === ProposerImpl.rs ===
     // Should retain: Clone impl, 5 static helper methods + their internal helpers
     let proposer = std::fs::read_to_string("../src/implementation/RSL/ProposerImpl.rs")
         .expect("Failed to read ProposerImpl.rs");
-    assert!(proposer.contains("pub struct CProposer"), "ProposerImpl.rs should define CProposer");
-    assert!(proposer.contains("impl Clone for CProposer"), "ProposerImpl.rs should retain Clone impl");
-    assert!(proposer.contains("CSetOfMessage1bAboutBallot"), "ProposerImpl.rs should retain CSetOfMessage1bAboutBallot");
-    assert!(proposer.contains("CAllAcceptorsHadNoProposal"), "ProposerImpl.rs should retain CAllAcceptorsHadNoProposal");
-    assert!(proposer.contains("CExistsAcceptorHasProposalLargeThanOpn"), "ProposerImpl.rs should retain CExistsAcceptorHasProposalLargeThanOpn");
-    assert!(proposer.contains("CValIsHighestNumberedProposal"), "ProposerImpl.rs should retain CValIsHighestNumberedProposal");
-    assert!(proposer.contains("CProposerCanNominateUsingOperationNumber"), "ProposerImpl.rs should retain CProposerCanNominateUsingOperationNumber");
+    assert!(
+        proposer.contains("pub struct CProposer"),
+        "ProposerImpl.rs should define CProposer"
+    );
+    assert!(
+        proposer.contains("impl Clone for CProposer"),
+        "ProposerImpl.rs should retain Clone impl"
+    );
+    assert!(
+        proposer.contains("CSetOfMessage1bAboutBallot"),
+        "ProposerImpl.rs should retain CSetOfMessage1bAboutBallot"
+    );
+    assert!(
+        proposer.contains("CAllAcceptorsHadNoProposal"),
+        "ProposerImpl.rs should retain CAllAcceptorsHadNoProposal"
+    );
+    assert!(
+        proposer.contains("CExistsAcceptorHasProposalLargeThanOpn"),
+        "ProposerImpl.rs should retain CExistsAcceptorHasProposalLargeThanOpn"
+    );
+    assert!(
+        proposer.contains("CValIsHighestNumberedProposal"),
+        "ProposerImpl.rs should retain CValIsHighestNumberedProposal"
+    );
+    assert!(
+        proposer.contains("CProposerCanNominateUsingOperationNumber"),
+        "ProposerImpl.rs should retain CProposerCanNominateUsingOperationNumber"
+    );
     // Dead &mut self methods
-    assert!(!proposer.contains("fn CProposerInit("), "ProposerImpl.rs should not contain dead CProposerInit");
-    assert!(!proposer.contains("fn CProposerProcessRequest("), "ProposerImpl.rs should not contain dead CProposerProcessRequest");
-    assert!(!proposer.contains("fn CProposerProcess1b("), "ProposerImpl.rs should not contain dead CProposerProcess1b");
-    assert!(!proposer.contains("fn CProposerMaybeEnterNewViewAndSend1a("), "ProposerImpl.rs should not contain dead CProposerMaybeEnterNewViewAndSend1a");
-    assert!(!proposer.contains("fn CProposerMaybeEnterPhase2("), "ProposerImpl.rs should not contain dead CProposerMaybeEnterPhase2");
-    assert!(!proposer.contains("fn CProposerNominateNewValueAndSend2a("), "ProposerImpl.rs should not contain dead CProposerNominateNewValueAndSend2a");
-    assert!(!proposer.contains("fn CProposerNominateOldValueAndSend2a("), "ProposerImpl.rs should not contain dead CProposerNominateOldValueAndSend2a");
-    assert!(!proposer.contains("fn CProposerMaybeNominateValueAndSend2a("), "ProposerImpl.rs should not contain dead CProposerMaybeNominateValueAndSend2a");
-    assert!(!proposer.contains("fn CProposerProcessHeartbeat("), "ProposerImpl.rs should not contain dead CProposerProcessHeartbeat");
-    assert!(!proposer.contains("fn CProposerCheckForViewTimeout("), "ProposerImpl.rs should not contain dead CProposerCheckForViewTimeout");
-    assert!(!proposer.contains("fn CProposerCheckForQuorumOfViewSuspicions("), "ProposerImpl.rs should not contain dead CProposerCheckForQuorumOfViewSuspicions");
-    assert!(!proposer.contains("fn CProposerResetViewTimerDueToExecution("), "ProposerImpl.rs should not contain dead CProposerResetViewTimerDueToExecution");
+    assert!(
+        !proposer.contains("fn CProposerInit("),
+        "ProposerImpl.rs should not contain dead CProposerInit"
+    );
+    assert!(
+        !proposer.contains("fn CProposerProcessRequest("),
+        "ProposerImpl.rs should not contain dead CProposerProcessRequest"
+    );
+    assert!(
+        !proposer.contains("fn CProposerProcess1b("),
+        "ProposerImpl.rs should not contain dead CProposerProcess1b"
+    );
+    assert!(
+        !proposer.contains("fn CProposerMaybeEnterNewViewAndSend1a("),
+        "ProposerImpl.rs should not contain dead CProposerMaybeEnterNewViewAndSend1a"
+    );
+    assert!(
+        !proposer.contains("fn CProposerMaybeEnterPhase2("),
+        "ProposerImpl.rs should not contain dead CProposerMaybeEnterPhase2"
+    );
+    assert!(
+        !proposer.contains("fn CProposerNominateNewValueAndSend2a("),
+        "ProposerImpl.rs should not contain dead CProposerNominateNewValueAndSend2a"
+    );
+    assert!(
+        !proposer.contains("fn CProposerNominateOldValueAndSend2a("),
+        "ProposerImpl.rs should not contain dead CProposerNominateOldValueAndSend2a"
+    );
+    assert!(
+        !proposer.contains("fn CProposerMaybeNominateValueAndSend2a("),
+        "ProposerImpl.rs should not contain dead CProposerMaybeNominateValueAndSend2a"
+    );
+    assert!(
+        !proposer.contains("fn CProposerProcessHeartbeat("),
+        "ProposerImpl.rs should not contain dead CProposerProcessHeartbeat"
+    );
+    assert!(
+        !proposer.contains("fn CProposerCheckForViewTimeout("),
+        "ProposerImpl.rs should not contain dead CProposerCheckForViewTimeout"
+    );
+    assert!(
+        !proposer.contains("fn CProposerCheckForQuorumOfViewSuspicions("),
+        "ProposerImpl.rs should not contain dead CProposerCheckForQuorumOfViewSuspicions"
+    );
+    assert!(
+        !proposer.contains("fn CProposerResetViewTimerDueToExecution("),
+        "ProposerImpl.rs should not contain dead CProposerResetViewTimerDueToExecution"
+    );
     // Dead test and helper functions
-    assert!(!proposer.contains("fn test("), "ProposerImpl.rs should not contain dead test functions");
-    assert!(!proposer.contains("fn test2("), "ProposerImpl.rs should not contain dead test2 function");
-    assert!(!proposer.contains("fn test3("), "ProposerImpl.rs should not contain dead test3 function");
-    assert!(!proposer.contains("lemma_hashset_insert"), "ProposerImpl.rs should not contain dead lemma_hashset_insert");
+    assert!(
+        !proposer.contains("fn test("),
+        "ProposerImpl.rs should not contain dead test functions"
+    );
+    assert!(
+        !proposer.contains("fn test2("),
+        "ProposerImpl.rs should not contain dead test2 function"
+    );
+    assert!(
+        !proposer.contains("fn test3("),
+        "ProposerImpl.rs should not contain dead test3 function"
+    );
+    assert!(
+        !proposer.contains("lemma_hashset_insert"),
+        "ProposerImpl.rs should not contain dead lemma_hashset_insert"
+    );
 }
 
 /// Phase 19.3.1: Verify executor_gen.rs has no delegate patterns.
@@ -6500,13 +7247,15 @@ fn test_impl_files_size_after_stripping() {
     ];
 
     for (path, max_lines) in files_and_max_lines {
-        let content = std::fs::read_to_string(path)
-            .unwrap_or_else(|_| panic!("Failed to read {}", path));
+        let content =
+            std::fs::read_to_string(path).unwrap_or_else(|_| panic!("Failed to read {}", path));
         let line_count = content.lines().count();
         assert!(
             line_count <= max_lines,
             "{} has {} lines, expected <= {} after dead code stripping",
-            path, line_count, max_lines
+            path,
+            line_count,
+            max_lines
         );
     }
 }

@@ -14,7 +14,9 @@ pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,
     TlaNumber, TlaOperator, TlaParam, TlaQuantBound, TlaTheorem, TlaUnaryOp,
 };
-pub use mc_wrapper::{generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions};
+pub use mc_wrapper::{
+    generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions, PacketProjectionMode,
+};
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};
 pub use translator::{

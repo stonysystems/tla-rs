@@ -6584,8 +6584,12 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] Leaf 22.10.1 (<500 LOC): add generic relational wrapper generator command (`verus-transpile generate-mc-wrapper`) that emits `<Module>_MC.tla` and `.cfg` skeleton from `Init/Next` operator patterns.
     - Added reusable generator logic in `transpiler/src/tla/mc_wrapper.rs` with pattern validation (`Init(s,c)` + `Next(s,s_,c)`), deterministic wrapper rendering, and cfg invariant injection.
     - Wired CLI command in `transpiler/src/main.rs` and added focused command/unit coverage plus integration coverage against `Twophase.tla`.
-  - [ ] Leaf 22.10.2 (<500 LOC): add optional pattern adapters for explicit message-channel lift helpers (`sent_packets` projection modes) when a protocol needs packet observability in TLC.
-  - [ ] Leaf 22.10.3 (<500 LOC): add fixture-driven golden tests for generated wrapper/cfg pairs across the four shared small protocols.
+  - [x] Leaf 22.10.2 (<500 LOC): add optional pattern adapters for explicit message-channel lift helpers (`sent_packets` projection modes) when a protocol needs packet observability in TLC.
+    - Extended `generate-mc-wrapper` with packet projection modes (`none`, `append-seq`, `replace-seq`) plus configurable packet variable name, and added branch-level `Next` disjunct lifting that binds `state_` + branch existentials and updates `msgs` from `sent_packets`.
+    - Added focused unit/CLI tests and integration coverage against generated `Twophase.tla` to validate lifted wrapper generation.
+  - [x] Leaf 22.10.3 (<500 LOC): add fixture-driven golden tests for generated wrapper/cfg pairs across the four shared small protocols.
+    - Added `transpiler/tests/mc_wrapper_fixtures/*.golden.{tla,cfg}` for TwoPhase, LeaderElection, Paxos, and PrimaryBackup, generated via `verus-transpile generate-mc-wrapper` from checked-in relational specs.
+    - Added integration test `test_generate_mc_wrapper_matches_golden_fixtures_for_shared_small_protocols` to run wrapper generation per protocol and exact-compare generated `.tla/.cfg` against committed golden fixtures.
   - [ ] Leaf 22.10.4 (<500 LOC): document wrapper-generation workflow and selection guidance vs source-first `model-check`.
 - [ ] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.
