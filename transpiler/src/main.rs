@@ -163,6 +163,14 @@ enum Commands {
         #[arg(long)]
         types: Option<PathBuf>,
 
+        /// Init entrypoint function name (default: LInit)
+        #[arg(long, default_value = "LInit")]
+        init: String,
+
+        /// Next entrypoint function name (default: LNext)
+        #[arg(long, default_value = "LNext")]
+        next: String,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -579,22 +587,30 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
         Commands::ModelCheck {
             input,
             types,
+            init,
+            next,
             model,
         } => {
             use verus_transpiler::modelcheck::config::parse_model_config_file;
             use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
-            use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types;
+            use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
 
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
                 if let Some(types_file) = types {
                     eprintln!("Loading explicit types spec: {}", types_file.display());
                 }
+                eprintln!("Entrypoints: init=`{}`, next=`{}`", init, next);
                 eprintln!("Loading model config: {}", model.display());
             }
 
-            let bundle = ingest_protocol_sources_with_types(input.as_path(), types.as_deref())
-                .map_err(|e| miette::miette!("{}", e))?;
+            let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+                input.as_path(),
+                types.as_deref(),
+                init,
+                next,
+            )
+            .map_err(|e| miette::miette!("{}", e))?;
             let model_config =
                 parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
             let selected_invariants = resolve_selected_invariants(
@@ -1924,6 +1940,10 @@ Next == count' = count + N
             "src/protocol/TwoPhase/twophase.rs",
             "--types",
             "src/protocol/TwoPhase/types.rs",
+            "--init",
+            "InitOverride",
+            "--next",
+            "NextOverride",
             "--model",
             "model.toml",
         ]);
@@ -1932,10 +1952,14 @@ Next == count' = count + N
             Some(Commands::ModelCheck {
                 input,
                 types,
+                init,
+                next,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
                 assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
+                assert_eq!(init, "InitOverride");
+                assert_eq!(next, "NextOverride");
                 assert_eq!(model, PathBuf::from("model.toml"));
             }
             _ => panic!("Expected ModelCheck command"),
@@ -1987,6 +2011,8 @@ invariants = ["LInv"]
         let command = Commands::ModelCheck {
             input: proto_path,
             types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
             model: model_path,
         };
         let cli = Cli {
@@ -2042,6 +2068,8 @@ verus! {
         let command = Commands::ModelCheck {
             input: proto_path,
             types: Some(types_path),
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
             model: model_path,
         };
         let cli = Cli {
@@ -2061,6 +2089,121 @@ verus! {
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_with_custom_entrypoint_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn InitCustom(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn NextCustom(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "InitCustom".to_string(),
+            next: "NextCustom".to_string(),
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_missing_custom_next_entrypoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn InitCustom(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn NextOther(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "InitCustom".to_string(),
+            next: "NextCustom".to_string(),
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(err.to_string().contains("Missing required entrypoint `NextCustom"));
     }
 
     #[test]
@@ -2086,6 +2229,8 @@ verus! {
         let command = Commands::ModelCheck {
             input: proto_path,
             types: Some(missing_types_path),
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
             model: model_path,
         };
         let cli = Cli {
@@ -2149,6 +2294,8 @@ invariants = ["LMissing"]
         let command = Commands::ModelCheck {
             input: proto_path,
             types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
             model: model_path,
         };
         let cli = Cli {

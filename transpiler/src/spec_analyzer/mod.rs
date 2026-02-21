@@ -187,9 +187,9 @@ pub struct ProtocolSourceBundle {
 /// Required source-first entrypoints for model checking.
 #[derive(Debug, Clone)]
 pub struct RequiredEntrypoints {
-    /// `LInit(s: LState, c: LConstants) -> bool`
+    /// Configured init entrypoint (`s: LState, c: LConstants) -> bool`.
     pub linit: SpecFunction,
-    /// `LNext(s: LState, s_: LState, c: LConstants) -> bool`
+    /// Configured next entrypoint (`s: LState, s_: LState, c: LConstants) -> bool`.
     pub lnext: SpecFunction,
 }
 
@@ -249,6 +249,15 @@ pub fn analyze_spec_files_with_ast<P: AsRef<Path>>(
 pub fn resolve_required_entrypoints(
     spec_functions: &[SpecFunction],
 ) -> TranspileResult<RequiredEntrypoints> {
+    resolve_required_entrypoints_named(spec_functions, "LInit", "LNext")
+}
+
+/// Resolve and validate configured model-check entrypoints from parsed spec functions.
+pub fn resolve_required_entrypoints_named(
+    spec_functions: &[SpecFunction],
+    init_name: &str,
+    next_name: &str,
+) -> TranspileResult<RequiredEntrypoints> {
     let available_names: Vec<String> = spec_functions.iter().map(|f| f.name.clone()).collect();
     let available_names_text = if available_names.is_empty() {
         "<none>".to_string()
@@ -258,32 +267,32 @@ pub fn resolve_required_entrypoints(
 
     let linit = spec_functions
         .iter()
-        .find(|f| f.name == "LInit")
+        .find(|f| f.name == init_name)
         .cloned()
         .ok_or_else(|| crate::error::TranspileError::Config {
             message: format!(
-                "Missing required entrypoint `LInit(s: LState, c: LConstants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `LInit` with the required signature.",
-                available_names_text
+                "Missing required entrypoint `{}(s: LState, c: LConstants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `{}` with the required signature.",
+                init_name, available_names_text, init_name
             ),
         })?;
     let lnext = spec_functions
         .iter()
-        .find(|f| f.name == "LNext")
+        .find(|f| f.name == next_name)
         .cloned()
         .ok_or_else(|| crate::error::TranspileError::Config {
             message: format!(
-                "Missing required entrypoint `LNext(s: LState, s_: LState, c: LConstants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `LNext` with the required signature.",
-                available_names_text
+                "Missing required entrypoint `{}(s: LState, s_: LState, c: LConstants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `{}` with the required signature.",
+                next_name, available_names_text, next_name
             ),
         })?;
 
-    validate_linit_signature(&linit)?;
-    validate_lnext_signature(&lnext)?;
+    validate_linit_signature(&linit, init_name)?;
+    validate_lnext_signature(&lnext, next_name)?;
 
     Ok(RequiredEntrypoints { linit, lnext })
 }
 
-fn validate_linit_signature(linit: &SpecFunction) -> TranspileResult<()> {
+fn validate_linit_signature(linit: &SpecFunction, expected_name: &str) -> TranspileResult<()> {
     let mut issues = Vec::new();
     if linit.params.len() != 2 {
         issues.push(format!(
@@ -329,7 +338,9 @@ fn validate_linit_signature(linit: &SpecFunction) -> TranspileResult<()> {
     if !issues.is_empty() {
         return Err(crate::error::TranspileError::Config {
             message: format!(
-                "Incompatible `LInit` signature.\nExpected: LInit(s: LState, c: LConstants) -> bool\nFound: {}\nIssues: {}\nFix: rename/retype parameters to match the expected entrypoint.",
+                "Incompatible `{}` signature.\nExpected: {}(s: LState, c: LConstants) -> bool\nFound: {}\nIssues: {}\nFix: rename/retype parameters to match the expected entrypoint.",
+                expected_name,
+                expected_name,
                 format_signature_for_diagnostic(linit),
                 issues.join("; ")
             ),
@@ -339,7 +350,7 @@ fn validate_linit_signature(linit: &SpecFunction) -> TranspileResult<()> {
     Ok(())
 }
 
-fn validate_lnext_signature(lnext: &SpecFunction) -> TranspileResult<()> {
+fn validate_lnext_signature(lnext: &SpecFunction, expected_name: &str) -> TranspileResult<()> {
     let mut issues = Vec::new();
     if lnext.params.len() != 3 {
         issues.push(format!(
@@ -399,7 +410,9 @@ fn validate_lnext_signature(lnext: &SpecFunction) -> TranspileResult<()> {
     if !issues.is_empty() {
         return Err(crate::error::TranspileError::Config {
             message: format!(
-                "Incompatible `LNext` signature.\nExpected: LNext(s: LState, s_: LState, c: LConstants) -> bool\nFound: {}\nIssues: {}\nFix: rename/retype parameters to match the expected entrypoint.",
+                "Incompatible `{}` signature.\nExpected: {}(s: LState, s_: LState, c: LConstants) -> bool\nFound: {}\nIssues: {}\nFix: rename/retype parameters to match the expected entrypoint.",
+                expected_name,
+                expected_name,
                 format_signature_for_diagnostic(lnext),
                 issues.join("; ")
             ),
@@ -482,7 +495,12 @@ fn format_type_for_diagnostic(ty: &Type) -> String {
 pub fn ingest_protocol_sources<P: AsRef<Path>>(
     protocol_file: P,
 ) -> TranspileResult<ProtocolSourceBundle> {
-    ingest_protocol_sources_with_types(protocol_file.as_ref(), None)
+    ingest_protocol_sources_with_types_and_entrypoints(
+        protocol_file.as_ref(),
+        None,
+        "LInit",
+        "LNext",
+    )
 }
 
 /// Ingest protocol sources from `<proto>.rs` and either:
@@ -491,6 +509,21 @@ pub fn ingest_protocol_sources<P: AsRef<Path>>(
 pub fn ingest_protocol_sources_with_types(
     protocol_file: &Path,
     types_file_override: Option<&Path>,
+) -> TranspileResult<ProtocolSourceBundle> {
+    ingest_protocol_sources_with_types_and_entrypoints(
+        protocol_file,
+        types_file_override,
+        "LInit",
+        "LNext",
+    )
+}
+
+/// Ingest protocol sources with configurable required init/next entrypoint names.
+pub fn ingest_protocol_sources_with_types_and_entrypoints(
+    protocol_file: &Path,
+    types_file_override: Option<&Path>,
+    init_name: &str,
+    next_name: &str,
 ) -> TranspileResult<ProtocolSourceBundle> {
     if !protocol_file.exists() {
         return Err(crate::error::TranspileError::Config {
@@ -549,7 +582,7 @@ pub fn ingest_protocol_sources_with_types(
 
     let (schema, spec_functions) =
         analyze_spec_files_with_ast(&[types_file.as_path(), protocol_file])?;
-    let entrypoints = resolve_required_entrypoints(&spec_functions)?;
+    let entrypoints = resolve_required_entrypoints_named(&spec_functions, init_name, next_name)?;
 
     Ok(ProtocolSourceBundle {
         types_file,
@@ -1408,6 +1441,85 @@ verus! {
             bundle.spec_functions.iter().any(|f| f.name == "LNext"),
             "ingestion should parse LNext from protocol source"
         );
+    }
+
+    #[test]
+    fn test_resolve_required_entrypoints_named_custom_names() {
+        let dir = tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+
+        fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn InitCustom(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn NextCustom(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let (_, spec_functions) =
+            analyze_spec_files_with_ast(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+
+        let entrypoints =
+            resolve_required_entrypoints_named(&spec_functions, "InitCustom", "NextCustom")
+                .unwrap();
+        assert_eq!(entrypoints.linit.name, "InitCustom");
+        assert_eq!(entrypoints.lnext.name, "NextCustom");
+    }
+
+    #[test]
+    fn test_resolve_required_entrypoints_named_missing_custom_next() {
+        let dir = tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+
+        fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn InitCustom(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn NextOther(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let (_, spec_functions) =
+            analyze_spec_files_with_ast(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+
+        let err =
+            resolve_required_entrypoints_named(&spec_functions, "InitCustom", "NextCustom")
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Missing required entrypoint `NextCustom"));
+        assert!(msg.contains("Fix: add/rename a function to `NextCustom`"));
     }
 
     #[test]

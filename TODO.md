@@ -6520,7 +6520,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] `--types` (types file; optional if inferable)
     - Added `--types` to `verus-transpile model-check` and wired explicit-types ingestion via `ingest_protocol_sources_with_types`, with default sibling `types.rs` inference preserved when the flag is omitted.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI + ingestion tests).
-  - [ ] `--init`, `--next` (override function names; default `LInit`, `LNext`)
+  - [x] `--init`, `--next` (override function names; default `LInit`, `LNext`)
+    - Added `--init` / `--next` flags to `verus-transpile model-check`, with configurable entrypoint resolution wired through source ingestion (defaults remain `LInit` / `LNext`).
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI + resolver tests).
   - [ ] `--invariant` (repeatable)
   - [ ] `--search` (`bfs|dfs`)
   - [ ] `--max-depth`, `--max-states`, `--timeout`
