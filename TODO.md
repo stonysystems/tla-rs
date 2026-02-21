@@ -6549,7 +6549,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Add unit tests for evaluator semantics and domain expansion.
   - Expanded `modelcheck::evaluator` unit coverage for short-circuit connective semantics (`&&&`, `|||`, `==>`), `if` without `else`, `iff`/`not`, cast-to-`nat` edge cases, and map `index`/`contains_key` behavior.
   - Expanded `modelcheck::domain` unit coverage for named `values` overrides (without alias/enum schema), reference and generic container type expansion, payload-enum rejection diagnostics, and missing named-domain diagnostics.
-- [ ] Add integration tests for end-to-end model-check runs (split into protocol-sized leaves, each <500 LOC):
+- [x] Add integration tests for end-to-end model-check runs (split into protocol-sized leaves, each <500 LOC):
   - [x] PrimaryBackup helper-call `LNext` branch support regression: solve predicate-only helper branches by evaluating branch predicates over candidate `s_` states (instead of requiring direct `s_.field == ...` assignments).
   - [x] PrimaryBackup success-path bounded run.
     - Added bounded integration coverage in `transpiler/tests/integration.rs` to assert `model-check` succeeds with helper-call `LNext` branches and reports non-zero states/transitions.
@@ -6559,7 +6559,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added bounded integration coverage in `transpiler/tests/integration.rs` with finite `LConstants` domains and `LElectionMessage` payload-variant enum subset; run asserts successful JSON report with non-zero states/transitions.
   - [x] Paxos (bounded run)
     - Added bounded integration coverage in `transpiler/tests/integration.rs` with finite `LConstants` (`acceptors`, `quorum_size`, `node_id`) and tiny int/search domains, asserting successful JSON report with non-zero states/transitions.
-- [ ] Add differential checks against existing TLC wrapper outcomes for shared small models.
+- [x] Add differential checks against existing TLC wrapper outcomes for shared small models.
+  - Added `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` in `transpiler/tests/integration.rs` to run source-first model-check on shared protocols (TwoPhase, LeaderElection, PrimaryBackup, Paxos) and assert qualitative agreement with recorded TLC outcome categories (`PASS`/`PARTIAL`) via non-violating JSON results.
 - [ ] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
 
 ### 22.9 Documentation and Rollout

@@ -6080,6 +6080,268 @@ successor_semantics = "deadlock"
 }
 
 #[test]
+fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let tlc_outcomes_doc = std::fs::read_to_string("../docs/conversion-testing-guide.md")
+        .expect("Failed to read TLC outcomes doc");
+
+    struct DiffCase<'a> {
+        protocol_name: &'a str,
+        input: &'a str,
+        types: &'a str,
+        model_toml: &'a str,
+        expected_tlc_label: &'a str,
+    }
+
+    let cases = [
+        DiffCase {
+            protocol_name: "TwoPhase",
+            input: "src/protocol/TwoPhase/twophase.rs",
+            types: "src/protocol/TwoPhase/types.rs",
+            model_toml: r#"
+[constants.domains.rm]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LTPCMessage]
+kind = "enum_subset"
+variants = ["Prepare", "Commit", "Abort"]
+
+[collections]
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
+"#,
+            expected_tlc_label: "PASS",
+        },
+        DiffCase {
+            protocol_name: "LeaderElection",
+            input: "src/protocol/LeaderElection/election.rs",
+            types: "src/protocol/LeaderElection/types.rs",
+            model_toml: r#"
+[constants.assignments]
+num_nodes = 0
+
+[constants.domains.nodes]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LElectionMessage]
+kind = "enum_subset"
+variants = ["Election", "Answer", "Coordinator"]
+
+[collections]
+max_seq_len = 1
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
+"#,
+            expected_tlc_label: "PASS",
+        },
+        DiffCase {
+            protocol_name: "PrimaryBackup",
+            input: "src/protocol/PrimaryBackup/primarybackup.rs",
+            types: "src/protocol/PrimaryBackup/types.rs",
+            model_toml: r#"
+[constants.assignments]
+max_log_len = 0
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LPBMessage]
+kind = "enum_subset"
+variants = ["Ack"]
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
+"#,
+            expected_tlc_label: "PASS",
+        },
+        DiffCase {
+            protocol_name: "Paxos",
+            input: "src/protocol/Paxos/paxos.rs",
+            types: "src/protocol/Paxos/types.rs",
+            model_toml: r#"
+[constants.assignments]
+quorum_size = 0
+node_id = 0
+
+[constants.domains.acceptors]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[collections]
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
+"#,
+            expected_tlc_label: "PARTIAL",
+        },
+    ];
+
+    for case in cases {
+        let protocol_row = tlc_outcomes_doc.lines().find(|line| {
+            line.contains(&format!("| {} |", case.protocol_name))
+                && line.contains(case.expected_tlc_label)
+        });
+        assert!(
+            protocol_row.is_some(),
+            "TLC outcomes table should include row for {} with label `{}`",
+            case.protocol_name,
+            case.expected_tlc_label,
+        );
+
+        let input = repo_root.join(case.input);
+        let types = repo_root.join(case.types);
+        assert!(input.exists(), "Missing input spec: {}", input.display());
+        assert!(types.exists(), "Missing types spec: {}", types.display());
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let model_path = std::env::temp_dir().join(format!(
+            "differential_{}_modelcheck_{}_{}.toml",
+            case.protocol_name.to_lowercase(),
+            std::process::id(),
+            stamp
+        ));
+        std::fs::write(&model_path, case.model_toml).expect("Failed to write temporary model.toml");
+
+        let output = std::process::Command::new(&transpiler_bin)
+            .args([
+                "model-check",
+                "--input",
+                input.to_str().unwrap(),
+                "--types",
+                types.to_str().unwrap(),
+                "--model",
+                model_path.to_str().unwrap(),
+                "--search",
+                "bfs",
+                "--json-report",
+            ])
+            .output()
+            .expect("Failed to run model-check command");
+        let _ = std::fs::remove_file(&model_path);
+
+        assert!(
+            output.status.success(),
+            "Model-check run should succeed for {} (TLC={}). stderr={}",
+            case.protocol_name,
+            case.expected_tlc_label,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let report: serde_json::Value =
+            serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+        let result = report
+            .get("result")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>");
+        let stop_reason = report
+            .get("stop_reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>");
+        let states = report
+            .get("summary")
+            .and_then(|s| s.get("states"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let transitions = report
+            .get("summary")
+            .and_then(|s| s.get("transitions"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        assert_eq!(
+            result, "ok",
+            "Expected source-first run to agree with non-violating TLC outcome for {} (TLC={}). Full report: {}",
+            case.protocol_name, case.expected_tlc_label, stdout
+        );
+        assert!(
+            report
+                .get("invariant_violation")
+                .map(serde_json::Value::is_null)
+                .unwrap_or(true),
+            "Expected no invariant violation for {}. Full report: {}",
+            case.protocol_name,
+            stdout
+        );
+        assert!(
+            report
+                .get("deadlock")
+                .map(serde_json::Value::is_null)
+                .unwrap_or(true),
+            "Expected no deadlock report for {} in this bounded differential run. Full report: {}",
+            case.protocol_name,
+            stdout
+        );
+        assert!(
+            states > 0,
+            "Expected reached states > 0 for {}. stop_reason={}, report={}",
+            case.protocol_name,
+            stop_reason,
+            stdout
+        );
+        assert!(
+            transitions > 0,
+            "Expected transitions > 0 for {}. stop_reason={}, report={}",
+            case.protocol_name,
+            stop_reason,
+            stdout
+        );
+    }
+}
+
+#[test]
 fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
     let source = std::fs::read_to_string("../docs/dev/phase22-mvp-scope.md")
         .expect("Failed to read Phase 22 MVP scope doc");
