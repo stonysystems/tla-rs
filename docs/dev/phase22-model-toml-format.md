@@ -9,7 +9,7 @@ model checking over protocol specs (`LInit`/`LNext`).
 - Bound quantifier expansion.
 - Bound collection sizes used by runtime value generation.
 - Bound state-space exploration (`max_depth`, `max_states`, `timeout`).
-- Select invariants and optional deadlock checking.
+- Select invariants and configure deadlock vs stuttering successor semantics.
 
 ## Top-Level Sections
 
@@ -19,7 +19,7 @@ model checking over protocol specs (`LInit`/`LNext`).
 - `[quantifiers.types.<TypeName>]`: finite domain per type.
 - `[collections]`: bounds for `Seq`/`Set`/`Map`.
 - `[search]`: exploration limits.
-- `[properties]`: invariants and deadlock toggle.
+- `[properties]`: invariants, deadlock reporting, and empty-successor semantics.
 
 ## Domain Kinds
 
@@ -74,6 +74,7 @@ timeout_ms = 1000
 [properties]
 invariants = ["LTypeOK", "LSafety"]
 check_deadlock = true
+successor_semantics = "deadlock" # or "stuttering"
 ```
 
 ## Validation Rules (Current)
@@ -83,6 +84,9 @@ check_deadlock = true
 - Domain lists/subsets must be non-empty.
 - Collection bounds and search limits must be positive.
 - Invariant names must be non-empty and unique.
+- `properties.successor_semantics` must be one of `deadlock` or `stuttering`.
+- `properties.check_deadlock = true` cannot be combined with
+  `properties.successor_semantics = "stuttering"` (stuttering removes deadlocks).
 
 ## CLI Overrides (Current)
 

@@ -6484,7 +6484,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Added `modelcheck::solver` (`transpiler/src/modelcheck/solver.rs`) with `solve_branch_successors`, applying normalized `s_.* == expr` assignments plus deferred equality/predicate checks under evaluator semantics and existential bindings to emit concrete successor `s_` states (with explicit unsupported errors when a branch lacks direct next-state equalities).
 - [x] Deduplicate equivalent successor states via canonical state hashing.
   - Added canonical-key dedup in `modelcheck::solver` for both per-branch successor sets and merged transition-level successors (`solve_transition_successors` + `deduplicate_successors`), preserving stable discovery order while collapsing equivalent states.
-- [ ] Add optional stuttering/deadlock semantics toggle.
+- [x] Add optional stuttering/deadlock semantics toggle.
+  - Added `properties.successor_semantics = "deadlock" | "stuttering"` in `model.toml` config (with validation against conflicting `check_deadlock=true`) and wired `modelcheck::solver` transition solving to optionally inject a stutter self-loop (`s_ == s`) when no successors are enabled under stuttering semantics.
 
 ### 22.6 State-Space Exploration Engine
 

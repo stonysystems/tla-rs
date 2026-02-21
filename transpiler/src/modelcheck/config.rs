@@ -87,6 +87,19 @@ pub struct PropertyConfig {
     /// Whether to report deadlock states (no successors).
     #[serde(default)]
     pub check_deadlock: bool,
+    /// Transition semantics when no branch successors exist.
+    #[serde(default)]
+    pub successor_semantics: SuccessorSemantics,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SuccessorSemantics {
+    /// No implicit transition when `LNext` has no enabled branch.
+    #[default]
+    Deadlock,
+    /// Add a stutter successor (`s_ == s`) when no branch is enabled.
+    Stuttering,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -323,6 +336,19 @@ pub fn validate_model_config(config: &ModelConfig) -> TranspileResult<()> {
         }
     }
 
+    if config.properties.check_deadlock
+        && matches!(
+            config.properties.successor_semantics,
+            SuccessorSemantics::Stuttering
+        )
+    {
+        return Err(TranspileError::Config {
+            message: "Invalid model.toml: `properties.check_deadlock = true` conflicts with \
+                      `properties.successor_semantics = \"stuttering\"` (stuttering removes deadlocks)."
+                .to_string(),
+        });
+    }
+
     Ok(())
 }
 
@@ -452,6 +478,7 @@ timeout_ms = 1000
 [properties]
 invariants = ["LTypeOK", "LSafety"]
 check_deadlock = true
+successor_semantics = "deadlock"
 "#;
         let config = parse_model_config_str(source).unwrap();
         assert_eq!(config.constants.assignments.len(), 2);
@@ -459,6 +486,10 @@ check_deadlock = true
         assert_eq!(config.quantifiers.types.len(), 1);
         assert_eq!(config.properties.invariants.len(), 2);
         assert!(config.properties.check_deadlock);
+        assert_eq!(
+            config.properties.successor_semantics,
+            SuccessorSemantics::Deadlock
+        );
     }
 
     #[test]
@@ -473,6 +504,10 @@ invariants = ["LTypeOK"]
         assert_eq!(config.search.max_states, 100_000);
         assert_eq!(config.search.timeout_ms, 30_000);
         assert_eq!(config.properties.invariants, vec!["LTypeOK".to_string()]);
+        assert_eq!(
+            config.properties.successor_semantics,
+            SuccessorSemantics::Deadlock
+        );
     }
 
     #[test]
@@ -547,6 +582,33 @@ invariants = ["LSafety", "LSafety"]
 "#;
         let err = parse_model_config_str(source).unwrap_err();
         assert!(err.to_string().contains("duplicate invariant `LSafety`"));
+    }
+
+    #[test]
+    fn test_parse_model_config_accepts_stuttering_semantics() {
+        let source = r#"
+[properties]
+invariants = ["LTypeOK"]
+check_deadlock = false
+successor_semantics = "stuttering"
+"#;
+        let config = parse_model_config_str(source).unwrap();
+        assert_eq!(
+            config.properties.successor_semantics,
+            SuccessorSemantics::Stuttering
+        );
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_deadlock_check_with_stuttering_semantics() {
+        let source = r#"
+[properties]
+invariants = ["LTypeOK"]
+check_deadlock = true
+successor_semantics = "stuttering"
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("conflicts with"));
     }
 
     #[test]

@@ -8,6 +8,7 @@
 //! - finite-domain expansion for existential branch variables
 //! - branch-constraint solving into concrete successor states
 //! - canonical-key successor deduplication
+//! - optional stuttering vs deadlock empty-successor semantics
 
 pub mod config;
 pub mod domain;

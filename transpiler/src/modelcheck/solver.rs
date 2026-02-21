@@ -15,6 +15,16 @@ pub struct SolverHooks<'a> {
     pub method_evaluator: Option<&'a MethodEvaluator>,
 }
 
+/// Semantics to apply when `LNext` yields no enabled successors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EmptySuccessorSemantics {
+    /// No implicit transition (deadlock semantics).
+    #[default]
+    Deadlock,
+    /// Add one stutter successor where `s_ == s`.
+    Stuttering,
+}
+
 /// Solve one normalized `LNext` branch into concrete successor states.
 ///
 /// For each existential assignment:
@@ -89,6 +99,27 @@ pub fn solve_transition_successors(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
 ) -> TranspileResult<Vec<RuntimeValue>> {
+    solve_transition_successors_with_semantics(
+        transition,
+        current_state,
+        constants,
+        existential_assignments_by_branch,
+        bounds,
+        hooks,
+        EmptySuccessorSemantics::Deadlock,
+    )
+}
+
+/// Solve all `LNext` branches with explicit empty-successor semantics.
+pub fn solve_transition_successors_with_semantics(
+    transition: &TransitionIr,
+    current_state: &RuntimeValue,
+    constants: Option<&RuntimeValue>,
+    existential_assignments_by_branch: Option<&BTreeMap<String, Vec<ExistentialAssignment>>>,
+    bounds: RuntimeCollectionBounds,
+    hooks: SolverHooks<'_>,
+    empty_successor_semantics: EmptySuccessorSemantics,
+) -> TranspileResult<Vec<RuntimeValue>> {
     let mut successors = Vec::new();
     for branch in &transition.branches {
         let branch_assignments: &[ExistentialAssignment] = existential_assignments_by_branch
@@ -106,7 +137,16 @@ pub fn solve_transition_successors(
         )?);
     }
 
-    Ok(deduplicate_successors(successors))
+    let mut deduplicated = deduplicate_successors(successors);
+    if deduplicated.is_empty()
+        && matches!(
+            empty_successor_semantics,
+            EmptySuccessorSemantics::Stuttering
+        )
+    {
+        deduplicated.push(current_state.clone());
+    }
+    Ok(deduplicated)
 }
 
 /// Deduplicate successor states by canonical runtime-value key while preserving order.
@@ -687,6 +727,73 @@ mod tests {
         .unwrap();
         assert_eq!(successors.len(), 1);
         assert_eq!(successors[0], state(1, 2));
+    }
+
+    #[test]
+    fn test_solve_transition_successors_deadlock_semantics_keeps_empty() {
+        let mut transition = transition();
+        transition.branches = vec![TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["x".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(1)),
+                },
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Literal(crate::ast::Literal::Bool(false)),
+                },
+            ],
+        }];
+
+        let successors = solve_transition_successors_with_semantics(
+            &transition,
+            &state(0, 0),
+            Some(&constants(10)),
+            None,
+            bounds(),
+            SolverHooks::default(),
+            EmptySuccessorSemantics::Deadlock,
+        )
+        .unwrap();
+        assert!(successors.is_empty());
+    }
+
+    #[test]
+    fn test_solve_transition_successors_stuttering_semantics_adds_self_loop() {
+        let mut transition = transition();
+        transition.branches = vec![TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["x".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(1)),
+                },
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Literal(crate::ast::Literal::Bool(false)),
+                },
+            ],
+        }];
+
+        let current = state(4, 7);
+        let successors = solve_transition_successors_with_semantics(
+            &transition,
+            &current,
+            Some(&constants(10)),
+            None,
+            bounds(),
+            SolverHooks::default(),
+            EmptySuccessorSemantics::Stuttering,
+        )
+        .unwrap();
+        assert_eq!(successors, vec![current]);
     }
 
     #[test]
