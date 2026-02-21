@@ -6512,7 +6512,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.7 CLI Integration
 
-- [ ] Add new CLI subcommand: `verus-transpile model-check`.
+- [x] Add new CLI subcommand: `verus-transpile model-check`.
+  - Added `Commands::ModelCheck` in `transpiler/src/main.rs` with a real preflight execution path that validates protocol source ingestion (`types.rs` + protocol), required `LInit`/`LNext` entrypoints, `model.toml` parsing, and configured invariant name resolution.
+  - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
 - [ ] Proposed flags:
   - `--input` (protocol spec file)
   - `--types` (types file; optional if inferable)
