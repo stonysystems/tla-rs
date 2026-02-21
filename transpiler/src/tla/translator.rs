@@ -1323,19 +1323,22 @@ impl ModuleTranslator {
         let fn_name = self.config.spec_fn_name(&op.name);
 
         // Detect if this is an action (uses primed variables, directly or transitively)
-        let is_action = expr_translator.config.operator_info.get(&op.name)
-            == Some(&OperatorKind::Action);
+        let is_action =
+            expr_translator.config.operator_info.get(&op.name) == Some(&OperatorKind::Action);
 
         // Build parameter list
         let mut params = Vec::new();
+        let mut used_param_names = std::collections::HashSet::<String>::new();
 
         // Add state parameter if operator references variables (directly or transitively)
         let refs_vars = self.operator_refs_variables(&op.body, &[]);
         // Actions always get s and s_ params (they transitively reference state through sub-operators)
         if refs_vars || is_action {
             params.push(format!("s: {}", state_name));
+            used_param_names.insert("s".to_string());
             if is_action {
                 params.push(format!("s_: {}", state_name));
+                used_param_names.insert("s_".to_string());
             }
         }
 
@@ -1344,12 +1347,19 @@ impl ModuleTranslator {
         if !module.constants.is_empty() {
             let const_struct = format!("{}Constants", self.config.spec_prefix);
             params.push(format!("c: {}", const_struct));
+            used_param_names.insert("c".to_string());
         }
 
         // Add operator parameters
         for param in &op.params {
+            // D1 round-trip can emit explicit params named s/s_/c even though those are
+            // already auto-injected; skip duplicates to keep signatures parseable.
+            if used_param_names.contains(&param.name) {
+                continue;
+            }
             let param_type = self.get_param_type(&param.name);
             params.push(format!("{}: {}", param.name, param_type));
+            used_param_names.insert(param.name.clone());
         }
 
         // Determine return type
@@ -2464,6 +2474,68 @@ mod tests {
         assert!(
             result.contains("s_.count"),
             "Expected s_.count in output, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_translate_skips_duplicate_reserved_params_in_init_signature() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Init(s, c) == x = N
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("pub open spec fn LInit(s: LState, c: LConstants) -> bool"),
+            "Init signature should include exactly one s and one c, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("LInit(s: LState, c: LConstants, s: int"),
+            "Init signature should not include duplicate s param, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("c: LConstants, c: int"),
+            "Init signature should not include duplicate c param, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_translate_skips_duplicate_reserved_params_in_action_signature() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Step(s, s_, c, delta) == x' = x + delta
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains(
+                "pub open spec fn LStep(s: LState, s_: LState, c: LConstants, delta: int) -> bool"
+            ),
+            "Action signature should retain only non-reserved explicit params, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("s_: LState, c: LConstants, s: int"),
+            "Action signature should not include duplicate s param, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("s_: LState, c: LConstants, s_: int"),
+            "Action signature should not include duplicate s_ param, got:\n{}",
             result
         );
     }
