@@ -49,7 +49,7 @@ pub open spec fn LComputeSuccessorView(c: LConstants, b: int) -> LRecord {
 }
 
 /// BoundRequestSequence operator
-pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int) -> int {
+pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int) -> Seq<int> {
     if (((arbitrary::<int>() == 9267933094int) && (0 <= arbitrary::<int>())) && (arbitrary::<int>() < (s.len() as int))) { s.subrange(0 - 1, arbitrary()) } else { s }
 }
 

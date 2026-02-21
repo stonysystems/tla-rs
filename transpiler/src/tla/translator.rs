@@ -2471,7 +2471,14 @@ impl ModuleTranslator {
         }
 
         // Determine return type
-        let return_type = self.get_operator_return_type(&op.name);
+        let mut return_type = self.get_operator_return_type(&op.name);
+        if module.variables.is_empty() && return_type == "int" {
+            if let Some(inferred_return_ty) =
+                self.infer_generated_d1_return_type_from_expr(&op.body, &identifier_type_hints)
+            {
+                return_type = inferred_return_ty;
+            }
+        }
 
         // Generate function signature
         output.push_str(&format!("/// {} operator\n", op.name));
@@ -3093,6 +3100,60 @@ impl ModuleTranslator {
         }
         // Default: most operators return bool
         "bool".to_string()
+    }
+
+    fn infer_generated_d1_return_type_from_expr(
+        &self,
+        expr: &TlaExpr,
+        identifier_type_hints: &std::collections::HashMap<String, String>,
+    ) -> Option<String> {
+        match expr {
+            TlaExpr::Ident(name) => identifier_type_hints.get(name).cloned(),
+            TlaExpr::Prime(inner)
+            | TlaExpr::Enabled(inner)
+            | TlaExpr::Always(inner)
+            | TlaExpr::Eventually(inner) => {
+                self.infer_generated_d1_return_type_from_expr(inner, identifier_type_hints)
+            }
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                let lhs =
+                    self.infer_generated_d1_return_type_from_expr(then_expr, identifier_type_hints);
+                let rhs =
+                    self.infer_generated_d1_return_type_from_expr(else_expr, identifier_type_hints);
+                if lhs.is_some() && lhs == rhs {
+                    lhs
+                } else {
+                    None
+                }
+            }
+            TlaExpr::LetIn { body, .. } => {
+                self.infer_generated_d1_return_type_from_expr(body, identifier_type_hints)
+            }
+            TlaExpr::SetEnum(_) => Some("Set<int>".to_string()),
+            TlaExpr::Tuple(_) => Some("Seq<int>".to_string()),
+            TlaExpr::BinOp { op, .. } => match op {
+                TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus => {
+                    Some("Set<int>".to_string())
+                }
+                _ => None,
+            },
+            TlaExpr::OpApply { op, .. } => match op.as_ref() {
+                TlaExpr::Ident(name) => match name.as_str() {
+                    "SubSeq" | "Append" | "Tail" | "drop_first" | "drop_last" | "skip"
+                    | "update" => Some("Seq<int>".to_string()),
+                    "DOMAIN" | "SetUnion" | "SetIntersect" | "SetMinus" => {
+                        Some("Set<int>".to_string())
+                    }
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }
 
@@ -4972,6 +5033,29 @@ mod tests {
             !result.contains("LBoundRequestSequence(s: LState"),
             "Parameterized helper should not inject state param for explicit local s, got:\n{}",
             result
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_return_type_uses_seq_shape_for_bound_request_sequence() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT UpperBound
+            BoundRequestSequence(s, lengthBound) ==
+                IF 0 <= lengthBound /\ lengthBound < Len(s)
+                THEN SubSeq(s, 0, lengthBound)
+                ELSE s
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains(
+                "pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int) -> Seq<int>"
+            ),
+            "Expected Seq<int> return type for BoundRequestSequence shape, got:\n{}",
+            output
         );
     }
 

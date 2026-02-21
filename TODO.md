@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `15/33` files compile with Verus after `16.8.3d-2d-10`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `15/33` files compile with Verus after `16.8.3d-2d-11`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5408,6 +5408,15 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-10`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
           - Net effect: residual method-on-scalar class eliminated (`E0599: 1 -> 0`) with one surfaced type-mismatch first-error (`E0308: 0 -> 1`); compile pass count unchanged (`15/33`).
+        - [x] **16.8.3d-2d-11** Normalize generated-D1 helper return type shape for obvious seq/set-producing expression forms to eliminate residual `E0308` mismatch in `RSL/Election.rs`.
+          - Scope/LOC check: implemented as a focused `ModuleTranslator` return-type refinement (generated-D1 only) plus targeted regression and baseline/docs refresh; stayed under the <500 LOC target.
+          - Added generated-D1 expression-shape return-type inference (`infer_generated_d1_return_type_from_expr`) for non-scalar forms (`IF` with matching branch shapes, `SubSeq`/`Append`/`skip`/`update` family, set constructors/ops, tuple-as-seq).
+          - Applied this refinement only when inferred operator return type is fallback `int` in generated-D1 context, preserving existing typed results from `TypeEnv`.
+          - Added regression:
+            - `test_generated_d1_return_type_uses_seq_shape_for_bound_request_sequence`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-11`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
+          - Net effect: residual mismatched-type first-error class eliminated (`E0308: 1 -> 0`) with class shift to inference (`E0282: 17 -> 18`); compile pass count unchanged (`15/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
