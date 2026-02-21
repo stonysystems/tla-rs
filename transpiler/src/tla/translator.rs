@@ -402,6 +402,18 @@ impl<'a> ExprTranslator<'a> {
         format!("arbitrary::<{}>()", trimmed)
     }
 
+    fn identifier_type_hint<'b>(&'b self, name: &str) -> Option<&'b str> {
+        self.config.identifier_type_hints.get(name).map(|s| s.as_str())
+    }
+
+    fn type_hint_is_bool(hint: &str) -> bool {
+        hint.trim() == "bool"
+    }
+
+    fn type_hint_is_numeric(hint: &str) -> bool {
+        matches!(hint.trim(), "int" | "nat")
+    }
+
     fn constant_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
         let field_name = match expr {
             TlaExpr::Ident(name) => {
@@ -448,7 +460,13 @@ impl<'a> ExprTranslator<'a> {
     fn expr_is_boolish(&self, expr: &TlaExpr) -> bool {
         match expr {
             TlaExpr::Bool(_) => true,
-            TlaExpr::Ident(name) => name == "TRUE" || name == "FALSE",
+            TlaExpr::Ident(name) => {
+                name == "TRUE"
+                    || name == "FALSE"
+                    || self
+                        .identifier_type_hint(name)
+                        .is_some_and(Self::type_hint_is_bool)
+            }
             TlaExpr::UnaryOp {
                 op: TlaUnaryOp::Not, ..
             } => true,
@@ -484,13 +502,18 @@ impl<'a> ExprTranslator<'a> {
                 ..
             } => self.expr_is_boolish(then_expr) && self.expr_is_boolish(else_expr),
             TlaExpr::LetIn { body, .. } => self.expr_is_boolish(body),
-            _ => false,
+            _ => self
+                .constant_field_type_hint(expr)
+                .is_some_and(Self::type_hint_is_bool),
         }
     }
 
     fn expr_is_numericish(&self, expr: &TlaExpr) -> bool {
         match expr {
             TlaExpr::Number(_) => true,
+            TlaExpr::Ident(name) => self
+                .identifier_type_hint(name)
+                .is_some_and(Self::type_hint_is_numeric),
             TlaExpr::UnaryOp {
                 op: TlaUnaryOp::Neg, ..
             } => true,
@@ -510,7 +533,9 @@ impl<'a> ExprTranslator<'a> {
                 ..
             } => self.expr_is_numericish(then_expr) && self.expr_is_numericish(else_expr),
             TlaExpr::LetIn { body, .. } => self.expr_is_numericish(body),
-            _ => false,
+            _ => self
+                .constant_field_type_hint(expr)
+                .is_some_and(Self::type_hint_is_numeric),
         }
     }
 
@@ -2885,6 +2910,12 @@ impl ModuleTranslator {
                             if inferred == "()" && usage_hint == Some("Seq<int>") {
                                 return "Seq<int>".to_string();
                             }
+                            if inferred.starts_with('(')
+                                && inferred.ends_with(')')
+                                && usage_hint == Some("Seq<int>")
+                            {
+                                return "Seq<int>".to_string();
+                            }
                         }
                         return inferred;
                     }
@@ -4556,6 +4587,21 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_if_with_mixed_typed_identifier_branches_falls_back_to_arbitrary() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("n".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::IfThenElse {
+            cond: Box::new(TlaExpr::ident("cond")),
+            then_expr: Box::new(TlaExpr::ident("n")),
+            else_expr: Box::new(TlaExpr::bool(false)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
     fn test_non_generated_context_if_with_mixed_bool_numeric_branches_is_preserved() {
         let mut config = TranslatorConfig::spec();
         config.variable_names.insert("known_state".to_string());
@@ -5801,6 +5847,31 @@ mod tests {
         env.set_operator(
             "Foo",
             TlaType::function(TlaType::tuple(vec![TlaType::tuple(vec![])]), TlaType::Bool),
+        );
+        translator.type_env = Some(env);
+
+        assert_eq!(
+            translator.get_param_type(&op, 0, "sent_packets", true),
+            "Seq<int>"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_overrides_inferred_singleton_tuple_for_seq_equality_usage() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(
+                TlaBinOp::Eq,
+                TlaExpr::ident("sent_packets"),
+                TlaExpr::Tuple(vec![TlaExpr::number(1)]),
+            ),
+        )
+        .with_params(vec![crate::tla::ast::TlaParam::new("sent_packets")]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator(
+            "Foo",
+            TlaType::function(TlaType::tuple(vec![TlaType::tuple(vec![TlaType::Int])]), TlaType::Bool),
         );
         translator.type_env = Some(env);
 

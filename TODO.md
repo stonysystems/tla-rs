@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `18/33` files compile with Verus after `16.8.3d-2d-14`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `21/33` files compile with Verus after `16.8.3d-2d-15`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5458,6 +5458,16 @@ transpiler/tla_test_workspace/
           - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-14`: `18/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `4` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `11` `E0282`.
           - Net effect: compile passes improved (`15 -> 18`) and inference blockers reduced (`E0282: 18 -> 11`) with surfaced concrete mismatched-type blockers (`E0308: 0 -> 4`) for follow-up leaf work.
+        - [x] **16.8.3d-2d-15** Eliminate residual generated-D1 mixed-branch `E0308` blockers by honoring typed identifier hints in `IF` branch-shape fallback and sequence-usage overrides for tuple-inferred parameters.
+          - Scope/LOC check: implemented as focused `ExprTranslator`/`ModuleTranslator` typing-shape refinements + targeted regressions + workspace re-generation; stayed under the <500 LOC leaf target.
+          - Updated generated-D1 bool/numeric branch-shape detection to consult identifier/constant type hints (`int`/`nat`/`bool`) so mixed typed identifier branches collapse to `arbitrary()` before Verus sees incompatible `if/else` types.
+          - Extended generated-D1 parameter type override to treat tuple-shaped inferred placeholders as `Seq<int>` when usage evidence already classifies them as sequence equality.
+          - Added regressions:
+            - `test_generated_d1_if_with_mixed_typed_identifier_branches_falls_back_to_arbitrary`
+            - `test_generated_d1_param_type_overrides_inferred_singleton_tuple_for_seq_equality_usage`
+          - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-15`: `21/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `12` `E0282`.
+          - Net effect: compile passes improved (`18 -> 21`) and mismatched-type first-error class eliminated (`E0308: 4 -> 0`) with expected concentration in inference-only blockers (`E0282: 11 -> 12`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

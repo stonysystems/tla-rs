@@ -33,8 +33,8 @@ pub open spec fn LInit(c: LConstants, s: int) -> bool {
 }
 
 /// PrePrepare operator
-pub open spec fn LPrePrepare(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: (LRecord)) -> bool {
-    ((((((((((((((((arbitrary::<int>() == 3632816197int) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() >= arbitrary::<int>())) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary::<int>() == 6989001116int)) && (arbitrary::<int>() == digest)) && (Set::<int>::empty() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<(LRecord)>()))
+pub open spec fn LPrePrepare(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: Seq<int>) -> bool {
+    ((((((((((((((((arbitrary::<int>() == 3632816197int) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() >= arbitrary::<int>())) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary::<int>() == 6989001116int)) && (arbitrary::<int>() == digest)) && (Set::<int>::empty() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<Seq<int>>()))
 }
 
 /// ReceivePrePrepare operator

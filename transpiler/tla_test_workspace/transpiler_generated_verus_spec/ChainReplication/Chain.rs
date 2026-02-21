@@ -36,8 +36,8 @@ pub open spec fn LHeadReceiveWrite(s: LState, s_: LState, c: LConstants, value: 
 }
 
 /// ForwardToSuccessor operator
-pub open spec fn LForwardToSuccessor(s: LState, s_: LState, c: LConstants, value: int, sent_packets: (LRecord)) -> bool {
-    ((arbitrary::<int>() == 3419909347int) || (((((((((((((((arbitrary::<int>() == 9863251288int) && (arbitrary::<bool>() == true)) && Set::<int>::empty().contains(value)) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<(LRecord)>())))
+pub open spec fn LForwardToSuccessor(s: LState, s_: LState, c: LConstants, value: int, sent_packets: Seq<int>) -> bool {
+    ((arbitrary::<int>() == 3419909347int) || (((((((((((((((arbitrary::<int>() == 9863251288int) && (arbitrary::<bool>() == true)) && Set::<int>::empty().contains(value)) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<Seq<int>>())))
 }
 
 /// ReceiveUpdate operator
@@ -46,8 +46,8 @@ pub open spec fn LReceiveUpdate(s: LState, s_: LState, c: LConstants, value: int
 }
 
 /// TailCommit operator
-pub open spec fn LTailCommit(s: LState, s_: LState, c: LConstants, value: int, sent_packets: (LRecord)) -> bool {
-    ((((((((((((((arbitrary::<int>() == 8736718595int) && (arbitrary::<bool>() == true)) && Set::<int>::empty().contains(value)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<int>() == value)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<(LRecord)>()))
+pub open spec fn LTailCommit(s: LState, s_: LState, c: LConstants, value: int, sent_packets: Seq<int>) -> bool {
+    ((((((((((((((arbitrary::<int>() == 8736718595int) && (arbitrary::<bool>() == true)) && Set::<int>::empty().contains(value)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<int>() == value)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<Seq<int>>()))
 }
 
 /// ReceiveAck operator

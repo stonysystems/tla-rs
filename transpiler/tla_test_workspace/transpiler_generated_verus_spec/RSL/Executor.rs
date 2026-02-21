@@ -123,10 +123,10 @@ pub open spec fn LExecutorProcessAppStateSupply(s: LState, s_: LState, c: LConst
 }
 
 /// ExecutorProcessAppStateRequest operator
-pub open spec fn LExecutorProcessAppStateRequest(s: LState, s_: LState, c: LConstants, inp: int, sent_packets: (LRecord)) -> bool {
+pub open spec fn LExecutorProcessAppStateRequest(s: LState, s_: LState, c: LConstants, inp: int, sent_packets: Seq<int>) -> bool {
     {
     let m: int = arbitrary();
-    if (((Set::<int>::empty().contains(arbitrary::<int>()) && arbitrary()) && (arbitrary::<int>() >= arbitrary::<int>())) && arbitrary()) { ((s_ == s) && (sent_packets == arbitrary::<(LRecord)>())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
+    if (((Set::<int>::empty().contains(arbitrary::<int>()) && arbitrary()) && (arbitrary::<int>() >= arbitrary::<int>())) && arbitrary()) { ((s_ == s) && (sent_packets == arbitrary::<Seq<int>>())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 }
 
@@ -136,10 +136,10 @@ pub open spec fn LExecutorProcessStartingPhase2(s: LState, s_: LState, c: LConst
 }
 
 /// ExecutorProcessRequest operator
-pub open spec fn LExecutorProcessRequest(c: LConstants, s: int, inp: int, sent_packets: (LRecord)) -> bool {
+pub open spec fn LExecutorProcessRequest(c: LConstants, s: int, inp: int, sent_packets: Seq<int>) -> bool {
     if ((arbitrary() == arbitrary::<Seq<int>>()[arbitrary()].seqno) && arbitrary()) { {
     let r = arbitrary::<Seq<int>>()[arbitrary()];
-    (sent_packets == arbitrary::<(LRecord)>())
+    (sent_packets == arbitrary::<Seq<int>>())
 } } else { (sent_packets == Seq::<int>::empty()) }
 }
 

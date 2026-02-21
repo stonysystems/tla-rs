@@ -3216,13 +3216,13 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-14:
-    // Generated-D1 Eq/Neq identifier-hint coercion now applies concrete
-    // scalar/custom hints for untyped placeholders, with sequence-equality
-    // parameter hinting for tuple-literal peers.
+    // Baseline after 16.8.3d-2d-15:
+    // Generated-D1 branch-shape normalization now honors typed identifier
+    // hints in mixed if-branches, and tuple-inferred parameter signatures
+    // can be overridden to Seq<int> when usage evidence is sequence equality.
     assert_eq!(
-        passed, 18,
-        "Expected exactly eighteen D1 files to compile at current baseline; pass files: {:?}",
+        passed, 21,
+        "Expected exactly twenty-one D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3242,8 +3242,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 4,
-        "Expected 4 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 0,
+        "Expected 0 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3262,8 +3262,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 11,
-        "Expected 11 type-inference (E0282) failures at baseline"
+        cat_e0282, 12,
+        "Expected 12 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

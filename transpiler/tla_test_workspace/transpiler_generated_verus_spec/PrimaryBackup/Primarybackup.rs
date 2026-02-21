@@ -36,8 +36,8 @@ pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int, s
 }
 
 /// PrimarySendReplicate operator
-pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sent_packets: (LRecord)) -> bool {
-    ((((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<bool>() == true)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<(LRecord)>()))
+pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
+    ((((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<bool>() == true)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == arbitrary::<Seq<int>>()))
 }
 
 /// BackupReceiveReplicate operator
@@ -46,7 +46,7 @@ pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants, v
 }
 
 /// BackupSendAck operator
-pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants, sent_packets: (int)) -> bool {
+pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
     (((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![7544150754int]))
 }
 
