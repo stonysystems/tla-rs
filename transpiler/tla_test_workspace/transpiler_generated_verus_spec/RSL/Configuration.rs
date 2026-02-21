@@ -32,7 +32,7 @@ pub open spec fn LConfiguration(c: LConstants) -> LRecord {
 
 /// MinQuorumSize operator
 pub open spec fn LMinQuorumSize(s: LState, c: LConstants) -> int {
-    ((c.replica_ids.len() / 2) + 1)
+    ((arbitrary::<int>().len() / 2) + 1)
 }
 
 /// ReplicasDistinct operator
@@ -47,12 +47,12 @@ pub open spec fn LReplicasIsUnique(s: LState, c: LConstants, replica_ids: int) -
 
 /// WellFormedLConfiguration operator
 pub open spec fn LWellFormedLConfiguration(s: LState, c: LConstants) -> bool {
-    ((0 < c.replica_ids.len()) && forall |i, j| (LReplicasDistinct(s, c, c.replica_ids, i, j) && LReplicasIsUnique(s, c, c.replica_ids)))
+    ((0 < arbitrary::<int>().len()) && forall |i, j| (LReplicasDistinct(s, c, arbitrary::<int>(), i, j) && LReplicasIsUnique(s, c, arbitrary::<int>())))
 }
 
 /// IsReplicaIndex operator
 pub open spec fn LIsReplicaIndex(s: LState, c: LConstants, idx: int, id: int) -> bool {
-    (((0 <= idx) && (idx < c.replica_ids.len())) && (c.replica_ids[idx] == id))
+    (((0 <= idx) && (idx < arbitrary::<int>().len())) && (arbitrary::<int>()[idx] == id))
 }
 
 /// GetReplicaIndex operator

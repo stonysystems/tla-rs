@@ -3154,6 +3154,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     let mut cat_e0599 = 0; // method missing on inferred scalar
     let mut cat_e0308 = 0; // mismatched types
     let mut cat_e0618 = 0; // attempted call on non-function
+    let mut cat_e0277 = 0; // trait bound failure
+    let mut cat_e0061 = 0; // wrong number of arguments
+    let mut cat_e0282 = 0; // type annotations needed
     let mut pass_files: Vec<String> = Vec::new();
     let mut other_fails: Vec<String> = Vec::new();
 
@@ -3187,6 +3190,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
             Some("E0599") => cat_e0599 += 1,
             Some("E0308") => cat_e0308 += 1,
             Some("E0618") => cat_e0618 += 1,
+            Some("E0277") => cat_e0277 += 1,
+            Some("E0061") => cat_e0061 += 1,
+            Some("E0282") => cat_e0282 += 1,
             Some(code) => {
                 other_fails.push(format!("{rel}: error[{code}]"));
             }
@@ -3205,8 +3211,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3c-3 constructor/value call-shape normalization:
-    // E0423 constructor/type-value misuse class is eliminated in D1 first-error categories.
+    // Baseline after 16.8.3d-1 reserved-root record-access normalization:
+    // E0609 drops substantially while remaining blockers shift toward method/typing/arity classes.
     assert_eq!(
         passed, 2,
         "Expected exactly two D1 files to compile at current baseline; pass files: {:?}",
@@ -3221,12 +3227,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 value/type-shape (E0423) failures at baseline"
     );
     assert_eq!(
-        cat_e0609, 14,
-        "Expected 14 unknown-field (E0609) failures at baseline"
+        cat_e0609, 5,
+        "Expected 5 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 12,
-        "Expected 12 method-missing (E0599) failures at baseline"
+        cat_e0599, 17,
+        "Expected 17 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
         cat_e0308, 5,
@@ -3235,6 +3241,18 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     assert_eq!(
         cat_e0618, 0,
         "Expected 0 call-non-function (E0618) failures at baseline"
+    );
+    assert_eq!(
+        cat_e0277, 1,
+        "Expected 1 trait-bound (E0277) failure at baseline"
+    );
+    assert_eq!(
+        cat_e0061, 1,
+        "Expected 1 wrong-arity (E0061) failure at baseline"
+    );
+    assert_eq!(
+        cat_e0282, 2,
+        "Expected 2 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),
@@ -3245,7 +3263,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     eprintln!(
         "D1 Verus compile baseline: {passed}/{total} pass, \
 {cat_e0425} E0425, {cat_e0423} E0423, {cat_e0609} E0609, \
-{cat_e0599} E0599, {cat_e0308} E0308, {cat_e0618} E0618"
+{cat_e0599} E0599, {cat_e0308} E0308, {cat_e0618} E0618, \
+{cat_e0277} E0277, {cat_e0061} E0061, {cat_e0282} E0282"
     );
 }
 

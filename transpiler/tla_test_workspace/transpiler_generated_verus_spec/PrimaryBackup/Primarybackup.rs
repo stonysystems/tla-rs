@@ -27,47 +27,47 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    ((((((((((s.role.tag == 6049598361int) && (s.log_length == 0)) && (s.last_value == 0)) && (s.has_pending == false)) && (s.pending_value == 0)) && (s.acked == true)) && (s.backup_log_length == 0)) && (s.backup_last_value == 0)) && (s.backup_synced == true)) && (s.view == 0))
+    ((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == 0))
 }
 
 /// PrimaryWrite operator
 pub open spec fn LPrimaryWrite(s: LState, c: LConstants, s_: int, val: int, sent_packets: int) -> bool {
-    (((((((((((((((s.role.tag == 6049598361int) && (s.acked == true)) && (s.has_pending == false)) && (s.log_length < c.max_log_len)) && (s_.has_pending == true)) && (s_.pending_value == val)) && (s_.acked == false)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![]))
+    (((((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == val)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// PrimarySendReplicate operator
 pub open spec fn LPrimarySendReplicate(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((((((((s.role.tag == 6049598361int) && (s.has_pending == true)) && (s.acked == false)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.has_pending == s.has_pending)) && (s_.pending_value == s.pending_value)) && (s_.acked == s.acked)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![LRecord { val: s.pending_value }]))
+    ((((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![LRecord { val: arbitrary::<int>() }]))
 }
 
 /// BackupReceiveReplicate operator
 pub open spec fn LBackupReceiveReplicate(s: LState, c: LConstants, s_: int, val: int, sent_packets: int) -> bool {
-    ((((((((((((s.role.tag == 6049598361int) && (s_.backup_log_length == (s.backup_log_length + 1))) && (s_.backup_last_value == val)) && (s_.backup_synced == true)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.has_pending == s.has_pending)) && (s_.pending_value == s.pending_value)) && (s_.acked == s.acked)) && (s_.view == s.view)) && (sent_packets == seq![]))
+    ((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<int>() == val)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// BackupSendAck operator
 pub open spec fn LBackupSendAck(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((((((((s.role.tag == 6049598361int) && (s.backup_synced == true)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.has_pending == s.has_pending)) && (s_.pending_value == s.pending_value)) && (s_.acked == s.acked)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![7544150754int]))
+    (((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![7544150754int]))
 }
 
 /// PrimaryReceiveAck operator
 pub open spec fn LPrimaryReceiveAck(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((((((((s.role.tag == 6049598361int) && (s.has_pending == true)) && (s_.acked == true)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.has_pending == s.has_pending)) && (s_.pending_value == s.pending_value)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![]))
+    (((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// PrimaryCommit operator
 pub open spec fn LPrimaryCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((((((((s.role.tag == 6049598361int) && (s.acked == true)) && (s.has_pending == true)) && (s_.log_length == (s.log_length + 1))) && (s_.last_value == s.pending_value)) && (s_.has_pending == false)) && (s_.pending_value == 0)) && (s_.acked == true)) && (s_.role == s.role)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![]))
+    ((((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// PrimaryFail operator
 pub open spec fn LPrimaryFail(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((((((s.role.tag == 6049598361int) && (s_.role.tag == 1048442360int)) && (s_.has_pending == false)) && (s_.pending_value == 0)) && (s_.acked == true)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == false)) && (s_.view == s.view)) && (sent_packets == seq![]))
+    ((((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == 1048442360int)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// BackupPromote operator
 pub open spec fn LBackupPromote(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((((((s.role.tag == 1048442360int) && (s_.role.tag == 6049598361int)) && (s_.log_length == s.backup_log_length)) && (s_.last_value == s.backup_last_value)) && (s_.has_pending == false)) && (s_.pending_value == 0)) && (s_.acked == true)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == true)) && (s_.view == (s.view + 1))) && (sent_packets == seq![]))
+    ((((((((((((arbitrary::<int>() == 1048442360int) && (arbitrary::<int>() == 6049598361int)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (sent_packets == seq![]))
 }
 
 /// Next operator

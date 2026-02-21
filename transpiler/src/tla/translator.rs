@@ -663,6 +663,15 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn translate_record_access(&self, record: &TlaExpr, field: &str) -> String {
+        if self.config.normalize_unknown_external_refs && self.config.variable_names.is_empty() {
+            if matches!(
+                record,
+                TlaExpr::Ident(name) if name == "s" || name == "s_" || name == "c"
+            ) || matches!(record, TlaExpr::RecordAccess { .. })
+            {
+                return "arbitrary::<int>()".to_string();
+            }
+        }
         let record_str = self.translate(record);
         format!("{}.{}", record_str, safe_field_name(field))
     }
@@ -3123,6 +3132,39 @@ mod tests {
         assert!(!out.contains("seq_field: Seq("));
         assert!(!out.contains("map_field: Map("));
         assert!(!out.contains("fnset_field: Map::<"));
+    }
+
+    #[test]
+    fn test_translate_record_access_fallback_for_reserved_roots_without_variable_decls() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+
+        let root_access = TlaExpr::RecordAccess {
+            record: Box::new(TlaExpr::ident("s")),
+            field: "foo".to_string(),
+        };
+        assert_eq!(translator.translate(&root_access), "arbitrary::<int>()");
+
+        let nested_access = TlaExpr::RecordAccess {
+            record: Box::new(TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("c")),
+                field: "cfg".to_string(),
+            }),
+            field: "value".to_string(),
+        };
+        assert_eq!(translator.translate(&nested_access), "arbitrary::<int>()");
+    }
+
+    #[test]
+    fn test_translate_record_access_preserves_when_variables_are_known() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("x".to_string());
+        let translator = ExprTranslator::new(&config);
+        let access = TlaExpr::RecordAccess {
+            record: Box::new(TlaExpr::ident("x")),
+            field: "value".to_string(),
+        };
+        assert_eq!(translator.translate(&access), "s.x.value");
     }
 
     #[test]

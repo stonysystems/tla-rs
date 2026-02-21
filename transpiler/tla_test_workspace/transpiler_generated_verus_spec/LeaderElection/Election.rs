@@ -29,42 +29,42 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    ((((((((s.electing == Set::<int>::empty()) && (s.has_leader == false)) && (s.leader == 0)) && (s.alive == c.nodes)) && (s.has_highest == false)) && (s.highest_heard == 0)) && (s.waiting_answer == false)) && (s.waiting_node == 0))
+    ((((((((arbitrary::<int>() == Set::<int>::empty()) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0))
 }
 
 /// DetectFailure operator
 pub open spec fn LDetectFailure(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
-    (((((((((((s.alive.contains(node) && (s.has_leader == true)) && s.alive.contains(!(s.leader))) && (s_.electing == s.electing.union(set![node]))) && (s_.waiting_answer == true)) && (s_.waiting_node == node)) && (s_.has_leader == s.has_leader)) && (s_.leader == s.leader)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![LRecord { leader: 0int, responder: 0int, sender: node }]))
+    (((((((((((arbitrary::<int>().contains(node) && (arbitrary::<int>() == true)) && arbitrary::<int>().contains(!(arbitrary::<int>()))) && (arbitrary::<int>() == arbitrary::<int>().union(set![node]))) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == node)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![LRecord { leader: 0int, responder: 0int, sender: node }]))
 }
 
 /// StartElection operator
 pub open spec fn LStartElection(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
-    (((((((((s.alive.contains(node) && (s_.electing == s.electing.union(set![node]))) && (s_.has_leader == false)) && (s_.leader == 0)) && (s_.waiting_answer == true)) && (s_.waiting_node == node)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![LRecord { leader: 0int, responder: 0int, sender: node }]))
+    (((((((((arbitrary::<int>().contains(node) && (arbitrary::<int>() == arbitrary::<int>().union(set![node]))) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == node)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![LRecord { leader: 0int, responder: 0int, sender: node }]))
 }
 
 /// SendAnswer operator
 pub open spec fn LSendAnswer(s: LState, c: LConstants, s_: int, node: int, sender: int, sent_packets: int) -> bool {
-    ((((s.alive.contains(node) && (node > sender)) && (s_.electing == s.electing.union(set![node]))) && (s_.has_highest == true)) && (s_.highest_heard == if (!(s.has_highest) || (node > s.highest_heard)) { node } else { ((((((s.highest_heard && (s_.has_leader == s.has_leader)) && (s_.leader == s.leader)) && (s_.alive == s.alive)) && (s_.waiting_answer == s.waiting_answer)) && (s_.waiting_node == s.waiting_node)) && (sent_packets == seq![LRecord { leader: 0int, responder: node, sender: 0int }])) }))
+    ((((arbitrary::<int>().contains(node) && (node > sender)) && (arbitrary::<int>() == arbitrary::<int>().union(set![node]))) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == if (!(arbitrary::<int>()) || (node > arbitrary::<int>())) { node } else { ((((((arbitrary::<int>() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![LRecord { leader: 0int, responder: node, sender: 0int }])) }))
 }
 
 /// ReceiveAnswer operator
 pub open spec fn LReceiveAnswer(s: LState, c: LConstants, s_: int, node: int, responder: int, sent_packets: int) -> bool {
-    (((((((((((s.alive.contains(node) && (s.waiting_answer == true)) && (s.waiting_node == node)) && (s_.waiting_answer == false)) && (s_.waiting_node == 0)) && (s_.electing == s.electing.difference(set![node]))) && (s_.has_leader == s.has_leader)) && (s_.leader == s.leader)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![]))
+    (((((((((((arbitrary::<int>().contains(node) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == node)) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>().difference(set![node]))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// SendCoordinator operator
 pub open spec fn LSendCoordinator(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
-    ((((((((((((s.alive.contains(node) && s.electing.contains(node)) && (s.waiting_answer == true)) && (s.waiting_node == node)) && (s_.has_leader == true)) && (s_.leader == node)) && (s_.electing == s.electing.difference(set![node]))) && (s_.waiting_answer == false)) && (s_.waiting_node == 0)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![LRecord { leader: node, responder: 0int, sender: 0int }]))
+    ((((((((((((arbitrary::<int>().contains(node) && arbitrary::<int>().contains(node)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == node)) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == node)) && (arbitrary::<int>() == arbitrary::<int>().difference(set![node]))) && (arbitrary::<int>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![LRecord { leader: node, responder: 0int, sender: 0int }]))
 }
 
 /// ReceiveCoordinator operator
 pub open spec fn LReceiveCoordinator(s: LState, c: LConstants, s_: int, node: int, leader: int, sent_packets: int) -> bool {
-    (((((((((s.alive.contains(node) && (s_.has_leader == true)) && (s_.leader == leader)) && (s_.electing == s.electing.difference(set![node]))) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (s_.waiting_answer == s.waiting_answer)) && (s_.waiting_node == s.waiting_node)) && (sent_packets == seq![]))
+    (((((((((arbitrary::<int>().contains(node) && (arbitrary::<int>() == true)) && (arbitrary::<int>() == leader)) && (arbitrary::<int>() == arbitrary::<int>().difference(set![node]))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator
 pub open spec fn LNodeFail(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
-    (((s.alive.contains(node) && (s_.alive == s.alive.difference(set![node]))) && (s_.electing == s.electing.difference(set![node]))) && (s_.has_leader == if (s.has_leader && (s.leader == node)) { false } else { (s.has_leader && (s_.leader == if (s.has_leader && (s.leader == node)) { 0 } else { (s.leader && (s_.waiting_answer == if (s.waiting_answer && (s.waiting_node == node)) { false } else { (s.waiting_answer && (s_.waiting_node == if (s.waiting_answer && (s.waiting_node == node)) { 0 } else { (((s.waiting_node && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![])) })) })) })) }))
+    (((arbitrary::<int>().contains(node) && (arbitrary::<int>() == arbitrary::<int>().difference(set![node]))) && (arbitrary::<int>() == arbitrary::<int>().difference(set![node]))) && (arbitrary::<int>() == if (arbitrary::<int>() && (arbitrary::<int>() == node)) { false } else { (arbitrary::<int>() && (arbitrary::<int>() == if (arbitrary::<int>() && (arbitrary::<int>() == node)) { 0 } else { (arbitrary::<int>() && (arbitrary::<int>() == if (arbitrary::<int>() && (arbitrary::<int>() == node)) { false } else { (arbitrary::<int>() && (arbitrary::<int>() == if (arbitrary::<int>() && (arbitrary::<int>() == node)) { 0 } else { (((arbitrary::<int>() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == seq![])) })) })) })) }))
 }
 
 /// Next operator

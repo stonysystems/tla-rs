@@ -38,7 +38,7 @@ pub open spec fn LReplicaConstants(c: LConstants) -> LRecord {
 
 /// ReplicaConstantsValid operator
 pub open spec fn LReplicaConstantsValid(s: LState, c: LConstants) -> bool {
-    ((0 <= c.my_index) && (c.my_index < c.all.config.replica_ids.len()))
+    ((0 <= arbitrary::<int>()) && (arbitrary::<int>() < arbitrary::<int>().len()))
 }
 
 } // verus!

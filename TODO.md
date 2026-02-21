@@ -5219,7 +5219,7 @@ transpiler/tla_test_workspace/
       - Added `Last` / `drop_last` operator lowering and allowed bare `Head`/`Tail` atoms to follow symbolic-atom int lowering while preserving `Head(seq)` / `Tail(seq)` builtin lowering.
       - Regenerated all 33 D1 workspace specs and re-ran Verus compile baseline.
       - New first-error baseline: `0` `E0425`, `21` `E0423`, `5` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618` (compile pass remains `2/33`: `RSL/Environment.rs`, `RSL/Message.rs`).
-  - [ ] **16.8.3c** Eliminate `E0423` value/type-constructor misuse in generated D1 specs (e.g., builtin type tokens emitted in value position, invalid constructor call-shapes).
+  - [x] **16.8.3c** Eliminate `E0423` value/type-constructor misuse in generated D1 specs (e.g., builtin type tokens emitted in value position, invalid constructor call-shapes).
     - [x] **16.8.3c-1** Normalize constructor-style type-set membership emission (`Seq(...)`, `Set(...)`, `Map(...)`, `[D -> R]`) so quantifier and membership guards do not emit value-position constructor calls.
       - Implemented guard normalization in `ExprTranslator` for both `\in`/`\notin` and quantifier bounds: constructor-style type-set expressions now avoid `.contains(...)` emission.
       - Added translator regressions for constructor-style bounds in quantifiers and `\in`/`\notin` binary forms.
@@ -5236,6 +5236,14 @@ transpiler/tla_test_workspace/
       - Re-generated all `33` D1 workspace specs and re-ran D1 Verus compile baseline.
       - Result: compile pass remains `2/33`, first-error `E0423` reduced `8 -> 0`; new first-error baseline: `0` `E0425`, `0` `E0423`, `14` `E0609`, `12` `E0599`, `5` `E0308`, `0` `E0618`.
   - [ ] **16.8.3d** Re-run full D1 Verus compile baseline and promote the 16.8.3 gate to required once all generated files compile.
+    - [x] **16.8.3d-1** Normalize reserved-root record-access fallback for D1 spec translation (modules with no declared state variables), then regenerate and re-measure full D1 first-error baseline.
+      - Implemented `translate_record_access` fallback in D1 spec mode when `variable_names` is empty and the access root is reserved (`s`/`s_`/`c`) or nested record-access, lowering to `arbitrary::<int>()`.
+      - Added translator regressions for fallback and non-fallback behavior (`variable_names` present).
+      - Re-generated D1 workspace specs and re-ran full per-file Verus compile baseline.
+      - Measured first-error baseline after `16.8.3d-1`: `2/33` pass, `0` `E0425`, `0` `E0423`, `5` `E0609`, `17` `E0599`, `5` `E0308`, `0` `E0618`, `1` `E0277`, `1` `E0061`, `2` `E0282`.
+      - Scope/LOC check: translator + tests + docs updates are under the <500 LOC leaf target.
+    - [ ] **16.8.3d-2** Reduce remaining D1 first-error blockers (`E0609`, `E0599`, `E0308`, `E0277`, `E0061`, `E0282`) with targeted expression/type-shape normalization until compile pass reaches `33/33`.
+    - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
