@@ -6557,7 +6557,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added bounded integration coverage in `transpiler/tests/integration.rs` using a finite `c.rm` constants domain (`values = ["set:{int:0}"]`) and a small `LTPCMessage` enum subset (`Prepare/Commit/Abort`) to keep the fixture bounded, asserting successful JSON run with non-zero states/transitions.
   - [x] LeaderElection (bounded run)
     - Added bounded integration coverage in `transpiler/tests/integration.rs` with finite `LConstants` domains and `LElectionMessage` payload-variant enum subset; run asserts successful JSON report with non-zero states/transitions.
-  - [ ] Paxos (bounded run)
+  - [x] Paxos (bounded run)
+    - Added bounded integration coverage in `transpiler/tests/integration.rs` with finite `LConstants` (`acceptors`, `quorum_size`, `node_id`) and tiny int/search domains, asserting successful JSON report with non-zero states/transitions.
 - [ ] Add differential checks against existing TLC wrapper outcomes for shared small models.
 - [ ] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
 
