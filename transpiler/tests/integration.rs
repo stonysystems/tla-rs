@@ -3216,13 +3216,13 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-15:
-    // Generated-D1 branch-shape normalization now honors typed identifier
-    // hints in mixed if-branches, and tuple-inferred parameter signatures
-    // can be overridden to Seq<int> when usage evidence is sequence equality.
+    // Baseline after 16.8.3d-2d-16:
+    // Generated-D1 now applies int binders for unbounded/Int/Nat quantifier
+    // vars, bool-coerces untyped negation placeholders, and coerces
+    // record/map-shaped peers for Eq/Domain/FnExcept fallback receivers.
     assert_eq!(
-        passed, 21,
-        "Expected exactly twenty-one D1 files to compile at current baseline; pass files: {:?}",
+        passed, 22,
+        "Expected exactly twenty-two D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3234,16 +3234,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 value/type-shape (E0423) failures at baseline"
     );
     assert_eq!(
-        cat_e0609, 0,
-        "Expected 0 unknown-field (E0609) failures at baseline"
+        cat_e0609, 1,
+        "Expected 1 unknown-field (E0609) failure at baseline"
     );
     assert_eq!(
         cat_e0599, 0,
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 0,
-        "Expected 0 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 7,
+        "Expected 7 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3254,16 +3254,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 call-non-function (E0618) failures at baseline"
     );
     assert_eq!(
-        cat_e0277, 0,
-        "Expected 0 trait-bound (E0277) failures at baseline"
+        cat_e0277, 2,
+        "Expected 2 trait-bound (E0277) failures at baseline"
     );
     assert_eq!(
         cat_e0061, 0,
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 12,
-        "Expected 12 type-inference (E0282) failures at baseline"
+        cat_e0282, 1,
+        "Expected 1 type-inference (E0282) failure at baseline"
     );
     assert!(
         other_fails.is_empty(),

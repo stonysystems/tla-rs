@@ -79,7 +79,7 @@ pub open spec fn LNewRound(s: LState, s_: LState, c: LConstants, sent_packets: S
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    exists |digest, sent_packets| (LPrePrepare(s, s_, c, digest, sent_packets) || exists |view, seq, digest, sent_packets| (LReceivePrePrepare(s, s_, c, view, seq, digest, sent_packets) || exists |sender, sent_packets| (LReceivePrepare(s, s_, c, sender, sent_packets) || exists |sent_packets| (LEnterCommit(s, s_, c, sent_packets) || exists |sender, sent_packets| (LReceiveCommit(s, s_, c, sender, sent_packets) || exists |sent_packets| (LExecuteReply(s, s_, c, sent_packets) || exists |digest, sent_packets| (LCheckpoint(s, s_, c, digest, sent_packets) || exists |sent_packets| (LViewChange(s, s_, c, sent_packets) || exists |sent_packets| LNewRound(s, s_, c, sent_packets)))))))))
+    exists |digest: int, sent_packets| (LPrePrepare(s, s_, c, digest, sent_packets) || exists |view: int, seq: int, digest: int, sent_packets| (LReceivePrePrepare(s, s_, c, view, seq, digest, sent_packets) || exists |sender: int, sent_packets| (LReceivePrepare(s, s_, c, sender, sent_packets) || exists |sent_packets| (LEnterCommit(s, s_, c, sent_packets) || exists |sender: int, sent_packets| (LReceiveCommit(s, s_, c, sender, sent_packets) || exists |sent_packets| (LExecuteReply(s, s_, c, sent_packets) || exists |digest: int, sent_packets| (LCheckpoint(s, s_, c, digest, sent_packets) || exists |sent_packets| (LViewChange(s, s_, c, sent_packets) || exists |sent_packets| LNewRound(s, s_, c, sent_packets)))))))))
 }
 
 } // verus!

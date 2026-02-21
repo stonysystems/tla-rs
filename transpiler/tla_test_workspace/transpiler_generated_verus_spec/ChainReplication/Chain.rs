@@ -72,7 +72,7 @@ pub open spec fn LReconfigure(s: LState, s_: LState, c: LConstants, new_has_pred
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    exists |value, sent_packets| (LHeadReceiveWrite(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LForwardToSuccessor(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LReceiveUpdate(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LTailCommit(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LReceiveAck(s, s_, c, value, sent_packets) || exists |sent_packets| (LClientRead(s, s_, c, sent_packets) || exists |sent_packets| (LNodeFail(s, s_, c, sent_packets) || exists |new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets| LReconfigure(s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets))))))))
+    exists |value: int, sent_packets| (LHeadReceiveWrite(s, s_, c, value, sent_packets) || exists |value: int, sent_packets| (LForwardToSuccessor(s, s_, c, value, sent_packets) || exists |value: int, sent_packets| (LReceiveUpdate(s, s_, c, value, sent_packets) || exists |value: int, sent_packets| (LTailCommit(s, s_, c, value, sent_packets) || exists |value: int, sent_packets| (LReceiveAck(s, s_, c, value, sent_packets) || exists |sent_packets| (LClientRead(s, s_, c, sent_packets) || exists |sent_packets| (LNodeFail(s, s_, c, sent_packets) || exists |new_has_predecessor, new_predecessor: int, new_has_successor, new_successor: int, sent_packets| LReconfigure(s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets))))))))
 }
 
 } // verus!

@@ -61,7 +61,7 @@ pub open spec fn LLearn(s: LState, s_: LState, c: LConstants) -> bool {
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    exists |b| (LSend1a(s, s_, c, b) || exists |b| (LSend1b(s, s_, c, b) || exists |a, ab, av| (LRecvPromise(s, s_, c, a, ab, av) || exists |v| (LSend2a(s, s_, c, v) || exists |b, v| (LSend2b(s, s_, c, b, v) || exists |a| (LRecvAccepted(s, s_, c, a) || LLearn(s, s_, c)))))))
+    exists |b: int| (LSend1a(s, s_, c, b) || exists |b: int| (LSend1b(s, s_, c, b) || exists |a: int, ab: int, av: int| (LRecvPromise(s, s_, c, a, ab, av) || exists |v: int| (LSend2a(s, s_, c, v) || exists |b: int, v: int| (LSend2b(s, s_, c, b, v) || exists |a: int| (LRecvAccepted(s, s_, c, a) || LLearn(s, s_, c)))))))
 }
 
 } // verus!

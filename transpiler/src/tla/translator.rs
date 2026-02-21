@@ -414,6 +414,31 @@ impl<'a> ExprTranslator<'a> {
         matches!(hint.trim(), "int" | "nat")
     }
 
+    fn record_struct_hint_from_expr(&self, expr: &TlaExpr) -> Option<String> {
+        let TlaExpr::Record(fields) = expr else {
+            return None;
+        };
+        let mut sorted_names: Vec<_> = fields.iter().map(|(name, _)| name.as_str()).collect();
+        sorted_names.sort();
+        let key = sorted_names.join(",");
+        self.config.record_structs.get(&key).cloned()
+    }
+
+    fn quantifier_var_binder(&self, var: &TlaQuantBound) -> String {
+        if !self.is_generated_d1_context() {
+            return var.var.clone();
+        }
+        let force_int = match &var.set {
+            None => true,
+            Some(set) => matches!(set, TlaExpr::Ident(name) if name == "Int" || name == "Nat"),
+        };
+        if force_int {
+            format!("{}: int", var.var)
+        } else {
+            var.var.clone()
+        }
+    }
+
     fn constant_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
         let field_name = match expr {
             TlaExpr::Ident(name) => {
@@ -786,6 +811,12 @@ impl<'a> ExprTranslator<'a> {
             if matches!(right, TlaExpr::Tuple(_)) {
                 left_str = self.coerce_untyped_arbitrary_seq_int(&left_str);
             }
+            if let Some(struct_name) = self.record_struct_hint_from_expr(left) {
+                right_str = self.coerce_untyped_arbitrary_from_type_hint(&right_str, &struct_name);
+            }
+            if let Some(struct_name) = self.record_struct_hint_from_expr(right) {
+                left_str = self.coerce_untyped_arbitrary_from_type_hint(&left_str, &struct_name);
+            }
             if matches!(left, TlaExpr::Ident(name) if name == "c")
                 && !self.config.constant_names.is_empty()
                 && right_str == "arbitrary()"
@@ -993,7 +1024,15 @@ impl<'a> ExprTranslator<'a> {
         let operand_str = self.translate(operand);
 
         match op {
-            TlaUnaryOp::Not => format!("!({})", operand_str),
+            TlaUnaryOp::Not => {
+                if self.is_generated_d1_context() {
+                    let normalized =
+                        self.coerce_boolish_numeric_literal(&operand_str, operand);
+                    format!("!({})", self.coerce_untyped_arbitrary_bool(&normalized))
+                } else {
+                    format!("!({})", operand_str)
+                }
+            }
             TlaUnaryOp::Neg => format!("-({})", operand_str),
             TlaUnaryOp::Subset => {
                 // SUBSET S = power set
@@ -1005,7 +1044,11 @@ impl<'a> ExprTranslator<'a> {
             }
             TlaUnaryOp::Domain => {
                 // DOMAIN f = domain of function/map
-                format!("{}.dom()", operand_str)
+                let func = self.coerce_untyped_arbitrary_from_type_hint(
+                    &operand_str,
+                    "Map<int, int>",
+                );
+                format!("{}.dom()", func)
             }
         }
     }
@@ -1065,6 +1108,7 @@ impl<'a> ExprTranslator<'a> {
     ) -> String {
         // [f EXCEPT ![i] = v] → f.insert(i, v)
         let mut result = self.translate(func);
+        result = self.coerce_untyped_arbitrary_from_type_hint(&result, "Map<int, int>");
 
         for update in updates {
             let value_str = self.translate(&update.value);
@@ -1239,18 +1283,19 @@ impl<'a> ExprTranslator<'a> {
 
         if vars.len() == 1 {
             let var = &vars[0];
+            let binder = self.quantifier_var_binder(var);
             if let Some(set) = &var.set {
                 if let Some(bound) = self.translate_quantifier_bound(&var.var, set) {
-                    format!("forall |{}| {} ==> {}", var.var, bound, body_str)
+                    format!("forall |{}| {} ==> {}", binder, bound, body_str)
                 } else {
-                    format!("forall |{}| {}", var.var, body_str)
+                    format!("forall |{}| {}", binder, body_str)
                 }
             } else {
-                format!("forall |{}| {}", var.var, body_str)
+                format!("forall |{}| {}", binder, body_str)
             }
         } else {
             // Multiple bound variables
-            let var_names: Vec<_> = vars.iter().map(|v| v.var.clone()).collect();
+            let var_binders: Vec<_> = vars.iter().map(|v| self.quantifier_var_binder(v)).collect();
             let bounds: Vec<_> = vars
                 .iter()
                 .filter_map(|v| {
@@ -1261,11 +1306,11 @@ impl<'a> ExprTranslator<'a> {
                 .collect();
 
             if bounds.is_empty() {
-                format!("forall |{}| {}", var_names.join(", "), body_str)
+                format!("forall |{}| {}", var_binders.join(", "), body_str)
             } else {
                 format!(
                     "forall |{}| ({}) ==> {}",
-                    var_names.join(", "),
+                    var_binders.join(", "),
                     bounds.join(" && "),
                     body_str
                 )
@@ -1279,18 +1324,19 @@ impl<'a> ExprTranslator<'a> {
 
         if vars.len() == 1 {
             let var = &vars[0];
+            let binder = self.quantifier_var_binder(var);
             if let Some(set) = &var.set {
                 if let Some(bound) = self.translate_quantifier_bound(&var.var, set) {
-                    format!("exists |{}| {} && {}", var.var, bound, body_str)
+                    format!("exists |{}| {} && {}", binder, bound, body_str)
                 } else {
-                    format!("exists |{}| {}", var.var, body_str)
+                    format!("exists |{}| {}", binder, body_str)
                 }
             } else {
-                format!("exists |{}| {}", var.var, body_str)
+                format!("exists |{}| {}", binder, body_str)
             }
         } else {
             // Multiple bound variables
-            let var_names: Vec<_> = vars.iter().map(|v| v.var.clone()).collect();
+            let var_binders: Vec<_> = vars.iter().map(|v| self.quantifier_var_binder(v)).collect();
             let bounds: Vec<_> = vars
                 .iter()
                 .filter_map(|v| {
@@ -1301,11 +1347,11 @@ impl<'a> ExprTranslator<'a> {
                 .collect();
 
             if bounds.is_empty() {
-                format!("exists |{}| {}", var_names.join(", "), body_str)
+                format!("exists |{}| {}", var_binders.join(", "), body_str)
             } else {
                 format!(
                     "exists |{}| ({}) && {}",
-                    var_names.join(", "),
+                    var_binders.join(", "),
                     bounds.join(" && "),
                     body_str
                 )
@@ -3922,6 +3968,48 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_forall_unbounded_var_gets_int_binder() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Forall {
+            vars: vec![TlaQuantBound {
+                var: "idx".to_string(),
+                set: None,
+            }],
+            body: Box::new(TlaExpr::binop(
+                TlaBinOp::Geq,
+                TlaExpr::ident("idx"),
+                TlaExpr::number(0),
+            )),
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "forall |idx: int| (idx >= 0)"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_exists_nat_bound_var_gets_int_binder() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Exists {
+            vars: vec![TlaQuantBound {
+                var: "n".to_string(),
+                set: Some(TlaExpr::ident("Nat")),
+            }],
+            body: Box::new(TlaExpr::binop(
+                TlaBinOp::Gt,
+                TlaExpr::ident("n"),
+                TlaExpr::number(0),
+            )),
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "exists |n: int| (n >= 0) && (n > 0)"
+        );
+    }
+
+    #[test]
     fn test_translate_quantifier_bounds_for_builtin_sets() {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
@@ -4602,6 +4690,20 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_not_coerces_untyped_arbitrary_to_bool() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::unary(
+            TlaUnaryOp::Not,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("s")),
+                field: "unknown".to_string(),
+            },
+        );
+        assert_eq!(translator.translate(&expr), "!(arbitrary::<bool>())");
+    }
+
+    #[test]
     fn test_non_generated_context_if_with_mixed_bool_numeric_branches_is_preserved() {
         let mut config = TranslatorConfig::spec();
         config.variable_names.insert("known_state".to_string());
@@ -4804,6 +4906,62 @@ mod tests {
         assert_eq!(
             translator.translate(&expr),
             "(sent_packets == arbitrary::<(LRecord)>())"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_record_literal_peer() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .record_structs
+            .insert("x".to_string(), "LRecord".to_string());
+        config.record_all_fields = vec!["x".to_string()];
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("s")),
+                field: "payload".to_string(),
+            },
+            TlaExpr::Record(vec![("x".to_string(), TlaExpr::number(0))]),
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<LRecord>() == LRecord { x: 0 })"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_domain_coerces_untyped_arbitrary_to_map() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::unary(
+            TlaUnaryOp::Domain,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("s")),
+                field: "table".to_string(),
+            },
+        );
+        assert_eq!(translator.translate(&expr), "arbitrary::<Map<int, int>>().dom()");
+    }
+
+    #[test]
+    fn test_generated_d1_fn_except_coerces_untyped_arbitrary_to_map() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::FnExcept {
+            func: Box::new(TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("s")),
+                field: "table".to_string(),
+            }),
+            updates: vec![crate::tla::ast::TlaExceptUpdate {
+                path: vec![TlaExceptPath::Index(TlaExpr::number(0))],
+                value: TlaExpr::number(1),
+            }],
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "arbitrary::<Map<int, int>>().insert(0, 1)"
         );
     }
 

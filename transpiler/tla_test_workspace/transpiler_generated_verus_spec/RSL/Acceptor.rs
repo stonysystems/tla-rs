@@ -66,7 +66,7 @@ pub open spec fn LAddVoteAndRemoveOldOnes(c: LConstants, votes: Map<int, int>, v
 
 /// AcceptorInit operator
 pub open spec fn LAcceptorInit(c: LConstants, a: int) -> bool {
-    (((((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && ((arbitrary::<Seq<int>>().len() as int) == (arbitrary::<Seq<int>>().len() as int))) && forall |idx| ((((0 <= idx) && (idx < (arbitrary::<Seq<int>>().len() as int))) ==> (arbitrary::<Seq<int>>()[idx] == 0)) && (arbitrary::<int>() == 0)))
+    (((((arbitrary::<LConstants>() == c) && (arbitrary::<LRecord>() == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && ((arbitrary::<Seq<int>>().len() as int) == (arbitrary::<Seq<int>>().len() as int))) && forall |idx: int| ((((0 <= idx) && (idx < (arbitrary::<Seq<int>>().len() as int))) ==> (arbitrary::<Seq<int>>()[idx] == 0)) && (arbitrary::<int>() == 0)))
 }
 
 /// AcceptorProcess1a operator

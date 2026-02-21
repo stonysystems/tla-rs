@@ -69,7 +69,7 @@ pub open spec fn LNodeFail(s: LState, s_: LState, c: LConstants, node: int, sent
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    exists |node, sent_packets| (LDetectFailure(s, s_, c, node, sent_packets) || exists |node, sent_packets| (LStartElection(s, s_, c, node, sent_packets) || exists |node, sender, sent_packets| (LSendAnswer(s, s_, c, node, sender, sent_packets) || exists |node, responder, sent_packets| (LReceiveAnswer(s, s_, c, node, responder, sent_packets) || exists |node, sent_packets| (LSendCoordinator(s, s_, c, node, sent_packets) || exists |node, leader, sent_packets| (LReceiveCoordinator(s, s_, c, node, leader, sent_packets) || exists |node, sent_packets| LNodeFail(s, s_, c, node, sent_packets)))))))
+    exists |node: int, sent_packets| (LDetectFailure(s, s_, c, node, sent_packets) || exists |node: int, sent_packets| (LStartElection(s, s_, c, node, sent_packets) || exists |node: int, sender: int, sent_packets| (LSendAnswer(s, s_, c, node, sender, sent_packets) || exists |node: int, responder: int, sent_packets| (LReceiveAnswer(s, s_, c, node, responder, sent_packets) || exists |node: int, sent_packets| (LSendCoordinator(s, s_, c, node, sent_packets) || exists |node: int, leader: int, sent_packets| (LReceiveCoordinator(s, s_, c, node, leader, sent_packets) || exists |node: int, sent_packets| LNodeFail(s, s_, c, node, sent_packets)))))))
 }
 
 } // verus!

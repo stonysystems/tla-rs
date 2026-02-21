@@ -70,7 +70,7 @@ pub open spec fn LRemoveAllSatisfiedRequestsInSequence(c: LConstants, s: Seq<int
 
 /// ElectionStateInit operator
 pub open spec fn LElectionStateInit(c: LConstants, es: int) -> bool {
-    (((((((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: 1 })) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty()))
+    (((((((arbitrary::<LConstants>() == c) && (arbitrary::<LRecord>() == LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: 1 })) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty()))
 }
 
 /// ElectionStateProcessHeartbeat operator
@@ -94,7 +94,7 @@ pub open spec fn LElectionStateCheckForViewTimeout(c: LConstants, es: LRecord, e
 
 /// ElectionStateCheckForQuorumOfViewSuspicions operator
 pub open spec fn LElectionStateCheckForQuorumOfViewSuspicions(c: LConstants, es: LRecord, es_: LRecord, clock: int) -> bool {
-    if (((arbitrary::<Seq<int>>().len() as int) < arbitrary::<int>()) || !(arbitrary())) { (es_ == es) } else { {
+    if (((arbitrary::<Seq<int>>().len() as int) < arbitrary::<int>()) || !(arbitrary::<bool>())) { (es_ == es) } else { {
     let new_epoch_length: int = arbitrary();
     (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int })
 } }

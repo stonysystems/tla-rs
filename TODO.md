@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `21/33` files compile with Verus after `16.8.3d-2d-15`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `22/33` files compile with Verus after `16.8.3d-2d-16`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5468,6 +5468,23 @@ transpiler/tla_test_workspace/
           - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-15`: `21/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `12` `E0282`.
           - Net effect: compile passes improved (`18 -> 21`) and mismatched-type first-error class eliminated (`E0308: 4 -> 0`) with expected concentration in inference-only blockers (`E0282: 11 -> 12`).
+        - [x] **16.8.3d-2d-16** Reduce remaining generated-D1 inference blockers by coercing bool/map/record-shaped fallback placeholders and adding int binders for unbounded/Int/Nat quantifier vars.
+          - Scope/LOC check: implemented as focused `ExprTranslator` generated-D1-only coercion/binder refinements + targeted regressions + workspace re-generation; stayed under the <500 LOC leaf target.
+          - Added generated-D1 coercions for:
+            - unary `Not` on untyped placeholders (`arbitrary()` -> `arbitrary::<bool>()`);
+            - `Domain`/`FnExcept` untyped receivers (`arbitrary()` -> `arbitrary::<Map<int, int>>()`);
+            - Eq/Neq peers against record-literal shapes (`arbitrary()` -> `arbitrary::<Struct>()` using identifier/record hints).
+          - Added generated-D1 quantifier binder shaping so unbounded, `Int`, and `Nat` bound vars emit explicit `: int` binders.
+          - Added regressions:
+            - `test_generated_d1_not_coerces_untyped_arbitrary_to_bool`
+            - `test_generated_d1_eq_coerces_arbitrary_from_record_literal_peer`
+            - `test_generated_d1_domain_coerces_untyped_arbitrary_to_map`
+            - `test_generated_d1_fn_except_coerces_untyped_arbitrary_to_map`
+            - `test_generated_d1_forall_unbounded_var_gets_int_binder`
+            - `test_generated_d1_exists_nat_bound_var_gets_int_binder`
+          - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-16`: `22/33` pass, `0` `E0425`, `0` `E0423`, `1` `E0609`, `0` `E0599`, `7` `E0308`, `0` `E0600`, `0` `E0618`, `2` `E0277`, `0` `E0061`, `1` `E0282`.
+          - Net effect: compile passes improved (`21 -> 22`) and inference blockers reduced (`E0282: 12 -> 1`), with newly surfaced non-inference blockers now concentrated in `E0308`/`E0277`/`E0609` for follow-up leaves.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

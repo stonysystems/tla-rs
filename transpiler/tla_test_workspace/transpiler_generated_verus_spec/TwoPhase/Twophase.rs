@@ -72,7 +72,7 @@ pub open spec fn LRMReceiveAbort(s: LState, s_: LState, c: LConstants, rm: int, 
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    exists |sent_packets| (LTMSendPrepare(s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceivePrepare(s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (LRMAbort(s, s_, c, rm, sent_packets) || exists |r, sent_packets| (LTMRcvPrepared(s, s_, c, r, sent_packets) || exists |sent_packets| (LTMSendCommit(s, s_, c, sent_packets) || exists |sent_packets| (LTMSendAbort(s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceiveCommit(s, s_, c, rm, sent_packets) || exists |rm, sent_packets| LRMReceiveAbort(s, s_, c, rm, sent_packets))))))))
+    exists |sent_packets| (LTMSendPrepare(s, s_, c, sent_packets) || exists |rm: int, sent_packets| (LRMReceivePrepare(s, s_, c, rm, sent_packets) || exists |rm: int, sent_packets| (LRMAbort(s, s_, c, rm, sent_packets) || exists |r: int, sent_packets| (LTMRcvPrepared(s, s_, c, r, sent_packets) || exists |sent_packets| (LTMSendCommit(s, s_, c, sent_packets) || exists |sent_packets| (LTMSendAbort(s, s_, c, sent_packets) || exists |rm: int, sent_packets| (LRMReceiveCommit(s, s_, c, rm, sent_packets) || exists |rm: int, sent_packets| LRMReceiveAbort(s, s_, c, rm, sent_packets))))))))
 }
 
 } // verus!
