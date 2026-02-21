@@ -1232,7 +1232,7 @@ Goal: Use the transpiler to generate the RSL implementation from `src/protocol/R
     - Result: 627 verified, 0 errors (up from 624); 1340 transpiler tests pass
   - [x] Proposer: 12 delegate functions remaining → Phase 19.2
   - [x] Executor: 0 delegates remaining (Phase 19.3 COMPLETE — CGetPacketsFromReplies moved to standalone recursive)
-  - [ ] Acceptor: 2 HashMap delegate helpers remaining → Phase 19.4
+  - [x] Acceptor: 2 HashMap delegate helpers remaining → Phase 19.4
   - [ ] Election: 11 functions generated but disabled (mod.rs) → Phase 19.5
   - [ ] Replica: 20 delegate functions remaining → Phase 19.6
   - **Gap Analysis** [26:01:25, 10:30]: Generated code needs significant adaptation
