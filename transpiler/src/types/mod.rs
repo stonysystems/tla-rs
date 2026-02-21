@@ -732,10 +732,37 @@ impl<'a> TypeParser<'a> {
         self.expect(')')?;
         self.skip_whitespace();
 
-        // Parse return type: -> Type
+        // Parse return type: -> Type (including named return tuple syntax `(name: Type)`)
         let return_type = if self.try_consume("->") {
             self.skip_whitespace();
-            self.parse_type()?
+            if self.peek() == Some('(') {
+                let start_pos = self.pos;
+                self.advance(); // consume '('
+                self.skip_whitespace();
+
+                if let Ok(_name) = self.parse_identifier() {
+                    self.skip_whitespace();
+                    if self.peek() == Some(':') {
+                        // Named return form: (name: Type)
+                        self.advance(); // consume ':'
+                        self.skip_whitespace();
+                        let ty = self.parse_type()?;
+                        self.skip_whitespace();
+                        self.expect(')')?;
+                        ty
+                    } else {
+                        // Not a named return; parse as normal tuple type
+                        self.pos = start_pos;
+                        self.parse_type()?
+                    }
+                } else {
+                    // Not an identifier after '('; parse as normal tuple type
+                    self.pos = start_pos;
+                    self.parse_type()?
+                }
+            } else {
+                self.parse_type()?
+            }
         } else {
             Type::Bool // default for predicates
         };
@@ -1583,6 +1610,33 @@ verus! {
                 assert_eq!(f.params.len(), 3);
             }
             _ => panic!("Expected function RemoveVotesBeforeLogTruncationPoint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_spec_fn_named_return_tuple_type() {
+        let source = r#"
+verus! {
+    pub open spec fn BuildLBroadcast(src: AbstractEndPoint, dsts: Seq<AbstractEndPoint>, m: RslMessage) -> (res: Seq<RslPacket>) {
+        Seq::empty()
+    }
+}
+        "#;
+
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        assert_eq!(types.len(), 1, "Expected one function signature");
+        match &types[0] {
+            TypeDef::Function(f) => {
+                assert_eq!(f.name, "BuildLBroadcast");
+                assert_eq!(f.params.len(), 3);
+                assert!(
+                    matches!(f.return_type, Type::Seq(_)),
+                    "Expected Seq return type, got {:?}",
+                    f.return_type
+                );
+            }
+            other => panic!("Expected function signature, got {:?}", other),
         }
     }
 

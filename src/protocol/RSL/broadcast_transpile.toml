@@ -6,6 +6,9 @@ skip_functions = [
     "BuildLBroadcast",
 ]
 
+# Ensure Vec<CPacket> outputs carry per-element proof obligations.
+vec_element_ensures = ["valid", "abstractable"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

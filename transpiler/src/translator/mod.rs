@@ -3233,6 +3233,13 @@ impl Translator {
                 ));
             }
         }
+        // 4. Optional per-element predicate invariants (e.g., valid/abstractable)
+        for pred in &self.config.vec_element_ensures {
+            invariants.push(format!(
+                "forall |j: int| 0 <= j < {} as int ==> (#[trigger] result@[j]).{}()",
+                index_var, pred
+            ));
+        }
 
         // Post-process element to fix Vec indexing:
         // - Integer param indices need *param as usize
@@ -3245,21 +3252,25 @@ impl Translator {
             &self.config.clone_method,
         );
 
-        // Build loop body: let pkt = element; result.push(pkt); idx = idx + 1;
-        let loop_body = ExecExpr::Block(vec![
-            ExecExpr::Let {
-                pattern: "pkt".to_string(),
-                ty: None,
-                value: Box::new(element),
-            },
-            ExecExpr::MethodCall {
-                receiver: Box::new(ExecExpr::Var("result".to_string())),
-                method: "push".to_string(),
-                args: vec![ExecExpr::Var("pkt".to_string())],
-            },
-            // idx = idx + 1 (reassignment — include semicolon in literal)
-            ExecExpr::Literal(format!("{} = {} + 1;", index_var, index_var)),
-        ]);
+        // Build loop body: let pkt = element; prove pkt predicates; result.push(pkt); idx = idx + 1;
+        let mut loop_body_stmts = vec![ExecExpr::Let {
+            pattern: "pkt".to_string(),
+            ty: None,
+            value: Box::new(element),
+        }];
+        if let Some(pkt_proof) =
+            self.generate_seq_comprehension_element_predicate_proof(element_expr, index_var, ctx)
+        {
+            loop_body_stmts.push(pkt_proof);
+        }
+        loop_body_stmts.push(ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("result".to_string())),
+            method: "push".to_string(),
+            args: vec![ExecExpr::Var("pkt".to_string())],
+        });
+        // idx = idx + 1 (reassignment — include semicolon in literal)
+        loop_body_stmts.push(ExecExpr::Literal(format!("{} = {} + 1;", index_var, index_var)));
+        let loop_body = ExecExpr::Block(loop_body_stmts);
 
         let decreases_str = format!("{} - {}", length_str, index_var);
 
@@ -3411,6 +3422,73 @@ impl Translator {
         Some(ExecExpr::ProofBlock { stmts: proof_stmts })
     }
 
+    /// Generate a proof block that establishes configured per-element predicates for `pkt`.
+    ///
+    /// This is used by seq-comprehension while loops when `vec_element_ensures` is configured.
+    /// For packet-like structs (fields dst/src/msg), emit field-level assertions that commonly
+    /// help prove `pkt.valid()` / `pkt.abstractable()`.
+    fn generate_seq_comprehension_element_predicate_proof(
+        &self,
+        element_expr: &Expr,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> Option<ExecExpr> {
+        if self.config.vec_element_ensures.is_empty() {
+            return None;
+        }
+        let fields = match element_expr {
+            Expr::Struct { fields, .. } => fields,
+            _ => return None,
+        };
+
+        let mut proof_stmts: Vec<ExecExpr> = Vec::new();
+        for (field_name, field_value) in fields {
+            let source_str = self.field_expr_to_loop_string(field_value, index_var, ctx);
+            proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(format!(
+                "pkt.{}@ == {}",
+                field_name, source_str
+            )))));
+        }
+
+        let field_names: HashSet<&str> = fields.iter().map(|(n, _)| n.as_str()).collect();
+        let has_packet_fields = field_names.contains("dst")
+            && field_names.contains("src")
+            && field_names.contains("msg");
+        for pred in &self.config.vec_element_ensures {
+            if pred == "valid" && has_packet_fields {
+                proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(
+                    "pkt.dst.valid_public_key()".to_string(),
+                ))));
+                proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(
+                    "pkt.src.valid_public_key()".to_string(),
+                ))));
+                proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(
+                    "pkt.msg.valid()".to_string(),
+                ))));
+            } else if pred == "abstractable" && has_packet_fields {
+                proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(
+                    "pkt.dst.abstractable()".to_string(),
+                ))));
+                proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(
+                    "pkt.src.abstractable()".to_string(),
+                ))));
+                proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(
+                    "pkt.msg.abstractable()".to_string(),
+                ))));
+            }
+            proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(format!(
+                "pkt.{}()",
+                pred
+            )))));
+        }
+
+        if proof_stmts.is_empty() {
+            None
+        } else {
+            Some(ExecExpr::ProofBlock { stmts: proof_stmts })
+        }
+    }
+
     /// Convert a spec field value expression to an invariant-compatible string.
     ///
     /// Handles the conversion from spec to exec-view invariant forms:
@@ -3478,6 +3556,73 @@ impl Translator {
             }
             Expr::Field(base, field) => {
                 let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                format!("{}.{}", base_str, field)
+            }
+            _ => self.expr_to_spec_string(expr, &[]),
+        }
+    }
+
+    /// Convert a spec field value expression to a loop-body-compatible string.
+    ///
+    /// Similar to `field_expr_to_invariant_string`, but keeps the current loop index variable
+    /// (e.g., `idx`) as `idx as int` instead of replacing it with the quantified `j`.
+    fn field_expr_to_loop_string(
+        &self,
+        expr: &Expr,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> String {
+        match expr {
+            Expr::Index(base, idx) => {
+                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
+                let idx_str = self.field_expr_to_loop_string(idx, index_var, ctx);
+                format!("{}@[{}]@", base_str, idx_str)
+            }
+            Expr::Ident(name) if name == index_var => format!("{} as int", index_var),
+            Expr::Ident(name) => {
+                if let Some(ty) = ctx.input_types.get(name) {
+                    match ty {
+                        crate::ast::Type::Int | crate::ast::Type::Nat => {
+                            format!("*{} as int", name)
+                        }
+                        crate::ast::Type::Bool => name.clone(),
+                        _ => format!("{}@", name),
+                    }
+                } else {
+                    name.clone()
+                }
+            }
+            Expr::Field(base, field) => {
+                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
+                format!("{}.{}", base_str, field)
+            }
+            _ => self.expr_to_spec_string(expr, &[]),
+        }
+    }
+
+    /// Raw-string variant for loop-body field expression conversion.
+    fn field_expr_to_raw_string_loop(
+        &self,
+        expr: &Expr,
+        index_var: &str,
+        ctx: &TransformContext,
+    ) -> String {
+        match expr {
+            Expr::Ident(name) if name == index_var => format!("{} as int", index_var),
+            Expr::Ident(name) => {
+                if let Some(ty) = ctx.input_types.get(name) {
+                    match ty {
+                        crate::ast::Type::Int | crate::ast::Type::Nat => {
+                            format!("*{} as int", name)
+                        }
+                        _ => name.clone(),
+                    }
+                } else {
+                    name.clone()
+                }
+            }
+            Expr::Field(base, field) => {
+                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
             _ => self.expr_to_spec_string(expr, &[]),
@@ -22912,6 +23057,193 @@ mod tests {
             printed.contains("Vec::<CPacket>::new"),
             "Should have typed Vec::new, got: {}",
             printed
+        );
+    }
+
+    #[test]
+    fn test_seq_comprehension_while_loop_emits_vec_element_predicate_invariants_and_pkt_proofs() {
+        let config = TranslatorConfig {
+            generate_loops_for_verification: true,
+            vec_element_ensures: vec!["valid".to_string(), "abstractable".to_string()],
+            type_remapping: {
+                let mut m = HashMap::new();
+                m.insert("RslPacket".to_string(), "CPacket".to_string());
+                m
+            },
+            ..Default::default()
+        };
+        let translator = Translator::new(config.clone());
+
+        let mut output_types = HashMap::new();
+        output_types.insert(
+            "sent_packets".to_string(),
+            crate::ast::Type::Seq(Box::new(crate::ast::Type::Named(crate::ast::Path::single(
+                "RslPacket".to_string(),
+            )))),
+        );
+
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "c".to_string(),
+            crate::ast::Type::Named(crate::ast::Path::single("LConfiguration".to_string())),
+        );
+        input_types.insert("myidx".to_string(), crate::ast::Type::Int);
+        input_types.insert(
+            "m".to_string(),
+            crate::ast::Type::Named(crate::ast::Path::single("RslMessage".to_string())),
+        );
+
+        let ctx = TransformContext {
+            config: &config,
+            output_params: vec!["sent_packets".to_string()],
+            input_params: vec!["c".to_string(), "myidx".to_string(), "m".to_string()],
+            output_types,
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec!["c.valid()".to_string(), "m.valid()".to_string()],
+        };
+
+        let length_eq = Expr::Eq(
+            Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Ident("sent_packets".to_string())),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+            Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::Field(
+                    Box::new(Expr::Ident("c".to_string())),
+                    "replica_ids".to_string(),
+                )),
+                method: "len".to_string(),
+                args: vec![],
+            }),
+        );
+
+        let binding = crate::ast::Binding {
+            pattern: crate::ast::Pattern::Ident("idx".to_string()),
+            ty: None,
+            variable_mode: crate::ast::VariableMode::Exec,
+        };
+        let struct_expr = Expr::Struct {
+            name: crate::ast::Path::single("RslPacket".to_string()),
+            fields: vec![
+                (
+                    "dst".to_string(),
+                    Expr::Index(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("c".to_string())),
+                            "replica_ids".to_string(),
+                        )),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    ),
+                ),
+                (
+                    "src".to_string(),
+                    Expr::Index(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("c".to_string())),
+                            "replica_ids".to_string(),
+                        )),
+                        Box::new(Expr::Ident("myidx".to_string())),
+                    ),
+                ),
+                ("msg".to_string(), Expr::Ident("m".to_string())),
+            ],
+        };
+        let forall_expr = Expr::Forall {
+            vars: vec![binding],
+            triggers: vec![],
+            body: Box::new(Expr::Implies(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Le(
+                        Box::new(Expr::Literal(Literal::Int(0))),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )),
+                    BinOp::And,
+                    Box::new(Expr::Lt(
+                        Box::new(Expr::Ident("idx".to_string())),
+                        Box::new(Expr::MethodCall {
+                            receiver: Box::new(Expr::Ident("sent_packets".to_string())),
+                            method: "len".to_string(),
+                            args: vec![],
+                        }),
+                    )),
+                )),
+                Box::new(Expr::Eq(
+                    Box::new(Expr::Index(
+                        Box::new(Expr::Ident("sent_packets".to_string())),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )),
+                    Box::new(struct_expr),
+                )),
+            )),
+        };
+
+        let conjunction = Expr::Conjunction(vec![length_eq, forall_expr]);
+        let result = translator.transform_expr(&conjunction, &ctx).unwrap();
+
+        let while_loop = match result {
+            ExecExpr::Block(stmts) => stmts
+                .into_iter()
+                .find_map(|s| match s {
+                    ExecExpr::WhileLoop { invariants, body, .. } => Some((invariants, body)),
+                    _ => None,
+                })
+                .expect("Expected a WhileLoop in transformed block"),
+            other => panic!("Expected block with WhileLoop, got {:?}", other),
+        };
+
+        let (invariants, body) = while_loop;
+        assert!(
+            invariants
+                .iter()
+                .any(|inv| inv.contains("result@[j]).valid()")),
+            "Expected valid() invariant, got {:?}",
+            invariants
+        );
+        assert!(
+            invariants
+                .iter()
+                .any(|inv| inv.contains("result@[j]).abstractable()")),
+            "Expected abstractable() invariant, got {:?}",
+            invariants
+        );
+
+        let proof_stmts = match body.as_ref() {
+            ExecExpr::Block(stmts) => stmts
+                .iter()
+                .find_map(|s| match s {
+                    ExecExpr::ProofBlock { stmts } => Some(stmts.clone()),
+                    _ => None,
+                })
+                .expect("Expected element predicate proof block in loop body"),
+            other => panic!("Expected loop body block, got {:?}", other),
+        };
+        let asserted: Vec<String> = proof_stmts
+            .iter()
+            .filter_map(|s| match s {
+                ExecExpr::Assert(inner) => match inner.as_ref() {
+                    ExecExpr::Literal(lit) => Some(lit.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert!(
+            asserted.iter().any(|s| s == "pkt.valid()"),
+            "Expected pkt.valid() assert in proof block, got {:?}",
+            asserted
+        );
+        assert!(
+            asserted.iter().any(|s| s == "pkt.abstractable()"),
+            "Expected pkt.abstractable() assert in proof block, got {:?}",
+            asserted
+        );
+        assert!(
+            asserted.iter().any(|s| s == "pkt.dst.valid_public_key()"),
+            "Expected pkt.dst.valid_public_key() helper assert, got {:?}",
+            asserted
         );
     }
 
