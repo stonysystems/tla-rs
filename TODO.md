@@ -6616,3 +6616,14 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added focused assertions for symmetry-collapse/POR telemetry in explorer and model-check execution tests.
     - Updated `docs/model-checking-source-first.md` with reduction telemetry fields and explicit “safe to use” guidance for canonical/hash/symmetry/POR modes.
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.
+  - [x] Leaf 22.x.1 (<500 LOC): extend `model.toml` schema for temporal obligations and fail fast when configured liveness is not yet executable.
+    - Added `properties.leads_to` and `properties.fairness.{weak,strong}` parsing/validation in `transpiler/src/modelcheck/config.rs` (non-empty checks and duplicate rejection).
+    - Added `PropertyConfig::has_temporal_requirements()` and an explicit `model-check` guard in `transpiler/src/main.rs` so temporal properties are never silently ignored before the SCC-based engine lands.
+    - Added focused unit coverage for temporal config parsing/validation and a command-level rejection test for temporal properties.
+    - Updated `docs/model-checking-source-first.md` limitations to document current temporal-config behavior.
+  - [ ] Leaf 22.x.2 (<500 LOC): add reusable graph index builder for explored state graphs (successor + predecessor adjacency + per-state metadata) to support cycle analyses.
+  - [ ] Leaf 22.x.3 (<500 LOC): add SCC detection utility with witness extraction (component members + representative cycle edge) and focused unit tests.
+  - [ ] Leaf 22.x.4 (<500 LOC): implement `leads_to` checking on explored graphs by searching SCCs that contain `from` states but can avoid `to` forever; emit counterexample traces.
+  - [ ] Leaf 22.x.5 (<500 LOC): add fairness filtering (`WF`/`SF`) over candidate SCC cycles using branch-label visitation conditions.
+  - [ ] Leaf 22.x.6 (<500 LOC): integrate liveness/fairness results into `model-check` JSON/human reports and document the finalized workflow/caveats.
+  - [ ] Leaf 22.x.7 (<500 LOC): add integration fixtures/tests for small protocols covering satisfied and violated `leads_to` obligations under fairness and non-fairness settings.

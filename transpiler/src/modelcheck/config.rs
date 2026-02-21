@@ -123,12 +123,42 @@ pub struct PropertyConfig {
     /// Invariant spec function names (e.g. `LTypeOK`, `LSafety`).
     #[serde(default)]
     pub invariants: Vec<String>,
+    /// Liveness obligations as `from ~> to` predicate-name pairs.
+    #[serde(default)]
+    pub leads_to: Vec<LeadsToProperty>,
+    /// Fairness assumptions over `LNext` branch labels.
+    #[serde(default)]
+    pub fairness: FairnessConfig,
     /// Whether to report deadlock states (no successors).
     #[serde(default)]
     pub check_deadlock: bool,
     /// Transition semantics when no branch successors exist.
     #[serde(default)]
     pub successor_semantics: SuccessorSemantics,
+}
+
+impl PropertyConfig {
+    pub fn has_temporal_requirements(&self) -> bool {
+        !self.leads_to.is_empty()
+            || !self.fairness.weak.is_empty()
+            || !self.fairness.strong.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeadsToProperty {
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct FairnessConfig {
+    #[serde(default)]
+    pub weak: Vec<String>,
+    #[serde(default)]
+    pub strong: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -395,6 +425,78 @@ pub fn validate_model_config(config: &ModelConfig) -> TranspileResult<()> {
         }
     }
 
+    let mut seen_named_leads_to = HashSet::new();
+    let mut seen_leads_to_pairs = HashSet::new();
+    for obligation in &config.properties.leads_to {
+        let from = obligation.from.trim();
+        let to = obligation.to.trim();
+        if from.is_empty() || to.is_empty() {
+            return Err(TranspileError::Config {
+                message:
+                    "Invalid model.toml: each `properties.leads_to` entry needs non-empty `from` and `to` predicate names."
+                        .to_string(),
+            });
+        }
+
+        let pair_key = format!("{}=>{}", from, to);
+        if !seen_leads_to_pairs.insert(pair_key) {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Invalid model.toml: duplicate leads-to obligation `{} ~> {}` in `properties.leads_to`.",
+                    from, to
+                ),
+            });
+        }
+
+        if let Some(name) = &obligation.name {
+            let trimmed_name = name.trim();
+            if trimmed_name.is_empty() {
+                return Err(TranspileError::Config {
+                    message:
+                        "Invalid model.toml: `properties.leads_to[*].name` cannot be empty when provided."
+                            .to_string(),
+                });
+            }
+            if !seen_named_leads_to.insert(trimmed_name.to_string()) {
+                return Err(TranspileError::Config {
+                    message: format!(
+                        "Invalid model.toml: duplicate leads-to name `{}` in `properties.leads_to`.",
+                        trimmed_name
+                    ),
+                });
+            }
+        }
+    }
+
+    let mut seen_fairness = HashSet::new();
+    for (kind, labels) in [
+        ("properties.fairness.weak", &config.properties.fairness.weak),
+        (
+            "properties.fairness.strong",
+            &config.properties.fairness.strong,
+        ),
+    ] {
+        for label in labels {
+            let trimmed = label.trim();
+            if trimmed.is_empty() {
+                return Err(TranspileError::Config {
+                    message: format!(
+                        "Invalid model.toml: `{}` cannot contain empty branch labels.",
+                        kind
+                    ),
+                });
+            }
+            if !seen_fairness.insert(trimmed.to_string()) {
+                return Err(TranspileError::Config {
+                    message: format!(
+                        "Invalid model.toml: duplicate fairness branch label `{}` across `properties.fairness`.",
+                        trimmed
+                    ),
+                });
+            }
+        }
+    }
+
     if config.properties.check_deadlock
         && matches!(
             config.properties.successor_semantics,
@@ -548,6 +650,8 @@ state_dedup = "canonical"
 
 [properties]
 invariants = ["LTypeOK", "LSafety"]
+leads_to = [{ name = "eventual_safety", from = "LTypeOK", to = "LSafety" }]
+fairness = { weak = ["branch_send"], strong = ["branch_commit"] }
 check_deadlock = true
 successor_semantics = "deadlock"
 "#;
@@ -556,6 +660,15 @@ successor_semantics = "deadlock"
         assert_eq!(config.constants.domains.len(), 2);
         assert_eq!(config.quantifiers.types.len(), 1);
         assert_eq!(config.properties.invariants.len(), 2);
+        assert_eq!(config.properties.leads_to.len(), 1);
+        assert_eq!(
+            config.properties.fairness.weak,
+            vec!["branch_send".to_string()]
+        );
+        assert_eq!(
+            config.properties.fairness.strong,
+            vec!["branch_commit".to_string()]
+        );
         assert!(config.properties.check_deadlock);
         assert_eq!(
             config.properties.successor_semantics,
@@ -579,6 +692,9 @@ invariants = ["LTypeOK"]
         assert!(config.search.symmetry_fields.is_empty());
         assert_eq!(config.search.por_heuristic, PorHeuristic::None);
         assert_eq!(config.properties.invariants, vec!["LTypeOK".to_string()]);
+        assert!(config.properties.leads_to.is_empty());
+        assert!(config.properties.fairness.weak.is_empty());
+        assert!(config.properties.fairness.strong.is_empty());
         assert_eq!(
             config.properties.successor_semantics,
             SuccessorSemantics::Deadlock
@@ -657,6 +773,64 @@ invariants = ["LSafety", "LSafety"]
 "#;
         let err = parse_model_config_str(source).unwrap_err();
         assert!(err.to_string().contains("duplicate invariant `LSafety`"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_leads_to_with_empty_from_or_to() {
+        let source = r#"
+[properties]
+leads_to = [{ from = "LTypeOK", to = "  " }]
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("properties.leads_to"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_duplicate_leads_to_pairs() {
+        let source = r#"
+[properties]
+leads_to = [
+  { from = "LTypeOK", to = "LSafety" },
+  { from = "LTypeOK", to = "LSafety" },
+]
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("duplicate leads-to obligation"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_duplicate_leads_to_names() {
+        let source = r#"
+[properties]
+leads_to = [
+  { name = "eventual", from = "LTypeOK", to = "LSafety" },
+  { name = "eventual", from = "LSafety", to = "LTypeOK" },
+]
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("duplicate leads-to name"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_duplicate_fairness_labels_across_modes() {
+        let source = r#"
+[properties]
+fairness = { weak = ["branch_send"], strong = ["branch_send"] }
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("duplicate fairness branch label"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_empty_fairness_label() {
+        let source = r#"
+[properties]
+fairness = { weak = ["  "] }
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("cannot contain empty branch labels"));
     }
 
     #[test]

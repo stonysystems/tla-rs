@@ -162,6 +162,7 @@ Finite-domain expansion and runtime values currently cover:
 
 - Safety-only scope in Phase 22 MVP:
   - liveness/fairness operators (`[]<>`, `WF`, `SF`, `~>`) are out of scope.
+  - `properties.leads_to` and `properties.fairness` are accepted by `model.toml` parsing for forward compatibility, but `model-check` currently rejects runs that configure them.
 - Current entrypoint assumptions:
   - model-check execution currently assumes `LInit(s, c)` and `LNext(s, s_, c)` style signatures.
   - constants resolution currently requires exactly one concrete `LConstants` valuation after applying assignments/domains.

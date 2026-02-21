@@ -1408,6 +1408,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
                 model_config.properties.invariants = normalized;
             }
+            if model_config.properties.has_temporal_requirements() {
+                return Err(miette::miette!(
+                    "Source-first liveness checking is not implemented yet: \
+                     `properties.leads_to`/`properties.fairness` are parsed for forward compatibility \
+                     but cannot be used with `model-check` yet."
+                ));
+            }
             let selected_search = (*search).unwrap_or(CliSearchMode::Bfs);
             let selected_invariants = resolve_selected_invariants(
                 &bundle.spec_functions,
@@ -3239,6 +3246,91 @@ invariants = ["LInv"]
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_temporal_properties_until_supported() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+
+    pub open spec fn LInv(s: LState, c: LConstants) -> bool {
+        s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[properties]
+invariants = ["LInv"]
+leads_to = [{ from = "LInv", to = "LInv" }]
+"#,
+        )
+        .unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec![],
+            search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
+            json_report: false,
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("liveness checking is not implemented yet"));
     }
 
     #[test]
