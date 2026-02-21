@@ -21,52 +21,52 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants, s: int, c: int) -> bool {
+pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     (((((s.tm_state.tag == LInit(s, c)) && (s.tm_prepared == Set::<int>::empty())) && (s.rm_prepared == Set::<int>::empty())) && (s.rm_committed == Set::<int>::empty())) && (s.rm_aborted == Set::<int>::empty()))
 }
 
 /// TMSendPrepare operator
-pub open spec fn LTMSendPrepare(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LTMSendPrepare(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     (((((((s.tm_state.tag == LInit(s, c)) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![Prepare]))
 }
 
 /// RMReceivePrepare operator
-pub open spec fn LRMReceivePrepare(s: LState, c: LConstants, s: int, s_: int, c: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMReceivePrepare(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
     ((((((((c.rm.contains(rm) && s.rm_prepared.contains(!(rm))) && s.rm_aborted.contains(!(rm))) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared.union(set![rm]))) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![{ rm: rm }]))
 }
 
 /// RMAbort operator
-pub open spec fn LRMAbort(s: LState, c: LConstants, s: int, s_: int, c: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMAbort(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
     (((((((((c.rm.contains(rm) && s.rm_prepared.contains(!(rm))) && s.rm_aborted.contains(!(rm))) && s.rm_committed.contains(!(rm))) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted.union(set![rm]))) && (sent_packets == seq![]))
 }
 
 /// TMRcvPrepared operator
-pub open spec fn LTMRcvPrepared(s: LState, c: LConstants, s: int, s_: int, c: int, r: int, sent_packets: int) -> bool {
+pub open spec fn LTMRcvPrepared(s: LState, c: LConstants, s_: int, r: int, sent_packets: int) -> bool {
     ((((((((s.tm_state.tag == LInit(s, c)) && s.rm_prepared.contains(r)) && (s_.tm_state.tag == LInit(s, c))) && (s_.tm_prepared == s.tm_prepared.union(set![r]))) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![]))
 }
 
 /// TMSendCommit operator
-pub open spec fn LTMSendCommit(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LTMSendCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((s.tm_state.tag == LInit(s, c)) && (s.tm_prepared == c.rm)) && (s_.tm_state.tag == Committed)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![Commit]))
 }
 
 /// TMSendAbort operator
-pub open spec fn LTMSendAbort(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LTMSendAbort(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     (((((((s.tm_state.tag == LInit(s, c)) && (s_.tm_state.tag == Aborted)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![Abort]))
 }
 
 /// RMReceiveCommit operator
-pub open spec fn LRMReceiveCommit(s: LState, c: LConstants, s: int, s_: int, c: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMReceiveCommit(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
     ((((((((c.rm.contains(rm) && s.rm_prepared.contains(rm)) && s.rm_committed.contains(!(rm))) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed.union(set![rm]))) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![]))
 }
 
 /// RMReceiveAbort operator
-pub open spec fn LRMReceiveAbort(s: LState, c: LConstants, s: int, s_: int, c: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMReceiveAbort(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
     ((((((((c.rm.contains(rm) && s.rm_committed.contains(!(rm))) && s.rm_aborted.contains(!(rm))) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted.union(set![rm]))) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s: int, s_: int, c: int) -> bool {
+pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
     exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendPrepare(s, c)(s, s_, c, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceivePrepare(s, c)(s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && (LRMAbort(s, c)(s, s_, c, rm, sent_packets) || exists |r, sent_packets| (int.contains(r) && Seq(c.TPCMessage).contains(sent_packets)) && (LTMRcvPrepared(s, c)(s, s_, c, r, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendCommit(s, c)(s, s_, c, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendAbort(s, c)(s, s_, c, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceiveCommit(s, c)(s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && LRMReceiveAbort(s, c)(s, s_, c, rm, sent_packets))))))))
 }
 

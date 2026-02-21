@@ -21,52 +21,52 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants, s: int, c: int) -> bool {
+pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     (((((((((s.history == seq![]) && (s.pending_sent == Set::<int>::empty())) && (s.committed_count == 0)) && (s.obj_value == 0)) && ((c.node_id == 0) ==> (s.role.tag == Head))) && ((c.node_id == (c.chain_len - 1)) ==> (s.role.tag == Tail))) && (((c.node_id > 0) && (c.node_id < (c.chain_len - 1))) ==> (s.role.tag == Middle))) && (s.has_predecessor == (c.node_id > 0))) && (s.predecessor == if (c.node_id > 0) { (c.node_id - 1) } else { ((0 && (s.has_successor == (c.node_id < (c.chain_len - 1)))) && (s.successor == if (c.node_id < (c.chain_len - 1)) { (c.node_id + 1) } else { (0 && (s.alive == true)) })) }))
 }
 
 /// HeadReceiveWrite operator
-pub open spec fn LHeadReceiveWrite(s: LState, c: LConstants, s: int, s_: int, c: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LHeadReceiveWrite(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
     ((((((((((((((s.role.tag == Head) && (s.alive == true)) && s.pending_sent.contains(!(value))) && (s_.role == s.role)) && (s_.history == s.history.push(value))) && (s_.pending_sent == s.pending_sent.union(set![value]))) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
 }
 
 /// ForwardToSuccessor operator
-pub open spec fn LForwardToSuccessor(s: LState, c: LConstants, s: int, s_: int, c: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LForwardToSuccessor(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
     ((s.role.tag == Head) || (((((((((((((((s.role.tag == Middle) && (s.alive == true)) && s.pending_sent.contains(value)) && (s.has_successor == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![{ value: value }])))
 }
 
 /// ReceiveUpdate operator
-pub open spec fn LReceiveUpdate(s: LState, c: LConstants, s: int, s_: int, c: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveUpdate(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
     ((s.role.tag == Middle) || ((((((s.role.tag == Tail) && (s.alive == true)) && s.history.contains(!(value))) && (s_.role == s.role)) && (s_.history == s.history.push(value))) && if (s.role.tag == Middle) { (s_.pending_sent == s.pending_sent.union(set![value])) } else { (((((((((s_.pending_sent == s.pending_sent) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![])) }))
 }
 
 /// TailCommit operator
-pub open spec fn LTailCommit(s: LState, c: LConstants, s: int, s_: int, c: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LTailCommit(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
     ((((((((((((((s.role.tag == Tail) && (s.alive == true)) && s.history.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == (s.committed_count + 1))) && (s_.obj_value == value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![{ value: value }]))
 }
 
 /// ReceiveAck operator
-pub open spec fn LReceiveAck(s: LState, c: LConstants, s: int, s_: int, c: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveAck(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
     ((s.role.tag == Head) || ((((((((((((((s.role.tag == Middle) && (s.alive == true)) && s.pending_sent.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent.difference(set![value]))) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![])))
 }
 
 /// ClientRead operator
-pub open spec fn LClientRead(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LClientRead(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     (((((((((((((s.role.tag == Tail) && (s.alive == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator
-pub open spec fn LNodeFail(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LNodeFail(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((s.alive == true) && (s_.alive == false)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (sent_packets == seq![]))
 }
 
 /// Reconfigure operator
-pub open spec fn LReconfigure(s: LState, c: LConstants, s: int, s_: int, c: int, new_has_predecessor: int, new_predecessor: int, new_has_successor: int, new_successor: int, sent_packets: int) -> bool {
+pub open spec fn LReconfigure(s: LState, c: LConstants, s_: int, new_has_predecessor: int, new_predecessor: int, new_has_successor: int, new_successor: int, sent_packets: int) -> bool {
     ((((((((((((s.alive == true) && (s_.has_predecessor == new_has_predecessor)) && (s_.predecessor == new_predecessor)) && (s_.has_successor == new_has_successor)) && (s_.successor == new_successor)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.alive == s.alive)) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s: int, s_: int, c: int) -> bool {
+pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
     exists |value, sent_packets| (int.contains(value) && Seq(c.CRMessage).contains(sent_packets)) && (LHeadReceiveWrite(s, c)(s, s_, c, value, sent_packets) || exists |value, sent_packets| (int.contains(value) && Seq(c.CRMessage).contains(sent_packets)) && (LForwardToSuccessor(s, c)(s, s_, c, value, sent_packets) || exists |value, sent_packets| (int.contains(value) && Seq(c.CRMessage).contains(sent_packets)) && (LReceiveUpdate(s, c)(s, s_, c, value, sent_packets) || exists |value, sent_packets| (int.contains(value) && Seq(c.CRMessage).contains(sent_packets)) && (LTailCommit(s, c)(s, s_, c, value, sent_packets) || exists |value, sent_packets| (int.contains(value) && Seq(c.CRMessage).contains(sent_packets)) && (LReceiveAck(s, c)(s, s_, c, value, sent_packets) || exists |sent_packets| Seq(c.CRMessage).contains(sent_packets) && (LClientRead(s, c)(s, s_, c, sent_packets) || exists |sent_packets| Seq(c.CRMessage).contains(sent_packets) && (LNodeFail(s, c)(s, s_, c, sent_packets) || exists |new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets| (bool.contains(new_has_predecessor) && int.contains(new_predecessor) && bool.contains(new_has_successor) && int.contains(new_successor) && Seq(c.CRMessage).contains(sent_packets)) && LReconfigure(s, c)(s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets))))))))
 }
 

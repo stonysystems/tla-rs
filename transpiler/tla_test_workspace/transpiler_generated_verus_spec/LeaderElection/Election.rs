@@ -21,47 +21,47 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants, s: int, c: int) -> bool {
+pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     ((((((((s.electing == Set::<int>::empty()) && (s.has_leader == false)) && (s.leader == 0)) && (s.alive == c.nodes)) && (s.has_highest == false)) && (s.highest_heard == 0)) && (s.waiting_answer == false)) && (s.waiting_node == 0))
 }
 
 /// DetectFailure operator
-pub open spec fn LDetectFailure(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LDetectFailure(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
     (((((((((((s.alive.contains(node) && (s.has_leader == true)) && s.alive.contains(!(s.leader))) && (s_.electing == s.electing.union(set![node]))) && (s_.waiting_answer == true)) && (s_.waiting_node == node)) && (s_.has_leader == s.has_leader)) && (s_.leader == s.leader)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![{ sender: node }]))
 }
 
 /// StartElection operator
-pub open spec fn LStartElection(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LStartElection(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
     (((((((((s.alive.contains(node) && (s_.electing == s.electing.union(set![node]))) && (s_.has_leader == false)) && (s_.leader == 0)) && (s_.waiting_answer == true)) && (s_.waiting_node == node)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![{ sender: node }]))
 }
 
 /// SendAnswer operator
-pub open spec fn LSendAnswer(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, sender: int, sent_packets: int) -> bool {
+pub open spec fn LSendAnswer(s: LState, c: LConstants, s_: int, node: int, sender: int, sent_packets: int) -> bool {
     ((((s.alive.contains(node) && (node > sender)) && (s_.electing == s.electing.union(set![node]))) && (s_.has_highest == true)) && (s_.highest_heard == if (!(s.has_highest) || (node > s.highest_heard)) { node } else { ((((((s.highest_heard && (s_.has_leader == s.has_leader)) && (s_.leader == s.leader)) && (s_.alive == s.alive)) && (s_.waiting_answer == s.waiting_answer)) && (s_.waiting_node == s.waiting_node)) && (sent_packets == seq![{ responder: node }])) }))
 }
 
 /// ReceiveAnswer operator
-pub open spec fn LReceiveAnswer(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, responder: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveAnswer(s: LState, c: LConstants, s_: int, node: int, responder: int, sent_packets: int) -> bool {
     (((((((((((s.alive.contains(node) && (s.waiting_answer == true)) && (s.waiting_node == node)) && (s_.waiting_answer == false)) && (s_.waiting_node == 0)) && (s_.electing == s.electing.difference(set![node]))) && (s_.has_leader == s.has_leader)) && (s_.leader == s.leader)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![]))
 }
 
 /// SendCoordinator operator
-pub open spec fn LSendCoordinator(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LSendCoordinator(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
     ((((((((((((s.alive.contains(node) && s.electing.contains(node)) && (s.waiting_answer == true)) && (s.waiting_node == node)) && (s_.has_leader == true)) && (s_.leader == node)) && (s_.electing == s.electing.difference(set![node]))) && (s_.waiting_answer == false)) && (s_.waiting_node == 0)) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![{ leader: node }]))
 }
 
 /// ReceiveCoordinator operator
-pub open spec fn LReceiveCoordinator(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, leader: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveCoordinator(s: LState, c: LConstants, s_: int, node: int, leader: int, sent_packets: int) -> bool {
     (((((((((s.alive.contains(node) && (s_.has_leader == true)) && (s_.leader == leader)) && (s_.electing == s.electing.difference(set![node]))) && (s_.alive == s.alive)) && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (s_.waiting_answer == s.waiting_answer)) && (s_.waiting_node == s.waiting_node)) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator
-pub open spec fn LNodeFail(s: LState, c: LConstants, s: int, s_: int, c: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LNodeFail(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
     (((s.alive.contains(node) && (s_.alive == s.alive.difference(set![node]))) && (s_.electing == s.electing.difference(set![node]))) && (s_.has_leader == if (s.has_leader && (s.leader == node)) { false } else { (s.has_leader && (s_.leader == if (s.has_leader && (s.leader == node)) { 0 } else { (s.leader && (s_.waiting_answer == if (s.waiting_answer && (s.waiting_node == node)) { false } else { (s.waiting_answer && (s_.waiting_node == if (s.waiting_answer && (s.waiting_node == node)) { 0 } else { (((s.waiting_node && (s_.has_highest == s.has_highest)) && (s_.highest_heard == s.highest_heard)) && (sent_packets == seq![])) })) })) })) }))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s: int, s_: int, c: int) -> bool {
+pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
     exists |node, sent_packets| (int.contains(node) && Seq(c.ElectionMessage).contains(sent_packets)) && (LDetectFailure(s, c)(s, s_, c, node, sent_packets) || exists |node, sent_packets| (int.contains(node) && Seq(c.ElectionMessage).contains(sent_packets)) && (LStartElection(s, c)(s, s_, c, node, sent_packets) || exists |node, sender, sent_packets| (int.contains(node) && int.contains(sender) && Seq(c.ElectionMessage).contains(sent_packets)) && (LSendAnswer(s, c)(s, s_, c, node, sender, sent_packets) || exists |node, responder, sent_packets| (int.contains(node) && int.contains(responder) && Seq(c.ElectionMessage).contains(sent_packets)) && (LReceiveAnswer(s, c)(s, s_, c, node, responder, sent_packets) || exists |node, sent_packets| (int.contains(node) && Seq(c.ElectionMessage).contains(sent_packets)) && (LSendCoordinator(s, c)(s, s_, c, node, sent_packets) || exists |node, leader, sent_packets| (int.contains(node) && int.contains(leader) && Seq(c.ElectionMessage).contains(sent_packets)) && (LReceiveCoordinator(s, c)(s, s_, c, node, leader, sent_packets) || exists |node, sent_packets| (int.contains(node) && Seq(c.ElectionMessage).contains(sent_packets)) && LNodeFail(s, c)(s, s_, c, node, sent_packets)))))))
 }
 

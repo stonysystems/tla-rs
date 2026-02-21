@@ -31,17 +31,17 @@ pub struct LConstants {
 
 
 /// Learner operator
-pub open spec fn LLearner(c: LConstants) -> { constants: int, unexecuted_learner_state: int, max_ballot_seen: int } {
+pub open spec fn LLearner(c: LConstants) -> { unexecuted_learner_state: int, constants: int, max_ballot_seen: int } {
     LRecord { constants: c.ReplicaConstants, max_ballot_seen: Ballot, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: earnerState }
 }
 
 /// LearnerInit operator
-pub open spec fn LLearnerInit(s: LState, c: LConstants, l: int, c: int) -> bool {
+pub open spec fn LLearnerInit(s: LState, c: LConstants, l: int) -> bool {
     (((l.constants == c) && (l.max_ballot_seen == LRecord { constants: 0int, max_ballot_seen: 0int, proposer_id: 0, seqno: 0, unexecuted_learner_state: 0int })) && (l.unexecuted_learner_state == seq![]))
 }
 
 /// LearnerProcess2b operator
-pub open spec fn LLearnerProcess2b(s: LState, c: LConstants, s: int, s_: int, packet: int) -> bool {
+pub open spec fn LLearnerProcess2b(s: LState, c: LConstants, s_: int, packet: int) -> bool {
     {
     let m = packet.msg;
     {
@@ -64,12 +64,12 @@ pub open spec fn LLearnerProcess2b(s: LState, c: LConstants, s: int, s_: int, pa
 }
 
 /// LearnerForgetDecision operator
-pub open spec fn LLearnerForgetDecision(s: LState, c: LConstants, s: int, s_: int, opn: int) -> bool {
+pub open spec fn LLearnerForgetDecision(s: LState, c: LConstants, s_: int, opn: int) -> bool {
     if s.unexecuted_learner_state.dom().contains(opn) { (s_ == LRecord { constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.difference(set![opn]) }) } else { (s_ == s) }
 }
 
 /// LearnerForgetOperationsBefore operator
-pub open spec fn LLearnerForgetOperationsBefore(s: LState, c: LConstants, s: int, s_: int, ops_complete: int) -> bool {
+pub open spec fn LLearnerForgetOperationsBefore(s: LState, c: LConstants, s_: int, ops_complete: int) -> bool {
     forall |k| c.OperationNumber.contains(k) ==> ((s_.unexecuted_learner_state.dom().contains(k) <==> ((k >= ops_complete) && s.unexecuted_learner_state.dom().contains(k))) && forall |k| c.OperationNumber.contains(k) ==> ((s_.unexecuted_learner_state.dom().contains(k) ==> (s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k])) && (s_ == LRecord { constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: s_.unexecuted_learner_state })))
 }
 

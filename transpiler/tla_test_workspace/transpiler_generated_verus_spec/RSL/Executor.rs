@@ -44,7 +44,7 @@ pub struct LConstants {
 
 
 /// Executor operator
-pub open spec fn LExecutor(c: LConstants) -> { ops_complete: Set<int>, max_bal_reflected: int, app: int, reply_cache: int, next_op_to_execute: int, constants: int } {
+pub open spec fn LExecutor(c: LConstants) -> { max_bal_reflected: int, reply_cache: int, constants: int, ops_complete: Set<int>, next_op_to_execute: int, app: int } {
     LRecord { app: AppState, bal: 0int, bal_state_req: 0int, constants: c.ReplicaConstants, max_bal_reflected: c.Ballot, next_op_to_execute: LOutstandingOperation(c), opn_state_req: 0int, ops_complete: int, proposer_id: 0int, reply_cache: c.ReplyCache, seqno: 0int, v: 0int }
 }
 
@@ -54,12 +54,12 @@ pub open spec fn LOutstandingOperation(c: LConstants) -> Set<int> {
 }
 
 /// ExecutorInit operator
-pub open spec fn LExecutorInit(s: LState, c: LConstants, s: int, c: int) -> bool {
+pub open spec fn LExecutorInit(s: LState, c: LConstants) -> bool {
     ((((((s.constants == c) && (s.app == AppInitialize)) && (s.ops_complete == 0)) && (s.max_bal_reflected == LRecord { app: 0int, bal: 0int, bal_state_req: 0int, constants: 0int, max_bal_reflected: 0int, next_op_to_execute: 0int, opn_state_req: 0int, ops_complete: 0int, proposer_id: 0, reply_cache: 0int, seqno: 0, v: 0int })) && (s.next_op_to_execute == seq![])) && (s.reply_cache == seq![]))
 }
 
 /// ExecutorGetDecision operator
-pub open spec fn LExecutorGetDecision(s: LState, c: LConstants, s: int, s_: int, bal: int, opn: int, v: int) -> bool {
+pub open spec fn LExecutorGetDecision(s: LState, c: LConstants, s_: int, bal: int, opn: int, v: int) -> bool {
     (s_ == LRecord { app: s.app, bal: 0int, bal_state_req: 0int, constants: s.constants, max_bal_reflected: s.max_bal_reflected, next_op_to_execute: LRecord { app: 0int, bal: bal, bal_state_req: 0int, constants: 0int, max_bal_reflected: 0int, next_op_to_execute: 0int, opn_state_req: 0int, ops_complete: 0int, proposer_id: 0int, reply_cache: 0int, seqno: 0int, v: v }, opn_state_req: 0int, ops_complete: s.ops_complete, proposer_id: 0int, reply_cache: s.reply_cache, seqno: 0int, v: 0int })
 }
 
@@ -79,7 +79,7 @@ pub open spec fn LRepliesAreReplyType(s: LState, c: LConstants, replies: int) ->
 }
 
 /// UpdateNewCache operator
-pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c: int, c_: int, replies: int) -> bool {
+pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c_: int, replies: int) -> bool {
     {
     let nc = LClientsInReplies(s, c)(replies);
     forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| int.contains(req_idx) && ((((0 <= req_idx) && (req_idx < replies.len())) && (replies[req_idx].client == client)) && (c_[client] == replies[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
@@ -87,7 +87,7 @@ pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c: int, c_: int, repl
 }
 
 /// ExecutorExecute operator
-pub open spec fn LExecutorExecute(s: LState, c: LConstants, s: int, s_: int, sent_packets: int) -> bool {
+pub open spec fn LExecutorExecute(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     {
     let batch = s.next_op_to_execute.v;
     {
@@ -107,7 +107,7 @@ pub open spec fn LExecutorExecute(s: LState, c: LConstants, s: int, s_: int, sen
 }
 
 /// ExecutorProcessAppStateSupply operator
-pub open spec fn LExecutorProcessAppStateSupply(s: LState, c: LConstants, s: int, s_: int, inp: int) -> bool {
+pub open spec fn LExecutorProcessAppStateSupply(s: LState, c: LConstants, s_: int, inp: int) -> bool {
     {
     let m = inp.msg;
     (s_ == LRecord { app: m.app_state, bal: 0int, bal_state_req: 0int, constants: s.constants, max_bal_reflected: m.bal_state_supply, next_op_to_execute: seq![], opn_state_req: 0int, ops_complete: m.opn_state_supply, proposer_id: 0int, reply_cache: m.reply_cache, seqno: 0int, v: 0int })
@@ -115,7 +115,7 @@ pub open spec fn LExecutorProcessAppStateSupply(s: LState, c: LConstants, s: int
 }
 
 /// ExecutorProcessAppStateRequest operator
-pub open spec fn LExecutorProcessAppStateRequest(s: LState, c: LConstants, s: int, s_: int, inp: int, sent_packets: int) -> bool {
+pub open spec fn LExecutorProcessAppStateRequest(s: LState, c: LConstants, s_: int, inp: int, sent_packets: int) -> bool {
     {
     let m = inp.msg;
     if (((s.constants.all.config.replica_ids.contains(inp.src) && BalLeq(s.max_bal_reflected, m.bal_state_req)) && (s.ops_complete >= m.opn_state_req)) && ReplicaConstantsValid(s.constants)) { ((s_ == s) && (sent_packets == seq![{ dst: inp.src, src: s.constants.all.config.replica_ids[s.constants.my_index], msg: { bal_state_supply: s.max_bal_reflected, opn_state_supply: s.ops_complete, app_state: s.app, reply_cache: s.reply_cache } }])) } else { ((s_ == s) && (sent_packets == seq![])) }
@@ -123,12 +123,12 @@ pub open spec fn LExecutorProcessAppStateRequest(s: LState, c: LConstants, s: in
 }
 
 /// ExecutorProcessStartingPhase2 operator
-pub open spec fn LExecutorProcessStartingPhase2(s: LState, c: LConstants, s: int, s_: int, inp: int, sent_packets: int) -> bool {
+pub open spec fn LExecutorProcessStartingPhase2(s: LState, c: LConstants, s_: int, inp: int, sent_packets: int) -> bool {
     if (s.constants.all.config.replica_ids.contains(inp.src) && (inp.msg.logTruncationPoint_2 > s.ops_complete)) { ((s_ == s) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, LRecord { app: 0int, bal: 0int, bal_state_req: inp.msg.bal_2, constants: 0int, max_bal_reflected: 0int, next_op_to_execute: 0int, opn_state_req: inp.msg.logTruncationPoint_2, ops_complete: 0int, proposer_id: 0int, reply_cache: 0int, seqno: 0int, v: 0int }, sent_packets)) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ExecutorProcessRequest operator
-pub open spec fn LExecutorProcessRequest(s: LState, c: LConstants, s: int, inp: int, sent_packets: int) -> bool {
+pub open spec fn LExecutorProcessRequest(s: LState, c: LConstants, inp: int, sent_packets: int) -> bool {
     if ((inp.msg.seqno_req == s.reply_cache[inp.src].seqno) && ReplicaConstantsValid(s.constants)) { {
     let r = s.reply_cache[inp.src];
     (sent_packets == seq![{ dst: r.client, src: s.constants.all.config.replica_ids[s.constants.my_index], msg: { seqno_reply: r.seqno, reply: r.reply } }])

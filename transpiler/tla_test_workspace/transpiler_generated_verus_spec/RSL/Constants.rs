@@ -27,17 +27,17 @@ pub struct LConstants {
 
 
 /// Constants operator
-pub open spec fn LConstants(c: LConstants) -> { params: int, config: int } {
+pub open spec fn LConstants(c: LConstants) -> { config: int, params: int } {
     LRecord { all: 0int, config: Configuration, my_index: 0int, params: Parameters }
 }
 
 /// ReplicaConstants operator
-pub open spec fn LReplicaConstants(c: LConstants) -> { all: { config: int, params: int }, my_index: Set<int> } {
+pub open spec fn LReplicaConstants(c: LConstants) -> { my_index: Set<int>, all: { params: int, config: int } } {
     LRecord { all: LConstants(c), config: 0int, my_index: int, params: 0int }
 }
 
 /// ReplicaConstantsValid operator
-pub open spec fn LReplicaConstantsValid(s: LState, c: LConstants, c: int) -> bool {
+pub open spec fn LReplicaConstantsValid(s: LState, c: LConstants) -> bool {
     ((0 <= c.my_index) && (c.my_index < c.all.config.replica_ids.len()))
 }
 

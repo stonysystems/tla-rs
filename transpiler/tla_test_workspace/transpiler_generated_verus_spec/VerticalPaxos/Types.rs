@@ -38,7 +38,7 @@ pub open spec fn LConstants() -> { node_id: Set<int>, quorum_size: Set<int>, num
 }
 
 /// State operator
-pub open spec fn LState() -> { witness_val: Set<int>, config_num: Set<int>, committed: Set<bool>, has_witness: Set<bool>, committed_val: Set<int>, max_val: Set<int>, max_v_bal: Set<int>, promises_rcvd: Set<Set<int>>, has_voted: Set<bool>, max_bal: Set<int>, is_active: Set<bool>, accepts_rcvd: Set<Set<int>> } {
+pub open spec fn LState() -> { max_val: Set<int>, max_bal: Set<int>, promises_rcvd: Set<Set<int>>, committed_val: Set<int>, accepts_rcvd: Set<Set<int>>, max_v_bal: Set<int>, has_witness: Set<bool>, has_voted: Set<bool>, config_num: Set<int>, is_active: Set<bool>, witness_val: Set<int>, committed: Set<bool> } {
     LRecord { accepts_rcvd: int.powerset(), committed: bool, committed_val: int, config_num: int, has_voted: bool, has_witness: bool, is_active: bool, max_bal: int, max_v_bal: int, max_val: int, node_id: 0int, num_nodes: 0int, promises_rcvd: int.powerset(), quorum_size: 0int, witness_val: int }
 }
 

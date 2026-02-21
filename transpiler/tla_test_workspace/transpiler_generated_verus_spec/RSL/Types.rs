@@ -38,7 +38,7 @@ pub open spec fn LBallot(c: LConstants) -> { seqno: Set<int>, proposer_id: Set<i
 }
 
 /// Request operator
-pub open spec fn LRequest(c: LConstants) -> { request: int, seqno: Set<int>, client: int } {
+pub open spec fn LRequest(c: LConstants) -> { seqno: Set<int>, request: int, client: int } {
     LRecord { candidate_learned_value: 0int, client: AbstractEndPoint, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: AppMessage, seqno: int, t: 0int }
 }
 
@@ -48,12 +48,12 @@ pub open spec fn LReply(c: LConstants) -> { client: int, seqno: Set<int>, reply:
 }
 
 /// LearnerTuple operator
-pub open spec fn LLearnerTuple(c: LConstants) -> { candidate_learned_value: int, received_2b_message_senders: Set<int> } {
+pub open spec fn LLearnerTuple(c: LConstants) -> { received_2b_message_senders: Set<int>, candidate_learned_value: int } {
     LRecord { candidate_learned_value: Seq(LRequest(c)), client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: AbstractEndPoint.powerset(), reply: 0int, request: 0int, seqno: 0int, t: 0int }
 }
 
 /// Vote operator
-pub open spec fn LVote(c: LConstants) -> { max_val: int, max_value_bal: { proposer_id: Set<int>, seqno: Set<int> } } {
+pub open spec fn LVote(c: LConstants) -> { max_value_bal: { proposer_id: Set<int>, seqno: Set<int> }, max_val: int } {
     LRecord { candidate_learned_value: 0int, client: 0int, max_val: Seq(LRequest(c)), max_value_bal: c.Ballot, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: 0int, t: 0int }
 }
 

@@ -31,7 +31,7 @@ pub open spec fn LConfiguration(c: LConstants) -> { replica_ids: int, clientIds:
 }
 
 /// MinQuorumSize operator
-pub open spec fn LMinQuorumSize(s: LState, c: LConstants, c: int) -> int {
+pub open spec fn LMinQuorumSize(s: LState, c: LConstants) -> int {
     ((c.replica_ids.len() / 2) + 1)
 }
 
@@ -46,17 +46,17 @@ pub open spec fn LReplicasIsUnique(s: LState, c: LConstants, replica_ids: int) -
 }
 
 /// WellFormedLConfiguration operator
-pub open spec fn LWellFormedLConfiguration(s: LState, c: LConstants, c: int) -> bool {
+pub open spec fn LWellFormedLConfiguration(s: LState, c: LConstants) -> bool {
     ((0 < c.replica_ids.len()) && forall |i, j| (int.contains(i) && int.contains(j)) ==> (LReplicasDistinct(s, c)(c.replica_ids, i, j) && LReplicasIsUnique(s, c)(c.replica_ids)))
 }
 
 /// IsReplicaIndex operator
-pub open spec fn LIsReplicaIndex(s: LState, c: LConstants, idx: int, id: int, c: int) -> bool {
+pub open spec fn LIsReplicaIndex(s: LState, c: LConstants, idx: int, id: int) -> bool {
     (((0 <= idx) && (idx < c.replica_ids.len())) && (c.replica_ids[idx] == id))
 }
 
 /// GetReplicaIndex operator
-pub open spec fn LGetReplicaIndex(s: LState, c: LConstants, id: int, c: int) -> int {
+pub open spec fn LGetReplicaIndex(s: LState, c: LConstants, id: int) -> int {
     FindIndexInSeq(c.replica_ids, id)
 }
 

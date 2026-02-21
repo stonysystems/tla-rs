@@ -21,67 +21,67 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants, s: int, c: int) -> bool {
+pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     (((((((((((((((s.ballot == 0) && (s.phase.tag == Empty)) && (s.cmd == 0)) && (s.seq == 0)) && (s.dep_count == 0)) && (s.is_leader == false)) && (s.committed_count == 0)) && (s.executed_count == 0)) && (s.preaccept_senders == Set::<int>::empty())) && (s.accept_senders == Set::<int>::empty())) && (s.has_conflict == false)) && (s.max_resp_seq == 0)) && (c.num_replicas >= 3)) && (c.quorum_size > 0)) && (c.fast_quorum_size >= c.quorum_size))
 }
 
 /// Propose operator
-pub open spec fn LPropose(s: LState, c: LConstants, s: int, s_: int, c: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LPropose(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
     ((((((((((((((s.phase.tag == Empty) && (s_.ballot == s.ballot)) && (s_.phase.tag == PreAccepted)) && (s_.cmd == value)) && (s_.seq == (s.committed_count + 1))) && (s_.dep_count == 0)) && (s_.is_leader == true)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == Set::<int>::empty().union(set![c.my_id]))) && (s_.accept_senders == Set::<int>::empty())) && (s_.has_conflict == false)) && (s_.max_resp_seq == 0)) && (sent_packets == seq![{ ballot: s.ballot, cmd: value, seq: (s.committed_count + 1) }]))
 }
 
 /// SendPreAcceptOk operator
-pub open spec fn LSendPreAcceptOk(s: LState, c: LConstants, s: int, s_: int, c: int, local_conflict: int, local_seq: int, sent_packets: int) -> bool {
+pub open spec fn LSendPreAcceptOk(s: LState, c: LConstants, s_: int, local_conflict: int, local_seq: int, sent_packets: int) -> bool {
     (((((((((((((sent_packets == seq![{ sender: c.my_id, seq: local_seq, conflict: local_conflict }]) && (s_.ballot == s.ballot)) && (s_.phase == s.phase)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.accept_senders == s.accept_senders)) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq))
 }
 
 /// ReceivePreAcceptOk operator
-pub open spec fn LReceivePreAcceptOk(s: LState, c: LConstants, s: int, s_: int, c: int, pa_sender: int, pa_seq: int, pa_conflict: int, sent_packets: int) -> bool {
+pub open spec fn LReceivePreAcceptOk(s: LState, c: LConstants, s_: int, pa_sender: int, pa_seq: int, pa_conflict: int, sent_packets: int) -> bool {
     (((((s.phase.tag == PreAccepted) && (s.is_leader == true)) && s.preaccept_senders.contains(!(pa_sender))) && (s_.preaccept_senders == s.preaccept_senders.union(set![pa_sender]))) && (s_.has_conflict == if pa_conflict { true } else { (s.has_conflict && (s_.dep_count == if pa_conflict { (s.dep_count + 1) } else { (s.dep_count && (s_.max_resp_seq == if (pa_seq > s.max_resp_seq) { pa_seq } else { (s.max_resp_seq && (s_.seq == if (pa_seq > s.seq) { pa_seq } else { ((((((((s.seq && (sent_packets == seq![])) && (s_.ballot == s.ballot)) && (s_.phase == s.phase)) && (s_.cmd == s.cmd)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.accept_senders == s.accept_senders)) })) })) })) }))
 }
 
 /// FastCommit operator
-pub open spec fn LFastCommit(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LFastCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     (((((((((((((((((s.phase.tag == PreAccepted) && (s.is_leader == true)) && (s.preaccept_senders.len() >= c.fast_quorum_size)) && (s.has_conflict == false)) && (s_.ballot == s.ballot)) && (s_.phase.tag == Committed)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == (s.committed_count + 1))) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.accept_senders == s.accept_senders)) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq)) && (sent_packets == seq![{ cmd: s.cmd, seq: s.seq }]))
 }
 
 /// StartAccept operator
-pub open spec fn LStartAccept(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LStartAccept(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     (((((((((((((((((s.phase.tag == PreAccepted) && (s.is_leader == true)) && (s.preaccept_senders.len() >= c.quorum_size)) && (s.has_conflict == true)) && (s_.ballot == s.ballot)) && (s_.phase.tag == Accepted)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.accept_senders == Set::<int>::empty().union(set![c.my_id]))) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq)) && (sent_packets == seq![{ ballot: s.ballot, cmd: s.cmd, seq: s.seq }]))
 }
 
 /// SendAcceptOk operator
-pub open spec fn LSendAcceptOk(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LSendAcceptOk(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     (((((((((((((sent_packets == seq![{ sender: c.my_id }]) && (s_.ballot == s.ballot)) && (s_.phase == s.phase)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.accept_senders == s.accept_senders)) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq))
 }
 
 /// ReceiveAcceptOk operator
-pub open spec fn LReceiveAcceptOk(s: LState, c: LConstants, s: int, s_: int, c: int, ao_sender: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveAcceptOk(s: LState, c: LConstants, s_: int, ao_sender: int, sent_packets: int) -> bool {
     ((((((((((((((((s.phase.tag == Accepted) && (s.is_leader == true)) && s.accept_senders.contains(!(ao_sender))) && (s_.accept_senders == s.accept_senders.union(set![ao_sender]))) && (sent_packets == seq![])) && (s_.ballot == s.ballot)) && (s_.phase == s.phase)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq))
 }
 
 /// SlowCommit operator
-pub open spec fn LSlowCommit(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LSlowCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((((((s.phase.tag == Accepted) && (s.is_leader == true)) && (s.accept_senders.len() >= c.quorum_size)) && (s_.ballot == s.ballot)) && (s_.phase.tag == Committed)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == (s.committed_count + 1))) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.accept_senders == s.accept_senders)) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq)) && (sent_packets == seq![{ cmd: s.cmd, seq: s.seq }]))
 }
 
 /// Execute operator
-pub open spec fn LExecute(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LExecute(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((((s.phase.tag == Committed) && (s_.ballot == s.ballot)) && (s_.phase.tag == Executed)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == s.dep_count)) && (s_.is_leader == s.is_leader)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == (s.executed_count + 1))) && (s_.preaccept_senders == s.preaccept_senders)) && (s_.accept_senders == s.accept_senders)) && (s_.has_conflict == s.has_conflict)) && (s_.max_resp_seq == s.max_resp_seq)) && (sent_packets == seq![]))
 }
 
 /// Recover operator
-pub open spec fn LRecover(s: LState, c: LConstants, s: int, s_: int, c: int, new_ballot: int, sent_packets: int) -> bool {
+pub open spec fn LRecover(s: LState, c: LConstants, s_: int, new_ballot: int, sent_packets: int) -> bool {
     ((s.phase.tag == PreAccepted) || (((((((((((((((s.phase.tag == Accepted) && (new_ballot > s.ballot)) && (s_.ballot == new_ballot)) && (s_.phase.tag == PreAccepted)) && (s_.cmd == s.cmd)) && (s_.seq == s.seq)) && (s_.dep_count == 0)) && (s_.is_leader == true)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == Set::<int>::empty().union(set![c.my_id]))) && (s_.accept_senders == Set::<int>::empty())) && (s_.has_conflict == false)) && (s_.max_resp_seq == 0)) && (sent_packets == seq![{ ballot: new_ballot, cmd: s.cmd, seq: s.seq }])))
 }
 
 /// NewInstance operator
-pub open spec fn LNewInstance(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LNewInstance(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((((s.phase.tag == Executed) && (s_.ballot == s.ballot)) && (s_.phase.tag == Empty)) && (s_.cmd == 0)) && (s_.seq == 0)) && (s_.dep_count == 0)) && (s_.is_leader == false)) && (s_.committed_count == s.committed_count)) && (s_.executed_count == s.executed_count)) && (s_.preaccept_senders == Set::<int>::empty())) && (s_.accept_senders == Set::<int>::empty())) && (s_.has_conflict == false)) && (s_.max_resp_seq == 0)) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s: int, s_: int, c: int) -> bool {
+pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
     exists |value, sent_packets| (int.contains(value) && Seq(c.EPaxosMessage).contains(sent_packets)) && (LPropose(s, c)(s, s_, c, value, sent_packets) || exists |local_conflict, local_seq, sent_packets| (bool.contains(local_conflict) && int.contains(local_seq) && Seq(c.EPaxosMessage).contains(sent_packets)) && (LSendPreAcceptOk(s, c)(s, s_, c, local_conflict, local_seq, sent_packets) || exists |pa_sender, pa_seq, pa_conflict, sent_packets| (int.contains(pa_sender) && int.contains(pa_seq) && bool.contains(pa_conflict) && Seq(c.EPaxosMessage).contains(sent_packets)) && (LReceivePreAcceptOk(s, c)(s, s_, c, pa_sender, pa_seq, pa_conflict, sent_packets) || exists |sent_packets| Seq(c.EPaxosMessage).contains(sent_packets) && (LFastCommit(s, c)(s, s_, c, sent_packets) || exists |sent_packets| Seq(c.EPaxosMessage).contains(sent_packets) && (LStartAccept(s, c)(s, s_, c, sent_packets) || exists |sent_packets| Seq(c.EPaxosMessage).contains(sent_packets) && (LSendAcceptOk(s, c)(s, s_, c, sent_packets) || exists |ao_sender, sent_packets| (int.contains(ao_sender) && Seq(c.EPaxosMessage).contains(sent_packets)) && (LReceiveAcceptOk(s, c)(s, s_, c, ao_sender, sent_packets) || exists |sent_packets| Seq(c.EPaxosMessage).contains(sent_packets) && (LSlowCommit(s, c)(s, s_, c, sent_packets) || exists |sent_packets| Seq(c.EPaxosMessage).contains(sent_packets) && (LExecute(s, c)(s, s_, c, sent_packets) || exists |new_ballot, sent_packets| (int.contains(new_ballot) && Seq(c.EPaxosMessage).contains(sent_packets)) && (LRecover(s, c)(s, s_, c, new_ballot, sent_packets) || exists |sent_packets| Seq(c.EPaxosMessage).contains(sent_packets) && LNewInstance(s, c)(s, s_, c, sent_packets)))))))))))
 }
 

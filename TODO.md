@@ -5208,7 +5208,10 @@ transpiler/tla_test_workspace/
   - [x] **16.8.4a** Deduplicate reserved `s` / `s_` / `c` params when D1-generated operators already declare them, so emitted Verus signatures are syntactically valid for this failure class.
     - Implemented in `transpiler/src/tla/translator.rs::generate_spec_function` with collision filtering against auto-injected state/constant params.
     - Added translator regression tests to prevent reintroducing duplicate reserved params.
-  - [ ] **16.8.4b** Regenerate `transpiler_generated_verus_spec/` from `transpiler_generated_tla/` using the updated translator and snapshot before/after signature diffs.
+  - [x] **16.8.4b** Regenerate `transpiler_generated_verus_spec/` from `transpiler_generated_tla/` using the updated translator and snapshot before/after signature diffs.
+    - Executed in a clean detached worktree at commit `588fef1` to avoid mixing unrelated local modifications into generated artifacts.
+    - Scope check: regeneration touched 30 files with `197` insertions and `197` deletions (`394` total changed LOC), within the <500 LOC target for this leaf.
+    - Signature snapshot captured in `docs/phase16-8-4b-signature-diff.md` (pre/post signature line dump + representative protocol signature diffs).
   - [ ] **16.8.4c** Re-run D2 on regenerated specs and refresh category counts in `docs/conversion-testing-guide.md` + TODO status matrix.
   - [ ] **16.8.4d** Address remaining parser blockers (anonymous record return types and malformed call-shape emission) until the D2 compile gate can be promoted from blocked to required.
 - [x] Track failures by pattern category:

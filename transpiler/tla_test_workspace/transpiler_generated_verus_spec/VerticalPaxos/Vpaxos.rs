@@ -21,62 +21,62 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants, s: int, c: int) -> bool {
+pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     ((((((((((((((s.config_num == 0) && (s.max_bal == 0)) && (s.max_v_bal == 0)) && (s.max_val == 0)) && (s.has_voted == false)) && (s.is_active == true)) && (s.promises_rcvd == Set::<int>::empty())) && (s.accepts_rcvd == Set::<int>::empty())) && (s.committed == false)) && (s.committed_val == 0)) && (s.witness_val == 0)) && (s.has_witness == false)) && (c.quorum_size >= 1)) && (c.num_nodes >= c.quorum_size))
 }
 
 /// Prepare operator
-pub open spec fn LPrepare(s: LState, c: LConstants, s: int, s_: int, c: int, b: int, sent_packets: int) -> bool {
+pub open spec fn LPrepare(s: LState, c: LConstants, s_: int, b: int, sent_packets: int) -> bool {
     (((((((((((((((s.is_active == true) && (b > s.max_bal)) && (s_.max_bal == b)) && (sent_packets == seq![{ bal: b }])) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// SendPromise operator
-pub open spec fn LSendPromise(s: LState, c: LConstants, s: int, s_: int, c: int, prepare_bal: int, sent_packets: int) -> bool {
+pub open spec fn LSendPromise(s: LState, c: LConstants, s_: int, prepare_bal: int, sent_packets: int) -> bool {
     (((((((((((((((s.is_active == true) && (prepare_bal > s.max_bal)) && (s_.max_bal == prepare_bal)) && (sent_packets == seq![{ bal: prepare_bal, v_bal: s.max_v_bal, val: s.max_val }])) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// ReceivePromise operator
-pub open spec fn LReceivePromise(s: LState, c: LConstants, s: int, s_: int, c: int, sender: int, promise_bal: int, promise_v_bal: int, promise_val: int, sent_packets: int) -> bool {
+pub open spec fn LReceivePromise(s: LState, c: LConstants, s_: int, sender: int, promise_bal: int, promise_v_bal: int, promise_val: int, sent_packets: int) -> bool {
     (((((s.is_active == true) && (promise_bal == s.max_bal)) && s.promises_rcvd.contains(!(sender))) && (s_.promises_rcvd == s.promises_rcvd.union(set![sender]))) && (s_.max_v_bal == if (promise_v_bal > s.max_v_bal) { promise_v_bal } else { (s.max_v_bal && (s_.max_val == if (promise_v_bal > s.max_v_bal) { promise_val } else { ((((((((((s.max_val && (sent_packets == seq![])) && (s_.max_bal == s.max_bal)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness)) })) }))
 }
 
 /// Accept operator
-pub open spec fn LAccept(s: LState, c: LConstants, s: int, s_: int, c: int, b: int, v: int, sent_packets: int) -> bool {
+pub open spec fn LAccept(s: LState, c: LConstants, s_: int, b: int, v: int, sent_packets: int) -> bool {
     ((((((((((((((((s.is_active == true) && (b == s.max_bal)) && (b > s.max_v_bal)) && (s_.max_v_bal == b)) && (s_.max_val == v)) && (s_.has_voted == true)) && (sent_packets == seq![{ bal: b, val: v }])) && (s_.max_bal == s.max_bal)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// ReceiveAccepted operator
-pub open spec fn LReceiveAccepted(s: LState, c: LConstants, s: int, s_: int, c: int, sender: int, accept_bal: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveAccepted(s: LState, c: LConstants, s_: int, sender: int, accept_bal: int, sent_packets: int) -> bool {
     ((((((((((((((((s.is_active == true) && (accept_bal == s.max_bal)) && s.accepts_rcvd.contains(!(sender))) && (s_.accepts_rcvd == s.accepts_rcvd.union(set![sender]))) && (sent_packets == seq![])) && (s_.max_bal == s.max_bal)) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// Commit operator
-pub open spec fn LCommit(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((((((s.is_active == true) && (s.committed == false)) && (s.accepts_rcvd.len() >= c.quorum_size)) && (s_.committed == true)) && (s_.committed_val == s.max_val)) && (sent_packets == seq![])) && (s_.max_bal == s.max_bal)) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// Reconfigure operator
-pub open spec fn LReconfigure(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LReconfigure(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((((s.is_active == true) && (s_.config_num == (s.config_num + 1))) && (s_.max_bal == 0)) && (s_.max_v_bal == 0)) && (s_.max_val == s.max_val)) && (s_.has_voted == false)) && (s_.is_active == true)) && (s_.promises_rcvd == Set::<int>::empty())) && (s_.accepts_rcvd == Set::<int>::empty())) && (sent_packets == seq![])) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// WitnessSync operator
-pub open spec fn LWitnessSync(s: LState, c: LConstants, s: int, s_: int, c: int, witness_val: int, sent_packets: int) -> bool {
+pub open spec fn LWitnessSync(s: LState, c: LConstants, s_: int, witness_val: int, sent_packets: int) -> bool {
     ((((s.is_active == true) && (s_.has_witness == true)) && (s_.witness_val == witness_val)) && (s_.max_val == if !(s.has_voted) { witness_val } else { ((((((((((s.max_val && (sent_packets == seq![])) && (s_.max_bal == s.max_bal)) && (s_.max_v_bal == s.max_v_bal)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) }))
 }
 
 /// Sync operator
-pub open spec fn LSync(s: LState, c: LConstants, s: int, s_: int, c: int, new_config: int, val: int, sent_packets: int) -> bool {
+pub open spec fn LSync(s: LState, c: LConstants, s_: int, new_config: int, val: int, sent_packets: int) -> bool {
     (((((((((((((((s.is_active == false) && (new_config > s.config_num)) && (s_.config_num == new_config)) && (s_.max_bal == 0)) && (s_.max_v_bal == 0)) && (s_.max_val == val)) && (s_.has_voted == false)) && (s_.is_active == true)) && (s_.promises_rcvd == Set::<int>::empty())) && (s_.accepts_rcvd == Set::<int>::empty())) && (s_.committed == false)) && (s_.committed_val == 0)) && (s_.witness_val == 0)) && (s_.has_witness == false)) && (sent_packets == seq![]))
 }
 
 /// Deactivate operator
-pub open spec fn LDeactivate(s: LState, c: LConstants, s: int, s_: int, c: int, sent_packets: int) -> bool {
+pub open spec fn LDeactivate(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     ((((((((((((((s.is_active == true) && (s_.is_active == false)) && (sent_packets == seq![])) && (s_.config_num == s.config_num)) && (s_.max_bal == s.max_bal)) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s: int, s_: int, c: int) -> bool {
+pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
     exists |b, sent_packets| (int.contains(b) && Seq(c.VPMessage).contains(sent_packets)) && (LPrepare(s, c)(s, s_, c, b, sent_packets) || exists |prepare_bal, sent_packets| (int.contains(prepare_bal) && Seq(c.VPMessage).contains(sent_packets)) && (LSendPromise(s, c)(s, s_, c, prepare_bal, sent_packets) || exists |sender, promise_bal, promise_v_bal, promise_val, sent_packets| (int.contains(sender) && int.contains(promise_bal) && int.contains(promise_v_bal) && int.contains(promise_val) && Seq(c.VPMessage).contains(sent_packets)) && (LReceivePromise(s, c)(s, s_, c, sender, promise_bal, promise_v_bal, promise_val, sent_packets) || exists |b, v, sent_packets| (int.contains(b) && int.contains(v) && Seq(c.VPMessage).contains(sent_packets)) && (LAccept(s, c)(s, s_, c, b, v, sent_packets) || exists |sender, accept_bal, sent_packets| (int.contains(sender) && int.contains(accept_bal) && Seq(c.VPMessage).contains(sent_packets)) && (LReceiveAccepted(s, c)(s, s_, c, sender, accept_bal, sent_packets) || exists |sent_packets| Seq(c.VPMessage).contains(sent_packets) && (LCommit(s, c)(s, s_, c, sent_packets) || exists |sent_packets| Seq(c.VPMessage).contains(sent_packets) && (LReconfigure(s, c)(s, s_, c, sent_packets) || exists |witness_val, sent_packets| (int.contains(witness_val) && Seq(c.VPMessage).contains(sent_packets)) && (LWitnessSync(s, c)(s, s_, c, witness_val, sent_packets) || exists |new_config, val, sent_packets| (int.contains(new_config) && int.contains(val) && Seq(c.VPMessage).contains(sent_packets)) && (LSync(s, c)(s, s_, c, new_config, val, sent_packets) || exists |sent_packets| Seq(c.VPMessage).contains(sent_packets) && LDeactivate(s, c)(s, s_, c, sent_packets))))))))))
 }
 

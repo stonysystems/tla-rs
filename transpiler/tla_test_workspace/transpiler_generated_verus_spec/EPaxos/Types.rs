@@ -34,12 +34,12 @@ pub struct LState {
 
 
 /// Constants operator
-pub open spec fn LConstants() -> { quorum_size: Set<int>, num_replicas: Set<int>, my_id: Set<int>, fast_quorum_size: Set<int> } {
+pub open spec fn LConstants() -> { quorum_size: Set<int>, fast_quorum_size: Set<int>, my_id: Set<int>, num_replicas: Set<int> } {
     LRecord { accept_senders: 0int, ballot: 0int, cmd: 0int, committed_count: 0int, dep_count: 0int, executed_count: 0int, fast_quorum_size: int, has_conflict: 0int, is_leader: 0int, max_resp_seq: 0int, my_id: int, num_replicas: int, phase: 0int, preaccept_senders: 0int, quorum_size: int, seq: 0int }
 }
 
 /// State operator
-pub open spec fn LState() -> { has_conflict: Set<bool>, ballot: Set<int>, accept_senders: Set<Set<int>>, preaccept_senders: Set<Set<int>>, seq: Set<int>, cmd: Set<int>, phase: int, committed_count: Set<int>, dep_count: Set<int>, is_leader: Set<bool>, max_resp_seq: Set<int>, executed_count: Set<int> } {
+pub open spec fn LState() -> { phase: int, committed_count: Set<int>, dep_count: Set<int>, accept_senders: Set<Set<int>>, is_leader: Set<bool>, ballot: Set<int>, preaccept_senders: Set<Set<int>>, cmd: Set<int>, executed_count: Set<int>, max_resp_seq: Set<int>, has_conflict: Set<bool>, seq: Set<int> } {
     LRecord { accept_senders: int.powerset(), ballot: int, cmd: int, committed_count: int, dep_count: int, executed_count: int, fast_quorum_size: 0int, has_conflict: bool, is_leader: bool, max_resp_seq: int, my_id: 0int, num_replicas: 0int, phase: LInstancePhase(), preaccept_senders: int.powerset(), quorum_size: 0int, seq: int }
 }
 
