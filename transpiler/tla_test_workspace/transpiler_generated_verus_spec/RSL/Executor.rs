@@ -44,7 +44,7 @@ pub struct LConstants {
 
 
 /// Executor operator
-pub open spec fn LExecutor(c: LConstants) -> { max_bal_reflected: int, reply_cache: int, constants: int, ops_complete: Set<int>, next_op_to_execute: int, app: int } {
+pub open spec fn LExecutor(c: LConstants) -> { app: int, ops_complete: Set<int>, reply_cache: int, constants: int, max_bal_reflected: int, next_op_to_execute: int } {
     LRecord { app: AppState, bal: 0int, bal_state_req: 0int, constants: c.ReplicaConstants, max_bal_reflected: c.Ballot, next_op_to_execute: LOutstandingOperation(c), opn_state_req: 0int, ops_complete: int, proposer_id: 0int, reply_cache: c.ReplyCache, seqno: 0int, v: 0int }
 }
 
@@ -65,12 +65,12 @@ pub open spec fn LExecutorGetDecision(s: LState, c: LConstants, s_: int, bal: in
 
 /// GetPacketsFromReplies operator
 pub open spec fn LGetPacketsFromReplies(s: LState, c: LConstants, me: int, requests: int, replies: int) -> () {
-    if (requests.len() == 0) { seq![] } else { (seq![{ dst: requests[0].client, src: me, msg: { seqno_reply: requests[0].seqno, reply: replies[0].reply } }] + LGetPacketsFromReplies(s, c)(me, drop_first(requests), drop_first(replies))) }
+    if (requests.len() == 0) { seq![] } else { (seq![{ dst: requests[0].client, src: me, msg: { seqno_reply: requests[0].seqno, reply: replies[0].reply } }] + LGetPacketsFromReplies(s, c, me, drop_first(requests), drop_first(replies))) }
 }
 
 /// ClientsInReplies operator
 pub open spec fn LClientsInReplies(s: LState, c: LConstants, replies: int) -> () {
-    if (replies.len() == 0) { seq![] } else { LClientsInReplies(s, c)(drop_first(replies)).insert(replies[0].client, replies[0]) }
+    if (replies.len() == 0) { seq![] } else { LClientsInReplies(s, c, drop_first(replies)).insert(replies[0].client, replies[0]) }
 }
 
 /// RepliesAreReplyType operator
@@ -81,7 +81,7 @@ pub open spec fn LRepliesAreReplyType(s: LState, c: LConstants, replies: int) ->
 /// UpdateNewCache operator
 pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c_: int, replies: int) -> bool {
     {
-    let nc = LClientsInReplies(s, c)(replies);
+    let nc = LClientsInReplies(s, c, replies);
     forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| int.contains(req_idx) && ((((0 <= req_idx) && (req_idx < replies.len())) && (replies[req_idx].client == client)) && (c_[client] == replies[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
 }
 }
@@ -97,8 +97,8 @@ pub open spec fn LExecutorExecute(s: LState, c: LConstants, s_: int, sent_packet
     {
     let replies = temp[2];
     {
-    let clients = LClientsInReplies(s, c)(replies);
-    ((((s_.constants == s.constants) && (s_.app == new_state)) && (s_.ops_complete == (s.ops_complete + 1))) && (s_.max_bal_reflected == if BalLeq(s.max_bal_reflected, s.next_op_to_execute.bal) { s.next_op_to_execute.bal } else { ((((s.max_bal_reflected && (s_.next_op_to_execute == seq![])) && LUpdateNewCache(s, c)(s.reply_cache, s_.reply_cache, replies)) && (sent_packets == LGetPacketsFromReplies(s, c)(s.constants.all.config.replica_ids[s.constants.my_index], batch, replies))) && LRepliesAreReplyType(s, c)(sent_packets)) }))
+    let clients = LClientsInReplies(s, c, replies);
+    ((((s_.constants == s.constants) && (s_.app == new_state)) && (s_.ops_complete == (s.ops_complete + 1))) && (s_.max_bal_reflected == if BalLeq(s.max_bal_reflected, s.next_op_to_execute.bal) { s.next_op_to_execute.bal } else { ((((s.max_bal_reflected && (s_.next_op_to_execute == seq![])) && LUpdateNewCache(s, c, s.reply_cache, s_.reply_cache, replies)) && (sent_packets == LGetPacketsFromReplies(s, c, s.constants.all.config.replica_ids[s.constants.my_index], batch, replies))) && LRepliesAreReplyType(s, c, sent_packets)) }))
 }
 }
 }

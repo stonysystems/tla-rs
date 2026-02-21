@@ -3127,8 +3127,10 @@ fn walkdir(dir: &str) -> Vec<String> {
 /// Failure categories:
 /// - Category A (21 files): "Expected identifier, found '{'" — anonymous record return types
 ///   in Types.rs files (e.g., `fn foo() -> { field: Type }` is not valid Rust syntax)
-/// - Category B (10 files): "Expected ')', found '('" — duplicate parameter names in
-///   main module function signatures (D1 generates both struct and scalar params for state)
+/// - Category B (0 files after 16.8.4d-1): "Expected ')', found '('" parse failures from
+///   malformed call-shape emission; retained as a regression check
+/// - Category C (10 files): annotation parameter count mismatch after D1 regen, where
+///   generated `.automan` signatures drift from emitted function signatures in module files
 ///
 /// These are fundamental D1→D2 pipeline gaps, not D2 bugs.
 #[test]
@@ -3147,6 +3149,7 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
     let mut passed = 0;
     let mut cat_a_fails = 0; // "Expected identifier, found '{'"
     let mut cat_b_fails = 0; // "Expected ')', found '('"
+    let mut cat_c_fails = 0; // "Parameter count mismatch: function has ..."
     let mut other_fails: Vec<String> = Vec::new();
 
     let config = TranspilerConfig {
@@ -3188,6 +3191,8 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
                     cat_a_fails += 1;
                 } else if msg.contains("Expected ')', found") {
                     cat_b_fails += 1;
+                } else if msg.contains("Parameter count mismatch: function has") {
+                    cat_c_fails += 1;
                 } else {
                     other_fails.push(format!(
                         "{}: {}",
@@ -3215,11 +3220,15 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
         "Expected ~21 Category A failures (record return types), got {cat_a_fails}"
     );
     assert!(
-        cat_b_fails >= 9,
-        "Expected ~10 Category B failures (duplicate params), got {cat_b_fails}"
+        cat_b_fails == 0,
+        "Expected Category B call-shape parse failures to be eliminated, got {cat_b_fails}"
+    );
+    assert!(
+        cat_c_fails >= 9,
+        "Expected ~10 Category C annotation mismatch failures, got {cat_c_fails}"
     );
     eprintln!(
-        "D2 workspace results: {passed}/{total} pass, {cat_a_fails} Cat-A, {cat_b_fails} Cat-B, {} other",
+        "D2 workspace results: {passed}/{total} pass, {cat_a_fails} Cat-A, {cat_b_fails} Cat-B, {cat_c_fails} Cat-C, {} other",
         other_fails.len()
     );
     if !other_fails.is_empty() {

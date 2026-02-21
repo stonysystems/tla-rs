@@ -30,12 +30,12 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState() -> { has_successor: Set<bool>, obj_value: Set<int>, history: int, predecessor: Set<int>, has_predecessor: Set<bool>, successor: Set<int>, alive: Set<bool>, pending_sent: Set<Set<int>>, committed_count: Set<int>, role: int } {
+pub open spec fn LState() -> { alive: Set<bool>, has_successor: Set<bool>, successor: Set<int>, history: int, predecessor: Set<int>, pending_sent: Set<Set<int>>, role: int, obj_value: Set<int>, has_predecessor: Set<bool>, committed_count: Set<int> } {
     LRecord { alive: bool, chain_len: 0int, committed_count: int, has_predecessor: bool, has_successor: bool, history: Seq(int), node_id: 0int, obj_value: int, pending_sent: int.powerset(), predecessor: int, role: LNodeRole(), successor: int }
 }
 
 /// Constants operator
-pub open spec fn LConstants() -> { node_id: Set<int>, chain_len: Set<int> } {
+pub open spec fn LConstants() -> { chain_len: Set<int>, node_id: Set<int> } {
     LRecord { alive: 0int, chain_len: int, committed_count: 0int, has_predecessor: 0int, has_successor: 0int, history: 0int, node_id: int, obj_value: 0int, pending_sent: 0int, predecessor: 0int, role: 0int, successor: 0int }
 }
 

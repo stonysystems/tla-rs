@@ -554,27 +554,28 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 
 | Protocol | Files | D2 Parse | D2 Transpile | Failure Category |
 |----------|-------|----------|-------------|------------------|
-| TwoPhase | 2 | ❌ | ❌ | Types.rs: Cat-A; Twophase.rs: Cat-B |
-| Paxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Paxos.rs: Cat-B |
-| LeaderElection | 2 | ❌ | ❌ | Types.rs: Cat-A; Election.rs: Cat-B |
-| Raft | 2 | ❌ | ❌ | Types.rs: Cat-A; Raft.rs: Cat-B |
-| ChainReplication | 2 | ❌ | ❌ | Types.rs: Cat-A; Chain.rs: Cat-B |
-| PrimaryBackup | 2 | ❌ | ❌ | Types.rs: Cat-A; Primarybackup.rs: Cat-B |
-| PBFT | 2 | ❌ | ❌ | Types.rs: Cat-A; Pbft.rs: Cat-B |
-| VerticalPaxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Vpaxos.rs: Cat-B |
-| EPaxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Epaxos.rs: Cat-B |
-| RSL | 15 | 2 ✅ / 13 ❌ | 2 ✅ | Environment.rs, Message.rs pass (trivial) |
+| TwoPhase | 2 | ❌ | ❌ | Types.rs: Cat-A; Twophase.rs: Cat-C |
+| Paxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Paxos.rs: Cat-C |
+| LeaderElection | 2 | ❌ | ❌ | Types.rs: Cat-A; Election.rs: Cat-C |
+| Raft | 2 | ❌ | ❌ | Types.rs: Cat-A; Raft.rs: Cat-C |
+| ChainReplication | 2 | ❌ | ❌ | Types.rs: Cat-A; Chain.rs: Cat-C |
+| PrimaryBackup | 2 | ❌ | ❌ | Types.rs: Cat-A; Primarybackup.rs: Cat-C |
+| PBFT | 2 | ❌ | ❌ | Types.rs: Cat-A; Pbft.rs: Cat-C |
+| VerticalPaxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Vpaxos.rs: Cat-C |
+| EPaxos | 2 | ❌ | ❌ | Types.rs: Cat-A; Epaxos.rs: Cat-C |
+| RSL | 15 | 2 ✅ / 13 ❌ | 2 ✅ | Environment.rs, Message.rs pass; Broadcast.rs: Cat-C; remaining failures Cat-A |
 | **Total** | **33** | **2/33** | **2/33** | |
 
-Revalidated after `16.8.4b` regeneration (2026-02-21) via:
+Revalidated after `16.8.4d-1` call-shape fix + D1 workspace regeneration (2026-02-21) via:
 `cargo test --test integration test_d2_spec_to_exec_on_generated_workspace -- --nocapture`
-with unchanged totals: `2/33` pass, `21` Cat-A, `10` Cat-B, `0` other.
+with totals: `2/33` pass, `21` Cat-A, `0` Cat-B, `10` Cat-C, `0` other.
 
 **Failure Categories:**
 - **Cat-A (21 files)**: D1 generates anonymous record return types (`fn foo() -> { field: Type }`) — not valid Rust syntax. Affects all Types.rs files + most RSL module files.
-- **Cat-B (10 files)**: "Expected ')', found '('" from remaining malformed signature/call-shape patterns in D1 output (still present after reserved-name dedup). Affects all 9 main protocol modules + RSL/Broadcast.
+- **Cat-B (0 files)**: call-shape parse failures ("Expected ')', found '('") were eliminated by `16.8.4d-1` (`translate_op_apply` fix).
+- **Cat-C (10 files)**: annotation parameter mismatch (`Parameter count mismatch: function has ...`) on all 9 main protocol modules + `RSL/Broadcast.rs`; this is now the dominant non-Cat-A blocker after call-shape repair.
 
-**Root cause**: D1 (TLA+ → Verus) generates "TLA+-flavored Verus" that preserves TLA+ semantics but doesn't conform to the Verus parser's expectations. The D3→D1→D2 round-trip requires D1 output improvements (struct field inference, parameter dedup, record type elimination). The integrated D4 pipeline avoids these issues through internal type propagation.
+**Root cause**: D1 (TLA+ → Verus) still generates "TLA+-flavored Verus" that preserves semantics but diverges from D2 parser/annotation expectations. Remaining gaps are (1) anonymous record return types and (2) signature/annotation arity drift in regenerated module files. The integrated D4 pipeline avoids these workspace serialization gaps through internal type propagation.
 
 #### D3 TLC Model Checking: `transpiler_generated_tla_with_properties/` (Phase 16.8.2)
 

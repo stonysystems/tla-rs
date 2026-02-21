@@ -31,7 +31,7 @@ pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: i
 /// HandleRequestBatchHidden operator
 pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int, batch: int) -> ((int), ()) {
     if (batch.len() == 0) { seq![seq![state], seq![]] } else { {
-    let unused_2 = LHandleRequestBatchHidden(s, c)(state, drop_last(batch));
+    let unused_2 = LHandleRequestBatchHidden(s, c, state, drop_last(batch));
     {
     let unused_2 = AppHandleRequest(Last(restStates), Last(batch).request);
     seq![(restStates + seq![new_state]), (restReplies + seq![{ client: Last(batch).client, seqno: Last(batch).seqno, reply: reply }])]
@@ -42,7 +42,7 @@ pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int,
 /// HandleRequestBatch operator
 pub open spec fn LHandleRequestBatch(s: LState, c: LConstants, state: int, batch: int) -> (int, int) {
     {
-    let unused_3 = LHandleRequestBatchHidden(s, c)(state, batch);
+    let unused_3 = LHandleRequestBatchHidden(s, c, state, batch);
     seq![states, replies]
 }
 }

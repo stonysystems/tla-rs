@@ -28,7 +28,7 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState() -> { waiting_answer: Set<bool>, highest_heard: Set<int>, has_highest: Set<bool>, alive: Set<Set<int>>, has_leader: Set<bool>, electing: Set<Set<int>>, waiting_node: Set<int>, leader: Set<int> } {
+pub open spec fn LState() -> { has_highest: Set<bool>, electing: Set<Set<int>>, has_leader: Set<bool>, waiting_node: Set<int>, leader: Set<int>, alive: Set<Set<int>>, highest_heard: Set<int>, waiting_answer: Set<bool> } {
     LRecord { alive: int.powerset(), electing: int.powerset(), has_highest: bool, has_leader: bool, highest_heard: int, leader: int, nodes: 0int, num_nodes: 0int, waiting_answer: bool, waiting_node: int }
 }
 

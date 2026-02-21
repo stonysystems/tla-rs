@@ -61,7 +61,7 @@ pub open spec fn LLearn(s: LState, c: LConstants, s_: int) -> bool {
 
 /// Next operator
 pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |b| int.contains(b) && (LSend1a(s, c)(s, s_, c, b) || exists |b| int.contains(b) && (LSend1b(s, c)(s, s_, c, b) || exists |a, ab, av| (int.contains(a) && int.contains(ab) && int.contains(av)) && (LRecvPromise(s, c)(s, s_, c, a, ab, av) || exists |v| int.contains(v) && (LSend2a(s, c)(s, s_, c, v) || exists |b, v| (int.contains(b) && int.contains(v)) && (LSend2b(s, c)(s, s_, c, b, v) || exists |a| int.contains(a) && (LRecvAccepted(s, c)(s, s_, c, a) || LLearn(s, c)(s, s_, c)))))))
+    exists |b| int.contains(b) && (LSend1a(s, c, s, s_, c, b) || exists |b| int.contains(b) && (LSend1b(s, c, s, s_, c, b) || exists |a, ab, av| (int.contains(a) && int.contains(ab) && int.contains(av)) && (LRecvPromise(s, c, s, s_, c, a, ab, av) || exists |v| int.contains(v) && (LSend2a(s, c, s, s_, c, v) || exists |b, v| (int.contains(b) && int.contains(v)) && (LSend2b(s, c, s, s_, c, b, v) || exists |a| int.contains(a) && (LRecvAccepted(s, c, s, s_, c, a) || LLearn(s, c, s, s_, c)))))))
 }
 
 } // verus!

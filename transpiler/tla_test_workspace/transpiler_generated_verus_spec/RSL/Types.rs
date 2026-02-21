@@ -33,27 +33,27 @@ pub struct LConstants {
 
 
 /// Ballot operator
-pub open spec fn LBallot(c: LConstants) -> { seqno: Set<int>, proposer_id: Set<int> } {
+pub open spec fn LBallot(c: LConstants) -> { proposer_id: Set<int>, seqno: Set<int> } {
     LRecord { candidate_learned_value: 0int, client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: int, t: 0int }
 }
 
 /// Request operator
-pub open spec fn LRequest(c: LConstants) -> { seqno: Set<int>, request: int, client: int } {
+pub open spec fn LRequest(c: LConstants) -> { seqno: Set<int>, client: int, request: int } {
     LRecord { candidate_learned_value: 0int, client: AbstractEndPoint, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: AppMessage, seqno: int, t: 0int }
 }
 
 /// Reply operator
-pub open spec fn LReply(c: LConstants) -> { client: int, seqno: Set<int>, reply: int } {
+pub open spec fn LReply(c: LConstants) -> { reply: int, client: int, seqno: Set<int> } {
     LRecord { candidate_learned_value: 0int, client: AbstractEndPoint, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: AppMessage, request: 0int, seqno: int, t: 0int }
 }
 
 /// LearnerTuple operator
-pub open spec fn LLearnerTuple(c: LConstants) -> { received_2b_message_senders: Set<int>, candidate_learned_value: int } {
+pub open spec fn LLearnerTuple(c: LConstants) -> { candidate_learned_value: int, received_2b_message_senders: Set<int> } {
     LRecord { candidate_learned_value: Seq(LRequest(c)), client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: AbstractEndPoint.powerset(), reply: 0int, request: 0int, seqno: 0int, t: 0int }
 }
 
 /// Vote operator
-pub open spec fn LVote(c: LConstants) -> { max_value_bal: { proposer_id: Set<int>, seqno: Set<int> }, max_val: int } {
+pub open spec fn LVote(c: LConstants) -> { max_value_bal: { seqno: Set<int>, proposer_id: Set<int> }, max_val: int } {
     LRecord { candidate_learned_value: 0int, client: 0int, max_val: Seq(LRequest(c)), max_value_bal: c.Ballot, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: 0int, t: 0int }
 }
 

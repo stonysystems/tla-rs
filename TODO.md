@@ -5220,15 +5220,20 @@ transpiler/tla_test_workspace/
     - [x] **16.8.4d-1** Fix D1 `OpApply` emission to avoid malformed double-call shapes (`LFoo(...)(...)`) while preserving implicit `s/s_/c` injection when missing.
       - Implemented in `transpiler/src/tla/translator.rs::translate_op_apply` with module-operator-aware call assembly.
       - Added regressions for both cases: implicit state/const injection when omitted, and no double-call when `s/s_/c` are explicit.
-    - [ ] **16.8.4d-2** Re-run D2 workspace pass and refresh per-category counts after call-shape fix.
-      - Current D2 counts remain `2/33`, `21` Cat-A, `10` Cat-B until `transpiler_generated_verus_spec/` is regenerated with the new translator behavior.
+    - [x] **16.8.4d-2** Re-run D2 workspace pass and refresh per-category counts after call-shape fix.
+      - Regenerated all `33` D1 workspace specs from `transpiler_generated_tla/` into `transpiler_generated_verus_spec/` using `translate-tla --gen-modes`.
+      - Re-ran `cargo test --test integration test_d2_spec_to_exec_on_generated_workspace -- --nocapture` after regeneration.
+      - Updated measured totals to `2/33` pass, `21` Cat-A, `0` Cat-B, `10` Cat-C, `0` uncategorized.
+      - Net effect: call-shape parse failures are eliminated; remaining non-Cat-A blockers are now annotation arity mismatches (Cat-C).
     - [ ] **16.8.4d-3** Eliminate anonymous record return type emission in D1 output for `Types.rs` and RSL helper specs.
-    - [ ] **16.8.4d-4** Promote 16.8.4 compile gate status once Cat-A/Cat-B parser blockers are both resolved.
+    - [ ] **16.8.4d-3b** Resolve D1 signature/annotation arity drift (`Parameter count mismatch`) for module files after reserved-parameter dedup.
+    - [ ] **16.8.4d-4** Promote 16.8.4 compile gate status once Cat-A/Cat-C blockers are both resolved.
 - [x] Track failures by pattern category:
   - **2/33 PASS**: RSL/Environment.rs, RSL/Message.rs (trivial: empty struct / constant set only)
   - **Category A (21 files)**: "Expected identifier, found '{'" — D1 generates anonymous record return types `fn foo() -> { field: Type }` not valid in Rust; affects all Types.rs + most RSL module files
-  - **Category B (10 files)**: "Expected ')', found '('" — remaining malformed signature/call-shape patterns in D1 output (post 16.8.4a reserved-name dedup); affects all 9 main protocol modules + RSL/Broadcast
-  - **Root cause**: D1 (TLA+ → Verus) output is "TLA+-flavored Verus" that matches TLA+ semantics but not Verus parser expectations. The D3→D1→D2 round-trip requires D1 output quality improvements (struct field type inference, parameter deduplication, record type elimination) before D2 can consume it. The direct D4 pipeline (TLA+ → Verus Exec) works because it uses integrated type inference and avoids the intermediate serialization step.
+  - **Category B (0 files)**: call-shape parse failures ("Expected ')', found '('") eliminated by `16.8.4d-1`.
+  - **Category C (10 files)**: annotation parameter-count mismatches after D1 regeneration (`Parameter count mismatch: function has ...`); affects all 9 main protocol modules + RSL/Broadcast.
+  - **Root cause**: D1 (TLA+ → Verus) output is still "TLA+-flavored Verus" that diverges from D2 parser/annotation expectations. Remaining blockers are anonymous record return types + signature/annotation arity drift. The direct D4 pipeline (TLA+ → Verus Exec) works because it uses integrated type inference and avoids the intermediate serialization step.
 
 #### 16.8.5: External TLA+ corpora (LLM + community)
 

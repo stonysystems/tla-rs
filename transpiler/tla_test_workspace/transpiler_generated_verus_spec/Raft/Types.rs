@@ -32,7 +32,7 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState(s: LState) -> { voted_for: Set<int>, log: int, match_index: Set<spec_fn(int) -> int>, next_index: Set<spec_fn(int) -> int>, current_term: Set<int>, commit_index: Set<int>, role: int, has_voted: Set<bool>, votes_granted: Set<Set<int>> } {
+pub open spec fn LState(s: LState) -> { commit_index: Set<int>, next_index: Set<spec_fn(int) -> int>, log: int, match_index: Set<spec_fn(int) -> int>, role: int, has_voted: Set<bool>, votes_granted: Set<Set<int>>, voted_for: Set<int>, current_term: Set<int> } {
     LRecord { commit_index: int, current_term: int, has_voted: bool, log: Seq(LLogEntry()), match_index: Map::<u64, u64>, my_id: 0int, next_index: Map::<u64, u64>, quorum_size: 0int, role: LServerRole(), servers: 0int, term: 0int, value: 0int, voted_for: int, votes_granted: int.powerset() }
 }
 
@@ -42,7 +42,7 @@ pub open spec fn LConstants() -> { my_id: Set<int>, servers: Set<Set<int>>, quor
 }
 
 /// LogEntry operator
-pub open spec fn LLogEntry() -> { term: Set<int>, value: Set<int> } {
+pub open spec fn LLogEntry() -> { value: Set<int>, term: Set<int> } {
     LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: 0int, next_index: 0int, quorum_size: 0int, role: 0int, servers: 0int, term: int, value: int, voted_for: 0int, votes_granted: 0int }
 }
 

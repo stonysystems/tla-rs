@@ -43,7 +43,7 @@ pub struct LConstants {
 
 
 /// Proposer operator
-pub open spec fn LProposer(s: LState, c: LConstants) -> { current_state: Set<int>, next_operation_number_to_propose: Set<int>, max_ballot_i_sent_1a: int, incomplete_batch_timer: int, constants: int, received_1b_packets: Set<int>, highest_seqno_requested_by_client_this_view: Set<spec_fn(int) -> Set<int>>, election_state: int, request_queue: int } {
+pub open spec fn LProposer(s: LState, c: LConstants) -> { request_queue: int, current_state: Set<int>, next_operation_number_to_propose: Set<int>, constants: int, highest_seqno_requested_by_client_this_view: Set<spec_fn(int) -> Set<int>>, election_state: int, incomplete_batch_timer: int, received_1b_packets: Set<int>, max_ballot_i_sent_1a: int } {
     LRecord { bal_1a: 0int, bal_2: 0int, constants: c.ReplicaConstants, current_state: int, election_state: ElectionState, highest_seqno_requested_by_client_this_view: Map::<AbstractEndPoint, int>, incomplete_batch_timer: LIncompleteBatchTimer(c), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: c.Ballot, next_operation_number_to_propose: int, proposer_id: 0int, received_1b_packets: c.RslPacket.powerset(), request_queue: Seq(Request), seqno: 0int, when: 0int }
 }
 
@@ -64,7 +64,7 @@ pub open spec fn LSetOfMessage1b(s: LState, c: LConstants, S: int) -> bool {
 
 /// SetOfMessage1bAboutBallot operator
 pub open spec fn LSetOfMessage1bAboutBallot(s: LState, c: LConstants, S: int, b: int) -> bool {
-    (LSetOfMessage1b(s, c)(S) && forall |p| c.RslPacket.contains(p) ==> (S.contains(p) ==> (p.msg.bal_1b == b)))
+    (LSetOfMessage1b(s, c, S) && forall |p| c.RslPacket.contains(p) ==> (S.contains(p) ==> (p.msg.bal_1b == b)))
 }
 
 /// ExistVotesHasProposalLargeThanOpn operator
@@ -74,7 +74,7 @@ pub open spec fn LExistVotesHasProposalLargeThanOpn(s: LState, c: LConstants, p:
 
 /// ExistsAcceptorHasProposalLargeThanOpn operator
 pub open spec fn LExistsAcceptorHasProposalLargeThanOpn(s: LState, c: LConstants, S: int, op: int) -> bool {
-    exists |p| c.RslPacket.contains(p) && (S.contains(p) && LExistVotesHasProposalLargeThanOpn(s, c)(p, op))
+    exists |p| c.RslPacket.contains(p) && (S.contains(p) && LExistVotesHasProposalLargeThanOpn(s, c, p, op))
 }
 
 /// AllAcceptorsHadNoProposal operator
@@ -94,17 +94,17 @@ pub open spec fn LExistsBallotInS(s: LState, c: LConstants, v: int, S: int, opn:
 
 /// ValIsHighestNumberedProposalAtBallot operator
 pub open spec fn LValIsHighestNumberedProposalAtBallot(s: LState, c: LConstants, v: int, S: int, opn: int) -> bool {
-    (LLmax_balInS(s, c)(c, S, opn) && LExistsBallotInS(s, c)(v, c, S, opn))
+    (LLmax_balInS(s, c, c, S, opn) && LExistsBallotInS(s, c, v, c, S, opn))
 }
 
 /// ValIsHighestNumberedProposal operator
 pub open spec fn LValIsHighestNumberedProposal(s: LState, c: LConstants, v: int, S: int, opn: int) -> bool {
-    exists |c| c.Ballot.contains(c) && LValIsHighestNumberedProposalAtBallot(s, c)(v, c, S, opn)
+    exists |c| c.Ballot.contains(c) && LValIsHighestNumberedProposalAtBallot(s, c, v, c, S, opn)
 }
 
 /// ProposerCanNominateUsingOperationNumber operator
 pub open spec fn LProposerCanNominateUsingOperationNumber(s: LState, c: LConstants, log_truncation_point: int, opn: int) -> bool {
-    ((((((((s.election_state.current_view == s.max_ballot_i_sent_1a) && (s.current_state == 2)) && (s.received_1b_packets.len() >= MinQuorumSize(s.constants.all.config))) && LSetOfMessage1bAboutBallot(s, c)(s.received_1b_packets, s.max_ballot_i_sent_1a)) && LIsAfterLogTruncationPoint(s, c)(opn, s.received_1b_packets)) && (opn < UpperBoundedAddition(log_truncation_point, s.constants.all.params.max_log_length, s.constants.all.params.max_integer_val))) && (opn >= 0)) && LtUpperBound(opn, s.constants.all.params.max_integer_val))
+    ((((((((s.election_state.current_view == s.max_ballot_i_sent_1a) && (s.current_state == 2)) && (s.received_1b_packets.len() >= MinQuorumSize(s.constants.all.config))) && LSetOfMessage1bAboutBallot(s, c, s.received_1b_packets, s.max_ballot_i_sent_1a)) && LIsAfterLogTruncationPoint(s, c, opn, s.received_1b_packets)) && (opn < UpperBoundedAddition(log_truncation_point, s.constants.all.params.max_log_length, s.constants.all.params.max_integer_val))) && (opn >= 0)) && LtUpperBound(opn, s.constants.all.params.max_integer_val))
 }
 
 /// ProposerInit operator
@@ -132,7 +132,7 @@ pub open spec fn LProposerProcess1b(s: LState, c: LConstants, s_: int, p: int) -
 
 /// ProposerMaybeEnterPhase2 operator
 pub open spec fn LProposerMaybeEnterPhase2(s: LState, c: LConstants, s_: int, log_truncation_point: int, sent_packets: int) -> bool {
-    if (((s.received_1b_packets.len() >= MinQuorumSize(s.constants.all.config)) && LSetOfMessage1bAboutBallot(s, c)(s.received_1b_packets, s.max_ballot_i_sent_1a)) && (s.current_state == 1)) { ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, constants: s.constants, current_state: 2, election_state: s.election_state, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: log_truncation_point, proposer_id: 0int, received_1b_packets: s.received_1b_packets, request_queue: s.request_queue, seqno: 0int, when: 0int }) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, LRecord { bal_1a: 0int, bal_2: s.max_ballot_i_sent_1a, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: log_truncation_point, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, proposer_id: 0int, received_1b_packets: 0int, request_queue: 0int, seqno: 0int, when: 0int }, sent_packets)) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (((s.received_1b_packets.len() >= MinQuorumSize(s.constants.all.config)) && LSetOfMessage1bAboutBallot(s, c, s.received_1b_packets, s.max_ballot_i_sent_1a)) && (s.current_state == 1)) { ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, constants: s.constants, current_state: 2, election_state: s.election_state, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: log_truncation_point, proposer_id: 0int, received_1b_packets: s.received_1b_packets, request_queue: s.request_queue, seqno: 0int, when: 0int }) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, LRecord { bal_1a: 0int, bal_2: s.max_ballot_i_sent_1a, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: log_truncation_point, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, proposer_id: 0int, received_1b_packets: 0int, request_queue: 0int, seqno: 0int, when: 0int }, sent_packets)) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ProposerNominateNewValueAndSend2a operator
@@ -153,13 +153,13 @@ pub open spec fn LProposerNominateNewValueAndSend2a(s: LState, c: LConstants, s_
 pub open spec fn LProposerNominateOldValueAndSend2a(s: LState, c: LConstants, s_: int, log_truncation_point: int, sent_packets: int) -> bool {
     {
     let opn = s.next_operation_number_to_propose;
-    exists |p| c.RslPacket.contains(p) && (((s.received_1b_packets.contains(p) && LValIsHighestNumberedProposal(s, c)(p.msg.votes[opn].max_val, s.received_1b_packets, opn)) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, constants: s.constants, current_state: s.current_state, election_state: s.election_state, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: (s.next_operation_number_to_propose + 1), proposer_id: 0int, received_1b_packets: s.received_1b_packets, request_queue: s.request_queue, seqno: 0int, when: 0int })) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p.msg.votes[opn].max_val }, sent_packets))
+    exists |p| c.RslPacket.contains(p) && (((s.received_1b_packets.contains(p) && LValIsHighestNumberedProposal(s, c, p.msg.votes[opn].max_val, s.received_1b_packets, opn)) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, constants: s.constants, current_state: s.current_state, election_state: s.election_state, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: s.incomplete_batch_timer, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: (s.next_operation_number_to_propose + 1), proposer_id: 0int, received_1b_packets: s.received_1b_packets, request_queue: s.request_queue, seqno: 0int, when: 0int })) && BroadcastToEveryone(s.constants.all.config, s.constants.my_index, { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p.msg.votes[opn].max_val }, sent_packets))
 }
 }
 
 /// ProposerMaybeNominateValueAndSend2a operator
 pub open spec fn LProposerMaybeNominateValueAndSend2a(s: LState, c: LConstants, s_: int, clock: int, log_truncation_point: int, sent_packets: int) -> bool {
-    if !(LProposerCanNominateUsingOperationNumber(s, c)(s, log_truncation_point, s.next_operation_number_to_propose)) { ((s_ == s) && (sent_packets == seq![])) } else { if !(LAllAcceptorsHadNoProposal(s, c)(s.received_1b_packets, s.next_operation_number_to_propose)) { LProposerNominateOldValueAndSend2a(s, c)(s, s_, log_truncation_point, sent_packets) } else { if ((LExistsAcceptorHasProposalLargeThanOpn(s, c)(s.received_1b_packets, s.next_operation_number_to_propose) || (s.request_queue.len() >= s.constants.all.params.max_batch_size)) || (((s.request_queue.len() > 0) && (s.incomplete_batch_timer.tag == IncompleteBatchTimerOn)) && (clock >= s.incomplete_batch_timer.when))) { LProposerNominateNewValueAndSend2a(s, c)(s, s_, clock, log_truncation_point, sent_packets) } else { if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer.tag == IncompleteBatchTimerOff)) { ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, constants: s.constants, current_state: s.current_state, election_state: s.election_state, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: LRecord { bal_1a: 0int, bal_2: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, proposer_id: 0int, received_1b_packets: 0int, request_queue: 0int, seqno: 0int, when: UpperBoundedAddition(clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val) }, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, proposer_id: 0int, received_1b_packets: s.received_1b_packets, request_queue: s.request_queue, seqno: 0int, when: 0int }) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) } } } }
+    if !(LProposerCanNominateUsingOperationNumber(s, c, s, log_truncation_point, s.next_operation_number_to_propose)) { ((s_ == s) && (sent_packets == seq![])) } else { if !(LAllAcceptorsHadNoProposal(s, c, s.received_1b_packets, s.next_operation_number_to_propose)) { LProposerNominateOldValueAndSend2a(s, c, s, s_, log_truncation_point, sent_packets) } else { if ((LExistsAcceptorHasProposalLargeThanOpn(s, c, s.received_1b_packets, s.next_operation_number_to_propose) || (s.request_queue.len() >= s.constants.all.params.max_batch_size)) || (((s.request_queue.len() > 0) && (s.incomplete_batch_timer.tag == IncompleteBatchTimerOn)) && (clock >= s.incomplete_batch_timer.when))) { LProposerNominateNewValueAndSend2a(s, c, s, s_, clock, log_truncation_point, sent_packets) } else { if ((s.request_queue.len() > 0) && (s.incomplete_batch_timer.tag == IncompleteBatchTimerOff)) { ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, constants: s.constants, current_state: s.current_state, election_state: s.election_state, highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view, incomplete_batch_timer: LRecord { bal_1a: 0int, bal_2: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, proposer_id: 0int, received_1b_packets: 0int, request_queue: 0int, seqno: 0int, when: UpperBoundedAddition(clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val) }, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: s.max_ballot_i_sent_1a, next_operation_number_to_propose: s.next_operation_number_to_propose, proposer_id: 0int, received_1b_packets: s.received_1b_packets, request_queue: s.request_queue, seqno: 0int, when: 0int }) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) } } } }
 }
 
 /// ProposerProcessHeartbeat operator

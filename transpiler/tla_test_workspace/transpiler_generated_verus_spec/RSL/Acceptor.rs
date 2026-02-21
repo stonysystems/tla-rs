@@ -36,7 +36,7 @@ pub struct LConstants {
 
 
 /// Acceptor operator
-pub open spec fn LAcceptor(c: LConstants) -> { votes: int, log_truncation_point: int, constants: int, max_bal: int, last_checkpointed_operation: int } {
+pub open spec fn LAcceptor(c: LConstants) -> { last_checkpointed_operation: int, max_bal: int, votes: int, log_truncation_point: int, constants: int } {
     LRecord { constants: c.ReplicaConstants, last_checkpointed_operation: Seq(c.OperationNumber), log_truncation_point: c.OperationNumber, max_bal: Ballot, proposer_id: 0int, seqno: 0int, votes: c.Votes }
 }
 
@@ -77,7 +77,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, c: LConstants, s_: int, inp: int,
     let m = inp.msg;
     {
     let newLogTruncationPoint = if (((inp.msg.opn_2a - s.constants.all.params.max_log_length) + 1) > s.log_truncation_point) { ((inp.msg.opn_2a - s.constants.all.params.max_log_length) + 1) } else { s.log_truncation_point };
-    (((BroadcastToEveryone(s.constants.all.config, s.constants.my_index, { bal_2b: m.bal_2a, opn_2b: m.opn_2a, val_2b: m.val_2a }, sent_packets) && (s_.max_bal == m.bal_2a)) && (s_.log_truncation_point == newLogTruncationPoint)) && if (s.log_truncation_point <= m.opn_2a) { LAddVoteAndRemoveOldOnes(s, c)(s.votes, s_.votes, m.opn_2a, { max_value_bal: m.bal_2a, max_val: m.val_2a }, newLogTruncationPoint) } else { (((s_.votes == s.votes) && (s_.constants == s.constants)) && (s_.last_checkpointed_operation == s.last_checkpointed_operation)) })
+    (((BroadcastToEveryone(s.constants.all.config, s.constants.my_index, { bal_2b: m.bal_2a, opn_2b: m.opn_2a, val_2b: m.val_2a }, sent_packets) && (s_.max_bal == m.bal_2a)) && (s_.log_truncation_point == newLogTruncationPoint)) && if (s.log_truncation_point <= m.opn_2a) { LAddVoteAndRemoveOldOnes(s, c, s.votes, s_.votes, m.opn_2a, { max_value_bal: m.bal_2a, max_val: m.val_2a }, newLogTruncationPoint) } else { (((s_.votes == s.votes) && (s_.constants == s.constants)) && (s_.last_checkpointed_operation == s.last_checkpointed_operation)) })
 }
 }
 }
@@ -92,7 +92,7 @@ pub open spec fn LAcceptorProcessHeartbeat(s: LState, c: LConstants, s_: int, in
 
 /// AcceptorTruncateLog operator
 pub open spec fn LAcceptorTruncateLog(s: LState, c: LConstants, s_: int, opn: int) -> bool {
-    if (opn <= s.log_truncation_point) { (s_ == s) } else { ((s_ == LRecord { constants: s.constants, last_checkpointed_operation: s.last_checkpointed_operation, log_truncation_point: opn, max_bal: s.max_bal, proposer_id: 0int, seqno: 0int, votes: s_.votes }) && LRemoveVotesBeforeLogTruncationPoint(s, c)(s.votes, s_.votes, opn)) }
+    if (opn <= s.log_truncation_point) { (s_ == s) } else { ((s_ == LRecord { constants: s.constants, last_checkpointed_operation: s.last_checkpointed_operation, log_truncation_point: opn, max_bal: s.max_bal, proposer_id: 0int, seqno: 0int, votes: s_.votes }) && LRemoveVotesBeforeLogTruncationPoint(s, c, s.votes, s_.votes, opn)) }
 }
 
 } // verus!

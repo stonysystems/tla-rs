@@ -33,12 +33,12 @@ pub struct LState {
 
 
 /// Constants operator
-pub open spec fn LConstants() -> { node_id: Set<int>, quorum_size: Set<int>, num_nodes: Set<int> } {
+pub open spec fn LConstants() -> { quorum_size: Set<int>, num_nodes: Set<int>, node_id: Set<int> } {
     LRecord { accepts_rcvd: 0int, committed: 0int, committed_val: 0int, config_num: 0int, has_voted: 0int, has_witness: 0int, is_active: 0int, max_bal: 0int, max_v_bal: 0int, max_val: 0int, node_id: int, num_nodes: int, promises_rcvd: 0int, quorum_size: int, witness_val: 0int }
 }
 
 /// State operator
-pub open spec fn LState() -> { max_val: Set<int>, max_bal: Set<int>, promises_rcvd: Set<Set<int>>, committed_val: Set<int>, accepts_rcvd: Set<Set<int>>, max_v_bal: Set<int>, has_witness: Set<bool>, has_voted: Set<bool>, config_num: Set<int>, is_active: Set<bool>, witness_val: Set<int>, committed: Set<bool> } {
+pub open spec fn LState() -> { accepts_rcvd: Set<Set<int>>, committed: Set<bool>, promises_rcvd: Set<Set<int>>, has_voted: Set<bool>, witness_val: Set<int>, config_num: Set<int>, max_val: Set<int>, has_witness: Set<bool>, is_active: Set<bool>, max_v_bal: Set<int>, committed_val: Set<int>, max_bal: Set<int> } {
     LRecord { accepts_rcvd: int.powerset(), committed: bool, committed_val: int, config_num: int, has_voted: bool, has_witness: bool, is_active: bool, max_bal: int, max_v_bal: int, max_val: int, node_id: 0int, num_nodes: 0int, promises_rcvd: int.powerset(), quorum_size: 0int, witness_val: int }
 }
 
