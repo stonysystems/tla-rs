@@ -1095,6 +1095,40 @@ fn test_rsl_types_manual_helpers_foundational_symbols_present() {
 }
 
 #[test]
+fn test_rsl_types_manual_helpers_contains_only_type_infrastructure() {
+    let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
+        .expect("Failed to read RSL types manual helpers");
+
+    // Phase 21.2.9 guard: this helper file is for type/clone/view infrastructure only.
+    // Protocol action implementations should live in generated *_gen.rs or impl modules.
+    assert!(
+        !source.contains("pub exec fn"),
+        "types_manual_helpers.rs should not define protocol exec functions"
+    );
+
+    let forbidden_protocol_symbols = [
+        "CAcceptorProcess1a(",
+        "CAcceptorProcess2a(",
+        "CAcceptorProcessHeartbeat(",
+        "CAcceptorTruncateLog(",
+        "CLearnerProcess2b(",
+        "CExecutorExecute(",
+        "CProposerProcessRequest(",
+        "CElectionStateProcessHeartbeat(",
+        "CBroadcastToEveryone(",
+        "CReplicaNextProcessPacket(",
+    ];
+
+    for symbol in forbidden_protocol_symbols {
+        assert!(
+            !source.contains(symbol),
+            "types_manual_helpers.rs should not contain protocol function `{}`",
+            symbol
+        );
+    }
+}
+
+#[test]
 fn test_rsl_types_manual_helpers_extension_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
         .expect("Failed to read RSL types manual helpers");

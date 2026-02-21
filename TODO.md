@@ -43,6 +43,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 **Next steps (priority order):**
 1. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
 2. **Phase 20: Auto-infer TOML configuration from spec analysis** — ✅ MOSTLY COMPLETE. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
+3. **Phase 22: Native model checking from tla-rs spec source** — Add a source-first checker that consumes Verus spec files (`LInit`/`LNext`) directly, with finite-domain safety checking and counterexample traces. See [Phase 22](#phase-22-native-model-checking-for-tla-rs-spec-source-first).
 2. ~~**Phase 19: Eliminate all manual impl delegates from generated RSL code**~~ ✅ COMPLETE — All RSL gen modules fully standalone. election_gen.rs enabled, 0 delegates across all 7 gen modules. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
 2. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
 3. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
@@ -83,6 +84,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 18. [Phase 19: Eliminate Manual Impl Delegates from Generated RSL Code](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code)
 19. [Phase 20: Auto-Infer TOML Configuration from Spec Analysis](#phase-20-auto-infer-toml-configuration-from-spec-analysis)
 20. [Phase 21: Minimal TOML Regeneration and Eliminate manual_code](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code)
+21. [Phase 22: Native Model Checking for TLA-rs Spec (Source-First)](#phase-22-native-model-checking-for-tla-rs-spec-source-first)
 
 ---
 
@@ -6225,7 +6227,7 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] Also fixed: HashMap.insert() semicolon bug in printer, type_remapping in stubs, ensures in stubs
 - [x] 1126 lib tests + 146 integration tests pass
 
-#### 21.2.3 RSL broadcast: no manual code needed ✅ PARTIAL
+#### 21.2.3 RSL broadcast: no manual code needed ✅
 
 - [x] Fixed ModeAnalyzer regression: `check_output_in_quantifier` now whitelists Seq comprehension pattern
   - Pattern: `forall |idx| bounds ==> output[idx] == expr` (convertible to WhileLoop)
@@ -6233,13 +6235,12 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] Fixed stub generator: non-predicate spec functions (return Seq/Map/etc) no longer get spec call in ensures
 - [x] Fixed broadcast remapping: `AbstractEndPoint` → `EndPoint` (was `CAbstractEndPoint` which doesn't exist)
 - [x] CBroadcastToEveryone now transpiles correctly via WhileLoop (moder no longer blocks it)
-- [ ] **BLOCKED**: Regenerated broadcast_gen.rs missing element-level validity ensures/proofs
-  - Callers (acceptor, proposer, executor, replica) depend on `forall |i| result@[i].valid()`
-  - Hand-tuned version has loop invariants + proof block for CPacket validity
-  - Transpiler's WhileLoop generator doesn't yet produce element-level validity proofs
-  - Committed hand-tuned version restored (581 verified, 0 errors)
-- [ ] Future: teach WhileLoop generator to emit `result@[j].valid()` invariants for constructed struct elements
-- 1130 lib tests + 146 integration tests pass (4 new tests added)
+- [x] Regenerated `broadcast_gen.rs` now includes element-level ensures/proofs (`valid`, `abstractable`)
+  - Added `vec_element_ensures = ["valid", "abstractable"]` in `broadcast_transpile.toml`
+  - WhileLoop generator now emits per-element predicate loop invariants and per-iteration predicate proof block for constructed struct elements
+  - `CBroadcastToEveryone` is fully auto-generated again (no hand-tuned restore needed)
+- [x] Taught WhileLoop generator to emit `result@[j].valid()`-style invariants for constructed struct elements
+- 1134 lib tests + 148 integration tests pass; Verus verification passes (`scons ... liblib.so`)
 
 #### 21.2.4 RSL acceptor: DEFERRED — hand-written proofs required
 
@@ -6284,7 +6285,8 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 
 #### 21.2.9 RSL types: keep types_manual_helpers.rs (deferred)
 
-- [ ] types_manual_helpers.rs is **type infrastructure** (impl blocks, clone methods, view traits), NOT protocol functions
+- [x] types_manual_helpers.rs is **type infrastructure** (impl blocks, clone methods, view traits), NOT protocol functions
+  - Added regression test `test_rsl_types_manual_helpers_contains_only_type_infrastructure` to guard against protocol exec/action functions being injected into this file.
 - [ ] Keep `manual_code = "types_manual_helpers.rs"` in types_transpile.toml
 - [ ] Long-term (Phase 21.7): teach type generator to produce these impl blocks
 - [ ] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle
@@ -6376,3 +6378,103 @@ Based on current manual code analysis (204 assumes + 25 external_body):
 | **Total** | **66** | **~19-28** | **~38-47** | |
 
 The verified function count may drop from 583 to ~540-560 as hidden assumes become honest `external_body`. This is a **net improvement in correctness** — the trust boundary becomes explicit and auditable.
+
+## Phase 22: Native Model Checking for TLA-rs Spec (Source-First)
+
+### 22.1 Scope and Acceptance Criteria
+
+- [ ] Define MVP as **safety model checking** over finite models using tla-rs spec source (`LInit`, `LNext`) directly (no `.tla` input required).
+- [ ] Explicitly defer liveness/fairness (`[]<>`, `WF`, `SF`, `~>`) to a later phase.
+- [ ] Define pass criteria:
+  - Exhaustive checks for small finite models on TwoPhase, LeaderElection, PrimaryBackup.
+  - Bounded/partial exploration support for large-state protocols (e.g., Paxos).
+
+### 22.2 Source-First Spec Ingestion
+
+- [ ] Add a source ingestion pipeline that consumes protocol spec files directly:
+  - `src/protocol/<Proto>/types.rs`
+  - `src/protocol/<Proto>/<proto>.rs`
+- [ ] Reuse existing parser/AST (`parse_file`, `SpecFunction`, `Expr`) as the canonical input path.
+- [ ] Resolve and validate required entrypoints:
+  - `LInit(s, c) -> bool`
+  - `LNext(s, s_, c) -> bool`
+- [ ] Add diagnostics for missing or incompatible signatures (clear “what to rename/fix” guidance).
+
+### 22.3 Finite Model Configuration (`model.toml`)
+
+- [ ] Design a finite-domain config format for model checking:
+  - Constant assignments/domains (`LConstants` fields)
+  - Quantifier domains (`int`, `nat`, enum subsets, bounded seq/set/map sizes)
+  - Search limits (`max_depth`, `max_states`, timeout)
+  - Property list (`invariants`, deadlock toggle)
+- [ ] Implement parser + validation for `model.toml`.
+- [ ] Support CLI overrides for key limits/domains.
+
+### 22.4 Model Checking IR and Evaluator
+
+- [ ] Create `transpiler/src/modelcheck/` module.
+- [ ] Define normalized transition IR:
+  - Current state `s`
+  - Next state `s_`
+  - Constants `c`
+  - Branch-level constraints from `LNext`
+- [ ] Implement runtime value model for supported spec types:
+  - primitives, enums, tuples, structs, Seq/Set/Map (bounded)
+- [ ] Implement evaluator for the required `Expr` subset used in protocol specs.
+- [ ] Add explicit unsupported-construct errors (no silent fallback).
+
+### 22.5 Successor Generation from `LNext`
+
+- [ ] Reuse/discover `LNext` disjunction branches (including `exists`-quantified branches).
+- [ ] Expand existential variables using configured finite domains.
+- [ ] Solve branch constraints to produce concrete successor states.
+- [ ] Deduplicate equivalent successor states via canonical state hashing.
+- [ ] Add optional stuttering/deadlock semantics toggle.
+
+### 22.6 State-Space Exploration Engine
+
+- [ ] Implement BFS and DFS exploration modes.
+- [ ] Maintain visited-set and frontier statistics.
+- [ ] Check:
+  - `LInit` for initial-state construction
+  - User-selected invariants on every reached state
+  - Optional deadlock detection
+- [ ] Emit counterexample traces with action branch + state diff summaries.
+
+### 22.7 CLI Integration
+
+- [ ] Add new CLI subcommand: `verus-transpile model-check`.
+- [ ] Proposed flags:
+  - `--input` (protocol spec file)
+  - `--types` (types file; optional if inferable)
+  - `--model` (`model.toml`)
+  - `--init`, `--next` (override function names; default `LInit`, `LNext`)
+  - `--invariant` (repeatable)
+  - `--search` (`bfs|dfs`)
+  - `--max-depth`, `--max-states`, `--timeout`
+  - `--json-report` (machine-readable result)
+- [ ] Add human-readable summary output (states, transitions, depth, elapsed, result).
+
+### 22.8 Validation and Regression Tests
+
+- [ ] Add unit tests for evaluator semantics and domain expansion.
+- [ ] Add integration tests for end-to-end model-check runs on:
+  - TwoPhase
+  - LeaderElection
+  - PrimaryBackup
+  - Paxos (bounded run)
+- [ ] Add differential checks against existing TLC wrapper outcomes for shared small models.
+- [ ] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
+
+### 22.9 Documentation and Rollout
+
+- [ ] Document “how to model check tla-rs specs directly” in `docs/`.
+- [ ] Provide migration guidance from TLC wrapper workflow to source-first workflow.
+- [ ] Document current limitations and supported expression/type subset.
+- [ ] Add troubleshooting section for common modeling errors (domain too large, unsupported constructs).
+
+### 22.10 Follow-Up (Post-MVP)
+
+- [ ] Auto-generate model-check wrappers from relational spec patterns where needed.
+- [ ] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
+- [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.
