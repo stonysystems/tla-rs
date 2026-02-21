@@ -422,19 +422,46 @@ impl<'a> ExprTranslator<'a> {
             return self.coerce_untyped_arbitrary_from_type_hint(rendered, hint);
         }
 
-        let normalized = hint
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect::<String>();
-        let is_structured = matches!(arg_expr, TlaExpr::Record(_) | TlaExpr::Tuple(_));
-
-        if !is_structured {
+        let trimmed = hint.trim();
+        if trimmed.is_empty() {
             return rendered.to_string();
         }
 
+        let normalized = trimmed
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>();
+        let arg_is_setish = self.expr_is_setish(arg_expr, rendered);
+        let arg_is_seqish = self.expr_is_seqish(arg_expr, rendered);
+        let arg_is_non_int_shape =
+            self.expr_is_non_int_shape(arg_expr) || arg_is_setish || arg_is_seqish;
+
         match normalized.as_str() {
-            "int" | "nat" => "arbitrary::<int>()".to_string(),
-            "bool" => "arbitrary::<bool>()".to_string(),
+            "int" | "nat" => {
+                if arg_is_non_int_shape {
+                    "arbitrary::<int>()".to_string()
+                } else {
+                    rendered.to_string()
+                }
+            }
+            "bool" => {
+                if !self.expr_is_boolish(arg_expr) {
+                    "arbitrary::<bool>()".to_string()
+                } else {
+                    rendered.to_string()
+                }
+            }
+            _ if Self::type_hint_is_seq(trimmed) => {
+                if !arg_is_seqish {
+                    if !trimmed.contains("->") {
+                        format!("arbitrary::<{}>()", trimmed)
+                    } else {
+                        "arbitrary::<Seq<int>>()".to_string()
+                    }
+                } else {
+                    rendered.to_string()
+                }
+            }
             _ => rendered.to_string(),
         }
     }
@@ -735,10 +762,37 @@ impl<'a> ExprTranslator<'a> {
             | TlaExpr::FnConstruct { .. }
             | TlaExpr::FnExcept { .. }
             | TlaExpr::FnSet { .. } => true,
-            TlaExpr::BinOp { op, .. } => matches!(
-                op,
-                TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus
-            ),
+            TlaExpr::BinOp { op, left, right } => match op {
+                TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus | TlaBinOp::CrossProd => true,
+                TlaBinOp::Plus => {
+                    let left_rendered = self.translate(left);
+                    let right_rendered = self.translate(right);
+                    self.expr_is_setish(left, &left_rendered)
+                        || self.expr_is_setish(right, &right_rendered)
+                        || self.expr_is_seqish(left, &left_rendered)
+                        || self.expr_is_seqish(right, &right_rendered)
+                }
+                _ => false,
+            },
+            TlaExpr::OpApply { .. } => self.expr_type_hint(expr).is_some_and(|hint| {
+                Self::type_hint_is_set(hint)
+                    || Self::type_hint_is_seq(hint)
+                    || Self::type_hint_is_map(hint)
+                    || Self::type_hint_is_record_like(hint)
+            }),
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                self.expr_is_non_int_shape(then_expr)
+                    || self.expr_is_non_int_shape(else_expr)
+                    || self.expr_is_setish(then_expr, &self.translate(then_expr))
+                    || self.expr_is_setish(else_expr, &self.translate(else_expr))
+                    || self.expr_is_seqish(then_expr, &self.translate(then_expr))
+                    || self.expr_is_seqish(else_expr, &self.translate(else_expr))
+            }
+            TlaExpr::LetIn { body, .. } => self.expr_is_non_int_shape(body),
             TlaExpr::Ident(name) => self.identifier_type_hint(name).is_some_and(|hint| {
                 Self::type_hint_is_set(hint)
                     || Self::type_hint_is_seq(hint)
@@ -1622,7 +1676,9 @@ impl<'a> ExprTranslator<'a> {
                     if self.config.normalize_unknown_external_refs
                         && expected_is_int_like
                         && (rendered_value.starts_with("c.")
-                            || self.expr_is_non_int_shape(value))
+                            || self.expr_is_non_int_shape(value)
+                            || self.expr_is_setish(value, &rendered_value)
+                            || self.expr_is_seqish(value, &rendered_value))
                     {
                         rendered_value = "arbitrary::<int>()".to_string();
                     }
@@ -4630,7 +4686,7 @@ mod tests {
         };
         assert_eq!(
             translator.translate(&expr),
-            "exists |promise_val: bool| LReceivePromise(promise_val)"
+            "exists |promise_val: bool| LReceivePromise(arbitrary::<bool>())"
         );
     }
 
@@ -4960,6 +5016,72 @@ mod tests {
             translator.translate(&expr),
             "LAddVoteAndRemoveOldOnes(c, votes, votes_, 1, arbitrary::<int>(), 2)"
         );
+    }
+
+    #[test]
+    fn test_generated_d1_module_operator_call_coerces_scalar_ident_to_seq_param_hint() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config
+            .operator_info
+            .insert("Helper".to_string(), OperatorKind::ConstantOp);
+        config
+            .operator_param_type_hints
+            .insert("Helper".to_string(), vec!["Seq<int>".to_string()]);
+        config
+            .identifier_type_hints
+            .insert("x".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Helper")),
+            args: vec![TlaExpr::ident("x")],
+        };
+
+        assert_eq!(translator.translate(&expr), "LHelper(arbitrary::<Seq<int>>())");
+    }
+
+    #[test]
+    fn test_generated_d1_module_operator_call_coerces_numeric_arg_to_bool_param_hint() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config
+            .operator_info
+            .insert("ReceivePromise".to_string(), OperatorKind::ConstantOp);
+        config
+            .operator_param_type_hints
+            .insert("ReceivePromise".to_string(), vec!["bool".to_string()]);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("ReceivePromise")),
+            args: vec![TlaExpr::number(1)],
+        };
+
+        assert_eq!(translator.translate(&expr), "LReceivePromise(arbitrary::<bool>())");
+    }
+
+    #[test]
+    fn test_generated_d1_module_operator_call_coerces_seqish_arg_to_int_param_hint() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config
+            .operator_info
+            .insert("UseInt".to_string(), OperatorKind::ConstantOp);
+        config
+            .operator_param_type_hints
+            .insert("UseInt".to_string(), vec!["int".to_string()]);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("UseInt")),
+            args: vec![TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("drop_first")),
+                args: vec![TlaExpr::ident("replies")],
+            }],
+        };
+
+        assert_eq!(translator.translate(&expr), "LUseInt(arbitrary::<int>())");
     }
 
     #[test]
@@ -7009,8 +7131,8 @@ mod tests {
         let output = translator.translate(&module);
 
         assert!(
-            output.contains("log_truncation_point: arbitrary()"),
-            "Expected generated-D1 reserved-root fallback to normalize c.field value to arbitrary(), got:\n{}",
+            output.contains("log_truncation_point: arbitrary::<int>()"),
+            "Expected generated-D1 reserved-root fallback to normalize c.field value to arbitrary::<int>(), got:\n{}",
             output
         );
     }
@@ -7119,6 +7241,62 @@ mod tests {
         assert!(
             out.contains("current_view_suspectors: arbitrary::<int>()"),
             "Expected int field to normalize non-int set-shaped value in generated D1, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_record_int_field_normalizes_if_set_branches_to_arbitrary_int() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .record_structs
+            .insert("current_view_suspectors".to_string(), "LRecord".to_string());
+        config.record_all_fields = vec!["current_view_suspectors".to_string()];
+        config
+            .record_field_types
+            .insert("current_view_suspectors".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "current_view_suspectors".to_string(),
+            TlaExpr::IfThenElse {
+                cond: Box::new(TlaExpr::Bool(true)),
+                then_expr: Box::new(TlaExpr::SetEnum(vec![TlaExpr::number(1)])),
+                else_expr: Box::new(TlaExpr::SetEnum(vec![])),
+            },
+        )]);
+
+        let out = translator.translate(&expr);
+        assert!(
+            out.contains("current_view_suspectors: arbitrary::<int>()"),
+            "Expected int field to normalize set-shaped if branches in generated D1, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_record_int_field_normalizes_seq_plus_value_to_arbitrary_int() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .record_structs
+            .insert("request_queue".to_string(), "LRecord".to_string());
+        config.record_all_fields = vec!["request_queue".to_string()];
+        config
+            .record_field_types
+            .insert("request_queue".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "request_queue".to_string(),
+            TlaExpr::binop(
+                TlaBinOp::Plus,
+                TlaExpr::Tuple(vec![TlaExpr::number(1)]),
+                TlaExpr::Tuple(vec![TlaExpr::number(2)]),
+            ),
+        )]);
+
+        let out = translator.translate(&expr);
+        assert!(
+            out.contains("request_queue: arbitrary::<int>()"),
+            "Expected int field to normalize seq-shaped plus value in generated D1, got:\n{}",
             out
         );
     }

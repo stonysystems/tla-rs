@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `23/33` files compile with Verus after `16.8.3d-3b-2`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `23/33` files compile with Verus after `16.8.3d-3b-3`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5544,7 +5544,24 @@ transpiler/tla_test_workspace/
           - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-3b-2`: `23/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `4` `E0282`, `1` `REC_DECREASES`.
           - Net effect: compile passes improved (`22 -> 23`) and mismatched-type blockers reduced (`E0308: 7 -> 5`) while preserving `E0277=0`; one former mismatched-type file now leads with inference (`E0282: 3 -> 4`).
-        - [ ] **16.8.3d-3b-3** Reduce residual control-flow/function-call `E0308` mismatches in generated D1 specs (including mixed branch/call argument shape drift) and refresh D1 baseline expectations.
+        - [x] **16.8.3d-3b-3** Reduce residual control-flow/function-call `E0308` mismatches in generated D1 specs (including mixed branch/call argument shape drift) and refresh D1 baseline expectations.
+          - Scope/LOC check: implemented as focused generated-D1 call-arg coercion + int-field record-shape normalization + targeted regressions; stayed under the <500 LOC leaf target.
+          - Expanded generated-D1 module-operator argument coercion from parameter type hints:
+            - seq-expected params now normalize scalar identifiers/placeholders to `arbitrary::<Seq<int>>()`;
+            - int-expected params now normalize seq/set-shaped args to `arbitrary::<int>()`;
+            - bool-expected params now normalize numeric/non-bool args to `arbitrary::<bool>()`.
+          - Expanded generated-D1 int-typed record-field normalization for control-flow/collection drift:
+            - `if` branches returning set shapes;
+            - seq-concat (`+`) tuple/seq-shaped values in int fields.
+          - Added regressions:
+            - `test_generated_d1_module_operator_call_coerces_scalar_ident_to_seq_param_hint`
+            - `test_generated_d1_module_operator_call_coerces_seqish_arg_to_int_param_hint`
+            - `test_generated_d1_module_operator_call_coerces_numeric_arg_to_bool_param_hint`
+            - `test_generated_d1_record_int_field_normalizes_if_set_branches_to_arbitrary_int`
+            - `test_generated_d1_record_int_field_normalizes_seq_plus_value_to_arbitrary_int`
+          - Re-built `transpiler/target/release/verus-transpile`, regenerated the residual `E0308` target modules (`RSL/Election`, `RSL/Executor`, `RSL/Learner`, `RSL/Proposer`, `VerticalPaxos/Vpaxos`), and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-3b-3`: `23/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `3` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `5` `E0282`, `1` `REC_DECREASES`.
+          - Net effect: residual mismatched-type blockers reduced (`E0308: 5 -> 3`) with compile pass count unchanged (`23 -> 23`) while preserving `E0277=0`; one former mismatched-type file now leads with `E0599` and one with `E0282`.
       - [ ] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
