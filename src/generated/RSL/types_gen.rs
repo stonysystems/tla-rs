@@ -176,24 +176,6 @@ impl View for CParameters {
     }
 }
 
-pub fn StaticParams() -> (p:CParameters)
-    ensures
-        p.max_log_length > 0,
-        p.max_log_length < 10000,
-        p.valid(),
-        p.max_log_length < max_votes_len(),
-        0 < p.max_batch_size <= RequestBatchSizeLimit(),
-{
-    CParameters{
-        max_log_length: 1000,
-        baseline_view_timeout_period: 400,
-        heartbeat_period: 30,
-        max_integer_val: 0x8000_0000_0000_0000 - 1,
-        max_batch_size: 32,
-        max_batch_delay: 30,
-    }
-}
-
 // =============================================================================
 // CConfiguration (generated + impl methods)
 // =============================================================================
@@ -561,7 +543,7 @@ pub fn InitReplicaConstants(end:&EndPoint, config:&CConfiguration) -> (rc:CRepli
         rc.all.params.max_log_length > 0,
         rc.all.params.max_log_length < 10000,
 {
-    let params = StaticParams();
+    let params = crate::implementation::RSL::cparameters::StaticParams();
     let (found, index) = config.CGetReplicaIndex(end);
     let constants = CConstants{config:config.clone_up_to_view(), params:params};
     assert(constants.config.valid());

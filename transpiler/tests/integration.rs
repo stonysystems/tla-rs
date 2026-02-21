@@ -1250,7 +1250,6 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
 
     let expected_symbols = [
         "impl CParameters",
-        "StaticParams()",
         "pub struct CConfiguration",
         "CGetReplicaIndex(",
         "lemma_AbstractifyEndpoints_properties",
@@ -1269,6 +1268,18 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
             symbol
         );
     }
+
+    assert!(
+        !source.contains("pub fn StaticParams() -> (p:CParameters)"),
+        "StaticParams should be re-homed out of manual helper injection"
+    );
+
+    let cparameters_source = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
+        .expect("Failed to read RSL cparameters module");
+    assert!(
+        cparameters_source.contains("pub fn StaticParams() -> (p:CParameters)"),
+        "StaticParams should be defined in implementation/RSL/cparameters.rs"
+    );
 }
 
 #[test]
