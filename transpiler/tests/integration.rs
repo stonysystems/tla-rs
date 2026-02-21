@@ -3221,7 +3221,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3d-1:
+    // Baseline after 16.8.3d-3d-2b:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
     // - infers quantifier binder types from bound-set and call-site hints, and
@@ -3229,10 +3229,14 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     // - coerces non-int structured/control-flow placeholders in int-typed record contexts,
     // - coerces scalar/seq drift at module-operator call-sites from parameter hints,
     // - coerces Eq/Neq arbitrary peers from map shape/type hints and local let hints,
-    // - aligns partially explicit action call prefixes with implicit s/s_/c injection.
+    // - aligns partially explicit action call prefixes with implicit s/s_/c injection,
+    // - aliases variable-free explicit-state modules to `LState = LRecord`,
+    // - infers generated-D1 helper parameter hints from operator call sites,
+    // - uses a collision-free constants parameter alias in variable-free helpers
+    //   when explicit/bound identifiers reuse `c`.
     assert_eq!(
-        passed, 25,
-        "Expected exactly twenty-five D1 files to compile at current baseline; pass files: {:?}",
+        passed, 28,
+        "Expected exactly twenty-eight D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3252,8 +3256,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 2 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 5,
-        "Expected 5 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 1,
+        "Expected 1 mismatched-types (E0308) failure at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3276,8 +3280,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 type-inference (E0282) failures at baseline"
     );
     assert_eq!(
-        cat_rec_decreases, 1,
-        "Expected 1 recursive-missing-decreases first-error at baseline"
+        cat_rec_decreases, 2,
+        "Expected 2 recursive-missing-decreases first-errors at baseline"
     );
     assert!(
         other_fails.is_empty(),

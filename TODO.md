@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `25/33` files compile with Verus after `16.8.3d-3c-3`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `28/33` files compile with Verus after `16.8.3d-3d-2b`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5607,6 +5607,29 @@ transpiler/tla_test_workspace/
           - Re-measured D1 first-error baseline after `16.8.3d-3d-1`: `25/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
           - Net effect: wrong-arity first-error class is eliminated (`E0061: 1 -> 0`) without changing compile-pass count (`25/33`); one file now surfaces `E0599` as its first error.
         - [ ] **16.8.3d-3d-2** Reduce `E0308` first errors in `Raft/Raft.rs` and `RSL/{Acceptor,Election,Learner,Proposer}.rs` via targeted bool/int and branch-shape coercion fixes.
+          - Scope analysis (`<500` LOC target per leaf): current blockers split across at least three distinct code paths, so this task is expanded into smaller leaves to keep each implementation bounded and reviewable.
+          - [x] **16.8.3d-3d-2a** Eliminate `LState` vs `LRecord` first-error mismatches in `RSL/{Acceptor,Learner}.rs` for variable-free modules by aligning generated state type shape.
+            - Scope/LOC check: implemented as a focused state-struct generation refinement + regression test + targeted module regeneration; stayed within the <500 LOC leaf target.
+            - Translator change: when a module has no `VARIABLE`s, has explicit `s`/`s_` operator params, and only a single generated record struct, emit `type LState = LRecord` instead of an empty `struct LState {}`.
+            - Added regression: `test_translate_variable_free_stateful_module_aliases_state_to_record`.
+            - Regenerated affected D1 files: `RSL/{Acceptor,Learner,Election,Proposer}.rs` and `Raft/Raft.rs`.
+            - Re-measured D1 first-error baseline after `16.8.3d-3d-2a`: `27/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `3` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
+            - Net effect: `RSL/Acceptor.rs` and `RSL/Learner.rs` now compile; remaining `E0308` first errors are concentrated in `Raft/Raft.rs` and `RSL/{Election,Proposer}.rs`.
+          - [x] **16.8.3d-3d-2b** Fix helper-parameter type drift in `RSL/{Election,Proposer}.rs` (`Set/Seq` params inferred as `int`) by improving generated-D1 parameter type-hint inference from operator call sites.
+            - Scope/LOC check: implemented as focused D1 parameter-hint and constants-name collision handling in translator + targeted regressions + module regeneration; stayed within the <500 LOC leaf target.
+            - Translator changes:
+              - Added generated-D1 call-site hint propagation into `get_param_type` so helper params can inherit `Seq/Set` shape from called-operator signatures instead of falling back to `int`.
+              - Added variable-free constants-parameter aliasing (`c_consts`) when `c` is already used as an explicit/bound identifier, preventing signature/call-shape and quantifier-bound collisions.
+              - Extended record-like hint detection to include `*State` wrappers for generated-D1 coercion contexts.
+            - Added regressions:
+              - `test_generated_d1_param_type_infers_seq_from_operator_call_site_hint`
+              - `test_generated_d1_param_type_infers_set_from_operator_call_site_hint`
+              - `test_generated_d1_variable_free_explicit_c_param_uses_constants_alias`
+              - `test_generated_d1_variable_free_quantifier_c_uses_constants_alias`
+            - Regenerated affected D1 files: `RSL/Election.rs` and `RSL/Proposer.rs`.
+            - Re-measured D1 first-error baseline after `16.8.3d-3d-2b`: `28/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `2` `REC_DECREASES`.
+            - Net effect: `RSL/Proposer.rs` now compiles and `RSL/Election.rs` no longer fails with `E0308` (now first-fails on recursive decreases), improving compile pass count (`27 -> 28`).
+          - [ ] **16.8.3d-3d-2c** Reduce residual `Raft/Raft.rs` first-error branch-shape bool/int mismatches by tightening generated-D1 conditional/argument coercion in map/record update contexts.
         - [ ] **16.8.3d-3d-3** Eliminate residual `E0599` first error in `RSL/Executor.rs` (method-on-scalar drift) via receiver-shape normalization.
         - [ ] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.
         - [ ] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.

@@ -29,8 +29,7 @@ pub struct LRecord {
 }
 
 /// State for Acceptor module
-pub struct LState {
-}
+pub type LState = LRecord;
 
 /// Constants for the module
 pub struct LConstants {

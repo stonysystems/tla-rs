@@ -3,12 +3,12 @@
 
 module Election {
     helper LElectionState(+);  // c is input (constants)
-    helper LComputeSuccessorView(+, +);  // c is input (constants), b is input
+    helper LComputeSuccessorView(+, +, +);  // c is input (constants), b is input, c is input
     LBoundRequestSequence(+, +, +);  // c is input (constants), s is input, lengthBound is input
     LRequestsMatch(+, +, +);  // c is input (constants), r1 is input, r2 is input
     LRequestSatisfiedBy(+, +, +);  // c is input (constants), r1 is input, r2 is input
     helper LRemoveAllSatisfiedRequestsInSequence(+, +, +);  // c is input (constants), s is input, r is input
-    LElectionStateInit(+, +);  // c is input (constants), es is input
+    LElectionStateInit(+, +, +);  // c is input (constants), es is input, c is input
     LElectionStateProcessHeartbeat(+, +, +, +, +);  // c is input (constants), es is input, es_ is input, p is input, clock is input
     LElectionStateCheckForViewTimeout(+, +, +, +);  // c is input (constants), es is input, es_ is input, clock is input
     LElectionStateCheckForQuorumOfViewSuspicions(+, +, +, +);  // c is input (constants), es is input, es_ is input, clock is input

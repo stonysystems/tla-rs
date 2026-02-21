@@ -20,8 +20,7 @@ pub struct LRecord {
 }
 
 /// State for Learner module
-pub struct LState {
-}
+pub type LState = LRecord;
 
 /// Constants for the module
 pub struct LConstants {

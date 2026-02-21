@@ -179,6 +179,8 @@ pub struct TranslatorConfig {
     pub operator_param_type_hints: std::collections::HashMap<String, Vec<String>>,
     /// Per-operator return type hints for expression-shape coercion.
     pub operator_return_type_hints: std::collections::HashMap<String, String>,
+    /// Name of the constants parameter in the current generated function scope.
+    pub constants_param_name: String,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -211,6 +213,7 @@ impl Default for TranslatorConfig {
             constant_field_type_hints: std::collections::HashMap::new(),
             operator_param_type_hints: std::collections::HashMap::new(),
             operator_return_type_hints: std::collections::HashMap::new(),
+            constants_param_name: "c".to_string(),
         }
     }
 }
@@ -512,7 +515,7 @@ impl<'a> ExprTranslator<'a> {
             .chars()
             .filter(|c| !c.is_whitespace())
             .collect::<String>();
-        normalized.ends_with("Record")
+        normalized.ends_with("Record") || normalized.ends_with("State")
     }
 
     fn record_struct_hint_from_expr(&self, expr: &TlaExpr) -> Option<String> {
@@ -604,17 +607,23 @@ impl<'a> ExprTranslator<'a> {
         nested.translate(body)
     }
 
-    fn implicit_args_for_operator_name(&self, op_name: &str) -> Vec<&'static str> {
+    fn implicit_args_for_operator_name(&self, op_name: &str) -> Vec<String> {
         let Some(kind) = self.config.operator_info.get(op_name) else {
             return Vec::new();
         };
         let has_constants = !self.config.constant_names.is_empty();
         match (kind, has_constants) {
-            (OperatorKind::Action, true) => vec!["s", "s_", "c"],
-            (OperatorKind::Action, false) => vec!["s", "s_"],
-            (OperatorKind::Predicate, true) => vec!["s", "c"],
-            (OperatorKind::Predicate, false) => vec!["s"],
-            (OperatorKind::ConstantOp, true) => vec!["c"],
+            (OperatorKind::Action, true) => vec![
+                "s".to_string(),
+                "s_".to_string(),
+                self.config.constants_param_name.clone(),
+            ],
+            (OperatorKind::Action, false) => vec!["s".to_string(), "s_".to_string()],
+            (OperatorKind::Predicate, true) => {
+                vec!["s".to_string(), self.config.constants_param_name.clone()]
+            }
+            (OperatorKind::Predicate, false) => vec!["s".to_string()],
+            (OperatorKind::ConstantOp, true) => vec![self.config.constants_param_name.clone()],
             (OperatorKind::ConstantOp, false) => Vec::new(),
         }
     }
@@ -622,7 +631,7 @@ impl<'a> ExprTranslator<'a> {
     fn explicit_implicit_prefix_len(
         &self,
         args: &[TlaExpr],
-        implicit_args: &[&str],
+        implicit_args: &[String],
     ) -> usize {
         args.iter()
             .zip(implicit_args.iter())
@@ -824,6 +833,16 @@ impl<'a> ExprTranslator<'a> {
         best
     }
 
+    fn infer_identifier_type_hint_from_call_sites(
+        &self,
+        expr: &TlaExpr,
+        ident_name: &str,
+    ) -> Option<String> {
+        let mut best = None;
+        self.collect_quantifier_var_type_hint_from_call_sites(expr, ident_name, &mut best);
+        best
+    }
+
     fn expr_is_non_int_shape(&self, expr: &TlaExpr) -> bool {
         match expr {
             TlaExpr::Record(_)
@@ -876,9 +895,10 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn constant_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
+        let constant_prefix = format!("{}.", self.config.constants_param_name);
         let field_name = match expr {
             TlaExpr::Ident(name) => {
-                if let Some(field_name) = name.strip_prefix("c.") {
+                if let Some(field_name) = name.strip_prefix(&constant_prefix) {
                     field_name
                 } else if self.config.constant_names.contains(name.as_str()) {
                     name.as_str()
@@ -887,7 +907,10 @@ impl<'a> ExprTranslator<'a> {
                 }
             }
             TlaExpr::RecordAccess { record, field } => {
-                if matches!(record.as_ref(), TlaExpr::Ident(name) if name == "c") {
+                if matches!(
+                    record.as_ref(),
+                    TlaExpr::Ident(name) if name == &self.config.constants_param_name
+                ) {
                     field.as_str()
                 } else {
                     return None;
@@ -1183,7 +1206,7 @@ impl<'a> ExprTranslator<'a> {
                 }
                 // Qualify module constants with c.
                 if self.config.constant_names.contains(name) {
-                    return format!("c.{}", name);
+                    return format!("{}.{}", self.config.constants_param_name, name);
                 }
                 // Reference to a module operator: add prefix and pass state args
                 if let Some(kind) = self.config.operator_info.get(name) {
@@ -1202,15 +1225,18 @@ impl<'a> ExprTranslator<'a> {
                     let has_constants = !self.config.constant_names.is_empty();
                     return match kind {
                         OperatorKind::Action if has_constants => {
-                            format!("{}(s, s_, c)", prefixed)
+                            format!(
+                                "{}(s, s_, {})",
+                                prefixed, self.config.constants_param_name
+                            )
                         }
                         OperatorKind::Action => format!("{}(s, s_)", prefixed),
                         OperatorKind::Predicate if has_constants => {
-                            format!("{}(s, c)", prefixed)
+                            format!("{}(s, {})", prefixed, self.config.constants_param_name)
                         }
                         OperatorKind::Predicate => format!("{}(s)", prefixed),
                         OperatorKind::ConstantOp if has_constants => {
-                            format!("{}(c)", prefixed)
+                            format!("{}({})", prefixed, self.config.constants_param_name)
                         }
                         OperatorKind::ConstantOp => format!("{}()", prefixed),
                     };
@@ -1426,13 +1452,13 @@ impl<'a> ExprTranslator<'a> {
             if let Some(struct_name) = self.record_struct_hint_from_expr(right) {
                 left_str = self.coerce_untyped_arbitrary_from_type_hint(&left_str, &struct_name);
             }
-            if matches!(left, TlaExpr::Ident(name) if name == "c")
+            if matches!(left, TlaExpr::Ident(name) if name == &self.config.constants_param_name)
                 && !self.config.constant_names.is_empty()
                 && right_str == "arbitrary()"
             {
                 right_str = "arbitrary::<LConstants>()".to_string();
             }
-            if matches!(right, TlaExpr::Ident(name) if name == "c")
+            if matches!(right, TlaExpr::Ident(name) if name == &self.config.constants_param_name)
                 && !self.config.constant_names.is_empty()
                 && left_str == "arbitrary()"
             {
@@ -1813,7 +1839,10 @@ impl<'a> ExprTranslator<'a> {
                     let mut rendered_value = self.translate_value_context_expr(value);
                     if self.config.normalize_unknown_external_refs
                         && expected_is_int_like
-                        && (rendered_value.starts_with("c.")
+                        && (rendered_value.starts_with(&format!(
+                            "{}.",
+                            self.config.constants_param_name
+                        ))
                             || self.expr_is_non_int_shape(value)
                             || self.expr_is_setish(value, &rendered_value)
                             || self.expr_is_seqish(value, &rendered_value))
@@ -1859,7 +1888,9 @@ impl<'a> ExprTranslator<'a> {
             // field-on-scalar compile failures while preserving known module state/constant roots.
             if let TlaExpr::Ident(name) = record {
                 if self.config.variable_names.is_empty()
-                    && (name == "s" || name == "s_" || name == "c")
+                    && (name == "s"
+                        || name == "s_"
+                        || name == &self.config.constants_param_name)
                 {
                     return "arbitrary()".to_string();
                 }
@@ -1867,7 +1898,7 @@ impl<'a> ExprTranslator<'a> {
                     || self.config.constant_names.contains(name.as_str())
                     || name == "s"
                     || name == "s_"
-                    || name == "c";
+                    || name == &self.config.constants_param_name;
                 if !is_known_module_root {
                     return "arbitrary()".to_string();
                 }
@@ -2059,12 +2090,20 @@ impl<'a> ExprTranslator<'a> {
                 let prefixed = format!("{}{}", self.config.spec_prefix, op_name);
                 let has_constants = !self.config.constant_names.is_empty();
 
-                let implicit_args: Vec<&str> = match (kind, has_constants) {
-                    (OperatorKind::Action, true) => vec!["s", "s_", "c"],
-                    (OperatorKind::Action, false) => vec!["s", "s_"],
-                    (OperatorKind::Predicate, true) => vec!["s", "c"],
-                    (OperatorKind::Predicate, false) => vec!["s"],
-                    (OperatorKind::ConstantOp, true) => vec!["c"],
+                let implicit_args: Vec<String> = match (kind, has_constants) {
+                    (OperatorKind::Action, true) => vec![
+                        "s".to_string(),
+                        "s_".to_string(),
+                        self.config.constants_param_name.clone(),
+                    ],
+                    (OperatorKind::Action, false) => vec!["s".to_string(), "s_".to_string()],
+                    (OperatorKind::Predicate, true) => {
+                        vec!["s".to_string(), self.config.constants_param_name.clone()]
+                    }
+                    (OperatorKind::Predicate, false) => vec!["s".to_string()],
+                    (OperatorKind::ConstantOp, true) => {
+                        vec![self.config.constants_param_name.clone()]
+                    }
                     (OperatorKind::ConstantOp, false) => Vec::new(),
                 };
                 let implicit_prefix_len =
@@ -2101,7 +2140,7 @@ impl<'a> ExprTranslator<'a> {
                     .collect();
                 let call_args: Vec<String> = implicit_args
                     .iter()
-                    .map(|s| s.to_string())
+                    .cloned()
                     .chain(explicit_args.into_iter().skip(implicit_prefix_len))
                     .collect();
 
@@ -2513,6 +2552,140 @@ impl Default for ModuleTranslator {
 }
 
 impl ModuleTranslator {
+    fn d1_hint_priority(hint: &str) -> usize {
+        let trimmed = hint.trim();
+        if trimmed.is_empty() {
+            0
+        } else if ExprTranslator::type_hint_is_seq(trimmed)
+            || ExprTranslator::type_hint_is_set(trimmed)
+            || ExprTranslator::type_hint_is_map(trimmed)
+            || ExprTranslator::type_hint_is_record_like(trimmed)
+        {
+            4
+        } else if ExprTranslator::type_hint_is_bool(trimmed) {
+            3
+        } else if ExprTranslator::type_hint_is_numeric(trimmed) {
+            2
+        } else {
+            1
+        }
+    }
+
+    fn preferred_d1_hint(&self, usage_hint: Option<&str>, call_site_hint: Option<&str>) -> Option<String> {
+        match (usage_hint, call_site_hint) {
+            (Some(lhs), Some(rhs)) => {
+                if Self::d1_hint_priority(rhs) >= Self::d1_hint_priority(lhs) {
+                    Some(rhs.to_string())
+                } else {
+                    Some(lhs.to_string())
+                }
+            }
+            (Some(lhs), None) => Some(lhs.to_string()),
+            (None, Some(rhs)) => Some(rhs.to_string()),
+            (None, None) => None,
+        }
+    }
+
+    fn constants_param_name_for_operator(&self, op: &TlaOperator, module: &TlaModule) -> Option<String> {
+        if module.constants.is_empty() {
+            return None;
+        }
+        if !module.variables.is_empty() {
+            return Some("c".to_string());
+        }
+        let explicit_params: std::collections::HashSet<&str> =
+            op.params.iter().map(|p| p.name.as_str()).collect();
+        if !explicit_params.contains("c") && !Self::expr_binds_identifier(&op.body, "c") {
+            return Some("c".to_string());
+        }
+        let mut candidate = "c_consts".to_string();
+        while explicit_params.contains(candidate.as_str()) {
+            candidate.push('_');
+        }
+        Some(candidate)
+    }
+
+    fn expr_binds_identifier(expr: &TlaExpr, ident: &str) -> bool {
+        match expr {
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                vars.iter().any(|v| v.var == ident || v.set.as_ref().is_some_and(|s| Self::expr_binds_identifier(s, ident)))
+                    || Self::expr_binds_identifier(body, ident)
+            }
+            TlaExpr::Choose { var, set, body } => {
+                var == ident
+                    || set
+                        .as_ref()
+                        .is_some_and(|s| Self::expr_binds_identifier(s, ident))
+                    || Self::expr_binds_identifier(body, ident)
+            }
+            TlaExpr::SetFilter { var, set, filter } => {
+                var == ident
+                    || Self::expr_binds_identifier(set, ident)
+                    || Self::expr_binds_identifier(filter, ident)
+            }
+            TlaExpr::SetMap { expr, var, set } => {
+                var == ident
+                    || Self::expr_binds_identifier(expr, ident)
+                    || Self::expr_binds_identifier(set, ident)
+            }
+            TlaExpr::FnConstruct { var, domain, body } => {
+                var == ident
+                    || Self::expr_binds_identifier(domain, ident)
+                    || Self::expr_binds_identifier(body, ident)
+            }
+            TlaExpr::LetIn { defs, body } => {
+                defs.iter().any(|d| d.name == ident || Self::expr_binds_identifier(&d.body, ident))
+                    || Self::expr_binds_identifier(body, ident)
+            }
+            TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+                Self::expr_binds_identifier(left, ident)
+                    || Self::expr_binds_identifier(right, ident)
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => Self::expr_binds_identifier(operand, ident),
+            TlaExpr::OpApply { op, args } => {
+                Self::expr_binds_identifier(op, ident)
+                    || args.iter().any(|a| Self::expr_binds_identifier(a, ident))
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::expr_binds_identifier(func, ident)
+                    || Self::expr_binds_identifier(arg, ident)
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::expr_binds_identifier(func, ident)
+                    || updates
+                        .iter()
+                        .any(|u| Self::expr_binds_identifier(&u.value, ident))
+            }
+            TlaExpr::Record(fields) => fields
+                .iter()
+                .any(|(_, v)| Self::expr_binds_identifier(v, ident)),
+            TlaExpr::RecordAccess { record, .. } => Self::expr_binds_identifier(record, ident),
+            TlaExpr::Tuple(elements) | TlaExpr::SetEnum(elements) | TlaExpr::Unchanged(elements) => {
+                elements.iter().any(|e| Self::expr_binds_identifier(e, ident))
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::expr_binds_identifier(vars, ident)
+                    || Self::expr_binds_identifier(action, ident)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter().any(|(c, b)| {
+                    Self::expr_binds_identifier(c, ident) || Self::expr_binds_identifier(b, ident)
+                }) || other
+                    .as_ref()
+                    .is_some_and(|o| Self::expr_binds_identifier(o, ident))
+            }
+            TlaExpr::FnSet { domain, range } => {
+                Self::expr_binds_identifier(domain, ident)
+                    || Self::expr_binds_identifier(range, ident)
+            }
+            _ => false,
+        }
+    }
+
     /// Create a new module translator with default configuration
     pub fn new() -> Self {
         Self {
@@ -3058,16 +3231,40 @@ impl ModuleTranslator {
             self.generate_record_structs(module, &mut output);
         }
 
-        // State struct (spec-only, no derive Clone — Verus doesn't support it for nat/int fields)
-        output.push_str(&format!("/// State for {} module\n", module.name));
-        output.push_str(&format!("pub struct {} {{\n", state_name));
+        let explicit_state_params = module.operators.iter().any(|op| {
+            op.params
+                .iter()
+                .any(|p| p.name == "s" || p.name == "s_")
+        });
+        let unique_record_names: std::collections::BTreeSet<String> = self
+            .expr_config
+            .record_structs
+            .values()
+            .cloned()
+            .collect();
+        let aliased_record_state = module.variables.is_empty()
+            && explicit_state_params
+            && unique_record_names.len() == 1;
 
-        for var in &module.variables {
-            let var_type = self.get_variable_type(var);
-            output.push_str(&format!("    pub {}: {},\n", var, var_type));
+        if aliased_record_state {
+            let record_name = unique_record_names
+                .iter()
+                .next()
+                .expect("record name set is non-empty when len == 1");
+            output.push_str(&format!("/// State for {} module\n", module.name));
+            output.push_str(&format!("pub type {} = {};\n\n", state_name, record_name));
+        } else {
+            // State struct (spec-only, no derive Clone — Verus doesn't support it for nat/int fields)
+            output.push_str(&format!("/// State for {} module\n", module.name));
+            output.push_str(&format!("pub struct {} {{\n", state_name));
+
+            for var in &module.variables {
+                let var_type = self.get_variable_type(var);
+                output.push_str(&format!("    pub {}: {},\n", var, var_type));
+            }
+
+            output.push_str("}\n\n");
         }
-
-        output.push_str("}\n\n");
 
         // Constants as associated constants or generic parameters
         if !module.constants.is_empty() {
@@ -3126,7 +3323,7 @@ impl ModuleTranslator {
     }
 
     /// Generate spec functions for operators
-    fn generate_spec_functions(&self, module: &TlaModule) -> String {
+    fn generate_spec_functions(&mut self, module: &TlaModule) -> String {
         let mut output = String::new();
         let state_name = self.config.spec_state_name();
         let module_var_names: std::collections::HashSet<String> =
@@ -3211,7 +3408,9 @@ impl ModuleTranslator {
             }
         }
         // Pass 3: collect per-operator parameter type hints for expression-call coercion.
+        self.expr_config = config.clone();
         for op in &module.operators {
+            self.expr_config = config.clone();
             let is_action =
                 config.operator_info.get(&op.name) == Some(&OperatorKind::Action);
             let is_strict_init = op.name.eq_ignore_ascii_case("init");
@@ -3229,8 +3428,9 @@ impl ModuleTranslator {
                     used_param_names.insert("s_".to_string());
                 }
             }
-            if !module.constants.is_empty() {
-                used_param_names.insert("c".to_string());
+            let const_param_name = self.constants_param_name_for_operator(op, module);
+            if let Some(name) = &const_param_name {
+                used_param_names.insert(name.clone());
             }
 
             let mut param_type_hints = Vec::new();
@@ -3243,6 +3443,7 @@ impl ModuleTranslator {
                     param_idx,
                     &param.name,
                     self.expr_config.normalize_unknown_external_refs,
+                    const_param_name.as_deref().unwrap_or("c"),
                 );
                 param_type_hints.push(param_type);
                 used_param_names.insert(param.name.clone());
@@ -3250,7 +3451,9 @@ impl ModuleTranslator {
             config
                 .operator_param_type_hints
                 .insert(op.name.clone(), param_type_hints);
+            self.expr_config = config.clone();
         }
+        self.expr_config = config.clone();
         // Pass 4: collect per-operator return type hints for expression-shape coercion.
         for op in &module.operators {
             let return_type = self.get_operator_return_type(&op.name);
@@ -3326,11 +3529,12 @@ impl ModuleTranslator {
 
         // Add constants parameter if module has constants
         // (simpler than per-function tracking; all functions get c to allow operator cross-references)
-        if !module.constants.is_empty() {
+        let const_param_name = self.constants_param_name_for_operator(op, module);
+        if let Some(const_param_name) = &const_param_name {
             let const_struct = format!("{}Constants", self.config.spec_prefix);
-            params.push(format!("c: {}", const_struct));
-            used_param_names.insert("c".to_string());
-            identifier_type_hints.insert("c".to_string(), const_struct);
+            params.push(format!("{}: {}", const_param_name, const_struct));
+            used_param_names.insert(const_param_name.clone());
+            identifier_type_hints.insert(const_param_name.clone(), const_struct);
         }
 
         // Add operator parameters
@@ -3345,6 +3549,7 @@ impl ModuleTranslator {
                 param_idx,
                 &param.name,
                 self.expr_config.normalize_unknown_external_refs,
+                const_param_name.as_deref().unwrap_or("c"),
             );
             params.push(format!("{}: {}", param.name, param_type));
             identifier_type_hints.insert(param.name.clone(), param_type.clone());
@@ -3375,6 +3580,9 @@ impl ModuleTranslator {
 
         // Generate body
         let mut function_expr_config = expr_translator.config.clone();
+        if let Some(const_param_name) = const_param_name {
+            function_expr_config.constants_param_name = const_param_name;
+        }
         function_expr_config
             .identifier_type_hints
             .extend(identifier_type_hints);
@@ -3696,6 +3904,7 @@ impl ModuleTranslator {
         param_index: usize,
         param_name: &str,
         generated_d1_context: bool,
+        constants_param_name: &str,
     ) -> String {
         let generated_hint_context =
             self.expr_config.normalize_unknown_external_refs && generated_d1_context;
@@ -3704,6 +3913,18 @@ impl ModuleTranslator {
         } else {
             None
         };
+        let call_site_hint = if generated_hint_context {
+            let mut callsite_config = self.expr_config.clone();
+            callsite_config.constants_param_name = constants_param_name.to_string();
+            ExprTranslator::new(&callsite_config).infer_identifier_type_hint_from_call_sites(
+                &op.body,
+                param_name,
+            )
+        } else {
+            None
+        };
+        let preferred_hint =
+            self.preferred_d1_hint(usage_hint, call_site_hint.as_deref());
 
         if let Some(env) = &self.type_env {
             if let Some(TlaType::Function { domain, .. }) = env.operators.get(&op.name) {
@@ -3717,38 +3938,38 @@ impl ModuleTranslator {
                         param_ty.to_verus_type_with_records(&self.expr_config.record_structs);
                     if inferred != "int" {
                         if generated_hint_context {
-                            if inferred == "bool" && usage_hint == Some("int") {
+                            if inferred == "bool" && preferred_hint.as_deref() == Some("int") {
                                 return "int".to_string();
                             }
                             if inferred == "bool"
                                 && matches!(
-                                    usage_hint,
+                                    preferred_hint.as_deref(),
                                     Some("Seq<int>" | "Seq<LRecord>" | "Set<int>" | "Map<int, int>")
                                 )
                             {
-                                return usage_hint.unwrap_or("bool").to_string();
+                                return preferred_hint.unwrap_or_else(|| "bool".to_string());
                             }
-                            if inferred == "()" && usage_hint == Some("Seq<int>") {
+                            if inferred == "()" && preferred_hint.as_deref() == Some("Seq<int>") {
                                 return "Seq<int>".to_string();
                             }
                             if inferred.starts_with('(')
                                 && inferred.ends_with(')')
-                                && usage_hint == Some("Seq<int>")
+                                && preferred_hint.as_deref() == Some("Seq<int>")
                             {
                                 return "Seq<int>".to_string();
                             }
                         }
                         return inferred;
                     }
-                    if let Some(hint) = usage_hint {
-                        return hint.to_string();
+                    if let Some(hint) = preferred_hint {
+                        return hint;
                     }
                     return inferred;
                 }
             }
         }
-        if let Some(hint) = usage_hint {
-            return hint.to_string();
+        if let Some(hint) = preferred_hint {
+            return hint;
         }
         // Fallback when inference is unavailable or unresolved.
         let _ = param_name;
@@ -4405,10 +4626,10 @@ impl ModeAnnotationGenerator {
         // else: constant operator — no state parameter
 
         // Add constants parameter if module has constants
-        if !module.constants.is_empty() {
+        if let Some(const_param_name) = refs_helper.constants_param_name_for_operator(op, module) {
             modes.push(ParameterMode::Input);
             desc_parts.push("c is input (constants)".to_string());
-            used_param_names.insert("c".to_string());
+            used_param_names.insert(const_param_name);
         }
 
         // Add modes for explicit parameters - typically inputs
@@ -6453,6 +6674,36 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_variable_free_stateful_module_aliases_state_to_record() {
+        let source = r"
+            ---- MODULE AcceptorMini ----
+            CONSTANT Cfg
+            Step(s, s_, inp) ==
+                IF inp = 0 THEN s_ = s ELSE s_ = [constants |-> Cfg, max_bal |-> inp]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("pub struct LRecord"),
+            "Expected record struct generation for variable-free stateful module, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("pub type LState = LRecord;"),
+            "Expected LState alias to LRecord for explicit state-param modules, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("pub struct LState {"),
+            "Should avoid emitting empty LState struct when aliasing to record state, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
     fn test_translate_module_with_extends() {
         let source = r"
             ---- MODULE Test ----
@@ -7261,6 +7512,93 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_param_type_infers_seq_from_operator_call_site_hint() {
+        let source = r"
+            ---- MODULE Test ----
+            NeedsSeq(xs) == /\ Len(xs) >= 0
+                            /\ xs[0] = 0
+            Foo(reqs) == NeedsSeq(reqs)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(reqs: Seq<int>) -> bool"),
+            "Expected call-site hint to infer Seq<int> for reqs, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_infers_set_from_operator_call_site_hint() {
+        let source = r"
+            ---- MODULE Test ----
+            NeedsSet(S) == 0 \in S
+            Foo(S) == NeedsSet(S)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(S: Set<int>) -> bool"),
+            "Expected call-site hint to infer Set<int> for S, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_variable_free_explicit_c_param_uses_constants_alias() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT Pool
+            Foo(c) == c \in Pool
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(c_consts: LConstants, c: int) -> bool"),
+            "Expected constants alias to avoid c/c collision in variable-free module, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("c_consts.Pool.contains(c)"),
+            "Expected constants references to use c_consts root, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_variable_free_quantifier_c_uses_constants_alias() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT Ballot
+            Foo(v) == \E c \in Ballot : c = v
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(c_consts: LConstants, v: int) -> bool"),
+            "Expected constants alias when quantifier binds c, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("c_consts.Ballot.contains(c)"),
+            "Expected Ballot bound to use c_consts root, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
     fn test_generated_d1_param_type_overrides_inferred_bool_for_set_element_usage() {
         let op = TlaOperator::new(
             "Foo",
@@ -7281,8 +7619,11 @@ mod tests {
         );
         translator.type_env = Some(env);
 
-        assert_eq!(translator.get_param_type(&op, 0, "x", true), "int");
-        assert_eq!(translator.get_param_type(&op, 1, "S", true), "Set<int>");
+        assert_eq!(translator.get_param_type(&op, 0, "x", true, "c"), "int");
+        assert_eq!(
+            translator.get_param_type(&op, 1, "S", true, "c"),
+            "Set<int>"
+        );
     }
 
     #[test]
@@ -7310,7 +7651,7 @@ mod tests {
         );
         translator.type_env = Some(env);
 
-        assert_eq!(translator.get_param_type(&op, 0, "x", true), "int");
+        assert_eq!(translator.get_param_type(&op, 0, "x", true, "c"), "int");
     }
 
     #[test]
@@ -7329,7 +7670,7 @@ mod tests {
         translator.type_env = Some(env);
 
         assert_eq!(
-            translator.get_param_type(&op, 0, "sent_packets", true),
+            translator.get_param_type(&op, 0, "sent_packets", true, "c"),
             "Seq<int>"
         );
     }
@@ -7354,7 +7695,7 @@ mod tests {
         translator.type_env = Some(env);
 
         assert_eq!(
-            translator.get_param_type(&op, 0, "sent_packets", true),
+            translator.get_param_type(&op, 0, "sent_packets", true, "c"),
             "Seq<int>"
         );
     }
@@ -7380,7 +7721,7 @@ mod tests {
         );
         translator.type_env = Some(env);
 
-        assert_eq!(translator.get_param_type(&op, 0, "x", false), "bool");
+        assert_eq!(translator.get_param_type(&op, 0, "x", false, "c"), "bool");
     }
 
     #[test]
@@ -7398,7 +7739,7 @@ mod tests {
         );
         translator.type_env = Some(env);
 
-        assert_eq!(translator.get_param_type(&op, 0, "x", true), "int");
+        assert_eq!(translator.get_param_type(&op, 0, "x", true, "c"), "int");
     }
 
     #[test]

@@ -28,8 +28,7 @@ pub struct LRecord {
 }
 
 /// State for Raft module
-pub struct LState {
-}
+pub type LState = LRecord;
 
 /// Constants for the module
 pub struct LConstants {
