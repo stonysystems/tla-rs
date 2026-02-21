@@ -71,12 +71,14 @@ pub open spec fn LExecutorGetDecision(s: LState, s_: LState, c: LConstants, bal:
 }
 
 /// GetPacketsFromReplies operator
-pub open spec fn LGetPacketsFromReplies(c: LConstants, me: int, requests: Seq<int>, replies: int) -> Seq<int> {
+pub open spec fn LGetPacketsFromReplies(c: LConstants, me: int, requests: Seq<int>, replies: int) -> Seq<int>
+    decreases requests.len() {
     if ((requests.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<Seq<int>>() + LGetPacketsFromReplies(c, me, requests.drop_first(), arbitrary::<int>())) }
 }
 
 /// ClientsInReplies operator
-pub open spec fn LClientsInReplies(c: LConstants, replies: Seq<int>) -> Map<int, int> {
+pub open spec fn LClientsInReplies(c: LConstants, replies: Seq<int>) -> Map<int, int>
+    decreases replies.len() {
     arbitrary()
 }
 
@@ -94,7 +96,7 @@ pub open spec fn LUpdateNewCache(c_consts: LConstants, c: Map<int, int>, c_: Map
 }
 
 /// ExecutorExecute operator
-pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
     {
     let batch: int = arbitrary();
     {
@@ -105,7 +107,7 @@ pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_pac
     let replies = arbitrary::<Seq<Seq<int>>>()[2];
     {
     let clients = LClientsInReplies(c, arbitrary::<Seq<int>>());
-    ((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<bool>() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && LUpdateNewCache(c, arbitrary::<Map<int, int>>(), arbitrary::<Map<int, int>>(), arbitrary::<Seq<int>>())) && (sent_packets == LGetPacketsFromReplies(c, arbitrary::<Seq<int>>()[arbitrary()], arbitrary::<Seq<int>>(), arbitrary::<int>()))) && LRepliesAreReplyType(c, sent_packets)) }))
+    ((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<bool>() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && LUpdateNewCache(c, arbitrary::<Map<int, int>>(), arbitrary::<Map<int, int>>(), arbitrary::<Seq<int>>())) && (sent_packets == LGetPacketsFromReplies(c, arbitrary::<Seq<int>>()[arbitrary()], arbitrary::<Seq<int>>(), arbitrary::<int>()))) && LRepliesAreReplyType(c, arbitrary::<Set<int>>())) }))
 }
 }
 }

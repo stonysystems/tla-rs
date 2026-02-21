@@ -3229,7 +3229,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3d-4:
+    // Baseline after 16.8.3d-3d-6:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
     // - infers quantifier binder types from bound-set and call-site hints, and
@@ -3246,10 +3246,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     //   when explicit/bound identifiers reuse `c`,
     // - normalizes generated-D1 mixed map/non-map IF branches to `arbitrary()`,
     // - coerces bool-shaped call args at int-hinted operator parameters,
-    // - preserves bool parameter hints for bool-literal equality/logical usage.
+    // - preserves bool parameter hints for bool-literal equality/logical usage,
+    // - forces generated-D1 `sent_packets` params to sequence shape in signature inference,
+    // - emits explicit int-binder trigger annotations for generated-D1 forall quantifiers.
     assert_eq!(
-        passed, 31,
-        "Expected exactly thirty-one D1 files to compile at current baseline; pass files: {:?}",
+        passed, 33,
+        "Expected all 33 D1 files to compile at required baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3265,12 +3267,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 1,
-        "Expected 1 method-missing (E0599) failure at baseline"
+        cat_e0599, 0,
+        "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 1,
-        "Expected 1 mismatched-types (E0308) failure at baseline"
+        cat_e0308, 0,
+        "Expected 0 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3298,13 +3300,13 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     );
     assert_eq!(
         files_e0599,
-        vec!["RSL/Replica.rs".to_string()],
-        "Expected only RSL/Replica.rs to fail with E0599 at baseline"
+        Vec::<String>::new(),
+        "Expected no D1 files to fail with E0599 at baseline"
     );
     assert_eq!(
         files_e0308,
-        vec!["RSL/Executor.rs".to_string()],
-        "Expected only RSL/Executor.rs to fail with E0308 at baseline"
+        Vec::<String>::new(),
+        "Expected no D1 files to fail with E0308 at baseline"
     );
     assert!(
         other_fails.is_empty(),
