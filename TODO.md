@@ -6302,7 +6302,9 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
       - Removed manual `CParameters` struct and `clone_up_to_view` from `types_manual_helpers.rs`; these now come from generated type output.
   - [ ] 21.7.4 Generate remaining structural helper methods (`StaticParams`, quorum/index helpers) or re-home them outside manual type injection.
     - [x] 21.7.4.1 Re-home `StaticParams` to `src/implementation/RSL/cparameters.rs` and stop injecting its body via `types_manual_helpers.rs`.
-    - [ ] 21.7.4.2 Re-home or generate quorum/index helpers (`CMinQuorumSize`, `CGetReplicaIndex`, `CFindIndexInSeq`) so they no longer require manual type injection.
+    - [x] 21.7.4.2 Re-home or generate quorum/index helpers (`CMinQuorumSize`, `CGetReplicaIndex`, `CFindIndexInSeq`) so they no longer require manual type injection.
+      - Re-homed these helpers (plus endpoint abstraction lemmas used by `CGetReplicaIndex`) into `src/implementation/RSL/cconfiguration.rs`.
+      - Removed helper bodies from `types_manual_helpers.rs` and regenerated `types_gen.rs`; integration tests now assert the new helper location.
     - [ ] 21.7.4.3 Re-home or generate replica-constants helpers (`CReplicaConstantsValid`, `InitReplicaConstants`) and keep parity tests green.
   - [ ] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.
 - [x] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle

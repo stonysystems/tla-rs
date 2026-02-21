@@ -1251,10 +1251,6 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
     let expected_symbols = [
         "impl CParameters",
         "pub struct CConfiguration",
-        "CGetReplicaIndex(",
-        "lemma_AbstractifyEndpoints_properties",
-        "lemma_AbstractifyEndPointToNodeIdentity_injective_forall",
-        "CFindIndexInSeq(",
         "pub struct CConstants",
         "pub struct CReplicaConstants",
         "CReplicaConstantsValid(",
@@ -1273,6 +1269,22 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         !source.contains("pub fn StaticParams() -> (p:CParameters)"),
         "StaticParams should be re-homed out of manual helper injection"
     );
+    assert!(
+        !source.contains("pub fn CMinQuorumSize(&self) -> (q:usize)"),
+        "CMinQuorumSize should be re-homed out of manual helper injection"
+    );
+    assert!(
+        !source.contains("pub fn CGetReplicaIndex( &self, id:&EndPoint) -> (rc:(bool, usize))"),
+        "CGetReplicaIndex should be re-homed out of manual helper injection"
+    );
+    assert!(
+        !source.contains("pub fn CFindIndexInSeq(s:Vec<EndPoint>, v:EndPoint, start:usize) -> (rc:(bool, usize))"),
+        "CFindIndexInSeq should be re-homed out of manual helper injection"
+    );
+    assert!(
+        !source.contains("pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)"),
+        "endpoint abstraction lemmas should be re-homed out of manual helper injection"
+    );
 
     let cparameters_source = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
         .expect("Failed to read RSL cparameters module");
@@ -1280,6 +1292,22 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         cparameters_source.contains("pub fn StaticParams() -> (p:CParameters)"),
         "StaticParams should be defined in implementation/RSL/cparameters.rs"
     );
+
+    let cconfiguration_source = std::fs::read_to_string("../src/implementation/RSL/cconfiguration.rs")
+        .expect("Failed to read RSL cconfiguration module");
+    for symbol in [
+        "pub fn CMinQuorumSize(&self) -> (q:usize)",
+        "pub fn CGetReplicaIndex( &self, id:&EndPoint) -> (rc:(bool, usize))",
+        "pub fn CFindIndexInSeq(s:Vec<EndPoint>, v:EndPoint, start:usize) -> (rc:(bool, usize))",
+        "pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)",
+        "pub proof fn lemma_AbstractifyEndPointToNodeIdentity_injective_forall()",
+    ] {
+        assert!(
+            cconfiguration_source.contains(symbol),
+            "missing symbol `{}` in re-homed cconfiguration helper module",
+            symbol
+        );
+    }
 }
 
 #[test]
