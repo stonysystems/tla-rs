@@ -42,12 +42,12 @@ pub open spec fn LReplicasDistinct(s: LState, c: LConstants, replica_ids: int, i
 
 /// ReplicasIsUnique operator
 pub open spec fn LReplicasIsUnique(s: LState, c: LConstants, replica_ids: int) -> bool {
-    forall |i, j| (int.contains(i) && int.contains(j)) ==> ((((((0 <= i) && (i < replica_ids.len())) && (0 <= j)) && (j < replica_ids.len())) && (replica_ids[i] == replica_ids[j])) ==> (i == j))
+    forall |i, j| ((((((0 <= i) && (i < replica_ids.len())) && (0 <= j)) && (j < replica_ids.len())) && (replica_ids[i] == replica_ids[j])) ==> (i == j))
 }
 
 /// WellFormedLConfiguration operator
 pub open spec fn LWellFormedLConfiguration(s: LState, c: LConstants) -> bool {
-    ((0 < c.replica_ids.len()) && forall |i, j| (int.contains(i) && int.contains(j)) ==> (LReplicasDistinct(s, c, c.replica_ids, i, j) && LReplicasIsUnique(s, c, c.replica_ids)))
+    ((0 < c.replica_ids.len()) && forall |i, j| (LReplicasDistinct(s, c, c.replica_ids, i, j) && LReplicasIsUnique(s, c, c.replica_ids)))
 }
 
 /// IsReplicaIndex operator

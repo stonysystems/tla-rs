@@ -35,17 +35,17 @@ pub open spec fn LConstants() -> LRecord {
 
 /// TMState operator
 pub open spec fn LTMState() -> Set<int> {
-    set![Init, Committed, Aborted]
+    set![1755428851int, 1819226073int, 4391523824int]
 }
 
 /// RMState operator
 pub open spec fn LRMState() -> Set<int> {
-    set![Working, Prepared, Committed, Aborted]
+    set![7249365736int, 9617861224int, 1819226073int, 4391523824int]
 }
 
 /// TPCMessage operator
 pub open spec fn LTPCMessage() -> Set<int> {
-    set![Prepare, PreparedVote, Commit, Abort]
+    set![6989001116int, 8119312364int, 9385017532int, 8579416217int]
 }
 
 } // verus!

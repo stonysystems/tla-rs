@@ -44,12 +44,12 @@ pub open spec fn LConstants() -> LRecord {
 
 /// PBFTMessage operator
 pub open spec fn LPBFTMessage() -> Set<int> {
-    set![PrePrepare]
+    set![3632816197int]
 }
 
 /// Phase operator
 pub open spec fn LPhase() -> Set<int> {
-    set![PrePrepare, Prepare, Commit, Replied]
+    set![3632816197int, 6989001116int, 9385017532int, 6279280374int]
 }
 
 } // verus!

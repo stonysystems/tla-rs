@@ -44,7 +44,7 @@ pub open spec fn LState() -> LRecord {
 
 /// VPMessage operator
 pub open spec fn LVPMessage() -> Set<int> {
-    set![Prepare, Promise, Accept]
+    set![6989001116int, 3654517122int, 4031255529int]
 }
 
 } // verus!

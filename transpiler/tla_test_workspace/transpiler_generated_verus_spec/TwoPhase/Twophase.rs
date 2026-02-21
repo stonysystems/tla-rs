@@ -32,7 +32,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// TMSendPrepare operator
 pub open spec fn LTMSendPrepare(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((s.tm_state.tag == LInit(s, c)) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![Prepare]))
+    (((((((s.tm_state.tag == LInit(s, c)) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![6989001116int]))
 }
 
 /// RMReceivePrepare operator
@@ -52,12 +52,12 @@ pub open spec fn LTMRcvPrepared(s: LState, c: LConstants, s_: int, r: int, sent_
 
 /// TMSendCommit operator
 pub open spec fn LTMSendCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((s.tm_state.tag == LInit(s, c)) && (s.tm_prepared == c.rm)) && (s_.tm_state.tag == Committed)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![Commit]))
+    ((((((((s.tm_state.tag == LInit(s, c)) && (s.tm_prepared == c.rm)) && (s_.tm_state.tag == 1819226073int)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![9385017532int]))
 }
 
 /// TMSendAbort operator
 pub open spec fn LTMSendAbort(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((s.tm_state.tag == LInit(s, c)) && (s_.tm_state.tag == Aborted)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![Abort]))
+    (((((((s.tm_state.tag == LInit(s, c)) && (s_.tm_state.tag == 4391523824int)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared)) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![8579416217int]))
 }
 
 /// RMReceiveCommit operator
@@ -72,7 +72,7 @@ pub open spec fn LRMReceiveAbort(s: LState, c: LConstants, s_: int, rm: int, sen
 
 /// Next operator
 pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendPrepare(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceivePrepare(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && (LRMAbort(s, c, s, s_, c, rm, sent_packets) || exists |r, sent_packets| (int.contains(r) && Seq(c.TPCMessage).contains(sent_packets)) && (LTMRcvPrepared(s, c, s, s_, c, r, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendAbort(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceiveCommit(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (int.contains(rm) && Seq(c.TPCMessage).contains(sent_packets)) && LRMReceiveAbort(s, c, s, s_, c, rm, sent_packets))))))))
+    exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendPrepare(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceivePrepare(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LRMAbort(s, c, s, s_, c, rm, sent_packets) || exists |r, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LTMRcvPrepared(s, c, s, s_, c, r, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendAbort(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceiveCommit(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && LRMReceiveAbort(s, c, s, s_, c, rm, sent_packets))))))))
 }
 
 } // verus!

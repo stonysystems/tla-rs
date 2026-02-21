@@ -45,12 +45,12 @@ pub open spec fn LState() -> LRecord {
 
 /// InstancePhase operator
 pub open spec fn LInstancePhase() -> Set<int> {
-    set![Empty, PreAccepted, Accepted, Committed, Executed]
+    set![6464590606int, 6635974839int, 5046330240int, 1819226073int, 6951385236int]
 }
 
 /// EPaxosMessage operator
 pub open spec fn LEPaxosMessage() -> Set<int> {
-    set![PreAccept, PreAcceptOk, Accept, AcceptOk, Commit]
+    set![7983981238int, 8383016784int, 4031255529int, 7932070043int, 9385017532int]
 }
 
 } // verus!

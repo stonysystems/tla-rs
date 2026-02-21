@@ -43,7 +43,7 @@ pub open spec fn LConstants() -> LRecord {
 
 /// Phase operator
 pub open spec fn LPhase() -> Set<int> {
-    set![Idle, Phase1, Phase2, Decided]
+    set![5126177779int, 9996969643int, 2508597854int, 8313578207int]
 }
 
 } // verus!

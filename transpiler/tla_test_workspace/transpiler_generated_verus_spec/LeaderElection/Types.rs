@@ -39,12 +39,12 @@ pub open spec fn LConstants() -> LRecord {
 
 /// ElectionMessage operator
 pub open spec fn LElectionMessage() -> Set<int> {
-    set![Election, Answer, Coordinator]
+    set![4497021786int, 5524816575int, 2350874961int]
 }
 
 /// NodeState operator
 pub open spec fn LNodeState() -> Set<int> {
-    set![Normal, Election, Leader]
+    set![9956178258int, 4497021786int, 4100380100int]
 }
 
 } // verus!

@@ -48,12 +48,12 @@ pub open spec fn LLogEntry() -> LRecord {
 
 /// RaftMessage operator
 pub open spec fn LRaftMessage() -> Set<int> {
-    set![RequestVote, VoteResponse, AppendEntries, AppendResponse]
+    set![9722175990int, 1307883406int, 8229452647int, 2753669866int]
 }
 
 /// ServerRole operator
 pub open spec fn LServerRole() -> Set<int> {
-    set![Follower, Candidate, Leader]
+    set![8761388551int, 2420160122int, 4100380100int]
 }
 
 } // verus!

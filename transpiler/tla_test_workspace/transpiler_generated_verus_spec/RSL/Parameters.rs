@@ -30,7 +30,7 @@ pub struct LConstants {
 
 /// Parameters operator
 pub open spec fn LParameters(c: LConstants) -> LRecord {
-    LRecord { baseline_view_timeout_period: int, heartbeat_period: int, max_batch_delay: int, max_batch_size: int, max_integer_val: UpperBound, max_log_length: int }
+    LRecord { baseline_view_timeout_period: int, heartbeat_period: int, max_batch_delay: int, max_batch_size: int, max_integer_val: 2116730917int, max_log_length: int }
 }
 
 /// WFLParameters operator

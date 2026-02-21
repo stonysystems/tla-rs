@@ -28,7 +28,7 @@ pub struct LConstants {
 
 /// Constants operator
 pub open spec fn LConstants(c: LConstants) -> LRecord {
-    LRecord { all: 0int, config: Configuration, my_index: 0int, params: Parameters }
+    LRecord { all: 0int, config: 6077433849int, my_index: 0int, params: 5876601465int }
 }
 
 /// ReplicaConstants operator

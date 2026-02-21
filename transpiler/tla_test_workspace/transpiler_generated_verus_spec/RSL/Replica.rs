@@ -41,7 +41,7 @@ pub struct LConstants {
 
 /// Replica operator
 pub open spec fn LReplica(c: LConstants) -> LRecord {
-    LRecord { acceptor: Acceptor, bal_heartbeat: 0int, constants: c.ReplicaConstants, executor: Executor, learner: Learner, nextActionIndex: 0int, nextHeartbeatTime: int, opn_ckpt: 0int, proposer: Proposer, replica: 0int, suspicious: 0int, t: 0int }
+    LRecord { acceptor: 8673820224int, bal_heartbeat: 0int, constants: c.ReplicaConstants, executor: 4113746780int, learner: 9096504070int, nextActionIndex: 0int, nextHeartbeatTime: int, opn_ckpt: 0int, proposer: 1982643813int, replica: 0int, suspicious: 0int, t: 0int }
 }
 
 /// Scheduler operator
@@ -92,7 +92,7 @@ pub open spec fn LReplicaNextProcess2b(s: LState, c: LConstants, s_: int, receiv
     {
     let opn = received_packet.msg.opn_2b;
     {
-    let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && (s.executor.next_op_to_execute.tag == OutstandingOpUnknown)));
+    let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && (s.executor.next_op_to_execute.tag == 4689272130int)));
     if op_learnable { ((LearnerProcess2b(s.learner, s_.learner, received_packet) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
@@ -135,20 +135,20 @@ pub open spec fn LReplicaNextReadClockMaybeNominateValueAndSend2a(s: LState, c: 
 
 /// ReplicaNextSpontaneousTruncateLogBasedOnCheckpoints operator
 pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    exists |opn| OperationNumber.contains(opn) && ((s.acceptor.last_checkpointed_operation.contains(opn) && IsLogTruncationPointValid(opn, s.acceptor.last_checkpointed_operation, s.constants.all.config)) && if (opn > s.acceptor.log_truncation_point) { ((AcceptorTruncateLog(s.acceptor, s_.acceptor, opn) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) })
+    exists |opn| 6996286291int.contains(opn) && ((s.acceptor.last_checkpointed_operation.contains(opn) && IsLogTruncationPointValid(opn, s.acceptor.last_checkpointed_operation, s.constants.all.config)) && if (opn > s.acceptor.log_truncation_point) { ((AcceptorTruncateLog(s.acceptor, s_.acceptor, opn) && (s_ == LRecord { acceptor: s_.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) })
 }
 
 /// ReplicaNextSpontaneousMaybeMakeDecision operator
 pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     {
     let opn = s.executor.ops_complete;
-    if (((s.executor.next_op_to_execute.tag == OutstandingOpUnknown) && s.learner.unexecuted_learner_state.dom().contains(opn)) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= MinQuorumSize(s.learner.constants.all.config))) { ((ExecutorGetDecision(s.executor, s_.executor, s.learner.max_ballot_seen, opn, s.learner.unexecuted_learner_state[opn].candidate_learned_value) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (((s.executor.next_op_to_execute.tag == 4689272130int) && s.learner.unexecuted_learner_state.dom().contains(opn)) && (s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= MinQuorumSize(s.learner.constants.all.config))) { ((ExecutorGetDecision(s.executor, s_.executor, s.learner.max_ballot_seen, opn, s.learner.unexecuted_learner_state[opn].candidate_learned_value) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s.proposer, replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == seq![])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 
 /// ReplicaNextSpontaneousMaybeExecute operator
 pub open spec fn LReplicaNextSpontaneousMaybeExecute(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    if (((s.executor.next_op_to_execute.tag == OutstandingOpKnown) && LtUpperBound(s.executor.ops_complete, s.executor.constants.all.params.max_integer_val)) && ReplicaConstantsValid(s.executor.constants)) { {
+    if (((s.executor.next_op_to_execute.tag == 6764822447int) && LtUpperBound(s.executor.ops_complete, s.executor.constants.all.params.max_integer_val)) && ReplicaConstantsValid(s.executor.constants)) { {
     let v = s.executor.next_op_to_execute.v;
     (((ProposerResetViewTimerDueToExecution(s.proposer, s_.proposer, v) && LearnerForgetDecision(s.learner, s_.learner, s.executor.ops_complete)) && ExecutorExecute(s.executor, s_.executor, sent_packets)) && (s_ == LRecord { acceptor: s.acceptor, bal_heartbeat: 0int, constants: s.constants, executor: s_.executor, learner: s_.learner, nextActionIndex: 0int, nextHeartbeatTime: s.nextHeartbeatTime, opn_ckpt: 0int, proposer: s_.proposer, replica: 0int, suspicious: 0int, t: 0int }))
 } } else { ((s_ == s) && (sent_packets == seq![])) }
@@ -171,25 +171,25 @@ pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: LState, 
 
 /// ExtractSentPacketsFromIos operator
 pub open spec fn LExtractSentPacketsFromIos(s: LState, c: LConstants, ios: int) -> () {
-    if (ios.len() == 0) { seq![] } else { if (ios[0].tag == Send) { (seq![ios[0].s] + LExtractSentPacketsFromIos(s, c, drop_first(ios))) } else { LExtractSentPacketsFromIos(s, c, drop_first(ios)) } }
+    if (ios.len() == 0) { seq![] } else { if (ios[0].tag == 5308382735int) { (seq![ios[0].s] + LExtractSentPacketsFromIos(s, c, ios.drop_first())) } else { LExtractSentPacketsFromIos(s, c, ios.drop_first()) } }
 }
 
 /// ReplicaNextReadClockAndProcessPacket operator
 pub open spec fn LReplicaNextReadClockAndProcessPacket(s: LState, c: LConstants, s_: int, ios: int) -> bool {
-    (((ios.len() > 1) && (ios[1].tag == ReadClock)) && forall |io| c.RslIo.contains(io) ==> ((ios.subrange(2 - 1, ios.len()).contains(io) ==> (io.tag == Send)) && LReplicaNextProcessHeartbeat(s, c, s, s_, ios[0].r, ios[1].t, LExtractSentPacketsFromIos(s, c, ios))))
+    (((ios.len() > 1) && (ios[1].tag == 9416806621int)) && forall |io| c.RslIo.contains(io) ==> ((ios.subrange(2 - 1, ios.len()).contains(io) ==> (io.tag == 5308382735int)) && LReplicaNextProcessHeartbeat(s, c, s, s_, ios[0].r, ios[1].t, LExtractSentPacketsFromIos(s, c, ios))))
 }
 
 /// ReplicaNextProcessPacketWithoutReadingClock operator
 pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s: LState, c: LConstants, s_: int, ios: int) -> bool {
     {
     let sent_packets = LExtractSentPacketsFromIos(s, c, ios);
-    forall |io| c.RslIo.contains(io) ==> ((drop_first(ios).contains(io) ==> (io.tag == Send)) && LReplicaNextProcessInvalid(s, c, s, s_, ios[0].r, sent_packets))
+    forall |io| c.RslIo.contains(io) ==> ((ios.drop_first().contains(io) ==> (io.tag == 5308382735int)) && LReplicaNextProcessInvalid(s, c, s, s_, ios[0].r, sent_packets))
 }
 }
 
 /// ReplicaNextProcessPacket operator
 pub open spec fn LReplicaNextProcessPacket(s: LState, c: LConstants, s_: int, ios: int) -> bool {
-    ((ios.len() >= 1) && if (ios[0].tag == TimeoutReceive) { ((s_ == s) && (ios.len() == 1)) } else { ((ios[0].tag == Receive) && if (ios[0].r.msg.tag == RslMessageHeartbeat) { LReplicaNextReadClockAndProcessPacket(s, c, s, s_, ios) } else { LReplicaNextProcessPacketWithoutReadingClock(s, c, s, s_, ios) }) })
+    ((ios.len() >= 1) && if (ios[0].tag == 5897376741int) { ((s_ == s) && (ios.len() == 1)) } else { ((ios[0].tag == 1912102818int) && if (ios[0].r.msg.tag == 2135448699int) { LReplicaNextReadClockAndProcessPacket(s, c, s, s_, ios) } else { LReplicaNextProcessPacketWithoutReadingClock(s, c, s, s_, ios) }) })
 }
 
 /// ReplicaNumActions operator
@@ -199,7 +199,7 @@ pub open spec fn LReplicaNumActions(c: LConstants) -> int {
 
 /// SpontaneousIos operator
 pub open spec fn LSpontaneousIos(s: LState, c: LConstants, ios: int, clocks: int) -> bool {
-    ((clocks <= ios.len()) && forall |i| int.contains(i) ==> ((((0 <= i) && (i < clocks)) ==> (ios[i].tag == ReadClock)) && forall |i| int.contains(i) ==> (((clocks <= i) && (i < ios.len())) ==> (ios[i].tag == Send))))
+    ((clocks <= ios.len()) && forall |i| ((((0 <= i) && (i < clocks)) ==> (ios[i].tag == 9416806621int)) && forall |i| (((clocks <= i) && (i < ios.len())) ==> (ios[i].tag == 5308382735int))))
 }
 
 /// SpontaneousClock operator

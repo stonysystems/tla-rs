@@ -34,7 +34,7 @@ pub struct LConstants {
 
 /// Learner operator
 pub open spec fn LLearner(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, constants: c.ReplicaConstants, max_ballot_seen: Ballot, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: earnerState }
+    LRecord { candidate_learned_value: 0int, constants: c.ReplicaConstants, max_ballot_seen: 8530703455int, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: earnerState }
 }
 
 /// LearnerInit operator

@@ -53,17 +53,17 @@ pub struct LConstants {
 
 /// Executor operator
 pub open spec fn LExecutor(c: LConstants) -> LRecord {
-    LRecord { app: AppState, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: c.ReplicaConstants, dst: 0int, max_bal_reflected: c.Ballot, msg: 0int, next_op_to_execute: LOutstandingOperation(c), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: int, proposer_id: 0int, reply: 0int, reply_cache: c.ReplyCache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }
+    LRecord { app: 2467764049int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: c.ReplicaConstants, dst: 0int, max_bal_reflected: c.Ballot, msg: 0int, next_op_to_execute: LOutstandingOperation(c), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: int, proposer_id: 0int, reply: 0int, reply_cache: c.ReplyCache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }
 }
 
 /// OutstandingOperation operator
 pub open spec fn LOutstandingOperation(c: LConstants) -> Set<int> {
-    set![OutstandingOpKnown, OutstandingOpUnknown]
+    set![6764822447int, 4689272130int]
 }
 
 /// ExecutorInit operator
 pub open spec fn LExecutorInit(s: LState, c: LConstants) -> bool {
-    ((((((s.constants == c) && (s.app == AppInitialize)) && (s.ops_complete == 0)) && (s.max_bal_reflected == LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0, reply: 0int, reply_cache: 0int, seqno: 0, seqno_reply: 0int, src: 0int, v: 0int })) && (s.next_op_to_execute == seq![])) && (s.reply_cache == seq![]))
+    ((((((s.constants == c) && (s.app == 2250457826int)) && (s.ops_complete == 0)) && (s.max_bal_reflected == LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0, reply: 0int, reply_cache: 0int, seqno: 0, seqno_reply: 0int, src: 0int, v: 0int })) && (s.next_op_to_execute == seq![])) && (s.reply_cache == seq![]))
 }
 
 /// ExecutorGetDecision operator
@@ -73,24 +73,24 @@ pub open spec fn LExecutorGetDecision(s: LState, c: LConstants, s_: int, bal: in
 
 /// GetPacketsFromReplies operator
 pub open spec fn LGetPacketsFromReplies(s: LState, c: LConstants, me: int, requests: int, replies: int) -> () {
-    if (requests.len() == 0) { seq![] } else { (seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: requests[0].client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: replies[0].reply, reply_cache: 0int, seqno: 0int, seqno_reply: requests[0].seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: me, v: 0int }] + LGetPacketsFromReplies(s, c, me, drop_first(requests), drop_first(replies))) }
+    if (requests.len() == 0) { seq![] } else { (seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: requests[0].client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: replies[0].reply, reply_cache: 0int, seqno: 0int, seqno_reply: requests[0].seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: me, v: 0int }] + LGetPacketsFromReplies(s, c, me, requests.drop_first(), replies.drop_first())) }
 }
 
 /// ClientsInReplies operator
 pub open spec fn LClientsInReplies(s: LState, c: LConstants, replies: int) -> () {
-    if (replies.len() == 0) { seq![] } else { LClientsInReplies(s, c, drop_first(replies)).insert(replies[0].client, replies[0]) }
+    if (replies.len() == 0) { seq![] } else { LClientsInReplies(s, c, replies.drop_first()).insert(replies[0].client, replies[0]) }
 }
 
 /// RepliesAreReplyType operator
 pub open spec fn LRepliesAreReplyType(s: LState, c: LConstants, replies: int) -> bool {
-    forall |p| c.RslPacket.contains(p) ==> (replies.contains(p) ==> (p.msg.tag == RslMessageReply))
+    forall |p| c.RslPacket.contains(p) ==> (replies.contains(p) ==> (p.msg.tag == 1959719083int))
 }
 
 /// UpdateNewCache operator
 pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c_: int, replies: int) -> bool {
     {
     let nc = LClientsInReplies(s, c, replies);
-    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| int.contains(req_idx) && ((((0 <= req_idx) && (req_idx < replies.len())) && (replies[req_idx].client == client)) && (c_[client] == replies[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
+    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| ((((0 <= req_idx) && (req_idx < replies.len())) && (replies[req_idx].client == client)) && (c_[client] == replies[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
 }
 }
 

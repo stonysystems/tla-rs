@@ -35,7 +35,7 @@ pub struct LConstants {
 
 /// RslState operator
 pub open spec fn LRslState(c: LConstants) -> LRecord {
-    LRecord { actor: 0int, all: 0int, clients: Seq(c.AbstractEndPoint), constants: c.Constants, environment: Environment, ios: 0int, my_index: 0int, replicas: Seq(Scheduler) }
+    LRecord { actor: 0int, all: 0int, clients: Seq(c.AbstractEndPoint), constants: c.Constants, environment: 7208647130int, ios: 0int, my_index: 0int, replicas: Seq(6667538010int) }
 }
 
 /// RslMapsComplete operator
@@ -50,7 +50,7 @@ pub open spec fn LRslConstantsUnchanged(s: LState, c: LConstants, ps: int, ps_: 
 
 /// RslInit operator
 pub open spec fn LRslInit(s: LState, c: LConstants, con: int, ps: int) -> bool {
-    (((((WellFormedLConfiguration(con.config) && WFLParameters(con.params)) && (ps.constants == con)) && Environment_Init(ps.environment)) && LRslMapsComplete(s, c, ps)) && forall |i| int.contains(i) ==> (((0 <= i) && (i < con.config.replica_ids.len())) ==> SchedulerInit(ps.replicas[i], LRecord { actor: 0int, all: con, clients: 0int, constants: 0int, environment: 0int, ios: 0int, my_index: i, replicas: 0int })))
+    (((((WellFormedLConfiguration(con.config) && WFLParameters(con.params)) && (ps.constants == con)) && Environment_Init(ps.environment)) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < con.config.replica_ids.len())) ==> SchedulerInit(ps.replicas[i], LRecord { actor: 0int, all: con, clients: 0int, constants: 0int, environment: 0int, ios: 0int, my_index: i, replicas: 0int })))
 }
 
 /// RslNextCommon operator
@@ -60,12 +60,12 @@ pub open spec fn LRslNextCommon(s: LState, c: LConstants, ps: int, ps_: int) -> 
 
 /// RslNextOneReplica operator
 pub open spec fn LRslNextOneReplica(s: LState, c: LConstants, ps: int, ps_: int, idx: int, ios: int) -> bool {
-    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < ps.constants.config.replica_ids.len())) && SchedulerNext(ps.replicas[idx], ps_.replicas[idx], ios)) && (ps.environment.nextStep == LRecord { actor: ps.constants.config.replica_ids[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (ps_.replicas == update(ps.replicas, idx, ps_.replicas[idx])))
+    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < ps.constants.config.replica_ids.len())) && SchedulerNext(ps.replicas[idx], ps_.replicas[idx], ios)) && (ps.environment.nextStep == LRecord { actor: ps.constants.config.replica_ids[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (ps_.replicas == ps.replicas.update(idx, ps_.replicas[idx])))
 }
 
 /// RslNextEnvironment operator
 pub open spec fn LRslNextEnvironment(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslNextCommon(s, c, ps, ps_) && (!(ps.environment.nextStep.tag) == LEnvStepHostIos)) && (ps_.replicas == ps.replicas))
+    ((LRslNextCommon(s, c, ps, ps_) && (!(ps.environment.nextStep.tag) == 2375175031int)) && (ps_.replicas == ps.replicas))
 }
 
 /// RslNextOneExternal operator
@@ -75,7 +75,7 @@ pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int
 
 /// RslNext operator
 pub open spec fn LRslNext(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    exists |idx, ios| (int.contains(idx) && Seq(c.RslIo).contains(ios)) && (LRslNextOneReplica(s, c, ps, ps_, idx, ios) || exists |eid, ios| (c.AbstractEndPoint.contains(eid) && Seq(c.RslIo).contains(ios)) && (LRslNextOneExternal(s, c, ps, ps_, eid, ios) || LRslNextEnvironment(s, c, ps, ps_)))
+    exists |idx, ios| (Seq(c.RslIo).contains(ios)) && (LRslNextOneReplica(s, c, ps, ps_, idx, ios) || exists |eid, ios| (c.AbstractEndPoint.contains(eid) && Seq(c.RslIo).contains(ios)) && (LRslNextOneExternal(s, c, ps, ps_, eid, ios) || LRslNextEnvironment(s, c, ps, ps_)))
 }
 
 } // verus!

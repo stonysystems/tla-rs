@@ -40,12 +40,12 @@ pub open spec fn LConstants() -> LRecord {
 
 /// PBMessage operator
 pub open spec fn LPBMessage() -> Set<int> {
-    set![Replicate, Ack]
+    set![4415219684int, 7544150754int]
 }
 
 /// NodeRole operator
 pub open spec fn LNodeRole() -> Set<int> {
-    set![Primary, Backup, Inactive]
+    set![6049598361int, 6865358367int, 1048442360int]
 }
 
 } // verus!

@@ -50,7 +50,7 @@ pub open spec fn LComputeSuccessorView(s: LState, c: LConstants, b: int) -> LRec
 
 /// BoundRequestSequence operator
 pub open spec fn LBoundRequestSequence(s: LState, c: LConstants, lengthBound: int) -> int {
-    if (((lengthBound.tag == UpperBoundFinite) && (0 <= lengthBound.n)) && (lengthBound.n < s.len())) { s.subrange(0 - 1, lengthBound.n) } else { s }
+    if (((lengthBound.tag == 9267933094int) && (0 <= lengthBound.n)) && (lengthBound.n < s.len())) { s.subrange(0 - 1, lengthBound.n) } else { s }
 }
 
 /// RequestsMatch operator
@@ -65,7 +65,7 @@ pub open spec fn LRequestSatisfiedBy(s: LState, c: LConstants, r1: int, r2: int)
 
 /// RemoveAllSatisfiedRequestsInSequence operator
 pub open spec fn LRemoveAllSatisfiedRequestsInSequence(s: LState, c: LConstants, r: int) -> () {
-    if (s.len() == 0) { seq![] } else { if LRequestSatisfiedBy(s, c, s[0], r) { LRemoveAllSatisfiedRequestsInSequence(s, c, drop_first(s), r) } else { (seq![s[0]] + LRemoveAllSatisfiedRequestsInSequence(s, c, drop_first(s), r)) } }
+    if (s.len() == 0) { seq![] } else { if LRequestSatisfiedBy(s, c, s[0], r) { LRemoveAllSatisfiedRequestsInSequence(s, c, s.drop_first(), r) } else { (seq![s[0]] + LRemoveAllSatisfiedRequestsInSequence(s, c, s.drop_first(), r)) } }
 }
 
 /// ElectionStateInit operator
@@ -107,7 +107,7 @@ pub open spec fn LElectionStateReflectReceivedRequest(s: LState, c: LConstants, 
 
 /// RemoveExecutedRequestBatch operator
 pub open spec fn LRemoveExecutedRequestBatch(s: LState, c: LConstants, reqs: int, batch: int) -> int {
-    if (batch.len() == 0) { reqs } else { LRemoveExecutedRequestBatch(s, c, LRemoveAllSatisfiedRequestsInSequence(s, c, reqs, batch[0]), drop_first(batch)) }
+    if (batch.len() == 0) { reqs } else { LRemoveExecutedRequestBatch(s, c, LRemoveAllSatisfiedRequestsInSequence(s, c, reqs, batch[0]), batch.drop_first()) }
 }
 
 /// ElectionStateReflectExecutedRequestBatch operator

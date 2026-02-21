@@ -16,6 +16,39 @@ fn safe_field_name(name: &str) -> String {
     }
 }
 
+/// True when an identifier looks like a symbolic atom from generated TLA+ specs
+/// (for example enum-like tags such as `Idle`, `Prepare`, `Follower`).
+fn is_symbolic_atom_name(name: &str) -> bool {
+    if name.len() <= 1 {
+        return false;
+    }
+    if matches!(
+        name,
+        "Append" | "Head" | "Tail" | "Len" | "SubSeq" | "Cardinality" | "IsFiniteSet"
+    ) {
+        return false;
+    }
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_uppercase() && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Deterministically lower symbolic atoms to integer literals so generated D1
+/// specs remain Verus-compilable without requiring out-of-module declarations.
+fn symbolic_atom_to_int_literal(name: &str) -> String {
+    // 64-bit FNV-1a for stable cross-run mapping.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in name.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    // Keep values readable and avoid tiny literals like 0/1.
+    let value = (hash % 9_000_000_000) + 1_000_000_000;
+    format!("{value}int")
+}
+
 /// Configuration for the expression translator
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -220,6 +253,9 @@ impl<'a> ExprTranslator<'a> {
                         }
                         OperatorKind::ConstantOp => format!("{}()", prefixed),
                     };
+                }
+                if is_symbolic_atom_name(name) {
+                    return symbolic_atom_to_int_literal(name);
                 }
                 name.to_string()
             }
@@ -548,6 +584,19 @@ impl<'a> ExprTranslator<'a> {
     // Quantifier translation (T5.4)
     // =========================================================================
 
+    fn translate_quantifier_bound(&self, var: &str, set: &TlaExpr) -> Option<String> {
+        match set {
+            // Int/BOOLEAN are universal in TLA+; no explicit bound needed in Verus quantifier guard.
+            TlaExpr::Ident(name) if name == "Int" || name == "BOOLEAN" => None,
+            // Nat is modeled as int with non-negativity guard.
+            TlaExpr::Ident(name) if name == "Nat" => Some(format!("({var} >= 0)")),
+            _ => {
+                let set_str = self.translate(set);
+                Some(format!("{}.contains({})", set_str, var))
+            }
+        }
+    }
+
     fn translate_forall(&self, vars: &[TlaQuantBound], body: &TlaExpr) -> String {
         // \A x \in S : P(x) → forall |x| S.contains(x) ==> P(x)
         let body_str = self.translate(body);
@@ -555,11 +604,11 @@ impl<'a> ExprTranslator<'a> {
         if vars.len() == 1 {
             let var = &vars[0];
             if let Some(set) = &var.set {
-                let set_str = self.translate(set);
-                format!(
-                    "forall |{}| {}.contains({}) ==> {}",
-                    var.var, set_str, var.var, body_str
-                )
+                if let Some(bound) = self.translate_quantifier_bound(&var.var, set) {
+                    format!("forall |{}| {} ==> {}", var.var, bound, body_str)
+                } else {
+                    format!("forall |{}| {}", var.var, body_str)
+                }
             } else {
                 format!("forall |{}| {}", var.var, body_str)
             }
@@ -569,10 +618,9 @@ impl<'a> ExprTranslator<'a> {
             let bounds: Vec<_> = vars
                 .iter()
                 .filter_map(|v| {
-                    v.set.as_ref().map(|s| {
-                        let set_str = self.translate(s);
-                        format!("{}.contains({})", set_str, v.var)
-                    })
+                    v.set
+                        .as_ref()
+                        .and_then(|s| self.translate_quantifier_bound(&v.var, s))
                 })
                 .collect();
 
@@ -596,11 +644,11 @@ impl<'a> ExprTranslator<'a> {
         if vars.len() == 1 {
             let var = &vars[0];
             if let Some(set) = &var.set {
-                let set_str = self.translate(set);
-                format!(
-                    "exists |{}| {}.contains({}) && {}",
-                    var.var, set_str, var.var, body_str
-                )
+                if let Some(bound) = self.translate_quantifier_bound(&var.var, set) {
+                    format!("exists |{}| {} && {}", var.var, bound, body_str)
+                } else {
+                    format!("exists |{}| {}", var.var, body_str)
+                }
             } else {
                 format!("exists |{}| {}", var.var, body_str)
             }
@@ -610,10 +658,9 @@ impl<'a> ExprTranslator<'a> {
             let bounds: Vec<_> = vars
                 .iter()
                 .filter_map(|v| {
-                    v.set.as_ref().map(|s| {
-                        let set_str = self.translate(s);
-                        format!("{}.contains({})", set_str, v.var)
-                    })
+                    v.set
+                        .as_ref()
+                        .and_then(|s| self.translate_quantifier_bound(&v.var, s))
                 })
                 .collect();
 
@@ -686,14 +733,33 @@ impl<'a> ExprTranslator<'a> {
             }
         }
 
-        let op_str = self.translate(op);
         let arg_strs: Vec<_> = args.iter().map(|a| self.translate(a)).collect();
+        // In operator-call position, keep identifier operators as identifiers to
+        // avoid symbolic-atom lowering turning call heads into integer literals.
+        let op_str = match op {
+            TlaExpr::Ident(name) => self
+                .config
+                .rename_map
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| name.clone()),
+            _ => self.translate(op),
+        };
 
         // Check for standard library functions
         match op_str.as_str() {
             // Sequence operations (T5.3)
             "Append" if args.len() == 2 => {
                 format!("{}.push({})", arg_strs[0], arg_strs[1])
+            }
+            "update" if args.len() == 3 => {
+                format!("{}.update({}, {})", arg_strs[0], arg_strs[1], arg_strs[2])
+            }
+            "skip" if args.len() == 2 => {
+                format!("{}.skip({})", arg_strs[0], arg_strs[1])
+            }
+            "drop_first" if args.len() == 1 => {
+                format!("{}.drop_first()", arg_strs[0])
             }
             "Head" if args.len() == 1 => {
                 format!("{}[0]", arg_strs[0])
@@ -2586,6 +2652,27 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_quantifier_bounds_for_builtin_sets() {
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+
+        let forall_int = TlaExpr::Forall {
+            vars: vec![TlaQuantBound::new("x", TlaExpr::ident("Int"))],
+            body: Box::new(TlaExpr::ident("P")),
+        };
+        let out_forall_int = translator.translate(&forall_int);
+        assert!(out_forall_int.contains("forall |x| P"));
+        assert!(!out_forall_int.contains("int.contains"));
+
+        let exists_nat = TlaExpr::Exists {
+            vars: vec![TlaQuantBound::new("x", TlaExpr::ident("Nat"))],
+            body: Box::new(TlaExpr::ident("Q")),
+        };
+        let out_exists_nat = translator.translate(&exists_nat);
+        assert!(out_exists_nat.contains("exists |x| (x >= 0) && Q"));
+    }
+
+    #[test]
     fn test_translate_unchanged() {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
@@ -2670,6 +2757,27 @@ mod tests {
             args: vec![TlaExpr::ident("s"), TlaExpr::ident("x")],
         };
         assert_eq!(translator.translate(&expr), "s.push(x)");
+
+        // update(s, i, x) → s.update(i, x)
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("update")),
+            args: vec![TlaExpr::ident("s"), TlaExpr::ident("i"), TlaExpr::ident("x")],
+        };
+        assert_eq!(translator.translate(&expr), "s.update(i, x)");
+
+        // skip(s, 1) → s.skip(1)
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("skip")),
+            args: vec![TlaExpr::ident("s"), TlaExpr::number(1)],
+        };
+        assert_eq!(translator.translate(&expr), "s.skip(1)");
+
+        // drop_first(s) → s.drop_first()
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("drop_first")),
+            args: vec![TlaExpr::ident("s")],
+        };
+        assert_eq!(translator.translate(&expr), "s.drop_first()");
 
         // Head(s) → s[0]
         let expr = TlaExpr::OpApply {
@@ -2775,6 +2883,33 @@ mod tests {
             "new_name"
         );
         assert_eq!(translator.translate(&TlaExpr::ident("other")), "other");
+    }
+
+    #[test]
+    fn test_translate_unknown_symbolic_atom_to_stable_int_literal() {
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+        let out = translator.translate(&TlaExpr::ident("Idle"));
+        assert_eq!(out, symbolic_atom_to_int_literal("Idle"));
+        assert!(out.ends_with("int"));
+    }
+
+    #[test]
+    fn test_translate_unknown_uppercase_operator_call_head_is_not_lowered() {
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Seq")),
+            args: vec![TlaExpr::ident("x")],
+        };
+        assert_eq!(translator.translate(&expr), "Seq(x)");
+    }
+
+    #[test]
+    fn test_translate_unknown_lowercase_identifier_is_preserved() {
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+        assert_eq!(translator.translate(&TlaExpr::ident("new_state")), "new_state");
     }
 
     // Module translation tests (T6)

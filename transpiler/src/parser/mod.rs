@@ -328,8 +328,8 @@ impl<'a> VerusBlockParser<'a> {
         let start = self.pos;
 
         // Handle raw identifier prefix: r#keyword
-        let has_raw_prefix = self.pos + 2 <= self.content.len()
-            && &self.content[self.pos..self.pos + 2] == "r#";
+        let has_raw_prefix =
+            self.pos + 2 <= self.content.len() && &self.content[self.pos..self.pos + 2] == "r#";
         if has_raw_prefix {
             self.pos += 2; // skip "r#"
         }
@@ -1027,22 +1027,24 @@ impl<'a> VerusBlockParser<'a> {
 
         // Check for boolean literals
         if self.try_consume("true") {
-            return Ok(Expr::Literal(Literal::Bool(true)));
+            return self.parse_postfix_ops(Expr::Literal(Literal::Bool(true)));
         }
         if self.try_consume("false") {
-            return Ok(Expr::Literal(Literal::Bool(false)));
+            return self.parse_postfix_ops(Expr::Literal(Literal::Bool(false)));
         }
 
         // Check for numeric literals
         if let Some(c) = self.peek() {
             if c.is_ascii_digit() || c == '-' {
-                return self.parse_number_literal();
+                let expr = self.parse_number_literal()?;
+                return self.parse_postfix_ops(expr);
             }
         }
 
         // Check for string literals
         if self.peek() == Some('"') {
-            return self.parse_string_literal();
+            let expr = self.parse_string_literal()?;
+            return self.parse_postfix_ops(expr);
         }
 
         // Parse identifier or path, then handle postfix operations
@@ -2734,6 +2736,25 @@ mod tests {
             }
             _ => panic!("Expected conjunction"),
         }
+    }
+
+    #[test]
+    fn test_parse_numeric_literal_method_call_chain() {
+        let source = r#"
+        verus! {
+            pub open spec fn literal_methods() -> bool {
+                3338869814int.powerset().contains(1)
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(
+            result.is_ok(),
+            "Numeric literal method-call chain should parse: {:?}",
+            result.err()
+        );
     }
 
     #[test]

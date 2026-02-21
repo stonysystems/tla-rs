@@ -41,12 +41,12 @@ pub open spec fn LConstants() -> LRecord {
 
 /// CRMessage operator
 pub open spec fn LCRMessage() -> Set<int> {
-    set![Forward, Ack]
+    set![7736370138int, 7544150754int]
 }
 
 /// NodeRole operator
 pub open spec fn LNodeRole() -> Set<int> {
-    set![Head, Middle, Tail]
+    set![Head, 9863251288int, Tail]
 }
 
 } // verus!

@@ -21,12 +21,12 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    (((((((((((s.promised_bal == 0) && (s.accepted_bal == 0)) && (s.accepted_val == 0)) && (s.proposer_bal == 0)) && (s.phase.tag == Idle)) && (s.promises_rcvd == Set::<int>::empty())) && (s.highest_accepted_bal == 0)) && (s.highest_accepted_val == 0)) && (s.proposed_val == 0)) && (s.accepts_rcvd == Set::<int>::empty())) && (s.decided_val == 0))
+    (((((((((((s.promised_bal == 0) && (s.accepted_bal == 0)) && (s.accepted_val == 0)) && (s.proposer_bal == 0)) && (s.phase.tag == 5126177779int)) && (s.promises_rcvd == Set::<int>::empty())) && (s.highest_accepted_bal == 0)) && (s.highest_accepted_val == 0)) && (s.proposed_val == 0)) && (s.accepts_rcvd == Set::<int>::empty())) && (s.decided_val == 0))
 }
 
 /// Send1a operator
 pub open spec fn LSend1a(s: LState, c: LConstants, s_: int, b: int) -> bool {
-    (((((((((((((s.phase.tag == Idle) && (b > s.proposer_bal)) && (s_.proposer_bal == b)) && (s_.phase.tag == Phase1)) && (s_.promises_rcvd == Set::<int>::empty())) && (s_.highest_accepted_bal == 0)) && (s_.highest_accepted_val == 0)) && (s_.proposed_val == s.proposed_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.decided_val == s.decided_val))
+    (((((((((((((s.phase.tag == 5126177779int) && (b > s.proposer_bal)) && (s_.proposer_bal == b)) && (s_.phase.tag == 9996969643int)) && (s_.promises_rcvd == Set::<int>::empty())) && (s_.highest_accepted_bal == 0)) && (s_.highest_accepted_val == 0)) && (s_.proposed_val == s.proposed_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.decided_val == s.decided_val))
 }
 
 /// Send1b operator
@@ -36,12 +36,12 @@ pub open spec fn LSend1b(s: LState, c: LConstants, s_: int, b: int) -> bool {
 
 /// RecvPromise operator
 pub open spec fn LRecvPromise(s: LState, c: LConstants, s_: int, a: int, a_accepted_bal: int, a_accepted_val: int) -> bool {
-    (((((s.phase.tag == Phase1) && c.acceptors.contains(a)) && s.promises_rcvd.contains(!(a))) && (s_.promises_rcvd == s.promises_rcvd.union(set![a]))) && (s_.highest_accepted_bal == if (a_accepted_bal > s.highest_accepted_bal) { a_accepted_bal } else { (s.highest_accepted_bal && (s_.highest_accepted_val == if (a_accepted_bal > s.highest_accepted_bal) { a_accepted_val } else { ((((((((s.highest_accepted_val && (s_.proposer_bal == s.proposer_bal)) && (s_.phase.tag == Phase1)) && (s_.proposed_val == s.proposed_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.decided_val == s.decided_val)) })) }))
+    (((((s.phase.tag == 9996969643int) && c.acceptors.contains(a)) && s.promises_rcvd.contains(!(a))) && (s_.promises_rcvd == s.promises_rcvd.union(set![a]))) && (s_.highest_accepted_bal == if (a_accepted_bal > s.highest_accepted_bal) { a_accepted_bal } else { (s.highest_accepted_bal && (s_.highest_accepted_val == if (a_accepted_bal > s.highest_accepted_bal) { a_accepted_val } else { ((((((((s.highest_accepted_val && (s_.proposer_bal == s.proposer_bal)) && (s_.phase.tag == 9996969643int)) && (s_.proposed_val == s.proposed_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.decided_val == s.decided_val)) })) }))
 }
 
 /// Send2a operator
 pub open spec fn LSend2a(s: LState, c: LConstants, s_: int, v: int) -> bool {
-    (((s.phase.tag == Phase1) && (s.promises_rcvd.len() >= c.quorum_size)) && (s_.proposed_val == if (s.highest_accepted_bal > 0) { s.highest_accepted_val } else { ((((((((((v && (s_.phase.tag == Phase2)) && (s_.accepts_rcvd == Set::<int>::empty())) && (s_.proposer_bal == s.proposer_bal)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.highest_accepted_bal == s.highest_accepted_bal)) && (s_.highest_accepted_val == s.highest_accepted_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.decided_val == s.decided_val)) }))
+    (((s.phase.tag == 9996969643int) && (s.promises_rcvd.len() >= c.quorum_size)) && (s_.proposed_val == if (s.highest_accepted_bal > 0) { s.highest_accepted_val } else { ((((((((((v && (s_.phase.tag == 2508597854int)) && (s_.accepts_rcvd == Set::<int>::empty())) && (s_.proposer_bal == s.proposer_bal)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.highest_accepted_bal == s.highest_accepted_bal)) && (s_.highest_accepted_val == s.highest_accepted_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.decided_val == s.decided_val)) }))
 }
 
 /// Send2b operator
@@ -51,17 +51,17 @@ pub open spec fn LSend2b(s: LState, c: LConstants, s_: int, b: int, v: int) -> b
 
 /// RecvAccepted operator
 pub open spec fn LRecvAccepted(s: LState, c: LConstants, s_: int, a: int) -> bool {
-    ((((((((((((((s.phase.tag == Phase2) && c.acceptors.contains(a)) && s.accepts_rcvd.contains(!(a))) && (s_.accepts_rcvd == s.accepts_rcvd.union(set![a]))) && (s_.proposer_bal == s.proposer_bal)) && (s_.phase.tag == Phase2)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.highest_accepted_bal == s.highest_accepted_bal)) && (s_.highest_accepted_val == s.highest_accepted_val)) && (s_.proposed_val == s.proposed_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.decided_val == s.decided_val))
+    ((((((((((((((s.phase.tag == 2508597854int) && c.acceptors.contains(a)) && s.accepts_rcvd.contains(!(a))) && (s_.accepts_rcvd == s.accepts_rcvd.union(set![a]))) && (s_.proposer_bal == s.proposer_bal)) && (s_.phase.tag == 2508597854int)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.highest_accepted_bal == s.highest_accepted_bal)) && (s_.highest_accepted_val == s.highest_accepted_val)) && (s_.proposed_val == s.proposed_val)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val)) && (s_.decided_val == s.decided_val))
 }
 
 /// Learn operator
 pub open spec fn LLearn(s: LState, c: LConstants, s_: int) -> bool {
-    (((((((((((((s.phase.tag == Phase2) && (s.accepts_rcvd.len() >= c.quorum_size)) && (s_.phase.tag == Decided)) && (s_.decided_val == s.proposed_val)) && (s_.proposer_bal == s.proposer_bal)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.highest_accepted_bal == s.highest_accepted_bal)) && (s_.highest_accepted_val == s.highest_accepted_val)) && (s_.proposed_val == s.proposed_val)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val))
+    (((((((((((((s.phase.tag == 2508597854int) && (s.accepts_rcvd.len() >= c.quorum_size)) && (s_.phase.tag == 8313578207int)) && (s_.decided_val == s.proposed_val)) && (s_.proposer_bal == s.proposer_bal)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.highest_accepted_bal == s.highest_accepted_bal)) && (s_.highest_accepted_val == s.highest_accepted_val)) && (s_.proposed_val == s.proposed_val)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.promised_bal == s.promised_bal)) && (s_.accepted_bal == s.accepted_bal)) && (s_.accepted_val == s.accepted_val))
 }
 
 /// Next operator
 pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |b| int.contains(b) && (LSend1a(s, c, s, s_, c, b) || exists |b| int.contains(b) && (LSend1b(s, c, s, s_, c, b) || exists |a, ab, av| (int.contains(a) && int.contains(ab) && int.contains(av)) && (LRecvPromise(s, c, s, s_, c, a, ab, av) || exists |v| int.contains(v) && (LSend2a(s, c, s, s_, c, v) || exists |b, v| (int.contains(b) && int.contains(v)) && (LSend2b(s, c, s, s_, c, b, v) || exists |a| int.contains(a) && (LRecvAccepted(s, c, s, s_, c, a) || LLearn(s, c, s, s_, c)))))))
+    exists |b| (LSend1a(s, c, s, s_, c, b) || exists |b| (LSend1b(s, c, s, s_, c, b) || exists |a, ab, av| (LRecvPromise(s, c, s, s_, c, a, ab, av) || exists |v| (LSend2a(s, c, s, s_, c, v) || exists |b, v| (LSend2b(s, c, s, s_, c, b, v) || exists |a| (LRecvAccepted(s, c, s, s_, c, a) || LLearn(s, c, s, s_, c)))))))
 }
 
 } // verus!

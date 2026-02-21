@@ -15,7 +15,7 @@ pub struct LState {
 
 /// RslMessage operator
 pub open spec fn LRslMessage() -> Set<int> {
-    set![RslMessageInvalid, RslMessageRequest, RslMessage1a, RslMessage1b, RslMessage2a, RslMessage2b, RslMessageHeartbeat, RslMessageReply, RslMessageAppStateRequest, RslMessageAppStateSupply, RslMessageStartingPhase2]
+    set![7289550020int, 1642754294int, 7689225219int, 9200853430int, 1270826328int, 5805710961int, 2135448699int, 1959719083int, 6488777570int, 7430730718int, 2439504254int]
 }
 
 } // verus!
