@@ -6147,6 +6147,30 @@ fn test_phase22_source_first_model_checking_guide_has_core_steps() {
     }
 }
 
+#[test]
+fn test_phase22_migration_guide_has_tlc_to_source_first_mapping() {
+    let source = std::fs::read_to_string("../docs/model-checking-migration.md")
+        .expect("Failed to read model-checking migration guide");
+
+    for marker in [
+        "TLC Wrapper Workflow",
+        "Source-First Model Checking",
+        "*_MC.tla",
+        ".cfg",
+        "model.toml",
+        "properties.invariants",
+        "properties.check_deadlock",
+        "verus-transpile model-check",
+        "Migration Steps",
+    ] {
+        assert!(
+            source.contains(marker),
+            "model-checking migration guide should contain `{}`",
+            marker
+        );
+    }
+}
+
 /// Phase 19.4: Verify acceptor_gen.rs is fully standalone with no clone-delegate patterns
 #[test]
 fn test_acceptor_gen_no_delegate_patterns() {

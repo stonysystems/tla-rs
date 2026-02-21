@@ -102,3 +102,7 @@ transpiler/target/debug/verus-transpile model-config \
 
 This prints the resolved, validated configuration to stdout.
 
+## 8. Migration from TLC Wrapper Workflow
+
+If you are migrating from the older wrapper-based workflow, use
+`docs/model-checking-migration.md`.

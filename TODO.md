@@ -6568,7 +6568,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 - [x] Document “how to model check tla-rs specs directly” in `docs/`.
   - Added `docs/model-checking-source-first.md` with a source-first workflow (`model-check` command, minimal `model.toml`, key overrides, JSON report interpretation, and `model-config` validation step).
-- [ ] Provide migration guidance from TLC wrapper workflow to source-first workflow.
+- [x] Provide migration guidance from TLC wrapper workflow to source-first workflow.
+  - Added `docs/model-checking-migration.md` with artifact mapping (`*_MC.tla`/`.cfg` to `model.toml` + source inputs), property mapping, migration checklist, and rollout pattern.
 - [ ] Document current limitations and supported expression/type subset.
 - [ ] Add troubleshooting section for common modeling errors (domain too large, unsupported constructs).
 
