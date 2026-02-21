@@ -518,28 +518,82 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn quantifier_var_binder(&self, var: &TlaQuantBound, body: &TlaExpr) -> String {
-        if !self.is_generated_d1_context() {
-            return var.var.clone();
-        }
-        if var.set.is_none() {
-            if let Some(hint) = self.infer_quantifier_var_type_hint_from_call_sites(body, &var.var)
-            {
-                match hint.trim() {
-                    "bool" => return format!("{}: bool", var.var),
-                    "int" | "nat" => return format!("{}: int", var.var),
-                    _ => {}
-                }
-            }
-        }
-        let force_int = match &var.set {
-            None => true,
-            Some(set) => matches!(set, TlaExpr::Ident(name) if name == "Int" || name == "Nat"),
-        };
-        if force_int {
-            format!("{}: int", var.var)
+        if let Some(hint) = self.generated_quantifier_var_type_hint(var, body) {
+            format!("{}: {}", var.var, hint)
         } else {
             var.var.clone()
         }
+    }
+
+    fn quantifier_var_type_hint_from_bound_set(&self, set: &TlaExpr) -> Option<&'static str> {
+        match set {
+            TlaExpr::Ident(name) if name == "Int" || name == "Nat" => Some("int"),
+            TlaExpr::Ident(name) if name == "BOOLEAN" => Some("bool"),
+            TlaExpr::OpApply { op, .. } => {
+                if let TlaExpr::Ident(name) = op.as_ref() {
+                    match name.as_str() {
+                        "Seq" => Some("Seq<int>"),
+                        "Set" => Some("Set<int>"),
+                        "Map" => Some("Map<int, int>"),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn generated_quantifier_var_type_hint(
+        &self,
+        var: &TlaQuantBound,
+        body: &TlaExpr,
+    ) -> Option<String> {
+        if !self.config.normalize_unknown_external_refs {
+            return None;
+        }
+        let mut best: Option<String> = None;
+        if let Some(set) = &var.set {
+            if let Some(hint) = self.quantifier_var_type_hint_from_bound_set(set) {
+                self.update_quantifier_var_hint(&mut best, hint);
+            }
+        }
+        if let Some(hint) = self.infer_quantifier_var_type_hint_from_call_sites(body, &var.var) {
+            self.update_quantifier_var_hint(&mut best, hint.trim());
+        }
+        if var.set.is_none() && best.is_none() {
+            best = Some("int".to_string());
+        }
+        best.map(|hint| match hint.trim() {
+            "nat" | "int" => "int".to_string(),
+            other => other.to_string(),
+        })
+    }
+
+    fn translate_quantifier_body_with_var_hints(
+        &self,
+        vars: &[TlaQuantBound],
+        body: &TlaExpr,
+    ) -> String {
+        if !self.config.normalize_unknown_external_refs {
+            return self.translate(body);
+        }
+        let mut nested_config = self.config.clone();
+        let mut has_hint = false;
+        for var in vars {
+            if let Some(hint) = self.generated_quantifier_var_type_hint(var, body) {
+                nested_config
+                    .identifier_type_hints
+                    .insert(var.var.clone(), hint);
+                has_hint = true;
+            }
+        }
+        if !has_hint {
+            return self.translate(body);
+        }
+        let nested = ExprTranslator::new(&nested_config);
+        nested.translate(body)
     }
 
     fn implicit_args_for_operator_name(&self, op_name: &str) -> Vec<&'static str> {
@@ -1787,7 +1841,7 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_forall(&self, vars: &[TlaQuantBound], body: &TlaExpr) -> String {
         // \A x \in S : P(x) → forall |x| S.contains(x) ==> P(x)
-        let body_str = self.translate(body);
+        let body_str = self.translate_quantifier_body_with_var_hints(vars, body);
         if self.config.normalize_unknown_external_refs && body_str.contains("arbitrary()") {
             return "arbitrary::<bool>()".to_string();
         }
@@ -1834,7 +1888,7 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_exists(&self, vars: &[TlaQuantBound], body: &TlaExpr) -> String {
         // \E x \in S : P(x) → exists |x| S.contains(x) && P(x)
-        let body_str = self.translate(body);
+        let body_str = self.translate_quantifier_body_with_var_hints(vars, body);
         if self.config.normalize_unknown_external_refs && body_str.contains("arbitrary()") {
             return "arbitrary::<bool>()".to_string();
         }
@@ -4686,7 +4740,72 @@ mod tests {
         };
         assert_eq!(
             translator.translate(&expr),
-            "exists |promise_val: bool| LReceivePromise(arbitrary::<bool>())"
+            "exists |promise_val: bool| LReceivePromise(promise_val)"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_unbounded_quantifier_gets_int_binder_with_declared_module_vars() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("x".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Exists {
+            vars: vec![TlaQuantBound {
+                var: "sent_packets".to_string(),
+                set: None,
+            }],
+            body: Box::new(TlaExpr::ident("P")),
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "exists |sent_packets: int| P"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_quantifier_seq_bound_gets_seq_int_binder() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Exists {
+            vars: vec![TlaQuantBound {
+                var: "sent_packets".to_string(),
+                set: Some(TlaExpr::OpApply {
+                    op: Box::new(TlaExpr::ident("Seq")),
+                    args: vec![TlaExpr::ident("VPMessage")],
+                }),
+            }],
+            body: Box::new(TlaExpr::ident("P")),
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "exists |sent_packets: Seq<int>| P"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_quantifier_int_bound_can_use_bool_call_site_hint() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config
+            .operator_info
+            .insert("ReceivePromise".to_string(), OperatorKind::ConstantOp);
+        config
+            .operator_param_type_hints
+            .insert("ReceivePromise".to_string(), vec!["bool".to_string()]);
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Exists {
+            vars: vec![TlaQuantBound {
+                var: "witness_val".to_string(),
+                set: Some(TlaExpr::ident("Int")),
+            }],
+            body: Box::new(TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("ReceivePromise")),
+                args: vec![TlaExpr::ident("witness_val")],
+            }),
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "exists |witness_val: bool| LReceivePromise(witness_val)"
         );
     }
 

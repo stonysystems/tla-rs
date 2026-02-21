@@ -3221,15 +3221,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3b-3:
+    // Baseline after 16.8.3d-3c-1:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
-    // - infers bool quantifier binders from operator call-site parameter hints,
+    // - infers quantifier binder types from bound-set and call-site hints, and
+    //   propagates those hints into quantifier bodies,
     // - coerces non-int structured/control-flow placeholders in int-typed record contexts,
     // - coerces scalar/seq drift at module-operator call-sites from parameter hints.
     assert_eq!(
-        passed, 23,
-        "Expected exactly twenty-three D1 files to compile at current baseline; pass files: {:?}",
+        passed, 24,
+        "Expected exactly twenty-four D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3269,8 +3270,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 5,
-        "Expected 5 type-inference (E0282) failures at baseline"
+        cat_e0282, 4,
+        "Expected 4 type-inference (E0282) failures at baseline"
     );
     assert_eq!(
         cat_rec_decreases, 1,

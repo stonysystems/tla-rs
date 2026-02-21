@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `23/33` files compile with Verus after `16.8.3d-3b-3`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `24/33` files compile with Verus after `16.8.3d-3c-1`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5563,6 +5563,20 @@ transpiler/tla_test_workspace/
           - Measured first-error baseline after `16.8.3d-3b-3`: `23/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `3` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `5` `E0282`, `1` `REC_DECREASES`.
           - Net effect: residual mismatched-type blockers reduced (`E0308: 5 -> 3`) with compile pass count unchanged (`23 -> 23`) while preserving `E0277=0`; one former mismatched-type file now leads with `E0599` and one with `E0282`.
       - [ ] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
+        - [x] **16.8.3d-3c-1** Eliminate untyped generated-D1 quantifier binder inference blockers (e.g., unused `sent_packets` binders in `VerticalPaxos/LNext`) by applying binder fallback typing whenever unknown-ref normalization is enabled, then regenerate/re-measure baseline.
+          - Scope/LOC check: implemented as focused quantifier-binder/type-hint propagation refinements in `ExprTranslator` plus targeted regressions and single-module regeneration; stayed under the <500 LOC leaf target.
+          - Added generated-D1 quantifier bound-type handling for constructor-style bounds (`Seq`/`Set`/`Map`) and merged bound-set hints with call-site parameter hints (priority-based) for binder typing.
+          - Added generated-D1 quantifier-local identifier hint propagation into body translation so bound vars are preserved in operator calls (`sent_packets`/`promise_val`/`witness_val`) instead of being coerced to `arbitrary::<...>()`.
+          - Added regressions:
+            - `test_generated_d1_unbounded_quantifier_gets_int_binder_with_declared_module_vars`
+            - `test_generated_d1_quantifier_seq_bound_gets_seq_int_binder`
+            - `test_generated_d1_quantifier_int_bound_can_use_bool_call_site_hint`
+            - updated expectation in `test_generated_d1_exists_unbounded_var_uses_bool_call_site_hint`
+          - Re-built `transpiler/target/release/verus-transpile`, regenerated `VerticalPaxos/Vpaxos.rs`, and re-ran the D1 compile baseline.
+          - Measured first-error baseline after `16.8.3d-3c-1`: `24/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `3` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `4` `E0282`, `1` `REC_DECREASES`.
+          - Net effect: compile passes improved (`23 -> 24`) and inference blockers reduced (`E0282: 5 -> 4`) while preserving `E0277=0`; `VerticalPaxos/Vpaxos.rs` now compiles in D1 baseline.
+        - [ ] **16.8.3d-3c-2** Reduce residual generated-D1 `arbitrary() == <typed peer>` inference blockers (`Paxos`, `RSL/Acceptor`, `RSL/Replica`, `Raft`) via Eq/Neq peer-shape/type-hint coercion refinement.
+        - [ ] **16.8.3d-3c-3** Re-run full D1 compile baseline, refresh integration assertions/docs, and decide whether to keep `3c` open or promote `16.8.3d-3` criteria.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
