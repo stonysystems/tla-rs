@@ -5417,6 +5417,22 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-11`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
           - Net effect: residual mismatched-type first-error class eliminated (`E0308: 1 -> 0`) with class shift to inference (`E0282: 17 -> 18`); compile pass count unchanged (`15/33`).
+        - [x] **16.8.3d-2d-12** Add generated-D1 constant-field hint coercion for Eq/Neq peers (`Request` → `c.Request`) to reduce residual inference blockers without reintroducing scalar-method failures.
+          - Scope/LOC check: implemented as focused `ExprTranslator`/`ModuleTranslator` hint plumbing + regression coverage; stayed under the <500 LOC leaf target.
+          - Added `constant_field_type_hints` propagation into per-function expression translation, sourced from module constant type resolution (`get_constant_type`).
+          - Extended generated-D1 Eq/Neq coercion to use constant-field hints for:
+            - plain constant identifiers (e.g., `Request` that render as `c.Request`);
+            - explicit dotted `c.<Field>` identifiers; and
+            - `RecordAccess(c, field)` forms.
+          - Tightened module-state reference fallback for unhandled expression variants in `operator_refs_declared_variables` (recurse known wrappers, default unknown to `false`) so generated helper params like `s` are not spuriously upgraded to state receivers in D1 regeneration.
+          - Added regressions:
+            - `test_generated_d1_eq_coerces_arbitrary_from_constant_field_type_hint_set`
+            - `test_generated_d1_neq_coerces_arbitrary_from_constant_field_type_hint_seq`
+            - `test_non_generated_eq_preserves_constant_field_hint_coercion`
+            - `test_generated_d1_module_translation_coerces_eq_from_constant_field_hint`
+          - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-12`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+          - Net effect: inference blockers reduced (`E0282: 18 -> 17`) with one surfaced mismatched-type first-error (`E0308: 0 -> 1`, `RSL/Election.rs`), compile pass count unchanged (`15/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

@@ -55,12 +55,12 @@ pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: 
 
 /// RequestsMatch operator
 pub open spec fn LRequestsMatch(c: LConstants, r1: int, r2: int) -> bool {
-    ((((arbitrary() == c.Request) && (arbitrary() == c.Request)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
+    ((((arbitrary::<Set<int>>() == c.Request) && (arbitrary::<Set<int>>() == c.Request)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RequestSatisfiedBy operator
 pub open spec fn LRequestSatisfiedBy(c: LConstants, r1: int, r2: int) -> bool {
-    ((((arbitrary() == c.Request) && (arbitrary() == c.Request)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() <= arbitrary::<int>()))
+    ((((arbitrary::<Set<int>>() == c.Request) && (arbitrary::<Set<int>>() == c.Request)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() <= arbitrary::<int>()))
 }
 
 /// RemoveAllSatisfiedRequestsInSequence operator

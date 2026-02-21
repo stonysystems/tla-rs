@@ -32,7 +32,7 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState(s: LState) -> LRecord {
+pub open spec fn LState() -> LRecord {
     LRecord { commit_index: arbitrary(), current_term: arbitrary(), has_voted: arbitrary(), log: arbitrary(), match_index: arbitrary(), my_id: 0int, next_index: arbitrary(), quorum_size: 0int, role: arbitrary(), servers: 0int, term: 0int, value: 0int, voted_for: arbitrary(), votes_granted: arbitrary() }
 }
 

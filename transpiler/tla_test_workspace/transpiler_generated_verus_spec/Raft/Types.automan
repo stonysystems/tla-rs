@@ -2,7 +2,7 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Types {
-    helper LState(+);  // s is input (state to check)
+    helper LState();  // 
     helper LConstants();  // 
     helper LLogEntry();  // 
     helper LRaftMessage();  // 

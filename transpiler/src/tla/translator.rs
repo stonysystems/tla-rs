@@ -165,6 +165,8 @@ pub struct TranslatorConfig {
     pub normalize_unknown_external_refs: bool,
     /// Per-operator identifier type hints (typically parameter types) for local coercion.
     pub identifier_type_hints: std::collections::HashMap<String, String>,
+    /// Per-module constants-field type hints for `c.<Field>` access coercion in generated D1.
+    pub constant_field_type_hints: std::collections::HashMap<String, String>,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -194,6 +196,7 @@ impl Default for TranslatorConfig {
             record_field_types: std::collections::HashMap::new(),
             normalize_unknown_external_refs: false,
             identifier_type_hints: std::collections::HashMap::new(),
+            constant_field_type_hints: std::collections::HashMap::new(),
         }
     }
 }
@@ -397,6 +400,32 @@ impl<'a> ExprTranslator<'a> {
             "Set<int>" => "arbitrary::<Set<int>>()".to_string(),
             _ => rendered.to_string(),
         }
+    }
+
+    fn constant_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
+        let field_name = match expr {
+            TlaExpr::Ident(name) => {
+                if let Some(field_name) = name.strip_prefix("c.") {
+                    field_name
+                } else if self.config.constant_names.contains(name.as_str()) {
+                    name.as_str()
+                } else {
+                    return None;
+                }
+            }
+            TlaExpr::RecordAccess { record, field } => {
+                if matches!(record.as_ref(), TlaExpr::Ident(name) if name == "c") {
+                    field.as_str()
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+        self.config
+            .constant_field_type_hints
+            .get(field_name)
+            .map(|s| s.as_str())
     }
 
     fn coerce_boolish_numeric_literal(&self, rendered: &str, expr: &TlaExpr) -> String {
@@ -706,6 +735,12 @@ impl<'a> ExprTranslator<'a> {
                 if let Some(hint) = self.config.identifier_type_hints.get(name) {
                     right_str = self.coerce_untyped_arbitrary_from_type_hint(&right_str, hint);
                 }
+            }
+            if let Some(hint) = self.constant_field_type_hint(left) {
+                right_str = self.coerce_untyped_arbitrary_from_type_hint(&right_str, hint);
+            }
+            if let Some(hint) = self.constant_field_type_hint(right) {
+                left_str = self.coerce_untyped_arbitrary_from_type_hint(&left_str, hint);
             }
 
             if self.expr_is_boolish(left) {
@@ -2421,6 +2456,15 @@ impl ModuleTranslator {
         let mut output = String::new();
         let fn_name = self.config.spec_fn_name(&op.name);
         let mut identifier_type_hints = std::collections::HashMap::<String, String>::new();
+        let mut constant_field_type_hints = std::collections::HashMap::<String, String>::new();
+        for constant in &module.constants {
+            let constant_ty = self.get_constant_type(module, &constant.name);
+            constant_field_type_hints.insert(constant.name.clone(), constant_ty.clone());
+            let safe_name = safe_field_name(&constant.name);
+            if safe_name != constant.name {
+                constant_field_type_hints.insert(safe_name, constant_ty);
+            }
+        }
 
         // Detect if this is an action (uses primed variables, directly or transitively)
         let is_action =
@@ -2497,6 +2541,9 @@ impl ModuleTranslator {
         function_expr_config
             .identifier_type_hints
             .extend(identifier_type_hints);
+        function_expr_config
+            .constant_field_type_hints
+            .extend(constant_field_type_hints);
         let function_expr_translator = ExprTranslator::new(&function_expr_config);
         let body = function_expr_translator.translate(&op.body);
         output.push_str(&format!("    {}\n", body));
@@ -2699,6 +2746,9 @@ impl ModuleTranslator {
             TlaExpr::RecordAccess { record, .. } => {
                 self.operator_refs_declared_variables(record, local_vars, module_vars)
             }
+            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => {
+                self.operator_refs_declared_variables(inner, local_vars, module_vars)
+            }
             TlaExpr::Tuple(elems) => elems
                 .iter()
                 .any(|e| self.operator_refs_declared_variables(e, local_vars, module_vars)),
@@ -2746,7 +2796,18 @@ impl ModuleTranslator {
                     self.operator_refs_declared_variables(&d.body, local_vars, module_vars)
                 }) || self.operator_refs_declared_variables(body, &locals, module_vars)
             }
-            _ => true,
+            TlaExpr::LeadsTo { left, right } => {
+                self.operator_refs_declared_variables(left, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(right, local_vars, module_vars)
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                self.operator_refs_declared_variables(vars, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(action, local_vars, module_vars)
+            }
+            TlaExpr::Unchanged(vars) => vars
+                .iter()
+                .any(|v| self.operator_refs_declared_variables(v, local_vars, module_vars)),
+            _ => false,
         }
     }
 
@@ -4615,6 +4676,68 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_constant_field_type_hint_set() {
+        let mut config = TranslatorConfig::spec();
+        config.constant_names.insert("Request".to_string());
+        config
+            .constant_field_type_hints
+            .insert("Request".to_string(), "Set<int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "payload".to_string(),
+            },
+            TlaExpr::Ident("Request".to_string()),
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Set<int>>() == c.Request)"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_neq_coerces_arbitrary_from_constant_field_type_hint_seq() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .constant_field_type_hints
+            .insert("RequestBatch".to_string(), "Seq<int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Neq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "batch".to_string(),
+            },
+            TlaExpr::Ident("c.RequestBatch".to_string()),
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Seq<int>>() != c.RequestBatch)"
+        );
+    }
+
+    #[test]
+    fn test_non_generated_eq_preserves_constant_field_hint_coercion() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        config
+            .constant_field_type_hints
+            .insert("Request".to_string(), "Set<int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "payload".to_string(),
+            },
+            TlaExpr::Ident("c.Request".to_string()),
+        );
+        assert_eq!(translator.translate(&expr), "(arbitrary() == c.Request)");
+    }
+
+    #[test]
     fn test_generated_d1_eq_coerces_arbitrary_to_lconstants_for_c_peer() {
         let mut config = TranslatorConfig::spec();
         config.constant_names.insert("N".to_string());
@@ -5579,6 +5702,31 @@ mod tests {
         assert!(
             output.contains("pub S: Set<int>,"),
             "Expected Set hint for constant S from membership usage, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_module_translation_coerces_eq_from_constant_field_hint() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT Request
+            IsRequestSet(x) == x \in Request
+            Foo == request.payload = c.Request
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub Request: Set<int>,"),
+            "Expected Request constant to infer Set<int>, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("(arbitrary::<Set<int>>() == arbitrary())"),
+            "Expected generated-D1 Eq coercion from c.Request type hint, got:\n{}",
             output
         );
     }

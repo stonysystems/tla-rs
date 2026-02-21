@@ -48,7 +48,7 @@ pub struct LConstants {
 
 
 /// Proposer operator
-pub open spec fn LProposer(s: LState, c: LConstants) -> LRecord {
+pub open spec fn LProposer(c: LConstants) -> LRecord {
     LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary::<int>(), current_state: arbitrary(), election_state: 6986500239int, highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary::<int>(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int }
 }
 
