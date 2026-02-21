@@ -50,7 +50,7 @@ pub open spec fn LRslConstantsUnchanged(c: LConstants, ps: int, ps_: int) -> boo
 
 /// RslInit operator
 pub open spec fn LRslInit(c: LConstants, con: int, ps: int) -> bool {
-    (((((arbitrary() && arbitrary()) && (arbitrary() == con)) && arbitrary()) && LRslMapsComplete(c, ps)) && forall |i| (((0 <= i) && (i < (arbitrary::<Seq<int>>().len() as int))) ==> arbitrary()))
+    (((((arbitrary() && arbitrary()) && (arbitrary::<int>() == con)) && arbitrary()) && LRslMapsComplete(c, ps)) && forall |i| (((0 <= i) && (i < (arbitrary::<Seq<int>>().len() as int))) ==> arbitrary()))
 }
 
 /// RslNextCommon operator

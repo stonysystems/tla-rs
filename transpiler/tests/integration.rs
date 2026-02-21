@@ -3123,6 +3123,9 @@ fn first_verus_error_code(stderr: &str) -> Option<&str> {
             let end = line[start..].find(']')?;
             return Some(&line[start..start + end]);
         }
+        if line.starts_with("error: mismatched types") {
+            return Some("E0308");
+        }
     }
     None
 }
@@ -3213,12 +3216,13 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-13:
-    // Generated-D1 recursive helper return-type refinement now recovers
-    // Seq<int> signatures for mixed recursive/concat shapes.
+    // Baseline after 16.8.3d-2d-14:
+    // Generated-D1 Eq/Neq identifier-hint coercion now applies concrete
+    // scalar/custom hints for untyped placeholders, with sequence-equality
+    // parameter hinting for tuple-literal peers.
     assert_eq!(
-        passed, 15,
-        "Expected exactly fifteen D1 files to compile at current baseline; pass files: {:?}",
+        passed, 18,
+        "Expected exactly eighteen D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3238,8 +3242,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 0,
-        "Expected 0 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 4,
+        "Expected 4 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3258,8 +3262,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 18,
-        "Expected 18 type-inference (E0282) failures at baseline"
+        cat_e0282, 11,
+        "Expected 11 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

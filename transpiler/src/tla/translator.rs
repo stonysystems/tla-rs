@@ -395,11 +395,11 @@ impl<'a> ExprTranslator<'a> {
         if !self.is_generated_d1_context() || rendered != "arbitrary()" {
             return rendered.to_string();
         }
-        match hint.trim() {
-            "Seq<int>" => "arbitrary::<Seq<int>>()".to_string(),
-            "Set<int>" => "arbitrary::<Set<int>>()".to_string(),
-            _ => rendered.to_string(),
+        let trimmed = hint.trim();
+        if trimmed.is_empty() || trimmed.contains("->") {
+            return rendered.to_string();
         }
+        format!("arbitrary::<{}>()", trimmed)
     }
 
     fn constant_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
@@ -2878,11 +2878,13 @@ impl ModuleTranslator {
                     let inferred =
                         param_ty.to_verus_type_with_records(&self.expr_config.record_structs);
                     if inferred != "int" {
-                        if generated_d1_context
-                            && inferred == "bool"
-                            && usage_hint == Some("int")
-                        {
-                            return "int".to_string();
+                        if generated_d1_context {
+                            if inferred == "bool" && usage_hint == Some("int") {
+                                return "int".to_string();
+                            }
+                            if inferred == "()" && usage_hint == Some("Seq<int>") {
+                                return "Seq<int>".to_string();
+                            }
                         }
                         return inferred;
                     }
@@ -2969,6 +2971,9 @@ impl ModuleTranslator {
                                 TlaExpr::Number(_) | TlaExpr::Bool(_) | TlaExpr::String(_)
                             ) {
                                 evidence.scalar_usage = true;
+                            } else if matches!(other, TlaExpr::Tuple(_)) {
+                                evidence.seq_len = true;
+                                evidence.seq_index_like = true;
                             }
                         }
                         _ => {}
@@ -4697,6 +4702,66 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_int() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("node".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::ident("node"),
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "id".to_string(),
+            },
+        );
+        assert_eq!(translator.translate(&expr), "(node == arbitrary::<int>())");
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_bool() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("is_active".to_string(), "bool".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::ident("is_active"),
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "flag".to_string(),
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(is_active == arbitrary::<bool>())"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_record() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("sent_packets".to_string(), "(LRecord)".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::ident("sent_packets"),
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "payload".to_string(),
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(sent_packets == arbitrary::<(LRecord)>())"
+        );
+    }
+
+    #[test]
     fn test_generated_d1_eq_coerces_arbitrary_from_constant_field_type_hint_set() {
         let mut config = TranslatorConfig::spec();
         config.constant_names.insert("Request".to_string());
@@ -5682,6 +5747,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parameter_type_infers_seq_from_equality_with_tuple_literal() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(xs) == xs = <<>>
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(xs: Seq<int>) -> bool"),
+            "Expected Seq hint from equality with tuple literal, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
     fn test_generated_d1_param_type_overrides_inferred_bool_for_set_element_usage() {
         let op = TlaOperator::new(
             "Foo",
@@ -5704,6 +5787,27 @@ mod tests {
 
         assert_eq!(translator.get_param_type(&op, 0, "x", true), "int");
         assert_eq!(translator.get_param_type(&op, 1, "S", true), "Set<int>");
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_overrides_inferred_unit_for_seq_equality_usage() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("sent_packets"), TlaExpr::Tuple(vec![])),
+        )
+        .with_params(vec![crate::tla::ast::TlaParam::new("sent_packets")]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator(
+            "Foo",
+            TlaType::function(TlaType::tuple(vec![TlaType::tuple(vec![])]), TlaType::Bool),
+        );
+        translator.type_env = Some(env);
+
+        assert_eq!(
+            translator.get_param_type(&op, 0, "sent_packets", true),
+            "Seq<int>"
+        );
     }
 
     #[test]

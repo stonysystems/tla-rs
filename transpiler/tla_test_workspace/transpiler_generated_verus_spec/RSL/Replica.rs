@@ -55,12 +55,12 @@ pub open spec fn LReplicaInit(c: LConstants, r: int) -> bool {
 }
 
 /// ReplicaNextProcessInvalid operator
-pub open spec fn LReplicaNextProcessInvalid(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcessInvalid(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     ((s_ == s) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ReplicaNextProcessRequest operator
-pub open spec fn LReplicaNextProcessRequest(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcessRequest(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     if (arbitrary().dom().contains(arbitrary::<int>()) && (arbitrary::<int>() <= arbitrary::<Seq<int>>()[arbitrary()].seqno)) { (arbitrary() && (s_ == s)) } else { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) }
 }
 
@@ -70,7 +70,7 @@ pub open spec fn LReplicaNextProcess1a(s: LState, s_: LState, c: LConstants, rec
 }
 
 /// ReplicaNextProcess1b operator
-pub open spec fn LReplicaNextProcess1b(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcess1b(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     if (((Set::<int>::empty().contains(arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == 1)) && forall |other_packet| c.RslPacket.contains(other_packet) ==> (Set::<int>::empty().contains(other_packet) ==> (arbitrary::<int>() != arbitrary::<int>()))) { (((arbitrary() && arbitrary()) && (sent_packets == Seq::<int>::empty())) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 
@@ -80,7 +80,7 @@ pub open spec fn LReplicaNextProcessStartingPhase2(s: LState, s_: LState, c: LCo
 }
 
 /// ReplicaNextProcess2a operator
-pub open spec fn LReplicaNextProcess2a(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcess2a(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     {
     let m: int = arbitrary();
     if ((Set::<int>::empty().contains(arbitrary::<int>()) && arbitrary()) && arbitrary()) { (arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
@@ -88,7 +88,7 @@ pub open spec fn LReplicaNextProcess2a(s: LState, s_: LState, c: LConstants, rec
 }
 
 /// ReplicaNextProcess2b operator
-pub open spec fn LReplicaNextProcess2b(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcess2b(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     {
     let opn: int = arbitrary();
     {
@@ -99,12 +99,12 @@ pub open spec fn LReplicaNextProcess2b(s: LState, s_: LState, c: LConstants, rec
 }
 
 /// ReplicaNextProcessReply operator
-pub open spec fn LReplicaNextProcessReply(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcessReply(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     ((s_ == s) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ReplicaNextProcessAppStateSupply operator
-pub open spec fn LReplicaNextProcessAppStateSupply(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcessAppStateSupply(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: Seq<int>) -> bool {
     if (Set::<int>::empty().contains(arbitrary::<int>()) && (arbitrary::<int>() > arbitrary::<int>())) { (((arbitrary() && arbitrary()) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 
@@ -114,7 +114,7 @@ pub open spec fn LReplicaNextProcessAppStateRequest(s: LState, s_: LState, c: LC
 }
 
 /// ReplicaNextProcessHeartbeat operator
-pub open spec fn LReplicaNextProcessHeartbeat(s: LState, s_: LState, c: LConstants, received_packet: int, clock: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextProcessHeartbeat(s: LState, s_: LState, c: LConstants, received_packet: int, clock: int, sent_packets: Seq<int>) -> bool {
     (((arbitrary() && arbitrary()) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty()))
 }
 
@@ -134,12 +134,12 @@ pub open spec fn LReplicaNextReadClockMaybeNominateValueAndSend2a(s: LState, s_:
 }
 
 /// ReplicaNextSpontaneousTruncateLogBasedOnCheckpoints operator
-pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
     exists |opn| 6996286291int.contains(opn) && ((Set::<int>::empty().contains(opn) && arbitrary()) && if (opn > arbitrary::<int>()) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) })
 }
 
 /// ReplicaNextSpontaneousMaybeMakeDecision operator
-pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
     {
     let opn: int = arbitrary();
     if (((arbitrary::<int>() == 4689272130int) && arbitrary().dom().contains(opn)) && ((arbitrary::<Seq<int>>()[opn].received_2b_message_senders.len() as int) >= arbitrary::<int>())) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
@@ -147,7 +147,7 @@ pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, s_: LState,
 }
 
 /// ReplicaNextSpontaneousMaybeExecute operator
-pub open spec fn LReplicaNextSpontaneousMaybeExecute(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextSpontaneousMaybeExecute(s: LState, s_: LState, c: LConstants, sent_packets: Seq<int>) -> bool {
     if (((arbitrary::<int>() == 6764822447int) && arbitrary()) && arbitrary()) { {
     let v: int = arbitrary();
     (((arbitrary() && arbitrary()) && arbitrary()) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int }))
@@ -155,17 +155,17 @@ pub open spec fn LReplicaNextSpontaneousMaybeExecute(s: LState, s_: LState, c: L
 }
 
 /// ReplicaNextReadClockMaybeSendHeartbeat operator
-pub open spec fn LReplicaNextReadClockMaybeSendHeartbeat(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextReadClockMaybeSendHeartbeat(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: Seq<int>) -> bool {
     if (arbitrary::<int>() < arbitrary::<int>()) { ((s_ == s) && (sent_packets == Seq::<int>::empty())) } else { (((arbitrary::<int>() == arbitrary::<int>()) && arbitrary()) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) }
 }
 
 /// ReplicaNextReadClockCheckForViewTimeout operator
-pub open spec fn LReplicaNextReadClockCheckForViewTimeout(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextReadClockCheckForViewTimeout(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: Seq<int>) -> bool {
     ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ReplicaNextReadClockCheckForQuorumOfViewSuspicions operator
-pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: ()) -> bool {
+pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: Seq<int>) -> bool {
     ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty()))
 }
 
