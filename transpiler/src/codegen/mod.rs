@@ -946,6 +946,7 @@ pub fn generate_all_types_with_options(
         re_exports: &[],
         custom_derives: &HashMap::new(),
         skip_fields: &HashMap::new(),
+        generate_unreachable_value_helper: false,
         manual_code: None,
     })
 }
@@ -964,7 +965,20 @@ pub struct TypeGenConfig<'a> {
     pub re_exports: &'a [String],
     pub custom_derives: &'a HashMap<String, Vec<String>>,
     pub skip_fields: &'a HashMap<String, Vec<String>>,
+    pub generate_unreachable_value_helper: bool,
     pub manual_code: Option<&'a str>,
+}
+
+fn generate_unreachable_value_helper() -> &'static str {
+    r#"/// Helper for match arms that are provably unreachable.
+/// The requires clause is `false`, so Verus verifies this can never be called.
+#[verifier(external_body)]
+pub fn unreachable_value<T>() -> (result: T)
+    requires false,
+{
+    panic!("unreachable")
+}
+"#
 }
 
 /// Generate all types from a type registry with all configuration options
@@ -1059,6 +1073,15 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
                 all_warnings.extend(generated.warnings);
             }
         }
+    }
+
+    if cfg.generate_unreachable_value_helper
+        && !cfg
+            .manual_code
+            .is_some_and(|manual| manual.contains("fn unreachable_value<"))
+    {
+        all_code.push('\n');
+        all_code.push_str(generate_unreachable_value_helper());
     }
 
     if let Some(manual_code) = cfg.manual_code {
@@ -1993,6 +2016,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: false,
             manual_code: None,
         };
 
@@ -2034,6 +2058,7 @@ mod tests {
             re_exports: &re_exports,
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: false,
             manual_code: None,
         };
 
@@ -2451,6 +2476,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &custom_derives,
             skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: false,
             manual_code: None,
         };
 
@@ -2503,6 +2529,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &HashMap::new(),
             skip_fields: &skip_fields,
+            generate_unreachable_value_helper: false,
             manual_code: None,
         };
 
@@ -2540,6 +2567,7 @@ mod tests {
             re_exports: &[],
             custom_derives: &HashMap::new(),
             skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: false,
             manual_code: Some(manual),
         };
 
@@ -2553,6 +2581,70 @@ mod tests {
         assert!(
             manual_pos < close_pos,
             "manual snippet should be inside verus block: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_generate_unreachable_value_helper_enabled() {
+        let registry = TypeRegistry::new();
+        let naming = make_config();
+        let remapping = HashMap::new();
+
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: true,
+            manual_code: None,
+        };
+
+        let result = generate_all_types_full(&cfg);
+        assert!(
+            result.code.contains("pub fn unreachable_value<T>() -> (result: T)"),
+            "types output should include unreachable_value helper when enabled: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_generate_unreachable_value_helper_not_duplicated_from_manual_code() {
+        let registry = TypeRegistry::new();
+        let naming = make_config();
+        let remapping = HashMap::new();
+        let manual = "pub fn unreachable_value<T>() -> (result: T)\n    requires false,\n{ panic!(\"manual unreachable\") }";
+
+        let cfg = TypeGenConfig {
+            registry: &registry,
+            naming: &naming,
+            remapping: &remapping,
+            custom_imports: &[],
+            validity_predicate_name: "well_formed",
+            view_overrides: &HashMap::new(),
+            extra_fields: &HashMap::new(),
+            clone_strategy: &HashMap::new(),
+            skip_types: &[],
+            re_exports: &[],
+            custom_derives: &HashMap::new(),
+            skip_fields: &HashMap::new(),
+            generate_unreachable_value_helper: true,
+            manual_code: Some(manual),
+        };
+
+        let result = generate_all_types_full(&cfg);
+        assert_eq!(
+            result.code.matches("pub fn unreachable_value<T>()").count(),
+            1,
+            "helper should not be duplicated when manual code already defines it: {}",
             result.code
         );
     }

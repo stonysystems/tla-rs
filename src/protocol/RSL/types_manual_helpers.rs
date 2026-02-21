@@ -1100,16 +1100,3 @@ pub open spec fn abstractify_crslio(io: CRslIo) -> RslIo {
 pub open spec fn abstractify_crslio_seq(ios: Seq<CRslIo>) -> Seq<RslIo> {
     ios.map(|i, io: CRslIo| abstractify_crslio(io))
 }
-
-// =============================================================================
-// unreachable_value helper
-// =============================================================================
-
-/// Helper for match arms that are provably unreachable.
-/// The requires clause is `false`, so Verus verifies this can never be called.
-#[verifier(external_body)]
-pub fn unreachable_value<T>() -> (result: T)
-    requires false,
-{
-    panic!("unreachable")
-}

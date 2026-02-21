@@ -535,6 +535,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let re_exports = file_config.re_exports.clone();
             let custom_derives = file_config.custom_derives.clone();
             let skip_fields = file_config.skip_fields.clone();
+            let generate_unreachable_value_helper =
+                file_config.output.generate_unreachable_value_helper;
             let manual_code = config
                 .as_ref()
                 .and_then(|config_path| {
@@ -615,6 +617,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     re_exports: &re_exports,
                     custom_derives: &custom_derives,
                     skip_fields: &skip_fields,
+                    generate_unreachable_value_helper,
                     manual_code: manual_code.as_deref(),
                 },
             );
@@ -1735,8 +1738,8 @@ manual_code = "manual_helpers.rs"
             "loaded manual helper block should include extracted proposer section"
         );
         assert!(
-            manual.contains("pub fn unreachable_value<T>()"),
-            "loaded manual helper block should include unreachable_value helper"
+            !manual.contains("pub fn unreachable_value<T>()"),
+            "loaded manual helper block should no longer include unreachable_value helper"
         );
         assert!(
             manual.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
@@ -1744,6 +1747,10 @@ manual_code = "manual_helpers.rs"
         );
 
         let file_config = FileConfig::from_file(&config_path).expect("RSL file config should load");
+        assert!(
+            file_config.output.generate_unreachable_value_helper,
+            "RSL file config should enable output.generate_unreachable_value_helper"
+        );
         let required_skips = [
             "Ballot",
             "Request",

@@ -820,6 +820,12 @@ pub struct OutputConfig {
     #[serde(default)]
     pub clone_method: Option<String>,
 
+    /// Whether to generate a shared `unreachable_value<T>()` helper in generated type files.
+    /// Useful when generated/manual RSL modules rely on this trusted helper and we want
+    /// to migrate it out of manual helper code.
+    #[serde(default)]
+    pub generate_unreachable_value_helper: bool,
+
     /// Path to a file containing manual Verus code to inject into the generated output.
     /// The file contents are inserted inside the `verus! {}` block after all auto-generated
     /// items (functions for transpile mode, types/functions for generate-types mode).
@@ -853,6 +859,7 @@ impl Default for OutputConfig {
             generate_wrapper_methods: false,
             wrapper_impl_type: None,
             clone_method: None,
+            generate_unreachable_value_helper: false,
             manual_code: None,
             assume_postconditions: false,
         }
@@ -1153,6 +1160,23 @@ mod tests {
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert!(!config.output.generate_proofs);
         assert!(config.output.generate_loops_for_verification);
+    }
+
+    #[test]
+    fn test_generate_unreachable_value_helper_default_false() {
+        let config = TranspilerConfig::default();
+        assert!(!config.output.generate_unreachable_value_helper);
+    }
+
+    #[test]
+    fn test_generate_unreachable_value_helper_from_toml() {
+        let toml = r#"
+            [output]
+            generate_unreachable_value_helper = true
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(config.output.generate_unreachable_value_helper);
     }
 
     #[test]
