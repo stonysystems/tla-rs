@@ -171,6 +171,11 @@ enum Commands {
         #[arg(long, default_value = "LNext")]
         next: String,
 
+        /// Invariant name override (repeatable). If provided, overrides
+        /// `properties.invariants` from model.toml.
+        #[arg(long, action = clap::ArgAction::Append)]
+        invariant: Vec<String>,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -589,11 +594,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             types,
             init,
             next,
+            invariant,
             model,
         } => {
             use verus_transpiler::modelcheck::config::parse_model_config_file;
             use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
             use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+            use std::collections::HashSet;
 
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
@@ -611,8 +618,30 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 next,
             )
             .map_err(|e| miette::miette!("{}", e))?;
-            let model_config =
+            let mut model_config =
                 parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
+
+            if !invariant.is_empty() {
+                let mut normalized = Vec::with_capacity(invariant.len());
+                let mut seen = HashSet::new();
+                for name in invariant {
+                    let trimmed = name.trim();
+                    if trimmed.is_empty() {
+                        return Err(miette::miette!(
+                            "Invalid --invariant override: names cannot be empty."
+                        ));
+                    }
+                    let owned = trimmed.to_string();
+                    if !seen.insert(owned.clone()) {
+                        return Err(miette::miette!(
+                            "Invalid --invariant override: duplicate invariant `{}`.",
+                            owned
+                        ));
+                    }
+                    normalized.push(owned);
+                }
+                model_config.properties.invariants = normalized;
+            }
             let selected_invariants = resolve_selected_invariants(
                 &bundle.spec_functions,
                 &model_config.properties.invariants,
@@ -1944,6 +1973,10 @@ Next == count' = count + N
             "InitOverride",
             "--next",
             "NextOverride",
+            "--invariant",
+            "LTypeOK",
+            "--invariant",
+            "LSafety",
             "--model",
             "model.toml",
         ]);
@@ -1954,12 +1987,14 @@ Next == count' = count + N
                 types,
                 init,
                 next,
+                invariant,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
                 assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
                 assert_eq!(init, "InitOverride");
                 assert_eq!(next, "NextOverride");
+                assert_eq!(invariant, vec!["LTypeOK".to_string(), "LSafety".to_string()]);
                 assert_eq!(model, PathBuf::from("model.toml"));
             }
             _ => panic!("Expected ModelCheck command"),
@@ -2013,6 +2048,7 @@ invariants = ["LInv"]
             types: None,
             init: "LInit".to_string(),
             next: "LNext".to_string(),
+            invariant: vec![],
             model: model_path,
         };
         let cli = Cli {
@@ -2070,6 +2106,7 @@ verus! {
             types: Some(types_path),
             init: "LInit".to_string(),
             next: "LNext".to_string(),
+            invariant: vec![],
             model: model_path,
         };
         let cli = Cli {
@@ -2127,6 +2164,7 @@ verus! {
             types: None,
             init: "InitCustom".to_string(),
             next: "NextCustom".to_string(),
+            invariant: vec![],
             model: model_path,
         };
         let cli = Cli {
@@ -2184,6 +2222,7 @@ verus! {
             types: None,
             init: "InitCustom".to_string(),
             next: "NextCustom".to_string(),
+            invariant: vec![],
             model: model_path,
         };
         let cli = Cli {
@@ -2231,6 +2270,7 @@ verus! {
             types: Some(missing_types_path),
             init: "LInit".to_string(),
             next: "LNext".to_string(),
+            invariant: vec![],
             model: model_path,
         };
         let cli = Cli {
@@ -2296,6 +2336,7 @@ invariants = ["LMissing"]
             types: None,
             init: "LInit".to_string(),
             next: "LNext".to_string(),
+            invariant: vec![],
             model: model_path,
         };
         let cli = Cli {
@@ -2316,6 +2357,197 @@ invariants = ["LMissing"]
 
         let err = handle_command(&command, &cli).unwrap_err();
         assert!(err.to_string().contains("Invariant `LMissing`"));
+    }
+
+    #[test]
+    fn test_model_check_command_cli_invariant_override_takes_precedence() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+
+    pub open spec fn LInv(s: LState, c: LConstants) -> bool {
+        s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[properties]
+invariants = ["LMissing"]
+"#,
+        )
+        .unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec!["LInv".to_string()],
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_duplicate_cli_invariants() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+
+    pub open spec fn LInv(s: LState, c: LConstants) -> bool {
+        s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec!["LInv".to_string(), "LInv".to_string()],
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(err.to_string().contains("duplicate invariant `LInv`"));
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_empty_cli_invariant_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec!["   ".to_string()],
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(err.to_string().contains("names cannot be empty"));
     }
 
     #[test]

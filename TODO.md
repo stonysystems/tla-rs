@@ -6523,7 +6523,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] `--init`, `--next` (override function names; default `LInit`, `LNext`)
     - Added `--init` / `--next` flags to `verus-transpile model-check`, with configurable entrypoint resolution wired through source ingestion (defaults remain `LInit` / `LNext`).
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI + resolver tests).
-  - [ ] `--invariant` (repeatable)
+  - [x] `--invariant` (repeatable)
+    - Added repeatable `--invariant` overrides to `verus-transpile model-check`; when provided, they replace `properties.invariants` from `model.toml` for preflight resolution.
+    - Added CLI-side validation for override names (non-empty, no duplicates) with focused tests for parsing, override precedence, and validation errors.
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
   - [ ] `--search` (`bfs|dfs`)
   - [ ] `--max-depth`, `--max-states`, `--timeout`
   - [ ] `--json-report` (machine-readable result)
