@@ -64,6 +64,36 @@ pub struct DeadlockDetection {
     pub depth: usize,
 }
 
+/// One state-change summary entry for a transition in a counterexample trace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateDiffSummary {
+    pub path: String,
+    pub before: String,
+    pub after: String,
+}
+
+/// One action-labeled transition in a counterexample trace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CounterexampleStep {
+    pub action_branch: String,
+    pub state: RuntimeValue,
+    pub diffs: Vec<StateDiffSummary>,
+}
+
+/// Counterexample trace from one initial state to a failing state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CounterexampleTrace {
+    pub initial_state: RuntimeValue,
+    pub steps: Vec<CounterexampleStep>,
+}
+
+/// Successor annotated with action branch metadata for trace emission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TracedSuccessor {
+    pub action_branch: String,
+    pub state: RuntimeValue,
+}
+
 /// Summary statistics collected while exploring the state space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ExplorationStats {
@@ -93,12 +123,20 @@ pub struct ExplorationResult {
     pub stats: ExplorationStats,
     pub invariant_violation: Option<InvariantViolation>,
     pub deadlock: Option<DeadlockDetection>,
+    pub counterexample: Option<CounterexampleTrace>,
 }
 
 #[derive(Debug, Clone)]
 struct FrontierItem {
+    key: String,
     state: RuntimeValue,
     depth: usize,
+}
+
+#[derive(Debug, Clone)]
+struct TraceParent {
+    parent_key: String,
+    action_branch: String,
 }
 
 /// Explore the state space with either BFS or DFS.
@@ -176,6 +214,145 @@ where
     )
 }
 
+/// Explore the state space while emitting counterexample traces with action branches
+/// and per-transition state-diff summaries.
+///
+/// On invariant violation or deadlock, `ExplorationResult.counterexample` contains
+/// a trace from the chosen initial state to the failing state.
+pub fn explore_state_space_with_traces<F, I>(
+    initial_states: &[RuntimeValue],
+    mode: SearchMode,
+    limits: ExplorationLimits,
+    check_deadlock: bool,
+    mut successor_fn: F,
+    mut invariant_checker: I,
+) -> TranspileResult<ExplorationResult>
+where
+    F: FnMut(&RuntimeValue) -> TranspileResult<Vec<TracedSuccessor>>,
+    I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
+{
+    validate_limits(limits)?;
+
+    let mut visited = BTreeSet::new();
+    let mut frontier = VecDeque::new();
+    let mut states_by_key = std::collections::BTreeMap::new();
+    for state in initial_states {
+        let key = state.canonical_key();
+        if visited.insert(key.clone()) {
+            states_by_key.insert(key.clone(), state.clone());
+            frontier.push_back(FrontierItem {
+                key,
+                state: state.clone(),
+                depth: 0,
+            });
+        }
+    }
+
+    let mut stats = ExplorationStats {
+        initial_states: frontier.len(),
+        max_frontier_size: frontier.len(),
+        ..ExplorationStats::default()
+    };
+    let mut explored = Vec::new();
+    let mut parents = std::collections::BTreeMap::<String, TraceParent>::new();
+    while let Some(item) = pop_frontier(&mut frontier, mode) {
+        explored.push(ExploredState {
+            state: item.state.clone(),
+            depth: item.depth,
+        });
+
+        if let Some(invariant_name) = invariant_checker(&item.state, item.depth)? {
+            let counterexample = build_counterexample_trace(&item.key, &states_by_key, &parents);
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::InvariantViolated,
+                visited.len(),
+                frontier.len(),
+                stats,
+                Some(InvariantViolation {
+                    invariant: invariant_name,
+                    state: item.state.clone(),
+                    depth: item.depth,
+                }),
+                None,
+                counterexample,
+            ));
+        }
+
+        if item.depth >= limits.max_depth {
+            continue;
+        }
+
+        let successors = successor_fn(&item.state)?;
+        if check_deadlock && successors.is_empty() {
+            let counterexample = build_counterexample_trace(&item.key, &states_by_key, &parents);
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::DeadlockDetected,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                Some(DeadlockDetection {
+                    state: item.state.clone(),
+                    depth: item.depth,
+                }),
+                counterexample,
+            ));
+        }
+
+        let mut to_enqueue = Vec::new();
+        for successor in successors {
+            stats.successors_considered += 1;
+            if visited.len() >= limits.max_states {
+                return Ok(finalize_result(
+                    explored,
+                    ExplorationStopReason::MaxStatesReached,
+                    visited.len(),
+                    frontier.len(),
+                    stats,
+                    None,
+                    None,
+                    None,
+                ));
+            }
+
+            let key = successor.state.canonical_key();
+            if visited.insert(key.clone()) {
+                states_by_key.insert(key.clone(), successor.state.clone());
+                parents.insert(
+                    key.clone(),
+                    TraceParent {
+                        parent_key: item.key.clone(),
+                        action_branch: successor.action_branch,
+                    },
+                );
+                to_enqueue.push(FrontierItem {
+                    key,
+                    state: successor.state,
+                    depth: item.depth + 1,
+                });
+                stats.successors_enqueued += 1;
+            } else {
+                stats.duplicate_successors += 1;
+            }
+        }
+        push_successors(&mut frontier, mode, to_enqueue);
+        stats.max_frontier_size = stats.max_frontier_size.max(frontier.len());
+    }
+
+    Ok(finalize_result(
+        explored,
+        ExplorationStopReason::FrontierExhausted,
+        visited.len(),
+        frontier.len(),
+        stats,
+        None,
+        None,
+        None,
+    ))
+}
+
 fn explore_state_space_internal<F, I>(
     initial_states: &[RuntimeValue],
     mode: SearchMode,
@@ -194,8 +371,9 @@ where
     let mut frontier = VecDeque::new();
     for state in initial_states {
         let key = state.canonical_key();
-        if visited.insert(key) {
+        if visited.insert(key.clone()) {
             frontier.push_back(FrontierItem {
+                key,
                 state: state.clone(),
                 depth: 0,
             });
@@ -227,6 +405,7 @@ where
                     depth: item.depth,
                 }),
                 None,
+                None,
             ));
         }
 
@@ -247,6 +426,7 @@ where
                     state: item.state.clone(),
                     depth: item.depth,
                 }),
+                None,
             ));
         }
         let mut to_enqueue = Vec::new();
@@ -261,12 +441,14 @@ where
                     stats,
                     None,
                     None,
+                    None,
                 ));
             }
 
             let key = successor.canonical_key();
-            if visited.insert(key) {
+            if visited.insert(key.clone()) {
                 to_enqueue.push(FrontierItem {
+                    key,
                     state: successor,
                     depth: item.depth + 1,
                 });
@@ -287,6 +469,7 @@ where
         stats,
         None,
         None,
+        None,
     ))
 }
 
@@ -298,6 +481,7 @@ fn finalize_result(
     mut stats: ExplorationStats,
     invariant_violation: Option<InvariantViolation>,
     deadlock: Option<DeadlockDetection>,
+    counterexample: Option<CounterexampleTrace>,
 ) -> ExplorationResult {
     stats.explored_states = explored.len();
     stats.visited_states = visited_len;
@@ -308,6 +492,141 @@ fn finalize_result(
         stats,
         invariant_violation,
         deadlock,
+        counterexample,
+    }
+}
+
+fn build_counterexample_trace(
+    failure_key: &str,
+    states_by_key: &std::collections::BTreeMap<String, RuntimeValue>,
+    parents: &std::collections::BTreeMap<String, TraceParent>,
+) -> Option<CounterexampleTrace> {
+    let mut path = Vec::new();
+    let mut cursor = failure_key.to_string();
+    path.push(cursor.clone());
+    while let Some(parent) = parents.get(&cursor) {
+        cursor = parent.parent_key.clone();
+        path.push(cursor.clone());
+    }
+    path.reverse();
+
+    let initial_key = path.first()?;
+    let initial_state = states_by_key.get(initial_key)?.clone();
+    let mut steps = Vec::new();
+    for window in path.windows(2) {
+        let from_key = &window[0];
+        let to_key = &window[1];
+        let edge = parents.get(to_key)?;
+        let from_state = states_by_key.get(from_key)?;
+        let to_state = states_by_key.get(to_key)?;
+        steps.push(CounterexampleStep {
+            action_branch: edge.action_branch.clone(),
+            state: to_state.clone(),
+            diffs: summarize_state_diff(from_state, to_state),
+        });
+    }
+
+    Some(CounterexampleTrace {
+        initial_state,
+        steps,
+    })
+}
+
+fn summarize_state_diff(before: &RuntimeValue, after: &RuntimeValue) -> Vec<StateDiffSummary> {
+    let mut diffs = Vec::new();
+    collect_state_diffs("s", before, after, &mut diffs);
+    diffs
+}
+
+fn collect_state_diffs(
+    path: &str,
+    before: &RuntimeValue,
+    after: &RuntimeValue,
+    diffs: &mut Vec<StateDiffSummary>,
+) {
+    if before == after {
+        return;
+    }
+
+    match (before, after) {
+        (
+            RuntimeValue::Struct {
+                ty: b_ty,
+                fields: b_fields,
+            },
+            RuntimeValue::Struct {
+                ty: a_ty,
+                fields: a_fields,
+            },
+        ) if b_ty == a_ty => collect_named_field_diffs(path, b_fields, a_fields, diffs),
+        (
+            RuntimeValue::Enum {
+                ty: b_ty,
+                variant: b_variant,
+                fields: b_fields,
+            },
+            RuntimeValue::Enum {
+                ty: a_ty,
+                variant: a_variant,
+                fields: a_fields,
+            },
+        ) if b_ty == a_ty && b_variant == a_variant => {
+            collect_named_field_diffs(path, b_fields, a_fields, diffs)
+        }
+        (RuntimeValue::Tuple(b_values), RuntimeValue::Tuple(a_values))
+        | (RuntimeValue::Seq(b_values), RuntimeValue::Seq(a_values)) => {
+            let max_len = b_values.len().max(a_values.len());
+            for idx in 0..max_len {
+                let sub_path = format!("{path}[{idx}]");
+                match (b_values.get(idx), a_values.get(idx)) {
+                    (Some(b), Some(a)) => collect_state_diffs(&sub_path, b, a, diffs),
+                    (Some(b), None) => diffs.push(StateDiffSummary {
+                        path: sub_path,
+                        before: b.canonical_key(),
+                        after: "<missing>".to_string(),
+                    }),
+                    (None, Some(a)) => diffs.push(StateDiffSummary {
+                        path: sub_path,
+                        before: "<missing>".to_string(),
+                        after: a.canonical_key(),
+                    }),
+                    (None, None) => {}
+                }
+            }
+        }
+        _ => diffs.push(StateDiffSummary {
+            path: path.to_string(),
+            before: before.canonical_key(),
+            after: after.canonical_key(),
+        }),
+    }
+}
+
+fn collect_named_field_diffs(
+    path: &str,
+    before: &std::collections::BTreeMap<String, RuntimeValue>,
+    after: &std::collections::BTreeMap<String, RuntimeValue>,
+    diffs: &mut Vec<StateDiffSummary>,
+) {
+    let mut keys: BTreeSet<String> = BTreeSet::new();
+    keys.extend(before.keys().cloned());
+    keys.extend(after.keys().cloned());
+    for key in keys {
+        let sub_path = format!("{path}.{key}");
+        match (before.get(&key), after.get(&key)) {
+            (Some(b), Some(a)) => collect_state_diffs(&sub_path, b, a, diffs),
+            (Some(b), None) => diffs.push(StateDiffSummary {
+                path: sub_path,
+                before: b.canonical_key(),
+                after: "<missing>".to_string(),
+            }),
+            (None, Some(a)) => diffs.push(StateDiffSummary {
+                path: sub_path,
+                before: "<missing>".to_string(),
+                after: a.canonical_key(),
+            }),
+            (None, None) => {}
+        }
     }
 }
 
@@ -781,5 +1100,86 @@ mod tests {
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
         assert_eq!(ids(&result), vec![0, 1]);
         assert_eq!(result.deadlock, None);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_traces_emits_invariant_counterexample() {
+        let graph = BTreeMap::from([(0, vec![(1, "LStep")]), (1, vec![(2, "LCommit")]), (2, vec![])]);
+        let result = explore_state_space_with_traces(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            false,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|(id, action)| TracedSuccessor {
+                        action_branch: (*action).to_string(),
+                        state: state(*id),
+                    })
+                    .collect();
+                Ok(next)
+            },
+            |s, _| {
+                if state_id(s) == 2 {
+                    Ok(Some("LSafety".to_string()))
+                } else {
+                    Ok(None)
+                }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::InvariantViolated);
+        let trace = result.counterexample.expect("expected counterexample");
+        assert_eq!(state_id(&trace.initial_state), 0);
+        assert_eq!(trace.steps.len(), 2);
+        assert_eq!(trace.steps[0].action_branch, "LStep");
+        assert_eq!(state_id(&trace.steps[0].state), 1);
+        assert_eq!(trace.steps[1].action_branch, "LCommit");
+        assert_eq!(state_id(&trace.steps[1].state), 2);
+        assert_eq!(trace.steps[1].diffs[0].path, "s.id");
+        assert!(trace.steps[1].diffs[0].before.contains("int:1"));
+        assert!(trace.steps[1].diffs[0].after.contains("int:2"));
+    }
+
+    #[test]
+    fn test_explore_state_space_with_traces_emits_deadlock_counterexample() {
+        let graph = BTreeMap::from([(0, vec![(1, "LAdvance")]), (1, vec![])]);
+        let result = explore_state_space_with_traces(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            true,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|(id, action)| TracedSuccessor {
+                        action_branch: (*action).to_string(),
+                        state: state(*id),
+                    })
+                    .collect();
+                Ok(next)
+            },
+            |_s, _| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::DeadlockDetected);
+        let trace = result.counterexample.expect("expected counterexample");
+        assert_eq!(state_id(&trace.initial_state), 0);
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].action_branch, "LAdvance");
+        assert_eq!(state_id(&trace.steps[0].state), 1);
     }
 }

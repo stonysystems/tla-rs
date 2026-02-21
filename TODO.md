@@ -6505,7 +6505,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] Optional deadlock detection
     - Extended `modelcheck::explorer` with deadlock-aware exploration checks (`explore_state_space_with_checks`) that optionally stop on the first reached state (below depth bound) with no successors, returning explicit deadlock metadata (`state`, `depth`) and `DeadlockDetected` stop reason.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused unit tests).
-- [ ] Emit counterexample traces with action branch + state diff summaries.
+- [x] Emit counterexample traces with action branch + state diff summaries.
+  - Added trace-capable exploration in `modelcheck::explorer` via `explore_state_space_with_traces`, with action-labeled successors (`TracedSuccessor`) and emitted counterexamples (`CounterexampleTrace`) on invariant/deadlock stops.
+  - Added per-transition diff summaries (`StateDiffSummary`) using path-aware runtime-value comparisons (e.g., `s.field` / `s[idx]`) to highlight concrete state changes along the trace.
+  - Scope check: implemented as a small leaf task (`<500` LOC including focused unit tests).
 
 ### 22.7 CLI Integration
 
