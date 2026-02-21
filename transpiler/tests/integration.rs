@@ -6148,6 +6148,34 @@ fn test_phase22_source_first_model_checking_guide_has_core_steps() {
 }
 
 #[test]
+fn test_phase22_source_first_model_checking_guide_has_supported_subset_and_limitations() {
+    let source = std::fs::read_to_string("../docs/model-checking-source-first.md")
+        .expect("Failed to read source-first model-checking guide");
+
+    for marker in [
+        "Supported Subset and Current Limitations",
+        "Supported Expression Subset",
+        "Supported Type/Domain Subset",
+        "Current Limitations",
+        "Safety-only scope in Phase 22 MVP",
+        "forall",
+        "exists",
+        "match",
+        "bitwise/shift operators",
+        "exactly one concrete `LConstants` valuation",
+        "Seq<T>",
+        "Set<T>",
+        "Map<K, V>",
+    ] {
+        assert!(
+            source.contains(marker),
+            "source-first model-checking guide should contain `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
 fn test_phase22_migration_guide_has_tlc_to_source_first_mapping() {
     let source = std::fs::read_to_string("../docs/model-checking-migration.md")
         .expect("Failed to read model-checking migration guide");

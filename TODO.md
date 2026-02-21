@@ -6570,7 +6570,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Added `docs/model-checking-source-first.md` with a source-first workflow (`model-check` command, minimal `model.toml`, key overrides, JSON report interpretation, and `model-config` validation step).
 - [x] Provide migration guidance from TLC wrapper workflow to source-first workflow.
   - Added `docs/model-checking-migration.md` with artifact mapping (`*_MC.tla`/`.cfg` to `model.toml` + source inputs), property mapping, migration checklist, and rollout pattern.
-- [ ] Document current limitations and supported expression/type subset.
+- [x] Document current limitations and supported expression/type subset.
+  - Added section 9 in `docs/model-checking-source-first.md` to document the current executable expression subset, type/domain subset, and MVP limitations (safety-only scope, unsupported constructs, and constants/domain constraints), with integration coverage.
+  - Scope check: completed as a small leaf task (`<500` LOC including docs + focused test changes).
 - [ ] Add troubleshooting section for common modeling errors (domain too large, unsupported constructs).
 
 ### 22.10 Follow-Up (Post-MVP)

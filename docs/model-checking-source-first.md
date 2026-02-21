@@ -106,3 +106,65 @@ This prints the resolved, validated configuration to stdout.
 
 If you are migrating from the older wrapper-based workflow, use
 `docs/model-checking-migration.md`.
+
+## 9. Supported Subset and Current Limitations
+
+This section documents the currently implemented (Phase 22 MVP) execution subset.
+
+### 9.1 Supported Expression Subset (Current)
+
+The runtime evaluator currently supports:
+
+- boolean connectives: conjunction/disjunction, implication, iff, not
+- comparisons/equality: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- arithmetic: `+`, `-`, `*`, `/`, `%` (with division/modulo-by-zero checks)
+- `if`/`else` expressions
+- `let` bindings with identifier patterns
+- struct/enum literals and field access (`.` / `->`)
+- indexing into `Seq`/tuple/map
+- sequence/set/map literals, including empty constructors
+- helper spec calls reachable from ingested protocol sources
+- selected built-in methods:
+  - `.len()` on `Seq`/`Set`/`Map`/tuple/string
+  - `.contains(...)` on `Set`/`Seq`
+  - `.contains_key(...)` on `Map`
+  - `.insert(...)` / `.remove(...)` on `Set`
+- casts to `int`, `nat`, and `bool`
+
+### 9.2 Supported Type/Domain Subset (Current)
+
+Finite-domain expansion and runtime values currently cover:
+
+- primitive-like values: `unit`, `bool`, `int`, `nat`, `string`
+- structured/container values:
+  - named structs and enums (including enum payload variants)
+  - tuples
+  - `Seq<T>`, `Set<T>`, `Map<K, V>`
+  - references (`&T`/`&mut T`) via underlying `T`
+- `model.toml` domain kinds:
+  - `values`
+  - `int_range`
+  - `nat_range`
+  - `enum_subset`
+
+### 9.3 Current Limitations (MVP)
+
+- Safety-only scope in Phase 22 MVP:
+  - liveness/fairness operators (`[]<>`, `WF`, `SF`, `~>`) are out of scope.
+- Current entrypoint assumptions:
+  - model-check execution currently assumes `LInit(s, c)` and `LNext(s, s_, c)` style signatures.
+  - constants resolution currently requires exactly one concrete `LConstants` valuation after applying assignments/domains.
+- Evaluator unsupported constructs:
+  - `forall`, `exists`, `match`, struct update expressions
+  - bitwise/shift operators
+  - casts beyond `int`/`nat`/`bool`
+  - non-identifier `let` patterns
+- Quantifier nuance:
+  - branch-level existentials in `LNext` are supported via branch/domain expansion.
+  - arbitrary quantifier expressions are not generally executable by the evaluator.
+- Domain expansion limitations:
+  - generic domains are only supported for `Seq<T>`, `Set<T>`, and `Map<K, V>` container forms.
+  - expansion is bounded by configured collection/search limits and can fail when domains are too large.
+- Helper-call limitations:
+  - helper predicates/functions must resolve unambiguously from ingested sources.
+  - recursive helper evaluation has a bounded recursion depth.
