@@ -5655,6 +5655,126 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
     assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
 }
 
+fn resolve_transpiler_binary_for_integration() -> std::path::PathBuf {
+    for key in ["CARGO_BIN_EXE_verus-transpile", "CARGO_BIN_EXE_verus_transpile"] {
+        if let Some(path) = std::env::var_os(key) {
+            let bin = std::path::PathBuf::from(path);
+            if bin.exists() {
+                return bin;
+            }
+        }
+    }
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for candidate in [
+        manifest_dir.join("target/debug/verus-transpile"),
+        manifest_dir.join("target/release/verus-transpile"),
+    ] {
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
+    let build_output = std::process::Command::new("cargo")
+        .args(["build", "--bin", "verus-transpile"])
+        .current_dir(manifest_dir)
+        .output()
+        .expect("Failed to build verus-transpile binary for integration tests");
+    assert!(
+        build_output.status.success(),
+        "Failed to build verus-transpile binary: {}",
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+
+    let built = manifest_dir.join("target/debug/verus-transpile");
+    assert!(
+        built.exists(),
+        "Expected built binary at {}",
+        built.display()
+    );
+    built
+}
+
+#[test]
+fn test_model_check_primarybackup_reports_unsupported_lnext_call_branch() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let input = repo_root.join("src/protocol/PrimaryBackup/primarybackup.rs");
+    let types = repo_root.join("src/protocol/PrimaryBackup/types.rs");
+    assert!(input.exists(), "Missing input spec: {}", input.display());
+    assert!(types.exists(), "Missing types spec: {}", types.display());
+
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock should be after epoch")
+        .as_nanos();
+    let model_path = std::env::temp_dir().join(format!(
+        "primarybackup_modelcheck_{}_{}.toml",
+        std::process::id(),
+        stamp
+    ));
+    let model = r#"
+[constants.assignments]
+max_log_len = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.types.LPBMessage]
+kind = "enum_subset"
+variants = ["Ack"]
+
+[search]
+max_depth = 3
+max_states = 2000
+timeout_ms = 2000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
+"#;
+    std::fs::write(&model_path, model).expect("Failed to write temporary model.toml");
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "model-check",
+            "--input",
+            input.to_str().unwrap(),
+            "--types",
+            types.to_str().unwrap(),
+            "--model",
+            model_path.to_str().unwrap(),
+            "--search",
+            "bfs",
+            "--json-report",
+        ])
+        .output()
+        .expect("Failed to run model-check command");
+    let _ = std::fs::remove_file(&model_path);
+
+    assert!(
+        !output.status.success(),
+        "PrimaryBackup model-check is expected to fail until helper-call `LNext` lowering is implemented"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unsupported pattern"),
+        "error should be classified as unsupported pattern: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("no direct next-state equality")
+            && stderr.contains("constraints (`s_.field == ...`)"),
+        "error should explain missing `s_.field == ...` direct constraints: {}",
+        stderr
+    );
+}
+
 #[test]
 fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
     let source = std::fs::read_to_string("../docs/dev/phase22-mvp-scope.md")

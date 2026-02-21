@@ -6549,11 +6549,12 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Add unit tests for evaluator semantics and domain expansion.
   - Expanded `modelcheck::evaluator` unit coverage for short-circuit connective semantics (`&&&`, `|||`, `==>`), `if` without `else`, `iff`/`not`, cast-to-`nat` edge cases, and map `index`/`contains_key` behavior.
   - Expanded `modelcheck::domain` unit coverage for named `values` overrides (without alias/enum schema), reference and generic container type expansion, payload-enum rejection diagnostics, and missing named-domain diagnostics.
-- [ ] Add integration tests for end-to-end model-check runs on:
-  - TwoPhase
-  - LeaderElection
-  - PrimaryBackup
-  - Paxos (bounded run)
+- [ ] Add integration tests for end-to-end model-check runs (split into protocol-sized leaves, each <500 LOC):
+  - [x] PrimaryBackup blocker regression: assert actionable unsupported-pattern diagnostics for helper-call `LNext` branches (current solver requires direct `s_.field == ...` constraints).
+  - [ ] PrimaryBackup success-path bounded run (after helper-call `LNext` branch lowering support lands).
+  - [ ] TwoPhase (bounded run)
+  - [ ] LeaderElection (bounded run)
+  - [ ] Paxos (bounded run)
 - [ ] Add differential checks against existing TLC wrapper outcomes for shared small models.
 - [ ] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
 
