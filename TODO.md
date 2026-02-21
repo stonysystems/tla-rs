@@ -5212,12 +5212,15 @@ transpiler/tla_test_workspace/
     - Executed in a clean detached worktree at commit `588fef1` to avoid mixing unrelated local modifications into generated artifacts.
     - Scope check: regeneration touched 30 files with `197` insertions and `197` deletions (`394` total changed LOC), within the <500 LOC target for this leaf.
     - Signature snapshot captured in `docs/phase16-8-4b-signature-diff.md` (pre/post signature line dump + representative protocol signature diffs).
-  - [ ] **16.8.4c** Re-run D2 on regenerated specs and refresh category counts in `docs/conversion-testing-guide.md` + TODO status matrix.
+  - [x] **16.8.4c** Re-run D2 on regenerated specs and refresh category counts in `docs/conversion-testing-guide.md` + TODO status matrix.
+    - Re-ran `cargo test --test integration test_d2_spec_to_exec_on_generated_workspace -- --nocapture` after `16.8.4b` regeneration.
+    - Current measured totals remain unchanged: `2/33` pass, `21` Cat-A, `10` Cat-B, `0` uncategorized.
+    - Refreshed the D2 status notes in `docs/conversion-testing-guide.md` to record this post-regeneration revalidation.
   - [ ] **16.8.4d** Address remaining parser blockers (anonymous record return types and malformed call-shape emission) until the D2 compile gate can be promoted from blocked to required.
 - [x] Track failures by pattern category:
   - **2/33 PASS**: RSL/Environment.rs, RSL/Message.rs (trivial: empty struct / constant set only)
   - **Category A (21 files)**: "Expected identifier, found '{'" — D1 generates anonymous record return types `fn foo() -> { field: Type }` not valid in Rust; affects all Types.rs + most RSL module files
-  - **Category B (10 files)**: "Expected ')', found '('" — D1 generates duplicate parameter names (e.g., `s: LState, ..., s: int`) from TLA+ variable/state overlap; affects all 9 main protocol modules + RSL/Broadcast
+  - **Category B (10 files)**: "Expected ')', found '('" — remaining malformed signature/call-shape patterns in D1 output (post 16.8.4a reserved-name dedup); affects all 9 main protocol modules + RSL/Broadcast
   - **Root cause**: D1 (TLA+ → Verus) output is "TLA+-flavored Verus" that matches TLA+ semantics but not Verus parser expectations. The D3→D1→D2 round-trip requires D1 output quality improvements (struct field type inference, parameter deduplication, record type elimination) before D2 can consume it. The direct D4 pipeline (TLA+ → Verus Exec) works because it uses integrated type inference and avoids the intermediate serialization step.
 
 #### 16.8.5: External TLA+ corpora (LLM + community)

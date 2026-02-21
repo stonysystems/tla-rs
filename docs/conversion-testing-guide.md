@@ -566,9 +566,13 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 | RSL | 15 | 2 ✅ / 13 ❌ | 2 ✅ | Environment.rs, Message.rs pass (trivial) |
 | **Total** | **33** | **2/33** | **2/33** | |
 
+Revalidated after `16.8.4b` regeneration (2026-02-21) via:
+`cargo test --test integration test_d2_spec_to_exec_on_generated_workspace -- --nocapture`
+with unchanged totals: `2/33` pass, `21` Cat-A, `10` Cat-B, `0` other.
+
 **Failure Categories:**
 - **Cat-A (21 files)**: D1 generates anonymous record return types (`fn foo() -> { field: Type }`) — not valid Rust syntax. Affects all Types.rs files + most RSL module files.
-- **Cat-B (10 files)**: D1 generates duplicate parameter names (`s: LState, ..., s: int`) from TLA+ variable/state overlap. Affects all 9 main protocol modules + RSL/Broadcast.
+- **Cat-B (10 files)**: "Expected ')', found '('" from remaining malformed signature/call-shape patterns in D1 output (still present after reserved-name dedup). Affects all 9 main protocol modules + RSL/Broadcast.
 
 **Root cause**: D1 (TLA+ → Verus) generates "TLA+-flavored Verus" that preserves TLA+ semantics but doesn't conform to the Verus parser's expectations. The D3→D1→D2 round-trip requires D1 output improvements (struct field inference, parameter dedup, record type elimination). The integrated D4 pipeline avoids these issues through internal type propagation.
 
