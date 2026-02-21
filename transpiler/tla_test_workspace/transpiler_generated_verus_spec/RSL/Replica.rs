@@ -61,7 +61,7 @@ pub open spec fn LReplicaNextProcessInvalid(s: LState, s_: LState, c: LConstants
 
 /// ReplicaNextProcessRequest operator
 pub open spec fn LReplicaNextProcessRequest(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
-    if (arbitrary().dom().contains(arbitrary::<int>()) && (arbitrary::<int>() <= arbitrary()[arbitrary()].seqno)) { (arbitrary() && (s_ == s)) } else { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) }
+    if (arbitrary().dom().contains(arbitrary::<int>()) && (arbitrary::<int>() <= arbitrary::<Seq<int>>()[arbitrary()].seqno)) { (arbitrary() && (s_ == s)) } else { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) }
 }
 
 /// ReplicaNextProcess1a operator
@@ -142,7 +142,7 @@ pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState,
 pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
     {
     let opn: int = arbitrary();
-    if (((arbitrary::<int>() == 4689272130int) && arbitrary().dom().contains(opn)) && (arbitrary()[opn].received_2b_message_senders.len() >= arbitrary::<int>())) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
+    if (((arbitrary::<int>() == 4689272130int) && arbitrary().dom().contains(opn)) && (arbitrary::<Seq<int>>()[opn].received_2b_message_senders.len() >= arbitrary::<int>())) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 }
 

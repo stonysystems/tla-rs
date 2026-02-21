@@ -5367,6 +5367,16 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-6`: `14/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `19` `E0282`.
           - Net effect: mismatched-type first-error class eliminated (`E0308: 2 -> 0`) with expected shift into inference (`E0282: 17 -> 19`); compile pass count unchanged (`14/33`).
+        - [x] **16.8.3d-2d-7** Reduce residual generated-D1 inference blockers by coercing untyped placeholder receivers in sequence/set method contexts.
+          - Scope/LOC check: implemented as focused `ExprTranslator` receiver-coercion updates (`FnApply` + sequence/set op-apply) with targeted regressions and baseline/docs updates; stayed under the <500 LOC target.
+          - Added generated-D1 receiver coercion from untyped `arbitrary()` to `arbitrary::<Seq<int>>()` / `arbitrary::<Set<int>>()` when surrounding operation shape is sequence/set-specific (`f[x]`, `Len`, `Append`, `update`, `skip`, `drop_*`, `Head`/`Tail`/`Last`, `SubSeq`, `Cardinality`, `IsFiniteSet`).
+          - Added regressions:
+            - `test_generated_d1_fn_apply_coerces_untyped_arbitrary_receiver_to_seq`
+            - `test_non_generated_fn_apply_preserves_untyped_arbitrary_receiver`
+            - `test_generated_d1_len_coerces_untyped_arbitrary_receiver_to_seq`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-7`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `16` `E0282`.
+          - Net effect: compile passes increased (`14 -> 15`) and inference blockers reduced (`E0282: 19 -> 16`), with two newly surfaced non-inference first-error classes (`E0599`, `E0308`) tracked under `16.8.3d-2`/`16.8.3d-3`.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

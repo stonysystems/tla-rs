@@ -59,7 +59,7 @@ pub open spec fn LReceiveAccepted(s: LState, s_: LState, c: LConstants, sender: 
 
 /// Commit operator
 pub open spec fn LCommit(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
-    ((((((((((((((((arbitrary::<bool>() == true) && (arbitrary::<bool>() == false)) && (arbitrary().len() >= arbitrary::<int>())) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
+    ((((((((((((((((arbitrary::<bool>() == true) && (arbitrary::<bool>() == false)) && (arbitrary::<Seq<int>>().len() >= arbitrary::<int>())) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// Reconfigure operator

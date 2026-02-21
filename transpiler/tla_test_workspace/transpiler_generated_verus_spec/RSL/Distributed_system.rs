@@ -40,17 +40,17 @@ pub open spec fn LRslState(c: LConstants) -> LRecord {
 
 /// RslMapsComplete operator
 pub open spec fn LRslMapsComplete(s: LState, c: LConstants, ps: int) -> bool {
-    (arbitrary().len() == arbitrary().len())
+    (arbitrary::<Seq<int>>().len() == arbitrary::<Seq<int>>().len())
 }
 
 /// RslConstantsUnchanged operator
 pub open spec fn LRslConstantsUnchanged(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    (((arbitrary().len() == arbitrary().len()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
+    (((arbitrary::<Seq<int>>().len() == arbitrary::<Seq<int>>().len()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslInit operator
 pub open spec fn LRslInit(s: LState, c: LConstants, con: int, ps: int) -> bool {
-    (((((arbitrary() && arbitrary()) && (arbitrary() == con)) && arbitrary()) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < arbitrary().len())) ==> arbitrary()))
+    (((((arbitrary() && arbitrary()) && (arbitrary() == con)) && arbitrary()) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < arbitrary::<Seq<int>>().len())) ==> arbitrary()))
 }
 
 /// RslNextCommon operator
@@ -60,7 +60,7 @@ pub open spec fn LRslNextCommon(s: LState, c: LConstants, ps: int, ps_: int) -> 
 
 /// RslNextOneReplica operator
 pub open spec fn LRslNextOneReplica(s: LState, c: LConstants, ps: int, ps_: int, idx: int, ios: int) -> bool {
-    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < arbitrary().len())) && arbitrary()) && (arbitrary() == LRecord { actor: arbitrary()[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary() == arbitrary().update(idx, arbitrary()[idx])))
+    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < arbitrary::<Seq<int>>().len())) && arbitrary()) && (arbitrary() == LRecord { actor: arbitrary::<Seq<int>>()[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary() == arbitrary::<Seq<int>>().update(idx, arbitrary::<Seq<int>>()[idx])))
 }
 
 /// RslNextEnvironment operator

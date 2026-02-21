@@ -66,7 +66,7 @@ pub open spec fn LAddVoteAndRemoveOldOnes(s: LState, c: LConstants, votes: Map<i
 
 /// AcceptorInit operator
 pub open spec fn LAcceptorInit(s: LState, c: LConstants, a: int) -> bool {
-    (((((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary().len() == arbitrary().len())) && forall |idx| ((((0 <= idx) && (idx < arbitrary().len())) ==> (arbitrary()[idx] == 0)) && (arbitrary::<int>() == 0)))
+    (((((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary::<Seq<int>>().len() == arbitrary::<Seq<int>>().len())) && forall |idx| ((((0 <= idx) && (idx < arbitrary::<Seq<int>>().len())) ==> (arbitrary::<Seq<int>>()[idx] == 0)) && (arbitrary::<int>() == 0)))
 }
 
 /// AcceptorProcess1a operator
@@ -95,7 +95,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: i
 pub open spec fn LAcceptorProcessHeartbeat(s: LState, s_: LState, c: LConstants, inp: int) -> bool {
     if Set::<int>::empty().contains(arbitrary::<int>()) { {
     let sender_index: int = arbitrary();
-    if (((0 <= sender_index) && (sender_index < arbitrary().len())) && (arbitrary::<int>() > arbitrary()[sender_index])) { (((((arbitrary() == arbitrary().update(sender_index, arbitrary())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) } else { (s_ == s) }
+    if (((0 <= sender_index) && (sender_index < arbitrary::<Seq<int>>().len())) && (arbitrary::<int>() > arbitrary::<Seq<int>>()[sender_index])) { (((((arbitrary() == arbitrary::<Seq<int>>().update(sender_index, arbitrary())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) } else { (s_ == s) }
 } } else { (s_ == s) }
 }
 

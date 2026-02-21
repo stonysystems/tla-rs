@@ -41,7 +41,7 @@ pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_ac
 
 /// Send2a operator
 pub open spec fn LSend2a(s: LState, s_: LState, c: LConstants, v: bool) -> bool {
-    (((arbitrary::<int>() == 9996969643int) && (arbitrary().len() >= arbitrary::<int>())) && (arbitrary() == if (arbitrary::<int>() > 0) { arbitrary() } else { ((((((((((v && (arbitrary::<int>() == 2508597854int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) }))
+    (((arbitrary::<int>() == 9996969643int) && (arbitrary::<Seq<int>>().len() >= arbitrary::<int>())) && (arbitrary() == if (arbitrary::<int>() > 0) { arbitrary() } else { ((((((((((v && (arbitrary::<int>() == 2508597854int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) }))
 }
 
 /// Send2b operator
@@ -56,7 +56,7 @@ pub open spec fn LRecvAccepted(s: LState, s_: LState, c: LConstants, a: int) -> 
 
 /// Learn operator
 pub open spec fn LLearn(s: LState, s_: LState, c: LConstants) -> bool {
-    (((((((((((((arbitrary::<int>() == 2508597854int) && (arbitrary().len() >= arbitrary::<int>())) && (arbitrary::<int>() == 8313578207int)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
+    (((((((((((((arbitrary::<int>() == 2508597854int) && (arbitrary::<Seq<int>>().len() >= arbitrary::<int>())) && (arbitrary::<int>() == 8313578207int)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// Next operator

@@ -938,6 +938,7 @@ impl<'a> ExprTranslator<'a> {
     fn translate_fn_apply(&self, func: &TlaExpr, arg: &TlaExpr) -> String {
         // f[x] → f[x] or f.index(x)
         let func_str = self.translate(func);
+        let func_str = self.coerce_untyped_arbitrary_seq_int(&func_str);
         let arg_str = self.translate(arg);
         format!("{}[{}]", func_str, arg_str)
     }
@@ -1284,46 +1285,58 @@ impl<'a> ExprTranslator<'a> {
         match op_str.as_str() {
             // Sequence operations (T5.3)
             "Append" if args.len() == 2 => {
-                format!("{}.push({})", arg_strs[0], arg_strs[1])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.push({})", seq, arg_strs[1])
             }
             "update" if args.len() == 3 => {
-                format!("{}.update({}, {})", arg_strs[0], arg_strs[1], arg_strs[2])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.update({}, {})", seq, arg_strs[1], arg_strs[2])
             }
             "skip" if args.len() == 2 => {
-                format!("{}.skip({})", arg_strs[0], arg_strs[1])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.skip({})", seq, arg_strs[1])
             }
             "drop_first" if args.len() == 1 => {
-                format!("{}.drop_first()", arg_strs[0])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.drop_first()", seq)
             }
             "drop_last" if args.len() == 1 => {
-                format!("{}.subrange(0, {}.len() - 1)", arg_strs[0], arg_strs[0])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.subrange(0, {}.len() - 1)", seq, seq)
             }
             "Head" if args.len() == 1 => {
-                format!("{}[0]", arg_strs[0])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}[0]", seq)
             }
             "Tail" if args.len() == 1 => {
-                format!("{}.drop_first()", arg_strs[0])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.drop_first()", seq)
             }
             "Last" if args.len() == 1 => {
-                format!("{}[{}.len() - 1]", arg_strs[0], arg_strs[0])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}[{}.len() - 1]", seq, seq)
             }
             "Len" if args.len() == 1 => {
-                format!("{}.len()", arg_strs[0])
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
+                format!("{}.len()", seq)
             }
             "SubSeq" if args.len() == 3 => {
                 // TLA+ is 1-indexed, Verus is 0-indexed
+                let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
                 format!(
                     "{}.subrange({} - 1, {})",
-                    arg_strs[0], arg_strs[1], arg_strs[2]
+                    seq, arg_strs[1], arg_strs[2]
                 )
             }
 
             // Set operations
             "Cardinality" if args.len() == 1 => {
-                format!("{}.len()", arg_strs[0])
+                let set = self.coerce_untyped_arbitrary_set_int(&arg_strs[0]);
+                format!("{}.len()", set)
             }
             "IsFiniteSet" if args.len() == 1 => {
-                format!("{}.finite()", arg_strs[0])
+                let set = self.coerce_untyped_arbitrary_set_int(&arg_strs[0]);
+                format!("{}.finite()", set)
             }
 
             // Default: regular function call
@@ -3750,6 +3763,29 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_fn_apply_coerces_untyped_arbitrary_receiver_to_seq() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::FnApply {
+            func: Box::new(TlaExpr::ident("states")),
+            arg: Box::new(TlaExpr::number(0)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary::<Seq<int>>()[0]");
+    }
+
+    #[test]
+    fn test_non_generated_fn_apply_preserves_untyped_arbitrary_receiver() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("x".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::FnApply {
+            func: Box::new(TlaExpr::ident("states")),
+            arg: Box::new(TlaExpr::number(0)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary()[0]");
+    }
+
+    #[test]
     fn test_translate_sequence_ops() {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
@@ -3816,6 +3852,17 @@ mod tests {
             args: vec![TlaExpr::ident("s")],
         };
         assert_eq!(translator.translate(&expr), "s[s.len() - 1]");
+    }
+
+    #[test]
+    fn test_generated_d1_len_coerces_untyped_arbitrary_receiver_to_seq() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Len")),
+            args: vec![TlaExpr::ident("states")],
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary::<Seq<int>>().len()");
     }
 
     #[test]

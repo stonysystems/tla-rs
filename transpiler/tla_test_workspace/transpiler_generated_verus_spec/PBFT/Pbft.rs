@@ -49,7 +49,7 @@ pub open spec fn LReceivePrepare(s: LState, s_: LState, c: LConstants, sender: i
 
 /// EnterCommit operator
 pub open spec fn LEnterCommit(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
-    ((((((((((((((arbitrary::<int>() == 6989001116int) && (arbitrary().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() == 9385017532int)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
+    ((((((((((((((arbitrary::<int>() == 6989001116int) && (arbitrary::<Seq<int>>().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() == 9385017532int)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ReceiveCommit operator
@@ -59,7 +59,7 @@ pub open spec fn LReceiveCommit(s: LState, s_: LState, c: LConstants, sender: in
 
 /// ExecuteReply operator
 pub open spec fn LExecuteReply(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
-    ((((((((((((((arbitrary::<int>() == 9385017532int) && (arbitrary().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() == 6279280374int)) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
+    ((((((((((((((arbitrary::<int>() == 9385017532int) && (arbitrary::<Seq<int>>().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() == 6279280374int)) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// Checkpoint operator
