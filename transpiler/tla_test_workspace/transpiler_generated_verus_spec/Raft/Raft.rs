@@ -10,8 +10,21 @@ verus! {
 
 /// Record type for Raft module
 pub struct LRecord {
+    pub candidate: int,
+    pub follower: int,
+    pub granted: int,
+    pub has_entry: int,
+    pub last_log_index: int,
+    pub last_log_term: int,
+    pub leader: int,
+    pub leader_commit: int,
+    pub match_index: int,
+    pub prev_index: int,
+    pub prev_term: int,
+    pub success: int,
     pub term: int,
     pub value: int,
+    pub voter: int,
 }
 
 /// State for Raft module
@@ -44,12 +57,12 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// Timeout operator
 pub open spec fn LTimeout(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((s.role.tag == Follower) || (((((((((((s.role.tag == Candidate) && (s_.current_term == (s.current_term + 1))) && (s_.role.tag == Candidate)) && (s_.has_voted == true)) && (s_.voted_for == c.my_id)) && (s_.log == s.log)) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == Set::<int>::empty().union(set![c.my_id]))) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![{ term: (s.current_term + 1), candidate: c.my_id, last_log_index: 0, last_log_term: 0 }])))
+    ((s.role.tag == Follower) || (((((((((((s.role.tag == Candidate) && (s_.current_term == (s.current_term + 1))) && (s_.role.tag == Candidate)) && (s_.has_voted == true)) && (s_.voted_for == c.my_id)) && (s_.log == s.log)) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == Set::<int>::empty().union(set![c.my_id]))) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![LRecord { candidate: c.my_id, follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0, last_log_term: 0, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: (s.current_term + 1), value: 0int, voter: 0int }])))
 }
 
 /// GrantVote operator
 pub open spec fn LGrantVote(s: LState, c: LConstants, s_: int, candidate_term: int, candidate_last_log_term: int, candidate_last_log_index: int, candidate_id: int, sent_packets: int) -> bool {
-    (((candidate_term >= s.current_term) && !(s.has_voted)) || (((((((((((s.voted_for == candidate_id) && (s_.current_term == candidate_term)) && (s_.role.tag == Follower)) && (s_.has_voted == true)) && (s_.voted_for == candidate_id)) && (s_.log == s.log)) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == s.votes_granted)) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![{ term: candidate_term, granted: true, voter: c.my_id }])))
+    (((candidate_term >= s.current_term) && !(s.has_voted)) || (((((((((((s.voted_for == candidate_id) && (s_.current_term == candidate_term)) && (s_.role.tag == Follower)) && (s_.has_voted == true)) && (s_.voted_for == candidate_id)) && (s_.log == s.log)) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == s.votes_granted)) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![LRecord { candidate: 0int, follower: 0int, granted: true, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: candidate_term, value: 0int, voter: c.my_id }])))
 }
 
 /// ReceiveVoteGranted operator
@@ -64,17 +77,17 @@ pub open spec fn LBecomeLeader(s: LState, c: LConstants, s_: int, sent_packets: 
 
 /// ClientRequest operator
 pub open spec fn LClientRequest(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    (((((((((((s.role.tag == Leader) && (s_.current_term == s.current_term)) && (s_.role == s.role)) && (s_.has_voted == s.has_voted)) && (s_.voted_for == s.voted_for)) && (s_.log == s.log.push(LRecord { term: s.current_term, value: value }))) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == s.votes_granted)) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![]))
+    (((((((((((s.role.tag == Leader) && (s_.current_term == s.current_term)) && (s_.role == s.role)) && (s_.has_voted == s.has_voted)) && (s_.voted_for == s.voted_for)) && (s_.log == s.log.push(LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: s.current_term, value: value, voter: 0int }))) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == s.votes_granted)) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![]))
 }
 
 /// SendAppendEntries operator
 pub open spec fn LSendAppendEntries(s: LState, c: LConstants, s_: int, follower: int, entry_value: int, prev_log_index: int, prev_log_term: int, has_entry: int, sent_packets: int) -> bool {
-    ((((((((((((s.role.tag == Leader) && c.servers.contains(follower)) && (s_.current_term == s.current_term)) && (s_.role == s.role)) && (s_.has_voted == s.has_voted)) && (s_.voted_for == s.voted_for)) && (s_.log == s.log)) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == s.votes_granted)) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![{ term: s.current_term, leader: c.my_id, prev_index: prev_log_index, prev_term: prev_log_term, value: entry_value, has_entry: has_entry, leader_commit: s.commit_index }]))
+    ((((((((((((s.role.tag == Leader) && c.servers.contains(follower)) && (s_.current_term == s.current_term)) && (s_.role == s.role)) && (s_.has_voted == s.has_voted)) && (s_.voted_for == s.voted_for)) && (s_.log == s.log)) && (s_.commit_index == s.commit_index)) && (s_.votes_granted == s.votes_granted)) && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: has_entry, last_log_index: 0int, last_log_term: 0int, leader: c.my_id, leader_commit: s.commit_index, match_index: 0int, prev_index: prev_log_index, prev_term: prev_log_term, success: 0int, term: s.current_term, value: entry_value, voter: 0int }]))
 }
 
 /// FollowerAppendEntries operator
 pub open spec fn LFollowerAppendEntries(s: LState, c: LConstants, s_: int, ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int, ae_value: int, ae_has_entry: int, ae_leader_commit: int, sent_packets: int) -> bool {
-    ((((ae_term >= s.current_term) && (s_.current_term == ae_term)) && (s_.role.tag == Follower)) && (s_.has_voted == if (ae_term > s.current_term) { false } else { (s.has_voted && (s_.voted_for == if (ae_term > s.current_term) { 0 } else { (s.voted_for && (s_.log == if ae_has_entry { s.log.push(LRecord { term: ae_term, value: ae_value }) } else { (s.log && (s_.commit_index == if (ae_leader_commit > s.commit_index) { ae_leader_commit } else { (s.commit_index && (s_.votes_granted == if (ae_term > s.current_term) { Set::<int>::empty() } else { (((s.votes_granted && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![{ term: ae_term, success: true, match_index: if ae_has_entry { (s.log.len() + 1) } else { s.log.len() }, follower: c.my_id }])) })) })) })) })) }))
+    ((((ae_term >= s.current_term) && (s_.current_term == ae_term)) && (s_.role.tag == Follower)) && (s_.has_voted == if (ae_term > s.current_term) { false } else { (s.has_voted && (s_.voted_for == if (ae_term > s.current_term) { 0 } else { (s.voted_for && (s_.log == if ae_has_entry { s.log.push(LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: ae_term, value: ae_value, voter: 0int }) } else { (s.log && (s_.commit_index == if (ae_leader_commit > s.commit_index) { ae_leader_commit } else { (s.commit_index && (s_.votes_granted == if (ae_term > s.current_term) { Set::<int>::empty() } else { (((s.votes_granted && (s_.match_index == s.match_index)) && (s_.next_index == s.next_index)) && (sent_packets == seq![LRecord { candidate: 0int, follower: c.my_id, granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: if ae_has_entry { (s.log.len() + 1) } else { s.log.len() }, prev_index: 0int, prev_term: 0int, success: true, term: ae_term, value: 0int, voter: 0int }])) })) })) })) })) }))
 }
 
 /// HandleAppendResponse operator

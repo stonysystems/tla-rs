@@ -10,9 +10,11 @@ verus! {
 
 /// Record type for Learner module
 pub struct LRecord {
+    pub candidate_learned_value: int,
     pub constants: int,
     pub max_ballot_seen: int,
     pub proposer_id: int,
+    pub received_2b_message_senders: int,
     pub seqno: int,
     pub unexecuted_learner_state: int,
 }
@@ -31,13 +33,13 @@ pub struct LConstants {
 
 
 /// Learner operator
-pub open spec fn LLearner(c: LConstants) -> { unexecuted_learner_state: int, constants: int, max_ballot_seen: int } {
-    LRecord { constants: c.ReplicaConstants, max_ballot_seen: Ballot, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: earnerState }
+pub open spec fn LLearner(c: LConstants) -> LRecord {
+    LRecord { candidate_learned_value: 0int, constants: c.ReplicaConstants, max_ballot_seen: Ballot, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: earnerState }
 }
 
 /// LearnerInit operator
 pub open spec fn LLearnerInit(s: LState, c: LConstants, l: int) -> bool {
-    (((l.constants == c) && (l.max_ballot_seen == LRecord { constants: 0int, max_ballot_seen: 0int, proposer_id: 0, seqno: 0, unexecuted_learner_state: 0int })) && (l.unexecuted_learner_state == seq![]))
+    (((l.constants == c) && (l.max_ballot_seen == LRecord { candidate_learned_value: 0int, constants: 0int, max_ballot_seen: 0int, proposer_id: 0, received_2b_message_senders: 0int, seqno: 0, unexecuted_learner_state: 0int })) && (l.unexecuted_learner_state == seq![]))
 }
 
 /// LearnerProcess2b operator
@@ -47,16 +49,16 @@ pub open spec fn LLearnerProcess2b(s: LState, c: LConstants, s_: int, packet: in
     {
     let opn = m.opn_2b;
     if (s.constants.all.config.replica_ids.contains(!(packet.src)) || BalLt(m.bal_2b, s.max_ballot_seen)) { (s_ == s) } else { if BalLt(s.max_ballot_seen, m.bal_2b) { {
-    let tup_ = { received_2b_message_senders: set![packet.src], candidate_learned_value: m.val_2b };
-    (s_ == LRecord { constants: s.constants, max_ballot_seen: m.bal_2b, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: set![seq![opn, tup_]] })
+    let tup_ = LRecord { candidate_learned_value: m.val_2b, constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: set![packet.src], seqno: 0int, unexecuted_learner_state: 0int };
+    (s_ == LRecord { candidate_learned_value: 0int, constants: s.constants, max_ballot_seen: m.bal_2b, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: set![seq![opn, tup_]] })
 } } else { if s.unexecuted_learner_state.dom().contains(!(opn)) { {
-    let tup_ = { received_2b_message_senders: set![packet.src], candidate_learned_value: m.val_2b };
-    (s_ == LRecord { constants: s.constants, max_ballot_seen: m.bal_2b, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_) })
+    let tup_ = LRecord { candidate_learned_value: m.val_2b, constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: set![packet.src], seqno: 0int, unexecuted_learner_state: 0int };
+    (s_ == LRecord { candidate_learned_value: 0int, constants: s.constants, max_ballot_seen: m.bal_2b, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_) })
 } } else { if s.unexecuted_learner_state[opn].received_2b_message_senders.contains(packet.src) { (s_ == s) } else { {
     let tup = s.unexecuted_learner_state[opn];
     {
-    let tup_ = { received_2b_message_senders: (tup.received_2b_message_senders + set![packet.src]), candidate_learned_value: tup.candidate_learned_value };
-    (s_ == LRecord { constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_) })
+    let tup_ = LRecord { candidate_learned_value: tup.candidate_learned_value, constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: (tup.received_2b_message_senders + set![packet.src]), seqno: 0int, unexecuted_learner_state: 0int };
+    (s_ == LRecord { candidate_learned_value: 0int, constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_) })
 }
 } } } } }
 }
@@ -65,12 +67,12 @@ pub open spec fn LLearnerProcess2b(s: LState, c: LConstants, s_: int, packet: in
 
 /// LearnerForgetDecision operator
 pub open spec fn LLearnerForgetDecision(s: LState, c: LConstants, s_: int, opn: int) -> bool {
-    if s.unexecuted_learner_state.dom().contains(opn) { (s_ == LRecord { constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.difference(set![opn]) }) } else { (s_ == s) }
+    if s.unexecuted_learner_state.dom().contains(opn) { (s_ == LRecord { candidate_learned_value: 0int, constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: s.unexecuted_learner_state.difference(set![opn]) }) } else { (s_ == s) }
 }
 
 /// LearnerForgetOperationsBefore operator
 pub open spec fn LLearnerForgetOperationsBefore(s: LState, c: LConstants, s_: int, ops_complete: int) -> bool {
-    forall |k| c.OperationNumber.contains(k) ==> ((s_.unexecuted_learner_state.dom().contains(k) <==> ((k >= ops_complete) && s.unexecuted_learner_state.dom().contains(k))) && forall |k| c.OperationNumber.contains(k) ==> ((s_.unexecuted_learner_state.dom().contains(k) ==> (s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k])) && (s_ == LRecord { constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, seqno: 0int, unexecuted_learner_state: s_.unexecuted_learner_state })))
+    forall |k| c.OperationNumber.contains(k) ==> ((s_.unexecuted_learner_state.dom().contains(k) <==> ((k >= ops_complete) && s.unexecuted_learner_state.dom().contains(k))) && forall |k| c.OperationNumber.contains(k) ==> ((s_.unexecuted_learner_state.dom().contains(k) ==> (s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k])) && (s_ == LRecord { candidate_learned_value: 0int, constants: s.constants, max_ballot_seen: s.max_ballot_seen, proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: s_.unexecuted_learner_state })))
 }
 
 } // verus!

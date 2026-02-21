@@ -34,7 +34,7 @@ pub struct LConstants {
 
 
 /// RslState operator
-pub open spec fn LRslState(c: LConstants) -> { clients: int, replicas: int, environment: int, constants: int } {
+pub open spec fn LRslState(c: LConstants) -> LRecord {
     LRecord { actor: 0int, all: 0int, clients: Seq(c.AbstractEndPoint), constants: c.Constants, environment: Environment, ios: 0int, my_index: 0int, replicas: Seq(Scheduler) }
 }
 

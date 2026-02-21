@@ -32,12 +32,12 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState() -> { highest_accepted_val: Set<int>, promises_rcvd: Set<Set<int>>, phase: int, highest_accepted_bal: Set<int>, accepts_rcvd: Set<Set<int>>, accepted_val: Set<int>, proposed_val: Set<int>, proposer_bal: Set<int>, decided_val: Set<int>, promised_bal: Set<int>, accepted_bal: Set<int> } {
+pub open spec fn LState() -> LRecord {
     LRecord { accepted_bal: int, accepted_val: int, acceptors: 0int, accepts_rcvd: int.powerset(), decided_val: int, highest_accepted_bal: int, highest_accepted_val: int, node_id: 0int, phase: LPhase(), promised_bal: int, promises_rcvd: int.powerset(), proposed_val: int, proposer_bal: int, quorum_size: 0int }
 }
 
 /// Constants operator
-pub open spec fn LConstants() -> { node_id: Set<int>, acceptors: Set<Set<int>>, quorum_size: Set<int> } {
+pub open spec fn LConstants() -> LRecord {
     LRecord { accepted_bal: 0int, accepted_val: 0int, acceptors: int.powerset(), accepts_rcvd: 0int, decided_val: 0int, highest_accepted_bal: 0int, highest_accepted_val: 0int, node_id: int, phase: 0int, promised_bal: 0int, promises_rcvd: 0int, proposed_val: 0int, proposer_bal: 0int, quorum_size: int }
 }
 

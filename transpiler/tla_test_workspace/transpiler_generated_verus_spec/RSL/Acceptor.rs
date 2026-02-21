@@ -10,12 +10,21 @@ verus! {
 
 /// Record type for Acceptor module
 pub struct LRecord {
+    pub bal_1b: int,
+    pub bal_2b: int,
     pub constants: int,
+    pub dst: int,
     pub last_checkpointed_operation: int,
     pub log_truncation_point: int,
     pub max_bal: int,
+    pub max_val: int,
+    pub max_value_bal: int,
+    pub msg: int,
+    pub opn_2b: int,
     pub proposer_id: int,
     pub seqno: int,
+    pub src: int,
+    pub val_2b: int,
     pub votes: int,
 }
 
@@ -36,8 +45,8 @@ pub struct LConstants {
 
 
 /// Acceptor operator
-pub open spec fn LAcceptor(c: LConstants) -> { last_checkpointed_operation: int, max_bal: int, votes: int, log_truncation_point: int, constants: int } {
-    LRecord { constants: c.ReplicaConstants, last_checkpointed_operation: Seq(c.OperationNumber), log_truncation_point: c.OperationNumber, max_bal: Ballot, proposer_id: 0int, seqno: 0int, votes: c.Votes }
+pub open spec fn LAcceptor(c: LConstants) -> LRecord {
+    LRecord { bal_1b: 0int, bal_2b: 0int, constants: c.ReplicaConstants, dst: 0int, last_checkpointed_operation: Seq(c.OperationNumber), log_truncation_point: c.OperationNumber, max_bal: Ballot, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: c.Votes }
 }
 
 /// IsLogTruncationPointValid operator
@@ -57,7 +66,7 @@ pub open spec fn LAddVoteAndRemoveOldOnes(s: LState, c: LConstants, votes: int, 
 
 /// AcceptorInit operator
 pub open spec fn LAcceptorInit(s: LState, c: LConstants, a: int) -> bool {
-    (((((a.constants == c) && (a.max_bal == LRecord { constants: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, proposer_id: 0, seqno: 0, votes: 0int })) && (a.votes == seq![])) && (a.last_checkpointed_operation.len() == c.all.config.replica_ids.len())) && forall |idx| int.contains(idx) ==> ((((0 <= idx) && (idx < a.last_checkpointed_operation.len())) ==> (a.last_checkpointed_operation[idx] == 0)) && (a.log_truncation_point == 0)))
+    (((((a.constants == c) && (a.max_bal == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (a.votes == seq![])) && (a.last_checkpointed_operation.len() == c.all.config.replica_ids.len())) && forall |idx| int.contains(idx) ==> ((((0 <= idx) && (idx < a.last_checkpointed_operation.len())) ==> (a.last_checkpointed_operation[idx] == 0)) && (a.log_truncation_point == 0)))
 }
 
 /// AcceptorProcess1a operator
@@ -66,7 +75,7 @@ pub open spec fn LAcceptorProcess1a(s: LState, c: LConstants, s_: int, inp: int,
     let m = inp.msg;
     {
     let bal = inp.msg.bal_1a;
-    if ((s.constants.all.config.replica_ids.contains(inp.src) && BalLt(s.max_bal, bal)) && ReplicaConstantsValid(s.constants)) { ((sent_packets == seq![{ src: s.constants.all.config.replica_ids[s.constants.my_index], dst: inp.src, msg: { bal_1b: bal, log_truncation_point: s.log_truncation_point, votes: s.votes } }]) && (s_ == LRecord { constants: s.constants, last_checkpointed_operation: s.last_checkpointed_operation, log_truncation_point: s.log_truncation_point, max_bal: bal, proposer_id: 0int, seqno: 0int, votes: s.votes })) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if ((s.constants.all.config.replica_ids.contains(inp.src) && BalLt(s.max_bal, bal)) && ReplicaConstantsValid(s.constants)) { ((sent_packets == seq![LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: inp.src, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: LRecord { bal_1b: bal, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: s.log_truncation_point, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: s.votes }, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: s.constants.all.config.replica_ids[s.constants.my_index], val_2b: 0int, votes: 0int }]) && (s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: s.constants, dst: 0int, last_checkpointed_operation: s.last_checkpointed_operation, log_truncation_point: s.log_truncation_point, max_bal: bal, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: s.votes })) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 }
@@ -77,7 +86,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, c: LConstants, s_: int, inp: int,
     let m = inp.msg;
     {
     let newLogTruncationPoint = if (((inp.msg.opn_2a - s.constants.all.params.max_log_length) + 1) > s.log_truncation_point) { ((inp.msg.opn_2a - s.constants.all.params.max_log_length) + 1) } else { s.log_truncation_point };
-    (((BroadcastToEveryone(s.constants.all.config, s.constants.my_index, { bal_2b: m.bal_2a, opn_2b: m.opn_2a, val_2b: m.val_2a }, sent_packets) && (s_.max_bal == m.bal_2a)) && (s_.log_truncation_point == newLogTruncationPoint)) && if (s.log_truncation_point <= m.opn_2a) { LAddVoteAndRemoveOldOnes(s, c, s.votes, s_.votes, m.opn_2a, { max_value_bal: m.bal_2a, max_val: m.val_2a }, newLogTruncationPoint) } else { (((s_.votes == s.votes) && (s_.constants == s.constants)) && (s_.last_checkpointed_operation == s.last_checkpointed_operation)) })
+    (((BroadcastToEveryone(s.constants.all.config, s.constants.my_index, LRecord { bal_1b: 0int, bal_2b: m.bal_2a, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: m.opn_2a, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: m.val_2a, votes: 0int }, sent_packets) && (s_.max_bal == m.bal_2a)) && (s_.log_truncation_point == newLogTruncationPoint)) && if (s.log_truncation_point <= m.opn_2a) { LAddVoteAndRemoveOldOnes(s, c, s.votes, s_.votes, m.opn_2a, LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: m.val_2a, max_value_bal: m.bal_2a, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: 0int }, newLogTruncationPoint) } else { (((s_.votes == s.votes) && (s_.constants == s.constants)) && (s_.last_checkpointed_operation == s.last_checkpointed_operation)) })
 }
 }
 }
@@ -92,7 +101,7 @@ pub open spec fn LAcceptorProcessHeartbeat(s: LState, c: LConstants, s_: int, in
 
 /// AcceptorTruncateLog operator
 pub open spec fn LAcceptorTruncateLog(s: LState, c: LConstants, s_: int, opn: int) -> bool {
-    if (opn <= s.log_truncation_point) { (s_ == s) } else { ((s_ == LRecord { constants: s.constants, last_checkpointed_operation: s.last_checkpointed_operation, log_truncation_point: opn, max_bal: s.max_bal, proposer_id: 0int, seqno: 0int, votes: s_.votes }) && LRemoveVotesBeforeLogTruncationPoint(s, c, s.votes, s_.votes, opn)) }
+    if (opn <= s.log_truncation_point) { (s_ == s) } else { ((s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: s.constants, dst: 0int, last_checkpointed_operation: s.last_checkpointed_operation, log_truncation_point: opn, max_bal: s.max_bal, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: s_.votes }) && LRemoveVotesBeforeLogTruncationPoint(s, c, s.votes, s_.votes, opn)) }
 }
 
 } // verus!

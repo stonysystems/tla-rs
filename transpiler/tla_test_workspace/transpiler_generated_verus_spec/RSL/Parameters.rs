@@ -29,7 +29,7 @@ pub struct LConstants {
 
 
 /// Parameters operator
-pub open spec fn LParameters(c: LConstants) -> { baseline_view_timeout_period: Set<int>, max_log_length: Set<int>, max_batch_delay: Set<int>, max_integer_val: int, heartbeat_period: Set<int>, max_batch_size: Set<int> } {
+pub open spec fn LParameters(c: LConstants) -> LRecord {
     LRecord { baseline_view_timeout_period: int, heartbeat_period: int, max_batch_delay: int, max_batch_size: int, max_integer_val: UpperBound, max_log_length: int }
 }
 

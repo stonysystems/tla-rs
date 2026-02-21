@@ -8,6 +8,13 @@ use vstd::set::*;
 
 verus! {
 
+/// Record type for State_machine module
+pub struct LRecord {
+    pub client: int,
+    pub reply: int,
+    pub seqno: int,
+}
+
 /// State for State_machine module
 pub struct LState {
 }
@@ -21,10 +28,10 @@ pub struct LConstants {
 
 
 /// HandleRequest operator
-pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: int) -> (int, { seqno: int, reply: int, client: int }) {
+pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: int) -> (int, LRecord) {
     {
     let unused_0 = AppHandleRequest(state, request.request);
-    seq![new_state, { client: request.client, seqno: request.seqno, reply: reply }]
+    seq![new_state, LRecord { client: request.client, reply: reply, seqno: request.seqno }]
 }
 }
 
@@ -34,7 +41,7 @@ pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int,
     let unused_2 = LHandleRequestBatchHidden(s, c, state, drop_last(batch));
     {
     let unused_2 = AppHandleRequest(Last(restStates), Last(batch).request);
-    seq![(restStates + seq![new_state]), (restReplies + seq![{ client: Last(batch).client, seqno: Last(batch).seqno, reply: reply }])]
+    seq![(restStates + seq![new_state]), (restReplies + seq![LRecord { client: Last(batch).client, reply: reply, seqno: Last(batch).seqno }])]
 }
 } }
 }

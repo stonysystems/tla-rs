@@ -24,12 +24,12 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState() -> { rm_committed: Set<Set<int>>, tm_prepared: Set<Set<int>>, tm_state: int, rm_aborted: Set<Set<int>>, rm_prepared: Set<Set<int>> } {
+pub open spec fn LState() -> LRecord {
     LRecord { rm: 0int, rm_aborted: int.powerset(), rm_committed: int.powerset(), rm_prepared: int.powerset(), tm_prepared: int.powerset(), tm_state: LTMState() }
 }
 
 /// Constants operator
-pub open spec fn LConstants() -> { rm: Set<Set<int>> } {
+pub open spec fn LConstants() -> LRecord {
     LRecord { rm: int.powerset(), rm_aborted: 0int, rm_committed: 0int, rm_prepared: 0int, tm_prepared: 0int, tm_state: 0int }
 }
 

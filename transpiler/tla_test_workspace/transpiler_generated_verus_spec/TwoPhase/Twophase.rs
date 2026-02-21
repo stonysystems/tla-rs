@@ -8,6 +8,11 @@ use vstd::set::*;
 
 verus! {
 
+/// Record type for Twophase module
+pub struct LRecord {
+    pub rm: int,
+}
+
 /// State for Twophase module
 pub struct LState {
 }
@@ -32,7 +37,7 @@ pub open spec fn LTMSendPrepare(s: LState, c: LConstants, s_: int, sent_packets:
 
 /// RMReceivePrepare operator
 pub open spec fn LRMReceivePrepare(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
-    ((((((((c.rm.contains(rm) && s.rm_prepared.contains(!(rm))) && s.rm_aborted.contains(!(rm))) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared.union(set![rm]))) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![{ rm: rm }]))
+    ((((((((c.rm.contains(rm) && s.rm_prepared.contains(!(rm))) && s.rm_aborted.contains(!(rm))) && (s_.tm_state == s.tm_state)) && (s_.tm_prepared == s.tm_prepared)) && (s_.rm_prepared == s.rm_prepared.union(set![rm]))) && (s_.rm_committed == s.rm_committed)) && (s_.rm_aborted == s.rm_aborted)) && (sent_packets == seq![LRecord { rm: rm }]))
 }
 
 /// RMAbort operator

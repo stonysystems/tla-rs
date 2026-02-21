@@ -29,12 +29,12 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState() -> { view: Set<int>, log_length: Set<int>, acked: Set<bool>, has_pending: Set<bool>, last_value: Set<int>, backup_synced: Set<bool>, backup_log_length: Set<int>, pending_value: Set<int>, role: int, backup_last_value: Set<int> } {
+pub open spec fn LState() -> LRecord {
     LRecord { acked: bool, backup_last_value: int, backup_log_length: int, backup_synced: bool, has_pending: bool, last_value: int, log_length: int, max_log_len: 0int, pending_value: int, role: LNodeRole(), view: int }
 }
 
 /// Constants operator
-pub open spec fn LConstants() -> { max_log_len: Set<int> } {
+pub open spec fn LConstants() -> LRecord {
     LRecord { acked: 0int, backup_last_value: 0int, backup_log_length: 0int, backup_synced: 0int, has_pending: 0int, last_value: 0int, log_length: 0int, max_log_len: int, pending_value: 0int, role: 0int, view: 0int }
 }
 

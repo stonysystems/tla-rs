@@ -26,7 +26,7 @@ pub struct LConstants {
 
 
 /// Configuration operator
-pub open spec fn LConfiguration(c: LConstants) -> { replica_ids: int, clientIds: Set<int> } {
+pub open spec fn LConfiguration(c: LConstants) -> LRecord {
     LRecord { clientIds: c.AbstractEndPoint.powerset(), replica_ids: Seq(c.AbstractEndPoint) }
 }
 

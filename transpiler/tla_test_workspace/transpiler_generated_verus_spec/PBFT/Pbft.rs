@@ -8,6 +8,13 @@ use vstd::set::*;
 
 verus! {
 
+/// Record type for Pbft module
+pub struct LRecord {
+    pub digest: int,
+    pub seq: int,
+    pub view: int,
+}
+
 /// State for Pbft module
 pub struct LState {
 }
@@ -27,7 +34,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// PrePrepare operator
 pub open spec fn LPrePrepare(s: LState, c: LConstants, s_: int, digest: int, sent_packets: int) -> bool {
-    ((((((((((((((((s.phase.tag == LPrePrepare(s, c)) && (s.is_primary == true)) && (s.seq_num >= s.low_watermark)) && (s.seq_num < s.high_watermark)) && (s_.phase.tag == Prepare)) && (s_.request_digest == digest)) && (s_.prepare_senders == Set::<int>::empty().union(set![c.node_id]))) && (s_.commit_senders == Set::<int>::empty())) && (s_.view == s.view)) && (s_.seq_num == s.seq_num)) && (s_.is_primary == s.is_primary)) && (s_.checkpoint_seq == s.checkpoint_seq)) && (s_.checkpoint_digest == s.checkpoint_digest)) && (s_.low_watermark == s.low_watermark)) && (s_.high_watermark == s.high_watermark)) && (sent_packets == seq![{ view: s.view, seq: s.seq_num, digest: digest }]))
+    ((((((((((((((((s.phase.tag == LPrePrepare(s, c)) && (s.is_primary == true)) && (s.seq_num >= s.low_watermark)) && (s.seq_num < s.high_watermark)) && (s_.phase.tag == Prepare)) && (s_.request_digest == digest)) && (s_.prepare_senders == Set::<int>::empty().union(set![c.node_id]))) && (s_.commit_senders == Set::<int>::empty())) && (s_.view == s.view)) && (s_.seq_num == s.seq_num)) && (s_.is_primary == s.is_primary)) && (s_.checkpoint_seq == s.checkpoint_seq)) && (s_.checkpoint_digest == s.checkpoint_digest)) && (s_.low_watermark == s.low_watermark)) && (s_.high_watermark == s.high_watermark)) && (sent_packets == seq![LRecord { digest: digest, seq: s.seq_num, view: s.view }]))
 }
 
 /// ReceivePrePrepare operator

@@ -33,12 +33,12 @@ pub struct LState {
 
 
 /// State operator
-pub open spec fn LState() -> { prepare_senders: Set<Set<int>>, request_digest: Set<int>, seq_num: Set<int>, commit_senders: Set<Set<int>>, is_primary: Set<bool>, low_watermark: Set<int>, checkpoint_seq: Set<int>, checkpoint_digest: Set<int>, phase: int, view: Set<int>, high_watermark: Set<int> } {
+pub open spec fn LState() -> LRecord {
     LRecord { checkpoint_digest: int, checkpoint_interval: 0int, checkpoint_seq: int, commit_senders: int.powerset(), f: 0int, high_watermark: int, is_primary: bool, low_watermark: int, n: 0int, node_id: 0int, phase: LPhase(), prepare_senders: int.powerset(), request_digest: int, seq_num: int, view: int }
 }
 
 /// Constants operator
-pub open spec fn LConstants() -> { f: Set<int>, checkpoint_interval: Set<int>, node_id: Set<int>, n: Set<int> } {
+pub open spec fn LConstants() -> LRecord {
     LRecord { checkpoint_digest: 0int, checkpoint_interval: int, checkpoint_seq: 0int, commit_senders: 0int, f: int, high_watermark: 0int, is_primary: 0int, low_watermark: 0int, n: int, node_id: int, phase: 0int, prepare_senders: 0int, request_digest: 0int, seq_num: 0int, view: 0int }
 }
 

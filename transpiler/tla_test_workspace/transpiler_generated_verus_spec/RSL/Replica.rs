@@ -40,12 +40,12 @@ pub struct LConstants {
 
 
 /// Replica operator
-pub open spec fn LReplica(c: LConstants) -> { constants: int, proposer: int, executor: int, learner: int, nextHeartbeatTime: Set<int>, acceptor: int } {
+pub open spec fn LReplica(c: LConstants) -> LRecord {
     LRecord { acceptor: Acceptor, bal_heartbeat: 0int, constants: c.ReplicaConstants, executor: Executor, learner: Learner, nextActionIndex: 0int, nextHeartbeatTime: int, opn_ckpt: 0int, proposer: Proposer, replica: 0int, suspicious: 0int, t: 0int }
 }
 
 /// Scheduler operator
-pub open spec fn LScheduler(c: LConstants) -> { nextActionIndex: Set<int>, replica: { constants: int, executor: int, proposer: int, acceptor: int, learner: int, nextHeartbeatTime: Set<int> } } {
+pub open spec fn LScheduler(c: LConstants) -> LRecord {
     LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: c.Replica, suspicious: 0int, t: 0int }
 }
 
@@ -203,7 +203,7 @@ pub open spec fn LSpontaneousIos(s: LState, c: LConstants, ios: int, clocks: int
 }
 
 /// SpontaneousClock operator
-pub open spec fn LSpontaneousClock(s: LState, c: LConstants, ios: int) -> { t: int } {
+pub open spec fn LSpontaneousClock(s: LState, c: LConstants, ios: int) -> LRecord {
     if LSpontaneousIos(s, c, ios, 1) { LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: 0int, suspicious: 0int, t: ios[0].t } } else { LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: 0int, suspicious: 0int, t: 0 } }
 }
 

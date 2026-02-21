@@ -5226,14 +5226,23 @@ transpiler/tla_test_workspace/
       - Updated measured totals to `2/33` pass, `21` Cat-A, `0` Cat-B, `10` Cat-C, `0` uncategorized.
       - Net effect: call-shape parse failures are eliminated; remaining non-Cat-A blockers are now annotation arity mismatches (Cat-C).
     - [ ] **16.8.4d-3** Eliminate anonymous record return type emission in D1 output for `Types.rs` and RSL helper specs.
-    - [ ] **16.8.4d-3b** Resolve D1 signature/annotation arity drift (`Parameter count mismatch`) for module files after reserved-parameter dedup.
+      - [x] **16.8.4d-3a** Route operator return type rendering through `to_verus_type_with_records` so named record structs are emitted instead of anonymous `{ field: Type }` return types.
+        - Implemented in `transpiler/src/tla/translator.rs::get_operator_return_type`.
+        - Added regression test `test_record_return_types_use_named_struct_not_anonymous_record_type`.
+        - After regenerating `transpiler_generated_verus_spec/` and re-running D2: totals improved to `12/33` pass, `1` Cat-A, `0` Cat-B, `20` Cat-C, `0` other.
+      - [x] **16.8.4d-3b** Eliminate the remaining Cat-A parser blocker in `RSL/State_machine.rs`.
+        - Extended `collect_records_from_expr_fields` recursion to traverse nested `LetIn`/`Tuple` and other expression forms, so record-shape discovery is no longer skipped in nested operator bodies.
+        - Added regression test `test_record_shapes_found_inside_let_tuple_for_named_record_emission`.
+        - Re-generated all `33` workspace D1 specs and re-ran D2: `12/33` pass, `0` Cat-A, `0` Cat-B, `20` Cat-C, `1` other (`RSL/State_machine.rs` now fails at recursive codegen, not parser).
+    - [ ] **16.8.4d-3c** Resolve D1 signature/annotation arity drift (`Parameter count mismatch`) for module files after reserved-parameter dedup.
     - [ ] **16.8.4d-4** Promote 16.8.4 compile gate status once Cat-A/Cat-C blockers are both resolved.
 - [x] Track failures by pattern category:
-  - **2/33 PASS**: RSL/Environment.rs, RSL/Message.rs (trivial: empty struct / constant set only)
-  - **Category A (21 files)**: "Expected identifier, found '{'" — D1 generates anonymous record return types `fn foo() -> { field: Type }` not valid in Rust; affects all Types.rs + most RSL module files
+  - **12/33 PASS**: all 9 protocol `Types.rs` files + `RSL/Constants.rs`, `RSL/Environment.rs`, `RSL/Message.rs`
+  - **Category A (0 files)**: anonymous-record parser blocker eliminated by `16.8.4d-3b`.
   - **Category B (0 files)**: call-shape parse failures ("Expected ')', found '('") eliminated by `16.8.4d-1`.
-  - **Category C (10 files)**: annotation parameter-count mismatches after D1 regeneration (`Parameter count mismatch: function has ...`); affects all 9 main protocol modules + RSL/Broadcast.
-  - **Root cause**: D1 (TLA+ → Verus) output is still "TLA+-flavored Verus" that diverges from D2 parser/annotation expectations. Remaining blockers are anonymous record return types + signature/annotation arity drift. The direct D4 pipeline (TLA+ → Verus Exec) works because it uses integrated type inference and avoids the intermediate serialization step.
+  - **Category C (20 files)**: annotation parameter-count mismatches after D1 regeneration (`Parameter count mismatch: function has ...`); affects all 9 main protocol modules + 11 RSL modules.
+  - **Other (1 file)**: `RSL/State_machine.rs` recursive helper (`LHandleRequestBatchHidden`) fails D2 codegen pattern matching (`not match any known pattern (filter, map, fold)`).
+  - **Root cause**: D1 output quality has improved, but D3→D1 workspace serialization still drifts from D2 annotation/signature expectations; remaining blockers are widespread arity mismatches plus one recursive codegen unsupported case. The direct D4 pipeline (TLA+ → Verus Exec) works because it uses integrated type inference and avoids the intermediate serialization step.
 
 #### 16.8.5: External TLA+ corpora (LLM + community)
 

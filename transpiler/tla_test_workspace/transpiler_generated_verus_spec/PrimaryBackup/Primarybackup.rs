@@ -8,6 +8,11 @@ use vstd::set::*;
 
 verus! {
 
+/// Record type for Primarybackup module
+pub struct LRecord {
+    pub val: int,
+}
+
 /// State for Primarybackup module
 pub struct LState {
 }
@@ -32,7 +37,7 @@ pub open spec fn LPrimaryWrite(s: LState, c: LConstants, s_: int, val: int, sent
 
 /// PrimarySendReplicate operator
 pub open spec fn LPrimarySendReplicate(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((((((((s.role.tag == Primary) && (s.has_pending == true)) && (s.acked == false)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.has_pending == s.has_pending)) && (s_.pending_value == s.pending_value)) && (s_.acked == s.acked)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![{ val: s.pending_value }]))
+    ((((((((((((((s.role.tag == Primary) && (s.has_pending == true)) && (s.acked == false)) && (s_.role == s.role)) && (s_.log_length == s.log_length)) && (s_.last_value == s.last_value)) && (s_.has_pending == s.has_pending)) && (s_.pending_value == s.pending_value)) && (s_.acked == s.acked)) && (s_.backup_log_length == s.backup_log_length)) && (s_.backup_last_value == s.backup_last_value)) && (s_.backup_synced == s.backup_synced)) && (s_.view == s.view)) && (sent_packets == seq![LRecord { val: s.pending_value }]))
 }
 
 /// BackupReceiveReplicate operator

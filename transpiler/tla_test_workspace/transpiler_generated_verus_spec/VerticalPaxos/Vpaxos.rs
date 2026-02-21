@@ -8,6 +8,13 @@ use vstd::set::*;
 
 verus! {
 
+/// Record type for Vpaxos module
+pub struct LRecord {
+    pub bal: int,
+    pub v_bal: int,
+    pub val: int,
+}
+
 /// State for Vpaxos module
 pub struct LState {
 }
@@ -27,12 +34,12 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// Prepare operator
 pub open spec fn LPrepare(s: LState, c: LConstants, s_: int, b: int, sent_packets: int) -> bool {
-    (((((((((((((((s.is_active == true) && (b > s.max_bal)) && (s_.max_bal == b)) && (sent_packets == seq![{ bal: b }])) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
+    (((((((((((((((s.is_active == true) && (b > s.max_bal)) && (s_.max_bal == b)) && (sent_packets == seq![LRecord { bal: b, v_bal: 0int, val: 0int }])) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// SendPromise operator
 pub open spec fn LSendPromise(s: LState, c: LConstants, s_: int, prepare_bal: int, sent_packets: int) -> bool {
-    (((((((((((((((s.is_active == true) && (prepare_bal > s.max_bal)) && (s_.max_bal == prepare_bal)) && (sent_packets == seq![{ bal: prepare_bal, v_bal: s.max_v_bal, val: s.max_val }])) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
+    (((((((((((((((s.is_active == true) && (prepare_bal > s.max_bal)) && (s_.max_bal == prepare_bal)) && (sent_packets == seq![LRecord { bal: prepare_bal, v_bal: s.max_v_bal, val: s.max_val }])) && (s_.max_v_bal == s.max_v_bal)) && (s_.max_val == s.max_val)) && (s_.has_voted == s.has_voted)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// ReceivePromise operator
@@ -42,7 +49,7 @@ pub open spec fn LReceivePromise(s: LState, c: LConstants, s_: int, sender: int,
 
 /// Accept operator
 pub open spec fn LAccept(s: LState, c: LConstants, s_: int, b: int, v: int, sent_packets: int) -> bool {
-    ((((((((((((((((s.is_active == true) && (b == s.max_bal)) && (b > s.max_v_bal)) && (s_.max_v_bal == b)) && (s_.max_val == v)) && (s_.has_voted == true)) && (sent_packets == seq![{ bal: b, val: v }])) && (s_.max_bal == s.max_bal)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
+    ((((((((((((((((s.is_active == true) && (b == s.max_bal)) && (b > s.max_v_bal)) && (s_.max_v_bal == b)) && (s_.max_val == v)) && (s_.has_voted == true)) && (sent_packets == seq![LRecord { bal: b, v_bal: 0int, val: v }])) && (s_.max_bal == s.max_bal)) && (s_.config_num == s.config_num)) && (s_.is_active == s.is_active)) && (s_.promises_rcvd == s.promises_rcvd)) && (s_.accepts_rcvd == s.accepts_rcvd)) && (s_.committed == s.committed)) && (s_.committed_val == s.committed_val)) && (s_.witness_val == s.witness_val)) && (s_.has_witness == s.has_witness))
 }
 
 /// ReceiveAccepted operator

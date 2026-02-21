@@ -8,6 +8,11 @@ use vstd::set::*;
 
 verus! {
 
+/// Record type for Chain module
+pub struct LRecord {
+    pub value: int,
+}
+
 /// State for Chain module
 pub struct LState {
 }
@@ -32,7 +37,7 @@ pub open spec fn LHeadReceiveWrite(s: LState, c: LConstants, s_: int, value: int
 
 /// ForwardToSuccessor operator
 pub open spec fn LForwardToSuccessor(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((s.role.tag == Head) || (((((((((((((((s.role.tag == Middle) && (s.alive == true)) && s.pending_sent.contains(value)) && (s.has_successor == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![{ value: value }])))
+    ((s.role.tag == Head) || (((((((((((((((s.role.tag == Middle) && (s.alive == true)) && s.pending_sent.contains(value)) && (s.has_successor == true)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == s.committed_count)) && (s_.obj_value == s.obj_value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![LRecord { value: value }])))
 }
 
 /// ReceiveUpdate operator
@@ -42,7 +47,7 @@ pub open spec fn LReceiveUpdate(s: LState, c: LConstants, s_: int, value: int, s
 
 /// TailCommit operator
 pub open spec fn LTailCommit(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
-    ((((((((((((((s.role.tag == Tail) && (s.alive == true)) && s.history.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == (s.committed_count + 1))) && (s_.obj_value == value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![{ value: value }]))
+    ((((((((((((((s.role.tag == Tail) && (s.alive == true)) && s.history.contains(value)) && (s_.role == s.role)) && (s_.history == s.history)) && (s_.pending_sent == s.pending_sent)) && (s_.committed_count == (s.committed_count + 1))) && (s_.obj_value == value)) && (s_.has_predecessor == s.has_predecessor)) && (s_.predecessor == s.predecessor)) && (s_.has_successor == s.has_successor)) && (s_.successor == s.successor)) && (s_.alive == s.alive)) && (sent_packets == seq![LRecord { value: value }]))
 }
 
 /// ReceiveAck operator

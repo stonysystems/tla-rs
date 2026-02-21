@@ -39,12 +39,12 @@ pub struct LConstants {
 
 
 /// ElectionState operator
-pub open spec fn LElectionState(c: LConstants) -> { current_view: int, current_view_suspectors: Set<Set<int>>, requests_received_this_epoch: int, constants: int, requests_received_prev_epochs: int, epoch_end_time: Set<int>, epoch_length: Set<int> } {
+pub open spec fn LElectionState(c: LConstants) -> LRecord {
     LRecord { constants: c.ReplicaConstants, current_view: c.Ballot, current_view_suspectors: int.powerset(), epoch_end_time: int, epoch_length: int, proposer_id: 0int, requests_received_prev_epochs: Seq(c.Request), requests_received_this_epoch: Seq(c.Request), seqno: 0int }
 }
 
 /// ComputeSuccessorView operator
-pub open spec fn LComputeSuccessorView(s: LState, c: LConstants, b: int) -> { seqno: int, proposer_id: int } {
+pub open spec fn LComputeSuccessorView(s: LState, c: LConstants, b: int) -> LRecord {
     if ((b.proposer_id + 1) < c.config.replica_ids.len()) { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: (b.proposer_id + 1), requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: b.seqno } } else { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: (b.seqno + 1) } }
 }
 

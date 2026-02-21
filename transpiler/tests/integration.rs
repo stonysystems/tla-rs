@@ -3122,15 +3122,18 @@ fn walkdir(dir: &str) -> Vec<String> {
 
 /// Phase 16.8.4: D2 (Verus Spec → Verus Exec) on D1-generated Verus spec workspace
 /// Attempts D2 transpilation on all 33 generated Verus spec files from D1 round-trip.
-/// Currently 2/33 pass (trivial files); 31 fail due to D1 output format mismatches.
+/// Current baseline after 16.8.4d-3:
+/// - 12/33 pass
+/// - 21/33 fail due to remaining D1→D2 format mismatches
 ///
 /// Failure categories:
-/// - Category A (21 files): "Expected identifier, found '{'" — anonymous record return types
-///   in Types.rs files (e.g., `fn foo() -> { field: Type }` is not valid Rust syntax)
+/// - Category A (0 files): anonymous-record parser failures eliminated by 16.8.4d-3b
 /// - Category B (0 files after 16.8.4d-1): "Expected ')', found '('" parse failures from
 ///   malformed call-shape emission; retained as a regression check
-/// - Category C (10 files): annotation parameter count mismatch after D1 regen, where
+/// - Category C (20 files): annotation parameter count mismatch after D1 regen, where
 ///   generated `.automan` signatures drift from emitted function signatures in module files
+/// - Other (1 file): `RSL/State_machine.rs` recursive helper currently misses known
+///   recursion lowering patterns in D2 codegen
 ///
 /// These are fundamental D1→D2 pipeline gaps, not D2 bugs.
 #[test]
@@ -3206,26 +3209,31 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
         }
     }
 
-    // Document the expected state: 2 pass, 31 fail
+    // Document the expected state after 16.8.4d-3b
     assert!(
         total >= 33,
         "Should process at least 33 .rs files, got {total}"
     );
     assert!(
-        passed >= 2,
-        "At least 2 trivial files should pass D2, got {passed}"
+        passed >= 12,
+        "Expected at least 12 files to pass D2 after 16.8.4d-3b, got {passed}"
     );
     assert!(
-        cat_a_fails >= 20,
-        "Expected ~21 Category A failures (record return types), got {cat_a_fails}"
+        cat_a_fails == 0,
+        "Expected Category A parser failures to be eliminated after 16.8.4d-3b, got {cat_a_fails}"
     );
     assert!(
         cat_b_fails == 0,
         "Expected Category B call-shape parse failures to be eliminated, got {cat_b_fails}"
     );
     assert!(
-        cat_c_fails >= 9,
-        "Expected ~10 Category C annotation mismatch failures, got {cat_c_fails}"
+        cat_c_fails >= 19,
+        "Expected ~20 Category C annotation mismatch failures, got {cat_c_fails}"
+    );
+    assert!(
+        other_fails.len() <= 1,
+        "Expected at most one non-categorized failure (RSL recursion pattern), got {}",
+        other_fails.len()
     );
     eprintln!(
         "D2 workspace results: {passed}/{total} pass, {cat_a_fails} Cat-A, {cat_b_fails} Cat-B, {cat_c_fails} Cat-C, {} other",

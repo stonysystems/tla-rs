@@ -27,12 +27,12 @@ pub struct LConstants {
 
 
 /// Constants operator
-pub open spec fn LConstants(c: LConstants) -> { params: int, config: int } {
+pub open spec fn LConstants(c: LConstants) -> LRecord {
     LRecord { all: 0int, config: Configuration, my_index: 0int, params: Parameters }
 }
 
 /// ReplicaConstants operator
-pub open spec fn LReplicaConstants(c: LConstants) -> { my_index: Set<int>, all: { params: int, config: int } } {
+pub open spec fn LReplicaConstants(c: LConstants) -> LRecord {
     LRecord { all: LConstants(c), config: 0int, my_index: int, params: 0int }
 }
 
