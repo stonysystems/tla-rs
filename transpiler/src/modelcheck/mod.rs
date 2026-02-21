@@ -7,6 +7,7 @@
 //! - expression evaluation for model-check execution semantics
 //! - finite-domain expansion for existential branch variables
 //! - branch-constraint solving into concrete successor states
+//! - canonical-key successor deduplication
 
 pub mod config;
 pub mod domain;

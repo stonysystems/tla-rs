@@ -6482,7 +6482,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Added `modelcheck::domain` (`transpiler/src/modelcheck/domain.rs`) with `expand_branch_existentials`, including typed finite-domain expansion for primitive/alias/enum/unit/tuple/Seq/Set/Map existentials from `model.toml` quantifier domains + collection bounds, deterministic Cartesian assignment generation, and explicit errors for missing/unsupported domains.
 - [x] Solve branch constraints to produce concrete successor states.
   - Added `modelcheck::solver` (`transpiler/src/modelcheck/solver.rs`) with `solve_branch_successors`, applying normalized `s_.* == expr` assignments plus deferred equality/predicate checks under evaluator semantics and existential bindings to emit concrete successor `s_` states (with explicit unsupported errors when a branch lacks direct next-state equalities).
-- [ ] Deduplicate equivalent successor states via canonical state hashing.
+- [x] Deduplicate equivalent successor states via canonical state hashing.
+  - Added canonical-key dedup in `modelcheck::solver` for both per-branch successor sets and merged transition-level successors (`solve_transition_successors` + `deduplicate_successors`), preserving stable discovery order while collapsing equivalent states.
 - [ ] Add optional stuttering/deadlock semantics toggle.
 
 ### 22.6 State-Space Exploration Engine

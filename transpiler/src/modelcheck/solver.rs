@@ -6,7 +6,7 @@ use crate::modelcheck::ir::{
     BranchConstraintIr, ConstraintRoot, ConstraintTarget, TransitionBranchIr, TransitionIr,
 };
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Optional evaluator hooks used while solving branch constraints.
 #[derive(Clone, Copy, Default)]
@@ -73,7 +73,53 @@ pub fn solve_branch_successors(
         }
     }
 
-    Ok(successors)
+    Ok(deduplicate_successors(successors))
+}
+
+/// Solve all `LNext` branches for one current state and return deduplicated successors.
+///
+/// `existential_assignments_by_branch` maps branch labels (`branch_0`, `branch_1`, ...)
+/// to concrete existential assignments. If omitted or missing a label, the branch
+/// is solved with an empty assignment set.
+pub fn solve_transition_successors(
+    transition: &TransitionIr,
+    current_state: &RuntimeValue,
+    constants: Option<&RuntimeValue>,
+    existential_assignments_by_branch: Option<&BTreeMap<String, Vec<ExistentialAssignment>>>,
+    bounds: RuntimeCollectionBounds,
+    hooks: SolverHooks<'_>,
+) -> TranspileResult<Vec<RuntimeValue>> {
+    let mut successors = Vec::new();
+    for branch in &transition.branches {
+        let branch_assignments: &[ExistentialAssignment] = existential_assignments_by_branch
+            .and_then(|map| map.get(&branch.label))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        successors.extend(solve_branch_successors(
+            transition,
+            branch,
+            current_state,
+            constants,
+            branch_assignments,
+            bounds,
+            hooks,
+        )?);
+    }
+
+    Ok(deduplicate_successors(successors))
+}
+
+/// Deduplicate successor states by canonical runtime-value key while preserving order.
+pub fn deduplicate_successors(successors: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+    let mut seen = BTreeSet::new();
+    let mut unique = Vec::new();
+    for successor in successors {
+        let key = successor.canonical_key();
+        if seen.insert(key) {
+            unique.push(successor);
+        }
+    }
+    unique
 }
 
 fn solve_one_assignment(
@@ -317,11 +363,10 @@ fn branch_has_next_state_assignment(branch: &TransitionBranchIr) -> bool {
         matches!(
             constraint,
             BranchConstraintIr::Eq {
-                target:
-                    ConstraintTarget {
-                        root: ConstraintRoot::NextState,
-                        ..
-                    },
+                target: ConstraintTarget {
+                    root: ConstraintRoot::NextState,
+                    ..
+                },
                 ..
             }
         )
@@ -375,8 +420,11 @@ mod tests {
     }
 
     fn constants(limit: i128) -> RuntimeValue {
-        RuntimeValue::struct_value("LConstants", vec![("limit".to_string(), RuntimeValue::Int(limit))])
-            .unwrap()
+        RuntimeValue::struct_value(
+            "LConstants",
+            vec![("limit".to_string(), RuntimeValue::Int(limit))],
+        )
+        .unwrap()
     }
 
     #[test]
@@ -547,6 +595,101 @@ mod tests {
     }
 
     #[test]
+    fn test_solve_branch_successors_deduplicates_equivalent_states() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![crate::modelcheck::ir::ExistentialVarIr {
+                name: "i".to_string(),
+                ty: Some(crate::ast::Type::Int),
+            }],
+            constraints: vec![BranchConstraintIr::Eq {
+                target: ConstraintTarget {
+                    root: ConstraintRoot::NextState,
+                    path: vec!["x".to_string()],
+                },
+                value: Expr::Literal(crate::ast::Literal::Int(9)),
+            }],
+        };
+
+        let a1 = BTreeMap::from([("i".to_string(), RuntimeValue::Int(1))]);
+        let a2 = BTreeMap::from([("i".to_string(), RuntimeValue::Int(2))]);
+        let successors = solve_branch_successors(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[a1, a2],
+            bounds(),
+            SolverHooks::default(),
+        )
+        .unwrap();
+        assert_eq!(successors.len(), 1);
+        assert_eq!(
+            read_value_at_path(&successors[0], &[String::from("x")]).unwrap(),
+            RuntimeValue::Int(9)
+        );
+    }
+
+    #[test]
+    fn test_solve_transition_successors_deduplicates_across_branches() {
+        let mut transition = transition();
+        transition.branches = vec![
+            TransitionBranchIr {
+                label: "branch_0".to_string(),
+                existential_vars: vec![],
+                constraints: vec![
+                    BranchConstraintIr::Eq {
+                        target: ConstraintTarget {
+                            root: ConstraintRoot::NextState,
+                            path: vec!["x".to_string()],
+                        },
+                        value: Expr::Literal(crate::ast::Literal::Int(1)),
+                    },
+                    BranchConstraintIr::Eq {
+                        target: ConstraintTarget {
+                            root: ConstraintRoot::NextState,
+                            path: vec!["y".to_string()],
+                        },
+                        value: Expr::Literal(crate::ast::Literal::Int(2)),
+                    },
+                ],
+            },
+            TransitionBranchIr {
+                label: "branch_1".to_string(),
+                existential_vars: vec![],
+                constraints: vec![
+                    BranchConstraintIr::Eq {
+                        target: ConstraintTarget {
+                            root: ConstraintRoot::NextState,
+                            path: vec!["x".to_string()],
+                        },
+                        value: Expr::Literal(crate::ast::Literal::Int(1)),
+                    },
+                    BranchConstraintIr::Eq {
+                        target: ConstraintTarget {
+                            root: ConstraintRoot::NextState,
+                            path: vec!["y".to_string()],
+                        },
+                        value: Expr::Literal(crate::ast::Literal::Int(2)),
+                    },
+                ],
+            },
+        ];
+
+        let successors = solve_transition_successors(
+            &transition,
+            &state(0, 0),
+            Some(&constants(10)),
+            None,
+            bounds(),
+            SolverHooks::default(),
+        )
+        .unwrap();
+        assert_eq!(successors.len(), 1);
+        assert_eq!(successors[0], state(1, 2));
+    }
+
+    #[test]
     fn test_solve_branch_successors_errors_when_no_next_state_equalities() {
         let branch = TransitionBranchIr {
             label: "branch_0".to_string(),
@@ -590,8 +733,8 @@ mod tests {
             RuntimeValue::Int(5),
         )
         .unwrap();
-        let got = read_value_at_path(&root, &[String::from("inner"), String::from("count")])
-            .unwrap();
+        let got =
+            read_value_at_path(&root, &[String::from("inner"), String::from("count")]).unwrap();
         assert_eq!(got, RuntimeValue::Int(5));
     }
 }
