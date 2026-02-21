@@ -5217,6 +5217,13 @@ transpiler/tla_test_workspace/
     - Current measured totals remain unchanged: `2/33` pass, `21` Cat-A, `10` Cat-B, `0` uncategorized.
     - Refreshed the D2 status notes in `docs/conversion-testing-guide.md` to record this post-regeneration revalidation.
   - [ ] **16.8.4d** Address remaining parser blockers (anonymous record return types and malformed call-shape emission) until the D2 compile gate can be promoted from blocked to required.
+    - [x] **16.8.4d-1** Fix D1 `OpApply` emission to avoid malformed double-call shapes (`LFoo(...)(...)`) while preserving implicit `s/s_/c` injection when missing.
+      - Implemented in `transpiler/src/tla/translator.rs::translate_op_apply` with module-operator-aware call assembly.
+      - Added regressions for both cases: implicit state/const injection when omitted, and no double-call when `s/s_/c` are explicit.
+    - [ ] **16.8.4d-2** Re-run D2 workspace pass and refresh per-category counts after call-shape fix.
+      - Current D2 counts remain `2/33`, `21` Cat-A, `10` Cat-B until `transpiler_generated_verus_spec/` is regenerated with the new translator behavior.
+    - [ ] **16.8.4d-3** Eliminate anonymous record return type emission in D1 output for `Types.rs` and RSL helper specs.
+    - [ ] **16.8.4d-4** Promote 16.8.4 compile gate status once Cat-A/Cat-B parser blockers are both resolved.
 - [x] Track failures by pattern category:
   - **2/33 PASS**: RSL/Environment.rs, RSL/Message.rs (trivial: empty struct / constant set only)
   - **Category A (21 files)**: "Expected identifier, found '{'" — D1 generates anonymous record return types `fn foo() -> { field: Type }` not valid in Rust; affects all Types.rs + most RSL module files

@@ -642,6 +642,42 @@ impl<'a> ExprTranslator<'a> {
     // =========================================================================
 
     fn translate_op_apply(&self, op: &TlaExpr, args: &[TlaExpr]) -> String {
+        // Module operator calls need special handling:
+        // - avoid producing double-call forms like `LFoo(...)(...)`
+        // - inject implicit state/constants args when source omitted them
+        if let TlaExpr::Ident(op_name) = op {
+            if let Some(kind) = self.config.operator_info.get(op_name) {
+                let prefixed = format!("{}{}", self.config.spec_prefix, op_name);
+                let has_constants = !self.config.constant_names.is_empty();
+
+                let implicit_args: Vec<&str> = match (kind, has_constants) {
+                    (OperatorKind::Action, true) => vec!["s", "s_", "c"],
+                    (OperatorKind::Action, false) => vec!["s", "s_"],
+                    (OperatorKind::Predicate, true) => vec!["s", "c"],
+                    (OperatorKind::Predicate, false) => vec!["s"],
+                    (OperatorKind::ConstantOp, true) => vec!["c"],
+                    (OperatorKind::ConstantOp, false) => Vec::new(),
+                };
+                let explicit_args: Vec<String> = args.iter().map(|a| self.translate(a)).collect();
+                let explicit_starts_with_implicit = explicit_args
+                    .iter()
+                    .take(implicit_args.len())
+                    .map(|s| s.as_str())
+                    .eq(implicit_args.iter().copied());
+                let call_args: Vec<String> = if explicit_starts_with_implicit {
+                    explicit_args
+                } else {
+                    implicit_args
+                        .iter()
+                        .map(|s| s.to_string())
+                        .chain(explicit_args)
+                        .collect()
+                };
+
+                return format!("{}({})", prefixed, call_args.join(", "));
+            }
+        }
+
         let op_str = self.translate(op);
         let arg_strs: Vec<_> = args.iter().map(|a| self.translate(a)).collect();
 
@@ -2315,6 +2351,45 @@ mod tests {
             args: vec![TlaExpr::ident("s")],
         };
         assert_eq!(translator.translate(&expr), "s.len()");
+    }
+
+    #[test]
+    fn test_translate_op_apply_module_operator_injects_implicit_state_args() {
+        let mut config = TranslatorConfig::default();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("N".to_string());
+        config
+            .operator_info
+            .insert("Helper".to_string(), OperatorKind::Predicate);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Helper")),
+            args: vec![TlaExpr::number(1)],
+        };
+        assert_eq!(translator.translate(&expr), "LHelper(s, c, 1)");
+    }
+
+    #[test]
+    fn test_translate_op_apply_module_operator_avoids_double_call_when_state_explicit() {
+        let mut config = TranslatorConfig::default();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("N".to_string());
+        config
+            .operator_info
+            .insert("Step".to_string(), OperatorKind::Action);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Step")),
+            args: vec![
+                TlaExpr::ident("s"),
+                TlaExpr::ident("s_"),
+                TlaExpr::ident("c"),
+                TlaExpr::ident("x"),
+            ],
+        };
+        assert_eq!(translator.translate(&expr), "LStep(s, s_, c, x)");
     }
 
     #[test]
