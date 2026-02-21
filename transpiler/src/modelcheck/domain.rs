@@ -854,6 +854,7 @@ mod tests {
                 timeout_ms: 1_000,
                 state_dedup: crate::modelcheck::config::StateDedupMode::Canonical,
                 symmetry_fields: Vec::new(),
+                por_heuristic: crate::modelcheck::config::PorHeuristic::None,
             },
             ..Default::default()
         }

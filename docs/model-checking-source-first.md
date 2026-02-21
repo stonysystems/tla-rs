@@ -81,6 +81,7 @@ If `--types` is omitted, the tool defaults to sibling `types.rs`.
 - `state_dedup = "canonical"` (default, exact)
 - `state_dedup = "hash_compaction64"` (lossy hash compaction)
 - `symmetry_fields = ["field_a", "field_b"]` (optional top-level `LState` fields to symmetry-normalize before dedup)
+- `por_heuristic = "none" | "invisible_branch"` (optional conservative branch-pruning mode; requires `properties.check_deadlock = false`)
 
 ## 6. Inspect Results
 
@@ -180,6 +181,9 @@ Finite-domain expansion and runtime values currently cover:
 - Symmetry-field caveat:
   - `search.symmetry_fields` intentionally merges states by anonymizing selected top-level field identities before dedup.
   - Use only when the selected fields are truly symmetric by protocol design.
+- POR heuristic caveat:
+  - `search.por_heuristic = "invisible_branch"` prunes branches only when writes are syntactically proven invisible to other branches/invariants.
+  - Keep it disabled for deadlock checking (`properties.check_deadlock = true`) and treat it as reduction-for-search, not proof of transition completeness.
 - Helper-call limitations:
   - helper predicates/functions must resolve unambiguously from ingested sources.
   - recursive helper evaluation has a bounded recursion depth.

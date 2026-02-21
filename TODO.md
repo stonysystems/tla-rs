@@ -6605,6 +6605,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added symmetry-aware dedup canonicalization in trace exploration: selected fields are identity-anonymized before visited-key generation, and then fed through configured dedup mode (`canonical` or `hash_compaction64`) (`transpiler/src/modelcheck/explorer.rs`).
     - Wired symmetry fields through `model-check` execution and search reporting (`transpiler/src/main.rs`), and documented behavior/caveats in `docs/model-checking-source-first.md`.
     - Added focused tests for config parsing/validation, symmetry dedup behavior in explorer, and execution-level symmetry wiring.
-  - [ ] Leaf 22.10.7 (<500 LOC): add POR-like branch pruning heuristic for clearly independent next-branches (soundness-preserving when predicate is proven syntactic independence).
+  - [x] Leaf 22.10.7 (<500 LOC): add POR-like branch pruning heuristic for clearly independent next-branches (soundness-preserving when predicate is proven syntactic independence).
+    - Added `modelcheck::por` (`transpiler/src/modelcheck/por.rs`) with conservative syntactic footprint analysis over `LNext` branch constraints and selected invariants, inferring `invisible_branch` prunable labels only when writes are top-level-field independent and no whole-state accesses block proof.
+    - Added `[search].por_heuristic = "none" | "invisible_branch"` model config support and validation that forbids POR with `properties.check_deadlock = true` (`transpiler/src/modelcheck/config.rs`).
+    - Wired branch-pruning into source-first exploration (`transpiler/src/main.rs`) and surfaced POR mode/pruned branches in JSON and human `model-check` reporting.
+    - Added focused unit tests for POR analysis and execution-level wiring, plus config parse/validation coverage.
   - [ ] Leaf 22.10.8 (<500 LOC): add reduction telemetry summary (`pruned_by_por`, `symmetry_collapses`) and docs on when each mode is safe to use.
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.

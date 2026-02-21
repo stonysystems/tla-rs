@@ -76,6 +76,9 @@ pub struct SearchLimits {
     /// Keep this empty for exact exploration.
     #[serde(default)]
     pub symmetry_fields: Vec<String>,
+    /// Partial-order-reduction heuristic mode.
+    #[serde(default)]
+    pub por_heuristic: PorHeuristic,
 }
 
 impl Default for SearchLimits {
@@ -86,6 +89,7 @@ impl Default for SearchLimits {
             timeout_ms: default_timeout_ms(),
             state_dedup: StateDedupMode::Canonical,
             symmetry_fields: Vec::new(),
+            por_heuristic: PorHeuristic::None,
         }
     }
 }
@@ -101,6 +105,17 @@ pub enum StateDedupMode {
     /// This can reduce memory pressure but may merge distinct states on hash collisions.
     /// Use for bug-finding/exploration acceleration, not for sound proof obligations.
     HashCompaction64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PorHeuristic {
+    /// Disable POR-style branch pruning.
+    #[default]
+    None,
+    /// Prune branches that write only fields proven syntactically invisible
+    /// to all other branches and selected invariants.
+    InvisibleBranch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -393,6 +408,17 @@ pub fn validate_model_config(config: &ModelConfig) -> TranspileResult<()> {
         });
     }
 
+    if config.properties.check_deadlock
+        && !matches!(config.search.por_heuristic, PorHeuristic::None)
+    {
+        return Err(TranspileError::Config {
+            message:
+                "Invalid model.toml: POR heuristic requires `properties.check_deadlock = false` \
+                      (branch pruning can hide deadlock-only transitions)."
+                    .to_string(),
+        });
+    }
+
     Ok(())
 }
 
@@ -551,6 +577,7 @@ invariants = ["LTypeOK"]
         assert_eq!(config.search.timeout_ms, 30_000);
         assert_eq!(config.search.state_dedup, StateDedupMode::Canonical);
         assert!(config.search.symmetry_fields.is_empty());
+        assert_eq!(config.search.por_heuristic, PorHeuristic::None);
         assert_eq!(config.properties.invariants, vec!["LTypeOK".to_string()]);
         assert_eq!(
             config.properties.successor_semantics,
@@ -668,6 +695,16 @@ state_dedup = "unknown_mode"
     }
 
     #[test]
+    fn test_parse_model_config_accepts_invisible_branch_por_heuristic() {
+        let source = r#"
+[search]
+por_heuristic = "invisible_branch"
+"#;
+        let config = parse_model_config_str(source).unwrap();
+        assert_eq!(config.search.por_heuristic, PorHeuristic::InvisibleBranch);
+    }
+
+    #[test]
     fn test_parse_model_config_accepts_symmetry_fields() {
         let source = r#"
 [search]
@@ -710,6 +747,19 @@ successor_semantics = "stuttering"
 "#;
         let err = parse_model_config_str(source).unwrap_err();
         assert!(err.to_string().contains("conflicts with"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_por_with_deadlock_check() {
+        let source = r#"
+[search]
+por_heuristic = "invisible_branch"
+
+[properties]
+check_deadlock = true
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("POR heuristic requires"));
     }
 
     #[test]

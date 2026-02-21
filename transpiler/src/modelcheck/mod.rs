@@ -22,5 +22,6 @@ pub mod explorer;
 pub mod init;
 pub mod invariant;
 pub mod ir;
+pub mod por;
 pub mod solver;
 pub mod value;

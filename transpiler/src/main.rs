@@ -614,6 +614,7 @@ struct ModelCheckExecutionSummary {
 struct ModelCheckExecution {
     summary: ModelCheckExecutionSummary,
     exploration: verus_transpiler::modelcheck::explorer::ExplorationResult,
+    por_pruned_branches: Vec<String>,
 }
 
 fn model_check_result_label(
@@ -1055,8 +1056,9 @@ fn execute_model_check(
     selected_search: CliSearchMode,
     selected_invariants: &[&verus_transpiler::ast::SpecFunction],
 ) -> Result<ModelCheckExecution> {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::time::Instant;
+    use verus_transpiler::modelcheck::config::PorHeuristic;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
     use verus_transpiler::modelcheck::explorer::{
         explore_state_space_with_traces_and_dedup, ExplorationLimits, TracedSuccessor,
@@ -1064,6 +1066,7 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
     use verus_transpiler::modelcheck::invariant::{first_invariant_violation, InvariantHooks};
     use verus_transpiler::modelcheck::ir::build_transition_ir;
+    use verus_transpiler::modelcheck::por::infer_invisible_branch_pruning;
     use verus_transpiler::modelcheck::solver::{
         solve_branch_successors_with_candidates, SolverHooks,
     };
@@ -1077,6 +1080,12 @@ fn execute_model_check(
         .iter()
         .map(|invariant_fn| (*invariant_fn).clone())
         .collect();
+    let por_pruned_branch_labels: BTreeSet<String> = match model_config.search.por_heuristic {
+        PorHeuristic::None => BTreeSet::new(),
+        PorHeuristic::InvisibleBranch => {
+            infer_invisible_branch_pruning(&transition, &owned_invariants)
+        }
+    };
     let bounds = RuntimeCollectionBounds::from(&model_config.collections);
     let search_mode = cli_search_to_explorer_mode(selected_search);
     let limits = ExplorationLimits::from(&model_config.search);
@@ -1153,6 +1162,9 @@ fn execute_model_check(
         |state| {
             let mut traced_successors = Vec::new();
             for branch in &transition.branches {
+                if por_pruned_branch_labels.contains(&branch.label) {
+                    continue;
+                }
                 let branch_assignments = assignments_by_branch
                     .get(&branch.label)
                     .map(Vec::as_slice)
@@ -1242,6 +1254,7 @@ fn execute_model_check(
     Ok(ModelCheckExecution {
         summary,
         exploration,
+        por_pruned_branches: por_pruned_branch_labels.into_iter().collect(),
     })
 }
 
@@ -1432,6 +1445,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "successor_semantics": model_config.properties.successor_semantics,
                         "state_dedup": model_config.search.state_dedup,
                         "symmetry_fields": model_config.search.symmetry_fields,
+                        "por_heuristic": model_config.search.por_heuristic,
+                        "por_pruned_branches": execution.por_pruned_branches,
                         "max_depth": model_config.search.max_depth,
                         "max_states": model_config.search.max_states,
                         "timeout_ms": model_config.search.timeout_ms,
@@ -1474,15 +1489,20 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 resolved_invariant_names.len()
             );
             println!(
-                "  search: strategy={}, mode_semantics={:?}, state_dedup={:?}, symmetry_fields={:?}, max_depth={}, max_states={}, timeout_ms={}",
+                "  search: strategy={}, mode_semantics={:?}, state_dedup={:?}, symmetry_fields={:?}, por_heuristic={:?}, por_pruned_branches={}, max_depth={}, max_states={}, timeout_ms={}",
                 selected_search.as_str(),
                 model_config.properties.successor_semantics,
                 model_config.search.state_dedup,
                 model_config.search.symmetry_fields,
+                model_config.search.por_heuristic,
+                execution.por_pruned_branches.len(),
                 model_config.search.max_depth,
                 model_config.search.max_states,
                 model_config.search.timeout_ms
             );
+            if !execution.por_pruned_branches.is_empty() {
+                println!("  por_pruned_branches: {:?}", execution.por_pruned_branches);
+            }
             println!("  result: {}", execution.summary.result);
             println!(
                 "  summary: states={}, transitions={}, depth={}, elapsed_ms={}, hash_compaction_collisions={}",
@@ -3682,6 +3702,95 @@ symmetry_fields = ["value"]
         );
         assert_eq!(execution.summary.result, "ok");
         assert_eq!(execution.summary.states, 1);
+    }
+
+    #[test]
+    fn test_execute_model_check_applies_invisible_branch_por_heuristic() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub visible: int, pub hidden: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        s.visible == 0 && s.hidden == 0 && 0 <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s_.hidden == s.hidden + 1)
+        || (s_.visible == s.visible + 1 && s_.visible <= c.limit)
+    }
+
+    pub open spec fn LVisibleBound(s: LState, c: LConstants) -> bool {
+        s.visible <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+por_heuristic = "invisible_branch"
+
+[properties]
+invariants = ["LVisibleBound"]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(
+            model_config.search.por_heuristic,
+            verus_transpiler::modelcheck::config::PorHeuristic::InvisibleBranch
+        );
+        assert_eq!(execution.por_pruned_branches, vec!["branch_0".to_string()]);
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.states, 2);
     }
 
     #[test]
