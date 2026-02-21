@@ -34,7 +34,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// PrePrepare operator
 pub open spec fn LPrePrepare(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: int) -> bool {
-    ((((((((((((((((arbitrary() == 3632816197int) && (arbitrary() == true)) && (arbitrary::<int>() >= arbitrary::<int>())) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary() == 6989001116int)) && (arbitrary() == digest)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { digest: digest, seq: arbitrary(), view: arbitrary() }]))
+    ((((((((((((((((arbitrary() == 3632816197int) && (arbitrary() == true)) && (arbitrary::<int>() >= arbitrary::<int>())) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary() == 6989001116int)) && (arbitrary() == digest)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// ReceivePrePrepare operator

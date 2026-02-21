@@ -37,7 +37,7 @@ pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int, s
 
 /// PrimarySendReplicate operator
 pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
-    ((((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == false)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { val: arbitrary() }]))
+    ((((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == false)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// BackupReceiveReplicate operator

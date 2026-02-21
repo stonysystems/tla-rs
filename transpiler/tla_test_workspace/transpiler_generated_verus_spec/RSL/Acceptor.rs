@@ -75,7 +75,7 @@ pub open spec fn LAcceptorProcess1a(s: LState, s_: LState, c: LConstants, inp: i
     let m = arbitrary();
     {
     let bal = arbitrary();
-    if ((Set::<int>::empty().contains(arbitrary::<int>()) && arbitrary()) && arbitrary()) { ((sent_packets == seq![LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: arbitrary(), last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: LRecord { bal_1b: bal, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: arbitrary(), max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: arbitrary() }, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: arbitrary()[arbitrary()], val_2b: 0int, votes: 0int }]) && (s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: arbitrary(), dst: 0int, last_checkpointed_operation: arbitrary(), log_truncation_point: arbitrary(), max_bal: bal, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: arbitrary() })) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if ((Set::<int>::empty().contains(arbitrary::<int>()) && arbitrary()) && arbitrary()) { ((sent_packets == arbitrary()) && (s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: arbitrary(), dst: 0int, last_checkpointed_operation: arbitrary(), log_truncation_point: arbitrary(), max_bal: bal, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: arbitrary() })) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 }

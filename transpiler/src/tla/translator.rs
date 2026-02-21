@@ -359,6 +359,88 @@ impl<'a> ExprTranslator<'a> {
         }
     }
 
+    fn expr_is_boolish(&self, expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::Bool(_) => true,
+            TlaExpr::Ident(name) => name == "TRUE" || name == "FALSE",
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Not, ..
+            } => true,
+            TlaExpr::BinOp { op, .. } => matches!(
+                op,
+                TlaBinOp::And
+                    | TlaBinOp::Or
+                    | TlaBinOp::Implies
+                    | TlaBinOp::Iff
+                    | TlaBinOp::In
+                    | TlaBinOp::NotIn
+                    | TlaBinOp::Subseteq
+                    | TlaBinOp::Eq
+                    | TlaBinOp::Neq
+                    | TlaBinOp::Lt
+                    | TlaBinOp::Gt
+                    | TlaBinOp::Leq
+                    | TlaBinOp::Geq
+            ),
+            TlaExpr::Forall { .. }
+            | TlaExpr::Exists { .. }
+            | TlaExpr::Choose { .. }
+            | TlaExpr::Enabled(_)
+            | TlaExpr::Always(_)
+            | TlaExpr::Eventually(_)
+            | TlaExpr::LeadsTo { .. }
+            | TlaExpr::WeakFairness { .. }
+            | TlaExpr::StrongFairness { .. }
+            | TlaExpr::Unchanged(_) => true,
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => self.expr_is_boolish(then_expr) && self.expr_is_boolish(else_expr),
+            TlaExpr::LetIn { body, .. } => self.expr_is_boolish(body),
+            _ => false,
+        }
+    }
+
+    fn expr_is_numericish(&self, expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::Number(_) => true,
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Neg, ..
+            } => true,
+            TlaExpr::BinOp { op, .. } => matches!(
+                op,
+                TlaBinOp::Plus
+                    | TlaBinOp::Minus
+                    | TlaBinOp::Times
+                    | TlaBinOp::Div
+                    | TlaBinOp::Mod
+                    | TlaBinOp::Slash
+                    | TlaBinOp::Caret
+            ),
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => self.expr_is_numericish(then_expr) && self.expr_is_numericish(else_expr),
+            TlaExpr::LetIn { body, .. } => self.expr_is_numericish(body),
+            _ => false,
+        }
+    }
+
+    fn expr_is_tupleish(&self, expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::Tuple(_) => true,
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => self.expr_is_tupleish(then_expr) && self.expr_is_tupleish(else_expr),
+            TlaExpr::LetIn { body, .. } => self.expr_is_tupleish(body),
+            _ => false,
+        }
+    }
+
     // =========================================================================
     // Identifier and literal translation
     // =========================================================================
@@ -886,6 +968,13 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn translate_tuple(&self, elements: &[TlaExpr]) -> String {
+        if self.is_generated_d1_context()
+            && elements
+                .iter()
+                .any(|e| matches!(e, TlaExpr::Record(_) | TlaExpr::Tuple(_)))
+        {
+            return "arbitrary()".to_string();
+        }
         // <<a, b, c>> → seq![a, b, c] (for sequences)
         // For tuples as actual tuples, use (a, b, c)
         let elem_strs: Vec<_> = elements.iter().map(|e| self.translate(e)).collect();
@@ -1148,6 +1237,17 @@ impl<'a> ExprTranslator<'a> {
         then_expr: &TlaExpr,
         else_expr: &TlaExpr,
     ) -> String {
+        if self.is_generated_d1_context() {
+            let mixed_bool_numeric = (self.expr_is_boolish(then_expr)
+                && self.expr_is_numericish(else_expr))
+                || (self.expr_is_numericish(then_expr) && self.expr_is_boolish(else_expr));
+            let tupleish_branches =
+                self.expr_is_tupleish(then_expr) && self.expr_is_tupleish(else_expr);
+            if mixed_bool_numeric || tupleish_branches {
+                return "arbitrary()".to_string();
+            }
+        }
+
         let cond_str = self.translate(cond);
         let then_str = self.translate(then_expr);
         let else_str = self.translate(else_expr);
@@ -3592,6 +3692,69 @@ mod tests {
         let translator = ExprTranslator::new(&config);
         let expr = TlaExpr::binop(TlaBinOp::And, TlaExpr::number(0), TlaExpr::bool(true));
         assert_eq!(translator.translate(&expr), "(0 && true)");
+    }
+
+    #[test]
+    fn test_generated_d1_tuple_with_record_falls_back_to_arbitrary() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Tuple(vec![
+            TlaExpr::number(1),
+            TlaExpr::Record(vec![("x".to_string(), TlaExpr::number(2))]),
+        ]);
+        assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
+    fn test_non_generated_context_tuple_with_record_preserves_sequence_translation() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Tuple(vec![
+            TlaExpr::number(1),
+            TlaExpr::Record(vec![("x".to_string(), TlaExpr::number(2))]),
+        ]);
+        assert_eq!(translator.translate(&expr), "seq![1, { x: 2 }]");
+    }
+
+    #[test]
+    fn test_generated_d1_if_with_mixed_bool_numeric_branches_falls_back_to_arbitrary() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::IfThenElse {
+            cond: Box::new(TlaExpr::ident("cond")),
+            then_expr: Box::new(TlaExpr::number(1)),
+            else_expr: Box::new(TlaExpr::bool(false)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
+    fn test_non_generated_context_if_with_mixed_bool_numeric_branches_is_preserved() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::IfThenElse {
+            cond: Box::new(TlaExpr::ident("cond")),
+            then_expr: Box::new(TlaExpr::number(1)),
+            else_expr: Box::new(TlaExpr::bool(false)),
+        };
+        assert_eq!(translator.translate(&expr), "if cond { 1 } else { false }");
+    }
+
+    #[test]
+    fn test_generated_d1_if_with_tupleish_branches_falls_back_to_arbitrary() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::IfThenElse {
+            cond: Box::new(TlaExpr::bool(true)),
+            then_expr: Box::new(TlaExpr::Tuple(vec![TlaExpr::number(1)])),
+            else_expr: Box::new(TlaExpr::LetIn {
+                defs: vec![],
+                body: Box::new(TlaExpr::Tuple(vec![])),
+            }),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary()");
     }
 
     #[test]

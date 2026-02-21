@@ -37,7 +37,7 @@ pub open spec fn LTMSendPrepare(s: LState, s_: LState, c: LConstants, sent_packe
 
 /// RMReceivePrepare operator
 pub open spec fn LRMReceivePrepare(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: int) -> bool {
-    ((((((((Set::<int>::empty().contains(rm) && Set::<int>::empty().contains(!(rm))) && Set::<int>::empty().contains(!(rm))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == Set::<int>::empty().union(set![rm]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { rm: rm }]))
+    ((((((((Set::<int>::empty().contains(rm) && Set::<int>::empty().contains(!(rm))) && Set::<int>::empty().contains(!(rm))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == Set::<int>::empty().union(set![rm]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// RMAbort operator

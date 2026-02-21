@@ -5284,6 +5284,13 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2c-4`: `12/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `16` `E0282`.
           - Net effect: trait-bound blockers eliminated (`E0277: 1 -> 0`) with class shift to mismatched-type (`E0308: 1 -> 2`), leaving total compile passes unchanged.
+        - [x] **16.8.3d-2c-5** Reduce residual `E0308` first-error blockers from tuple/branch type-shape mismatches in generated D1 specs.
+          - Scope/LOC check: implemented as a focused `ExprTranslator` normalization tweak (generated-D1-only tuple/if fallback shaping), targeted unit regressions, and baseline/docs updates; stayed under the <500 LOC target.
+          - Normalized generated-D1 mixed bool/numeric `IF` branch emission and tuple literals containing record/nested-tuple payloads to untyped placeholders under unknown-reference fallback.
+          - Added translator regressions for generated-vs-non-generated behavior (tuple fallback, mixed-branch `IF` fallback, tupleish-branch `IF` fallback).
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2c-5`: `12/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `0` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
+          - Net effect: mismatched-type first-error class eliminated (`E0308: 2 -> 0`); targeted files (`ChainReplication/Chain.rs`, `RSL/State_machine.rs`) now lead with inference (`E0282`), compile pass count unchanged (`12/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

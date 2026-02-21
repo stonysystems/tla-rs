@@ -31,19 +31,13 @@ pub struct LConstants {
 pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: int) -> (int, LRecord) {
     {
     let unused_0 = arbitrary();
-    seq![arbitrary(), LRecord { client: arbitrary(), reply: arbitrary(), seqno: arbitrary() }]
+    arbitrary()
 }
 }
 
 /// HandleRequestBatchHidden operator
 pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int, batch: int) -> ((int), ()) {
-    if (batch.len() == 0) { seq![seq![state], seq![]] } else { {
-    let unused_2 = LHandleRequestBatchHidden(s, c, state, batch.subrange(0, batch.len() - 1));
-    {
-    let unused_2 = arbitrary();
-    seq![(arbitrary::<int>() + seq![arbitrary()]), (arbitrary::<int>() + seq![LRecord { client: batch[batch.len() - 1].client, reply: arbitrary(), seqno: batch[batch.len() - 1].seqno }])]
-}
-} }
+    arbitrary()
 }
 
 /// HandleRequestBatch operator

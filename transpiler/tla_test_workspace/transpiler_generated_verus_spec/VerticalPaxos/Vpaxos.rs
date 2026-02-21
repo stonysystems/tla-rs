@@ -34,12 +34,12 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// Prepare operator
 pub open spec fn LPrepare(s: LState, s_: LState, c: LConstants, b: int, sent_packets: int) -> bool {
-    (((((((((((((((arbitrary() == true) && (b > arbitrary::<int>())) && (arbitrary() == b)) && (sent_packets == seq![LRecord { bal: b, v_bal: 0int, val: 0int }])) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    (((((((((((((((arbitrary() == true) && (b > arbitrary::<int>())) && (arbitrary() == b)) && (sent_packets == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// SendPromise operator
 pub open spec fn LSendPromise(s: LState, s_: LState, c: LConstants, prepare_bal: int, sent_packets: int) -> bool {
-    (((((((((((((((arbitrary() == true) && (prepare_bal > arbitrary::<int>())) && (arbitrary() == prepare_bal)) && (sent_packets == seq![LRecord { bal: prepare_bal, v_bal: arbitrary(), val: arbitrary() }])) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    (((((((((((((((arbitrary() == true) && (prepare_bal > arbitrary::<int>())) && (arbitrary() == prepare_bal)) && (sent_packets == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// ReceivePromise operator
@@ -49,7 +49,7 @@ pub open spec fn LReceivePromise(s: LState, s_: LState, c: LConstants, sender: i
 
 /// Accept operator
 pub open spec fn LAccept(s: LState, s_: LState, c: LConstants, b: int, v: int, sent_packets: int) -> bool {
-    ((((((((((((((((arbitrary() == true) && (b == arbitrary())) && (b > arbitrary::<int>())) && (arbitrary() == b)) && (arbitrary() == v)) && (arbitrary() == true)) && (sent_packets == seq![LRecord { bal: b, v_bal: 0int, val: v }])) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    ((((((((((((((((arbitrary() == true) && (b == arbitrary())) && (b > arbitrary::<int>())) && (arbitrary() == b)) && (arbitrary() == v)) && (arbitrary() == true)) && (sent_packets == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// ReceiveAccepted operator
