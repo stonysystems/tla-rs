@@ -80,6 +80,7 @@ If `--types` is omitted, the tool defaults to sibling `types.rs`.
 
 - `state_dedup = "canonical"` (default, exact)
 - `state_dedup = "hash_compaction64"` (lossy hash compaction)
+- `symmetry_fields = ["field_a", "field_b"]` (optional top-level `LState` fields to symmetry-normalize before dedup)
 
 ## 6. Inspect Results
 
@@ -176,6 +177,9 @@ Finite-domain expansion and runtime values currently cover:
 - Hash-compaction caveat:
   - `search.state_dedup = "hash_compaction64"` is intentionally lossy and can merge distinct states on hash collisions.
   - Treat it as a bug-finding acceleration mode, not as a sound proof mode.
+- Symmetry-field caveat:
+  - `search.symmetry_fields` intentionally merges states by anonymizing selected top-level field identities before dedup.
+  - Use only when the selected fields are truly symmetric by protocol design.
 - Helper-call limitations:
   - helper predicates/functions must resolve unambiguously from ingested sources.
   - recursive helper evaluation has a bounded recursion depth.

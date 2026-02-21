@@ -6600,7 +6600,11 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Wired dedup mode into trace-capable exploration (`explore_state_space_with_traces_and_dedup`) and added `hash_compaction_collisions` diagnostics in exploration stats (`transpiler/src/modelcheck/explorer.rs`).
     - Surfaced dedup mode and collision metric in `model-check` human/JSON output (`transpiler/src/main.rs`) and documented usage/caveats in `docs/model-checking-source-first.md`.
     - Added focused unit tests for dedup-mode parsing/validation, hash-compaction helper behavior, and execution wiring.
-  - [ ] Leaf 22.10.6 (<500 LOC): introduce optional symmetry canonicalization hook for selected enum/set fields before visited-key generation.
+  - [x] Leaf 22.10.6 (<500 LOC): introduce optional symmetry canonicalization hook for selected enum/set fields before visited-key generation.
+    - Added `[search].symmetry_fields` (optional top-level `LState` field list) in model config parsing/validation, with duplicate/empty-name rejection (`transpiler/src/modelcheck/config.rs`).
+    - Added symmetry-aware dedup canonicalization in trace exploration: selected fields are identity-anonymized before visited-key generation, and then fed through configured dedup mode (`canonical` or `hash_compaction64`) (`transpiler/src/modelcheck/explorer.rs`).
+    - Wired symmetry fields through `model-check` execution and search reporting (`transpiler/src/main.rs`), and documented behavior/caveats in `docs/model-checking-source-first.md`.
+    - Added focused tests for config parsing/validation, symmetry dedup behavior in explorer, and execution-level symmetry wiring.
   - [ ] Leaf 22.10.7 (<500 LOC): add POR-like branch pruning heuristic for clearly independent next-branches (soundness-preserving when predicate is proven syntactic independence).
   - [ ] Leaf 22.10.8 (<500 LOC): add reduction telemetry summary (`pruned_by_por`, `symmetry_collapses`) and docs on when each mode is safe to use.
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.

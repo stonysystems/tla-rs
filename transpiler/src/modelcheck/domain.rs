@@ -853,6 +853,7 @@ mod tests {
                 max_states: 200,
                 timeout_ms: 1_000,
                 state_dedup: crate::modelcheck::config::StateDedupMode::Canonical,
+                symmetry_fields: Vec::new(),
             },
             ..Default::default()
         }

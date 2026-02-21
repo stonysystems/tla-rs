@@ -1148,6 +1148,7 @@ fn execute_model_check(
         search_mode,
         limits,
         model_config.search.state_dedup,
+        &model_config.search.symmetry_fields,
         model_config.properties.check_deadlock,
         |state| {
             let mut traced_successors = Vec::new();
@@ -1430,6 +1431,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "strategy": selected_search.as_str(),
                         "successor_semantics": model_config.properties.successor_semantics,
                         "state_dedup": model_config.search.state_dedup,
+                        "symmetry_fields": model_config.search.symmetry_fields,
                         "max_depth": model_config.search.max_depth,
                         "max_states": model_config.search.max_states,
                         "timeout_ms": model_config.search.timeout_ms,
@@ -1472,10 +1474,11 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 resolved_invariant_names.len()
             );
             println!(
-                "  search: strategy={}, mode_semantics={:?}, state_dedup={:?}, max_depth={}, max_states={}, timeout_ms={}",
+                "  search: strategy={}, mode_semantics={:?}, state_dedup={:?}, symmetry_fields={:?}, max_depth={}, max_states={}, timeout_ms={}",
                 selected_search.as_str(),
                 model_config.properties.successor_semantics,
                 model_config.search.state_dedup,
+                model_config.search.symmetry_fields,
                 model_config.search.max_depth,
                 model_config.search.max_states,
                 model_config.search.timeout_ms
@@ -3600,6 +3603,85 @@ state_dedup = "hash_compaction64"
         assert_eq!(execution.summary.result, "ok");
         assert!(execution.summary.states >= 1);
         assert_eq!(execution.exploration.stats.hash_compaction_collisions, 0);
+    }
+
+    #[test]
+    fn test_execute_model_check_respects_symmetry_field_dedup() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+state_dedup = "canonical"
+symmetry_fields = ["value"]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(
+            model_config.search.symmetry_fields,
+            vec!["value".to_string()]
+        );
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.states, 1);
     }
 
     #[test]

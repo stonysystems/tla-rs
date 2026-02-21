@@ -70,6 +70,12 @@ pub struct SearchLimits {
     /// State deduplication strategy used by exploration.
     #[serde(default)]
     pub state_dedup: StateDedupMode,
+    /// Optional top-level `LState` field names to symmetry-normalize before dedup.
+    ///
+    /// This intentionally merges states that differ only in selected field identities.
+    /// Keep this empty for exact exploration.
+    #[serde(default)]
+    pub symmetry_fields: Vec<String>,
 }
 
 impl Default for SearchLimits {
@@ -79,6 +85,7 @@ impl Default for SearchLimits {
             max_states: default_max_states(),
             timeout_ms: default_timeout_ms(),
             state_dedup: StateDedupMode::Canonical,
+            symmetry_fields: Vec::new(),
         }
     }
 }
@@ -334,6 +341,26 @@ pub fn validate_model_config(config: &ModelConfig) -> TranspileResult<()> {
         });
     }
 
+    let mut seen_symmetry_fields = HashSet::new();
+    for field in &config.search.symmetry_fields {
+        let trimmed = field.trim();
+        if trimmed.is_empty() {
+            return Err(TranspileError::Config {
+                message:
+                    "Invalid model.toml: `search.symmetry_fields` cannot contain empty field names."
+                        .to_string(),
+            });
+        }
+        if !seen_symmetry_fields.insert(trimmed.to_string()) {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Invalid model.toml: duplicate symmetry field `{}` in `search.symmetry_fields`.",
+                    trimmed
+                ),
+            });
+        }
+    }
+
     let mut seen = HashSet::new();
     for name in &config.properties.invariants {
         let trimmed = name.trim();
@@ -523,6 +550,7 @@ invariants = ["LTypeOK"]
         assert_eq!(config.search.max_states, 100_000);
         assert_eq!(config.search.timeout_ms, 30_000);
         assert_eq!(config.search.state_dedup, StateDedupMode::Canonical);
+        assert!(config.search.symmetry_fields.is_empty());
         assert_eq!(config.properties.invariants, vec!["LTypeOK".to_string()]);
         assert_eq!(
             config.properties.successor_semantics,
@@ -637,6 +665,39 @@ state_dedup = "unknown_mode"
 "#;
         let err = parse_model_config_str(source).unwrap_err();
         assert!(err.to_string().contains("state_dedup"));
+    }
+
+    #[test]
+    fn test_parse_model_config_accepts_symmetry_fields() {
+        let source = r#"
+[search]
+symmetry_fields = ["members", "leader"]
+"#;
+        let config = parse_model_config_str(source).unwrap();
+        assert_eq!(
+            config.search.symmetry_fields,
+            vec!["members".to_string(), "leader".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_empty_symmetry_field_name() {
+        let source = r#"
+[search]
+symmetry_fields = ["members", "  "]
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("search.symmetry_fields"));
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_duplicate_symmetry_field_names() {
+        let source = r#"
+[search]
+symmetry_fields = ["members", "members"]
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("duplicate symmetry field"));
     }
 
     #[test]

@@ -241,6 +241,7 @@ where
         mode,
         limits,
         StateDedupMode::Canonical,
+        &[],
         check_deadlock,
         successor_fn,
         invariant_checker,
@@ -253,6 +254,7 @@ pub fn explore_state_space_with_traces_and_dedup<F, I>(
     mode: SearchMode,
     limits: ExplorationLimits,
     state_dedup: StateDedupMode,
+    symmetry_fields: &[String],
     check_deadlock: bool,
     mut successor_fn: F,
     mut invariant_checker: I,
@@ -263,16 +265,17 @@ where
 {
     validate_limits(limits)?;
 
+    let symmetry_field_set: BTreeSet<&str> = symmetry_fields.iter().map(String::as_str).collect();
     let mut visited = BTreeSet::new();
     let mut hash_representatives = std::collections::BTreeMap::<String, String>::new();
     let mut frontier = VecDeque::new();
     let mut states_by_key = std::collections::BTreeMap::new();
     for state in initial_states {
-        let canonical = state.canonical_key();
-        let key = dedup_key_from_canonical(&canonical, state_dedup);
+        let dedup_canonical = canonical_dedup_key(state, &symmetry_field_set);
+        let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
         if visited.insert(key.clone()) {
             if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                hash_representatives.insert(key.clone(), canonical);
+                hash_representatives.insert(key.clone(), dedup_canonical);
             }
             states_by_key.insert(key.clone(), state.clone());
             frontier.push_back(FrontierItem {
@@ -352,11 +355,11 @@ where
                 ));
             }
 
-            let canonical = successor.state.canonical_key();
-            let key = dedup_key_from_canonical(&canonical, state_dedup);
+            let dedup_canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
+            let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
             if visited.insert(key.clone()) {
                 if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                    hash_representatives.insert(key.clone(), canonical);
+                    hash_representatives.insert(key.clone(), dedup_canonical);
                 }
                 states_by_key.insert(key.clone(), successor.state.clone());
                 parents.insert(
@@ -373,7 +376,7 @@ where
                 });
                 stats.successors_enqueued += 1;
             } else {
-                if is_hash_collision(&hash_representatives, &key, &canonical) {
+                if is_hash_collision(&hash_representatives, &key, &dedup_canonical) {
                     stats.hash_compaction_collisions += 1;
                 }
                 stats.duplicate_successors += 1;
@@ -410,16 +413,10 @@ where
     validate_limits(limits)?;
 
     let mut visited = BTreeSet::new();
-    let state_dedup = StateDedupMode::Canonical;
-    let mut hash_representatives = std::collections::BTreeMap::<String, String>::new();
     let mut frontier = VecDeque::new();
     for state in initial_states {
-        let canonical = state.canonical_key();
-        let key = dedup_key_from_canonical(&canonical, state_dedup);
+        let key = state.canonical_key();
         if visited.insert(key.clone()) {
-            if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                hash_representatives.insert(key.clone(), canonical);
-            }
             frontier.push_back(FrontierItem {
                 key,
                 state: state.clone(),
@@ -493,12 +490,8 @@ where
                 ));
             }
 
-            let canonical = successor.canonical_key();
-            let key = dedup_key_from_canonical(&canonical, state_dedup);
+            let key = successor.canonical_key();
             if visited.insert(key.clone()) {
-                if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                    hash_representatives.insert(key.clone(), canonical);
-                }
                 to_enqueue.push(FrontierItem {
                     key,
                     state: successor,
@@ -506,9 +499,6 @@ where
                 });
                 stats.successors_enqueued += 1;
             } else {
-                if is_hash_collision(&hash_representatives, &key, &canonical) {
-                    stats.hash_compaction_collisions += 1;
-                }
                 stats.duplicate_successors += 1;
             }
         }
@@ -548,6 +538,115 @@ fn is_hash_collision(
         .get(key)
         .map(|existing| existing != canonical)
         .unwrap_or(false)
+}
+
+fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -> String {
+    if symmetry_fields.is_empty() {
+        return state.canonical_key();
+    }
+
+    match state {
+        RuntimeValue::Struct { ty, fields } => {
+            let mut parts = Vec::new();
+            for (name, value) in fields {
+                let field_key = if symmetry_fields.contains(name.as_str()) {
+                    symmetry_normalized_key(value)
+                } else {
+                    value.canonical_key()
+                };
+                parts.push(format!("{name}:{field_key}"));
+            }
+            format!("struct:{ty}{{{}}}", parts.join(","))
+        }
+        _ => state.canonical_key(),
+    }
+}
+
+fn symmetry_normalized_key(value: &RuntimeValue) -> String {
+    let mut atoms = std::collections::BTreeMap::<String, usize>::new();
+    symmetry_normalized_key_with_atoms(value, &mut atoms)
+}
+
+fn symmetry_normalized_key_with_atoms(
+    value: &RuntimeValue,
+    atoms: &mut std::collections::BTreeMap<String, usize>,
+) -> String {
+    match value {
+        RuntimeValue::Unit => "unit".to_string(),
+        RuntimeValue::Bool(v) => format!("bool:{v}"),
+        RuntimeValue::Int(v) => symmetry_atom_key(format!("int:{v}"), atoms),
+        RuntimeValue::Nat(v) => symmetry_atom_key(format!("nat:{v}"), atoms),
+        RuntimeValue::String(v) => symmetry_atom_key(format!("string:{v}"), atoms),
+        RuntimeValue::Enum {
+            ty,
+            variant,
+            fields,
+        } if fields.is_empty() => symmetry_atom_key(format!("enum:{ty}::{variant}"), atoms),
+        RuntimeValue::Enum {
+            ty,
+            variant,
+            fields,
+        } => {
+            let field_parts = fields
+                .iter()
+                .map(|(k, v)| format!("{k}:{}", symmetry_normalized_key_with_atoms(v, atoms)))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("enum:{ty}::{variant}{{{field_parts}}}")
+        }
+        RuntimeValue::Struct { ty, fields } => {
+            let field_parts = fields
+                .iter()
+                .map(|(k, v)| format!("{k}:{}", symmetry_normalized_key_with_atoms(v, atoms)))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("struct:{ty}{{{field_parts}}}")
+        }
+        RuntimeValue::Tuple(values) => {
+            let parts = values
+                .iter()
+                .map(|v| symmetry_normalized_key_with_atoms(v, atoms))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("tuple:[{parts}]")
+        }
+        RuntimeValue::Seq(values) => {
+            let parts = values
+                .iter()
+                .map(|v| symmetry_normalized_key_with_atoms(v, atoms))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("seq:[{parts}]")
+        }
+        RuntimeValue::Set(items) => {
+            let mut parts = items
+                .iter()
+                .map(|v| symmetry_normalized_key_with_atoms(v, atoms))
+                .collect::<Vec<_>>();
+            parts.sort();
+            format!("set:[{}]", parts.join(","))
+        }
+        RuntimeValue::Map(entries) => {
+            let mut parts = entries
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}=>{}",
+                        symmetry_normalized_key_with_atoms(k, atoms),
+                        symmetry_normalized_key_with_atoms(v, atoms)
+                    )
+                })
+                .collect::<Vec<_>>();
+            parts.sort();
+            format!("map:[{}]", parts.join(","))
+        }
+    }
+}
+
+fn symmetry_atom_key(raw: String, atoms: &mut std::collections::BTreeMap<String, usize>) -> String {
+    let next = atoms.len();
+    let id = *atoms.entry(raw).or_insert(next);
+    format!("a{id}")
 }
 
 fn finalize_result(
@@ -1313,6 +1412,7 @@ mod tests {
                 max_states: 20,
             },
             StateDedupMode::HashCompaction64,
+            &[],
             false,
             |s| {
                 let next = graph
@@ -1334,5 +1434,51 @@ mod tests {
         assert_eq!(ids(&result), vec![0, 1]);
         assert_eq!(result.stats.duplicate_successors, 1);
         assert_eq!(result.stats.hash_compaction_collisions, 0);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_traces_symmetry_fields_deduplicate_initial_states() {
+        let result = explore_state_space_with_traces_and_dedup(
+            &[state(1), state(2)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 3,
+                max_states: 20,
+            },
+            StateDedupMode::Canonical,
+            &["id".to_string()],
+            false,
+            |_s| Ok(vec![]),
+            |_s, _| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(result.stats.initial_states, 1);
+        assert_eq!(result.stats.visited_states, 1);
+        assert_eq!(ids(&result), vec![1]);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_traces_symmetry_fields_ignore_unknown_field() {
+        let result = explore_state_space_with_traces_and_dedup(
+            &[state(1), state(2)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 3,
+                max_states: 20,
+            },
+            StateDedupMode::Canonical,
+            &["unknown_field".to_string()],
+            false,
+            |_s| Ok(vec![]),
+            |_s, _| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(result.stats.initial_states, 2);
+        assert_eq!(result.stats.visited_states, 2);
+        assert_eq!(ids(&result), vec![1, 2]);
     }
 }
