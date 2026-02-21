@@ -3211,13 +3211,13 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2c-5 D1 tuple/branch shape normalization:
-    // D1 spec translation now normalizes mixed bool/numeric IF branches and
-    // tuple/record-heavy tuple literals under unknown-reference fallback,
-    // removing residual E0308 first-error blockers.
+    // Baseline after 16.8.3d-2c-6 D1 equality peer-type coercion + typed let fallback:
+    // D1 spec translation now coerces untyped equality placeholders from typed peers
+    // (generated-D1 context) and adds typed let fallback for untyped arbitrary bindings,
+    // reducing residual E0282 first-error blockers.
     assert_eq!(
-        passed, 12,
-        "Expected exactly twelve D1 files to compile at current baseline; pass files: {:?}",
+        passed, 13,
+        "Expected exactly thirteen D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3253,8 +3253,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 18,
-        "Expected 18 type-inference (E0282) failures at baseline"
+        cat_e0282, 17,
+        "Expected 17 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

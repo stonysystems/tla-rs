@@ -29,42 +29,42 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    ((((((((Set::<int>::empty() == Set::<int>::empty()) && (arbitrary() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == false)) && (arbitrary::<int>() == 0))
+    ((((((((Set::<int>::empty() == Set::<int>::empty()) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0))
 }
 
 /// DetectFailure operator
 pub open spec fn LDetectFailure(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
-    (((((((((((Set::<int>::empty().contains(node) && (arbitrary() == true)) && Set::<int>::empty().contains(!(arbitrary()))) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
+    (((((((((((Set::<int>::empty().contains(node) && (arbitrary::<bool>() == true)) && Set::<int>::empty().contains(!(arbitrary()))) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// StartElection operator
 pub open spec fn LStartElection(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
-    (((((((((Set::<int>::empty().contains(node) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
+    (((((((((Set::<int>::empty().contains(node) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// SendAnswer operator
 pub open spec fn LSendAnswer(s: LState, s_: LState, c: LConstants, node: int, sender: int, sent_packets: int) -> bool {
-    ((((Set::<int>::empty().contains(node) && (node > sender)) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary() == true)) && (arbitrary() == if (!(arbitrary()) || (node > arbitrary::<int>())) { node } else { ((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary())) }))
+    ((((Set::<int>::empty().contains(node) && (node > sender)) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary::<bool>() == true)) && (arbitrary() == if (!(arbitrary()) || (node > arbitrary::<int>())) { node } else { ((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary())) }))
 }
 
 /// ReceiveAnswer operator
 pub open spec fn LReceiveAnswer(s: LState, s_: LState, c: LConstants, node: int, responder: int, sent_packets: int) -> bool {
-    (((((((((((Set::<int>::empty().contains(node) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+    (((((((((((Set::<int>::empty().contains(node) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// SendCoordinator operator
 pub open spec fn LSendCoordinator(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
-    ((((((((((((Set::<int>::empty().contains(node) && Set::<int>::empty().contains(node)) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
+    ((((((((((((Set::<int>::empty().contains(node) && Set::<int>::empty().contains(node)) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// ReceiveCoordinator operator
 pub open spec fn LReceiveCoordinator(s: LState, s_: LState, c: LConstants, node: int, leader: int, sent_packets: int) -> bool {
-    (((((((((Set::<int>::empty().contains(node) && (arbitrary() == true)) && (arbitrary() == leader)) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+    (((((((((Set::<int>::empty().contains(node) && (arbitrary::<bool>() == true)) && (arbitrary() == leader)) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator
 pub open spec fn LNodeFail(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
-    (((Set::<int>::empty().contains(node) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == if (arbitrary() && (arbitrary() == node)) { false } else { (arbitrary() && (arbitrary() == arbitrary())) }))
+    (((Set::<int>::empty().contains(node) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary() == Set::<int>::empty().difference(set![node]))) && (arbitrary::<bool>() == if (arbitrary() && (arbitrary() == node)) { false } else { (arbitrary() && (arbitrary() == arbitrary())) }))
 }
 
 /// Next operator

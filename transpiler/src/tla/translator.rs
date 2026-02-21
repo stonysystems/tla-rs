@@ -342,6 +342,22 @@ impl<'a> ExprTranslator<'a> {
         }
     }
 
+    fn coerce_untyped_arbitrary_bool(&self, rendered: &str) -> String {
+        if self.is_generated_d1_context() && rendered == "arbitrary()" {
+            "arbitrary::<bool>()".to_string()
+        } else {
+            rendered.to_string()
+        }
+    }
+
+    fn coerce_untyped_arbitrary_seq_int(&self, rendered: &str) -> String {
+        if self.is_generated_d1_context() && rendered == "arbitrary()" {
+            "arbitrary::<Seq<int>>()".to_string()
+        } else {
+            rendered.to_string()
+        }
+    }
+
     fn coerce_boolish_numeric_literal(&self, rendered: &str, expr: &TlaExpr) -> String {
         // In D1 spec translation, fallback normalization can leave `0`/`1` in logical
         // positions; Verus requires booleans there.
@@ -621,6 +637,37 @@ impl<'a> ExprTranslator<'a> {
             }
             if matches!(right, TlaExpr::SetEnum(_)) {
                 coerce_set(&mut left_str);
+            }
+
+            if self.expr_is_boolish(left) {
+                right_str = self.coerce_untyped_arbitrary_bool(&right_str);
+            }
+            if self.expr_is_boolish(right) {
+                left_str = self.coerce_untyped_arbitrary_bool(&left_str);
+            }
+            if self.expr_is_numericish(left) {
+                coerce_int(&mut right_str);
+            }
+            if self.expr_is_numericish(right) {
+                coerce_int(&mut left_str);
+            }
+            if matches!(left, TlaExpr::Tuple(_)) {
+                right_str = self.coerce_untyped_arbitrary_seq_int(&right_str);
+            }
+            if matches!(right, TlaExpr::Tuple(_)) {
+                left_str = self.coerce_untyped_arbitrary_seq_int(&left_str);
+            }
+            if matches!(left, TlaExpr::Ident(name) if name == "c")
+                && !self.config.constant_names.is_empty()
+                && right_str == "arbitrary()"
+            {
+                right_str = "arbitrary::<LConstants>()".to_string();
+            }
+            if matches!(right, TlaExpr::Ident(name) if name == "c")
+                && !self.config.constant_names.is_empty()
+                && left_str == "arbitrary()"
+            {
+                left_str = "arbitrary::<LConstants>()".to_string();
             }
         }
 
@@ -978,6 +1025,12 @@ impl<'a> ExprTranslator<'a> {
         // <<a, b, c>> → seq![a, b, c] (for sequences)
         // For tuples as actual tuples, use (a, b, c)
         let elem_strs: Vec<_> = elements.iter().map(|e| self.translate(e)).collect();
+        if self.is_generated_d1_context()
+            && elements.len() > 1
+            && elem_strs.iter().all(|s| s == "arbitrary()")
+        {
+            return "arbitrary()".to_string();
+        }
         format!("seq![{}]", elem_strs.join(", "))
     }
 
@@ -1286,7 +1339,16 @@ impl<'a> ExprTranslator<'a> {
         for def in defs {
             let body_str = self.translate(&def.body);
             if def.params.is_empty() {
-                result.push_str(&format!("    let {} = {};\n", def.name, body_str));
+                if self.is_generated_d1_context() && body_str == "arbitrary()" {
+                    let ty = if self.expr_is_boolish(&def.body) {
+                        "bool"
+                    } else {
+                        "int"
+                    };
+                    result.push_str(&format!("    let {}: {} = {};\n", def.name, ty, body_str));
+                } else {
+                    result.push_str(&format!("    let {} = {};\n", def.name, body_str));
+                }
             } else {
                 let param_names: Vec<_> = def.params.iter().map(|p| p.name.clone()).collect();
                 result.push_str(&format!(
@@ -3706,6 +3768,23 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_tuple_all_arbitrary_elements_falls_back_to_arbitrary() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Tuple(vec![
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "left".to_string(),
+            },
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "right".to_string(),
+            },
+        ]);
+        assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
     fn test_non_generated_context_tuple_with_record_preserves_sequence_translation() {
         let mut config = TranslatorConfig::spec();
         config.variable_names.insert("known_state".to_string());
@@ -3755,6 +3834,90 @@ mod tests {
             }),
         };
         assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_bool_from_peer() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "ok".to_string(),
+            },
+            TlaExpr::bool(true),
+        );
+        assert_eq!(translator.translate(&expr), "(arbitrary::<bool>() == true)");
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_seq_from_tuple_peer() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "batch".to_string(),
+            },
+            TlaExpr::Tuple(vec![]),
+        );
+        assert_eq!(translator.translate(&expr), "(arbitrary::<Seq<int>>() == seq![])");
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_lconstants_for_c_peer() {
+        let mut config = TranslatorConfig::spec();
+        config.constant_names.insert("N".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "cfg".to_string(),
+            },
+            TlaExpr::ident("c"),
+        );
+        assert_eq!(translator.translate(&expr), "(arbitrary::<LConstants>() == c)");
+    }
+
+    #[test]
+    fn test_generated_d1_let_in_types_untyped_arbitrary_binding() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::LetIn {
+            defs: vec![crate::tla::ast::TlaOperator::new(
+                "unused_0",
+                TlaExpr::RecordAccess {
+                    record: Box::new(TlaExpr::ident("request")),
+                    field: "client".to_string(),
+                },
+            )],
+            body: Box::new(TlaExpr::number(0)),
+        };
+        let out = translator.translate(&expr);
+        assert!(out.contains("let unused_0: int = arbitrary();"));
+    }
+
+    #[test]
+    fn test_non_generated_context_let_in_preserves_untyped_binding() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::LetIn {
+            defs: vec![crate::tla::ast::TlaOperator::new(
+                "unused_0",
+                TlaExpr::RecordAccess {
+                    record: Box::new(TlaExpr::ident("request")),
+                    field: "client".to_string(),
+                },
+            )],
+            body: Box::new(TlaExpr::number(0)),
+        };
+        let out = translator.translate(&expr);
+        assert!(out.contains("let unused_0 = arbitrary();"));
+        assert!(!out.contains("let unused_0: int = arbitrary();"));
     }
 
     #[test]

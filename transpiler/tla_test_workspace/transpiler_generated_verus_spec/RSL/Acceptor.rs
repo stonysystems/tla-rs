@@ -66,15 +66,15 @@ pub open spec fn LAddVoteAndRemoveOldOnes(s: LState, c: LConstants, votes: int, 
 
 /// AcceptorInit operator
 pub open spec fn LAcceptorInit(s: LState, c: LConstants, a: int) -> bool {
-    (((((arbitrary() == c) && (arbitrary() == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (arbitrary() == seq![])) && (arbitrary().len() == arbitrary().len())) && forall |idx| ((((0 <= idx) && (idx < arbitrary().len())) ==> (arbitrary()[idx] == 0)) && (arbitrary::<int>() == 0)))
+    (((((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0, seqno: 0, src: 0int, val_2b: 0int, votes: 0int })) && (arbitrary::<Seq<int>>() == seq![])) && (arbitrary().len() == arbitrary().len())) && forall |idx| ((((0 <= idx) && (idx < arbitrary().len())) ==> (arbitrary()[idx] == 0)) && (arbitrary::<int>() == 0)))
 }
 
 /// AcceptorProcess1a operator
 pub open spec fn LAcceptorProcess1a(s: LState, s_: LState, c: LConstants, inp: int, sent_packets: int) -> bool {
     {
-    let m = arbitrary();
+    let m: int = arbitrary();
     {
-    let bal = arbitrary();
+    let bal: int = arbitrary();
     if ((Set::<int>::empty().contains(arbitrary::<int>()) && arbitrary()) && arbitrary()) { ((sent_packets == arbitrary()) && (s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: arbitrary(), dst: 0int, last_checkpointed_operation: arbitrary(), log_truncation_point: arbitrary(), max_bal: bal, max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: arbitrary() })) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
@@ -83,7 +83,7 @@ pub open spec fn LAcceptorProcess1a(s: LState, s_: LState, c: LConstants, inp: i
 /// AcceptorProcess2a operator
 pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: int, sent_packets: int) -> bool {
     {
-    let m = arbitrary();
+    let m: int = arbitrary();
     {
     let newLogTruncationPoint = if (((arbitrary::<int>() - arbitrary::<int>()) + 1) > arbitrary::<int>()) { ((arbitrary::<int>() - arbitrary::<int>()) + 1) } else { arbitrary() };
     (((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(s, c, arbitrary(), arbitrary(), arbitrary(), LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: arbitrary(), max_value_bal: arbitrary(), msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: 0int }, newLogTruncationPoint) } else { (((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) })
@@ -94,7 +94,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: i
 /// AcceptorProcessHeartbeat operator
 pub open spec fn LAcceptorProcessHeartbeat(s: LState, s_: LState, c: LConstants, inp: int) -> bool {
     if Set::<int>::empty().contains(arbitrary::<int>()) { {
-    let sender_index = arbitrary();
+    let sender_index: int = arbitrary();
     if (((0 <= sender_index) && (sender_index < arbitrary().len())) && (arbitrary::<int>() > arbitrary()[sender_index])) { (((((arbitrary() == arbitrary().update(sender_index, arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) } else { (s_ == s) }
 } } else { (s_ == s) }
 }

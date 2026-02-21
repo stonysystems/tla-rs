@@ -39,15 +39,15 @@ pub open spec fn LLearner(c: LConstants) -> LRecord {
 
 /// LearnerInit operator
 pub open spec fn LLearnerInit(s: LState, c: LConstants, l: int) -> bool {
-    (((arbitrary() == c) && (arbitrary() == LRecord { candidate_learned_value: 0int, constants: 0int, max_ballot_seen: 0int, proposer_id: 0, received_2b_message_senders: 0int, seqno: 0, unexecuted_learner_state: 0int })) && (arbitrary() == seq![]))
+    (((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { candidate_learned_value: 0int, constants: 0int, max_ballot_seen: 0int, proposer_id: 0, received_2b_message_senders: 0int, seqno: 0, unexecuted_learner_state: 0int })) && (arbitrary::<Seq<int>>() == seq![]))
 }
 
 /// LearnerProcess2b operator
 pub open spec fn LLearnerProcess2b(s: LState, s_: LState, c: LConstants, packet: int) -> bool {
     {
-    let m = arbitrary();
+    let m: int = arbitrary();
     {
-    let opn = arbitrary();
+    let opn: int = arbitrary();
     if (Set::<int>::empty().contains(!(arbitrary())) || arbitrary()) { (s_ == s) } else { if arbitrary() { {
     let tup_ = LRecord { candidate_learned_value: arbitrary(), constants: 0int, max_ballot_seen: 0int, proposer_id: 0int, received_2b_message_senders: arbitrary(), seqno: 0int, unexecuted_learner_state: 0int };
     (s_ == LRecord { candidate_learned_value: 0int, constants: arbitrary(), max_ballot_seen: arbitrary(), proposer_id: 0int, received_2b_message_senders: 0int, seqno: 0int, unexecuted_learner_state: arbitrary() })

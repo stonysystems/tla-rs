@@ -114,7 +114,7 @@ pub open spec fn LProposerCanNominateUsingOperationNumber(s: LState, c: LConstan
 
 /// ProposerInit operator
 pub open spec fn LProposerInit(s: LState, c: LConstants) -> bool {
-    (((((((((arbitrary() == c) && (arbitrary::<int>() == 0)) && (arbitrary() == seq![])) && (arbitrary() == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, opn_2a: 0int, proposer_id: arbitrary(), received_1b_packets: 0int, request: 0int, request_queue: 0int, seqno: 0, val_2a: 0int, when: 0int })) && (arbitrary::<int>() == 0)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == seq![])) && arbitrary()) && (arbitrary() == 7355767685int))
+    (((((((((arbitrary::<LConstants>() == c) && (arbitrary::<int>() == 0)) && (arbitrary::<Seq<int>>() == seq![])) && (arbitrary() == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, opn_2a: 0int, proposer_id: arbitrary(), received_1b_packets: 0int, request: 0int, request_queue: 0int, seqno: 0, val_2a: 0int, when: 0int })) && (arbitrary::<int>() == 0)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<Seq<int>>() == seq![])) && arbitrary()) && (arbitrary() == 7355767685int))
 }
 
 /// ProposerProcessRequest operator
@@ -147,7 +147,7 @@ pub open spec fn LProposerNominateNewValueAndSend2a(s: LState, s_: LState, c: LC
     {
     let v = arbitrary().subrange(0 - 1, batchSize);
     {
-    let opn = arbitrary();
+    let opn: int = arbitrary();
     ((s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: arbitrary(), election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: if (arbitrary().len() > batchSize) { LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, opn_2a: 0int, proposer_id: 0int, received_1b_packets: 0int, request: 0int, request_queue: 0int, seqno: 0int, val_2a: 0int, when: arbitrary() } } else { seq![] }, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: (arbitrary::<int>() + 1), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary().subrange(batchSize - 1, arbitrary().len()), seqno: 0int, val_2a: 0int, when: 0int }) && arbitrary())
 }
 }
@@ -157,7 +157,7 @@ pub open spec fn LProposerNominateNewValueAndSend2a(s: LState, s_: LState, c: LC
 /// ProposerNominateOldValueAndSend2a operator
 pub open spec fn LProposerNominateOldValueAndSend2a(s: LState, s_: LState, c: LConstants, log_truncation_point: int, sent_packets: int) -> bool {
     {
-    let opn = arbitrary();
+    let opn: int = arbitrary();
     exists |p| c.RslPacket.contains(p) && (((Set::<int>::empty().contains(p) && LValIsHighestNumberedProposal(s, c, arbitrary()[opn].max_val, arbitrary(), opn)) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: arbitrary(), election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: (arbitrary::<int>() + 1), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int })) && arbitrary())
 }
 }
@@ -169,7 +169,7 @@ pub open spec fn LProposerMaybeNominateValueAndSend2a(s: LState, s_: LState, c: 
 
 /// ProposerProcessHeartbeat operator
 pub open spec fn LProposerProcessHeartbeat(s: LState, s_: LState, c: LConstants, p: int, clock: int) -> bool {
-    (arbitrary() && if arbitrary() { ((arbitrary::<int>() == 0) && (arbitrary() == seq![])) } else { (((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: arbitrary(), election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int })) })
+    (arbitrary() && if arbitrary() { ((arbitrary::<int>() == 0) && (arbitrary::<Seq<int>>() == seq![])) } else { (((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: arbitrary(), election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int })) })
 }
 
 /// ProposerCheckForViewTimeout operator
@@ -179,7 +179,7 @@ pub open spec fn LProposerCheckForViewTimeout(s: LState, s_: LState, c: LConstan
 
 /// ProposerCheckForQuorumOfViewSuspicions operator
 pub open spec fn LProposerCheckForQuorumOfViewSuspicions(s: LState, s_: LState, c: LConstants, clock: int) -> bool {
-    (arbitrary() && if arbitrary() { ((arbitrary::<int>() == 0) && (arbitrary() == seq![])) } else { (((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: arbitrary(), election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int })) })
+    (arbitrary() && if arbitrary() { ((arbitrary::<int>() == 0) && (arbitrary::<Seq<int>>() == seq![])) } else { (((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (s_ == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary(), current_state: arbitrary(), election_state: arbitrary(), highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int })) })
 }
 
 /// ProposerResetViewTimerDueToExecution operator

@@ -30,7 +30,7 @@ pub struct LConstants {
 /// HandleRequest operator
 pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: int) -> (int, LRecord) {
     {
-    let unused_0 = arbitrary();
+    let unused_0: int = arbitrary();
     arbitrary()
 }
 }
@@ -44,7 +44,7 @@ pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int,
 pub open spec fn LHandleRequestBatch(s: LState, c: LConstants, state: int, batch: int) -> (int, int) {
     {
     let unused_3 = LHandleRequestBatchHidden(s, c, state, batch);
-    seq![arbitrary(), arbitrary()]
+    arbitrary()
 }
 }
 
