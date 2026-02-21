@@ -168,3 +168,85 @@ Finite-domain expansion and runtime values currently cover:
 - Helper-call limitations:
   - helper predicates/functions must resolve unambiguously from ingested sources.
   - recursive helper evaluation has a bounded recursion depth.
+
+## 10. Troubleshooting Common Modeling Errors
+
+### 10.1 Domain Too Large (State Explosion)
+
+Typical symptoms:
+
+- run stops early with `result: max_states_reached`
+- config/domain errors containing `exceeded limit`
+- very large `summary.states` / `summary.transitions` before timeout
+
+Common causes:
+
+- wide `quantifiers.int` / `quantifiers.nat` ranges
+- large `quantifiers.types.<Type>` domains
+- large collection bounds (`max_seq_len`, `max_set_len`, `max_map_len`)
+- broad enum subsets or unconstrained constants domains
+
+Fixes:
+
+1. Shrink numeric ranges first (`int`, `nat`).
+2. Reduce per-type domains and enum subsets to the minimal repro case.
+3. Lower collection bounds.
+4. Pin constants with `[constants.assignments]` where possible.
+5. Iterate with smaller `max_depth` and then scale up.
+
+Useful commands:
+
+```bash
+transpiler/target/debug/verus-transpile model-config --model path/to/model.toml
+transpiler/target/debug/verus-transpile model-check ... --max-depth 2 --max-states 500
+```
+
+### 10.2 Unsupported Constructs
+
+Typical symptoms:
+
+- `Unsupported pattern: Model-check evaluator does not support ...`
+- errors mentioning unsupported quantifiers (`forall` / `exists`), `match`,
+  struct update, or bitwise/shift operators
+- helper-call resolution errors (`could not resolve helper call`)
+
+Common causes:
+
+- using expressions outside the current evaluator subset
+- relying on helpers that are not ingested or are ambiguously named
+
+Fixes:
+
+1. Rewrite property/helper logic into the supported subset in section 9.
+2. Prefer explicit boolean/arithmetic/field constraints over unsupported forms.
+3. Ensure helper predicates are in the provided source set and uniquely named.
+4. If a construct is required, add evaluator support in `transpiler/src/modelcheck/evaluator.rs`.
+
+### 10.3 Constants Resolution Errors
+
+Typical symptom:
+
+- `requires exactly one concrete LConstants valuation`
+
+Cause:
+
+- constants assignments/domains leave zero or multiple matching constant values.
+
+Fixes:
+
+1. Tighten `[constants.assignments]` and `[constants.domains]` to one valuation.
+2. Narrow type/quantifier domains used by constants fields.
+
+### 10.4 Signature/Entrypoint Mismatches
+
+Typical symptoms:
+
+- unknown invariant name
+- init/next signature errors
+- missing/invalid entrypoint function names
+
+Fixes:
+
+1. Confirm entrypoints with `--init` / `--next` if names differ from defaults.
+2. Keep invariants list aligned with parsed spec function names.
+3. Ensure `LInit`/`LNext` use the expected state/constants parameter conventions for MVP.

@@ -6573,7 +6573,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Document current limitations and supported expression/type subset.
   - Added section 9 in `docs/model-checking-source-first.md` to document the current executable expression subset, type/domain subset, and MVP limitations (safety-only scope, unsupported constructs, and constants/domain constraints), with integration coverage.
   - Scope check: completed as a small leaf task (`<500` LOC including docs + focused test changes).
-- [ ] Add troubleshooting section for common modeling errors (domain too large, unsupported constructs).
+- [x] Add troubleshooting section for common modeling errors (domain too large, unsupported constructs).
+  - Added section 10 in `docs/model-checking-source-first.md` with troubleshooting playbooks for state explosion/domain expansion, unsupported evaluator constructs, constants valuation resolution, and entrypoint/signature mismatches.
+  - Added integration coverage in `transpiler/tests/integration.rs` for troubleshooting markers.
+  - Scope check: completed as a small leaf task (`<500` LOC including docs + focused test changes).
 
 ### 22.10 Follow-Up (Post-MVP)
 

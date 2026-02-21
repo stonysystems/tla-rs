@@ -6176,6 +6176,30 @@ fn test_phase22_source_first_model_checking_guide_has_supported_subset_and_limit
 }
 
 #[test]
+fn test_phase22_source_first_model_checking_guide_has_troubleshooting() {
+    let source = std::fs::read_to_string("../docs/model-checking-source-first.md")
+        .expect("Failed to read source-first model-checking guide");
+
+    for marker in [
+        "Troubleshooting Common Modeling Errors",
+        "Domain Too Large (State Explosion)",
+        "max_states_reached",
+        "exceeded limit",
+        "Unsupported Constructs",
+        "Model-check evaluator does not support",
+        "Constants Resolution Errors",
+        "exactly one concrete LConstants valuation",
+        "Signature/Entrypoint Mismatches",
+    ] {
+        assert!(
+            source.contains(marker),
+            "source-first model-checking guide should contain `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
 fn test_phase22_migration_guide_has_tlc_to_source_first_mapping() {
     let source = std::fs::read_to_string("../docs/model-checking-migration.md")
         .expect("Failed to read model-checking migration guide");
