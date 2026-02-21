@@ -142,7 +142,7 @@ pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: LState,
 pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
     {
     let opn: int = arbitrary();
-    if (((arbitrary::<int>() == 4689272130int) && arbitrary().dom().contains(opn)) && (arbitrary::<Seq<int>>()[opn].received_2b_message_senders.len() >= arbitrary::<int>())) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
+    if (((arbitrary::<int>() == 4689272130int) && arbitrary().dom().contains(opn)) && ((arbitrary::<Seq<int>>()[opn].received_2b_message_senders.len() as int) >= arbitrary::<int>())) { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 }
 
@@ -171,12 +171,12 @@ pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: LState, 
 
 /// ExtractSentPacketsFromIos operator
 pub open spec fn LExtractSentPacketsFromIos(s: LState, c: LConstants, ios: Seq<int>) -> () {
-    if (ios.len() == 0) { Seq::<int>::empty() } else { if (ios[0].tag == 5308382735int) { (seq![ios[0].s] + LExtractSentPacketsFromIos(s, c, ios.drop_first())) } else { LExtractSentPacketsFromIos(s, c, ios.drop_first()) } }
+    if ((ios.len() as int) == 0) { Seq::<int>::empty() } else { if (ios[0].tag == 5308382735int) { (seq![ios[0].s] + LExtractSentPacketsFromIos(s, c, ios.drop_first())) } else { LExtractSentPacketsFromIos(s, c, ios.drop_first()) } }
 }
 
 /// ReplicaNextReadClockAndProcessPacket operator
 pub open spec fn LReplicaNextReadClockAndProcessPacket(s: LState, s_: LState, c: LConstants, ios: Seq<int>) -> bool {
-    (((ios.len() > 1) && (ios[1].tag == 9416806621int)) && forall |io| c.RslIo.contains(io) ==> ((ios.subrange(2 - 1, ios.len()).contains(io) ==> (arbitrary::<int>() == 5308382735int)) && LReplicaNextProcessHeartbeat(s, s_, c, s, s_, ios[0].r, ios[1].t, LExtractSentPacketsFromIos(s, c, ios))))
+    ((((ios.len() as int) > 1) && (ios[1].tag == 9416806621int)) && forall |io| c.RslIo.contains(io) ==> ((ios.subrange(2 - 1, (ios.len() as int)).contains(io) ==> (arbitrary::<int>() == 5308382735int)) && LReplicaNextProcessHeartbeat(s, s_, c, s, s_, ios[0].r, ios[1].t, LExtractSentPacketsFromIos(s, c, ios))))
 }
 
 /// ReplicaNextProcessPacketWithoutReadingClock operator
@@ -189,7 +189,7 @@ pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s: LState, s_: LSt
 
 /// ReplicaNextProcessPacket operator
 pub open spec fn LReplicaNextProcessPacket(s: LState, s_: LState, c: LConstants, ios: Seq<int>) -> bool {
-    ((ios.len() >= 1) && if (ios[0].tag == 5897376741int) { ((s_ == s) && (ios.len() == 1)) } else { ((ios[0].tag == 1912102818int) && if (arbitrary::<int>() == 2135448699int) { LReplicaNextReadClockAndProcessPacket(s, s_, c, s, s_, ios) } else { LReplicaNextProcessPacketWithoutReadingClock(s, s_, c, s, s_, ios) }) })
+    (((ios.len() as int) >= 1) && if (ios[0].tag == 5897376741int) { ((s_ == s) && ((ios.len() as int) == 1)) } else { ((ios[0].tag == 1912102818int) && if (arbitrary::<int>() == 2135448699int) { LReplicaNextReadClockAndProcessPacket(s, s_, c, s, s_, ios) } else { LReplicaNextProcessPacketWithoutReadingClock(s, s_, c, s, s_, ios) }) })
 }
 
 /// ReplicaNumActions operator
@@ -199,7 +199,7 @@ pub open spec fn LReplicaNumActions(c: LConstants) -> int {
 
 /// SpontaneousIos operator
 pub open spec fn LSpontaneousIos(s: LState, c: LConstants, ios: Seq<int>, clocks: int) -> bool {
-    ((clocks <= ios.len()) && forall |i| ((((0 <= i) && (i < clocks)) ==> (ios[i].tag == 9416806621int)) && forall |i| (((clocks <= i) && (i < ios.len())) ==> (ios[i].tag == 5308382735int))))
+    ((clocks <= (ios.len() as int)) && forall |i| ((((0 <= i) && (i < clocks)) ==> (ios[i].tag == 9416806621int)) && forall |i| (((clocks <= i) && (i < (ios.len() as int))) ==> (ios[i].tag == 5308382735int))))
 }
 
 /// SpontaneousClock operator

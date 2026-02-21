@@ -116,6 +116,25 @@ fn is_rendered_int_literal(s: &str) -> bool {
     !num.is_empty() && num.chars().all(|c| c.is_ascii_digit())
 }
 
+fn rendered_looks_like_set_int(rendered: &str) -> bool {
+    let trimmed = rendered.trim();
+    trimmed.starts_with("Set::<int>::")
+        || trimmed.contains(".union(")
+        || trimmed.contains(".intersect(")
+        || trimmed.contains(".difference(")
+        || trimmed.contains(".subset_of(")
+}
+
+fn rendered_looks_like_seq_int(rendered: &str) -> bool {
+    let trimmed = rendered.trim();
+    trimmed.starts_with("Seq::<int>::")
+        || trimmed.contains(".push(")
+        || trimmed.contains(".drop_first(")
+        || trimmed.contains(".subrange(")
+        || trimmed.contains(".update(")
+        || trimmed.contains(".skip(")
+}
+
 /// Configuration for the expression translator
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -651,6 +670,18 @@ impl<'a> ExprTranslator<'a> {
             }
             if matches!(right, TlaExpr::SetEnum(_)) {
                 coerce_set(&mut left_str);
+            }
+            if rendered_looks_like_set_int(&left_str) {
+                coerce_set(&mut right_str);
+            }
+            if rendered_looks_like_set_int(&right_str) {
+                coerce_set(&mut left_str);
+            }
+            if rendered_looks_like_seq_int(&left_str) {
+                right_str = self.coerce_untyped_arbitrary_seq_int(&right_str);
+            }
+            if rendered_looks_like_seq_int(&right_str) {
+                left_str = self.coerce_untyped_arbitrary_seq_int(&left_str);
             }
 
             if self.expr_is_boolish(left) {
@@ -1318,7 +1349,11 @@ impl<'a> ExprTranslator<'a> {
             }
             "Len" if args.len() == 1 => {
                 let seq = self.coerce_untyped_arbitrary_seq_int(&arg_strs[0]);
-                format!("{}.len()", seq)
+                if self.is_generated_d1_context() {
+                    format!("({}.len() as int)", seq)
+                } else {
+                    format!("{}.len()", seq)
+                }
             }
             "SubSeq" if args.len() == 3 => {
                 // TLA+ is 1-indexed, Verus is 0-indexed
@@ -3862,7 +3897,10 @@ mod tests {
             op: Box::new(TlaExpr::ident("Len")),
             args: vec![TlaExpr::ident("states")],
         };
-        assert_eq!(translator.translate(&expr), "arbitrary::<Seq<int>>().len()");
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Seq<int>>().len() as int)"
+        );
     }
 
     #[test]
@@ -4373,6 +4411,49 @@ mod tests {
         assert_eq!(
             translator.translate(&expr),
             "(arbitrary::<Seq<int>>() == Seq::<int>::empty())"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_set_from_rendered_union_peer() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "members".to_string(),
+            },
+            TlaExpr::binop(
+                TlaBinOp::Cup,
+                TlaExpr::SetEnum(vec![]),
+                TlaExpr::SetEnum(vec![TlaExpr::number(1)]),
+            ),
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(Set::<int>::empty() == Set::<int>::empty().union(set![1]))"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_seq_from_rendered_append_peer() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "batch".to_string(),
+            },
+            TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("Append")),
+                args: vec![TlaExpr::Tuple(vec![]), TlaExpr::number(1)],
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Seq<int>>() == Seq::<int>::empty().push(1))"
         );
     }
 

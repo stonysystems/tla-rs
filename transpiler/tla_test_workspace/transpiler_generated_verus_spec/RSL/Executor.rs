@@ -73,12 +73,12 @@ pub open spec fn LExecutorGetDecision(s: LState, s_: LState, c: LConstants, bal:
 
 /// GetPacketsFromReplies operator
 pub open spec fn LGetPacketsFromReplies(s: LState, c: LConstants, me: int, requests: Seq<int>, replies: int) -> () {
-    if (requests.len() == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LGetPacketsFromReplies(s, c, me, requests.drop_first(), arbitrary::<Seq<int>>().drop_first())) }
+    if ((requests.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LGetPacketsFromReplies(s, c, me, requests.drop_first(), arbitrary::<Seq<int>>().drop_first())) }
 }
 
 /// ClientsInReplies operator
 pub open spec fn LClientsInReplies(s: LState, c: LConstants, replies: Seq<int>) -> () {
-    if (arbitrary::<Seq<int>>().len() == 0) { Seq::<int>::empty() } else { LClientsInReplies(s, c, arbitrary::<Seq<int>>().drop_first()).insert(arbitrary::<Seq<int>>()[0].client, arbitrary::<Seq<int>>()[0]) }
+    if ((arbitrary::<Seq<int>>().len() as int) == 0) { Seq::<int>::empty() } else { LClientsInReplies(s, c, arbitrary::<Seq<int>>().drop_first()).insert(arbitrary::<Seq<int>>()[0].client, arbitrary::<Seq<int>>()[0]) }
 }
 
 /// RepliesAreReplyType operator
@@ -90,7 +90,7 @@ pub open spec fn LRepliesAreReplyType(s: LState, c: LConstants, replies: Set<int
 pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c_: Map<int, int>, replies: Seq<int>) -> bool {
     {
     let nc = LClientsInReplies(s, c, arbitrary());
-    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| ((((0 <= req_idx) && (req_idx < arbitrary::<Seq<int>>().len())) && (arbitrary::<Seq<int>>()[req_idx].client == client)) && (c_[client] == arbitrary::<Seq<int>>()[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
+    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx| ((((0 <= req_idx) && (req_idx < (arbitrary::<Seq<int>>().len() as int))) && (arbitrary::<Seq<int>>()[req_idx].client == client)) && (c_[client] == arbitrary::<Seq<int>>()[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
 }
 }
 
@@ -101,7 +101,7 @@ pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_pac
     {
     let temp: int = arbitrary();
     {
-    let new_state = temp[1][(temp[1].len() - 1)];
+    let new_state = temp[1][((temp[1].len() as int) - 1)];
     {
     let replies = temp[2];
     {

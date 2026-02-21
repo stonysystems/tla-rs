@@ -5377,6 +5377,16 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-7`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `16` `E0282`.
           - Net effect: compile passes increased (`14 -> 15`) and inference blockers reduced (`E0282: 19 -> 16`), with two newly surfaced non-inference first-error classes (`E0599`, `E0308`) tracked under `16.8.3d-2`/`16.8.3d-3`.
+        - [x] **16.8.3d-2d-8** Eliminate residual generated-D1 `E0308` first-error mismatch by normalizing `Len` result typing and extending Eq/Neq peer-shape coercion for rendered set/seq expressions.
+          - Scope/LOC check: implemented as a focused `ExprTranslator` generated-D1 normalization update (`Len` cast + Eq/Neq rendered peer-shape coercion) with targeted regressions and baseline/docs updates; stayed under the <500 LOC target.
+          - In generated-D1 context, `Len(x)` now emits `(<seq>.len() as int)` (while keeping non-generated translation unchanged), and Eq/Neq fallback now coerces untyped placeholders when the peer renders as set/seq method chains (`.union/.intersect/...`, `.push/.subrange/.update/.skip/...`).
+          - Added regressions:
+            - `test_generated_d1_len_coerces_untyped_arbitrary_receiver_to_seq`
+            - `test_generated_d1_eq_coerces_arbitrary_to_set_from_rendered_union_peer`
+            - `test_generated_d1_eq_coerces_arbitrary_to_seq_from_rendered_append_peer`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-8`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+          - Net effect: mismatched-type first-error class eliminated (`E0308: 1 -> 0`) with class shift into inference (`E0282: 16 -> 17`); compile pass count unchanged (`15/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
