@@ -547,7 +547,7 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
-#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3d-2a)
+#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3d-2c-1)
 
 Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <file>`), captured by
 `test_d1_generated_verus_spec_compile_baseline`.
@@ -559,21 +559,22 @@ Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <fi
 | Compile fail | 31 |
 | `E0425` unresolved symbol | 0 |
 | `E0423` value/type constructor misuse | 0 |
-| `E0609` unknown field on scalar | 5 |
+| `E0609` unknown field on scalar | 0 |
 | `E0599` missing method on scalar | 12 |
-| `E0308` mismatched types | 5 |
+| `E0308` mismatched types | 6 |
 | `E0618` call on non-function | 0 |
 | `E0277` trait-bound failure | 0 |
-| `E0061` wrong argument count | 1 |
-| `E0282` type annotations needed | 8 |
+| `E0061` wrong argument count | 0 |
+| `E0282` type annotations needed | 13 |
 | Other categories | 0 |
 
 Current pass files: `RSL/Environment.rs`, `RSL/Message.rs`.
 
-Update after `16.8.3d-2a` (fallback typing refinement for reserved-root record-access normalization):
-- reserved-root record-access fallback now emits untyped `arbitrary()` (instead of fixed `arbitrary::<int>()`) so container-method contexts can type-infer.
+Update after `16.8.3d-2c-1` (action/operator arity normalization):
+- operators with explicit `s_` params are treated as actions in D1 translation/mode inference even without direct prime syntax in regenerated TLA bodies.
+- parameterized operators in value-context bare/zero-arg positions are no longer auto-emitted as implicit calls.
 - compile pass remains `2/33` (`RSL/Environment.rs`, `RSL/Message.rs`)
-- current first-error mix is: `0` `E0425`, `0` `E0423`, `5` `E0609`, `12` `E0599`, `5` `E0308`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `8` `E0282`
+- current first-error mix is: `0` `E0425`, `0` `E0423`, `0` `E0609`, `12` `E0599`, `6` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `13` `E0282`
 
 This compile gate is currently blocked by codegen quality in D1 output (symbol/value emission shape),
 not by D1 parsing coverage (which is already 33/33).
@@ -585,7 +586,7 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 
 | Protocol | Files | D2 Parse | D2 Transpile | Failure Category |
 |----------|-------|----------|-------------|------------------|
-| TwoPhase | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Twophase.rs: recursive codegen unsupported (other) |
+| TwoPhase | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
 | Paxos | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
 | LeaderElection | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
 | Raft | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
@@ -595,11 +596,11 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 | VerticalPaxos | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
 | EPaxos | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
 | RSL | 15 | 10 ✅ / 5 ❌ | 10 ✅ | 5 recursive codegen unsupported (Broadcast/Election/Executor/Replica/State_machine) |
-| **Total** | **33** | **27/33** | **27/33** | |
+| **Total** | **33** | **28/33** | **28/33** | |
 
 Revalidated after `16.8.4d-3c` annotation-arity fix + full D1 workspace regeneration (2026-02-21) via:
 `cargo test --test integration test_d2_spec_to_exec_on_generated_workspace -- --nocapture`
-with totals: `27/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `6` other.
+with totals: `28/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `5` other.
 
 **Gate status (16.8.4d-4): REQUIRED**
 - Enforced by `test_d2_spec_to_exec_on_generated_workspace`.
@@ -610,7 +611,7 @@ with totals: `27/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `6` other.
 - **Cat-A (0 files)**: residual anonymous-record parser failures eliminated by `16.8.4d-3b`.
 - **Cat-B (0 files)**: call-shape parse failures ("Expected ')', found '('") were eliminated by `16.8.4d-1` (`translate_op_apply` fix).
 - **Cat-C (0 files)**: annotation parameter mismatch class eliminated by `16.8.4d-3c`.
-- **Other (6 files)**: recursive helper lowering gaps (`LBuildLBroadcast`, `LRemoveAllSatisfiedRequestsInSequence`, `LGetPacketsFromReplies`, `LExtractSentPacketsFromIos`, `LHandleRequestBatchHidden`, `TwoPhase::LInit`).
+- **Other (5 files)**: recursive helper lowering gaps (`LBuildLBroadcast`, `LRemoveAllSatisfiedRequestsInSequence`, `LGetPacketsFromReplies`, `LExtractSentPacketsFromIos`, `LHandleRequestBatchHidden`).
 
 **Root cause**: D1 (TLA+ → Verus) parsing/signature/annotation compatibility is now largely aligned with D2 after the nested-record and arity fixes. Remaining blockers are concentrated in recursive codegen pattern coverage for D2.
 

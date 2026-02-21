@@ -31,48 +31,48 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// PrimaryWrite operator
-pub open spec fn LPrimaryWrite(s: LState, c: LConstants, s_: int, val: int, sent_packets: int) -> bool {
+pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int, sent_packets: int) -> bool {
     (((((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == false)) && (arbitrary() < arbitrary())) && (arbitrary() == true)) && (arbitrary() == val)) && (arbitrary() == false)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// PrimarySendReplicate operator
-pub open spec fn LPrimarySendReplicate(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == false)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { val: arbitrary() }]))
 }
 
 /// BackupReceiveReplicate operator
-pub open spec fn LBackupReceiveReplicate(s: LState, c: LConstants, s_: int, val: int, sent_packets: int) -> bool {
+pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants, val: int, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == 6049598361int) && (arbitrary() == (arbitrary() + 1))) && (arbitrary() == val)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// BackupSendAck operator
-pub open spec fn LBackupSendAck(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     (((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![7544150754int]))
 }
 
 /// PrimaryReceiveAck operator
-pub open spec fn LPrimaryReceiveAck(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     (((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// PrimaryCommit operator
-pub open spec fn LPrimaryCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((((((((((((((arbitrary() == 6049598361int) && (arbitrary() == true)) && (arbitrary() == true)) && (arbitrary() == (arbitrary() + 1))) && (arbitrary() == arbitrary())) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// PrimaryFail operator
-pub open spec fn LPrimaryFail(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LPrimaryFail(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == 6049598361int) && (arbitrary() == 1048442360int)) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == false)) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// BackupPromote operator
-pub open spec fn LBackupPromote(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LBackupPromote(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == 1048442360int) && (arbitrary() == 6049598361int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == true)) && (arbitrary() == (arbitrary() + 1))) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |val, sent_packets| (LPrimaryWrite(s, c, s, s_, c, val, sent_packets) || exists |sent_packets| (LPrimarySendReplicate(s, c, s, s_, c, sent_packets) || exists |val, sent_packets| (LBackupReceiveReplicate(s, c, s, s_, c, val, sent_packets) || exists |sent_packets| (LBackupSendAck(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryReceiveAck(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryFail(s, c, s, s_, c, sent_packets) || exists |sent_packets| LBackupPromote(s, c, s, s_, c, sent_packets))))))))
+pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+    exists |val, sent_packets| (LPrimaryWrite(s, s_, c, val, sent_packets) || exists |sent_packets| (LPrimarySendReplicate(s, s_, c, sent_packets) || exists |val, sent_packets| (LBackupReceiveReplicate(s, s_, c, val, sent_packets) || exists |sent_packets| (LBackupSendAck(s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryReceiveAck(s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryCommit(s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryFail(s, s_, c, sent_packets) || exists |sent_packets| LBackupPromote(s, s_, c, sent_packets))))))))
 }
 
 } // verus!

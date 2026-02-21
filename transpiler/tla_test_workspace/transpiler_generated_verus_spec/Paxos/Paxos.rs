@@ -25,43 +25,43 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// Send1a operator
-pub open spec fn LSend1a(s: LState, c: LConstants, s_: int, b: int) -> bool {
+pub open spec fn LSend1a(s: LState, s_: LState, c: LConstants, b: int) -> bool {
     (((((((((((((arbitrary() == 5126177779int) && (b > arbitrary())) && (arbitrary() == b)) && (arbitrary() == 9996969643int)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == 0)) && (arbitrary() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// Send1b operator
-pub open spec fn LSend1b(s: LState, c: LConstants, s_: int, b: int) -> bool {
+pub open spec fn LSend1b(s: LState, s_: LState, c: LConstants, b: int) -> bool {
     ((((((((((((b >= arbitrary()) && (arbitrary() == b)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// RecvPromise operator
-pub open spec fn LRecvPromise(s: LState, c: LConstants, s_: int, a: int, a_accepted_bal: int, a_accepted_val: int) -> bool {
+pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_accepted_bal: int, a_accepted_val: int) -> bool {
     (((((arbitrary() == 9996969643int) && arbitrary().contains(a)) && arbitrary().contains(!(a))) && (arbitrary() == arbitrary().union(set![a]))) && (arbitrary() == if (a_accepted_bal > arbitrary()) { a_accepted_bal } else { (arbitrary() && (arbitrary() == if (a_accepted_bal > arbitrary()) { a_accepted_val } else { ((((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == 9996969643int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) })) }))
 }
 
 /// Send2a operator
-pub open spec fn LSend2a(s: LState, c: LConstants, s_: int, v: int) -> bool {
+pub open spec fn LSend2a(s: LState, s_: LState, c: LConstants, v: int) -> bool {
     (((arbitrary() == 9996969643int) && (arbitrary().len() >= arbitrary())) && (arbitrary() == if (arbitrary() > 0) { arbitrary() } else { ((((((((((v && (arbitrary() == 2508597854int)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) }))
 }
 
 /// Send2b operator
-pub open spec fn LSend2b(s: LState, c: LConstants, s_: int, b: int, v: int) -> bool {
+pub open spec fn LSend2b(s: LState, s_: LState, c: LConstants, b: int, v: int) -> bool {
     ((((((((((((b >= arbitrary()) && (arbitrary() == b)) && (arbitrary() == b)) && (arbitrary() == v)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// RecvAccepted operator
-pub open spec fn LRecvAccepted(s: LState, c: LConstants, s_: int, a: int) -> bool {
+pub open spec fn LRecvAccepted(s: LState, s_: LState, c: LConstants, a: int) -> bool {
     ((((((((((((((arbitrary() == 2508597854int) && arbitrary().contains(a)) && arbitrary().contains(!(a))) && (arbitrary() == arbitrary().union(set![a]))) && (arbitrary() == arbitrary())) && (arbitrary() == 2508597854int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// Learn operator
-pub open spec fn LLearn(s: LState, c: LConstants, s_: int) -> bool {
+pub open spec fn LLearn(s: LState, s_: LState, c: LConstants) -> bool {
     (((((((((((((arbitrary() == 2508597854int) && (arbitrary().len() >= arbitrary())) && (arbitrary() == 8313578207int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |b| (LSend1a(s, c, s, s_, c, b) || exists |b| (LSend1b(s, c, s, s_, c, b) || exists |a, ab, av| (LRecvPromise(s, c, s, s_, c, a, ab, av) || exists |v| (LSend2a(s, c, s, s_, c, v) || exists |b, v| (LSend2b(s, c, s, s_, c, b, v) || exists |a| (LRecvAccepted(s, c, s, s_, c, a) || LLearn(s, c, s, s_, c)))))))
+pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+    exists |b| (LSend1a(s, s_, c, b) || exists |b| (LSend1b(s, s_, c, b) || exists |a, ab, av| (LRecvPromise(s, s_, c, a, ab, av) || exists |v| (LSend2a(s, s_, c, v) || exists |b, v| (LSend2b(s, s_, c, b, v) || exists |a| (LRecvAccepted(s, s_, c, a) || LLearn(s, s_, c)))))))
 }
 
 } // verus!

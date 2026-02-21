@@ -7,8 +7,8 @@ module Acceptor {
     LRemoveVotesBeforeLogTruncationPoint(+, +, +, +, +);  // s is input (state to check), c is input (constants), votes is input, votes_ is input, log_truncation_point is input
     LAddVoteAndRemoveOldOnes(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), votes is input, votes_ is input, new_opn is input, new_vote is input, log_truncation_point is input
     LAcceptorInit(+, +, +);  // s is input (state to check), c is input (constants), a is input
-    LAcceptorProcess1a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input, sent_packets is input
-    LAcceptorProcess2a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input, sent_packets is input
-    LAcceptorProcessHeartbeat(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input
-    LAcceptorTruncateLog(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, opn is input
+    LAcceptorProcess1a(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input
+    LAcceptorProcess2a(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input
+    LAcceptorProcessHeartbeat(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input
+    LAcceptorTruncateLog(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), opn is input
 }

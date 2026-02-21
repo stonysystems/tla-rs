@@ -3,13 +3,13 @@
 
 module Chain {
     LInit(-, +);  // s is output (initialized state), c is input (constants)
-    LHeadReceiveWrite(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
-    LForwardToSuccessor(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
-    LReceiveUpdate(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
-    LTailCommit(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
-    LReceiveAck(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
-    LClientRead(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LNodeFail(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LReconfigure(+, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, new_has_predecessor is input, new_predecessor is input, new_has_successor is input, new_successor is input, sent_packets is input
-    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
+    LHeadReceiveWrite(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), value is input, sent_packets is input
+    LForwardToSuccessor(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), value is input, sent_packets is input
+    LReceiveUpdate(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), value is input, sent_packets is input
+    LTailCommit(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), value is input, sent_packets is input
+    LReceiveAck(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), value is input, sent_packets is input
+    LClientRead(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LNodeFail(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LReconfigure(+, -, +, +, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), new_has_predecessor is input, new_predecessor is input, new_has_successor is input, new_successor is input, sent_packets is input
+    LNext(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
 }

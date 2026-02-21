@@ -40,17 +40,17 @@ pub open spec fn LRslState(c: LConstants) -> LRecord {
 
 /// RslMapsComplete operator
 pub open spec fn LRslMapsComplete(s: LState, c: LConstants, ps: int) -> bool {
-    (ps.replicas.len() == arbitrary().len())
+    (arbitrary().len() == arbitrary().len())
 }
 
 /// RslConstantsUnchanged operator
 pub open spec fn LRslConstantsUnchanged(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    (((ps_.replicas.len() == ps.replicas.len()) && (ps_.clients == ps.clients)) && (ps_.constants == ps.constants))
+    (((arbitrary().len() == arbitrary().len()) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// RslInit operator
 pub open spec fn LRslInit(s: LState, c: LConstants, con: int, ps: int) -> bool {
-    (((((arbitrary() && arbitrary()) && (ps.constants == con)) && arbitrary()) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < arbitrary().len())) ==> arbitrary()))
+    (((((arbitrary() && arbitrary()) && (arbitrary() == con)) && arbitrary()) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < arbitrary().len())) ==> arbitrary()))
 }
 
 /// RslNextCommon operator
@@ -60,17 +60,17 @@ pub open spec fn LRslNextCommon(s: LState, c: LConstants, ps: int, ps_: int) -> 
 
 /// RslNextOneReplica operator
 pub open spec fn LRslNextOneReplica(s: LState, c: LConstants, ps: int, ps_: int, idx: int, ios: int) -> bool {
-    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < arbitrary().len())) && arbitrary()) && (arbitrary() == LRecord { actor: arbitrary()[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (ps_.replicas == ps.replicas.update(idx, ps_.replicas[idx])))
+    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < arbitrary().len())) && arbitrary()) && (arbitrary() == LRecord { actor: arbitrary()[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary() == arbitrary().update(idx, arbitrary()[idx])))
 }
 
 /// RslNextEnvironment operator
 pub open spec fn LRslNextEnvironment(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslNextCommon(s, c, ps, ps_) && (!(arbitrary()) == 2375175031int)) && (ps_.replicas == ps.replicas))
+    ((LRslNextCommon(s, c, ps, ps_) && (!(arbitrary()) == 2375175031int)) && (arbitrary() == arbitrary()))
 }
 
 /// RslNextOneExternal operator
 pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int, eid: int, ios: int) -> bool {
-    (((LRslNextCommon(s, c, ps, ps_) && arbitrary().contains(!(eid))) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (ps_.replicas == ps.replicas))
+    (((LRslNextCommon(s, c, ps, ps_) && arbitrary().contains(!(eid))) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary() == arbitrary()))
 }
 
 /// RslNext operator

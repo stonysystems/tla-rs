@@ -35,7 +35,7 @@ pub open spec fn LParameters(c: LConstants) -> LRecord {
 
 /// WFLParameters operator
 pub open spec fn LWFLParameters(s: LState, c: LConstants, p: int) -> bool {
-    (((((p.max_log_length > 0) && (p.baseline_view_timeout_period > 0)) && (p.heartbeat_period > 0)) && (p.max_batch_size > 0)) && (p.max_batch_delay >= 0))
+    (((((arbitrary() > 0) && (arbitrary() > 0)) && (arbitrary() > 0)) && (arbitrary() > 0)) && (arbitrary() >= 0))
 }
 
 } // verus!

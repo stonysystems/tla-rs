@@ -3211,8 +3211,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2a fallback typing refinement:
-    // untyped fallback reduces method-on-scalar failures while shifting residual issues toward type inference.
+    // Baseline after 16.8.3d-2c-1 action/operator arity normalization:
+    // explicit-s_ operators are classified as actions and parameterized operator
+    // identifiers in value position are no longer auto-called.
     assert_eq!(
         passed, 2,
         "Expected exactly two D1 files to compile at current baseline; pass files: {:?}",
@@ -3227,16 +3228,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 value/type-shape (E0423) failures at baseline"
     );
     assert_eq!(
-        cat_e0609, 5,
-        "Expected 5 unknown-field (E0609) failures at baseline"
+        cat_e0609, 0,
+        "Expected 0 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
         cat_e0599, 12,
         "Expected 12 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 5,
-        "Expected 5 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 6,
+        "Expected 6 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0618, 0,
@@ -3247,12 +3248,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 trait-bound (E0277) failures at baseline"
     );
     assert_eq!(
-        cat_e0061, 1,
-        "Expected 1 wrong-arity (E0061) failure at baseline"
+        cat_e0061, 0,
+        "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 8,
-        "Expected 8 type-inference (E0282) failures at baseline"
+        cat_e0282, 13,
+        "Expected 13 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

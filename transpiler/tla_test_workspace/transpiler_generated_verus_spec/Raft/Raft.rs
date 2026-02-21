@@ -56,63 +56,63 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// Timeout operator
-pub open spec fn LTimeout(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LTimeout(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((arbitrary() == 8761388551int) || (((((((((((arbitrary() == 2420160122int) && (arbitrary() == (arbitrary() + 1))) && (arbitrary() == 2420160122int)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { candidate: arbitrary(), follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0, last_log_term: 0, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: (arbitrary() + 1), value: 0int, voter: 0int }])))
 }
 
 /// GrantVote operator
-pub open spec fn LGrantVote(s: LState, c: LConstants, s_: int, candidate_term: int, candidate_last_log_term: int, candidate_last_log_index: int, candidate_id: int, sent_packets: int) -> bool {
+pub open spec fn LGrantVote(s: LState, s_: LState, c: LConstants, candidate_term: int, candidate_last_log_term: int, candidate_last_log_index: int, candidate_id: int, sent_packets: int) -> bool {
     (((candidate_term >= arbitrary()) && !(arbitrary())) || (((((((((((arbitrary() == candidate_id) && (arbitrary() == candidate_term)) && (arbitrary() == 8761388551int)) && (arbitrary() == true)) && (arbitrary() == candidate_id)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { candidate: 0int, follower: 0int, granted: true, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: candidate_term, value: 0int, voter: arbitrary() }])))
 }
 
 /// ReceiveVoteGranted operator
-pub open spec fn LReceiveVoteGranted(s: LState, c: LConstants, s_: int, vote_term: int, vote_granted: int, voter: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveVoteGranted(s: LState, s_: LState, c: LConstants, vote_term: int, vote_granted: int, voter: int, sent_packets: int) -> bool {
     (((((((((((((arbitrary() == 2420160122int) && (vote_granted == true)) && arbitrary().contains(voter)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().union(set![voter]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// BecomeLeader operator
-pub open spec fn LBecomeLeader(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LBecomeLeader(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == 2420160122int) && (arbitrary().len() >= arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == 4100380100int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == seq![])) && (arbitrary() == seq![])) && (sent_packets == seq![]))
 }
 
 /// ClientRequest operator
-pub open spec fn LClientRequest(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LClientRequest(s: LState, s_: LState, c: LConstants, value: int, sent_packets: int) -> bool {
     (((((((((((arbitrary() == 4100380100int) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().push(LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: arbitrary(), value: value, voter: 0int }))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// SendAppendEntries operator
-pub open spec fn LSendAppendEntries(s: LState, c: LConstants, s_: int, follower: int, entry_value: int, prev_log_index: int, prev_log_term: int, has_entry: int, sent_packets: int) -> bool {
+pub open spec fn LSendAppendEntries(s: LState, s_: LState, c: LConstants, follower: int, entry_value: int, prev_log_index: int, prev_log_term: int, has_entry: int, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == 4100380100int) && arbitrary().contains(follower)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: has_entry, last_log_index: 0int, last_log_term: 0int, leader: arbitrary(), leader_commit: arbitrary(), match_index: 0int, prev_index: prev_log_index, prev_term: prev_log_term, success: 0int, term: arbitrary(), value: entry_value, voter: 0int }]))
 }
 
 /// FollowerAppendEntries operator
-pub open spec fn LFollowerAppendEntries(s: LState, c: LConstants, s_: int, ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int, ae_value: int, ae_has_entry: int, ae_leader_commit: int, sent_packets: int) -> bool {
+pub open spec fn LFollowerAppendEntries(s: LState, s_: LState, c: LConstants, ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int, ae_value: int, ae_has_entry: int, ae_leader_commit: int, sent_packets: int) -> bool {
     ((((ae_term >= arbitrary()) && (arbitrary() == ae_term)) && (arbitrary() == 8761388551int)) && (arbitrary() == if (ae_term > arbitrary()) { false } else { (arbitrary() && (arbitrary() == if (ae_term > arbitrary()) { 0 } else { (arbitrary() && (arbitrary() == if ae_has_entry { arbitrary().push(LRecord { candidate: 0int, follower: 0int, granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: 0int, prev_index: 0int, prev_term: 0int, success: 0int, term: ae_term, value: ae_value, voter: 0int }) } else { (arbitrary() && (arbitrary() == if (ae_leader_commit > arbitrary()) { ae_leader_commit } else { (arbitrary() && (arbitrary() == if (ae_term > arbitrary()) { Set::<int>::empty() } else { (((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { candidate: 0int, follower: arbitrary(), granted: 0int, has_entry: 0int, last_log_index: 0int, last_log_term: 0int, leader: 0int, leader_commit: 0int, match_index: if ae_has_entry { (arbitrary().len() + 1) } else { arbitrary().len() }, prev_index: 0int, prev_term: 0int, success: true, term: ae_term, value: 0int, voter: 0int }])) })) })) })) })) }))
 }
 
 /// HandleAppendResponse operator
-pub open spec fn LHandleAppendResponse(s: LState, c: LConstants, s_: int, resp_term: int, resp_success: int, resp_match_index: int, resp_follower: int, follower: int, new_match_index: int, sent_packets: int) -> bool {
+pub open spec fn LHandleAppendResponse(s: LState, s_: LState, c: LConstants, resp_term: int, resp_success: int, resp_match_index: int, resp_follower: int, follower: int, new_match_index: int, sent_packets: int) -> bool {
     (((((((((((((((arbitrary() == 4100380100int) && (resp_success == true)) && arbitrary().contains(follower)) && (new_match_index >= 0)) && (new_match_index <= arbitrary().len())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().insert(follower, new_match_index))) && (arbitrary() == arbitrary().insert(follower, Lu64_inc(s, c, new_match_index)))) && (sent_packets == seq![]))
 }
 
 /// HandleAppendReject operator
-pub open spec fn LHandleAppendReject(s: LState, c: LConstants, s_: int, resp_term: int, resp_success: int, resp_match_index: int, resp_follower: int, follower: int, sent_packets: int) -> bool {
+pub open spec fn LHandleAppendReject(s: LState, s_: LState, c: LConstants, resp_term: int, resp_success: int, resp_match_index: int, resp_follower: int, follower: int, sent_packets: int) -> bool {
     ((((arbitrary() == 4100380100int) && (resp_success == false)) && arbitrary().contains(follower)) && (arbitrary() == if (arbitrary().dom().contains(follower) && (arbitrary()[follower] > 0)) { arbitrary().insert(follower, Lu64_dec(s, c, arbitrary()[follower])) } else { (((((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![])) }))
 }
 
 /// AdvanceCommitIndex operator
-pub open spec fn LAdvanceCommitIndex(s: LState, c: LConstants, s_: int, new_commit_index: int, sent_packets: int) -> bool {
+pub open spec fn LAdvanceCommitIndex(s: LState, s_: LState, c: LConstants, new_commit_index: int, sent_packets: int) -> bool {
     ((((((((((((((arbitrary() == 4100380100int) && (new_commit_index > arbitrary())) && (new_commit_index <= arbitrary().len())) && (arbitrary()[(new_commit_index - 1)].term == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == new_commit_index)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// StepDown operator
-pub open spec fn LStepDown(s: LState, c: LConstants, s_: int, new_term: int, sent_packets: int) -> bool {
+pub open spec fn LStepDown(s: LState, s_: LState, c: LConstants, new_term: int, sent_packets: int) -> bool {
     (((((((((((new_term > arbitrary()) && (arbitrary() == new_term)) && (arbitrary() == 8761388551int)) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |sent_packets| (LTimeout(s, c, s, s_, c, sent_packets) || exists |candidate_term, candidate_last_log_term, candidate_last_log_index, candidate_id, sent_packets| (LGrantVote(s, c, s, s_, c, candidate_term, candidate_last_log_term, candidate_last_log_index, candidate_id, sent_packets) || exists |vote_term, vote_granted, voter, sent_packets| (LReceiveVoteGranted(s, c, s, s_, c, vote_term, vote_granted, voter, sent_packets) || exists |sent_packets| (LBecomeLeader(s, c, s, s_, c, sent_packets) || exists |value, sent_packets| (LClientRequest(s, c, s, s_, c, value, sent_packets) || exists |follower, entry_value, prev_log_index, prev_log_term, sent_packets| (LSendAppendEntries(s, c, s, s_, c, follower, entry_value, prev_log_index, prev_log_term, true, sent_packets) || exists |ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit, sent_packets| (LFollowerAppendEntries(s, c, s, s_, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit, sent_packets) || exists |resp_term, resp_success, resp_match_index, resp_follower, follower, new_match_index, sent_packets| (c.u64.contains(follower) && c.u64.contains(new_match_index)) && (LHandleAppendResponse(s, c, s, s_, c, resp_term, resp_success, resp_match_index, resp_follower, follower, new_match_index, sent_packets) || exists |resp_term, resp_success, resp_match_index, resp_follower, follower, sent_packets| (c.u64.contains(follower)) && (LHandleAppendReject(s, c, s, s_, c, resp_term, resp_success, resp_match_index, resp_follower, follower, sent_packets) || exists |new_commit_index, sent_packets| (LAdvanceCommitIndex(s, c, s, s_, c, new_commit_index, sent_packets) || exists |new_term, sent_packets| LStepDown(s, c, s, s_, c, new_term, sent_packets)))))))))))
+pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+    exists |sent_packets| (LTimeout(s, s_, c, sent_packets) || exists |candidate_term, candidate_last_log_term, candidate_last_log_index, candidate_id, sent_packets| (LGrantVote(s, s_, c, candidate_term, candidate_last_log_term, candidate_last_log_index, candidate_id, sent_packets) || exists |vote_term, vote_granted, voter, sent_packets| (LReceiveVoteGranted(s, s_, c, vote_term, vote_granted, voter, sent_packets) || exists |sent_packets| (LBecomeLeader(s, s_, c, sent_packets) || exists |value, sent_packets| (LClientRequest(s, s_, c, value, sent_packets) || exists |follower, entry_value, prev_log_index, prev_log_term, sent_packets| (LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index, prev_log_term, true, sent_packets) || exists |ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit, sent_packets| (LFollowerAppendEntries(s, s_, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit, sent_packets) || exists |resp_term, resp_success, resp_match_index, resp_follower, follower, new_match_index, sent_packets| (c.u64.contains(follower) && c.u64.contains(new_match_index)) && (LHandleAppendResponse(s, s_, c, resp_term, resp_success, resp_match_index, resp_follower, follower, new_match_index, sent_packets) || exists |resp_term, resp_success, resp_match_index, resp_follower, follower, sent_packets| (c.u64.contains(follower)) && (LHandleAppendReject(s, s_, c, resp_term, resp_success, resp_match_index, resp_follower, follower, sent_packets) || exists |new_commit_index, sent_packets| (LAdvanceCommitIndex(s, s_, c, new_commit_index, sent_packets) || exists |new_term, sent_packets| LStepDown(s, s_, c, new_term, sent_packets)))))))))))
 }
 
 } // verus!

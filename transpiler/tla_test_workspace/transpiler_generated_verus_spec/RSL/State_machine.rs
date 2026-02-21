@@ -31,7 +31,7 @@ pub struct LConstants {
 pub open spec fn LHandleRequest(s: LState, c: LConstants, state: int, request: int) -> (int, LRecord) {
     {
     let unused_0 = arbitrary();
-    seq![arbitrary(), LRecord { client: request.client, reply: arbitrary(), seqno: request.seqno }]
+    seq![arbitrary(), LRecord { client: arbitrary(), reply: arbitrary(), seqno: arbitrary() }]
 }
 }
 

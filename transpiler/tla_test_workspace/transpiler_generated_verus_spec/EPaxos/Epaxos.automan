@@ -3,16 +3,16 @@
 
 module Epaxos {
     LInit(-, +);  // s is output (initialized state), c is input (constants)
-    LPropose(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
-    LSendPreAcceptOk(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, local_conflict is input, local_seq is input, sent_packets is input
-    LReceivePreAcceptOk(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, pa_sender is input, pa_seq is input, pa_conflict is input, sent_packets is input
-    LFastCommit(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LStartAccept(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LSendAcceptOk(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LReceiveAcceptOk(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, ao_sender is input, sent_packets is input
-    LSlowCommit(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LExecute(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LRecover(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, new_ballot is input, sent_packets is input
-    LNewInstance(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
+    LPropose(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), value is input, sent_packets is input
+    LSendPreAcceptOk(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), local_conflict is input, local_seq is input, sent_packets is input
+    LReceivePreAcceptOk(+, -, +, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), pa_sender is input, pa_seq is input, pa_conflict is input, sent_packets is input
+    LFastCommit(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LStartAccept(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LSendAcceptOk(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LReceiveAcceptOk(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), ao_sender is input, sent_packets is input
+    LSlowCommit(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LExecute(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LRecover(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), new_ballot is input, sent_packets is input
+    LNewInstance(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LNext(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
 }

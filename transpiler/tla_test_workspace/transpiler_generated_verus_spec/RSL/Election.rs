@@ -45,22 +45,22 @@ pub open spec fn LElectionState(c: LConstants) -> LRecord {
 
 /// ComputeSuccessorView operator
 pub open spec fn LComputeSuccessorView(s: LState, c: LConstants, b: int) -> LRecord {
-    if ((b.proposer_id + 1) < arbitrary().len()) { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: (b.proposer_id + 1), requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: b.seqno } } else { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: (b.seqno + 1) } }
+    if ((arbitrary() + 1) < arbitrary().len()) { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: (arbitrary() + 1), requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: arbitrary() } } else { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: (arbitrary() + 1) } }
 }
 
 /// BoundRequestSequence operator
 pub open spec fn LBoundRequestSequence(s: LState, c: LConstants, lengthBound: int) -> int {
-    if (((lengthBound.tag == 9267933094int) && (0 <= lengthBound.n)) && (lengthBound.n < s.len())) { s.subrange(0 - 1, lengthBound.n) } else { s }
+    if (((arbitrary() == 9267933094int) && (0 <= arbitrary())) && (arbitrary() < s.len())) { s.subrange(0 - 1, arbitrary()) } else { s }
 }
 
 /// RequestsMatch operator
 pub open spec fn LRequestsMatch(s: LState, c: LConstants, r1: int, r2: int) -> bool {
-    ((((r1.tag == c.Request) && (r2.tag == c.Request)) && (r1.client == r2.client)) && (r1.seqno == r2.seqno))
+    ((((arbitrary() == c.Request) && (arbitrary() == c.Request)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// RequestSatisfiedBy operator
 pub open spec fn LRequestSatisfiedBy(s: LState, c: LConstants, r1: int, r2: int) -> bool {
-    ((((r1.tag == c.Request) && (r2.tag == c.Request)) && (r1.client == r2.client)) && (r1.seqno <= r2.seqno))
+    ((((arbitrary() == c.Request) && (arbitrary() == c.Request)) && (arbitrary() == arbitrary())) && (arbitrary() <= arbitrary()))
 }
 
 /// RemoveAllSatisfiedRequestsInSequence operator
@@ -70,39 +70,39 @@ pub open spec fn LRemoveAllSatisfiedRequestsInSequence(s: LState, c: LConstants,
 
 /// ElectionStateInit operator
 pub open spec fn LElectionStateInit(s: LState, c: LConstants, es: int) -> bool {
-    (((((((es.constants == c) && (es.current_view == LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: 1 })) && (es.current_view_suspectors == Set::<int>::empty())) && (es.epoch_end_time == 0)) && (es.epoch_length == arbitrary())) && (es.requests_received_this_epoch == seq![])) && (es.requests_received_prev_epochs == seq![]))
+    (((((((arbitrary() == c) && (arbitrary() == LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: 1 })) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == seq![])) && (arbitrary() == seq![]))
 }
 
 /// ElectionStateProcessHeartbeat operator
 pub open spec fn LElectionStateProcessHeartbeat(s: LState, c: LConstants, es: int, es_: int, p: int, clock: int) -> bool {
-    if arbitrary().contains(!(p.src)) { (es_ == es) } else { {
+    if arbitrary().contains(!(arbitrary())) { (es_ == es) } else { {
     let sender_index = arbitrary();
-    if ((arbitrary() == es.current_view) && arbitrary()) { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: (es.current_view_suspectors + set![sender_index]), epoch_end_time: es.epoch_end_time, epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_prev_epochs, requests_received_this_epoch: es.requests_received_this_epoch, seqno: 0int }) } else { if arbitrary() { {
+    if ((arbitrary() == arbitrary()) && arbitrary()) { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: (arbitrary() + set![sender_index]), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int }) } else { if arbitrary() { {
     let new_epoch_length = arbitrary();
-    (es_ == LRecord { constants: es.constants, current_view: arbitrary(), current_view_suspectors: if arbitrary() { set![sender_index] } else { Set::<int>::empty() }, epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), arbitrary()), requests_received_this_epoch: seq![], seqno: 0int })
+    (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: if arbitrary() { set![sender_index] } else { Set::<int>::empty() }, epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (arbitrary() + arbitrary()), arbitrary()), requests_received_this_epoch: seq![], seqno: 0int })
 } } else { (es_ == es) } }
 } }
 }
 
 /// ElectionStateCheckForViewTimeout operator
 pub open spec fn LElectionStateCheckForViewTimeout(s: LState, c: LConstants, es: int, es_: int, clock: int) -> bool {
-    if (clock < es.epoch_end_time) { (es_ == es) } else { if (es.requests_received_prev_epochs.len() == 0) { {
+    if (clock < arbitrary()) { (es_ == es) } else { if (arbitrary().len() == 0) { {
     let new_epoch_length = arbitrary();
-    (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: es.current_view_suspectors, epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_this_epoch, requests_received_this_epoch: seq![], seqno: 0int })
-} } else { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: (es.current_view_suspectors + set![arbitrary()]), epoch_end_time: arbitrary(), epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), arbitrary()), requests_received_this_epoch: seq![], seqno: 0int }) } }
+    (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: seq![], seqno: 0int })
+} } else { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: (arbitrary() + set![arbitrary()]), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (arbitrary() + arbitrary()), arbitrary()), requests_received_this_epoch: seq![], seqno: 0int }) } }
 }
 
 /// ElectionStateCheckForQuorumOfViewSuspicions operator
 pub open spec fn LElectionStateCheckForQuorumOfViewSuspicions(s: LState, c: LConstants, es: int, es_: int, clock: int) -> bool {
-    if ((es.current_view_suspectors.len() < arbitrary()) || !(arbitrary())) { (es_ == es) } else { {
+    if ((arbitrary().len() < arbitrary()) || !(arbitrary())) { (es_ == es) } else { {
     let new_epoch_length = arbitrary();
-    (es_ == LRecord { constants: es.constants, current_view: LComputeSuccessorView(s, c, es.current_view, arbitrary()), current_view_suspectors: Set::<int>::empty(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (es.requests_received_prev_epochs + es.requests_received_this_epoch), arbitrary()), requests_received_this_epoch: seq![], seqno: 0int })
+    (es_ == LRecord { constants: arbitrary(), current_view: LComputeSuccessorView(s, c, arbitrary(), arbitrary()), current_view_suspectors: Set::<int>::empty(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: LBoundRequestSequence(s, c, (arbitrary() + arbitrary()), arbitrary()), requests_received_this_epoch: seq![], seqno: 0int })
 } }
 }
 
 /// ElectionStateReflectReceivedRequest operator
 pub open spec fn LElectionStateReflectReceivedRequest(s: LState, c: LConstants, es: int, es_: int, req: int) -> bool {
-    if exists |earlier_req| c.Request.contains(earlier_req) && ((es.requests_received_prev_epochs.contains(earlier_req) || es.requests_received_this_epoch.contains(earlier_req)) && LRequestsMatch(s, c, earlier_req, req)) { (es_ == es) } else { (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: es.current_view_suspectors, epoch_end_time: es.epoch_end_time, epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: es.requests_received_prev_epochs, requests_received_this_epoch: LBoundRequestSequence(s, c, (es.requests_received_this_epoch + seq![req]), arbitrary()), seqno: 0int }) }
+    if exists |earlier_req| c.Request.contains(earlier_req) && ((arbitrary().contains(earlier_req) || arbitrary().contains(earlier_req)) && LRequestsMatch(s, c, earlier_req, req)) { (es_ == es) } else { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: LBoundRequestSequence(s, c, (arbitrary() + seq![req]), arbitrary()), seqno: 0int }) }
 }
 
 /// RemoveExecutedRequestBatch operator
@@ -112,7 +112,7 @@ pub open spec fn LRemoveExecutedRequestBatch(s: LState, c: LConstants, reqs: int
 
 /// ElectionStateReflectExecutedRequestBatch operator
 pub open spec fn LElectionStateReflectExecutedRequestBatch(s: LState, c: LConstants, es: int, es_: int, batch: int) -> bool {
-    (es_ == LRecord { constants: es.constants, current_view: es.current_view, current_view_suspectors: es.current_view_suspectors, epoch_end_time: es.epoch_end_time, epoch_length: es.epoch_length, proposer_id: 0int, requests_received_prev_epochs: LRemoveExecutedRequestBatch(s, c, es.requests_received_prev_epochs, batch), requests_received_this_epoch: LRemoveExecutedRequestBatch(s, c, es.requests_received_this_epoch, batch), seqno: 0int })
+    (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: LRemoveExecutedRequestBatch(s, c, arbitrary(), batch), requests_received_this_epoch: LRemoveExecutedRequestBatch(s, c, arbitrary(), batch), seqno: 0int })
 }
 
 } // verus!

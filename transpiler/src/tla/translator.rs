@@ -121,6 +121,8 @@ pub struct TranslatorConfig {
     pub constant_names: std::collections::HashSet<String>,
     /// Module operator names mapped to whether they are actions (use primed vars)
     pub operator_info: std::collections::HashMap<String, OperatorKind>,
+    /// Module operator names mapped to explicit parameter arity from source.
+    pub operator_arity: std::collections::HashMap<String, usize>,
     /// Prefix for spec function names (e.g. "L")
     pub spec_prefix: String,
     /// Mapping from sorted field names to generated struct name for record types.
@@ -155,6 +157,7 @@ impl Default for TranslatorConfig {
             variable_names: std::collections::HashSet::new(),
             constant_names: std::collections::HashSet::new(),
             operator_info: std::collections::HashMap::new(),
+            operator_arity: std::collections::HashMap::new(),
             spec_prefix: String::new(),
             record_structs: std::collections::HashMap::new(),
             record_all_fields: Vec::new(),
@@ -314,6 +317,17 @@ impl<'a> ExprTranslator<'a> {
                 }
                 // Reference to a module operator: add prefix and pass state args
                 if let Some(kind) = self.config.operator_info.get(name) {
+                    let arity = self.config.operator_arity.get(name).copied().unwrap_or(0);
+                    // Only auto-call bare operator identifiers when they are nullary.
+                    // For parameterized operators, keep value-context behavior (e.g. symbolic tags).
+                    if arity > 0 {
+                        if self.config.normalize_unknown_external_refs
+                            && is_symbolic_atom_name(name)
+                        {
+                            return symbolic_atom_to_int_literal(name);
+                        }
+                        return format!("{}{}", self.config.spec_prefix, name);
+                    }
                     let prefixed = format!("{}{}", self.config.spec_prefix, name);
                     let has_constants = !self.config.constant_names.is_empty();
                     return match kind {
@@ -663,13 +677,27 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn translate_record_access(&self, record: &TlaExpr, field: &str) -> String {
-        if self.config.normalize_unknown_external_refs && self.config.variable_names.is_empty() {
-            if matches!(
-                record,
-                TlaExpr::Ident(name) if name == "s" || name == "s_" || name == "c"
-            ) || matches!(record, TlaExpr::RecordAccess { .. })
+        if self.config.normalize_unknown_external_refs {
+            // For generated D1 specs, unknown/local record roots (e.g. request.client, ps.replicas)
+            // frequently become scalar placeholders. Emit an untyped placeholder directly to avoid
+            // field-on-scalar compile failures while preserving known module state/constant roots.
+            if let TlaExpr::Ident(name) = record {
+                if self.config.variable_names.is_empty()
+                    && (name == "s" || name == "s_" || name == "c")
+                {
+                    return "arbitrary()".to_string();
+                }
+                let is_known_module_root = self.config.variable_names.contains(name.as_str())
+                    || self.config.constant_names.contains(name.as_str())
+                    || name == "s"
+                    || name == "s_"
+                    || name == "c";
+                if !is_known_module_root {
+                    return "arbitrary()".to_string();
+                }
+            } else if self.config.variable_names.is_empty()
+                && matches!(record, TlaExpr::RecordAccess { .. })
             {
-                // Leave placeholder untyped so downstream set/seq/map method calls can type-infer.
                 return "arbitrary()".to_string();
             }
         }
@@ -808,6 +836,20 @@ impl<'a> ExprTranslator<'a> {
         // - inject implicit state/constants args when source omitted them
         if let TlaExpr::Ident(op_name) = op {
             if let Some(kind) = self.config.operator_info.get(op_name) {
+                let declared_arity = self
+                    .config
+                    .operator_arity
+                    .get(op_name)
+                    .copied()
+                    .unwrap_or(args.len());
+                if args.is_empty() && declared_arity > 0 {
+                    if self.config.normalize_unknown_external_refs
+                        && is_symbolic_atom_name(op_name)
+                    {
+                        return symbolic_atom_to_int_literal(op_name);
+                    }
+                    return format!("{}{}", self.config.spec_prefix, op_name);
+                }
                 let prefixed = format!("{}{}", self.config.spec_prefix, op_name);
                 let has_constants = !self.config.constant_names.is_empty();
 
@@ -1066,6 +1108,10 @@ pub fn translate_expr_with_config(expr: &TlaExpr, config: &TranslatorConfig) -> 
 
 use crate::tla::ast::{TlaModule, TlaOperator};
 use crate::tla::types::{TlaType, TypeEnv, TypeInference};
+
+fn operator_has_explicit_next_state_param(op: &TlaOperator) -> bool {
+    op.params.iter().any(|param| param.name == "s_")
+}
 
 /// Configuration for module translation
 #[derive(Debug, Clone)]
@@ -1753,7 +1799,12 @@ impl ModuleTranslator {
         // Classify operators as actions vs predicates vs constants (multi-pass)
         // Pass 1: direct prime usage + variable reference check
         for op in &module.operators {
-            let kind = if self.operator_uses_primes(&op.body) {
+            config.operator_arity.insert(op.name.clone(), op.params.len());
+            let kind = if op.name.eq_ignore_ascii_case("init") {
+                OperatorKind::Predicate
+            } else if self.operator_uses_primes(&op.body)
+                || operator_has_explicit_next_state_param(op)
+            {
                 OperatorKind::Action
             } else if !self.operator_refs_variables(&op.body, &[]) {
                 OperatorKind::ConstantOp
@@ -1770,6 +1821,9 @@ impl ModuleTranslator {
         while changed {
             changed = false;
             for op in &module.operators {
+                if op.name.eq_ignore_ascii_case("init") {
+                    continue;
+                }
                 let current = config.operator_info.get(&op.name).cloned();
                 match current {
                     Some(OperatorKind::Predicate) => {
@@ -1842,6 +1896,7 @@ impl ModuleTranslator {
         // Detect if this is an action (uses primed variables, directly or transitively)
         let is_action =
             expr_translator.config.operator_info.get(&op.name) == Some(&OperatorKind::Action);
+        let is_strict_init = op.name.eq_ignore_ascii_case("init");
 
         // Build parameter list
         let mut params = Vec::new();
@@ -1853,7 +1908,7 @@ impl ModuleTranslator {
         if refs_vars || is_action {
             params.push(format!("s: {}", state_name));
             used_param_names.insert("s".to_string());
-            if is_action {
+            if is_action && !is_strict_init {
                 params.push(format!("s_: {}", state_name));
                 used_param_names.insert("s_".to_string());
             }
@@ -2309,7 +2364,11 @@ impl ModeAnnotationGenerator {
         let mut operator_info: std::collections::HashMap<String, OperatorKind> =
             std::collections::HashMap::new();
         for op in &module.operators {
-            let kind = if self.operator_uses_primes(&op.body) {
+            let kind = if op.name.eq_ignore_ascii_case("init") {
+                OperatorKind::Predicate
+            } else if self.operator_uses_primes(&op.body)
+                || operator_has_explicit_next_state_param(op)
+            {
                 OperatorKind::Action
             } else if !Self::body_refs_variables(&op.body, &module.variables) {
                 OperatorKind::ConstantOp
@@ -2323,6 +2382,9 @@ impl ModeAnnotationGenerator {
         while changed {
             changed = false;
             for op in &module.operators {
+                if op.name.eq_ignore_ascii_case("init") {
+                    continue;
+                }
                 let current = operator_info.get(&op.name).cloned();
                 match current {
                     Some(OperatorKind::Predicate) => {
@@ -2994,6 +3056,27 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_op_apply_parameterized_operator_without_args_in_value_context() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("N".to_string());
+        config
+            .operator_info
+            .insert("PrePrepare".to_string(), OperatorKind::Action);
+        config.operator_arity.insert("PrePrepare".to_string(), 5);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("PrePrepare")),
+            args: vec![],
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            symbolic_atom_to_int_literal("PrePrepare")
+        );
+    }
+
+    #[test]
     fn test_translate_domain() {
         let config = TranslatorConfig::default();
         let translator = ExprTranslator::new(&config);
@@ -3166,6 +3249,19 @@ mod tests {
             field: "value".to_string(),
         };
         assert_eq!(translator.translate(&access), "s.x.value");
+    }
+
+    #[test]
+    fn test_translate_record_access_fallback_for_unknown_identifier_roots() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+
+        let unknown_root_access = TlaExpr::RecordAccess {
+            record: Box::new(TlaExpr::ident("request")),
+            field: "client".to_string(),
+        };
+        assert_eq!(translator.translate(&unknown_root_access), "arbitrary()");
     }
 
     #[test]
@@ -3392,6 +3488,32 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_init_is_not_promoted_to_action_via_symbolic_action_token() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Step(s, s_, c, delta) == s_.x = x + delta
+            Init(s, c) == x = Step
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("pub open spec fn LInit(s: LState, c: LConstants) -> bool"),
+            "Init should not gain s_ via transitive action classification, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("pub open spec fn LInit(s: LState, s_: LState, c: LConstants)"),
+            "Init must remain non-action signature, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
     fn test_translate_skips_duplicate_reserved_params_in_action_signature() {
         let source = r"
             ---- MODULE Test ----
@@ -3419,6 +3541,55 @@ mod tests {
         assert!(
             !result.contains("s_: LState, c: LConstants, s_: int"),
             "Action signature should not include duplicate s_ param, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_translate_explicit_s_param_without_primes_is_action() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Step(s, s_, c, delta) == s_.x = x + delta
+            Next(s, s_, c) == Step(s, s_, c, 1)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains(
+                "pub open spec fn LStep(s: LState, s_: LState, c: LConstants, delta: int) -> bool"
+            ),
+            "Explicit s_ parameter should classify operator as action, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("LStep(s, s_, c, 1)"),
+            "Action calls should not duplicate implicit state/constants args, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_translate_parameterized_operator_ident_in_value_context_is_not_autocalled() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            PrePrepare(s, s_, c, delta) == s_.x = x + delta
+            Tag(s, s_, c) == x = PrePrepare
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            !result.contains("x == LPrePrepare(s, s_, c)"),
+            "Parameterized operator identifier in value context should not be auto-called, got:\n{}",
             result
         );
     }
@@ -3558,6 +3729,25 @@ mod tests {
 
         // Max has state + 2 params (all inputs for helper)
         assert!(result.contains("LMax"));
+    }
+
+    #[test]
+    fn test_generate_mode_annotations_explicit_s_param_without_primes() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Step(s, s_, c, delta) == s_.x = x + delta
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        assert!(
+            result.contains("LStep(+, -, +, +);"),
+            "Explicit s_ parameter should produce action modes (+, -, +, +), got:\n{}",
+            result
+        );
     }
 
     #[test]

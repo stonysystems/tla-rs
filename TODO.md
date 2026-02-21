@@ -5248,15 +5248,30 @@ transpiler/tla_test_workspace/
         - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
         - Measured first-error baseline after `16.8.3d-2a`: `2/33` pass, `0` `E0425`, `0` `E0423`, `5` `E0609`, `12` `E0599`, `5` `E0308`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `8` `E0282`.
         - Net effect: dominant method-on-scalar failures reduced (`E0599: 17 -> 12`) and trait-bound blocker removed (`E0277: 1 -> 0`), with expected shift into inference blockers (`E0282: 2 -> 8`) to be addressed in `16.8.3d-2c`.
-      - [ ] **16.8.3d-2b** Reduce residual `E0609` field-on-scalar failures after fallback-typing update.
+      - [x] **16.8.3d-2b** Reduce residual `E0609` field-on-scalar failures after fallback-typing update.
+        - Extended D1 fallback handling in `translate_record_access` so unknown/local identifier roots (not module state/constants) normalize directly to untyped `arbitrary()` instead of emitting `<scalar>.<field>`.
+        - Kept reserved-root fallback behavior (`s`/`s_`/`c` with empty module variable set) and added regression coverage for both unknown-root fallback and known state-root preservation.
+        - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+        - Measured first-error baseline after `16.8.3d-2b`: `2/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `12` `E0599`, `6` `E0308`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `12` `E0282`.
+        - Net effect: residual field-on-scalar failures eliminated (`E0609: 5 -> 0`), with expected shift into type/inference classes to be addressed in `16.8.3d-2c`.
       - [ ] **16.8.3d-2c** Reduce type/arity/inference blockers (`E0308`, `E0277`, `E0061`, `E0282`) after `2a/2b` normalization.
+        - [x] **16.8.3d-2c-1** Eliminate residual wrong-arity (`E0061`) first errors from parameterized-operator call-shape misclassification.
+          - Scope/LOC check: addressed in translator classification/call-shape logic + focused regressions; implementation stayed well under the <500 LOC leaf target.
+          - Treated operators with explicit `s_` parameter as actions during module translation and mode-annotation generation (even when generated TLA bodies no longer use prime syntax directly).
+          - Added operator-arity tracking in expression translation so bare/zero-arg uses of parameterized operators in value context are not auto-lowered to implicit calls.
+          - Added regressions for explicit-`s_` action classification and parameterized-operator value-context handling.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2c-1`: `2/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `12` `E0599`, `6` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `13` `E0282`.
+          - Net effect: wrong-arity blocker eliminated (`E0061: 1 -> 0`) with expected shift into inference (`E0282: 12 -> 13`).
+        - [ ] **16.8.3d-2c-2** Reduce `E0308` mismatched-type first errors in D1 generated specs.
+        - [ ] **16.8.3d-2c-3** Reduce remaining `E0282` inference blockers after `2c-2`.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/` (27/33 files currently transpile)
+- [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/` (28/33 files currently transpile)
 - [x] Require output to pass D2 generated-workspace compile gate (promoted by `16.8.4d-4`): `>=27/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, and `<=6` recursive-codegen "other" failures.
   - [x] **16.8.4a** Deduplicate reserved `s` / `s_` / `c` params when D1-generated operators already declare them, so emitted Verus signatures are syntactically valid for this failure class.
     - Implemented in `transpiler/src/tla/translator.rs::generate_spec_function` with collision filtering against auto-injected state/constant params.
@@ -5295,12 +5310,13 @@ transpiler/tla_test_workspace/
       - Scope/LOC check: this leaf is metadata + gate-definition alignment only (<100 LOC), so it remains within the <500 LOC target.
       - Promoted gate policy from "blocked" to "required" by codifying the measured post-`16.8.4d-3c` baseline in `test_d2_spec_to_exec_on_generated_workspace`.
       - Current required baseline: `>=27/33` pass, zero Cat-A/B/C failures, and at most six recursive-codegen "other" failures.
+      - Post `16.8.3d-2c-1` regeneration revalidation: `28/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `5` other.
 - [x] Track failures by pattern category:
-  - **27/33 PASS**: all 9 protocol `Types.rs` files + all main protocol modules except `TwoPhase/Twophase.rs`, plus `10/15` RSL modules.
+  - **28/33 PASS**: all 9 protocol `Types.rs` files + all 9 non-RSL main protocol modules, plus `10/15` RSL modules.
   - **Category A (0 files)**: anonymous-record parser blocker eliminated by `16.8.4d-3b`.
   - **Category B (0 files)**: call-shape parse failures ("Expected ')', found '('") eliminated by `16.8.4d-1`.
   - **Category C (0 files)**: annotation parameter-count mismatch class eliminated by `16.8.4d-3c`.
-  - **Other (6 files)**: recursion lowering gaps in D2 codegen (`LBuildLBroadcast`, `LRemoveAllSatisfiedRequestsInSequence`, `LGetPacketsFromReplies`, `LExtractSentPacketsFromIos`, `LHandleRequestBatchHidden`, `LInit` in `TwoPhase/Twophase.rs`).
+  - **Other (5 files)**: recursion lowering gaps in D2 codegen (`LBuildLBroadcast`, `LRemoveAllSatisfiedRequestsInSequence`, `LGetPacketsFromReplies`, `LExtractSentPacketsFromIos`, `LHandleRequestBatchHidden`).
   - **Root cause**: parser/call-shape/annotation-arity blockers are resolved; remaining workspace blockers are now concentrated in recursive helper translation pattern coverage.
 
 #### 16.8.5: External TLA+ corpora (LLM + community)

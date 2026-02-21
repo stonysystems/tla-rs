@@ -3,13 +3,13 @@
 
 module Primarybackup {
     LInit(-, +);  // s is output (initialized state), c is input (constants)
-    LPrimaryWrite(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, val is input, sent_packets is input
-    LPrimarySendReplicate(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LBackupReceiveReplicate(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, val is input, sent_packets is input
-    LBackupSendAck(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LPrimaryReceiveAck(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LPrimaryCommit(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LPrimaryFail(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LBackupPromote(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
+    LPrimaryWrite(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), val is input, sent_packets is input
+    LPrimarySendReplicate(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LBackupReceiveReplicate(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), val is input, sent_packets is input
+    LBackupSendAck(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LPrimaryReceiveAck(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LPrimaryCommit(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LPrimaryFail(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LBackupPromote(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LNext(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
 }

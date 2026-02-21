@@ -33,43 +33,43 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// DetectFailure operator
-pub open spec fn LDetectFailure(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LDetectFailure(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
     (((((((((((arbitrary().contains(node) && (arbitrary() == true)) && arbitrary().contains(!(arbitrary()))) && (arbitrary() == arbitrary().union(set![node]))) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { leader: 0int, responder: 0int, sender: node }]))
 }
 
 /// StartElection operator
-pub open spec fn LStartElection(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LStartElection(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
     (((((((((arbitrary().contains(node) && (arbitrary() == arbitrary().union(set![node]))) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { leader: 0int, responder: 0int, sender: node }]))
 }
 
 /// SendAnswer operator
-pub open spec fn LSendAnswer(s: LState, c: LConstants, s_: int, node: int, sender: int, sent_packets: int) -> bool {
+pub open spec fn LSendAnswer(s: LState, s_: LState, c: LConstants, node: int, sender: int, sent_packets: int) -> bool {
     ((((arbitrary().contains(node) && (node > sender)) && (arbitrary() == arbitrary().union(set![node]))) && (arbitrary() == true)) && (arbitrary() == if (!(arbitrary()) || (node > arbitrary())) { node } else { ((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { leader: 0int, responder: node, sender: 0int }])) }))
 }
 
 /// ReceiveAnswer operator
-pub open spec fn LReceiveAnswer(s: LState, c: LConstants, s_: int, node: int, responder: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveAnswer(s: LState, s_: LState, c: LConstants, node: int, responder: int, sent_packets: int) -> bool {
     (((((((((((arbitrary().contains(node) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == arbitrary().difference(set![node]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// SendCoordinator operator
-pub open spec fn LSendCoordinator(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LSendCoordinator(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
     ((((((((((((arbitrary().contains(node) && arbitrary().contains(node)) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary().difference(set![node]))) && (arbitrary() == false)) && (arbitrary() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { leader: node, responder: 0int, sender: 0int }]))
 }
 
 /// ReceiveCoordinator operator
-pub open spec fn LReceiveCoordinator(s: LState, c: LConstants, s_: int, node: int, leader: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveCoordinator(s: LState, s_: LState, c: LConstants, node: int, leader: int, sent_packets: int) -> bool {
     (((((((((arbitrary().contains(node) && (arbitrary() == true)) && (arbitrary() == leader)) && (arbitrary() == arbitrary().difference(set![node]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator
-pub open spec fn LNodeFail(s: LState, c: LConstants, s_: int, node: int, sent_packets: int) -> bool {
+pub open spec fn LNodeFail(s: LState, s_: LState, c: LConstants, node: int, sent_packets: int) -> bool {
     (((arbitrary().contains(node) && (arbitrary() == arbitrary().difference(set![node]))) && (arbitrary() == arbitrary().difference(set![node]))) && (arbitrary() == if (arbitrary() && (arbitrary() == node)) { false } else { (arbitrary() && (arbitrary() == if (arbitrary() && (arbitrary() == node)) { 0 } else { (arbitrary() && (arbitrary() == if (arbitrary() && (arbitrary() == node)) { false } else { (arbitrary() && (arbitrary() == if (arbitrary() && (arbitrary() == node)) { 0 } else { (((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![])) })) })) })) }))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |node, sent_packets| (LDetectFailure(s, c, s, s_, c, node, sent_packets) || exists |node, sent_packets| (LStartElection(s, c, s, s_, c, node, sent_packets) || exists |node, sender, sent_packets| (LSendAnswer(s, c, s, s_, c, node, sender, sent_packets) || exists |node, responder, sent_packets| (LReceiveAnswer(s, c, s, s_, c, node, responder, sent_packets) || exists |node, sent_packets| (LSendCoordinator(s, c, s, s_, c, node, sent_packets) || exists |node, leader, sent_packets| (LReceiveCoordinator(s, c, s, s_, c, node, leader, sent_packets) || exists |node, sent_packets| LNodeFail(s, c, s, s_, c, node, sent_packets)))))))
+pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+    exists |node, sent_packets| (LDetectFailure(s, s_, c, node, sent_packets) || exists |node, sent_packets| (LStartElection(s, s_, c, node, sent_packets) || exists |node, sender, sent_packets| (LSendAnswer(s, s_, c, node, sender, sent_packets) || exists |node, responder, sent_packets| (LReceiveAnswer(s, s_, c, node, responder, sent_packets) || exists |node, sent_packets| (LSendCoordinator(s, s_, c, node, sent_packets) || exists |node, leader, sent_packets| (LReceiveCoordinator(s, s_, c, node, leader, sent_packets) || exists |node, sent_packets| LNodeFail(s, s_, c, node, sent_packets)))))))
 }
 
 } // verus!

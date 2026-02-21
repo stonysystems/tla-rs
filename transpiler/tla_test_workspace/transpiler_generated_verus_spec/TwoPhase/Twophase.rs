@@ -27,52 +27,52 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    (((((arbitrary() == LInit(s, c)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == Set::<int>::empty()))
+    (((((arbitrary() == 1755428851int) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == Set::<int>::empty()))
 }
 
 /// TMSendPrepare operator
-pub open spec fn LTMSendPrepare(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((arbitrary() == LInit(s, c)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![6989001116int]))
+pub open spec fn LTMSendPrepare(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
+    (((((((arbitrary() == 1755428851int) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![6989001116int]))
 }
 
 /// RMReceivePrepare operator
-pub open spec fn LRMReceivePrepare(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMReceivePrepare(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: int) -> bool {
     ((((((((arbitrary().contains(rm) && arbitrary().contains(!(rm))) && arbitrary().contains(!(rm))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().union(set![rm]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { rm: rm }]))
 }
 
 /// RMAbort operator
-pub open spec fn LRMAbort(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMAbort(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: int) -> bool {
     (((((((((arbitrary().contains(rm) && arbitrary().contains(!(rm))) && arbitrary().contains(!(rm))) && arbitrary().contains(!(rm))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().union(set![rm]))) && (sent_packets == seq![]))
 }
 
 /// TMRcvPrepared operator
-pub open spec fn LTMRcvPrepared(s: LState, c: LConstants, s_: int, r: int, sent_packets: int) -> bool {
-    ((((((((arbitrary() == LInit(s, c)) && arbitrary().contains(r)) && (arbitrary() == LInit(s, c))) && (arbitrary() == arbitrary().union(set![r]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LTMRcvPrepared(s: LState, s_: LState, c: LConstants, r: int, sent_packets: int) -> bool {
+    ((((((((arbitrary() == 1755428851int) && arbitrary().contains(r)) && (arbitrary() == 1755428851int)) && (arbitrary() == arbitrary().union(set![r]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// TMSendCommit operator
-pub open spec fn LTMSendCommit(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    ((((((((arbitrary() == LInit(s, c)) && (arbitrary() == arbitrary())) && (arbitrary() == 1819226073int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![9385017532int]))
+pub open spec fn LTMSendCommit(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
+    ((((((((arbitrary() == 1755428851int) && (arbitrary() == arbitrary())) && (arbitrary() == 1819226073int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![9385017532int]))
 }
 
 /// TMSendAbort operator
-pub open spec fn LTMSendAbort(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
-    (((((((arbitrary() == LInit(s, c)) && (arbitrary() == 4391523824int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![8579416217int]))
+pub open spec fn LTMSendAbort(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
+    (((((((arbitrary() == 1755428851int) && (arbitrary() == 4391523824int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![8579416217int]))
 }
 
 /// RMReceiveCommit operator
-pub open spec fn LRMReceiveCommit(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMReceiveCommit(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: int) -> bool {
     ((((((((arbitrary().contains(rm) && arbitrary().contains(rm)) && arbitrary().contains(!(rm))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().union(set![rm]))) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// RMReceiveAbort operator
-pub open spec fn LRMReceiveAbort(s: LState, c: LConstants, s_: int, rm: int, sent_packets: int) -> bool {
+pub open spec fn LRMReceiveAbort(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: int) -> bool {
     ((((((((arbitrary().contains(rm) && arbitrary().contains(!(rm))) && arbitrary().contains(!(rm))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().union(set![rm]))) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |sent_packets| (LTMSendPrepare(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceivePrepare(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (LRMAbort(s, c, s, s_, c, rm, sent_packets) || exists |r, sent_packets| (LTMRcvPrepared(s, c, s, s_, c, r, sent_packets) || exists |sent_packets| (LTMSendCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LTMSendAbort(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceiveCommit(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| LRMReceiveAbort(s, c, s, s_, c, rm, sent_packets))))))))
+pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+    exists |sent_packets| (LTMSendPrepare(s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceivePrepare(s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (LRMAbort(s, s_, c, rm, sent_packets) || exists |r, sent_packets| (LTMRcvPrepared(s, s_, c, r, sent_packets) || exists |sent_packets| (LTMSendCommit(s, s_, c, sent_packets) || exists |sent_packets| (LTMSendAbort(s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceiveCommit(s, s_, c, rm, sent_packets) || exists |rm, sent_packets| LRMReceiveAbort(s, s_, c, rm, sent_packets))))))))
 }
 
 } // verus!

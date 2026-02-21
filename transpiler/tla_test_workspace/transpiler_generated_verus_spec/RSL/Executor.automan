@@ -5,14 +5,14 @@ module Executor {
     helper LExecutor(+);  // c is input (constants)
     helper LOutstandingOperation(+);  // c is input (constants)
     LExecutorInit(+, +);  // s is input (state to check), c is input (constants)
-    LExecutorGetDecision(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, bal is input, opn is input, v is input
+    LExecutorGetDecision(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), bal is input, opn is input, v is input
     helper LGetPacketsFromReplies(+, +, +, +, +);  // s is input (state to check), c is input (constants), me is input, requests is input, replies is input
     helper LClientsInReplies(+, +, +);  // s is input (state to check), c is input (constants), replies is input
     LRepliesAreReplyType(+, +, +);  // s is input (state to check), c is input (constants), replies is input
     LUpdateNewCache(+, +, +, +);  // s is input (state to check), c is input (constants), c_ is input, replies is input
-    LExecutorExecute(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LExecutorProcessAppStateSupply(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input
-    LExecutorProcessAppStateRequest(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input, sent_packets is input
-    LExecutorProcessStartingPhase2(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input, sent_packets is input
+    LExecutorExecute(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LExecutorProcessAppStateSupply(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input
+    LExecutorProcessAppStateRequest(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input
+    LExecutorProcessStartingPhase2(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input
     LExecutorProcessRequest(+, +, +, +);  // s is input (state to check), c is input (constants), inp is input, sent_packets is input
 }

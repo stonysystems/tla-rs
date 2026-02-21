@@ -3,12 +3,12 @@
 
 module Election {
     LInit(-, +);  // s is output (initialized state), c is input (constants)
-    LDetectFailure(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, sent_packets is input
-    LStartElection(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, sent_packets is input
-    LSendAnswer(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, sender is input, sent_packets is input
-    LReceiveAnswer(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, responder is input, sent_packets is input
-    LSendCoordinator(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, sent_packets is input
-    LReceiveCoordinator(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, leader is input, sent_packets is input
-    LNodeFail(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, node is input, sent_packets is input
-    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
+    LDetectFailure(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, sent_packets is input
+    LStartElection(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, sent_packets is input
+    LSendAnswer(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, sender is input, sent_packets is input
+    LReceiveAnswer(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, responder is input, sent_packets is input
+    LSendCoordinator(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, sent_packets is input
+    LReceiveCoordinator(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, leader is input, sent_packets is input
+    LNodeFail(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), node is input, sent_packets is input
+    LNext(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
 }

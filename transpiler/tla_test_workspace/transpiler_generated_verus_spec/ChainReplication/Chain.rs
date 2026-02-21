@@ -31,48 +31,48 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// HeadReceiveWrite operator
-pub open spec fn LHeadReceiveWrite(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LHeadReceiveWrite(s: LState, s_: LState, c: LConstants, value: int, sent_packets: int) -> bool {
     ((((((((((((((arbitrary() == 3419909347int) && (arbitrary() == true)) && arbitrary().contains(!(value))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().push(value))) && (arbitrary() == arbitrary().union(set![value]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// ForwardToSuccessor operator
-pub open spec fn LForwardToSuccessor(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LForwardToSuccessor(s: LState, s_: LState, c: LConstants, value: int, sent_packets: int) -> bool {
     ((arbitrary() == 3419909347int) || (((((((((((((((arbitrary() == 9863251288int) && (arbitrary() == true)) && arbitrary().contains(value)) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { value: value }])))
 }
 
 /// ReceiveUpdate operator
-pub open spec fn LReceiveUpdate(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveUpdate(s: LState, s_: LState, c: LConstants, value: int, sent_packets: int) -> bool {
     ((arbitrary() == 9863251288int) || ((((((arbitrary() == 8736718595int) && (arbitrary() == true)) && arbitrary().contains(!(value))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().push(value))) && if (arbitrary() == 9863251288int) { (arbitrary() == arbitrary().union(set![value])) } else { (((((((((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![])) }))
 }
 
 /// TailCommit operator
-pub open spec fn LTailCommit(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LTailCommit(s: LState, s_: LState, c: LConstants, value: int, sent_packets: int) -> bool {
     ((((((((((((((arbitrary() == 8736718595int) && (arbitrary() == true)) && arbitrary().contains(value)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == (arbitrary() + 1))) && (arbitrary() == value)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![LRecord { value: value }]))
 }
 
 /// ReceiveAck operator
-pub open spec fn LReceiveAck(s: LState, c: LConstants, s_: int, value: int, sent_packets: int) -> bool {
+pub open spec fn LReceiveAck(s: LState, s_: LState, c: LConstants, value: int, sent_packets: int) -> bool {
     ((arbitrary() == 3419909347int) || ((((((((((((((arbitrary() == 9863251288int) && (arbitrary() == true)) && arbitrary().contains(value)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary().difference(set![value]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![])))
 }
 
 /// ClientRead operator
-pub open spec fn LClientRead(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LClientRead(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     (((((((((((((arbitrary() == 8736718595int) && (arbitrary() == true)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// NodeFail operator
-pub open spec fn LNodeFail(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
+pub open spec fn LNodeFail(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == true) && (arbitrary() == false)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// Reconfigure operator
-pub open spec fn LReconfigure(s: LState, c: LConstants, s_: int, new_has_predecessor: int, new_predecessor: int, new_has_successor: int, new_successor: int, sent_packets: int) -> bool {
+pub open spec fn LReconfigure(s: LState, s_: LState, c: LConstants, new_has_predecessor: int, new_predecessor: int, new_has_successor: int, new_successor: int, sent_packets: int) -> bool {
     ((((((((((((arbitrary() == true) && (arbitrary() == new_has_predecessor)) && (arbitrary() == new_predecessor)) && (arbitrary() == new_has_successor)) && (arbitrary() == new_successor)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
 }
 
 /// Next operator
-pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |value, sent_packets| (LHeadReceiveWrite(s, c, s, s_, c, value, sent_packets) || exists |value, sent_packets| (LForwardToSuccessor(s, c, s, s_, c, value, sent_packets) || exists |value, sent_packets| (LReceiveUpdate(s, c, s, s_, c, value, sent_packets) || exists |value, sent_packets| (LTailCommit(s, c, s, s_, c, value, sent_packets) || exists |value, sent_packets| (LReceiveAck(s, c, s, s_, c, value, sent_packets) || exists |sent_packets| (LClientRead(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LNodeFail(s, c, s, s_, c, sent_packets) || exists |new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets| LReconfigure(s, c, s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets))))))))
+pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+    exists |value, sent_packets| (LHeadReceiveWrite(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LForwardToSuccessor(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LReceiveUpdate(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LTailCommit(s, s_, c, value, sent_packets) || exists |value, sent_packets| (LReceiveAck(s, s_, c, value, sent_packets) || exists |sent_packets| (LClientRead(s, s_, c, sent_packets) || exists |sent_packets| (LNodeFail(s, s_, c, sent_packets) || exists |new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets| LReconfigure(s, s_, c, new_has_predecessor, new_predecessor, new_has_successor, new_successor, sent_packets))))))))
 }
 
 } // verus!

@@ -16,15 +16,15 @@ module Proposer {
     LValIsHighestNumberedProposal(+, +, +, +, +);  // s is input (state to check), c is input (constants), v is input, S is input, opn is input
     LProposerCanNominateUsingOperationNumber(+, +, +, +);  // s is input (state to check), c is input (constants), log_truncation_point is input, opn is input
     LProposerInit(+, +);  // s is input (state to check), c is input (constants)
-    LProposerProcessRequest(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, packet is input
-    LProposerMaybeEnterNewViewAndSend1a(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LProposerProcess1b(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, p is input
-    LProposerMaybeEnterPhase2(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, log_truncation_point is input, sent_packets is input
-    LProposerNominateNewValueAndSend2a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input, log_truncation_point is input, sent_packets is input
-    LProposerNominateOldValueAndSend2a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, log_truncation_point is input, sent_packets is input
-    LProposerMaybeNominateValueAndSend2a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input, log_truncation_point is input, sent_packets is input
-    LProposerProcessHeartbeat(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, p is input, clock is input
-    LProposerCheckForViewTimeout(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input
-    LProposerCheckForQuorumOfViewSuspicions(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input
-    LProposerResetViewTimerDueToExecution(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, val is input
+    LProposerProcessRequest(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), packet is input
+    LProposerMaybeEnterNewViewAndSend1a(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LProposerProcess1b(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), p is input
+    LProposerMaybeEnterPhase2(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), log_truncation_point is input, sent_packets is input
+    LProposerNominateNewValueAndSend2a(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), clock is input, log_truncation_point is input, sent_packets is input
+    LProposerNominateOldValueAndSend2a(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), log_truncation_point is input, sent_packets is input
+    LProposerMaybeNominateValueAndSend2a(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), clock is input, log_truncation_point is input, sent_packets is input
+    LProposerProcessHeartbeat(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), p is input, clock is input
+    LProposerCheckForViewTimeout(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), clock is input
+    LProposerCheckForQuorumOfViewSuspicions(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), clock is input
+    LProposerResetViewTimerDueToExecution(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), val is input
 }

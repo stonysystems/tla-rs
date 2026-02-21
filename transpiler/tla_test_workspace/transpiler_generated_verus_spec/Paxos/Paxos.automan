@@ -3,12 +3,12 @@
 
 module Paxos {
     LInit(-, +);  // s is output (initialized state), c is input (constants)
-    LSend1a(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, b is input
-    LSend1b(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, b is input
-    LRecvPromise(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, a is input, a_accepted_bal is input, a_accepted_val is input
-    LSend2a(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, v is input
-    LSend2b(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, b is input, v is input
-    LRecvAccepted(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, a is input
-    LLearn(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
-    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
+    LSend1a(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), b is input
+    LSend1b(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), b is input
+    LRecvPromise(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), a is input, a_accepted_bal is input, a_accepted_val is input
+    LSend2a(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), v is input
+    LSend2b(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), b is input, v is input
+    LRecvAccepted(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), a is input
+    LLearn(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
+    LNext(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
 }

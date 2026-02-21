@@ -3,13 +3,13 @@
 
 module Twophase {
     LInit(-, +);  // s is output (initialized state), c is input (constants)
-    LTMSendPrepare(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LRMReceivePrepare(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, rm is input, sent_packets is input
-    LRMAbort(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, rm is input, sent_packets is input
-    LTMRcvPrepared(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, r is input, sent_packets is input
-    LTMSendCommit(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LTMSendAbort(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
-    LRMReceiveCommit(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, rm is input, sent_packets is input
-    LRMReceiveAbort(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, rm is input, sent_packets is input
-    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
+    LTMSendPrepare(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LRMReceivePrepare(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), rm is input, sent_packets is input
+    LRMAbort(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), rm is input, sent_packets is input
+    LTMRcvPrepared(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), r is input, sent_packets is input
+    LTMSendCommit(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LTMSendAbort(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
+    LRMReceiveCommit(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), rm is input, sent_packets is input
+    LRMReceiveAbort(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), rm is input, sent_packets is input
+    LNext(+, -, +);  // s is input (current state), s_ is output (next state), c is input (constants)
 }
