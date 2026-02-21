@@ -1253,8 +1253,6 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         "pub struct CConfiguration",
         "pub struct CConstants",
         "pub struct CReplicaConstants",
-        "CReplicaConstantsValid(",
-        "InitReplicaConstants(",
     ];
 
     for symbol in expected_symbols {
@@ -1285,6 +1283,14 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         !source.contains("pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)"),
         "endpoint abstraction lemmas should be re-homed out of manual helper injection"
     );
+    assert!(
+        !source.contains("pub fn CReplicaConstantsValid(&self) -> (res:bool)"),
+        "CReplicaConstantsValid should be re-homed out of manual helper injection"
+    );
+    assert!(
+        !source.contains("pub fn InitReplicaConstants(end:&EndPoint, config:&CConfiguration) -> (rc:CReplicaConstants)"),
+        "InitReplicaConstants should be re-homed out of manual helper injection"
+    );
 
     let cparameters_source = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
         .expect("Failed to read RSL cparameters module");
@@ -1305,6 +1311,19 @@ fn test_rsl_types_manual_helpers_extension_symbols_present() {
         assert!(
             cconfiguration_source.contains(symbol),
             "missing symbol `{}` in re-homed cconfiguration helper module",
+            symbol
+        );
+    }
+
+    let cconstants_source = std::fs::read_to_string("../src/implementation/RSL/cconstants.rs")
+        .expect("Failed to read RSL cconstants module");
+    for symbol in [
+        "pub fn CReplicaConstantsValid(&self) -> (res:bool)",
+        "pub fn InitReplicaConstants(end:&EndPoint, config:&CConfiguration) -> (rc:CReplicaConstants)",
+    ] {
+        assert!(
+            cconstants_source.contains(symbol),
+            "missing symbol `{}` in re-homed cconstants helper module",
             symbol
         );
     }
