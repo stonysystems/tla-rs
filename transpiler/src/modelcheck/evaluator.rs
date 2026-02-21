@@ -632,6 +632,91 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_short_circuit_boolean_connectives() {
+        let no_hook_call = Expr::Call {
+            func: Path::single("NeverReached".to_string()),
+            args: vec![],
+        };
+
+        let conjunction = Expr::Conjunction(vec![
+            Expr::Literal(Literal::Bool(false)),
+            no_hook_call.clone(),
+        ]);
+        let conjunction_out = eval_expr(&conjunction, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(conjunction_out, RuntimeValue::Bool(false));
+
+        let disjunction = Expr::Disjunction(vec![
+            Expr::Literal(Literal::Bool(true)),
+            no_hook_call.clone(),
+        ]);
+        let disjunction_out = eval_expr(&disjunction, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(disjunction_out, RuntimeValue::Bool(true));
+
+        let implication = Expr::Implies(
+            Box::new(Expr::Literal(Literal::Bool(false))),
+            Box::new(no_hook_call),
+        );
+        let implication_out = eval_expr(&implication, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(implication_out, RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_eval_if_without_else_returns_unit() {
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(false))),
+            then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+            else_branch: None,
+        };
+
+        let out = eval_expr(&expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(out, RuntimeValue::Unit);
+    }
+
+    #[test]
+    fn test_eval_iff_not_and_nat_cast() {
+        let iff_expr = Expr::Iff(
+            Box::new(Expr::Not(Box::new(Expr::Literal(Literal::Bool(false))))),
+            Box::new(Expr::Literal(Literal::Bool(true))),
+        );
+        let iff_out = eval_expr(&iff_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(iff_out, RuntimeValue::Bool(true));
+
+        let cast_expr = Expr::Cast(Box::new(Expr::Literal(Literal::Int(5))), Type::Nat);
+        let cast_out = eval_expr(&cast_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(cast_out, RuntimeValue::Nat(5));
+
+        let bad_cast_expr = Expr::Cast(Box::new(Expr::Literal(Literal::Int(-1))), Type::Nat);
+        let err = eval_expr(&bad_cast_expr, &EvalContext::new(test_bounds())).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Cannot cast negative value to nat"));
+    }
+
+    #[test]
+    fn test_eval_map_index_and_contains_key() {
+        let map_expr = Expr::MapLit(vec![(
+            Expr::Literal(Literal::Int(1)),
+            Expr::Literal(Literal::String("one".to_string())),
+        )]);
+
+        let index_expr = Expr::Index(
+            Box::new(map_expr.clone()),
+            Box::new(Expr::Literal(Literal::Int(1))),
+        );
+        let index_out = eval_expr(&index_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(index_out, RuntimeValue::String("one".to_string()));
+
+        let contains_key_expr = Expr::MethodCall {
+            receiver: Box::new(map_expr),
+            method: "contains_key".to_string(),
+            args: vec![Expr::Literal(Literal::Int(1))],
+        };
+        let contains_key_out =
+            eval_expr(&contains_key_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(contains_key_out, RuntimeValue::Bool(true));
+    }
+
+    #[test]
     fn test_eval_unsupported_constructs_are_explicit_errors() {
         let unsupported = Expr::Exists {
             vars: vec![],

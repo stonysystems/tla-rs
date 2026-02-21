@@ -160,15 +160,15 @@ enum Commands {
         nat_max: Option<u64>,
     },
 
-    /// Run source-first model-check preflight validation for one protocol spec.
+    /// Run source-first model checking for one protocol spec.
     ///
-    /// This command validates:
-    /// - protocol source ingestion (`types.rs` + protocol file),
-    /// - required entrypoints (`LInit`, `LNext`),
-    /// - `model.toml` parsing/validation,
-    /// - configured invariant names against parsed spec functions.
-    ///
-    /// Full exploration/report execution is added in later CLI integration leaves.
+    /// This command:
+    /// - ingests protocol sources (`types.rs` + protocol file),
+    /// - validates required entrypoints (`LInit`, `LNext`),
+    /// - parses/validates `model.toml`,
+    /// - resolves configured invariants,
+    /// - performs bounded BFS/DFS exploration,
+    /// - reports summary metrics (states, transitions, depth, elapsed, result).
     ModelCheck {
         /// Protocol spec file (e.g., src/protocol/TwoPhase/twophase.rs)
         #[arg(long)]
@@ -207,7 +207,7 @@ enum Commands {
         #[arg(long = "timeout", alias = "timeout-ms")]
         timeout_ms: Option<u64>,
 
-        /// Emit machine-readable JSON preflight report
+        /// Emit machine-readable JSON model-check report
         #[arg(long)]
         json_report: bool,
 
@@ -542,6 +542,475 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelCheckExecutionSummary {
+    result: String,
+    states: usize,
+    transitions: usize,
+    depth: usize,
+    elapsed_ms: u128,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelCheckExecution {
+    summary: ModelCheckExecutionSummary,
+    exploration: verus_transpiler::modelcheck::explorer::ExplorationResult,
+}
+
+fn model_check_result_label(
+    reason: verus_transpiler::modelcheck::explorer::ExplorationStopReason,
+) -> &'static str {
+    use verus_transpiler::modelcheck::explorer::ExplorationStopReason;
+    match reason {
+        ExplorationStopReason::FrontierExhausted => "ok",
+        ExplorationStopReason::MaxStatesReached => "max_states_reached",
+        ExplorationStopReason::InvariantViolated => "invariant_violated",
+        ExplorationStopReason::DeadlockDetected => "deadlock_detected",
+    }
+}
+
+fn cli_search_to_explorer_mode(
+    mode: CliSearchMode,
+) -> verus_transpiler::modelcheck::explorer::SearchMode {
+    use verus_transpiler::modelcheck::explorer::SearchMode;
+    match mode {
+        CliSearchMode::Bfs => SearchMode::Bfs,
+        CliSearchMode::Dfs => SearchMode::Dfs,
+    }
+}
+
+fn successor_semantics_to_solver_semantics(
+    semantics: verus_transpiler::modelcheck::config::SuccessorSemantics,
+) -> verus_transpiler::modelcheck::solver::EmptySuccessorSemantics {
+    use verus_transpiler::modelcheck::config::SuccessorSemantics;
+    use verus_transpiler::modelcheck::solver::EmptySuccessorSemantics;
+    match semantics {
+        SuccessorSemantics::Deadlock => EmptySuccessorSemantics::Deadlock,
+        SuccessorSemantics::Stuttering => EmptySuccessorSemantics::Stuttering,
+    }
+}
+
+fn expand_type_domain_candidates(
+    label: &str,
+    var_name: &str,
+    ty: &verus_transpiler::ast::Type,
+    schema: &verus_transpiler::spec_analyzer::SpecSchema,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
+    expand_type_domain_candidates_internal(label, var_name, ty, schema, model_config, 0)
+}
+
+fn expand_type_domain_candidates_internal(
+    label: &str,
+    var_name: &str,
+    ty: &verus_transpiler::ast::Type,
+    schema: &verus_transpiler::spec_analyzer::SpecSchema,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+    recursion_depth: usize,
+) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
+    use std::collections::BTreeSet;
+    use verus_transpiler::ast::Type;
+    use verus_transpiler::modelcheck::domain::expand_branch_existentials;
+    use verus_transpiler::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    if recursion_depth > 16 {
+        return Err(miette::miette!(
+            "Model-check candidate expansion exceeded recursion depth limit (16) for `{}`.",
+            label
+        ));
+    }
+
+    match ty {
+        Type::Reference { ty, .. } => {
+            return expand_type_domain_candidates_internal(
+                label,
+                var_name,
+                ty,
+                schema,
+                model_config,
+                recursion_depth + 1,
+            );
+        }
+        Type::Named(path) => {
+            if let Some(struct_def) = find_struct_definition(schema, path) {
+                let expansion_limit = model_config.search.max_states;
+                let mut combinations: Vec<Vec<(String, RuntimeValue)>> = vec![Vec::new()];
+
+                for field in &struct_def.fields {
+                    let field_values = expand_type_domain_candidates_internal(
+                        &format!("{}_{}", label, field.name),
+                        &field.name,
+                        &field.ty,
+                        schema,
+                        model_config,
+                        recursion_depth + 1,
+                    )?;
+                    if field_values.is_empty() {
+                        return Err(miette::miette!(
+                            "Model-check candidate expansion for struct `{}` produced an empty domain for field `{}`.",
+                            struct_def.name,
+                            field.name
+                        ));
+                    }
+
+                    let mut next = Vec::new();
+                    for partial in &combinations {
+                        for value in &field_values {
+                            let mut candidate = partial.clone();
+                            candidate.push((field.name.clone(), value.clone()));
+                            next.push(candidate);
+                            if next.len() > expansion_limit {
+                                return Err(miette::miette!(
+                                    "Model-check candidate expansion for struct `{}` exceeded limit ({}). \
+                                     Narrow domains or increase `search.max_states`.",
+                                    struct_def.name,
+                                    expansion_limit
+                                ));
+                            }
+                        }
+                    }
+                    combinations = next;
+                }
+
+                let mut seen = BTreeSet::new();
+                let mut values = Vec::new();
+                for fields in combinations {
+                    let value = RuntimeValue::struct_value(struct_def.name.clone(), fields)
+                        .map_err(|e| {
+                            miette::miette!(
+                                "Failed to build runtime struct candidate `{}`: {}",
+                                struct_def.name,
+                                e
+                            )
+                        })?;
+                    if seen.insert(value.canonical_key()) {
+                        values.push(value);
+                    }
+                }
+                return Ok(values);
+            }
+        }
+        _ => {}
+    }
+
+    let branch = TransitionBranchIr {
+        label: label.to_string(),
+        existential_vars: vec![ExistentialVarIr {
+            name: var_name.to_string(),
+            ty: Some(ty.clone()),
+        }],
+        constraints: vec![],
+    };
+    let assignments = expand_branch_existentials(&branch, schema, model_config)
+        .map_err(|e| miette::miette!("{}", e))?;
+
+    let mut seen = BTreeSet::new();
+    let mut values = Vec::new();
+    for assignment in assignments {
+        let value = assignment
+            .get(var_name)
+            .ok_or_else(|| {
+                miette::miette!(
+                    "Internal model-check error: existential expansion for `{}` \
+                     in `{}` missing expected binding.",
+                    var_name,
+                    label
+                )
+            })?
+            .clone();
+        if seen.insert(value.canonical_key()) {
+            values.push(value);
+        }
+    }
+    Ok(values)
+}
+
+fn find_struct_definition<'a>(
+    schema: &'a verus_transpiler::spec_analyzer::SpecSchema,
+    path: &verus_transpiler::ast::Path,
+) -> Option<&'a verus_transpiler::types::StructDef> {
+    let joined = path.segments.join("::");
+    if let Some(found) = schema.structs.get(&joined) {
+        return Some(found);
+    }
+    if let Some(last) = path.last() {
+        if let Some(found) = schema.structs.get(last) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn value_matches_domain_spec(
+    value: &verus_transpiler::modelcheck::value::RuntimeValue,
+    domain: &verus_transpiler::modelcheck::config::DomainSpec,
+    field_name: &str,
+) -> Result<bool> {
+    use verus_transpiler::modelcheck::config::DomainSpec;
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    match domain {
+        DomainSpec::Values { values } => Ok(values
+            .iter()
+            .any(|candidate| value == &RuntimeValue::from(candidate))),
+        DomainSpec::IntRange { min, max } => match value {
+            RuntimeValue::Int(v) => Ok((*min as i128..=*max as i128).contains(v)),
+            RuntimeValue::Nat(v) => Ok((*min as i128..=*max as i128).contains(&i128::from(*v))),
+            other => Err(miette::miette!(
+                "Invalid constants domain for field `{}`: int_range requires int/nat values, got `{}`.",
+                field_name,
+                other.canonical_key()
+            )),
+        },
+        DomainSpec::NatRange { max } => match value {
+            RuntimeValue::Nat(v) => Ok(*v <= *max),
+            RuntimeValue::Int(v) => Ok(
+                *v >= 0 && u64::try_from(*v).map(|converted| converted <= *max).unwrap_or(false),
+            ),
+            other => Err(miette::miette!(
+                "Invalid constants domain for field `{}`: nat_range requires int/nat values, got `{}`.",
+                field_name,
+                other.canonical_key()
+            )),
+        },
+        DomainSpec::EnumSubset { variants } => match value {
+            RuntimeValue::Enum { variant, .. } => Ok(variants.iter().any(|v| v == variant)),
+            other => Err(miette::miette!(
+                "Invalid constants domain for field `{}`: enum_subset requires enum values, got `{}`.",
+                field_name,
+                other.canonical_key()
+            )),
+        },
+    }
+}
+
+fn constants_candidate_matches_config(
+    candidate: &verus_transpiler::modelcheck::value::RuntimeValue,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+) -> Result<bool> {
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    for (field, assigned) in &model_config.constants.assignments {
+        let candidate_field = candidate.field(field).ok_or_else(|| {
+            miette::miette!(
+                "Invalid constants assignment: field `{}` does not exist on candidate constants value `{}`.",
+                field,
+                candidate.canonical_key()
+            )
+        })?;
+        let expected = RuntimeValue::from(assigned);
+        if candidate_field != &expected {
+            return Ok(false);
+        }
+    }
+
+    for (field, domain) in &model_config.constants.domains {
+        let candidate_field = candidate.field(field).ok_or_else(|| {
+            miette::miette!(
+                "Invalid constants domain: field `{}` does not exist on candidate constants value `{}`.",
+                field,
+                candidate.canonical_key()
+            )
+        })?;
+        if !value_matches_domain_spec(candidate_field, domain, field)? {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn resolve_single_constants_value(
+    candidates: Vec<verus_transpiler::modelcheck::value::RuntimeValue>,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+) -> Result<verus_transpiler::modelcheck::value::RuntimeValue> {
+    use std::collections::BTreeSet;
+
+    let mut seen = BTreeSet::new();
+    let mut filtered = Vec::new();
+    for candidate in candidates {
+        let key = candidate.canonical_key();
+        if !seen.insert(key) {
+            continue;
+        }
+        if constants_candidate_matches_config(&candidate, model_config)? {
+            filtered.push(candidate);
+        }
+    }
+
+    if filtered.is_empty() {
+        return Err(miette::miette!(
+            "Model-check constants resolution produced zero matching `LConstants` valuations. \
+             Add/adjust `[constants.assignments]`, `[constants.domains]`, and quantifier domains."
+        ));
+    }
+    if filtered.len() > 1 {
+        return Err(miette::miette!(
+            "Model-check currently requires exactly one concrete `LConstants` valuation, \
+             but {} candidates matched the model config. Narrow constants domains/assignments.",
+            filtered.len()
+        ));
+    }
+
+    Ok(filtered.remove(0))
+}
+
+fn execute_model_check(
+    bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+    selected_search: CliSearchMode,
+    selected_invariants: &[&verus_transpiler::ast::SpecFunction],
+) -> Result<ModelCheckExecution> {
+    use std::collections::BTreeMap;
+    use std::time::Instant;
+    use verus_transpiler::modelcheck::domain::expand_branch_existentials;
+    use verus_transpiler::modelcheck::explorer::{
+        explore_state_space_with_traces, ExplorationLimits, TracedSuccessor,
+    };
+    use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
+    use verus_transpiler::modelcheck::invariant::{first_invariant_violation, InvariantHooks};
+    use verus_transpiler::modelcheck::ir::build_transition_ir;
+    use verus_transpiler::modelcheck::solver::{solve_branch_successors, SolverHooks};
+    use verus_transpiler::modelcheck::value::RuntimeCollectionBounds;
+
+    let started = Instant::now();
+
+    let transition =
+        build_transition_ir(&bundle.entrypoints.lnext).map_err(|e| miette::miette!("{}", e))?;
+    let owned_invariants: Vec<verus_transpiler::ast::SpecFunction> = selected_invariants
+        .iter()
+        .map(|invariant_fn| (*invariant_fn).clone())
+        .collect();
+    let bounds = RuntimeCollectionBounds::from(&model_config.collections);
+    let search_mode = cli_search_to_explorer_mode(selected_search);
+    let limits = ExplorationLimits::from(&model_config.search);
+    let empty_successor_semantics =
+        successor_semantics_to_solver_semantics(model_config.properties.successor_semantics);
+
+    let state_ty = bundle
+        .entrypoints
+        .linit
+        .params
+        .first()
+        .ok_or_else(|| miette::miette!("Missing state parameter in init entrypoint."))?
+        .ty
+        .clone();
+    let constants_ty = bundle
+        .entrypoints
+        .linit
+        .params
+        .get(1)
+        .ok_or_else(|| miette::miette!("Missing constants parameter in init entrypoint."))?
+        .ty
+        .clone();
+
+    let state_candidates = expand_type_domain_candidates(
+        "candidate_states",
+        "candidate_state",
+        &state_ty,
+        &bundle.schema,
+        model_config,
+    )?;
+    let constants_candidates = expand_type_domain_candidates(
+        "candidate_constants",
+        "candidate_constants",
+        &constants_ty,
+        &bundle.schema,
+        model_config,
+    )?;
+    let constants_value = resolve_single_constants_value(constants_candidates, model_config)?;
+
+    let initial_states = construct_initial_states(
+        &bundle.entrypoints.linit,
+        &state_candidates,
+        Some(&constants_value),
+        bounds,
+        InitHooks::default(),
+    )
+    .map_err(|e| miette::miette!("{}", e))?;
+
+    let mut assignments_by_branch = BTreeMap::new();
+    for branch in &transition.branches {
+        let assignments = expand_branch_existentials(branch, &bundle.schema, model_config)
+            .map_err(|e| miette::miette!("{}", e))?;
+        assignments_by_branch.insert(branch.label.clone(), assignments);
+    }
+
+    let exploration = explore_state_space_with_traces(
+        &initial_states,
+        search_mode,
+        limits,
+        model_config.properties.check_deadlock,
+        |state| {
+            let mut traced_successors = Vec::new();
+            for branch in &transition.branches {
+                let branch_assignments = assignments_by_branch
+                    .get(&branch.label)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let successors = solve_branch_successors(
+                    &transition,
+                    branch,
+                    state,
+                    Some(&constants_value),
+                    branch_assignments,
+                    bounds,
+                    SolverHooks::default(),
+                )?;
+                for successor in successors {
+                    traced_successors.push(TracedSuccessor {
+                        action_branch: branch.label.clone(),
+                        state: successor,
+                    });
+                }
+            }
+
+            if traced_successors.is_empty()
+                && matches!(
+                    empty_successor_semantics,
+                    verus_transpiler::modelcheck::solver::EmptySuccessorSemantics::Stuttering
+                )
+            {
+                traced_successors.push(TracedSuccessor {
+                    action_branch: "stutter".to_string(),
+                    state: state.clone(),
+                });
+            }
+
+            Ok(traced_successors)
+        },
+        |state, _depth| {
+            first_invariant_violation(
+                &owned_invariants,
+                state,
+                Some(&constants_value),
+                bounds,
+                InvariantHooks::default(),
+            )
+        },
+    )
+    .map_err(|e| miette::miette!("{}", e))?;
+
+    let summary = ModelCheckExecutionSummary {
+        result: model_check_result_label(exploration.stop_reason).to_string(),
+        states: exploration.stats.visited_states,
+        transitions: exploration.stats.successors_considered,
+        depth: exploration
+            .explored
+            .iter()
+            .map(|s| s.depth)
+            .max()
+            .unwrap_or(0),
+        elapsed_ms: started.elapsed().as_millis(),
+    };
+
+    Ok(ModelCheckExecution {
+        summary,
+        exploration,
+    })
+}
+
 /// Handle subcommands
 fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
     match command {
@@ -637,12 +1106,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             json_report,
             model,
         } => {
+            use std::collections::HashSet;
             use verus_transpiler::modelcheck::config::{
                 apply_model_config_overrides, parse_model_config_file, ModelConfigOverrides,
             };
             use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
             use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
-            use std::collections::HashSet;
 
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
@@ -702,10 +1171,16 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .iter()
                 .map(|invariant_fn| invariant_fn.name.clone())
                 .collect();
+            let execution = execute_model_check(
+                &bundle,
+                &model_config,
+                selected_search,
+                &selected_invariants,
+            )?;
 
             if *json_report {
                 let report = serde_json::json!({
-                    "result": "ok",
+                    "result": execution.summary.result,
                     "protocol": bundle.protocol_file.display().to_string(),
                     "types": bundle.types_file.display().to_string(),
                     "entrypoints": {
@@ -725,6 +1200,22 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "max_states": model_config.search.max_states,
                         "timeout_ms": model_config.search.timeout_ms,
                     },
+                    "summary": {
+                        "states": execution.summary.states,
+                        "transitions": execution.summary.transitions,
+                        "depth": execution.summary.depth,
+                        "elapsed_ms": execution.summary.elapsed_ms,
+                    },
+                    "stop_reason": format!("{:?}", execution.exploration.stop_reason),
+                    "invariant_violation": execution.exploration.invariant_violation.as_ref().map(|violation| serde_json::json!({
+                        "invariant": violation.invariant,
+                        "depth": violation.depth,
+                        "state": violation.state.canonical_key(),
+                    })),
+                    "deadlock": execution.exploration.deadlock.as_ref().map(|deadlock| serde_json::json!({
+                        "depth": deadlock.depth,
+                        "state": deadlock.state.canonical_key(),
+                    })),
                 });
                 let rendered = serde_json::to_string_pretty(&report).map_err(|e| {
                     miette::miette!("Failed to serialize model-check JSON report: {}", e)
@@ -733,7 +1224,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 return Ok(());
             }
 
-            println!("Model-check preflight OK");
+            println!("Model-check run complete");
             println!("  protocol: {}", bundle.protocol_file.display());
             println!("  types: {}", bundle.types_file.display());
             println!(
@@ -753,6 +1244,23 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 model_config.search.max_states,
                 model_config.search.timeout_ms
             );
+            println!("  result: {}", execution.summary.result);
+            println!(
+                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}",
+                execution.summary.states,
+                execution.summary.transitions,
+                execution.summary.depth,
+                execution.summary.elapsed_ms
+            );
+            if let Some(violation) = &execution.exploration.invariant_violation {
+                println!(
+                    "  invariant_violation: invariant=`{}`, depth={}",
+                    violation.invariant, violation.depth
+                );
+            }
+            if let Some(deadlock) = &execution.exploration.deadlock {
+                println!("  deadlock: depth={}", deadlock.depth);
+            }
 
             Ok(())
         }
@@ -2094,7 +2602,10 @@ Next == count' = count + N
                 assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
                 assert_eq!(init, "InitOverride");
                 assert_eq!(next, "NextOverride");
-                assert_eq!(invariant, vec!["LTypeOK".to_string(), "LSafety".to_string()]);
+                assert_eq!(
+                    invariant,
+                    vec!["LTypeOK".to_string(), "LSafety".to_string()]
+                );
                 assert_eq!(search, Some(CliSearchMode::Dfs));
                 assert_eq!(max_depth, Some(64));
                 assert_eq!(max_states, Some(4096));
@@ -2164,7 +2675,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 
     pub open spec fn LInv(s: LState, c: LConstants) -> bool {
@@ -2177,6 +2688,13 @@ verus! {
         std::fs::write(
             &model_path,
             r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
 [properties]
 invariants = ["LInv"]
 "#,
@@ -2238,13 +2756,24 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
         )
         .unwrap();
-        std::fs::write(&model_path, "").unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
 
         let command = Commands::ModelCheck {
             input: proto_path,
@@ -2301,13 +2830,24 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
         )
         .unwrap();
-        std::fs::write(&model_path, "").unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
 
         let command = Commands::ModelCheck {
             input: proto_path,
@@ -2365,13 +2905,24 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
         )
         .unwrap();
-        std::fs::write(&model_path, "").unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
 
         let command = Commands::ModelCheck {
             input: proto_path,
@@ -2406,6 +2957,92 @@ verus! {
     }
 
     #[test]
+    fn test_execute_model_check_reports_invariant_violation_summary() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+
+    pub open spec fn LInvBad(s: LState, c: LConstants) -> bool {
+        s.value < 0 && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[properties]
+invariants = ["LInvBad"]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "invariant_violated");
+        assert_eq!(
+            execution
+                .exploration
+                .invariant_violation
+                .as_ref()
+                .map(|v| v.invariant.as_str()),
+            Some("LInvBad")
+        );
+        assert_eq!(execution.summary.states, 2);
+    }
+
+    #[test]
     fn test_model_check_command_with_explicit_types_override() {
         let dir = tempfile::tempdir().unwrap();
         let types_path = dir.path().join("custom_types.rs");
@@ -2428,13 +3065,24 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
         )
         .unwrap();
-        std::fs::write(&model_path, "").unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
 
         let command = Commands::ModelCheck {
             input: proto_path,
@@ -2491,13 +3139,24 @@ verus! {
             r#"
 verus! {
     pub open spec fn NextCustom(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
         )
         .unwrap();
-        std::fs::write(&model_path, "").unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
 
         let command = Commands::ModelCheck {
             input: proto_path,
@@ -2554,7 +3213,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn NextOther(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
@@ -2592,7 +3251,9 @@ verus! {
         };
 
         let err = handle_command(&command, &cli).unwrap_err();
-        assert!(err.to_string().contains("Missing required entrypoint `NextCustom"));
+        assert!(err
+            .to_string()
+            .contains("Missing required entrypoint `NextCustom"));
     }
 
     #[test]
@@ -2607,7 +3268,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
@@ -2645,7 +3306,9 @@ verus! {
         };
 
         let err = handle_command(&command, &cli).unwrap_err();
-        assert!(err.to_string().contains("Explicit types source file not found"));
+        assert!(err
+            .to_string()
+            .contains("Explicit types source file not found"));
     }
 
     #[test]
@@ -2671,7 +3334,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,
@@ -2680,6 +3343,13 @@ verus! {
         std::fs::write(
             &model_path,
             r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
 [properties]
 invariants = ["LMissing"]
 "#,
@@ -2742,7 +3412,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 
     pub open spec fn LInv(s: LState, c: LConstants) -> bool {
@@ -2755,6 +3425,13 @@ verus! {
         std::fs::write(
             &model_path,
             r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
 [properties]
 invariants = ["LMissing"]
 "#,
@@ -2816,7 +3493,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 
     pub open spec fn LInv(s: LState, c: LConstants) -> bool {
@@ -2884,7 +3561,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit && s.value <= c.limit
+        s_.value == s.value && s.value <= c.limit
     }
 }
 "#,

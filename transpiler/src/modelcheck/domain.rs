@@ -279,14 +279,7 @@ fn expand_named_type_domain(
     }
 
     if let Some((enum_name, enum_def)) = find_enum(schema, &candidates) {
-        return expand_enum_variants(
-            &enum_name,
-            enum_def,
-            None,
-            model,
-            bounds,
-            expansion_limit,
-        );
+        return expand_enum_variants(&enum_name, enum_def, None, model, bounds, expansion_limit);
     }
 
     Err(TranspileError::Config {
@@ -454,7 +447,10 @@ fn expand_enum_variants(
     Ok(out)
 }
 
-fn runtime_from_model_value(value: &ModelValue, expected_ty: &Type) -> TranspileResult<RuntimeValue> {
+fn runtime_from_model_value(
+    value: &ModelValue,
+    expected_ty: &Type,
+) -> TranspileResult<RuntimeValue> {
     match (value, expected_ty) {
         (ModelValue::Bool(v), Type::Bool) => Ok(RuntimeValue::Bool(*v)),
         (ModelValue::Int(v), Type::Int) => Ok(RuntimeValue::Int(i128::from(*v))),
@@ -479,13 +475,7 @@ fn generate_seq_domain(
 ) -> TranspileResult<Vec<RuntimeValue>> {
     let mut out = Vec::new();
     let mut current = Vec::new();
-    generate_seq_values_recursive(
-        elements,
-        max_len,
-        expansion_limit,
-        &mut current,
-        &mut out,
-    )?;
+    generate_seq_values_recursive(elements, max_len, expansion_limit, &mut current, &mut out)?;
     Ok(out)
 }
 
@@ -523,7 +513,14 @@ fn generate_set_domain(
 ) -> TranspileResult<Vec<RuntimeValue>> {
     let mut out = Vec::new();
     let mut current = Vec::new();
-    generate_set_values_recursive(elements, max_len, expansion_limit, 0, &mut current, &mut out)?;
+    generate_set_values_recursive(
+        elements,
+        max_len,
+        expansion_limit,
+        0,
+        &mut current,
+        &mut out,
+    )?;
     Ok(out)
 }
 
@@ -610,7 +607,15 @@ fn generate_map_values_recursive(
         return Ok(());
     }
 
-    generate_map_values_recursive(keys, values, max_len, expansion_limit, idx + 1, current, out)?;
+    generate_map_values_recursive(
+        keys,
+        values,
+        max_len,
+        expansion_limit,
+        idx + 1,
+        current,
+        out,
+    )?;
 
     for value in values {
         current.insert(keys[idx].clone(), value.clone());
@@ -670,7 +675,10 @@ fn type_name_candidates(path: &Path) -> Vec<String> {
     candidates
 }
 
-fn find_quantifier_domain<'a>(model: &'a ModelConfig, candidates: &[String]) -> Option<&'a DomainSpec> {
+fn find_quantifier_domain<'a>(
+    model: &'a ModelConfig,
+    candidates: &[String],
+) -> Option<&'a DomainSpec> {
     for candidate in candidates {
         if let Some(domain) = model.quantifiers.types.get(candidate) {
             return Some(domain);
@@ -965,5 +973,106 @@ mod tests {
         assert!(assignments
             .iter()
             .all(|a| matches!(a.get("m"), Some(RuntimeValue::Map(_)))));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_reference_and_generic_seq_domain() {
+        let mut model = base_model();
+        model.quantifiers.int = Some(IntDomain { min: 0, max: 1 });
+
+        let branch = mk_branch(vec![
+            ExistentialVarIr {
+                name: "r".to_string(),
+                ty: Some(Type::Reference {
+                    ty: Box::new(Type::Int),
+                    mutable: false,
+                }),
+            },
+            ExistentialVarIr {
+                name: "xs".to_string(),
+                ty: Some(Type::Generic(
+                    Path::single("Seq".to_string()),
+                    vec![Type::Bool],
+                )),
+            },
+        ]);
+
+        let assignments = expand_branch_existentials(&branch, &SpecSchema::new(), &model).unwrap();
+        assert_eq!(assignments.len(), 14); // 2 int choices * 7 seq<bool> choices (len<=2)
+        assert!(assignments.iter().all(|a| a.contains_key("r")));
+        assert!(assignments.iter().all(|a| a.contains_key("xs")));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_named_values_override_without_schema_type() {
+        let mut model = base_model();
+        model.quantifiers.types.insert(
+            "NodeId".to_string(),
+            DomainSpec::Values {
+                values: vec![ModelValue::Int(5), ModelValue::Int(8)],
+            },
+        );
+
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "id".to_string(),
+            ty: Some(Type::Named(Path::single("NodeId".to_string()))),
+        }]);
+
+        let assignments = expand_branch_existentials(&branch, &SpecSchema::new(), &model).unwrap();
+        assert_eq!(assignments.len(), 2);
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("id") == Some(&RuntimeValue::Int(5))));
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("id") == Some(&RuntimeValue::Int(8))));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_missing_named_domain_has_actionable_error() {
+        let model = base_model();
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "x".to_string(),
+            ty: Some(Type::Named(Path::single("UnknownType".to_string()))),
+        }]);
+
+        let err = expand_branch_existentials(&branch, &SpecSchema::new(), &model).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Missing domain for named type `UnknownType`"));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_rejects_payload_enum_variants() {
+        let mut model = base_model();
+        model.quantifiers.types.insert(
+            "LRole".to_string(),
+            DomainSpec::EnumSubset {
+                variants: vec!["Leader".to_string()],
+            },
+        );
+
+        let mut schema = SpecSchema::new();
+        schema.enums.insert(
+            "LRole".to_string(),
+            EnumDef {
+                name: "LRole".to_string(),
+                generics: Default::default(),
+                variants: vec![VariantDef {
+                    name: "Leader".to_string(),
+                    fields: VariantFields::Tuple(vec![Type::Int]),
+                }],
+                is_spec: true,
+            },
+        );
+        schema.enum_order.push("LRole".to_string());
+
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "role".to_string(),
+            ty: Some(Type::Named(Path::single("LRole".to_string()))),
+        }]);
+
+        let err = expand_branch_existentials(&branch, &schema, &model).unwrap_err();
+        assert!(err.to_string().contains("payload fields"));
     }
 }

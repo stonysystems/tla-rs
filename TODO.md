@@ -6536,14 +6536,19 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added focused tests for CLI parsing of these flags, command acceptance with overrides, and rejection of invalid overrides (e.g., `max_depth = 0`).
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
   - [x] `--json-report` (machine-readable result)
-    - Added `--json-report` to `verus-transpile model-check`; when set, preflight emits a structured JSON report (protocol/types paths, resolved entrypoints, invariant counts/names, and effective search settings) to stdout.
-    - Preserved existing human-readable summary when the flag is absent, and added focused tests for CLI parsing default/enablement and command preflight acceptance in JSON mode.
+    - Added `--json-report` to `verus-transpile model-check`; when set, execution emits a structured JSON report (protocol/types paths, resolved entrypoints/invariants, search settings, run summary, and stop metadata) to stdout.
+    - Added focused tests for CLI parsing default/enablement and command execution acceptance in JSON mode.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
-- [ ] Add human-readable summary output (states, transitions, depth, elapsed, result).
+- [x] Add human-readable summary output (states, transitions, depth, elapsed, result).
+  - `verus-transpile model-check` now executes bounded exploration and prints a run summary (`result`, `states`, `transitions`, `depth`, `elapsed_ms`) alongside protocol/search context.
+  - Added execution helper coverage for invariant-violation summary reporting and updated command-level model-check tests to exercise the run path.
+  - Scope check: implemented as a small leaf task (`<500` LOC including focused tests).
 
 ### 22.8 Validation and Regression Tests
 
-- [ ] Add unit tests for evaluator semantics and domain expansion.
+- [x] Add unit tests for evaluator semantics and domain expansion.
+  - Expanded `modelcheck::evaluator` unit coverage for short-circuit connective semantics (`&&&`, `|||`, `==>`), `if` without `else`, `iff`/`not`, cast-to-`nat` edge cases, and map `index`/`contains_key` behavior.
+  - Expanded `modelcheck::domain` unit coverage for named `values` overrides (without alias/enum schema), reference and generic container type expansion, payload-enum rejection diagnostics, and missing named-domain diagnostics.
 - [ ] Add integration tests for end-to-end model-check runs on:
   - TwoPhase
   - LeaderElection
