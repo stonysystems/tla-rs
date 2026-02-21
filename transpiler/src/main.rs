@@ -159,6 +159,10 @@ enum Commands {
         #[arg(long)]
         input: PathBuf,
 
+        /// Optional explicit types spec file (defaults to sibling types.rs)
+        #[arg(long)]
+        types: Option<PathBuf>,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -572,17 +576,25 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             println!("{}", rendered);
             Ok(())
         }
-        Commands::ModelCheck { input, model } => {
+        Commands::ModelCheck {
+            input,
+            types,
+            model,
+        } => {
             use verus_transpiler::modelcheck::config::parse_model_config_file;
             use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
-            use verus_transpiler::spec_analyzer::ingest_protocol_sources;
+            use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types;
 
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
+                if let Some(types_file) = types {
+                    eprintln!("Loading explicit types spec: {}", types_file.display());
+                }
                 eprintln!("Loading model config: {}", model.display());
             }
 
-            let bundle = ingest_protocol_sources(input).map_err(|e| miette::miette!("{}", e))?;
+            let bundle = ingest_protocol_sources_with_types(input.as_path(), types.as_deref())
+                .map_err(|e| miette::miette!("{}", e))?;
             let model_config =
                 parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
             let selected_invariants = resolve_selected_invariants(
@@ -1910,13 +1922,20 @@ Next == count' = count + N
             "model-check",
             "--input",
             "src/protocol/TwoPhase/twophase.rs",
+            "--types",
+            "src/protocol/TwoPhase/types.rs",
             "--model",
             "model.toml",
         ]);
 
         match cli.command {
-            Some(Commands::ModelCheck { input, model }) => {
+            Some(Commands::ModelCheck {
+                input,
+                types,
+                model,
+            }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
+                assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
                 assert_eq!(model, PathBuf::from("model.toml"));
             }
             _ => panic!("Expected ModelCheck command"),
@@ -1967,6 +1986,7 @@ invariants = ["LInv"]
 
         let command = Commands::ModelCheck {
             input: proto_path,
+            types: None,
             model: model_path,
         };
         let cli = Cli {
@@ -1986,6 +2006,106 @@ invariants = ["LInv"]
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_with_explicit_types_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("custom_types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: Some(types_path),
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_missing_explicit_types_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let proto_path = dir.path().join("demo.rs");
+        let missing_types_path = dir.path().join("missing_types.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: Some(missing_types_path),
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(err.to_string().contains("Explicit types source file not found"));
     }
 
     #[test]
@@ -2028,6 +2148,7 @@ invariants = ["LMissing"]
 
         let command = Commands::ModelCheck {
             input: proto_path,
+            types: None,
             model: model_path,
         };
         let cli = Cli {

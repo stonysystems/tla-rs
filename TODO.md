@@ -6495,7 +6495,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 - [x] Maintain visited-set and frontier statistics.
   - Extended `modelcheck::explorer` with `ExplorationStats` in `ExplorationResult`, tracking visited/explored counts, frontier peak/final sizes, and successor considered/enqueued/deduplicated metrics for bounded BFS/DFS runs.
   - Scope check: implemented as a small leaf task (`<500` LOC including tests).
-- [ ] Check:
+- [x] Check:
   - [x] `LInit` for initial-state construction
     - Added `modelcheck::init` (`transpiler/src/modelcheck/init.rs`) with `construct_initial_states`, which evaluates `LInit` against finite candidate states (with optional constants binding) to build deduplicated concrete initial states.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused unit tests).
@@ -6516,14 +6516,15 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Added `Commands::ModelCheck` in `transpiler/src/main.rs` with a real preflight execution path that validates protocol source ingestion (`types.rs` + protocol), required `LInit`/`LNext` entrypoints, `model.toml` parsing, and configured invariant name resolution.
   - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
 - [ ] Proposed flags:
-  - `--input` (protocol spec file)
-  - `--types` (types file; optional if inferable)
-  - `--model` (`model.toml`)
-  - `--init`, `--next` (override function names; default `LInit`, `LNext`)
-  - `--invariant` (repeatable)
-  - `--search` (`bfs|dfs`)
-  - `--max-depth`, `--max-states`, `--timeout`
-  - `--json-report` (machine-readable result)
+  - [x] `--input` + `--model` required inputs
+  - [x] `--types` (types file; optional if inferable)
+    - Added `--types` to `verus-transpile model-check` and wired explicit-types ingestion via `ingest_protocol_sources_with_types`, with default sibling `types.rs` inference preserved when the flag is omitted.
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI + ingestion tests).
+  - [ ] `--init`, `--next` (override function names; default `LInit`, `LNext`)
+  - [ ] `--invariant` (repeatable)
+  - [ ] `--search` (`bfs|dfs`)
+  - [ ] `--max-depth`, `--max-states`, `--timeout`
+  - [ ] `--json-report` (machine-readable result)
 - [ ] Add human-readable summary output (states, transitions, depth, elapsed, result).
 
 ### 22.8 Validation and Regression Tests

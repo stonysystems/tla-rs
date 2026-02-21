@@ -482,7 +482,16 @@ fn format_type_for_diagnostic(ty: &Type) -> String {
 pub fn ingest_protocol_sources<P: AsRef<Path>>(
     protocol_file: P,
 ) -> TranspileResult<ProtocolSourceBundle> {
-    let protocol_file = protocol_file.as_ref();
+    ingest_protocol_sources_with_types(protocol_file.as_ref(), None)
+}
+
+/// Ingest protocol sources from `<proto>.rs` and either:
+/// - an explicit `types.rs` path, or
+/// - inferred sibling `types.rs` next to `<proto>.rs` when no override is provided.
+pub fn ingest_protocol_sources_with_types(
+    protocol_file: &Path,
+    types_file_override: Option<&Path>,
+) -> TranspileResult<ProtocolSourceBundle> {
     if !protocol_file.exists() {
         return Err(crate::error::TranspileError::Config {
             message: format!(
@@ -512,16 +521,31 @@ pub fn ingest_protocol_sources<P: AsRef<Path>>(
             ),
         });
     };
-    let types_file = protocol_dir.join("types.rs");
-    if !types_file.exists() {
-        return Err(crate::error::TranspileError::Config {
-            message: format!(
-                "Expected sibling types.rs for protocol source {}: missing {}",
-                protocol_file.display(),
-                types_file.display()
-            ),
-        });
-    }
+
+    let types_file = if let Some(explicit_types_file) = types_file_override {
+        if !explicit_types_file.exists() {
+            return Err(crate::error::TranspileError::Config {
+                message: format!(
+                    "Explicit types source file not found for protocol source {}: {}",
+                    protocol_file.display(),
+                    explicit_types_file.display()
+                ),
+            });
+        }
+        explicit_types_file.to_path_buf()
+    } else {
+        let inferred_types_file = protocol_dir.join("types.rs");
+        if !inferred_types_file.exists() {
+            return Err(crate::error::TranspileError::Config {
+                message: format!(
+                    "Expected sibling types.rs for protocol source {}: missing {}",
+                    protocol_file.display(),
+                    inferred_types_file.display()
+                ),
+            });
+        }
+        inferred_types_file
+    };
 
     let (schema, spec_functions) =
         analyze_spec_files_with_ast(&[types_file.as_path(), protocol_file])?;
@@ -1384,6 +1408,68 @@ verus! {
             bundle.spec_functions.iter().any(|f| f.name == "LNext"),
             "ingestion should parse LNext from protocol source"
         );
+    }
+
+    #[test]
+    fn test_ingest_protocol_sources_with_explicit_types_path() {
+        let dir = tempdir().unwrap();
+        let explicit_types_path = dir.path().join("custom_types.rs");
+        let proto_path = dir.path().join("demo.rs");
+
+        fs::write(
+            &explicit_types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let bundle =
+            ingest_protocol_sources_with_types(&proto_path, Some(&explicit_types_path)).unwrap();
+        assert_eq!(bundle.types_file, explicit_types_path);
+        assert_eq!(bundle.protocol_file, proto_path);
+        assert!(bundle.schema.structs.contains_key("LState"));
+        assert_eq!(bundle.entrypoints.linit.name, "LInit");
+        assert_eq!(bundle.entrypoints.lnext.name, "LNext");
+    }
+
+    #[test]
+    fn test_ingest_protocol_sources_with_explicit_missing_types_path() {
+        let dir = tempdir().unwrap();
+        let proto_path = dir.path().join("demo.rs");
+        let missing_types_path = dir.path().join("missing_types.rs");
+
+        fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let err =
+            ingest_protocol_sources_with_types(&proto_path, Some(&missing_types_path)).unwrap_err();
+        assert!(matches!(err, crate::error::TranspileError::Config { .. }));
+        assert!(err.to_string().contains("Explicit types source file not found"));
     }
 
     #[test]
