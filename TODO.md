@@ -6499,7 +6499,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] `LInit` for initial-state construction
     - Added `modelcheck::init` (`transpiler/src/modelcheck/init.rs`) with `construct_initial_states`, which evaluates `LInit` against finite candidate states (with optional constants binding) to build deduplicated concrete initial states.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused unit tests).
-  - [ ] User-selected invariants on every reached state
+  - [x] User-selected invariants on every reached state
+    - Added `modelcheck::invariant` (`transpiler/src/modelcheck/invariant.rs`) with ordered user-selection resolution and `first_invariant_violation`, then integrated `modelcheck::explorer` (`explore_state_space_with_invariants`) to evaluate invariants on each reached/popped state and stop with explicit violation metadata.
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused unit tests).
   - [ ] Optional deadlock detection
 - [ ] Emit counterexample traces with action branch + state diff summaries.
 

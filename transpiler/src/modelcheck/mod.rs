@@ -11,12 +11,14 @@
 //! - optional stuttering vs deadlock empty-successor semantics
 //! - bounded BFS/DFS state-space exploration
 //! - `LInit`-based initial-state construction over finite candidate sets
+//! - user-selected invariant evaluation on reached states
 
 pub mod config;
 pub mod domain;
 pub mod evaluator;
 pub mod explorer;
 pub mod init;
+pub mod invariant;
 pub mod ir;
 pub mod solver;
 pub mod value;

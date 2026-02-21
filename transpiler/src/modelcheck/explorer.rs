@@ -43,6 +43,16 @@ pub enum ExplorationStopReason {
     FrontierExhausted,
     /// State bound reached before the frontier is fully explored.
     MaxStatesReached,
+    /// A user-selected invariant evaluated to false on a reached state.
+    InvariantViolated,
+}
+
+/// Invariant failure metadata captured at exploration stop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvariantViolation {
+    pub invariant: String,
+    pub state: RuntimeValue,
+    pub depth: usize,
 }
 
 /// Summary statistics collected while exploring the state space.
@@ -72,6 +82,7 @@ pub struct ExplorationResult {
     pub explored: Vec<ExploredState>,
     pub stop_reason: ExplorationStopReason,
     pub stats: ExplorationStats,
+    pub invariant_violation: Option<InvariantViolation>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,10 +100,42 @@ pub fn explore_state_space<F>(
     initial_states: &[RuntimeValue],
     mode: SearchMode,
     limits: ExplorationLimits,
-    mut successor_fn: F,
+    successor_fn: F,
 ) -> TranspileResult<ExplorationResult>
 where
     F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
+{
+    explore_state_space_internal(initial_states, mode, limits, successor_fn, |_, _| Ok(None))
+}
+
+/// Explore the state space while checking user-selected invariants on every reached state.
+///
+/// The invariant checker is invoked once per state popped from the frontier. Returning
+/// `Some(invariant_name)` stops exploration immediately with `InvariantViolated`.
+pub fn explore_state_space_with_invariants<F, I>(
+    initial_states: &[RuntimeValue],
+    mode: SearchMode,
+    limits: ExplorationLimits,
+    successor_fn: F,
+    invariant_checker: I,
+) -> TranspileResult<ExplorationResult>
+where
+    F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
+    I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
+{
+    explore_state_space_internal(initial_states, mode, limits, successor_fn, invariant_checker)
+}
+
+fn explore_state_space_internal<F, I>(
+    initial_states: &[RuntimeValue],
+    mode: SearchMode,
+    limits: ExplorationLimits,
+    mut successor_fn: F,
+    mut invariant_checker: I,
+) -> TranspileResult<ExplorationResult>
+where
+    F: FnMut(&RuntimeValue) -> TranspileResult<Vec<RuntimeValue>>,
+    I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
 {
     validate_limits(limits)?;
 
@@ -120,6 +163,21 @@ where
             depth: item.depth,
         });
 
+        if let Some(invariant_name) = invariant_checker(&item.state, item.depth)? {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::InvariantViolated,
+                visited.len(),
+                frontier.len(),
+                stats,
+                Some(InvariantViolation {
+                    invariant: invariant_name,
+                    state: item.state.clone(),
+                    depth: item.depth,
+                }),
+            ));
+        }
+
         if item.depth >= limits.max_depth {
             continue;
         }
@@ -135,6 +193,7 @@ where
                     visited.len(),
                     frontier.len(),
                     stats,
+                    None,
                 ));
             }
 
@@ -159,6 +218,7 @@ where
         visited.len(),
         frontier.len(),
         stats,
+        None,
     ))
 }
 
@@ -168,6 +228,7 @@ fn finalize_result(
     visited_len: usize,
     frontier_len: usize,
     mut stats: ExplorationStats,
+    invariant_violation: Option<InvariantViolation>,
 ) -> ExplorationResult {
     stats.explored_states = explored.len();
     stats.visited_states = visited_len;
@@ -176,6 +237,7 @@ fn finalize_result(
         explored,
         stop_reason,
         stats,
+        invariant_violation,
     }
 }
 
@@ -455,5 +517,105 @@ mod tests {
         assert_eq!(result.stats.successors_considered, 2);
         assert_eq!(result.stats.successors_enqueued, 1);
         assert_eq!(result.stats.duplicate_successors, 0);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_invariants_stops_on_violation() {
+        let graph = BTreeMap::from([(0, vec![1]), (1, vec![2]), (2, vec![])]);
+        let result = explore_state_space_with_invariants(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+            |s, _depth| {
+                if state_id(s) == 1 {
+                    Ok(Some("LSafety".to_string()))
+                } else {
+                    Ok(None)
+                }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::InvariantViolated);
+        assert_eq!(ids(&result), vec![0, 1]);
+        assert_eq!(
+            result.invariant_violation,
+            Some(InvariantViolation {
+                invariant: "LSafety".to_string(),
+                state: state(1),
+                depth: 1,
+            })
+        );
+        assert_eq!(result.stats.successors_considered, 1);
+        assert_eq!(result.stats.successors_enqueued, 1);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_invariants_checks_initial_states() {
+        let mut successor_calls = 0usize;
+        let result = explore_state_space_with_invariants(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            |_| {
+                successor_calls += 1;
+                Ok(vec![state(1)])
+            },
+            |_s, depth| {
+                if depth == 0 {
+                    Ok(Some("LTypeOK".to_string()))
+                } else {
+                    Ok(None)
+                }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::InvariantViolated);
+        assert_eq!(ids(&result), vec![0]);
+        assert_eq!(successor_calls, 0);
+    }
+
+    #[test]
+    fn test_explore_state_space_with_invariants_has_no_violation_when_all_hold() {
+        let graph = BTreeMap::from([(0, vec![1]), (1, vec![])]);
+        let result = explore_state_space_with_invariants(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+            },
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect();
+                Ok(next)
+            },
+            |_s, _depth| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(ids(&result), vec![0, 1]);
+        assert_eq!(result.invariant_violation, None);
     }
 }
