@@ -30,6 +30,21 @@ use verus_transpiler::spec_analyzer::{
 };
 use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfig};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum CliSearchMode {
+    Bfs,
+    Dfs,
+}
+
+impl CliSearchMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Bfs => "bfs",
+            Self::Dfs => "dfs",
+        }
+    }
+}
+
 /// Verus Spec-to-Implementation Transpiler
 ///
 /// Transforms Verus spec functions into verified exec implementations
@@ -175,6 +190,10 @@ enum Commands {
         /// `properties.invariants` from model.toml.
         #[arg(long, action = clap::ArgAction::Append)]
         invariant: Vec<String>,
+
+        /// Search strategy override (default: bfs)
+        #[arg(long, value_enum)]
+        search: Option<CliSearchMode>,
 
         /// Model-check config (model.toml)
         #[arg(long)]
@@ -595,6 +614,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             init,
             next,
             invariant,
+            search,
             model,
         } => {
             use verus_transpiler::modelcheck::config::parse_model_config_file;
@@ -642,6 +662,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
                 model_config.properties.invariants = normalized;
             }
+            let selected_search = (*search).unwrap_or(CliSearchMode::Bfs);
             let selected_invariants = resolve_selected_invariants(
                 &bundle.spec_functions,
                 &model_config.properties.invariants,
@@ -661,7 +682,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 selected_invariants.len()
             );
             println!(
-                "  search: mode_semantics={:?}, max_depth={}, max_states={}, timeout_ms={}",
+                "  search: strategy={}, mode_semantics={:?}, max_depth={}, max_states={}, timeout_ms={}",
+                selected_search.as_str(),
                 model_config.properties.successor_semantics,
                 model_config.search.max_depth,
                 model_config.search.max_states,
@@ -1977,6 +1999,8 @@ Next == count' = count + N
             "LTypeOK",
             "--invariant",
             "LSafety",
+            "--search",
+            "dfs",
             "--model",
             "model.toml",
         ]);
@@ -1988,6 +2012,7 @@ Next == count' = count + N
                 init,
                 next,
                 invariant,
+                search,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -1995,10 +2020,27 @@ Next == count' = count + N
                 assert_eq!(init, "InitOverride");
                 assert_eq!(next, "NextOverride");
                 assert_eq!(invariant, vec!["LTypeOK".to_string(), "LSafety".to_string()]);
+                assert_eq!(search, Some(CliSearchMode::Dfs));
                 assert_eq!(model, PathBuf::from("model.toml"));
             }
             _ => panic!("Expected ModelCheck command"),
         }
+    }
+
+    #[test]
+    fn test_model_check_cli_rejects_invalid_search_mode() {
+        let err = Cli::try_parse_from([
+            "verus-transpile",
+            "model-check",
+            "--input",
+            "src/protocol/TwoPhase/twophase.rs",
+            "--search",
+            "beam",
+            "--model",
+            "model.toml",
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("possible values: bfs, dfs"));
     }
 
     #[test]
@@ -2049,6 +2091,66 @@ invariants = ["LInv"]
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec![],
+            search: None,
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_accepts_search_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec![],
+            search: Some(CliSearchMode::Dfs),
             model: model_path,
         };
         let cli = Cli {
@@ -2107,6 +2209,7 @@ verus! {
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec![],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2165,6 +2268,7 @@ verus! {
             init: "InitCustom".to_string(),
             next: "NextCustom".to_string(),
             invariant: vec![],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2223,6 +2327,7 @@ verus! {
             init: "InitCustom".to_string(),
             next: "NextCustom".to_string(),
             invariant: vec![],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2271,6 +2376,7 @@ verus! {
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec![],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2337,6 +2443,7 @@ invariants = ["LMissing"]
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec![],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2407,6 +2514,7 @@ invariants = ["LMissing"]
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec!["LInv".to_string()],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2469,6 +2577,7 @@ verus! {
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec!["LInv".to_string(), "LInv".to_string()],
+            search: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2528,6 +2637,7 @@ verus! {
             init: "LInit".to_string(),
             next: "LNext".to_string(),
             invariant: vec!["   ".to_string()],
+            search: None,
             model: model_path,
         };
         let cli = Cli {

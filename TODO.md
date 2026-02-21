@@ -6527,7 +6527,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added repeatable `--invariant` overrides to `verus-transpile model-check`; when provided, they replace `properties.invariants` from `model.toml` for preflight resolution.
     - Added CLI-side validation for override names (non-empty, no duplicates) with focused tests for parsing, override precedence, and validation errors.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
-  - [ ] `--search` (`bfs|dfs`)
+  - [x] `--search` (`bfs|dfs`)
+    - Added `--search <bfs|dfs>` to `verus-transpile model-check` (typed CLI enum), defaulting to `bfs` when omitted.
+    - Wired selection into model-check preflight summary output and added focused tests for valid parsing (`dfs`), invalid mode rejection, and command preflight acceptance.
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
   - [ ] `--max-depth`, `--max-states`, `--timeout`
   - [ ] `--json-report` (machine-readable result)
 - [ ] Add human-readable summary output (states, transitions, depth, elapsed, result).
