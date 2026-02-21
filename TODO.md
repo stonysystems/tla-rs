@@ -5596,7 +5596,16 @@ transpiler/tla_test_workspace/
           - Confirmed first-error baseline after `16.8.3d-3c-3`: `25/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
           - Decision: close `16.8.3d-3c` as completed (`E0282` first-error class eliminated), but keep `16.8.3d-3` open; full-compile promotion criteria are not met yet (`25/33` with non-inference blockers remaining).
       - [ ] **16.8.3d-3d** Reduce residual non-inference first-error blockers (`E0308`, `E0061`, `E0599`, `REC_DECREASES`) before re-attempting `16.8.3d-3` promotion.
-        - [ ] **16.8.3d-3d-1** Eliminate `E0061` wrong-arity first error in `RSL/Replica.rs` by aligning generated D1 operator call arity/injected state args.
+        - [x] **16.8.3d-3d-1** Eliminate `E0061` wrong-arity first error in `RSL/Replica.rs` by aligning generated D1 operator call arity/injected state args.
+          - Scope/LOC check: implemented as a focused translator call-assembly fix + targeted regressions + single-module regeneration; stayed under the <500 LOC leaf target.
+          - Replaced all-or-nothing implicit-prefix matching with prefix-length matching for module-operator calls, so partially explicit prefixes (`s, s_, ...`) now inject only missing implicit args (`c`) rather than duplicating state args.
+          - Applied the same prefix-length handling to call-site parameter-hint indexing used by generated-D1 coercion and quantifier type-hint inference.
+          - Added regressions:
+            - `test_translate_op_apply_module_operator_injects_only_missing_implicit_args`
+            - `test_generated_d1_quantifier_call_site_hint_handles_partial_implicit_prefix`
+          - Regenerated `transpiler/tla_test_workspace/transpiler_generated_verus_spec/RSL/Replica.rs` (with `--gen-modes`) from `transpiler_generated_tla/RSL/Replica.tla`.
+          - Re-measured D1 first-error baseline after `16.8.3d-3d-1`: `25/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
+          - Net effect: wrong-arity first-error class is eliminated (`E0061: 1 -> 0`) without changing compile-pass count (`25/33`); one file now surfaces `E0599` as its first error.
         - [ ] **16.8.3d-3d-2** Reduce `E0308` first errors in `Raft/Raft.rs` and `RSL/{Acceptor,Election,Learner,Proposer}.rs` via targeted bool/int and branch-shape coercion fixes.
         - [ ] **16.8.3d-3d-3** Eliminate residual `E0599` first error in `RSL/Executor.rs` (method-on-scalar drift) via receiver-shape normalization.
         - [ ] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.

@@ -619,6 +619,19 @@ impl<'a> ExprTranslator<'a> {
         }
     }
 
+    fn explicit_implicit_prefix_len(
+        &self,
+        args: &[TlaExpr],
+        implicit_args: &[&str],
+    ) -> usize {
+        args.iter()
+            .zip(implicit_args.iter())
+            .take_while(|(arg, implicit_name)| {
+                matches!(arg, TlaExpr::Ident(name) if name == *implicit_name)
+            })
+            .count()
+    }
+
     fn quantifier_var_hint_priority(hint: &str) -> usize {
         let trimmed = hint.trim();
         if trimmed == "bool" {
@@ -666,19 +679,16 @@ impl<'a> ExprTranslator<'a> {
                 if let TlaExpr::Ident(op_name) = op.as_ref() {
                     if let Some(param_hints) = self.config.operator_param_type_hints.get(op_name) {
                         let implicit_args = self.implicit_args_for_operator_name(op_name);
-                        let explicit_starts_with_implicit = args
-                            .iter()
-                            .take(implicit_args.len())
-                            .enumerate()
-                            .all(|(idx, arg)| matches!(arg, TlaExpr::Ident(name) if name == implicit_args[idx]));
+                        let implicit_prefix_len =
+                            self.explicit_implicit_prefix_len(args, &implicit_args);
                         for (idx, arg) in args.iter().enumerate() {
                             if !matches!(arg, TlaExpr::Ident(name) if name == var_name) {
                                 continue;
                             }
-                            let param_idx = if explicit_starts_with_implicit {
-                                idx.checked_sub(implicit_args.len())
-                            } else {
+                            let param_idx = if implicit_prefix_len == 0 {
                                 Some(idx)
+                            } else {
+                                idx.checked_sub(implicit_prefix_len)
                             };
                             if let Some(expected) = param_idx.and_then(|i| param_hints.get(i)) {
                                 self.update_quantifier_var_hint(best, expected);
@@ -2057,13 +2067,10 @@ impl<'a> ExprTranslator<'a> {
                     (OperatorKind::ConstantOp, true) => vec!["c"],
                     (OperatorKind::ConstantOp, false) => Vec::new(),
                 };
+                let implicit_prefix_len =
+                    self.explicit_implicit_prefix_len(args, &implicit_args);
                 let raw_explicit_args: Vec<String> =
                     args.iter().map(|a| self.translate(a)).collect();
-                let explicit_starts_with_implicit = raw_explicit_args
-                    .iter()
-                    .take(implicit_args.len())
-                    .map(|s| s.as_str())
-                    .eq(implicit_args.iter().copied());
                 let explicit_args: Vec<String> = args
                     .iter()
                     .enumerate()
@@ -2074,10 +2081,10 @@ impl<'a> ExprTranslator<'a> {
                         else {
                             return rendered.clone();
                         };
-                        let param_idx = if explicit_starts_with_implicit {
-                            idx.checked_sub(implicit_args.len())
-                        } else {
+                        let param_idx = if implicit_prefix_len == 0 {
                             Some(idx)
+                        } else {
+                            idx.checked_sub(implicit_prefix_len)
                         };
                         if let Some(expected_type) =
                             param_idx.and_then(|i| param_hints.get(i))
@@ -2092,15 +2099,11 @@ impl<'a> ExprTranslator<'a> {
                         }
                     })
                     .collect();
-                let call_args: Vec<String> = if explicit_starts_with_implicit {
-                    explicit_args
-                } else {
-                    implicit_args
-                        .iter()
-                        .map(|s| s.to_string())
-                        .chain(explicit_args)
-                        .collect()
-                };
+                let call_args: Vec<String> = implicit_args
+                    .iter()
+                    .map(|s| s.to_string())
+                    .chain(explicit_args.into_iter().skip(implicit_prefix_len))
+                    .collect();
 
                 return format!("{}({})", prefixed, call_args.join(", "));
             }
@@ -5188,6 +5191,61 @@ mod tests {
             ],
         };
         assert_eq!(translator.translate(&expr), "LStep(s, s_, c, x)");
+    }
+
+    #[test]
+    fn test_translate_op_apply_module_operator_injects_only_missing_implicit_args() {
+        let mut config = TranslatorConfig::default();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("N".to_string());
+        config
+            .operator_info
+            .insert("Step".to_string(), OperatorKind::Action);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("Step")),
+            args: vec![
+                TlaExpr::ident("s"),
+                TlaExpr::ident("s_"),
+                TlaExpr::ident("ios"),
+            ],
+        };
+        assert_eq!(translator.translate(&expr), "LStep(s, s_, c, ios)");
+    }
+
+    #[test]
+    fn test_generated_d1_quantifier_call_site_hint_handles_partial_implicit_prefix() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("N".to_string());
+        config
+            .operator_info
+            .insert("Step".to_string(), OperatorKind::Action);
+        config
+            .operator_param_type_hints
+            .insert("Step".to_string(), vec!["bool".to_string()]);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::Exists {
+            vars: vec![TlaQuantBound {
+                var: "flag".to_string(),
+                set: None,
+            }],
+            body: Box::new(TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("Step")),
+                args: vec![
+                    TlaExpr::ident("s"),
+                    TlaExpr::ident("s_"),
+                    TlaExpr::ident("flag"),
+                ],
+            }),
+        };
+
+        assert_eq!(
+            translator.translate(&expr),
+            "exists |flag: bool| LStep(s, s_, c, flag)"
+        );
     }
 
     #[test]
