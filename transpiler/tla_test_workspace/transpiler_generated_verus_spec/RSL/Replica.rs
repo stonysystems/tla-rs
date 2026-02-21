@@ -92,7 +92,7 @@ pub open spec fn LReplicaNextProcess2b(s: LState, s_: LState, c: LConstants, rec
     {
     let opn: int = arbitrary();
     {
-    let op_learnable = ((arbitrary::<int>() < opn) || ((arbitrary() == opn) && (arbitrary::<int>() == 4689272130int)));
+    let op_learnable = ((arbitrary::<int>() < opn) || ((arbitrary::<int>() == opn) && (arbitrary::<int>() == 4689272130int)));
     if op_learnable { ((arbitrary() && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) && (sent_packets == Seq::<int>::empty())) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 }
@@ -182,14 +182,14 @@ pub open spec fn LReplicaNextReadClockAndProcessPacket(s: LState, s_: LState, c:
 /// ReplicaNextProcessPacketWithoutReadingClock operator
 pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s: LState, s_: LState, c: LConstants, ios: int) -> bool {
     {
-    let sent_packets = LExtractSentPacketsFromIos(c, ios);
+    let sent_packets = LExtractSentPacketsFromIos(c, arbitrary::<Seq<int>>());
     arbitrary::<bool>()
 }
 }
 
 /// ReplicaNextProcessPacket operator
 pub open spec fn LReplicaNextProcessPacket(s: LState, s_: LState, c: LConstants, ios: Seq<int>) -> bool {
-    (((ios.len() as int) >= 1) && if (arbitrary::<int>() == 5897376741int) { ((s_ == s) && ((ios.len() as int) == 1)) } else { ((arbitrary::<int>() == 1912102818int) && if (arbitrary::<int>() == 2135448699int) { LReplicaNextReadClockAndProcessPacket(s, s_, c, s, s_, ios) } else { LReplicaNextProcessPacketWithoutReadingClock(s, s_, c, s, s_, ios) }) })
+    (((ios.len() as int) >= 1) && if (arbitrary::<int>() == 5897376741int) { ((s_ == s) && ((ios.len() as int) == 1)) } else { ((arbitrary::<int>() == 1912102818int) && if (arbitrary::<int>() == 2135448699int) { LReplicaNextReadClockAndProcessPacket(s, s_, c, arbitrary::<Seq<int>>(), s_, ios) } else { LReplicaNextProcessPacketWithoutReadingClock(s, s_, c, s, s_, ios) }) })
 }
 
 /// ReplicaNumActions operator
@@ -204,14 +204,14 @@ pub open spec fn LSpontaneousIos(c: LConstants, ios: Seq<int>, clocks: int) -> b
 
 /// SpontaneousClock operator
 pub open spec fn LSpontaneousClock(c: LConstants, ios: int) -> LRecord {
-    if LSpontaneousIos(c, ios, 1) { LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: 0int, suspicious: 0int, t: arbitrary() } } else { LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: 0int, suspicious: 0int, t: 0 } }
+    if LSpontaneousIos(c, arbitrary::<Seq<int>>(), 1) { LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: 0int, suspicious: 0int, t: arbitrary() } } else { LRecord { acceptor: 0int, bal_heartbeat: 0int, constants: 0int, executor: 0int, learner: 0int, nextActionIndex: 0int, nextHeartbeatTime: 0int, opn_ckpt: 0int, proposer: 0int, replica: 0int, suspicious: 0int, t: 0 } }
 }
 
 /// ReplicaNoReceiveNext operator
 pub open spec fn LReplicaNoReceiveNext(s: LState, s_: LState, c: LConstants, nextActionIndex: int, ios: int) -> bool {
     {
-    let sent_packets = LExtractSentPacketsFromIos(c, ios);
-    if (nextActionIndex == 1) { (LSpontaneousIos(c, ios, 0) && LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 2) { (LSpontaneousIos(c, ios, 0) && LReplicaNextSpontaneousMaybeEnterPhase2(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 3) { (LSpontaneousIos(c, ios, 1) && LReplicaNextReadClockMaybeNominateValueAndSend2a(s, s_, c, s, s_, LSpontaneousClock(c, ios), sent_packets)) } else { if (nextActionIndex == 4) { (LSpontaneousIos(c, ios, 0) && LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 5) { (LSpontaneousIos(c, ios, 0) && LReplicaNextSpontaneousMaybeMakeDecision(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 6) { (LSpontaneousIos(c, ios, 0) && LReplicaNextSpontaneousMaybeExecute(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 7) { (LSpontaneousIos(c, ios, 1) && LReplicaNextReadClockCheckForViewTimeout(s, s_, c, s, s_, LSpontaneousClock(c, ios), sent_packets)) } else { if (nextActionIndex == 8) { (LSpontaneousIos(c, ios, 1) && LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s, s_, c, s, s_, LSpontaneousClock(c, ios), sent_packets)) } else { (((nextActionIndex == 9) && LSpontaneousIos(c, ios, 1)) && LReplicaNextReadClockMaybeSendHeartbeat(s, s_, c, s, s_, LSpontaneousClock(c, ios), sent_packets)) } } } } } } } }
+    let sent_packets = LExtractSentPacketsFromIos(c, arbitrary::<Seq<int>>());
+    if (nextActionIndex == 1) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 0) && LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 2) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 0) && LReplicaNextSpontaneousMaybeEnterPhase2(s, s_, c, s, s_, sent_packets)) } else { if (nextActionIndex == 3) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 1) && LReplicaNextReadClockMaybeNominateValueAndSend2a(s, s_, c, s, s_, LSpontaneousClock(c, ios), sent_packets)) } else { if (nextActionIndex == 4) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 0) && LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s, s_, c, arbitrary::<Seq<int>>(), s_, sent_packets)) } else { if (nextActionIndex == 5) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 0) && LReplicaNextSpontaneousMaybeMakeDecision(s, s_, c, arbitrary::<Seq<int>>(), s_, sent_packets)) } else { if (nextActionIndex == 6) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 0) && LReplicaNextSpontaneousMaybeExecute(s, s_, c, arbitrary::<Seq<int>>(), s_, sent_packets)) } else { if (nextActionIndex == 7) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 1) && LReplicaNextReadClockCheckForViewTimeout(s, s_, c, s, arbitrary::<Seq<int>>(), LSpontaneousClock(c, ios), sent_packets)) } else { if (nextActionIndex == 8) { (LSpontaneousIos(c, arbitrary::<Seq<int>>(), 1) && LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s, s_, c, s, arbitrary::<Seq<int>>(), LSpontaneousClock(c, ios), sent_packets)) } else { (((nextActionIndex == 9) && LSpontaneousIos(c, arbitrary::<Seq<int>>(), 1)) && LReplicaNextReadClockMaybeSendHeartbeat(s, s_, c, s, arbitrary::<Seq<int>>(), LSpontaneousClock(c, ios), sent_packets)) } } } } } } } }
 }
 }
 

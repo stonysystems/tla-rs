@@ -41,7 +41,7 @@ pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_ac
 
 /// Send2a operator
 pub open spec fn LSend2a(s: LState, s_: LState, c: LConstants, v: bool) -> bool {
-    (((arbitrary::<int>() == 9996969643int) && ((arbitrary::<Seq<int>>().len() as int) >= arbitrary::<int>())) && (arbitrary() == if (arbitrary::<int>() > 0) { arbitrary() } else { ((((((((((v && (arbitrary::<int>() == 2508597854int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) }))
+    (((arbitrary::<int>() == 9996969643int) && ((arbitrary::<Seq<int>>().len() as int) >= arbitrary::<int>())) && (arbitrary::<bool>() == if (arbitrary::<int>() > 0) { arbitrary() } else { ((((((((((v && (arbitrary::<int>() == 2508597854int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) }))
 }
 
 /// Send2b operator
@@ -61,7 +61,7 @@ pub open spec fn LLearn(s: LState, s_: LState, c: LConstants) -> bool {
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    exists |b: int| (LSend1a(s, s_, c, b) || exists |b: int| (LSend1b(s, s_, c, b) || exists |a: int, ab: int, av: int| (LRecvPromise(s, s_, c, a, ab, av) || exists |v: int| (LSend2a(s, s_, c, v) || exists |b: int, v: int| (LSend2b(s, s_, c, b, v) || exists |a: int| (LRecvAccepted(s, s_, c, a) || LLearn(s, s_, c)))))))
+    exists |b: int| (LSend1a(s, s_, c, b) || exists |b: int| (LSend1b(s, s_, c, b) || exists |a: int, ab: int, av: bool| (LRecvPromise(s, s_, c, a, ab, av) || exists |v: bool| (LSend2a(s, s_, c, v) || exists |b: int, v: int| (LSend2b(s, s_, c, b, v) || exists |a: int| (LRecvAccepted(s, s_, c, a) || LLearn(s, s_, c)))))))
 }
 
 } // verus!

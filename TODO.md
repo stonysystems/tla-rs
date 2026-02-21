@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `24/33` files compile with Verus after `16.8.3d-3c-1`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `25/33` files compile with Verus after `16.8.3d-3c-2`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5575,7 +5575,20 @@ transpiler/tla_test_workspace/
           - Re-built `transpiler/target/release/verus-transpile`, regenerated `VerticalPaxos/Vpaxos.rs`, and re-ran the D1 compile baseline.
           - Measured first-error baseline after `16.8.3d-3c-1`: `24/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `3` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `4` `E0282`, `1` `REC_DECREASES`.
           - Net effect: compile passes improved (`23 -> 24`) and inference blockers reduced (`E0282: 5 -> 4`) while preserving `E0277=0`; `VerticalPaxos/Vpaxos.rs` now compiles in D1 baseline.
-        - [ ] **16.8.3d-3c-2** Reduce residual generated-D1 `arbitrary() == <typed peer>` inference blockers (`Paxos`, `RSL/Acceptor`, `RSL/Replica`, `Raft`) via Eq/Neq peer-shape/type-hint coercion refinement.
+        - [x] **16.8.3d-3c-2** Reduce residual generated-D1 `arbitrary() == <typed peer>` inference blockers (`Paxos`, `RSL/Acceptor`, `RSL/Replica`, `Raft`) via Eq/Neq peer-shape/type-hint coercion refinement.
+          - Scope/LOC check: implemented as focused `ExprTranslator` coercion/hint refinements plus targeted regressions and four-module regeneration; stayed under the <500 LOC leaf target.
+          - Added generated-D1 Eq/Neq coercion coverage for map peers and map identifier hints:
+            - `test_generated_d1_eq_coerces_arbitrary_to_map_from_rendered_insert_peer`
+            - `test_generated_d1_neq_coerces_arbitrary_from_identifier_type_hint_map`
+          - Added regression for generated-D1 local `let` hint propagation into downstream equality coercion:
+            - `test_generated_d1_let_in_propagates_local_bool_hint_into_body_eq_coercion`
+          - Regenerated target modules with current-source translator (`cargo run --manifest-path transpiler/Cargo.toml -- translate-tla --gen-modes`):
+            - `Paxos/Paxos.rs`
+            - `RSL/Acceptor.rs`
+            - `RSL/Replica.rs`
+            - `Raft/Raft.rs`
+          - Measured first-error baseline after `16.8.3d-3c-2`: `25/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
+          - Net effect: inference first-error class eliminated (`E0282: 4 -> 0`) with one additional compile pass (`24 -> 25`, `Paxos/Paxos.rs` now compiles); remaining blockers are now type/arity (`E0308`, `E0061`) and recursive-decreases.
         - [ ] **16.8.3d-3c-3** Re-run full D1 compile baseline, refresh integration assertions/docs, and decide whether to keep `3c` open or promote `16.8.3d-3` criteria.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

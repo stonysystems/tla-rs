@@ -86,7 +86,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: i
     let m: int = arbitrary();
     {
     let newLogTruncationPoint = if (((arbitrary::<int>() - arbitrary::<int>()) + 1) > arbitrary::<int>()) { ((arbitrary::<int>() - arbitrary::<int>()) + 1) } else { arbitrary() };
-    (((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(c, arbitrary::<Map<int, int>>(), arbitrary::<Map<int, int>>(), arbitrary::<int>(), arbitrary::<int>(), newLogTruncationPoint) } else { (((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })
+    (((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(c, arbitrary::<Map<int, int>>(), arbitrary::<Map<int, int>>(), arbitrary::<int>(), arbitrary::<int>(), newLogTruncationPoint) } else { (((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })
 }
 }
 }

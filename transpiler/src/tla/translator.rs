@@ -135,6 +135,14 @@ fn rendered_looks_like_seq_int(rendered: &str) -> bool {
         || trimmed.contains(".skip(")
 }
 
+fn rendered_looks_like_map_int_int(rendered: &str) -> bool {
+    let trimmed = rendered.trim();
+    trimmed.starts_with("Map::<int, int>::")
+        || trimmed.starts_with("arbitrary::<Map<int, int>>()")
+        || trimmed.contains(".insert(")
+        || trimmed.contains(".dom()")
+}
+
 /// Configuration for the expression translator
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -1040,7 +1048,14 @@ impl<'a> ExprTranslator<'a> {
                 then_expr,
                 else_expr,
                 ..
-            } => self.expr_is_boolish(then_expr) && self.expr_is_boolish(else_expr),
+            } => {
+                let then_boolish = self.expr_is_boolish(then_expr);
+                let else_boolish = self.expr_is_boolish(else_expr);
+                then_boolish && else_boolish
+                    || (self.is_generated_d1_context()
+                        && ((then_boolish && self.translate(else_expr) == "arbitrary()")
+                            || (else_boolish && self.translate(then_expr) == "arbitrary()")))
+            }
             TlaExpr::LetIn { body, .. } => self.expr_is_boolish(body),
             _ => self
                 .constant_field_type_hint(expr)
@@ -1071,12 +1086,54 @@ impl<'a> ExprTranslator<'a> {
                 then_expr,
                 else_expr,
                 ..
-            } => self.expr_is_numericish(then_expr) && self.expr_is_numericish(else_expr),
+            } => {
+                let then_numeric = self.expr_is_numericish(then_expr);
+                let else_numeric = self.expr_is_numericish(else_expr);
+                then_numeric && else_numeric
+                    || (self.is_generated_d1_context()
+                        && ((then_numeric && self.translate(else_expr) == "arbitrary()")
+                            || (else_numeric && self.translate(then_expr) == "arbitrary()")))
+            }
             TlaExpr::LetIn { body, .. } => self.expr_is_numericish(body),
             _ => self
                 .constant_field_type_hint(expr)
                 .is_some_and(Self::type_hint_is_numeric),
         }
+    }
+
+    fn generated_d1_local_let_type_hint(&self, expr: &TlaExpr, rendered: &str) -> Option<String> {
+        if !self.is_generated_d1_context() {
+            return None;
+        }
+        if rendered == "arbitrary()" {
+            return Some(if self.expr_is_boolish(expr) {
+                "bool".to_string()
+            } else {
+                "int".to_string()
+            });
+        }
+        if let Some(hint) = self.expr_type_hint(expr) {
+            let trimmed = hint.trim();
+            if !trimmed.is_empty() && !trimmed.contains("->") {
+                return Some(trimmed.to_string());
+            }
+        }
+        if self.expr_is_boolish(expr) {
+            return Some("bool".to_string());
+        }
+        if self.expr_is_numericish(expr) {
+            return Some("int".to_string());
+        }
+        if self.expr_is_seqish(expr, rendered) {
+            return Some("Seq<int>".to_string());
+        }
+        if self.expr_is_setish(expr, rendered) {
+            return Some("Set<int>".to_string());
+        }
+        if rendered_looks_like_map_int_int(rendered) {
+            return Some("Map<int, int>".to_string());
+        }
+        None
     }
 
     fn expr_is_tupleish(&self, expr: &TlaExpr) -> bool {
@@ -1260,6 +1317,11 @@ impl<'a> ExprTranslator<'a> {
                     *s = "Set::<int>::empty()".to_string();
                 }
             };
+            let coerce_map = |s: &mut String| {
+                if s == "arbitrary()" {
+                    *s = "arbitrary::<Map<int, int>>()".to_string();
+                }
+            };
 
             if matches!(left, TlaExpr::Number(_)) {
                 coerce_int(&mut right_str);
@@ -1290,6 +1352,18 @@ impl<'a> ExprTranslator<'a> {
             }
             if rendered_looks_like_seq_int(&right_str) {
                 left_str = self.coerce_untyped_arbitrary_seq_int(&left_str);
+            }
+            if rendered_looks_like_map_int_int(&left_str) {
+                coerce_map(&mut right_str);
+            }
+            if rendered_looks_like_map_int_int(&right_str) {
+                coerce_map(&mut left_str);
+            }
+            if self.expr_type_hint(left).is_some_and(Self::type_hint_is_map) {
+                coerce_map(&mut right_str);
+            }
+            if self.expr_type_hint(right).is_some_and(Self::type_hint_is_map) {
+                coerce_map(&mut left_str);
             }
             if let TlaExpr::Ident(name) = right {
                 if let Some(hint) = self.config.identifier_type_hints.get(name) {
@@ -2194,16 +2268,31 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_let_in(&self, defs: &[crate::tla::ast::TlaOperator], body: &TlaExpr) -> String {
         let mut result = String::from("{\n");
+        let mut scope_config = self.config.clone();
 
         for def in defs {
-            let body_str = self.translate(&def.body);
+            let (body_str, local_type_hint, generated_d1_context) = {
+                let scope_translator = ExprTranslator::new(&scope_config);
+                let body_str = scope_translator.translate(&def.body);
+                let local_type_hint = if def.params.is_empty() {
+                    scope_translator.generated_d1_local_let_type_hint(&def.body, &body_str)
+                } else {
+                    None
+                };
+                (
+                    body_str,
+                    local_type_hint,
+                    scope_translator.is_generated_d1_context(),
+                )
+            };
             if def.params.is_empty() {
-                if self.is_generated_d1_context() && body_str == "arbitrary()" {
-                    let ty = if self.expr_is_boolish(&def.body) {
-                        "bool"
-                    } else {
-                        "int"
-                    };
+                if let Some(hint) = &local_type_hint {
+                    scope_config
+                        .identifier_type_hints
+                        .insert(def.name.clone(), hint.clone());
+                }
+                if generated_d1_context && body_str == "arbitrary()" {
+                    let ty = local_type_hint.as_deref().unwrap_or("int");
                     result.push_str(&format!("    let {}: {} = {};\n", def.name, ty, body_str));
                 } else {
                     result.push_str(&format!("    let {} = {};\n", def.name, body_str));
@@ -2219,7 +2308,8 @@ impl<'a> ExprTranslator<'a> {
             }
         }
 
-        let body_str = self.translate(body);
+        let scope_translator = ExprTranslator::new(&scope_config);
+        let body_str = scope_translator.translate(body);
         result.push_str(&format!("    {}\n}}", body_str));
 
         result
@@ -5975,6 +6065,54 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_map_from_rendered_insert_peer() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "table".to_string(),
+            },
+            TlaExpr::FnExcept {
+                func: Box::new(TlaExpr::RecordAccess {
+                    record: Box::new(TlaExpr::ident("s")),
+                    field: "table".to_string(),
+                }),
+                updates: vec![crate::tla::ast::TlaExceptUpdate {
+                    path: vec![TlaExceptPath::Index(TlaExpr::number(0))],
+                    value: TlaExpr::number(1),
+                }],
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Map<int, int>>() == arbitrary::<Map<int, int>>().insert(0, 1))"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_neq_coerces_arbitrary_from_identifier_type_hint_map() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("table".to_string(), "Map<int, int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Neq,
+            TlaExpr::ident("table"),
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "table".to_string(),
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(table != arbitrary::<Map<int, int>>())"
+        );
+    }
+
+    #[test]
     fn test_generated_d1_domain_coerces_untyped_arbitrary_to_map() {
         let config = TranslatorConfig::spec();
         let translator = ExprTranslator::new(&config);
@@ -6152,6 +6290,39 @@ mod tests {
         };
         let out = translator.translate(&expr);
         assert!(out.contains("let unused_0: int = arbitrary();"));
+    }
+
+    #[test]
+    fn test_generated_d1_let_in_propagates_local_bool_hint_into_body_eq_coercion() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::LetIn {
+            defs: vec![crate::tla::ast::TlaOperator::new(
+                "local_flag",
+                TlaExpr::IfThenElse {
+                    cond: Box::new(TlaExpr::bool(true)),
+                    then_expr: Box::new(TlaExpr::bool(true)),
+                    else_expr: Box::new(TlaExpr::RecordAccess {
+                        record: Box::new(TlaExpr::ident("request")),
+                        field: "flag".to_string(),
+                    }),
+                },
+            )],
+            body: Box::new(TlaExpr::binop(
+                TlaBinOp::Eq,
+                TlaExpr::ident("local_flag"),
+                TlaExpr::RecordAccess {
+                    record: Box::new(TlaExpr::ident("request")),
+                    field: "next_flag".to_string(),
+                },
+            )),
+        };
+        let out = translator.translate(&expr);
+        assert!(
+            out.contains("let local_flag = if true { true } else { arbitrary() };"),
+            "{out}"
+        );
+        assert!(out.contains("(local_flag == arbitrary::<bool>())"), "{out}");
     }
 
     #[test]
