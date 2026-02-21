@@ -28,7 +28,7 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+pub open spec fn LInit(c: LConstants, s: int) -> bool {
     ((((((((Set::<int>::empty() == Set::<int>::empty()) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0))
 }
 

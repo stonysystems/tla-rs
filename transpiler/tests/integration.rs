@@ -3213,9 +3213,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-8:
-    // D1 spec translation now also normalizes generated-D1 Len(...) to int
-    // and applies Eq/Neq placeholder coercion from rendered set/seq peer shapes.
+    // Baseline after 16.8.3d-2d-10:
+    // D1 spec translation now treats explicit operator parameters as locals
+    // when determining module-state references (no implicit LState injection for param-only helpers).
     assert_eq!(
         passed, 15,
         "Expected exactly fifteen D1 files to compile at current baseline; pass files: {:?}",
@@ -3234,12 +3234,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 1,
-        "Expected 1 method-missing (E0599) failure at baseline"
+        cat_e0599, 0,
+        "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 0,
-        "Expected 0 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 1,
+        "Expected 1 mismatched-types (E0308) failure at baseline"
     );
     assert_eq!(
         cat_e0600, 0,

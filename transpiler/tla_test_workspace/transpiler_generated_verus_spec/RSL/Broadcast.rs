@@ -29,13 +29,13 @@ pub struct LConstants {
 
 
 /// BroadcastToEveryone operator
-pub open spec fn LBroadcastToEveryone(s: LState, c: LConstants, myidx: int, m: int, sent_packets: Seq<int>) -> bool {
+pub open spec fn LBroadcastToEveryone(c: LConstants, myidx: int, m: int, sent_packets: Seq<int>) -> bool {
     (((((sent_packets.len() as int) == (arbitrary::<Seq<int>>().len() as int)) && (0 <= myidx)) && (myidx < (arbitrary::<Seq<int>>().len() as int))) && forall |idx| (((0 <= idx) && (idx < (sent_packets.len() as int))) ==> (sent_packets[idx] == LRecord { dst: arbitrary::<Seq<int>>()[idx], msg: m, src: arbitrary::<Seq<int>>()[myidx] })))
 }
 
 /// BuildLBroadcast operator
-pub open spec fn LBuildLBroadcast(s: LState, c: LConstants, src: int, dsts: Seq<int>, m: int) -> () {
-    if ((dsts.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LBuildLBroadcast(s, c, src, dsts.skip(1), m)) }
+pub open spec fn LBuildLBroadcast(c: LConstants, src: int, dsts: Seq<int>, m: int) -> () {
+    if ((dsts.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LBuildLBroadcast(c, src, dsts.skip(1), m)) }
 }
 
 } // verus!

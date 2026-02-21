@@ -3,10 +3,10 @@
 
 module Configuration {
     helper LConfiguration(+);  // c is input (constants)
-    LMinQuorumSize(+, +);  // s is input (state to check), c is input (constants)
-    LReplicasDistinct(+, +, +, +, +);  // s is input (state to check), c is input (constants), replica_ids is input, i is input, j is input
-    LReplicasIsUnique(+, +, +);  // s is input (state to check), c is input (constants), replica_ids is input
-    LWellFormedLConfiguration(+, +);  // s is input (state to check), c is input (constants)
-    LIsReplicaIndex(+, +, +, +);  // s is input (state to check), c is input (constants), idx is input, id is input
-    LGetReplicaIndex(+, +, +);  // s is input (state to check), c is input (constants), id is input
+    LMinQuorumSize(+);  // c is input (constants)
+    LReplicasDistinct(+, +, +, +);  // c is input (constants), replica_ids is input, i is input, j is input
+    LReplicasIsUnique(+, +);  // c is input (constants), replica_ids is input
+    LWellFormedLConfiguration(+);  // c is input (constants)
+    LIsReplicaIndex(+, +, +);  // c is input (constants), idx is input, id is input
+    LGetReplicaIndex(+, +);  // c is input (constants), id is input
 }

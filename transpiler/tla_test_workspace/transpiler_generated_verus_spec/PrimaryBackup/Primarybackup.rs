@@ -26,7 +26,7 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+pub open spec fn LInit(c: LConstants, s: int) -> bool {
     ((((((((((arbitrary::<int>() == 6049598361int) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == 0))
 }
 

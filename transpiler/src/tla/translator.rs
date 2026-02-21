@@ -163,6 +163,8 @@ pub struct TranslatorConfig {
     pub record_field_types: std::collections::HashMap<String, String>,
     /// Normalize unresolved external refs in generated spec output to keep D1 compilable.
     pub normalize_unknown_external_refs: bool,
+    /// Per-operator identifier type hints (typically parameter types) for local coercion.
+    pub identifier_type_hints: std::collections::HashMap<String, String>,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -191,6 +193,7 @@ impl Default for TranslatorConfig {
             record_set_vars: std::collections::HashSet::new(),
             record_field_types: std::collections::HashMap::new(),
             normalize_unknown_external_refs: false,
+            identifier_type_hints: std::collections::HashMap::new(),
         }
     }
 }
@@ -382,6 +385,17 @@ impl<'a> ExprTranslator<'a> {
             "arbitrary::<Seq<int>>()".to_string()
         } else {
             rendered.to_string()
+        }
+    }
+
+    fn coerce_untyped_arbitrary_from_type_hint(&self, rendered: &str, hint: &str) -> String {
+        if !self.is_generated_d1_context() || rendered != "arbitrary()" {
+            return rendered.to_string();
+        }
+        match hint.trim() {
+            "Seq<int>" => "arbitrary::<Seq<int>>()".to_string(),
+            "Set<int>" => "arbitrary::<Set<int>>()".to_string(),
+            _ => rendered.to_string(),
         }
     }
 
@@ -682,6 +696,16 @@ impl<'a> ExprTranslator<'a> {
             }
             if rendered_looks_like_seq_int(&right_str) {
                 left_str = self.coerce_untyped_arbitrary_seq_int(&left_str);
+            }
+            if let TlaExpr::Ident(name) = right {
+                if let Some(hint) = self.config.identifier_type_hints.get(name) {
+                    left_str = self.coerce_untyped_arbitrary_from_type_hint(&left_str, hint);
+                }
+            }
+            if let TlaExpr::Ident(name) = left {
+                if let Some(hint) = self.config.identifier_type_hints.get(name) {
+                    right_str = self.coerce_untyped_arbitrary_from_type_hint(&right_str, hint);
+                }
             }
 
             if self.expr_is_boolish(left) {
@@ -1654,6 +1678,8 @@ impl UsageHintEvidence {
             Some("Set<int>")
         } else if self.set_element_usage {
             Some("int")
+        } else if self.scalar_usage {
+            Some("int")
         } else {
             None
         }
@@ -2283,6 +2309,8 @@ impl ModuleTranslator {
     fn generate_spec_functions(&self, module: &TlaModule) -> String {
         let mut output = String::new();
         let state_name = self.config.spec_state_name();
+        let module_var_names: std::collections::HashSet<String> =
+            module.variables.iter().cloned().collect();
 
         // Build module-aware expression translator config
         let mut config = self.expr_config.clone();
@@ -2293,13 +2321,18 @@ impl ModuleTranslator {
         // Pass 1: direct prime usage + variable reference check
         for op in &module.operators {
             config.operator_arity.insert(op.name.clone(), op.params.len());
+            let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
             let kind = if op.name.eq_ignore_ascii_case("init") {
                 OperatorKind::Predicate
             } else if self.operator_uses_primes(&op.body)
                 || operator_has_explicit_next_state_param(op)
             {
                 OperatorKind::Action
-            } else if !self.operator_refs_variables(&op.body, &[]) {
+            } else if !self.operator_refs_declared_variables(
+                &op.body,
+                &op_param_names,
+                &module_var_names,
+            ) {
                 OperatorKind::ConstantOp
             } else {
                 OperatorKind::Predicate
@@ -2365,6 +2398,7 @@ impl ModuleTranslator {
                 &state_name,
                 &expr_translator,
                 module,
+                &module_var_names,
             ));
             output.push('\n');
         }
@@ -2382,9 +2416,11 @@ impl ModuleTranslator {
         state_name: &str,
         expr_translator: &ExprTranslator,
         module: &TlaModule,
+        module_var_names: &std::collections::HashSet<String>,
     ) -> String {
         let mut output = String::new();
         let fn_name = self.config.spec_fn_name(&op.name);
+        let mut identifier_type_hints = std::collections::HashMap::<String, String>::new();
 
         // Detect if this is an action (uses primed variables, directly or transitively)
         let is_action =
@@ -2396,14 +2432,18 @@ impl ModuleTranslator {
         let mut used_param_names = std::collections::HashSet::<String>::new();
 
         // Add state parameter if operator references variables (directly or transitively)
-        let refs_vars = self.operator_refs_variables(&op.body, &[]);
+        let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
+        let refs_vars =
+            self.operator_refs_declared_variables(&op.body, &op_param_names, module_var_names);
         // Actions always get s and s_ params (they transitively reference state through sub-operators)
         if refs_vars || is_action {
             params.push(format!("s: {}", state_name));
             used_param_names.insert("s".to_string());
+            identifier_type_hints.insert("s".to_string(), state_name.to_string());
             if is_action && !is_strict_init {
                 params.push(format!("s_: {}", state_name));
                 used_param_names.insert("s_".to_string());
+                identifier_type_hints.insert("s_".to_string(), state_name.to_string());
             }
         }
 
@@ -2413,6 +2453,7 @@ impl ModuleTranslator {
             let const_struct = format!("{}Constants", self.config.spec_prefix);
             params.push(format!("c: {}", const_struct));
             used_param_names.insert("c".to_string());
+            identifier_type_hints.insert("c".to_string(), const_struct);
         }
 
         // Add operator parameters
@@ -2425,6 +2466,7 @@ impl ModuleTranslator {
             let param_type =
                 self.get_param_type(op, param_idx, &param.name, module.variables.is_empty());
             params.push(format!("{}: {}", param.name, param_type));
+            identifier_type_hints.insert(param.name.clone(), param_type.clone());
             used_param_names.insert(param.name.clone());
         }
 
@@ -2444,7 +2486,12 @@ impl ModuleTranslator {
         ));
 
         // Generate body
-        let body = expr_translator.translate(&op.body);
+        let mut function_expr_config = expr_translator.config.clone();
+        function_expr_config
+            .identifier_type_hints
+            .extend(identifier_type_hints);
+        let function_expr_translator = ExprTranslator::new(&function_expr_config);
+        let body = function_expr_translator.translate(&op.body);
         output.push_str(&format!("    {}\n", body));
 
         output.push_str("}\n");
@@ -2576,91 +2623,94 @@ impl ModuleTranslator {
         }
     }
 
-    /// Check if an expression references module variables (simplified check)
-    fn operator_refs_variables(&self, expr: &TlaExpr, local_vars: &[String]) -> bool {
+    /// Check if an expression references declared module variables.
+    /// Unlike `operator_refs_variables`, this does not treat every unknown
+    /// non-local identifier as a state variable when type info is absent.
+    fn operator_refs_declared_variables(
+        &self,
+        expr: &TlaExpr,
+        local_vars: &[String],
+        module_vars: &std::collections::HashSet<String>,
+    ) -> bool {
         use crate::tla::ast::TlaExpr;
         match expr {
-            TlaExpr::Ident(name) => {
-                // Check if this identifier is a local binding (not a state variable)
-                if local_vars.contains(name) {
-                    return false;
-                }
-                // Check against module variables if type_env is available
-                if let Some(env) = &self.type_env {
-                    return env.variables.contains_key(name);
-                }
-                // Without type info, conservatively assume non-local idents might be variables
-                true
-            }
+            TlaExpr::Ident(name) => !local_vars.contains(name) && module_vars.contains(name),
             TlaExpr::Prime(_) => true, // Primed variables always reference state
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
             TlaExpr::BinOp { left, right, .. } => {
-                self.operator_refs_variables(left, local_vars)
-                    || self.operator_refs_variables(right, local_vars)
+                self.operator_refs_declared_variables(left, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(right, local_vars, module_vars)
             }
-            TlaExpr::UnaryOp { operand, .. } => self.operator_refs_variables(operand, local_vars),
+            TlaExpr::UnaryOp { operand, .. } => {
+                self.operator_refs_declared_variables(operand, local_vars, module_vars)
+            }
             TlaExpr::OpApply { op, args } => {
-                self.operator_refs_variables(op, local_vars)
+                let op_refs_vars = match op.as_ref() {
+                    // Operator names are not module state variables.
+                    TlaExpr::Ident(_) => false,
+                    _ => self.operator_refs_declared_variables(op, local_vars, module_vars),
+                };
+                op_refs_vars
                     || args
                         .iter()
-                        .any(|a| self.operator_refs_variables(a, local_vars))
+                        .any(|a| self.operator_refs_declared_variables(a, local_vars, module_vars))
             }
             TlaExpr::FnApply { func, arg } => {
-                self.operator_refs_variables(func, local_vars)
-                    || self.operator_refs_variables(arg, local_vars)
+                self.operator_refs_declared_variables(func, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(arg, local_vars, module_vars)
             }
             TlaExpr::SetEnum(elems) => elems
                 .iter()
-                .any(|e| self.operator_refs_variables(e, local_vars)),
+                .any(|e| self.operator_refs_declared_variables(e, local_vars, module_vars)),
             TlaExpr::SetFilter { var, set, filter } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                self.operator_refs_variables(set, local_vars)
-                    || self.operator_refs_variables(filter, &locals)
+                self.operator_refs_declared_variables(set, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(filter, &locals, module_vars)
             }
             TlaExpr::SetMap { expr: e, var, set } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                self.operator_refs_variables(set, local_vars)
-                    || self.operator_refs_variables(e, &locals)
+                self.operator_refs_declared_variables(set, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(e, &locals, module_vars)
             }
             TlaExpr::FnConstruct { var, domain, body } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                self.operator_refs_variables(domain, local_vars)
-                    || self.operator_refs_variables(body, &locals)
+                self.operator_refs_declared_variables(domain, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::FnExcept { func, updates } => {
-                self.operator_refs_variables(func, local_vars)
-                    || updates
-                        .iter()
-                        .any(|u| self.operator_refs_variables(&u.value, local_vars))
+                self.operator_refs_declared_variables(func, local_vars, module_vars)
+                    || updates.iter().any(|u| {
+                        self.operator_refs_declared_variables(&u.value, local_vars, module_vars)
+                    })
             }
             TlaExpr::Record(fields) => fields
                 .iter()
-                .any(|(_, v)| self.operator_refs_variables(v, local_vars)),
+                .any(|(_, v)| self.operator_refs_declared_variables(v, local_vars, module_vars)),
             TlaExpr::RecordAccess { record, .. } => {
-                self.operator_refs_variables(record, local_vars)
+                self.operator_refs_declared_variables(record, local_vars, module_vars)
             }
             TlaExpr::Tuple(elems) => elems
                 .iter()
-                .any(|e| self.operator_refs_variables(e, local_vars)),
+                .any(|e| self.operator_refs_declared_variables(e, local_vars, module_vars)),
             TlaExpr::IfThenElse {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                self.operator_refs_variables(cond, local_vars)
-                    || self.operator_refs_variables(then_expr, local_vars)
-                    || self.operator_refs_variables(else_expr, local_vars)
+                self.operator_refs_declared_variables(cond, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(then_expr, local_vars, module_vars)
+                    || self.operator_refs_declared_variables(else_expr, local_vars, module_vars)
             }
             TlaExpr::Case { arms, other } => {
                 arms.iter().any(|(cond, body)| {
-                    self.operator_refs_variables(cond, local_vars)
-                        || self.operator_refs_variables(body, local_vars)
-                }) || other
-                    .as_ref()
-                    .is_some_and(|e| self.operator_refs_variables(e, local_vars))
+                    self.operator_refs_declared_variables(cond, local_vars, module_vars)
+                        || self.operator_refs_declared_variables(body, local_vars, module_vars)
+                }) || other.as_ref().is_some_and(|e| {
+                    self.operator_refs_declared_variables(e, local_vars, module_vars)
+                })
             }
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
                 let mut locals = local_vars.to_vec();
@@ -2668,31 +2718,28 @@ impl ModuleTranslator {
                     locals.push(qb.var.clone());
                 }
                 vars.iter().any(|qb| {
-                    qb.set
-                        .as_ref()
-                        .is_some_and(|s| self.operator_refs_variables(s, local_vars))
-                }) || self.operator_refs_variables(body, &locals)
+                    qb.set.as_ref().is_some_and(|s| {
+                        self.operator_refs_declared_variables(s, local_vars, module_vars)
+                    })
+                }) || self.operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::Choose { var, set, body } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                set.as_ref()
-                    .is_some_and(|s| self.operator_refs_variables(s, local_vars))
-                    || self.operator_refs_variables(body, &locals)
+                set.as_ref().is_some_and(|s| {
+                    self.operator_refs_declared_variables(s, local_vars, module_vars)
+                }) || self.operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::LetIn { defs, body } => {
                 let mut locals = local_vars.to_vec();
                 for def in defs {
                     locals.push(def.name.clone());
                 }
-                defs.iter()
-                    .any(|d| self.operator_refs_variables(&d.body, local_vars))
-                    || self.operator_refs_variables(body, &locals)
+                defs.iter().any(|d| {
+                    self.operator_refs_declared_variables(&d.body, local_vars, module_vars)
+                }) || self.operator_refs_declared_variables(body, &locals, module_vars)
             }
-            _ => {
-                // Conservatively assume unknown expressions might reference variables
-                true
-            }
+            _ => true,
         }
     }
 
@@ -3301,7 +3348,14 @@ impl ModeAnnotationGenerator {
 
         // Check if operator body references any module variables (constant operators skip s param)
         // Keep this in lock-step with spec signature generation.
-        let refs_vars = refs_helper.operator_refs_variables(&op.body, &[]);
+        let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
+        let module_var_names: std::collections::HashSet<String> =
+            module.variables.iter().cloned().collect();
+        let refs_vars = refs_helper.operator_refs_declared_variables(
+            &op.body,
+            &op_param_names,
+            &module_var_names,
+        );
 
         if is_strict_init {
             // Init operators: state is output only
@@ -4458,6 +4512,48 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_seq() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("sent_packets".to_string(), "Seq<int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::ident("sent_packets"),
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "packets".to_string(),
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(sent_packets == arbitrary::<Seq<int>>())"
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_set() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("S".to_string(), "Set<int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Eq,
+            TlaExpr::ident("S"),
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "members".to_string(),
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "(S == arbitrary::<Set<int>>())"
+        );
+    }
+
+    #[test]
     fn test_generated_d1_eq_coerces_arbitrary_to_lconstants_for_c_peer() {
         let mut config = TranslatorConfig::spec();
         config.constant_names.insert("N".to_string());
@@ -4851,6 +4947,35 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_param_named_s_is_not_treated_as_module_state() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT UpperBound
+            BoundRequestSequence(s, lengthBound) ==
+                IF 0 <= lengthBound /\ lengthBound < Len(s)
+                THEN SubSeq(s, 0, lengthBound)
+                ELSE s
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains(
+                "pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int)"
+            ),
+            "Parameterized helper should keep explicit s param (Seq<int>) and avoid injected state s, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("LBoundRequestSequence(s: LState"),
+            "Parameterized helper should not inject state param for explicit local s, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
     fn test_translate_parameterized_operator_ident_in_value_context_is_not_autocalled() {
         let source = r"
             ---- MODULE Test ----
@@ -5028,6 +5153,32 @@ mod tests {
     }
 
     #[test]
+    fn test_mode_annotations_param_named_s_is_not_auto_state_input() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT UpperBound
+            BoundRequestSequence(s, lengthBound) ==
+                IF 0 <= lengthBound /\ lengthBound < Len(s)
+                THEN SubSeq(s, 0, lengthBound)
+                ELSE s
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        assert!(
+            result.contains("LBoundRequestSequence(+, +, +);"),
+            "Param-only helper should have modes for (c, s, lengthBound) without injected state/s_, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("LBoundRequestSequence(+, +, +, +);"),
+            "Param-only helper should not gain an extra auto state parameter, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
     fn test_mode_annotation_generator_with_config() {
         let config = ModuleConfig {
             spec_prefix: "Spec".to_string(),
@@ -5184,7 +5335,7 @@ mod tests {
         let output = translate_module_with_types(&module);
 
         assert!(
-            output.contains("pub open spec fn LFoo(s: LState, S: Set<int>) -> bool"),
+            output.contains("pub open spec fn LFoo(S: Set<int>) -> bool"),
             "Expected inferred set parameter type in signature, got:\n{}",
             output
         );
@@ -5201,7 +5352,7 @@ mod tests {
         let output = translate_module_with_types(&module);
 
         assert!(
-            output.contains("pub open spec fn LFoo(s: LState, xs: int) -> bool"),
+            output.contains("pub open spec fn LFoo(xs: int) -> bool"),
             "Expected fallback int param (no aggressive Seq inference), got:\n{}",
             output
         );
@@ -5218,7 +5369,7 @@ mod tests {
         let output = translate_module_with_types(&module);
 
         assert!(
-            output.contains("pub open spec fn LFoo(s: LState, m: int) -> bool"),
+            output.contains("pub open spec fn LFoo(m: int) -> bool"),
             "Expected fallback int param (no aggressive Map inference), got:\n{}",
             output
         );
@@ -5237,7 +5388,7 @@ mod tests {
         let output = translator.translate(&module);
 
         assert!(
-            output.contains("pub open spec fn LFoo(s: LState, xs: Seq<int>) -> bool"),
+            output.contains("pub open spec fn LFoo(xs: Seq<int>) -> bool"),
             "Expected Seq hint from combined len/index usage, got:\n{}",
             output
         );
@@ -5256,7 +5407,7 @@ mod tests {
         let output = translator.translate(&module);
 
         assert!(
-            output.contains("pub open spec fn LFoo(s: LState, m: Map<int, int>) -> bool"),
+            output.contains("pub open spec fn LFoo(m: Map<int, int>) -> bool"),
             "Expected Map hint from combined domain/index usage, got:\n{}",
             output
         );
@@ -5309,6 +5460,24 @@ mod tests {
         translator.type_env = Some(env);
 
         assert_eq!(translator.get_param_type(&op, 0, "x", false), "bool");
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_overrides_inferred_bool_for_scalar_usage() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(TlaBinOp::Gt, TlaExpr::ident("x"), TlaExpr::number(0)),
+        )
+        .with_params(vec![crate::tla::ast::TlaParam::new("x")]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator(
+            "Foo",
+            TlaType::function(TlaType::Bool, TlaType::Bool),
+        );
+        translator.type_env = Some(env);
+
+        assert_eq!(translator.get_param_type(&op, 0, "x", true), "int");
     }
 
     #[test]

@@ -31,32 +31,32 @@ pub open spec fn LConfiguration(c: LConstants) -> LRecord {
 }
 
 /// MinQuorumSize operator
-pub open spec fn LMinQuorumSize(s: LState, c: LConstants) -> int {
+pub open spec fn LMinQuorumSize(c: LConstants) -> int {
     (((arbitrary::<Seq<int>>().len() as int) / 2) + 1)
 }
 
 /// ReplicasDistinct operator
-pub open spec fn LReplicasDistinct(s: LState, c: LConstants, replica_ids: Seq<int>, i: int, j: int) -> bool {
+pub open spec fn LReplicasDistinct(c: LConstants, replica_ids: Seq<int>, i: int, j: int) -> bool {
     ((((((0 <= i) && (i < (replica_ids.len() as int))) && (0 <= j)) && (j < (replica_ids.len() as int))) && (replica_ids[i] == replica_ids[j])) ==> (i == j))
 }
 
 /// ReplicasIsUnique operator
-pub open spec fn LReplicasIsUnique(s: LState, c: LConstants, replica_ids: Seq<int>) -> bool {
+pub open spec fn LReplicasIsUnique(c: LConstants, replica_ids: Seq<int>) -> bool {
     forall |i, j| ((((((0 <= i) && (i < (replica_ids.len() as int))) && (0 <= j)) && (j < (replica_ids.len() as int))) && (replica_ids[i] == replica_ids[j])) ==> (i == j))
 }
 
 /// WellFormedLConfiguration operator
-pub open spec fn LWellFormedLConfiguration(s: LState, c: LConstants) -> bool {
-    ((0 < (arbitrary::<Seq<int>>().len() as int)) && forall |i, j| (LReplicasDistinct(s, c, arbitrary(), i, j) && LReplicasIsUnique(s, c, arbitrary())))
+pub open spec fn LWellFormedLConfiguration(c: LConstants) -> bool {
+    ((0 < (arbitrary::<Seq<int>>().len() as int)) && forall |i, j| (LReplicasDistinct(c, arbitrary(), i, j) && LReplicasIsUnique(c, arbitrary())))
 }
 
 /// IsReplicaIndex operator
-pub open spec fn LIsReplicaIndex(s: LState, c: LConstants, idx: int, id: int) -> bool {
+pub open spec fn LIsReplicaIndex(c: LConstants, idx: int, id: int) -> bool {
     (((0 <= idx) && (idx < (arbitrary::<Seq<int>>().len() as int))) && (arbitrary::<Seq<int>>()[idx] == id))
 }
 
 /// GetReplicaIndex operator
-pub open spec fn LGetReplicaIndex(s: LState, c: LConstants, id: int) -> int {
+pub open spec fn LGetReplicaIndex(c: LConstants, id: int) -> int {
     arbitrary()
 }
 

@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `14/33` files compile with Verus after `16.8.3d-2d-6`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `15/33` files compile with Verus after `16.8.3d-2d-10`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5387,6 +5387,27 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-8`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
           - Net effect: mismatched-type first-error class eliminated (`E0308: 1 -> 0`) with class shift into inference (`E0282: 16 -> 17`); compile pass count unchanged (`15/33`).
+        - [x] **16.8.3d-2d-9** Add generated-D1 safe identifier-hint coercion in Eq/Neq and scalar-usage fallback for parameter typing (without widening coercions that regress non-inference classes).
+          - Scope/LOC check: implemented as focused `ModuleTranslator`/`ExprTranslator` hint plumbing plus targeted regressions and baseline/docs refresh; stayed under the <500 LOC target.
+          - Added per-operator identifier type hints (parameter/injected arg types) into expression translation so generated-D1 Eq/Neq can safely coerce untyped placeholders when peer identifiers are already typed as `Seq<int>`/`Set<int>`.
+          - Extended usage-evidence fallback so generated-D1 scalar-usage parameters can normalize to `int` when type inference drifts to `bool` in arithmetic/comparison contexts.
+          - Added regressions:
+            - `test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_seq`
+            - `test_generated_d1_eq_coerces_arbitrary_from_identifier_type_hint_set`
+            - `test_generated_d1_param_type_overrides_inferred_bool_for_scalar_usage`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-9`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+          - Net effect: no aggregate baseline-count change (`15/33`, `E0282=17`), but generated-D1 typing/coercion behavior is now regression-covered and narrowed to safe Seq/Set identifier-hint paths.
+        - [x] **16.8.3d-2d-10** Treat explicit operator parameters as locals during module-state reference detection so helper operators named `s` do not get an injected `LState` receiver in generated-D1 specs.
+          - Scope/LOC check: implemented as a focused `ModuleTranslator`/mode-analysis state-reference normalization update plus targeted regressions; stayed under the <500 LOC target.
+          - Added `operator_refs_declared_variables` and switched operator-kind classification + spec-signature generation + mode-annotation analysis to use declared module variables instead of conservative unknown-identifier fallback.
+          - This prevents operator-call heads (`Len`, `SubSeq`, etc.) and explicit params (`s`, `lengthBound`) from being misclassified as module-state references when type inference is unavailable.
+          - Added regressions:
+            - `test_translate_param_named_s_is_not_treated_as_module_state`
+            - `test_mode_annotations_param_named_s_is_not_auto_state_input`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-10`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+          - Net effect: residual method-on-scalar class eliminated (`E0599: 1 -> 0`) with one surfaced type-mismatch first-error (`E0308: 0 -> 1`); compile pass count unchanged (`15/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

@@ -4,18 +4,18 @@
 module Proposer {
     helper LProposer(+, +);  // s is input (state to check), c is input (constants)
     helper LIncompleteBatchTimer(+);  // c is input (constants)
-    LIsAfterLogTruncationPoint(+, +, +, +);  // s is input (state to check), c is input (constants), opn is input, received_1b_packets is input
-    LSetOfMessage1b(+, +, +);  // s is input (state to check), c is input (constants), S is input
-    LSetOfMessage1bAboutBallot(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, b is input
-    LExistVotesHasProposalLargeThanOpn(+, +, +, +);  // s is input (state to check), c is input (constants), p is input, op is input
-    LExistsAcceptorHasProposalLargeThanOpn(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, op is input
-    LAllAcceptorsHadNoProposal(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, opn is input
-    LLmax_balInS(+, +, +, +);  // s is input (state to check), c is input (constants), S is input, opn is input
-    LExistsBallotInS(+, +, +, +, +);  // s is input (state to check), c is input (constants), v is input, S is input, opn is input
-    LValIsHighestNumberedProposalAtBallot(+, +, +, +, +);  // s is input (state to check), c is input (constants), v is input, S is input, opn is input
-    LValIsHighestNumberedProposal(+, +, +, +, +);  // s is input (state to check), c is input (constants), v is input, S is input, opn is input
-    LProposerCanNominateUsingOperationNumber(+, +, +, +);  // s is input (state to check), c is input (constants), log_truncation_point is input, opn is input
-    LProposerInit(+, +);  // s is input (state to check), c is input (constants)
+    LIsAfterLogTruncationPoint(+, +, +);  // c is input (constants), opn is input, received_1b_packets is input
+    LSetOfMessage1b(+, +);  // c is input (constants), S is input
+    LSetOfMessage1bAboutBallot(+, +, +);  // c is input (constants), S is input, b is input
+    LExistVotesHasProposalLargeThanOpn(+, +, +);  // c is input (constants), p is input, op is input
+    LExistsAcceptorHasProposalLargeThanOpn(+, +, +);  // c is input (constants), S is input, op is input
+    LAllAcceptorsHadNoProposal(+, +, +);  // c is input (constants), S is input, opn is input
+    LLmax_balInS(+, +, +);  // c is input (constants), S is input, opn is input
+    LExistsBallotInS(+, +, +, +);  // c is input (constants), v is input, S is input, opn is input
+    LValIsHighestNumberedProposalAtBallot(+, +, +, +);  // c is input (constants), v is input, S is input, opn is input
+    LValIsHighestNumberedProposal(+, +, +, +);  // c is input (constants), v is input, S is input, opn is input
+    LProposerCanNominateUsingOperationNumber(+, +, +, +);  // c is input (constants), s is input, log_truncation_point is input, opn is input
+    LProposerInit(+, +);  // c is input (constants), s is input
     LProposerProcessRequest(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), packet is input
     LProposerMaybeEnterNewViewAndSend1a(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
     LProposerProcess1b(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), p is input

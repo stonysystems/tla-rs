@@ -2,8 +2,8 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Raft {
-    Lu64_inc(+, +, +);  // s is input (state to check), c is input (constants), x is input
-    Lu64_dec(+, +, +);  // s is input (state to check), c is input (constants), x is input
+    Lu64_inc(+, +);  // c is input (constants), x is input
+    Lu64_dec(+, +);  // c is input (constants), x is input
     LInit(-, +);  // s is output (initialized state), c is input (constants)
     LTimeout(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
     LGrantVote(+, -, +, +, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), candidate_term is input, candidate_last_log_term is input, candidate_last_log_index is input, candidate_id is input, sent_packets is input

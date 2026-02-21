@@ -3,10 +3,10 @@
 
 module Acceptor {
     helper LAcceptor(+);  // c is input (constants)
-    LIsLogTruncationPointValid(+, +, +, +, +);  // s is input (state to check), c is input (constants), log_truncation_point is input, last_checkpointed_operation is input, config is input
-    LRemoveVotesBeforeLogTruncationPoint(+, +, +, +, +);  // s is input (state to check), c is input (constants), votes is input, votes_ is input, log_truncation_point is input
-    LAddVoteAndRemoveOldOnes(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), votes is input, votes_ is input, new_opn is input, new_vote is input, log_truncation_point is input
-    LAcceptorInit(+, +, +);  // s is input (state to check), c is input (constants), a is input
+    LIsLogTruncationPointValid(+, +, +, +);  // c is input (constants), log_truncation_point is input, last_checkpointed_operation is input, config is input
+    LRemoveVotesBeforeLogTruncationPoint(+, +, +, +);  // c is input (constants), votes is input, votes_ is input, log_truncation_point is input
+    LAddVoteAndRemoveOldOnes(+, +, +, +, +, +);  // c is input (constants), votes is input, votes_ is input, new_opn is input, new_vote is input, log_truncation_point is input
+    LAcceptorInit(+, +);  // c is input (constants), a is input
     LAcceptorProcess1a(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input
     LAcceptorProcess2a(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input
     LAcceptorProcessHeartbeat(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input

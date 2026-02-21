@@ -28,7 +28,7 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+pub open spec fn LInit(c: LConstants, s: int) -> bool {
     ((((((((((((((arbitrary::<int>() == 0) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == false)) && (arbitrary::<bool>() == true)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == false)) && (arbitrary::<int>() >= 1)) && (arbitrary::<int>() >= arbitrary::<int>()))
 }
 
@@ -43,7 +43,7 @@ pub open spec fn LSendPromise(s: LState, s_: LState, c: LConstants, prepare_bal:
 }
 
 /// ReceivePromise operator
-pub open spec fn LReceivePromise(s: LState, s_: LState, c: LConstants, sender: int, promise_bal: int, promise_v_bal: bool, promise_val: bool, sent_packets: ()) -> bool {
+pub open spec fn LReceivePromise(s: LState, s_: LState, c: LConstants, sender: int, promise_bal: int, promise_v_bal: int, promise_val: bool, sent_packets: ()) -> bool {
     (((((arbitrary::<bool>() == true) && (promise_bal == arbitrary())) && !Set::<int>::empty().contains(sender)) && (Set::<int>::empty() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == if (promise_v_bal > arbitrary::<int>()) { promise_v_bal } else { (arbitrary() && (arbitrary() == if (promise_v_bal > arbitrary::<int>()) { promise_val } else { ((((((((((arbitrary() && (sent_packets == Seq::<int>::empty())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })) }))
 }
 

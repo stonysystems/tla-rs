@@ -4,5 +4,5 @@
 module Constants {
     helper LConstants(+);  // c is input (constants)
     helper LReplicaConstants(+);  // c is input (constants)
-    LReplicaConstantsValid(+, +);  // s is input (state to check), c is input (constants)
+    LReplicaConstantsValid(+);  // c is input (constants)
 }

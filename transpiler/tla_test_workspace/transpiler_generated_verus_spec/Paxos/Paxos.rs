@@ -20,7 +20,7 @@ pub struct LConstants {
 
 
 /// Init operator
-pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+pub open spec fn LInit(c: LConstants, s: int) -> bool {
     (((((((((((arbitrary::<int>() == 0) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 5126177779int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0))
 }
 
@@ -35,7 +35,7 @@ pub open spec fn LSend1b(s: LState, s_: LState, c: LConstants, b: int) -> bool {
 }
 
 /// RecvPromise operator
-pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_accepted_bal: bool, a_accepted_val: bool) -> bool {
+pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_accepted_bal: int, a_accepted_val: bool) -> bool {
     (((((arbitrary::<int>() == 9996969643int) && Set::<int>::empty().contains(a)) && !Set::<int>::empty().contains(a)) && (Set::<int>::empty() == Set::<int>::empty().union(set![a]))) && (arbitrary() == if (a_accepted_bal > arbitrary::<int>()) { a_accepted_bal } else { (arbitrary() && (arbitrary() == if (a_accepted_bal > arbitrary::<int>()) { a_accepted_val } else { ((((((((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == 9996969643int)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })) }))
 }
 

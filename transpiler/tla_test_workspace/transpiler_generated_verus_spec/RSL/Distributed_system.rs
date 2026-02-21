@@ -39,43 +39,43 @@ pub open spec fn LRslState(c: LConstants) -> LRecord {
 }
 
 /// RslMapsComplete operator
-pub open spec fn LRslMapsComplete(s: LState, c: LConstants, ps: int) -> bool {
+pub open spec fn LRslMapsComplete(c: LConstants, ps: int) -> bool {
     ((arbitrary::<Seq<int>>().len() as int) == (arbitrary::<Seq<int>>().len() as int))
 }
 
 /// RslConstantsUnchanged operator
-pub open spec fn LRslConstantsUnchanged(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
+pub open spec fn LRslConstantsUnchanged(c: LConstants, ps: int, ps_: int) -> bool {
     ((((arbitrary::<Seq<int>>().len() as int) == (arbitrary::<Seq<int>>().len() as int)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslInit operator
-pub open spec fn LRslInit(s: LState, c: LConstants, con: int, ps: int) -> bool {
-    (((((arbitrary() && arbitrary()) && (arbitrary() == con)) && arbitrary()) && LRslMapsComplete(s, c, ps)) && forall |i| (((0 <= i) && (i < (arbitrary::<Seq<int>>().len() as int))) ==> arbitrary()))
+pub open spec fn LRslInit(c: LConstants, con: int, ps: int) -> bool {
+    (((((arbitrary() && arbitrary()) && (arbitrary() == con)) && arbitrary()) && LRslMapsComplete(c, ps)) && forall |i| (((0 <= i) && (i < (arbitrary::<Seq<int>>().len() as int))) ==> arbitrary()))
 }
 
 /// RslNextCommon operator
-pub open spec fn LRslNextCommon(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslMapsComplete(s, c, ps) && LRslConstantsUnchanged(s, c, ps, ps_)) && arbitrary())
+pub open spec fn LRslNextCommon(c: LConstants, ps: int, ps_: int) -> bool {
+    ((LRslMapsComplete(c, ps) && LRslConstantsUnchanged(c, ps, ps_)) && arbitrary())
 }
 
 /// RslNextOneReplica operator
-pub open spec fn LRslNextOneReplica(s: LState, c: LConstants, ps: int, ps_: int, idx: int, ios: int) -> bool {
-    (((((LRslNextCommon(s, c, ps, ps_) && (0 <= idx)) && (idx < (arbitrary::<Seq<int>>().len() as int))) && arbitrary()) && (arbitrary() == LRecord { actor: arbitrary::<Seq<int>>()[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary::<Seq<int>>() == arbitrary::<Seq<int>>().update(idx, arbitrary::<Seq<int>>()[idx])))
+pub open spec fn LRslNextOneReplica(c: LConstants, ps: int, ps_: int, idx: int, ios: int) -> bool {
+    (((((LRslNextCommon(c, ps, ps_) && (0 <= idx)) && (idx < (arbitrary::<Seq<int>>().len() as int))) && arbitrary()) && (arbitrary() == LRecord { actor: arbitrary::<Seq<int>>()[idx], all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary::<Seq<int>>() == arbitrary::<Seq<int>>().update(idx, arbitrary::<Seq<int>>()[idx])))
 }
 
 /// RslNextEnvironment operator
-pub open spec fn LRslNextEnvironment(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslNextCommon(s, c, ps, ps_) && (!(arbitrary()) == 2375175031int)) && (arbitrary::<int>() == arbitrary::<int>()))
+pub open spec fn LRslNextEnvironment(c: LConstants, ps: int, ps_: int) -> bool {
+    ((LRslNextCommon(c, ps, ps_) && (!(arbitrary()) == 2375175031int)) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslNextOneExternal operator
-pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int, eid: bool, ios: int) -> bool {
-    (((LRslNextCommon(s, c, ps, ps_) && !Set::<int>::empty().contains(eid)) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary::<int>() == arbitrary::<int>()))
+pub open spec fn LRslNextOneExternal(c: LConstants, ps: int, ps_: int, eid: int, ios: int) -> bool {
+    (((LRslNextCommon(c, ps, ps_) && !Set::<int>::empty().contains(eid)) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslNext operator
-pub open spec fn LRslNext(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    exists |idx, ios| (LRslNextOneReplica(s, c, ps, ps_, idx, ios) || exists |eid, ios| (c.AbstractEndPoint.contains(eid)) && (LRslNextOneExternal(s, c, ps, ps_, eid, ios) || LRslNextEnvironment(s, c, ps, ps_)))
+pub open spec fn LRslNext(c: LConstants, ps: int, ps_: int) -> bool {
+    exists |idx, ios| (LRslNextOneReplica(c, ps, ps_, idx, ios) || exists |eid, ios| (c.AbstractEndPoint.contains(eid)) && (LRslNextOneExternal(c, ps, ps_, eid, ios) || LRslNextEnvironment(c, ps, ps_)))
 }
 
 } // verus!

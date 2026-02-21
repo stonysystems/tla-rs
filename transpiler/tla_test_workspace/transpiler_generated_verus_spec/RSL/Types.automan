@@ -8,5 +8,5 @@ module Types {
     helper LLearnerTuple(+);  // c is input (constants)
     helper LVote(+);  // c is input (constants)
     helper LClockReading(+);  // c is input (constants)
-    LBalLeq(+, +, +, +);  // s is input (state to check), c is input (constants), ba is input, bb is input
+    LBalLeq(+, +, +);  // c is input (constants), ba is input, bb is input
 }

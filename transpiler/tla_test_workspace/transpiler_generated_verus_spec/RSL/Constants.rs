@@ -37,7 +37,7 @@ pub open spec fn LReplicaConstants(c: LConstants) -> LRecord {
 }
 
 /// ReplicaConstantsValid operator
-pub open spec fn LReplicaConstantsValid(s: LState, c: LConstants) -> bool {
+pub open spec fn LReplicaConstantsValid(c: LConstants) -> bool {
     ((0 <= arbitrary::<int>()) && (arbitrary::<int>() < (arbitrary::<Seq<int>>().len() as int)))
 }
 

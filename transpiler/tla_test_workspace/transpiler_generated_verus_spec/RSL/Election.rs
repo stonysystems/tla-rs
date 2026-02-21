@@ -44,37 +44,37 @@ pub open spec fn LElectionState(c: LConstants) -> LRecord {
 }
 
 /// ComputeSuccessorView operator
-pub open spec fn LComputeSuccessorView(s: LState, c: LConstants, b: int) -> LRecord {
+pub open spec fn LComputeSuccessorView(c: LConstants, b: int) -> LRecord {
     if ((arbitrary::<int>() + 1) < (arbitrary::<Seq<int>>().len() as int)) { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: (arbitrary::<int>() + 1), requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: arbitrary() } } else { LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: (arbitrary::<int>() + 1) } }
 }
 
 /// BoundRequestSequence operator
-pub open spec fn LBoundRequestSequence(s: LState, c: LConstants, lengthBound: int) -> int {
+pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int) -> int {
     if (((arbitrary::<int>() == 9267933094int) && (0 <= arbitrary::<int>())) && (arbitrary::<int>() < (s.len() as int))) { s.subrange(0 - 1, arbitrary()) } else { s }
 }
 
 /// RequestsMatch operator
-pub open spec fn LRequestsMatch(s: LState, c: LConstants, r1: int, r2: int) -> bool {
+pub open spec fn LRequestsMatch(c: LConstants, r1: int, r2: int) -> bool {
     ((((arbitrary() == c.Request) && (arbitrary() == c.Request)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RequestSatisfiedBy operator
-pub open spec fn LRequestSatisfiedBy(s: LState, c: LConstants, r1: int, r2: int) -> bool {
+pub open spec fn LRequestSatisfiedBy(c: LConstants, r1: int, r2: int) -> bool {
     ((((arbitrary() == c.Request) && (arbitrary() == c.Request)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() <= arbitrary::<int>()))
 }
 
 /// RemoveAllSatisfiedRequestsInSequence operator
-pub open spec fn LRemoveAllSatisfiedRequestsInSequence(s: LState, c: LConstants, r: int) -> () {
-    if ((s.len() as int) == 0) { Seq::<int>::empty() } else { if LRequestSatisfiedBy(s, c, s[0], r) { LRemoveAllSatisfiedRequestsInSequence(s, c, s.drop_first(), r) } else { (seq![s[0]] + LRemoveAllSatisfiedRequestsInSequence(s, c, s.drop_first(), r)) } }
+pub open spec fn LRemoveAllSatisfiedRequestsInSequence(c: LConstants, s: Seq<int>, r: int) -> () {
+    if ((s.len() as int) == 0) { Seq::<int>::empty() } else { if LRequestSatisfiedBy(c, s[0], r) { LRemoveAllSatisfiedRequestsInSequence(c, s.drop_first(), r) } else { (seq![s[0]] + LRemoveAllSatisfiedRequestsInSequence(c, s.drop_first(), r)) } }
 }
 
 /// ElectionStateInit operator
-pub open spec fn LElectionStateInit(s: LState, c: LConstants, es: int) -> bool {
+pub open spec fn LElectionStateInit(c: LConstants, es: int) -> bool {
     (((((((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { constants: 0int, current_view: 0int, current_view_suspectors: 0int, epoch_end_time: 0int, epoch_length: 0int, proposer_id: 0, requests_received_prev_epochs: 0int, requests_received_this_epoch: 0int, seqno: 1 })) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty()))
 }
 
 /// ElectionStateProcessHeartbeat operator
-pub open spec fn LElectionStateProcessHeartbeat(s: LState, c: LConstants, es: LRecord, es_: LRecord, p: int, clock: int) -> bool {
+pub open spec fn LElectionStateProcessHeartbeat(c: LConstants, es: LRecord, es_: LRecord, p: int, clock: int) -> bool {
     if !Set::<int>::empty().contains(arbitrary::<int>()) { (es_ == es) } else { {
     let sender_index: int = arbitrary();
     if ((arbitrary::<int>() == arbitrary::<int>()) && arbitrary()) { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: (arbitrary::<int>() + set![sender_index]), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int }) } else { if arbitrary() { {
@@ -85,7 +85,7 @@ pub open spec fn LElectionStateProcessHeartbeat(s: LState, c: LConstants, es: LR
 }
 
 /// ElectionStateCheckForViewTimeout operator
-pub open spec fn LElectionStateCheckForViewTimeout(s: LState, c: LConstants, es: LRecord, es_: LRecord, clock: int) -> bool {
+pub open spec fn LElectionStateCheckForViewTimeout(c: LConstants, es: LRecord, es_: LRecord, clock: int) -> bool {
     if (clock < arbitrary::<int>()) { (es_ == es) } else { if ((arbitrary::<Seq<int>>().len() as int) == 0) { {
     let new_epoch_length: int = arbitrary();
     (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int })
@@ -93,7 +93,7 @@ pub open spec fn LElectionStateCheckForViewTimeout(s: LState, c: LConstants, es:
 }
 
 /// ElectionStateCheckForQuorumOfViewSuspicions operator
-pub open spec fn LElectionStateCheckForQuorumOfViewSuspicions(s: LState, c: LConstants, es: LRecord, es_: LRecord, clock: int) -> bool {
+pub open spec fn LElectionStateCheckForQuorumOfViewSuspicions(c: LConstants, es: LRecord, es_: LRecord, clock: int) -> bool {
     if (((arbitrary::<Seq<int>>().len() as int) < arbitrary::<int>()) || !(arbitrary())) { (es_ == es) } else { {
     let new_epoch_length: int = arbitrary();
     (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: new_epoch_length, proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int })
@@ -101,17 +101,17 @@ pub open spec fn LElectionStateCheckForQuorumOfViewSuspicions(s: LState, c: LCon
 }
 
 /// ElectionStateReflectReceivedRequest operator
-pub open spec fn LElectionStateReflectReceivedRequest(s: LState, c: LConstants, es: LRecord, es_: LRecord, req: int) -> bool {
-    if exists |earlier_req| c.Request.contains(earlier_req) && ((Set::<int>::empty().contains(earlier_req) || Set::<int>::empty().contains(earlier_req)) && LRequestsMatch(s, c, earlier_req, req)) { (es_ == es) } else { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int }) }
+pub open spec fn LElectionStateReflectReceivedRequest(c: LConstants, es: LRecord, es_: LRecord, req: int) -> bool {
+    if exists |earlier_req| c.Request.contains(earlier_req) && ((Set::<int>::empty().contains(earlier_req) || Set::<int>::empty().contains(earlier_req)) && LRequestsMatch(c, earlier_req, req)) { (es_ == es) } else { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int }) }
 }
 
 /// RemoveExecutedRequestBatch operator
-pub open spec fn LRemoveExecutedRequestBatch(s: LState, c: LConstants, reqs: int, batch: Seq<int>) -> int {
-    if ((batch.len() as int) == 0) { reqs } else { LRemoveExecutedRequestBatch(s, c, LRemoveAllSatisfiedRequestsInSequence(s, c, reqs, batch[0]), batch.drop_first()) }
+pub open spec fn LRemoveExecutedRequestBatch(c: LConstants, reqs: int, batch: Seq<int>) -> int {
+    if ((batch.len() as int) == 0) { reqs } else { LRemoveExecutedRequestBatch(c, LRemoveAllSatisfiedRequestsInSequence(c, reqs, batch[0]), batch.drop_first()) }
 }
 
 /// ElectionStateReflectExecutedRequestBatch operator
-pub open spec fn LElectionStateReflectExecutedRequestBatch(s: LState, c: LConstants, es: int, es_: LRecord, batch: int) -> bool {
+pub open spec fn LElectionStateReflectExecutedRequestBatch(c: LConstants, es: int, es_: LRecord, batch: int) -> bool {
     (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: arbitrary(), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int })
 }
 
