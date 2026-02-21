@@ -6489,7 +6489,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.6 State-Space Exploration Engine
 
-- [ ] Implement BFS and DFS exploration modes.
+- [x] Implement BFS and DFS exploration modes.
+  - Added `modelcheck::explorer` (`transpiler/src/modelcheck/explorer.rs`) with bounded deterministic BFS/DFS traversal over canonical-key deduplicated `RuntimeValue` states, including configurable depth/state limits and explicit stop reasons (`FrontierExhausted` / `MaxStatesReached`).
+  - Scope check: implemented as a small leaf task (`<500` LOC total, including focused unit tests).
 - [ ] Maintain visited-set and frontier statistics.
 - [ ] Check:
   - `LInit` for initial-state construction

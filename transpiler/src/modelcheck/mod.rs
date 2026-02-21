@@ -9,10 +9,12 @@
 //! - branch-constraint solving into concrete successor states
 //! - canonical-key successor deduplication
 //! - optional stuttering vs deadlock empty-successor semantics
+//! - bounded BFS/DFS state-space exploration
 
 pub mod config;
 pub mod domain;
 pub mod evaluator;
+pub mod explorer;
 pub mod ir;
 pub mod solver;
 pub mod value;
