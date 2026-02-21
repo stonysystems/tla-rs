@@ -6535,7 +6535,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added `--max-depth`, `--max-states`, and `--timeout` overrides to `verus-transpile model-check` (with `--timeout-ms` alias), wired through `ModelConfigOverrides` so preflight uses validated search-limit overrides from CLI.
     - Added focused tests for CLI parsing of these flags, command acceptance with overrides, and rejection of invalid overrides (e.g., `max_depth = 0`).
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
-  - [ ] `--json-report` (machine-readable result)
+  - [x] `--json-report` (machine-readable result)
+    - Added `--json-report` to `verus-transpile model-check`; when set, preflight emits a structured JSON report (protocol/types paths, resolved entrypoints, invariant counts/names, and effective search settings) to stdout.
+    - Preserved existing human-readable summary when the flag is absent, and added focused tests for CLI parsing default/enablement and command preflight acceptance in JSON mode.
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
 - [ ] Add human-readable summary output (states, transitions, depth, elapsed, result).
 
 ### 22.8 Validation and Regression Tests

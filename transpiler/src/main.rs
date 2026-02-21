@@ -207,6 +207,10 @@ enum Commands {
         #[arg(long = "timeout", alias = "timeout-ms")]
         timeout_ms: Option<u64>,
 
+        /// Emit machine-readable JSON preflight report
+        #[arg(long)]
+        json_report: bool,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -630,6 +634,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             max_depth,
             max_states,
             timeout_ms,
+            json_report,
             model,
         } => {
             use verus_transpiler::modelcheck::config::{
@@ -693,6 +698,40 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 &model_config.properties.invariants,
             )
             .map_err(|e| miette::miette!("{}", e))?;
+            let resolved_invariant_names: Vec<String> = selected_invariants
+                .iter()
+                .map(|invariant_fn| invariant_fn.name.clone())
+                .collect();
+
+            if *json_report {
+                let report = serde_json::json!({
+                    "result": "ok",
+                    "protocol": bundle.protocol_file.display().to_string(),
+                    "types": bundle.types_file.display().to_string(),
+                    "entrypoints": {
+                        "init": bundle.entrypoints.linit.name,
+                        "next": bundle.entrypoints.lnext.name,
+                    },
+                    "invariants": {
+                        "configured_count": model_config.properties.invariants.len(),
+                        "resolved_count": selected_invariants.len(),
+                        "configured": model_config.properties.invariants,
+                        "resolved": resolved_invariant_names,
+                    },
+                    "search": {
+                        "strategy": selected_search.as_str(),
+                        "successor_semantics": model_config.properties.successor_semantics,
+                        "max_depth": model_config.search.max_depth,
+                        "max_states": model_config.search.max_states,
+                        "timeout_ms": model_config.search.timeout_ms,
+                    },
+                });
+                let rendered = serde_json::to_string_pretty(&report).map_err(|e| {
+                    miette::miette!("Failed to serialize model-check JSON report: {}", e)
+                })?;
+                println!("{}", rendered);
+                return Ok(());
+            }
 
             println!("Model-check preflight OK");
             println!("  protocol: {}", bundle.protocol_file.display());
@@ -704,7 +743,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             println!(
                 "  invariants: configured={}, resolved={}",
                 model_config.properties.invariants.len(),
-                selected_invariants.len()
+                resolved_invariant_names.len()
             );
             println!(
                 "  search: strategy={}, mode_semantics={:?}, max_depth={}, max_states={}, timeout_ms={}",
@@ -2032,6 +2071,7 @@ Next == count' = count + N
             "4096",
             "--timeout",
             "2500",
+            "--json-report",
             "--model",
             "model.toml",
         ]);
@@ -2047,6 +2087,7 @@ Next == count' = count + N
                 max_depth,
                 max_states,
                 timeout_ms,
+                json_report,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -2058,6 +2099,7 @@ Next == count' = count + N
                 assert_eq!(max_depth, Some(64));
                 assert_eq!(max_states, Some(4096));
                 assert_eq!(timeout_ms, Some(2500));
+                assert!(json_report);
                 assert_eq!(model, PathBuf::from("model.toml"));
             }
             _ => panic!("Expected ModelCheck command"),
@@ -2078,6 +2120,25 @@ Next == count' = count + N
         ])
         .unwrap_err();
         assert!(err.to_string().contains("possible values: bfs, dfs"));
+    }
+
+    #[test]
+    fn test_model_check_cli_json_report_defaults_false() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "model-check",
+            "--input",
+            "src/protocol/TwoPhase/twophase.rs",
+            "--model",
+            "model.toml",
+        ]);
+
+        match cli.command {
+            Some(Commands::ModelCheck { json_report, .. }) => {
+                assert!(!json_report);
+            }
+            _ => panic!("Expected ModelCheck command"),
+        }
     }
 
     #[test]
@@ -2132,6 +2193,7 @@ invariants = ["LInv"]
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2194,6 +2256,7 @@ verus! {
             max_depth: Some(55),
             max_states: Some(2048),
             timeout_ms: Some(7777),
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2256,6 +2319,7 @@ verus! {
             max_depth: Some(0),
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2276,6 +2340,69 @@ verus! {
 
         let err = handle_command(&command, &cli).unwrap_err();
         assert!(err.to_string().contains("search limits must be > 0"));
+    }
+
+    #[test]
+    fn test_model_check_command_accepts_json_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec![],
+            search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
+            json_report: true,
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        handle_command(&command, &cli).unwrap();
     }
 
     #[test]
@@ -2319,6 +2446,7 @@ verus! {
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2381,6 +2509,7 @@ verus! {
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2443,6 +2572,7 @@ verus! {
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2495,6 +2625,7 @@ verus! {
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2565,6 +2696,7 @@ invariants = ["LMissing"]
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2639,6 +2771,7 @@ invariants = ["LMissing"]
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2705,6 +2838,7 @@ verus! {
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
@@ -2768,6 +2902,7 @@ verus! {
             max_depth: None,
             max_states: None,
             timeout_ms: None,
+            json_report: false,
             model: model_path,
         };
         let cli = Cli {
