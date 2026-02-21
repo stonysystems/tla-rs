@@ -2170,6 +2170,45 @@ fn test_replica_action1_contract_prototype_is_documented_and_assume_remains() {
     );
 }
 
+/// h4 guard: deferred architecture-bound trust contract must stay explicit in docs and TODO.
+#[test]
+fn test_replica_trust_boundary_deferred_contract_has_guardrails_and_ownership() {
+    let doc = std::fs::read_to_string("../docs/dev/io-trust-boundary-analysis.md")
+        .expect("Failed to read io-trust-boundary-analysis.md");
+    assert!(
+        doc.contains("Deferred Architecture-Bound Contract (12.5.7h4)"),
+        "h4 deferred-contract section missing from io trust-boundary analysis doc"
+    );
+    assert!(
+        doc.contains("Guardrails"),
+        "h4 doc section should define guardrails"
+    );
+    assert!(
+        doc.contains("Ownership"),
+        "h4 doc section should define ownership"
+    );
+    assert!(
+        doc.contains("Exit Criteria"),
+        "h4 doc section should define explicit removal criteria"
+    );
+    assert!(
+        doc.contains("Assumption-count freeze")
+            && doc.contains("CReplicaNoReceiveNext")
+            && doc.contains("CReplicaNextProcessPacketWithoutReadingClock"),
+        "h4 guardrails should freeze trust-boundary assume count and placement"
+    );
+
+    let todo = std::fs::read_to_string("../TODO.md").expect("Failed to read TODO.md");
+    assert!(
+        todo.contains("- [x] **12.5.7h4**"),
+        "TODO should mark 12.5.7h4 complete after deferred-contract formalization"
+    );
+    assert!(
+        todo.contains("- [x] **12.5.7h4 acceptance criteria**"),
+        "TODO should include h4 acceptance criteria tracking"
+    );
+}
+
 /// Verify gen_helpers.rs contains all shared helper functions for generated modules
 #[test]
 fn test_gen_helpers_shared_module() {

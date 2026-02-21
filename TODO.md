@@ -2405,13 +2405,21 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 - [x] Removed `assume(received_packet.msg is CMessageHeartbeat)` (now provable from clone_io_packet ensures)
 - [x] Replaced `assume(false)` in dead non-Receive branch with `assert(false)` + IO contract requires
 - [x] Added IO contract preconditions to CReplicaNextProcessPacket and CSchedulerNext
-- [ ] Remaining 10 are irreducible IO trust boundary assumes (all identical pattern):
+- [x] Remaining 10 are irreducible IO trust boundary assumes (all identical pattern):
   - [x] **12.5.7h1** Inventory all 10 assume sites (function + line) and sync `docs/dev/io-trust-boundary-analysis.md` with current generated code location.
   - [x] **12.5.7h2** Add a drift check (script/test) that asserts exactly these 10 trust-boundary assumes remain and flags unexpected new `assume(...)` sites in replica dispatch paths.
     - Implemented in `transpiler/tests/integration.rs::test_replica_dispatch_assume_drift_guard` (enforces 9+1 split, exact assume form, and no new assume sites in other replica dispatch fns).
   - [x] **12.5.7h3** Prototype one-path contract propagation (NoReceive action 1) to test whether one packet-identity assume can be eliminated without IO architecture changes.
     - Prototype result: not eliminable in isolation. Adding an action-1 packet-shape precondition at `CReplicaNoReceiveNext` moved the obligation upward and failed at the caller (`CSchedulerNext`) without full IO contract propagation; experiment was reverted and documented.
-  - [ ] **12.5.7h4** If 12.5.7h3 fails, formalize these 10 as deferred architecture-bound assumptions with explicit guardrails and ownership in docs + TODO acceptance criteria.
+  - [x] **12.5.7h4** If 12.5.7h3 fails, formalize these 10 as deferred architecture-bound assumptions with explicit guardrails and ownership in docs + TODO acceptance criteria.
+    - Deferred contract formalized in `docs/dev/io-trust-boundary-analysis.md` under `Deferred Architecture-Bound Contract (12.5.7h4)`.
+    - Guardrails: assumption count frozen to 10; allowed sites constrained to `CReplicaNoReceiveNext` (9) + `CReplicaNextProcessPacketWithoutReadingClock` (1); drift blocked by integration tests.
+    - Ownership: runtime IO-recording contract (`src/generated/RSL/replica_gen.rs` dispatch boundary + runtime bridge assumptions) and drift-guard enforcement (`transpiler/tests/integration.rs`) explicitly assigned.
+    - Exit criteria: remove only after end-to-end IO witness contract propagation proves packet/log identity without trust-boundary `assume(...)`.
+  - [x] **12.5.7h4 acceptance criteria**
+    - [x] Docs define guardrails and owners for the deferred trust boundary.
+    - [x] Automated tests enforce assumption-count and placement invariants.
+    - [x] TODO explicitly tracks deferred status and removal criteria.
   - All 10 state: `_sent_packets@.map(|i, p| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))`
   - This asserts that the runtime faithfully records sent packets matching the IO spec
   - Cannot be proven without full IO contract propagation through CReplica dispatch
@@ -2424,7 +2432,7 @@ The learner has `CLearnerState = HashMap<u64, CLearnerTuple>` using `abstractify
 
 **12.6.1: Run full Verus verification** ✅ MOSTLY COMPLETE
 - [x] 627 verified, 0 errors (target exceeded; includes all 10 protocols)
-- [ ] 10 irreducible IO trust boundary assumes remain (would require CReplica clone_up_to_view + full IO contract propagation)
+- [x] 10 irreducible IO trust boundary assumes remain (deferred with explicit guardrails/ownership in 12.5.7h4; removal requires full IO contract propagation)
 - [x] All generated code comes from transpiler (no hand edits) — replica_gen.rs now 100% transpiler output
   - [x] Extract shared helpers (clone_cpacket_*, clone_io_packet, outbound_packets_to_vec) to `src/implementation/RSL/gen_helpers.rs` — eliminates 111 LOC of duplication across acceptor_gen, proposer_gen, replica_gen
   - [x] Move 9 hand-written dispatch functions from replica_gen.rs to `src/implementation/RSL/replica_dispatch.rs` [26:02:19]

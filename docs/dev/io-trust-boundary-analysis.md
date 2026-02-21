@@ -101,6 +101,42 @@ Result: **failed for isolated action-1 elimination**.
 
 The experimental code change was reverted, and the trust-boundary assume count remains 10.
 
+## Deferred Architecture-Bound Contract (12.5.7h4)
+
+The remaining 10 packet-identity assumptions are now explicitly treated as a **deferred architecture-bound trust contract**, not an accidental proof gap.
+
+### Guardrails
+
+1. **Assumption-count freeze**: exactly 10 trust-boundary assumptions are allowed.
+2. **Placement freeze**: allowed only in:
+   - `CReplicaNoReceiveNext` (9 sites),
+   - `CReplicaNextProcessPacketWithoutReadingClock` (1 site).
+3. **Statement freeze**: each assumption must be one of the two known packet-identity forms (`_sent_packets...` or `_packets...` mapped to `ExtractSentPacketsFromIos(...)`).
+4. **Drift enforcement**: `transpiler/tests/integration.rs::test_replica_dispatch_assume_drift_guard` must stay passing; any count/site/form drift is a release blocker.
+5. **No new trust sites**: no new `assume(...)` statements are permitted in replica dispatch paths.
+
+### Ownership
+
+- **Runtime IO-recording boundary owner**: RSL runtime/dispatch maintainers responsible for the trusted packet/log correspondence assumption at replica dispatch boundaries.
+- **Guardrail test owner**: transpiler integration-test maintainers responsible for keeping drift guards current with intentional architecture changes.
+- **Task tracking owner**: TODO/roadmap maintainers responsible for preserving deferred status, rationale, and removal criteria.
+
+### Acceptance Criteria
+
+- Guardrails and ownership are documented in this file.
+- TODO tracks this as a deferred architecture-bound contract (not silently ignored debt).
+- Automated drift checks enforce count + placement + statement invariants.
+- Removal criteria are explicit and checkable.
+
+### Exit Criteria (What Must Be Proven To Remove The 10 Assumes)
+
+All of the following are required before deleting these assumptions:
+
+1. End-to-end IO witness contract propagation from `CSchedulerNext` through replica dispatch sub-functions proving packet/log identity without trust-boundary assumptions.
+2. Verified linkage between emitted `Vec<CPacket>` outputs and corresponding IO log `Send` events (construction or witnessed refinement), not just local branch-shape preconditions.
+3. Replacement proofs land with unchanged behavior and all existing drift/roundtrip/integration tests still passing.
+4. Full Verus verification remains at 0 errors after removing the assumptions.
+
 ## Why This Is Irreducible
 
 The packet identity `exec_output =~= ExtractSentPacketsFromIos(io_log)` cannot be proven because:
