@@ -3221,7 +3221,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3c-2:
+    // Baseline after 16.8.3d-3c-3:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
     // - infers quantifier binder types from bound-set and call-site hints, and

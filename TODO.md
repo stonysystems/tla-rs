@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `25/33` files compile with Verus after `16.8.3d-3c-2`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `25/33` files compile with Verus after `16.8.3d-3c-3`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5517,7 +5517,7 @@ transpiler/tla_test_workspace/
         - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
         - Measured first-error baseline after `16.8.3d-3a`: `22/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `8` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `3` `E0282`.
         - Net effect: trait-bound class eliminated (`E0277: 2 -> 0`) with unchanged compile pass count (`22 -> 22`) and surfaced type-shape mismatches (`E0308: 6 -> 8`) for follow-up leaves.
-      - [ ] **16.8.3d-3b** Reduce post-`3a` `E0308` mismatched-type blockers (dominant class) while preserving `E0277=0`.
+      - [x] **16.8.3d-3b** Reduce post-`3a` `E0308` mismatched-type blockers (dominant class) while preserving `E0277=0`.
         - [x] **16.8.3d-3b-1** Infer `Seq<LRecord>` generated-D1 parameter shape when an indexed parameter value is directly compared against a record literal.
           - Scope/LOC check: implemented as focused usage-hint refinement + one translator regression + workspace regeneration; stayed under the <500 LOC leaf target.
           - Added `UsageHintEvidence` support for indexed-record comparison evidence and promoted this pattern to `Seq<LRecord>` parameter hinting in generated-D1 parameter typing fallback.
@@ -5562,7 +5562,7 @@ transpiler/tla_test_workspace/
           - Re-built `transpiler/target/release/verus-transpile`, regenerated the residual `E0308` target modules (`RSL/Election`, `RSL/Executor`, `RSL/Learner`, `RSL/Proposer`, `VerticalPaxos/Vpaxos`), and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-3b-3`: `23/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `3` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `5` `E0282`, `1` `REC_DECREASES`.
           - Net effect: residual mismatched-type blockers reduced (`E0308: 5 -> 3`) with compile pass count unchanged (`23 -> 23`) while preserving `E0277=0`; one former mismatched-type file now leads with `E0599` and one with `E0282`.
-      - [ ] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
+      - [x] **16.8.3d-3c** Reduce remaining inference blockers (`E0282`) after `3b`, then re-evaluate promotion criteria for the D1 compile gate.
         - [x] **16.8.3d-3c-1** Eliminate untyped generated-D1 quantifier binder inference blockers (e.g., unused `sent_packets` binders in `VerticalPaxos/LNext`) by applying binder fallback typing whenever unknown-ref normalization is enabled, then regenerate/re-measure baseline.
           - Scope/LOC check: implemented as focused quantifier-binder/type-hint propagation refinements in `ExprTranslator` plus targeted regressions and single-module regeneration; stayed under the <500 LOC leaf target.
           - Added generated-D1 quantifier bound-type handling for constructor-style bounds (`Seq`/`Set`/`Map`) and merged bound-set hints with call-site parameter hints (priority-based) for binder typing.
@@ -5589,7 +5589,18 @@ transpiler/tla_test_workspace/
             - `Raft/Raft.rs`
           - Measured first-error baseline after `16.8.3d-3c-2`: `25/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
           - Net effect: inference first-error class eliminated (`E0282: 4 -> 0`) with one additional compile pass (`24 -> 25`, `Paxos/Paxos.rs` now compiles); remaining blockers are now type/arity (`E0308`, `E0061`) and recursive-decreases.
-        - [ ] **16.8.3d-3c-3** Re-run full D1 compile baseline, refresh integration assertions/docs, and decide whether to keep `3c` open or promote `16.8.3d-3` criteria.
+        - [x] **16.8.3d-3c-3** Re-run full D1 compile baseline, refresh integration assertions/docs, and decide whether to keep `3c` open or promote `16.8.3d-3` criteria.
+          - Scope/LOC check: this leaf is baseline re-measurement + task/status updates only (<200 LOC), well below the <500 LOC target.
+          - Re-ran full D1 baseline via integration harness (`test_d1_generated_verus_spec_compile_baseline`) and direct per-file first-error classification.
+          - Refreshed D1 compile expectations in `transpiler/tests/integration.rs` to match the current measured baseline.
+          - Confirmed first-error baseline after `16.8.3d-3c-3`: `25/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `5` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `0` `E0282`, `1` `REC_DECREASES`.
+          - Decision: close `16.8.3d-3c` as completed (`E0282` first-error class eliminated), but keep `16.8.3d-3` open; full-compile promotion criteria are not met yet (`25/33` with non-inference blockers remaining).
+      - [ ] **16.8.3d-3d** Reduce residual non-inference first-error blockers (`E0308`, `E0061`, `E0599`, `REC_DECREASES`) before re-attempting `16.8.3d-3` promotion.
+        - [ ] **16.8.3d-3d-1** Eliminate `E0061` wrong-arity first error in `RSL/Replica.rs` by aligning generated D1 operator call arity/injected state args.
+        - [ ] **16.8.3d-3d-2** Reduce `E0308` first errors in `Raft/Raft.rs` and `RSL/{Acceptor,Election,Learner,Proposer}.rs` via targeted bool/int and branch-shape coercion fixes.
+        - [ ] **16.8.3d-3d-3** Eliminate residual `E0599` first error in `RSL/Executor.rs` (method-on-scalar drift) via receiver-shape normalization.
+        - [ ] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.
+        - [ ] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
