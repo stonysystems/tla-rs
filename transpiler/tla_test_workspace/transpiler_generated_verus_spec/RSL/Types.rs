@@ -34,17 +34,17 @@ pub struct LConstants {
 
 /// Ballot operator
 pub open spec fn LBallot(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: int, t: 0int }
+    LRecord { candidate_learned_value: 0int, client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: arbitrary(), received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: arbitrary(), t: 0int }
 }
 
 /// Request operator
 pub open spec fn LRequest(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, client: 3338869814int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 5508356363int, seqno: int, t: 0int }
+    LRecord { candidate_learned_value: 0int, client: 3338869814int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 5508356363int, seqno: arbitrary(), t: 0int }
 }
 
 /// Reply operator
 pub open spec fn LReply(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, client: 3338869814int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 5508356363int, request: 0int, seqno: int, t: 0int }
+    LRecord { candidate_learned_value: 0int, client: 3338869814int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 5508356363int, request: 0int, seqno: arbitrary(), t: 0int }
 }
 
 /// LearnerTuple operator
@@ -59,7 +59,7 @@ pub open spec fn LVote(c: LConstants) -> LRecord {
 
 /// ClockReading operator
 pub open spec fn LClockReading(c: LConstants) -> LRecord {
-    LRecord { candidate_learned_value: 0int, client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: 0int, t: int }
+    LRecord { candidate_learned_value: 0int, client: 0int, max_val: 0int, max_value_bal: 0int, proposer_id: 0int, received_2b_message_senders: 0int, reply: 0int, request: 0int, seqno: 0int, t: arbitrary() }
 }
 
 /// BalLeq operator

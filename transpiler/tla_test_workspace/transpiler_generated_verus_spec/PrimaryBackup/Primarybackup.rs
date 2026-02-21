@@ -72,7 +72,7 @@ pub open spec fn LBackupPromote(s: LState, c: LConstants, s_: int, sent_packets:
 
 /// Next operator
 pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |val, sent_packets| (Seq(c.PBMessage).contains(sent_packets)) && (LPrimaryWrite(s, c, s, s_, c, val, sent_packets) || exists |sent_packets| Seq(c.PBMessage).contains(sent_packets) && (LPrimarySendReplicate(s, c, s, s_, c, sent_packets) || exists |val, sent_packets| (Seq(c.PBMessage).contains(sent_packets)) && (LBackupReceiveReplicate(s, c, s, s_, c, val, sent_packets) || exists |sent_packets| Seq(c.PBMessage).contains(sent_packets) && (LBackupSendAck(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.PBMessage).contains(sent_packets) && (LPrimaryReceiveAck(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.PBMessage).contains(sent_packets) && (LPrimaryCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.PBMessage).contains(sent_packets) && (LPrimaryFail(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.PBMessage).contains(sent_packets) && LBackupPromote(s, c, s, s_, c, sent_packets))))))))
+    exists |val, sent_packets| (LPrimaryWrite(s, c, s, s_, c, val, sent_packets) || exists |sent_packets| (LPrimarySendReplicate(s, c, s, s_, c, sent_packets) || exists |val, sent_packets| (LBackupReceiveReplicate(s, c, s, s_, c, val, sent_packets) || exists |sent_packets| (LBackupSendAck(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryReceiveAck(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LPrimaryFail(s, c, s, s_, c, sent_packets) || exists |sent_packets| LBackupPromote(s, c, s, s_, c, sent_packets))))))))
 }
 
 } // verus!

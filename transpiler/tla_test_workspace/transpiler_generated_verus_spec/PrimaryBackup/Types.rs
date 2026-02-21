@@ -30,12 +30,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { acked: bool, backup_last_value: int, backup_log_length: int, backup_synced: bool, has_pending: bool, last_value: int, log_length: int, max_log_len: 0int, pending_value: int, role: LNodeRole(), view: int }
+    LRecord { acked: arbitrary(), backup_last_value: arbitrary(), backup_log_length: arbitrary(), backup_synced: arbitrary(), has_pending: arbitrary(), last_value: arbitrary(), log_length: arbitrary(), max_log_len: 0int, pending_value: arbitrary(), role: LNodeRole(), view: arbitrary() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { acked: 0int, backup_last_value: 0int, backup_log_length: 0int, backup_synced: 0int, has_pending: 0int, last_value: 0int, log_length: 0int, max_log_len: int, pending_value: 0int, role: 0int, view: 0int }
+    LRecord { acked: 0int, backup_last_value: 0int, backup_log_length: 0int, backup_synced: 0int, has_pending: 0int, last_value: 0int, log_length: 0int, max_log_len: arbitrary(), pending_value: 0int, role: 0int, view: 0int }
 }
 
 /// PBMessage operator

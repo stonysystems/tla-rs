@@ -33,17 +33,17 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState(s: LState) -> LRecord {
-    LRecord { commit_index: int, current_term: int, has_voted: bool, log: Seq(LLogEntry()), match_index: Map::<u64, u64>, my_id: 0int, next_index: Map::<u64, u64>, quorum_size: 0int, role: LServerRole(), servers: 0int, term: 0int, value: 0int, voted_for: int, votes_granted: int.powerset() }
+    LRecord { commit_index: arbitrary(), current_term: arbitrary(), has_voted: arbitrary(), log: Seq(LLogEntry()), match_index: Map::<u64, u64>, my_id: 0int, next_index: Map::<u64, u64>, quorum_size: 0int, role: LServerRole(), servers: 0int, term: 0int, value: 0int, voted_for: arbitrary(), votes_granted: int.powerset() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: int, next_index: 0int, quorum_size: int, role: 0int, servers: int.powerset(), term: 0int, value: 0int, voted_for: 0int, votes_granted: 0int }
+    LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: arbitrary(), next_index: 0int, quorum_size: arbitrary(), role: 0int, servers: int.powerset(), term: 0int, value: 0int, voted_for: 0int, votes_granted: 0int }
 }
 
 /// LogEntry operator
 pub open spec fn LLogEntry() -> LRecord {
-    LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: 0int, next_index: 0int, quorum_size: 0int, role: 0int, servers: 0int, term: int, value: int, voted_for: 0int, votes_granted: 0int }
+    LRecord { commit_index: 0int, current_term: 0int, has_voted: 0int, log: 0int, match_index: 0int, my_id: 0int, next_index: 0int, quorum_size: 0int, role: 0int, servers: 0int, term: arbitrary(), value: arbitrary(), voted_for: 0int, votes_granted: 0int }
 }
 
 /// RaftMessage operator

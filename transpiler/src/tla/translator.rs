@@ -91,6 +91,23 @@ fn looks_like_external_operator_name(name: &str) -> bool {
     first.is_ascii_uppercase() || name.chars().any(|c| c.is_ascii_uppercase())
 }
 
+fn is_constructor_style_type_set_expr(expr: &TlaExpr) -> bool {
+    match expr {
+        TlaExpr::FnSet { .. } => true,
+        TlaExpr::OpApply { op, .. } => {
+            matches!(
+                op.as_ref(),
+                TlaExpr::Ident(name) if name == "Seq" || name == "Set" || name == "Map"
+            )
+        }
+        _ => false,
+    }
+}
+
+fn is_builtin_type_token_ident(name: &str) -> bool {
+    matches!(name, "Nat" | "Int" | "BOOLEAN")
+}
+
 /// Configuration for the expression translator
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -253,6 +270,17 @@ impl<'a> ExprTranslator<'a> {
                 self.translate_strong_fairness(vars, action)
             }
         }
+    }
+
+    fn translate_value_context_expr(&self, expr: &TlaExpr) -> String {
+        if self.config.normalize_unknown_external_refs {
+            if let TlaExpr::Ident(name) = expr {
+                if is_builtin_type_token_ident(name) {
+                    return "arbitrary()".to_string();
+                }
+            }
+        }
+        self.translate(expr)
     }
 
     // =========================================================================
@@ -418,6 +446,9 @@ impl<'a> ExprTranslator<'a> {
                             _ => "true".to_string(),
                         }
                     }
+                    // Constructor-style type sets (Seq(...), Set(...), Map(...), [D -> R]) are
+                    // type-level in Verus and cannot be called as runtime set constructors.
+                    _ if is_constructor_style_type_set_expr(right) => "true".to_string(),
                     _ => format!("{}.contains({})", right_str, left_str),
                 }
             }
@@ -428,6 +459,7 @@ impl<'a> ExprTranslator<'a> {
                         _ => "false".to_string(),
                     }
                 }
+                _ if is_constructor_style_type_set_expr(right) => "false".to_string(),
                 _ => format!("!{}.contains({})", right_str, left_str),
             },
             TlaBinOp::Subseteq => format!("{}.subset_of({})", left_str, right_str),
@@ -591,7 +623,11 @@ impl<'a> ExprTranslator<'a> {
             for all_field in &self.config.record_all_fields {
                 let safe_name = safe_field_name(all_field);
                 if let Some((_, value)) = fields.iter().find(|(n, _)| n == all_field) {
-                    all_field_strs.push(format!("{}: {}", safe_name, self.translate(value)));
+                    all_field_strs.push(format!(
+                        "{}: {}",
+                        safe_name,
+                        self.translate_value_context_expr(value)
+                    ));
                 } else if !present.contains(all_field.as_str()) {
                     // Default value for missing fields (type-aware)
                     let default_val = match self
@@ -612,7 +648,11 @@ impl<'a> ExprTranslator<'a> {
             let field_strs: Vec<_> = fields
                 .iter()
                 .map(|(name, value)| {
-                    format!("{}: {}", safe_field_name(name), self.translate(value))
+                    format!(
+                        "{}: {}",
+                        safe_field_name(name),
+                        self.translate_value_context_expr(value)
+                    )
                 })
                 .collect();
             format!("{{ {} }}", field_strs.join(", "))
@@ -641,6 +681,8 @@ impl<'a> ExprTranslator<'a> {
             TlaExpr::Ident(name) if name == "Int" || name == "BOOLEAN" => None,
             // Nat is modeled as int with non-negativity guard.
             TlaExpr::Ident(name) if name == "Nat" => Some(format!("({var} >= 0)")),
+            // Constructor-style type sets are type-level and should not be emitted as value calls.
+            _ if is_constructor_style_type_set_expr(set) => None,
             _ => {
                 let set_str = self.translate(set);
                 Some(format!("{}.contains({})", set_str, var))
@@ -2740,6 +2782,20 @@ mod tests {
         };
         let out_exists_nat = translator.translate(&exists_nat);
         assert!(out_exists_nat.contains("exists |x| (x >= 0) && Q"));
+
+        let exists_seq = TlaExpr::Exists {
+            vars: vec![TlaQuantBound::new(
+                "p",
+                TlaExpr::OpApply {
+                    op: Box::new(TlaExpr::ident("Seq")),
+                    args: vec![TlaExpr::ident("Packet")],
+                },
+            )],
+            body: Box::new(TlaExpr::ident("R")),
+        };
+        let out_exists_seq = translator.translate(&exists_seq);
+        assert!(out_exists_seq.contains("exists |p| R"));
+        assert!(!out_exists_seq.contains("Seq(Packet).contains"));
     }
 
     #[test]
@@ -3010,6 +3066,24 @@ mod tests {
         let translator = ExprTranslator::new(&config);
         assert_eq!(translator.translate(&TlaExpr::ident("new_state")), "arbitrary()");
         assert_eq!(translator.translate(&TlaExpr::ident("earnerState")), "arbitrary()");
+    }
+
+    #[test]
+    fn test_translate_record_normalizes_builtin_type_tokens_in_value_context_spec_mode() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![
+            ("a".to_string(), TlaExpr::ident("Int")),
+            ("b".to_string(), TlaExpr::ident("Nat")),
+            ("c".to_string(), TlaExpr::ident("BOOLEAN")),
+        ]);
+        let out = translator.translate(&expr);
+        assert!(out.contains("a: arbitrary()"));
+        assert!(out.contains("b: arbitrary()"));
+        assert!(out.contains("c: arbitrary()"));
+        assert!(!out.contains("a: int"));
+        assert!(!out.contains("b: nat"));
+        assert!(!out.contains("c: bool"));
     }
 
     #[test]
@@ -3600,6 +3674,28 @@ mod tests {
         // x \notin Nat should become (x < 0)
         let expr = TlaExpr::binop(TlaBinOp::NotIn, TlaExpr::ident("x"), TlaExpr::ident("Nat"));
         assert_eq!(translator.translate(&expr), "(x < 0)");
+
+        // x \in Seq(T) should be treated as constructor-style type membership guard (erased)
+        let expr = TlaExpr::binop(
+            TlaBinOp::In,
+            TlaExpr::ident("x"),
+            TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("Seq")),
+                args: vec![TlaExpr::ident("T")],
+            },
+        );
+        assert_eq!(translator.translate(&expr), "true");
+
+        // x \notin Seq(T) should erase to false.
+        let expr = TlaExpr::binop(
+            TlaBinOp::NotIn,
+            TlaExpr::ident("x"),
+            TlaExpr::OpApply {
+                op: Box::new(TlaExpr::ident("Seq")),
+                args: vec![TlaExpr::ident("T")],
+            },
+        );
+        assert_eq!(translator.translate(&expr), "false");
     }
 
     #[test]

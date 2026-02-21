@@ -31,12 +31,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { alive: bool, chain_len: 0int, committed_count: int, has_predecessor: bool, has_successor: bool, history: Seq(int), node_id: 0int, obj_value: int, pending_sent: int.powerset(), predecessor: int, role: LNodeRole(), successor: int }
+    LRecord { alive: arbitrary(), chain_len: 0int, committed_count: arbitrary(), has_predecessor: arbitrary(), has_successor: arbitrary(), history: Seq(int), node_id: 0int, obj_value: arbitrary(), pending_sent: int.powerset(), predecessor: arbitrary(), role: LNodeRole(), successor: arbitrary() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { alive: 0int, chain_len: int, committed_count: 0int, has_predecessor: 0int, has_successor: 0int, history: 0int, node_id: int, obj_value: 0int, pending_sent: 0int, predecessor: 0int, role: 0int, successor: 0int }
+    LRecord { alive: 0int, chain_len: arbitrary(), committed_count: 0int, has_predecessor: 0int, has_successor: 0int, history: 0int, node_id: arbitrary(), obj_value: 0int, pending_sent: 0int, predecessor: 0int, role: 0int, successor: 0int }
 }
 
 /// CRMessage operator

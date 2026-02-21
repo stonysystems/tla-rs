@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3b-3`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3c-2`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5220,6 +5220,17 @@ transpiler/tla_test_workspace/
       - Regenerated all 33 D1 workspace specs and re-ran Verus compile baseline.
       - New first-error baseline: `0` `E0425`, `21` `E0423`, `5` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618` (compile pass remains `2/33`: `RSL/Environment.rs`, `RSL/Message.rs`).
   - [ ] **16.8.3c** Eliminate `E0423` value/type-constructor misuse in generated D1 specs (e.g., builtin type tokens emitted in value position, invalid constructor call-shapes).
+    - [x] **16.8.3c-1** Normalize constructor-style type-set membership emission (`Seq(...)`, `Set(...)`, `Map(...)`, `[D -> R]`) so quantifier and membership guards do not emit value-position constructor calls.
+      - Implemented guard normalization in `ExprTranslator` for both `\in`/`\notin` and quantifier bounds: constructor-style type-set expressions now avoid `.contains(...)` emission.
+      - Added translator regressions for constructor-style bounds in quantifiers and `\in`/`\notin` binary forms.
+      - Regenerated all 33 D1 workspace specs and re-ran Verus compile baseline.
+      - Result: compile pass remains `2/33`, first-error `E0423` reduced `21 -> 13`; new first-error baseline: `0` `E0425`, `13` `E0423`, `13` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618`.
+    - [x] **16.8.3c-2** Normalize builtin type-token value emission (`bool`, `int`, `nat`) when generated into record/value contexts in `Types.rs` modules.
+      - Added value-context normalization in `ExprTranslator` so D1 spec-mode record field emission rewrites raw builtin type tokens (`BOOLEAN`/`Int`/`Nat`) to typed placeholders instead of value-position `bool`/`int`/`nat`.
+      - Added translator regression coverage for record-field builtin token normalization in spec mode.
+      - Re-generated all `33` D1 workspace specs and re-ran D1 Verus compile baseline.
+      - Result: compile pass remains `2/33`, first-error `E0423` reduced `13 -> 8`; new first-error baseline: `0` `E0425`, `8` `E0423`, `13` `E0609`, `7` `E0599`, `3` `E0308`, `0` `E0618`.
+    - [ ] **16.8.3c-3** Normalize residual constructor/value call-shapes (`Map`/function-set style) that still emit type constructors in value position.
   - [ ] **16.8.3d** Re-run full D1 Verus compile baseline and promote the 16.8.3 gate to required once all generated files compile.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

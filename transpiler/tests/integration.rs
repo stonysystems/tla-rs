@@ -3205,8 +3205,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3b-3 operator/import normalization:
-    // unresolved-symbol failures are eliminated and remaining blockers are type-shape issues.
+    // Baseline after 16.8.3c-2 builtin type-token value normalization:
+    // E0423 drops again; remaining constructor/value-call-shape blockers are tracked in 16.8.3c-3.
     assert_eq!(
         passed, 2,
         "Expected exactly two D1 files to compile at current baseline; pass files: {:?}",
@@ -3217,20 +3217,20 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 unresolved-symbol (E0425) failures at baseline"
     );
     assert_eq!(
-        cat_e0423, 21,
-        "Expected 21 value/type-shape (E0423) failures at baseline"
+        cat_e0423, 8,
+        "Expected 8 value/type-shape (E0423) failures at baseline"
     );
     assert_eq!(
-        cat_e0609, 5,
-        "Expected 5 unknown-field (E0609) failures at baseline"
+        cat_e0609, 13,
+        "Expected 13 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 3,
-        "Expected 3 method-missing (E0599) failures at baseline"
+        cat_e0599, 7,
+        "Expected 7 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 2,
-        "Expected 2 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 3,
+        "Expected 3 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0618, 0,

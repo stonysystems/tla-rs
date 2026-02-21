@@ -34,12 +34,12 @@ pub struct LState {
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { accepts_rcvd: 0int, committed: 0int, committed_val: 0int, config_num: 0int, has_voted: 0int, has_witness: 0int, is_active: 0int, max_bal: 0int, max_v_bal: 0int, max_val: 0int, node_id: int, num_nodes: int, promises_rcvd: 0int, quorum_size: int, witness_val: 0int }
+    LRecord { accepts_rcvd: 0int, committed: 0int, committed_val: 0int, config_num: 0int, has_voted: 0int, has_witness: 0int, is_active: 0int, max_bal: 0int, max_v_bal: 0int, max_val: 0int, node_id: arbitrary(), num_nodes: arbitrary(), promises_rcvd: 0int, quorum_size: arbitrary(), witness_val: 0int }
 }
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { accepts_rcvd: int.powerset(), committed: bool, committed_val: int, config_num: int, has_voted: bool, has_witness: bool, is_active: bool, max_bal: int, max_v_bal: int, max_val: int, node_id: 0int, num_nodes: 0int, promises_rcvd: int.powerset(), quorum_size: 0int, witness_val: int }
+    LRecord { accepts_rcvd: int.powerset(), committed: arbitrary(), committed_val: arbitrary(), config_num: arbitrary(), has_voted: arbitrary(), has_witness: arbitrary(), is_active: arbitrary(), max_bal: arbitrary(), max_v_bal: arbitrary(), max_val: arbitrary(), node_id: 0int, num_nodes: 0int, promises_rcvd: int.powerset(), quorum_size: 0int, witness_val: arbitrary() }
 }
 
 /// VPMessage operator

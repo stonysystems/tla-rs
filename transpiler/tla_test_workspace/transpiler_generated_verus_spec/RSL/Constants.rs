@@ -33,7 +33,7 @@ pub open spec fn LConstants(c: LConstants) -> LRecord {
 
 /// ReplicaConstants operator
 pub open spec fn LReplicaConstants(c: LConstants) -> LRecord {
-    LRecord { all: LConstants(c), config: 0int, my_index: int, params: 0int }
+    LRecord { all: LConstants(c), config: 0int, my_index: arbitrary(), params: 0int }
 }
 
 /// ReplicaConstantsValid operator

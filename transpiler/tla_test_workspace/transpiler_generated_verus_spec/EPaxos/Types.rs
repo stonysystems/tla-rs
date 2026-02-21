@@ -35,12 +35,12 @@ pub struct LState {
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { accept_senders: 0int, ballot: 0int, cmd: 0int, committed_count: 0int, dep_count: 0int, executed_count: 0int, fast_quorum_size: int, has_conflict: 0int, is_leader: 0int, max_resp_seq: 0int, my_id: int, num_replicas: int, phase: 0int, preaccept_senders: 0int, quorum_size: int, seq: 0int }
+    LRecord { accept_senders: 0int, ballot: 0int, cmd: 0int, committed_count: 0int, dep_count: 0int, executed_count: 0int, fast_quorum_size: arbitrary(), has_conflict: 0int, is_leader: 0int, max_resp_seq: 0int, my_id: arbitrary(), num_replicas: arbitrary(), phase: 0int, preaccept_senders: 0int, quorum_size: arbitrary(), seq: 0int }
 }
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { accept_senders: int.powerset(), ballot: int, cmd: int, committed_count: int, dep_count: int, executed_count: int, fast_quorum_size: 0int, has_conflict: bool, is_leader: bool, max_resp_seq: int, my_id: 0int, num_replicas: 0int, phase: LInstancePhase(), preaccept_senders: int.powerset(), quorum_size: 0int, seq: int }
+    LRecord { accept_senders: int.powerset(), ballot: arbitrary(), cmd: arbitrary(), committed_count: arbitrary(), dep_count: arbitrary(), executed_count: arbitrary(), fast_quorum_size: 0int, has_conflict: arbitrary(), is_leader: arbitrary(), max_resp_seq: arbitrary(), my_id: 0int, num_replicas: 0int, phase: LInstancePhase(), preaccept_senders: int.powerset(), quorum_size: 0int, seq: arbitrary() }
 }
 
 /// InstancePhase operator

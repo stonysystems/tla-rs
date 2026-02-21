@@ -75,7 +75,7 @@ pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int
 
 /// RslNext operator
 pub open spec fn LRslNext(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    exists |idx, ios| (Seq(c.RslIo).contains(ios)) && (LRslNextOneReplica(s, c, ps, ps_, idx, ios) || exists |eid, ios| (c.AbstractEndPoint.contains(eid) && Seq(c.RslIo).contains(ios)) && (LRslNextOneExternal(s, c, ps, ps_, eid, ios) || LRslNextEnvironment(s, c, ps, ps_)))
+    exists |idx, ios| (LRslNextOneReplica(s, c, ps, ps_, idx, ios) || exists |eid, ios| (c.AbstractEndPoint.contains(eid)) && (LRslNextOneExternal(s, c, ps, ps_, eid, ios) || LRslNextEnvironment(s, c, ps, ps_)))
 }
 
 } // verus!

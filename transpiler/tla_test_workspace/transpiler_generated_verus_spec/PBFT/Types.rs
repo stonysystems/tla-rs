@@ -34,12 +34,12 @@ pub struct LState {
 
 /// State operator
 pub open spec fn LState() -> LRecord {
-    LRecord { checkpoint_digest: int, checkpoint_interval: 0int, checkpoint_seq: int, commit_senders: int.powerset(), f: 0int, high_watermark: int, is_primary: bool, low_watermark: int, n: 0int, node_id: 0int, phase: LPhase(), prepare_senders: int.powerset(), request_digest: int, seq_num: int, view: int }
+    LRecord { checkpoint_digest: arbitrary(), checkpoint_interval: 0int, checkpoint_seq: arbitrary(), commit_senders: int.powerset(), f: 0int, high_watermark: arbitrary(), is_primary: arbitrary(), low_watermark: arbitrary(), n: 0int, node_id: 0int, phase: LPhase(), prepare_senders: int.powerset(), request_digest: arbitrary(), seq_num: arbitrary(), view: arbitrary() }
 }
 
 /// Constants operator
 pub open spec fn LConstants() -> LRecord {
-    LRecord { checkpoint_digest: 0int, checkpoint_interval: int, checkpoint_seq: 0int, commit_senders: 0int, f: int, high_watermark: 0int, is_primary: 0int, low_watermark: 0int, n: int, node_id: int, phase: 0int, prepare_senders: 0int, request_digest: 0int, seq_num: 0int, view: 0int }
+    LRecord { checkpoint_digest: 0int, checkpoint_interval: arbitrary(), checkpoint_seq: 0int, commit_senders: 0int, f: arbitrary(), high_watermark: 0int, is_primary: 0int, low_watermark: 0int, n: arbitrary(), node_id: arbitrary(), phase: 0int, prepare_senders: 0int, request_digest: 0int, seq_num: 0int, view: 0int }
 }
 
 /// PBFTMessage operator

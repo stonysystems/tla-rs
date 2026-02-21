@@ -72,7 +72,7 @@ pub open spec fn LRMReceiveAbort(s: LState, c: LConstants, s_: int, rm: int, sen
 
 /// Next operator
 pub open spec fn LNext(s: LState, c: LConstants, s_: int) -> bool {
-    exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendPrepare(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceivePrepare(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LRMAbort(s, c, s, s_, c, rm, sent_packets) || exists |r, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LTMRcvPrepared(s, c, s, s_, c, r, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| Seq(c.TPCMessage).contains(sent_packets) && (LTMSendAbort(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && (LRMReceiveCommit(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (Seq(c.TPCMessage).contains(sent_packets)) && LRMReceiveAbort(s, c, s, s_, c, rm, sent_packets))))))))
+    exists |sent_packets| (LTMSendPrepare(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceivePrepare(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| (LRMAbort(s, c, s, s_, c, rm, sent_packets) || exists |r, sent_packets| (LTMRcvPrepared(s, c, s, s_, c, r, sent_packets) || exists |sent_packets| (LTMSendCommit(s, c, s, s_, c, sent_packets) || exists |sent_packets| (LTMSendAbort(s, c, s, s_, c, sent_packets) || exists |rm, sent_packets| (LRMReceiveCommit(s, c, s, s_, c, rm, sent_packets) || exists |rm, sent_packets| LRMReceiveAbort(s, c, s, s_, c, rm, sent_packets))))))))
 }
 
 } // verus!
