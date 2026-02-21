@@ -63,7 +63,8 @@ pub open spec fn LRequestSatisfiedBy(c: LConstants, r1: int, r2: int) -> bool {
 }
 
 /// RemoveAllSatisfiedRequestsInSequence operator
-pub open spec fn LRemoveAllSatisfiedRequestsInSequence(c: LConstants, s: Seq<int>, r: int) -> Seq<int> {
+pub open spec fn LRemoveAllSatisfiedRequestsInSequence(c: LConstants, s: Seq<int>, r: int) -> Seq<int>
+    decreases s.len() {
     if ((s.len() as int) == 0) { Seq::<int>::empty() } else { if LRequestSatisfiedBy(c, s[0], r) { LRemoveAllSatisfiedRequestsInSequence(c, s.drop_first(), r) } else { (seq![s[0]] + LRemoveAllSatisfiedRequestsInSequence(c, s.drop_first(), r)) } }
 }
 
@@ -105,7 +106,8 @@ pub open spec fn LElectionStateReflectReceivedRequest(c: LConstants, es: LRecord
 }
 
 /// RemoveExecutedRequestBatch operator
-pub open spec fn LRemoveExecutedRequestBatch(c: LConstants, reqs: Seq<int>, batch: Seq<int>) -> Seq<int> {
+pub open spec fn LRemoveExecutedRequestBatch(c: LConstants, reqs: Seq<int>, batch: Seq<int>) -> Seq<int>
+    decreases batch.len() {
     if ((batch.len() as int) == 0) { reqs } else { LRemoveExecutedRequestBatch(c, arbitrary::<Seq<int>>(), batch.drop_first()) }
 }
 

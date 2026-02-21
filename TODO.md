@@ -5656,7 +5656,21 @@ transpiler/tla_test_workspace/
           - Regenerated affected D1 file: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/RSL/Executor.rs`.
           - Verification result: `RSL/Executor.rs` no longer first-fails with `E0599` (first error now `E0308` in `LRepliesAreReplyType` call-shape).
           - Re-measured D1 first-error baseline after `16.8.3d-3d-3`: `29/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `2` `REC_DECREASES`.
-        - [ ] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.
+        - [x] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.
+          - Scope/LOC check: implemented as focused generated-D1 recursive helper signature refinement + targeted translator regressions + two-module regeneration; stayed under the <500 LOC leaf target.
+          - Chosen policy: resolve (no gate) by emitting a `decreases` clause for generated-D1 recursive helpers when all recursive self-calls strictly shrink a sequence parameter (`skip`, `drop_first`, `Tail`).
+          - Translator changes:
+            - Added generated-D1 recursive self-call analysis over `TlaExpr` to detect shrink-on-recursion candidates.
+            - Added automatic signature emission of `decreases <seq_param>.len()` for matching generated-D1 recursive operators.
+            - Kept detection conservative (only emits when every recursive self-call has a provably shrinking sequence argument at the same parameter index).
+          - Added regressions:
+            - `test_generated_d1_recursive_seq_helper_emits_decreases_clause`
+            - `test_generated_d1_recursive_decreases_picks_shrinking_seq_param`
+          - Regenerated affected D1 files:
+            - `transpiler/tla_test_workspace/transpiler_generated_verus_spec/RSL/Broadcast.rs`
+            - `transpiler/tla_test_workspace/transpiler_generated_verus_spec/RSL/Election.rs`
+          - Verification result: both files now compile under Verus with no `REC_DECREASES` first error.
+          - Re-measured D1 first-error baseline after `16.8.3d-3d-4`: `31/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `0` `REC_DECREASES`.
         - [ ] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

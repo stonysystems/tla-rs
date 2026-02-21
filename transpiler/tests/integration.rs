@@ -3221,7 +3221,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3d-3:
+    // Baseline after 16.8.3d-3d-4:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
     // - infers quantifier binder types from bound-set and call-site hints, and
@@ -3232,14 +3232,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     // - aligns partially explicit action call prefixes with implicit s/s_/c injection,
     // - aliases variable-free explicit-state modules to `LState = LRecord`,
     // - infers generated-D1 helper parameter hints from operator call sites,
+    // - emits decreases clauses for generated-D1 recursive helpers when
+    //   recursive calls strictly shrink a sequence argument via skip/tail/drop_first,
     // - uses a collision-free constants parameter alias in variable-free helpers
     //   when explicit/bound identifiers reuse `c`,
     // - normalizes generated-D1 mixed map/non-map IF branches to `arbitrary()`,
     // - coerces bool-shaped call args at int-hinted operator parameters,
     // - preserves bool parameter hints for bool-literal equality/logical usage.
     assert_eq!(
-        passed, 29,
-        "Expected exactly twenty-nine D1 files to compile at current baseline; pass files: {:?}",
+        passed, 31,
+        "Expected exactly thirty-one D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3283,8 +3285,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 type-inference (E0282) failures at baseline"
     );
     assert_eq!(
-        cat_rec_decreases, 2,
-        "Expected 2 recursive-missing-decreases first-errors at baseline"
+        cat_rec_decreases, 0,
+        "Expected 0 recursive-missing-decreases first-errors at baseline"
     );
     assert!(
         other_fails.is_empty(),

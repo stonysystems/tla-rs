@@ -3528,6 +3528,7 @@ impl ModuleTranslator {
         let fn_name = self.config.spec_fn_name(&op.name);
         let mut identifier_type_hints = std::collections::HashMap::<String, String>::new();
         let mut constant_field_type_hints = std::collections::HashMap::<String, String>::new();
+        let mut operator_param_types = Vec::<(String, String)>::new();
         for constant in &module.constants {
             let constant_ty = self.get_constant_type(module, &constant.name);
             constant_field_type_hints.insert(constant.name.clone(), constant_ty.clone());
@@ -3569,16 +3570,11 @@ impl ModuleTranslator {
             let const_struct = format!("{}Constants", self.config.spec_prefix);
             params.push(format!("{}: {}", const_param_name, const_struct));
             used_param_names.insert(const_param_name.clone());
-            identifier_type_hints.insert(const_param_name.clone(), const_struct);
+            identifier_type_hints.insert(const_param_name.clone(), const_struct.clone());
         }
 
         // Add operator parameters
         for (param_idx, param) in op.params.iter().enumerate() {
-            // D1 round-trip can emit explicit params named s/s_/c even though those are
-            // already auto-injected; skip duplicates to keep signatures parseable.
-            if used_param_names.contains(&param.name) {
-                continue;
-            }
             let param_type = self.get_param_type(
                 op,
                 param_idx,
@@ -3586,6 +3582,13 @@ impl ModuleTranslator {
                 self.expr_config.normalize_unknown_external_refs,
                 const_param_name.as_deref().unwrap_or("c"),
             );
+            operator_param_types.push((param.name.clone(), param_type.clone()));
+
+            // D1 round-trip can emit explicit params named s/s_/c even though those are
+            // already auto-injected; skip duplicates to keep signatures parseable.
+            if used_param_names.contains(&param.name) {
+                continue;
+            }
             params.push(format!("{}: {}", param.name, param_type));
             identifier_type_hints.insert(param.name.clone(), param_type.clone());
             used_param_names.insert(param.name.clone());
@@ -3612,11 +3615,17 @@ impl ModuleTranslator {
             output.push_str("#[verifier(inline)]\n");
         }
         output.push_str(&format!(
-            "pub open spec fn {}({}) -> {} {{\n",
+            "pub open spec fn {}({}) -> {}",
             fn_name,
             params.join(", "),
             return_type
         ));
+        if let Some(decreases_expr) =
+            self.generated_d1_recursive_decreases_expr(op, &operator_param_types)
+        {
+            output.push_str(&format!("\n    decreases {}", decreases_expr));
+        }
+        output.push_str(" {\n");
 
         // Generate body
         let mut function_expr_config = expr_translator.config.clone();
@@ -3636,6 +3645,168 @@ impl ModuleTranslator {
         output.push_str("}\n");
 
         output
+    }
+
+    fn generated_d1_recursive_decreases_expr(
+        &self,
+        op: &TlaOperator,
+        param_types: &[(String, String)],
+    ) -> Option<String> {
+        let generated_d1_context =
+            self.expr_config.normalize_unknown_external_refs && self.expr_config.variable_names.is_empty();
+        if !generated_d1_context {
+            return None;
+        }
+
+        let mut recursive_calls = Vec::<Vec<TlaExpr>>::new();
+        Self::collect_recursive_self_calls(&op.body, &op.name, &mut recursive_calls);
+        if recursive_calls.is_empty() {
+            return None;
+        }
+
+        for (param_idx, (param_name, param_ty)) in param_types.iter().enumerate() {
+            if !ExprTranslator::type_hint_is_seq(param_ty) {
+                continue;
+            }
+            let strictly_decreases = recursive_calls.iter().all(|args| {
+                args.get(param_idx)
+                    .is_some_and(|arg| Self::is_seq_decreasing_arg(arg, param_name))
+            });
+            if strictly_decreases {
+                return Some(format!("{}.len()", param_name));
+            }
+        }
+
+        None
+    }
+
+    fn collect_recursive_self_calls(expr: &TlaExpr, op_name: &str, out: &mut Vec<Vec<TlaExpr>>) {
+        match expr {
+            TlaExpr::OpApply { op, args } => {
+                if matches!(op.as_ref(), TlaExpr::Ident(name) if name == op_name) {
+                    out.push(args.clone());
+                }
+                Self::collect_recursive_self_calls(op, op_name, out);
+                for arg in args {
+                    Self::collect_recursive_self_calls(arg, op_name, out);
+                }
+            }
+            TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+                Self::collect_recursive_self_calls(left, op_name, out);
+                Self::collect_recursive_self_calls(right, op_name, out);
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => {
+                Self::collect_recursive_self_calls(operand, op_name, out);
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::collect_recursive_self_calls(func, op_name, out);
+                Self::collect_recursive_self_calls(arg, op_name, out);
+            }
+            TlaExpr::SetEnum(elements) | TlaExpr::Tuple(elements) | TlaExpr::Unchanged(elements) => {
+                for element in elements {
+                    Self::collect_recursive_self_calls(element, op_name, out);
+                }
+            }
+            TlaExpr::SetFilter { set, filter, .. } => {
+                Self::collect_recursive_self_calls(set, op_name, out);
+                Self::collect_recursive_self_calls(filter, op_name, out);
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                Self::collect_recursive_self_calls(expr, op_name, out);
+                Self::collect_recursive_self_calls(set, op_name, out);
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                Self::collect_recursive_self_calls(domain, op_name, out);
+                Self::collect_recursive_self_calls(body, op_name, out);
+            }
+            TlaExpr::FnSet { domain, range } => {
+                Self::collect_recursive_self_calls(domain, op_name, out);
+                Self::collect_recursive_self_calls(range, op_name, out);
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::collect_recursive_self_calls(func, op_name, out);
+                for update in updates {
+                    Self::collect_recursive_self_calls(&update.value, op_name, out);
+                }
+            }
+            TlaExpr::Record(fields) => {
+                for (_, value) in fields {
+                    Self::collect_recursive_self_calls(value, op_name, out);
+                }
+            }
+            TlaExpr::RecordAccess { record, .. } => {
+                Self::collect_recursive_self_calls(record, op_name, out);
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::collect_recursive_self_calls(cond, op_name, out);
+                Self::collect_recursive_self_calls(then_expr, op_name, out);
+                Self::collect_recursive_self_calls(else_expr, op_name, out);
+            }
+            TlaExpr::Case { arms, other } => {
+                for (cond, body) in arms {
+                    Self::collect_recursive_self_calls(cond, op_name, out);
+                    Self::collect_recursive_self_calls(body, op_name, out);
+                }
+                if let Some(other_expr) = other {
+                    Self::collect_recursive_self_calls(other_expr, op_name, out);
+                }
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                for bound in vars {
+                    if let Some(set) = &bound.set {
+                        Self::collect_recursive_self_calls(set, op_name, out);
+                    }
+                }
+                Self::collect_recursive_self_calls(body, op_name, out);
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                if let Some(set_expr) = set {
+                    Self::collect_recursive_self_calls(set_expr, op_name, out);
+                }
+                Self::collect_recursive_self_calls(body, op_name, out);
+            }
+            TlaExpr::LetIn { defs, body } => {
+                for def in defs {
+                    Self::collect_recursive_self_calls(&def.body, op_name, out);
+                }
+                Self::collect_recursive_self_calls(body, op_name, out);
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::collect_recursive_self_calls(vars, op_name, out);
+                Self::collect_recursive_self_calls(action, op_name, out);
+            }
+            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) | TlaExpr::Ident(_) => {}
+        }
+    }
+
+    fn is_seq_decreasing_arg(arg: &TlaExpr, param_name: &str) -> bool {
+        match arg {
+            TlaExpr::OpApply { op, args } => {
+                if let TlaExpr::Ident(name) = op.as_ref() {
+                    match name.as_str() {
+                        "drop_first" | "Tail" => {
+                            return args.len() == 1
+                                && matches!(args[0], TlaExpr::Ident(ref n) if n == param_name);
+                        }
+                        "skip" => {
+                            return !args.is_empty()
+                                && matches!(args[0], TlaExpr::Ident(ref n) if n == param_name);
+                        }
+                        _ => {}
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
     }
 
     /// Check if an expression uses primed variables
@@ -7233,6 +7404,55 @@ mod tests {
         assert!(
             output.contains("pub open spec fn LConcatSelf(s: int) -> Seq<int>"),
             "Expected Seq<int> return type for recursive sequence-concat expression, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_recursive_seq_helper_emits_decreases_clause() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT C
+            RECURSIVE Build(_, _)
+            Build(src, dsts) ==
+                IF Len(dsts) = 0
+                THEN <<>>
+                ELSE <<dsts[0]>> + Build(src, skip(dsts, 1))
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("\n    decreases dsts.len() {"),
+            "Expected generated-D1 recursive helper to emit decreases on shrinking seq param, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_recursive_decreases_picks_shrinking_seq_param() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT C
+            RECURSIVE Remove(_, _, _)
+            Remove(reqs, batch, r) ==
+                IF Len(batch) = 0
+                THEN Len(reqs)
+                ELSE Remove(reqs, drop_first(batch), r)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("\n    decreases batch.len() {"),
+            "Expected decreases to target shrinking recursive sequence param, got:\n{}",
+            output
+        );
+        assert!(
+            !output.contains("decreases reqs.len()"),
+            "Decreases should target the shrinking recursive arg, got:\n{}",
             output
         );
     }
