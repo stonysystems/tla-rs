@@ -547,6 +547,25 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
+#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3a)
+
+Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <file>`), captured by
+`test_d1_generated_verus_spec_compile_baseline`.
+
+| Metric | Count |
+|--------|-------|
+| Total generated D1 spec files | 33 |
+| Compile pass | 1 |
+| Compile fail | 32 |
+| `E0425` unresolved symbol | 22 |
+| `E0423` value/type constructor misuse | 10 |
+| Other categories | 0 |
+
+Current pass file: `RSL/Environment.rs`.
+
+This compile gate is currently blocked by codegen quality in D1 output (symbol/value emission shape),
+not by D1 parsing coverage (which is already 33/33).
+
 #### D2 on D1 Output: `transpiler_generated_verus_spec/` → Verus Exec (Phase 16.8.4)
 
 Attempts D2 (Verus Spec → Verus Exec) transpilation on D1-generated Verus spec files.

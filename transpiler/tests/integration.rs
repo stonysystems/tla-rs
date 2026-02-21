@@ -3100,6 +3100,129 @@ fn test_d1_translate_tla_on_generated_workspace() {
     );
 }
 
+fn resolve_verus_binary() -> Option<std::path::PathBuf> {
+    if let Ok(path) = std::env::var("VERUS_PATH") {
+        let candidate = std::path::PathBuf::from(path);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    let default = std::path::PathBuf::from("/home/shuai/tools/verus-x86-linux/verus");
+    if default.exists() {
+        Some(default)
+    } else {
+        None
+    }
+}
+
+fn first_verus_error_code(stderr: &str) -> Option<&str> {
+    for line in stderr.lines() {
+        if let Some(idx) = line.find("error[E") {
+            let start = idx + "error[".len();
+            let end = line[start..].find(']')?;
+            return Some(&line[start..start + end]);
+        }
+    }
+    None
+}
+
+/// Phase 16.8.3a: D1 generated-spec Verus compile baseline
+/// Compiles every generated D1 `.rs` file with Verus and tracks current blocker classes.
+#[test]
+fn test_d1_generated_verus_spec_compile_baseline() {
+    use std::process::Command;
+
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace/transpiler_generated_verus_spec");
+
+    if !workspace.exists() {
+        eprintln!("Skipping: workspace not found at {:?}", workspace);
+        return;
+    }
+
+    let Some(verus_bin) = resolve_verus_binary() else {
+        eprintln!("Skipping: Verus binary not found (set VERUS_PATH to enable compile baseline)");
+        return;
+    };
+
+    let mut total = 0;
+    let mut passed = 0;
+    let mut cat_e0425 = 0; // unresolved symbol in scope
+    let mut cat_e0423 = 0; // expected value/function, found type/struct
+    let mut pass_files: Vec<String> = Vec::new();
+    let mut other_fails: Vec<String> = Vec::new();
+
+    for entry in walkdir(workspace.to_str().unwrap()) {
+        if !entry.ends_with(".rs") {
+            continue;
+        }
+        total += 1;
+        let rel = entry
+            .strip_prefix(workspace.to_str().unwrap())
+            .unwrap_or(&entry)
+            .trim_start_matches('/')
+            .to_string();
+
+        let output = Command::new(&verus_bin)
+            .args(["--crate-type=lib", &entry])
+            .output()
+            .expect("Failed to run Verus for D1 compile baseline");
+
+        if output.status.success() {
+            passed += 1;
+            pass_files.push(rel);
+            continue;
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        match first_verus_error_code(&stderr) {
+            Some("E0425") => cat_e0425 += 1,
+            Some("E0423") => cat_e0423 += 1,
+            Some(code) => {
+                other_fails.push(format!("{rel}: error[{code}]"));
+            }
+            None => {
+                let first_line = stderr
+                    .lines()
+                    .find(|line| line.starts_with("error["))
+                    .unwrap_or("<unknown>");
+                other_fails.push(format!("{rel}: {first_line}"));
+            }
+        }
+    }
+
+    assert!(
+        total >= 33,
+        "Should process at least 33 generated D1 .rs files, got {total}"
+    );
+
+    // Baseline captured in 16.8.3a: one file compiles (RSL/Environment.rs) and all
+    // failures are currently covered by two dominant error classes.
+    assert_eq!(
+        passed, 1,
+        "Expected exactly one D1 file to compile at current baseline; pass files: {:?}",
+        pass_files
+    );
+    assert_eq!(
+        cat_e0425, 22,
+        "Expected 22 unresolved-symbol (E0425) failures at baseline"
+    );
+    assert_eq!(
+        cat_e0423, 10,
+        "Expected 10 value/type-shape (E0423) failures at baseline"
+    );
+    assert!(
+        other_fails.is_empty(),
+        "Expected no uncategorized D1 compile failures, got:\n{}",
+        other_fails.join("\n")
+    );
+
+    eprintln!(
+        "D1 Verus compile baseline: {passed}/{total} pass, {cat_e0425} E0425, {cat_e0423} E0423"
+    );
+}
+
 /// Walk a directory recursively and return all file paths as strings.
 fn walkdir(dir: &str) -> Vec<String> {
     let mut results = Vec::new();

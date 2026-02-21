@@ -5197,7 +5197,14 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (deferred: needs per-file type annotations and Verus toolchain integration)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `1/33` files compile with Verus; see 16.8.3a baseline)
+  - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
+    - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
+    - Measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
+    - Scope/LOC check: harness + docs/TODO updates are well below the <500 LOC leaf target.
+  - [ ] **16.8.3b** Eliminate `E0425` unresolved-symbol failures in generated D1 specs by correcting constant/operator symbol emission and cross-operator references.
+  - [ ] **16.8.3c** Eliminate `E0423` value/type-constructor misuse in generated D1 specs (e.g., builtin type tokens emitted in value position, invalid constructor call-shapes).
+  - [ ] **16.8.3d** Re-run full D1 Verus compile baseline and promote the 16.8.3 gate to required once all generated files compile.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
 #### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
