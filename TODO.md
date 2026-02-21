@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `28/33` files compile with Verus after `16.8.3d-3d-2b`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `29/33` files compile with Verus after `16.8.3d-3d-2c`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5629,7 +5629,20 @@ transpiler/tla_test_workspace/
             - Regenerated affected D1 files: `RSL/Election.rs` and `RSL/Proposer.rs`.
             - Re-measured D1 first-error baseline after `16.8.3d-3d-2b`: `28/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `2` `REC_DECREASES`.
             - Net effect: `RSL/Proposer.rs` now compiles and `RSL/Election.rs` no longer fails with `E0308` (now first-fails on recursive decreases), improving compile pass count (`27 -> 28`).
-          - [ ] **16.8.3d-3d-2c** Reduce residual `Raft/Raft.rs` first-error branch-shape bool/int mismatches by tightening generated-D1 conditional/argument coercion in map/record update contexts.
+          - [x] **16.8.3d-3d-2c** Reduce residual `Raft/Raft.rs` first-error branch-shape bool/int mismatches by tightening generated-D1 conditional/argument coercion in map/record update contexts.
+            - Scope/LOC check: implemented as focused generated-D1 coercion refinements in `ExprTranslator` + targeted regressions + single-module regeneration; stayed under the <500 LOC leaf target.
+            - Translator changes:
+              - Added generated-D1 `if` fallback for mixed map/non-map branches so `IF` expressions with map-vs-bool branch drift normalize to `arbitrary()` and can be safely typed by surrounding map/equality context.
+              - Tightened generated-D1 call-argument coercion for `int`-hinted parameters to treat bool-shaped args as non-int shape and normalize them to `arbitrary::<int>()`.
+              - Refined usage-hint inference to preserve bool parameter typing for bool-literal equality and logical-usage contexts (`bool_usage` signal), avoiding regressions where bool params drift to `int`.
+            - Added regressions:
+              - `test_generated_d1_if_with_map_and_bool_branches_falls_back_to_arbitrary`
+              - `test_non_generated_if_with_map_and_bool_branches_is_preserved`
+              - `test_generated_d1_module_operator_call_coerces_bool_arg_to_int_param_hint`
+              - `test_generated_d1_param_type_keeps_bool_for_bool_literal_equality_usage`
+            - Regenerated affected D1 file: `Raft/Raft.rs`.
+            - Re-measured D1 first-error baseline after `16.8.3d-3d-2c`: `29/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `2` `REC_DECREASES`.
+            - Net effect: residual mismatched-type first-error class eliminated (`E0308: 1 -> 0`) with one additional compile pass (`28 -> 29`, `Raft/Raft.rs` now compiles).
         - [ ] **16.8.3d-3d-3** Eliminate residual `E0599` first error in `RSL/Executor.rs` (method-on-scalar drift) via receiver-shape normalization.
         - [ ] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.
         - [ ] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.

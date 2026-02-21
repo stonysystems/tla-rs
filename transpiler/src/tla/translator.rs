@@ -442,10 +442,13 @@ impl<'a> ExprTranslator<'a> {
             .chars()
             .filter(|c| !c.is_whitespace())
             .collect::<String>();
+        let arg_is_boolish = self.expr_is_boolish(arg_expr);
         let arg_is_setish = self.expr_is_setish(arg_expr, rendered);
         let arg_is_seqish = self.expr_is_seqish(arg_expr, rendered);
-        let arg_is_non_int_shape =
-            self.expr_is_non_int_shape(arg_expr) || arg_is_setish || arg_is_seqish;
+        let arg_is_non_int_shape = self.expr_is_non_int_shape(arg_expr)
+            || arg_is_boolish
+            || arg_is_setish
+            || arg_is_seqish;
 
         match normalized.as_str() {
             "int" | "nat" => {
@@ -2265,20 +2268,25 @@ impl<'a> ExprTranslator<'a> {
         then_expr: &TlaExpr,
         else_expr: &TlaExpr,
     ) -> String {
+        let cond_str = self.translate(cond);
+        let then_str = self.translate(then_expr);
+        let else_str = self.translate(else_expr);
+
         if self.is_generated_d1_context() {
             let mixed_bool_numeric = (self.expr_is_boolish(then_expr)
                 && self.expr_is_numericish(else_expr))
                 || (self.expr_is_numericish(then_expr) && self.expr_is_boolish(else_expr));
             let tupleish_branches =
                 self.expr_is_tupleish(then_expr) && self.expr_is_tupleish(else_expr);
-            if mixed_bool_numeric || tupleish_branches {
+            let then_mapish = rendered_looks_like_map_int_int(&then_str)
+                || self.expr_type_hint(then_expr).is_some_and(Self::type_hint_is_map);
+            let else_mapish = rendered_looks_like_map_int_int(&else_str)
+                || self.expr_type_hint(else_expr).is_some_and(Self::type_hint_is_map);
+            let mixed_map_non_map = then_mapish != else_mapish;
+            if mixed_bool_numeric || tupleish_branches || mixed_map_non_map {
                 return "arbitrary()".to_string();
             }
         }
-
-        let cond_str = self.translate(cond);
-        let then_str = self.translate(then_expr);
-        let else_str = self.translate(else_expr);
 
         format!("if {} {{ {} }} else {{ {} }}", cond_str, then_str, else_str)
     }
@@ -2509,6 +2517,7 @@ struct UsageHintEvidence {
     seq_record_element_usage: bool,
     map_domain: bool,
     map_index_like: bool,
+    bool_usage: bool,
     scalar_usage: bool,
 }
 
@@ -2522,6 +2531,7 @@ impl UsageHintEvidence {
             seq_record_element_usage: self.seq_record_element_usage || other.seq_record_element_usage,
             map_domain: self.map_domain || other.map_domain,
             map_index_like: self.map_index_like || other.map_index_like,
+            bool_usage: self.bool_usage || other.bool_usage,
             scalar_usage: self.scalar_usage || other.scalar_usage,
         }
     }
@@ -2535,6 +2545,8 @@ impl UsageHintEvidence {
             Some("Seq<int>")
         } else if self.set_membership {
             Some("Set<int>")
+        } else if self.bool_usage && !self.scalar_usage {
+            Some("bool")
         } else if self.set_element_usage {
             Some("int")
         } else if self.scalar_usage {
@@ -4048,6 +4060,9 @@ impl ModuleTranslator {
                 }
                 if left_is_target || right_is_target {
                     match op {
+                        TlaBinOp::And | TlaBinOp::Or | TlaBinOp::Implies | TlaBinOp::Iff => {
+                            evidence.bool_usage = true;
+                        }
                         TlaBinOp::Plus
                         | TlaBinOp::Minus
                         | TlaBinOp::Times
@@ -4065,10 +4080,9 @@ impl ModuleTranslator {
                             } else {
                                 left.as_ref()
                             };
-                            if matches!(
-                                other,
-                                TlaExpr::Number(_) | TlaExpr::Bool(_) | TlaExpr::String(_)
-                            ) {
+                            if matches!(other, TlaExpr::Bool(_)) {
+                                evidence.bool_usage = true;
+                            } else if matches!(other, TlaExpr::Number(_) | TlaExpr::String(_)) {
                                 evidence.scalar_usage = true;
                             } else if matches!(other, TlaExpr::Tuple(_)) {
                                 evidence.seq_len = true;
@@ -4787,7 +4801,9 @@ pub fn generate_mode_annotations(module: &TlaModule) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tla::ast::{TlaBinOp, TlaExpr, TlaQuantBound, TlaUnaryOp};
+    use crate::tla::ast::{
+        TlaBinOp, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaQuantBound, TlaUnaryOp,
+    };
     use crate::tla::parser::parse_module;
 
     #[test]
@@ -5573,6 +5589,26 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_module_operator_call_coerces_bool_arg_to_int_param_hint() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config
+            .operator_info
+            .insert("UseInt".to_string(), OperatorKind::ConstantOp);
+        config
+            .operator_param_type_hints
+            .insert("UseInt".to_string(), vec!["int".to_string()]);
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("UseInt")),
+            args: vec![TlaExpr::bool(true)],
+        };
+
+        assert_eq!(translator.translate(&expr), "LUseInt(arbitrary::<int>())");
+    }
+
+    #[test]
     fn test_non_generated_module_operator_call_preserves_record_arg_from_param_type_hint() {
         let mut config = TranslatorConfig::default();
         config.spec_prefix = "L".to_string();
@@ -6141,6 +6177,52 @@ mod tests {
             }),
         };
         assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
+    fn test_generated_d1_if_with_map_and_bool_branches_falls_back_to_arbitrary() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::IfThenElse {
+            cond: Box::new(TlaExpr::bool(true)),
+            then_expr: Box::new(TlaExpr::FnExcept {
+                func: Box::new(TlaExpr::RecordAccess {
+                    record: Box::new(TlaExpr::ident("s")),
+                    field: "next_index".to_string(),
+                }),
+                updates: vec![TlaExceptUpdate {
+                    path: vec![TlaExceptPath::Index(TlaExpr::ident("follower"))],
+                    value: TlaExpr::number(1),
+                }],
+            }),
+            else_expr: Box::new(TlaExpr::bool(false)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary()");
+    }
+
+    #[test]
+    fn test_non_generated_if_with_map_and_bool_branches_is_preserved() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::IfThenElse {
+            cond: Box::new(TlaExpr::bool(true)),
+            then_expr: Box::new(TlaExpr::FnExcept {
+                func: Box::new(TlaExpr::RecordAccess {
+                    record: Box::new(TlaExpr::ident("s")),
+                    field: "next_index".to_string(),
+                }),
+                updates: vec![TlaExceptUpdate {
+                    path: vec![TlaExceptPath::Index(TlaExpr::ident("follower"))],
+                    value: TlaExpr::number(1),
+                }],
+            }),
+            else_expr: Box::new(TlaExpr::bool(false)),
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "if true { s.next_index.insert(follower, 1) } else { false }"
+        );
     }
 
     #[test]
@@ -7740,6 +7822,21 @@ mod tests {
         translator.type_env = Some(env);
 
         assert_eq!(translator.get_param_type(&op, 0, "x", true, "c"), "int");
+    }
+
+    #[test]
+    fn test_generated_d1_param_type_keeps_bool_for_bool_literal_equality_usage() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("flag"), TlaExpr::bool(true)),
+        )
+        .with_params(vec![crate::tla::ast::TlaParam::new("flag")]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator("Foo", TlaType::function(TlaType::Bool, TlaType::Bool));
+        translator.type_env = Some(env);
+
+        assert_eq!(translator.get_param_type(&op, 0, "flag", true, "c"), "bool");
     }
 
     #[test]

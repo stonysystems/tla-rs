@@ -3221,7 +3221,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3d-2b:
+    // Baseline after 16.8.3d-3d-2c:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
     // - infers quantifier binder types from bound-set and call-site hints, and
@@ -3233,10 +3233,13 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     // - aliases variable-free explicit-state modules to `LState = LRecord`,
     // - infers generated-D1 helper parameter hints from operator call sites,
     // - uses a collision-free constants parameter alias in variable-free helpers
-    //   when explicit/bound identifiers reuse `c`.
+    //   when explicit/bound identifiers reuse `c`,
+    // - normalizes generated-D1 mixed map/non-map IF branches to `arbitrary()`,
+    // - coerces bool-shaped call args at int-hinted operator parameters,
+    // - preserves bool parameter hints for bool-literal equality/logical usage.
     assert_eq!(
-        passed, 28,
-        "Expected exactly twenty-eight D1 files to compile at current baseline; pass files: {:?}",
+        passed, 29,
+        "Expected exactly twenty-nine D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3256,8 +3259,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 2 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 1,
-        "Expected 1 mismatched-types (E0308) failure at baseline"
+        cat_e0308, 0,
+        "Expected 0 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
