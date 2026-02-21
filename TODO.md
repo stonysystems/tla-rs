@@ -5277,6 +5277,13 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2c-3`: `12/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`, `1` `E0277`, `0` `E0061`, `16` `E0282`.
           - Net effect: inference blockers reduced (`E0282: 18 -> 16`) with one additional compile pass (`11 -> 12`); one file now leads with trait-bound (`E0277`) and remains tracked under `16.8.3d-2`/`16.8.3d-3`.
+        - [x] **16.8.3d-2c-4** Eliminate residual `E0277` first-error class in D1 generated specs after `2c-3`.
+          - Scope/LOC check: implemented as a small translator-side logical-operand normalization tweak plus focused regressions; remained well under the <500 LOC target.
+          - Broadened D1 logical-operand boolish coercion (`0/1` -> `false/true`) whenever unknown-reference normalization is enabled, including modules that still carry known variable names.
+          - Added regression coverage for both spec-mode-with-known-vars coercion and exec-mode non-coercion.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2c-4`: `12/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `16` `E0282`.
+          - Net effect: trait-bound blockers eliminated (`E0277: 1 -> 0`) with class shift to mismatched-type (`E0308: 1 -> 2`), leaving total compile passes unchanged.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

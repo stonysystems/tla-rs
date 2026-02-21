@@ -27,7 +27,7 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    (((((((((arbitrary() == seq![]) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && ((arbitrary::<int>() == 0) ==> (arbitrary() == 3419909347int))) && ((arbitrary() == (arbitrary::<int>() - 1)) ==> (arbitrary() == 8736718595int))) && (((arbitrary::<int>() > 0) && (arbitrary::<int>() < (arbitrary::<int>() - 1))) ==> (arbitrary() == 9863251288int))) && (arbitrary() == (arbitrary::<int>() > 0))) && (arbitrary() == if (arbitrary::<int>() > 0) { (arbitrary::<int>() - 1) } else { ((0 && (arbitrary() == (arbitrary::<int>() < (arbitrary::<int>() - 1)))) && (arbitrary() == if (arbitrary::<int>() < (arbitrary::<int>() - 1)) { (arbitrary::<int>() + 1) } else { (0 && (arbitrary() == true)) })) }))
+    (((((((((arbitrary() == seq![]) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && ((arbitrary::<int>() == 0) ==> (arbitrary() == 3419909347int))) && ((arbitrary() == (arbitrary::<int>() - 1)) ==> (arbitrary() == 8736718595int))) && (((arbitrary::<int>() > 0) && (arbitrary::<int>() < (arbitrary::<int>() - 1))) ==> (arbitrary() == 9863251288int))) && (arbitrary() == (arbitrary::<int>() > 0))) && (arbitrary() == if (arbitrary::<int>() > 0) { (arbitrary::<int>() - 1) } else { ((false && (arbitrary() == (arbitrary::<int>() < (arbitrary::<int>() - 1)))) && (arbitrary() == if (arbitrary::<int>() < (arbitrary::<int>() - 1)) { (arbitrary::<int>() + 1) } else { (false && (arbitrary() == true)) })) }))
 }
 
 /// HeadReceiveWrite operator

@@ -3211,9 +3211,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2c-3 D1 inference-shape normalization:
-    // D1 generated-spec binop emission now applies targeted placeholder coercions
-    // for numeric/set contexts to reduce untyped `arbitrary()` inference blockers.
+    // Baseline after 16.8.3d-2c-4 D1 logical-operand normalization:
+    // D1 spec translation now normalizes boolish numeric literals in logical
+    // contexts under unknown-reference normalization, removing residual E0277.
     assert_eq!(
         passed, 12,
         "Expected exactly twelve D1 files to compile at current baseline; pass files: {:?}",
@@ -3236,16 +3236,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 3 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 1,
-        "Expected 1 mismatched-types (E0308) failure at baseline"
+        cat_e0308, 2,
+        "Expected 2 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0618, 0,
         "Expected 0 call-non-function (E0618) failures at baseline"
     );
     assert_eq!(
-        cat_e0277, 1,
-        "Expected 1 trait-bound (E0277) failure at baseline"
+        cat_e0277, 0,
+        "Expected 0 trait-bound (E0277) failures at baseline"
     );
     assert_eq!(
         cat_e0061, 0,

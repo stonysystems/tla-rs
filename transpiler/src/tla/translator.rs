@@ -343,13 +343,19 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn coerce_boolish_numeric_literal(&self, rendered: &str, expr: &TlaExpr) -> String {
-        if !self.is_generated_d1_context() {
+        // In D1 spec translation, fallback normalization can leave `0`/`1` in logical
+        // positions; Verus requires booleans there.
+        if !self.config.normalize_unknown_external_refs {
             return rendered.to_string();
         }
         match expr {
             TlaExpr::Number(TlaNumber::Decimal(s)) if s == "0" => "false".to_string(),
             TlaExpr::Number(TlaNumber::Decimal(s)) if s == "1" => "true".to_string(),
-            _ => rendered.to_string(),
+            _ => match rendered.trim() {
+                "0" | "0int" => "false".to_string(),
+                "1" | "1int" => "true".to_string(),
+                _ => rendered.to_string(),
+            },
         }
     }
 
@@ -3569,6 +3575,23 @@ mod tests {
         let translator = ExprTranslator::new(&config);
         let expr = TlaExpr::binop(TlaBinOp::And, TlaExpr::number(0), TlaExpr::bool(true));
         assert_eq!(translator.translate(&expr), "(false && true)");
+    }
+
+    #[test]
+    fn test_logical_ops_coerce_boolish_numeric_literals_with_known_vars() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(TlaBinOp::And, TlaExpr::number(0), TlaExpr::bool(true));
+        assert_eq!(translator.translate(&expr), "(false && true)");
+    }
+
+    #[test]
+    fn test_exec_mode_does_not_coerce_boolish_numeric_literals() {
+        let config = TranslatorConfig::exec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(TlaBinOp::And, TlaExpr::number(0), TlaExpr::bool(true));
+        assert_eq!(translator.translate(&expr), "(0 && true)");
     }
 
     #[test]

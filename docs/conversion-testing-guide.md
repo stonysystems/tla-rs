@@ -547,7 +547,7 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
-#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3d-2c-3)
+#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3d-2c-4)
 
 Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <file>`), captured by
 `test_d1_generated_verus_spec_compile_baseline`.
@@ -561,19 +561,19 @@ Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <fi
 | `E0423` value/type constructor misuse | 0 |
 | `E0609` unknown field on scalar | 0 |
 | `E0599` missing method on scalar | 3 |
-| `E0308` mismatched types | 1 |
+| `E0308` mismatched types | 2 |
 | `E0618` call on non-function | 0 |
-| `E0277` trait-bound failure | 1 |
+| `E0277` trait-bound failure | 0 |
 | `E0061` wrong argument count | 0 |
 | `E0282` type annotations needed | 16 |
 | Other categories | 0 |
 
 Current pass files: `ChainReplication/Types.rs`, `EPaxos/Types.rs`, `LeaderElection/Types.rs`, `PBFT/Types.rs`, `Paxos/Types.rs`, `PrimaryBackup/Types.rs`, `RSL/Environment.rs`, `RSL/Message.rs`, `RSL/Parameters.rs`, `Raft/Types.rs`, `TwoPhase/Types.rs`, `VerticalPaxos/Types.rs`.
 
-Update after `16.8.3d-2c-3` (targeted D1 inference normalization in binop emission):
-- D1 spec-mode binop translation now coerces untyped `arbitrary()` placeholders into `int`/`Set<int>` contexts where operator shape already determines type.
+Update after `16.8.3d-2c-4` (D1 logical-operand boolish normalization):
+- D1 spec-mode logical operator emission now coerces boolish numeric literals (`0/1`) to booleans under unknown-reference normalization, including modules that retain known variable names.
 - compile pass improved to `12/33`.
-- current first-error mix is: `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`, `1` `E0277`, `0` `E0061`, `16` `E0282`.
+- current first-error mix is: `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `16` `E0282`.
 
 This compile gate is currently blocked by codegen quality in D1 output (symbol/value emission shape),
 not by D1 parsing coverage (which is already 33/33).
