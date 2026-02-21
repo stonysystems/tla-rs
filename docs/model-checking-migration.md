@@ -64,3 +64,5 @@ transpiler/target/debug/verus-transpile model-check \
 
 This keeps migration incremental and regression-tested.
 
+For wrapper command details (`generate-mc-wrapper`, packet projection modes,
+and fixture workflow), see `docs/model-checking-wrapper-workflow.md`.

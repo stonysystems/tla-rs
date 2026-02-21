@@ -6590,6 +6590,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - [x] Leaf 22.10.3 (<500 LOC): add fixture-driven golden tests for generated wrapper/cfg pairs across the four shared small protocols.
     - Added `transpiler/tests/mc_wrapper_fixtures/*.golden.{tla,cfg}` for TwoPhase, LeaderElection, Paxos, and PrimaryBackup, generated via `verus-transpile generate-mc-wrapper` from checked-in relational specs.
     - Added integration test `test_generate_mc_wrapper_matches_golden_fixtures_for_shared_small_protocols` to run wrapper generation per protocol and exact-compare generated `.tla/.cfg` against committed golden fixtures.
-  - [ ] Leaf 22.10.4 (<500 LOC): document wrapper-generation workflow and selection guidance vs source-first `model-check`.
+  - [x] Leaf 22.10.4 (<500 LOC): document wrapper-generation workflow and selection guidance vs source-first `model-check`.
+    - Added `docs/model-checking-wrapper-workflow.md` with `generate-mc-wrapper` command workflow, packet projection options, and explicit wrapper-vs-source-first selection guidance.
+    - Linked wrapper guidance from `docs/model-checking-source-first.md` and `docs/model-checking-migration.md`.
+    - Added integration coverage in `transpiler/tests/integration.rs` to lock required guide markers and cross-doc links.
 - [ ] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.

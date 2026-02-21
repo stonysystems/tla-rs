@@ -6853,6 +6853,47 @@ fn test_phase22_migration_guide_has_tlc_to_source_first_mapping() {
     }
 }
 
+#[test]
+fn test_phase22_wrapper_generation_guide_has_workflow_and_selection_guidance() {
+    let source = std::fs::read_to_string("../docs/model-checking-wrapper-workflow.md")
+        .expect("Failed to read wrapper generation guide");
+
+    for marker in [
+        "Relational Wrapper Generation Guide",
+        "verus-transpile generate-mc-wrapper",
+        "--input",
+        "--output",
+        "--invariant",
+        "--packet-mode",
+        "--packet-var",
+        "append-seq",
+        "replace-seq",
+        "Selection Guidance: Wrapper vs Source-First",
+        "verus-transpile model-check",
+        "transpiler/tests/mc_wrapper_fixtures/",
+    ] {
+        assert!(
+            source.contains(marker),
+            "wrapper generation guide should contain `{}`",
+            marker
+        );
+    }
+
+    let source_first = std::fs::read_to_string("../docs/model-checking-source-first.md")
+        .expect("Failed to read source-first model-checking guide");
+    assert!(
+        source_first.contains("docs/model-checking-wrapper-workflow.md"),
+        "source-first model-checking guide should link to wrapper-generation guide"
+    );
+
+    let migration = std::fs::read_to_string("../docs/model-checking-migration.md")
+        .expect("Failed to read model-checking migration guide");
+    assert!(
+        migration.contains("docs/model-checking-wrapper-workflow.md"),
+        "migration guide should link to wrapper-generation guide"
+    );
+}
+
 /// Phase 19.4: Verify acceptor_gen.rs is fully standalone with no clone-delegate patterns
 #[test]
 fn test_acceptor_gen_no_delegate_patterns() {

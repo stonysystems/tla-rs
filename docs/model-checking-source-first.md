@@ -107,6 +107,9 @@ This prints the resolved, validated configuration to stdout.
 If you are migrating from the older wrapper-based workflow, use
 `docs/model-checking-migration.md`.
 
+If you still need TLC artifacts (`*_MC.tla`/`.cfg`) for specific runs, use
+`docs/model-checking-wrapper-workflow.md`.
+
 ## 9. Supported Subset and Current Limitations
 
 This section documents the currently implemented (Phase 22 MVP) execution subset.
