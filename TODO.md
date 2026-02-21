@@ -6466,8 +6466,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Constants `c`
   - Branch-level constraints from `LNext`
   - Added `modelcheck::ir` with `TransitionIr`, per-branch existential bindings, and normalized equality/predicate constraints extracted from `LNext`.
-- [ ] Implement runtime value model for supported spec types:
+- [x] Implement runtime value model for supported spec types:
   - primitives, enums, tuples, structs, Seq/Set/Map (bounded)
+  - Added `modelcheck::value` (`transpiler/src/modelcheck/value.rs`) with `RuntimeValue`, bounded Seq/Set/Map constructors tied to `CollectionBounds`, and deterministic canonical keys for future state hashing.
 - [ ] Implement evaluator for the required `Expr` subset used in protocol specs.
 - [ ] Add explicit unsupported-construct errors (no silent fallback).
 

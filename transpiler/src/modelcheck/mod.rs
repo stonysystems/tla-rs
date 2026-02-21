@@ -3,6 +3,8 @@
 //! This module currently provides:
 //! - `model.toml` parsing + validation
 //! - normalized transition IR extraction from `LNext`
+//! - runtime value modeling for evaluator + state exploration
 
 pub mod config;
 pub mod ir;
+pub mod value;
