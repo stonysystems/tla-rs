@@ -1185,6 +1185,15 @@ impl<'a> ExprTranslator<'a> {
         }
     }
 
+    fn fn_apply_root_ident_and_depth(expr: &TlaExpr) -> Option<(String, usize)> {
+        match expr {
+            TlaExpr::Ident(name) => Some((name.clone(), 0)),
+            TlaExpr::FnApply { func, .. } => Self::fn_apply_root_ident_and_depth(func)
+                .map(|(root, depth)| (root, depth + 1)),
+            _ => None,
+        }
+    }
+
     // =========================================================================
     // Identifier and literal translation
     // =========================================================================
@@ -1756,7 +1765,21 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_fn_apply(&self, func: &TlaExpr, arg: &TlaExpr) -> String {
         // f[x] → f[x] or f.index(x)
-        let func_str = self.translate(func);
+        let mut func_str = self.translate(func);
+        if self.is_generated_d1_context() {
+            if let Some((root_ident, depth)) = Self::fn_apply_root_ident_and_depth(func) {
+                if self
+                    .identifier_type_hint(root_ident.as_str())
+                    .is_some_and(Self::type_hint_is_numeric)
+                {
+                    func_str = if depth == 0 {
+                        "arbitrary::<Seq<Seq<int>>>()".to_string()
+                    } else {
+                        "arbitrary::<Seq<int>>()".to_string()
+                    };
+                }
+            }
+        }
         let func_str = self.coerce_untyped_arbitrary_seq_int(&func_str);
         let arg_str = self.translate(arg);
         format!("{}[{}]", func_str, arg_str)
@@ -3570,11 +3593,16 @@ impl ModuleTranslator {
 
         // Determine return type
         let mut return_type = self.get_operator_return_type(&op.name);
-        if module.variables.is_empty() && (return_type == "int" || return_type == "()") {
+        if module.variables.is_empty() {
             if let Some(inferred_return_ty) =
                 self.infer_generated_d1_return_type_from_expr(&op.body, &identifier_type_hints)
             {
-                return_type = inferred_return_ty;
+                let should_override = return_type == "int"
+                    || return_type == "()"
+                    || (return_type == "Seq<int>" && inferred_return_ty == "Map<int, int>");
+                if should_override {
+                    return_type = inferred_return_ty;
+                }
             }
         }
 
@@ -4303,8 +4331,22 @@ impl ModuleTranslator {
                     self.infer_generated_d1_return_type_from_expr(then_expr, identifier_type_hints);
                 let rhs =
                     self.infer_generated_d1_return_type_from_expr(else_expr, identifier_type_hints);
+                let then_is_empty_tuple =
+                    matches!(then_expr.as_ref(), TlaExpr::Tuple(elements) if elements.is_empty());
+                let else_is_empty_tuple =
+                    matches!(else_expr.as_ref(), TlaExpr::Tuple(elements) if elements.is_empty());
                 if lhs.is_some() && lhs == rhs {
                     lhs
+                } else if matches!(lhs.as_deref(), Some("Map<int, int>"))
+                    && matches!(rhs.as_deref(), Some("Seq<int>"))
+                    && else_is_empty_tuple
+                {
+                    lhs
+                } else if matches!(rhs.as_deref(), Some("Map<int, int>"))
+                    && matches!(lhs.as_deref(), Some("Seq<int>"))
+                    && then_is_empty_tuple
+                {
+                    rhs
                 } else if lhs.is_some()
                     && rhs.is_none()
                     && matches!(lhs.as_deref(), Some("Seq<int>" | "Set<int>"))
@@ -4324,6 +4366,9 @@ impl ModuleTranslator {
             }
             TlaExpr::SetEnum(_) => Some("Set<int>".to_string()),
             TlaExpr::Tuple(_) => Some("Seq<int>".to_string()),
+            TlaExpr::FnConstruct { .. } | TlaExpr::FnExcept { .. } => {
+                Some("Map<int, int>".to_string())
+            }
             TlaExpr::BinOp { op, left, right } => match op {
                 TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus => Some("Set<int>".to_string()),
                 TlaBinOp::Plus => {
@@ -5271,6 +5316,37 @@ mod tests {
         let translator = ExprTranslator::new(&config);
         let expr = TlaExpr::FnApply {
             func: Box::new(TlaExpr::ident("states")),
+            arg: Box::new(TlaExpr::number(0)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary::<Seq<int>>()[0]");
+    }
+
+    #[test]
+    fn test_generated_d1_fn_apply_coerces_numeric_hint_receiver_to_nested_seq() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("temp".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::FnApply {
+            func: Box::new(TlaExpr::ident("temp")),
+            arg: Box::new(TlaExpr::number(1)),
+        };
+        assert_eq!(translator.translate(&expr), "arbitrary::<Seq<Seq<int>>>()[1]");
+    }
+
+    #[test]
+    fn test_generated_d1_nested_fn_apply_coerces_numeric_hint_receiver_to_seq() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .identifier_type_hints
+            .insert("temp".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::FnApply {
+            func: Box::new(TlaExpr::FnApply {
+                func: Box::new(TlaExpr::ident("temp")),
+                arg: Box::new(TlaExpr::number(1)),
+            }),
             arg: Box::new(TlaExpr::number(0)),
         };
         assert_eq!(translator.translate(&expr), "arbitrary::<Seq<int>>()[0]");
@@ -7093,6 +7169,30 @@ mod tests {
                 "pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int) -> Seq<int>"
             ),
             "Expected Seq<int> return type for BoundRequestSequence shape, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_return_type_uses_map_shape_for_recursive_except_with_empty_tuple_base() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT Clients
+            RECURSIVE ClientsInReplies(_)
+            ClientsInReplies(replies) ==
+                IF Len(replies) = 0
+                THEN <<>>
+                ELSE [ClientsInReplies(drop_first(replies)) EXCEPT ![replies[0].client] = replies[0]]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains(
+                "pub open spec fn LClientsInReplies(c: LConstants, replies: Seq<int>) -> Map<int, int>"
+            ),
+            "Expected Map<int, int> return type for recursive EXCEPT shape, got:\n{}",
             output
         );
     }

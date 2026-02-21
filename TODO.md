@@ -5643,7 +5643,19 @@ transpiler/tla_test_workspace/
             - Regenerated affected D1 file: `Raft/Raft.rs`.
             - Re-measured D1 first-error baseline after `16.8.3d-3d-2c`: `29/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `2` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `2` `REC_DECREASES`.
             - Net effect: residual mismatched-type first-error class eliminated (`E0308: 1 -> 0`) with one additional compile pass (`28 -> 29`, `Raft/Raft.rs` now compiles).
-        - [ ] **16.8.3d-3d-3** Eliminate residual `E0599` first error in `RSL/Executor.rs` (method-on-scalar drift) via receiver-shape normalization.
+        - [x] **16.8.3d-3d-3** Eliminate residual `E0599` first error in `RSL/Executor.rs` (method-on-scalar drift) via receiver-shape normalization.
+          - Scope/LOC check: implemented as focused generated-D1 receiver-shape normalization + return-type refinement + targeted regressions + single-module regeneration; stayed under the <500 LOC leaf target.
+          - Translator changes:
+            - Added generated-D1 `FnApply` receiver normalization for numeric-hinted fallback roots so scalar-drift index chains no longer emit method/index calls on `int` receivers.
+            - Extended generated-D1 return-type refinement to recognize map-producing recursive helper shapes (`FnExcept`/`FnConstruct`) and to prefer `Map<int, int>` for mixed `IF` branches when the non-map branch is the empty tuple base case.
+            - Allowed generated-D1 helper return-type override from inferred `Map<int, int>` when type inference had previously fallen back to `Seq<int>`.
+          - Added regressions:
+            - `test_generated_d1_fn_apply_coerces_numeric_hint_receiver_to_nested_seq`
+            - `test_generated_d1_nested_fn_apply_coerces_numeric_hint_receiver_to_seq`
+            - `test_generated_d1_return_type_uses_map_shape_for_recursive_except_with_empty_tuple_base`
+          - Regenerated affected D1 file: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/RSL/Executor.rs`.
+          - Verification result: `RSL/Executor.rs` no longer first-fails with `E0599` (first error now `E0308` in `LRepliesAreReplyType` call-shape).
+          - Re-measured D1 first-error baseline after `16.8.3d-3d-3`: `29/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `1` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `0` `E0282`, `2` `REC_DECREASES`.
         - [ ] **16.8.3d-3d-4** Resolve or explicitly gate the `REC_DECREASES` first error in `RSL/Broadcast.rs` and document the chosen policy.
         - [ ] **16.8.3d-3d-5** Re-run full D1 baseline, refresh integration assertions/docs, and re-evaluate readiness for `16.8.3d-3` promotion.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)

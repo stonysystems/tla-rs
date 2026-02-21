@@ -4,12 +4,12 @@
 module Executor {
     helper LExecutor(+);  // c is input (constants)
     helper LOutstandingOperation(+);  // c is input (constants)
-    LExecutorInit(+, +);  // c is input (constants), s is input
+    LExecutorInit(+, +, +);  // c is input (constants), s is input, c is input
     LExecutorGetDecision(+, -, +, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), bal is input, opn is input, v is input
     helper LGetPacketsFromReplies(+, +, +, +);  // c is input (constants), me is input, requests is input, replies is input
     helper LClientsInReplies(+, +);  // c is input (constants), replies is input
     LRepliesAreReplyType(+, +);  // c is input (constants), replies is input
-    LUpdateNewCache(+, +, +);  // c is input (constants), c_ is input, replies is input
+    LUpdateNewCache(+, +, +, +);  // c is input (constants), c is input, c_ is input, replies is input
     LExecutorExecute(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), sent_packets is input
     LExecutorProcessAppStateSupply(+, -, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input
     LExecutorProcessAppStateRequest(+, -, +, +, +);  // s is input (current state), s_ is output (next state), c is input (constants), inp is input, sent_packets is input

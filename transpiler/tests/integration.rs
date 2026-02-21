@@ -3221,7 +3221,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-3d-2c:
+    // Baseline after 16.8.3d-3d-3:
     // Generated-D1 normalization now:
     // - applies parameter usage hints in unknown-ref mode (not only no-variable modules),
     // - infers quantifier binder types from bound-set and call-site hints, and
@@ -3255,12 +3255,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 2,
-        "Expected 2 method-missing (E0599) failures at baseline"
+        cat_e0599, 1,
+        "Expected 1 method-missing (E0599) failure at baseline"
     );
     assert_eq!(
-        cat_e0308, 0,
-        "Expected 0 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 1,
+        "Expected 1 mismatched-types (E0308) failure at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
