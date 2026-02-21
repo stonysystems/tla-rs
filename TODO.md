@@ -6431,9 +6431,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.2 Source-First Spec Ingestion
 
-- [ ] Add a source ingestion pipeline that consumes protocol spec files directly:
+- [x] Add a source ingestion pipeline that consumes protocol spec files directly:
   - `src/protocol/<Proto>/types.rs`
   - `src/protocol/<Proto>/<proto>.rs`
+  - Added `spec_analyzer::ingest_protocol_sources(<proto>.rs)` to pair `<proto>.rs` with sibling `types.rs` and return merged schema + parsed spec AST (`SpecFunction`).
 - [ ] Reuse existing parser/AST (`parse_file`, `SpecFunction`, `Expr`) as the canonical input path.
 - [ ] Resolve and validate required entrypoints:
   - `LInit(s, c) -> bool`

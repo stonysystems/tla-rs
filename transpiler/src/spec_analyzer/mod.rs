@@ -23,15 +23,16 @@
 //! assert!(schema.functions.contains_key("LInit"));
 //! ```
 
-use crate::ast::Type;
+use crate::ast::{SpecFunction, Type};
 use crate::config::{NamingConfig, TranspilerConfig};
 use crate::error::TranspileResult;
+use crate::parser::parse_file;
 use crate::types::{
     build_registry, parse_types_from_file, EnumDef, FieldDef, FunctionSig, StructDef, TypeAlias,
     TypeRegistry, VariantDef, VariantFields,
 };
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// A structured schema extracted from protocol spec files.
 ///
@@ -163,6 +164,24 @@ pub struct SchemaSummary {
     pub num_functions: usize,
 }
 
+/// Parsed protocol sources for source-first workflows.
+///
+/// This pairs a protocol logic file (`<proto>.rs`) with its sibling `types.rs`
+/// and exposes both:
+/// - merged schema (types + signatures), and
+/// - full parsed spec functions (`SpecFunction` / `Expr` AST) from both files.
+#[derive(Debug)]
+pub struct ProtocolSourceBundle {
+    /// `src/protocol/<Proto>/types.rs`
+    pub types_file: PathBuf,
+    /// `src/protocol/<Proto>/<proto>.rs`
+    pub protocol_file: PathBuf,
+    /// Merged schema from `types.rs` + `<proto>.rs`
+    pub schema: SpecSchema,
+    /// Parsed spec functions from both files (`types.rs` first, then protocol file)
+    pub spec_functions: Vec<SpecFunction>,
+}
+
 /// Analyze a single spec file and return a SpecSchema.
 pub fn analyze_spec_file<P: AsRef<Path>>(path: P) -> TranspileResult<SpecSchema> {
     let path = path.as_ref();
@@ -182,6 +201,71 @@ pub fn analyze_spec_files<P: AsRef<Path>>(paths: &[P]) -> TranspileResult<SpecSc
         schema.merge(file_schema);
     }
     Ok(schema)
+}
+
+/// Ingest protocol sources directly from `<proto>.rs` + sibling `types.rs`.
+///
+/// This is the source-first ingestion path used by Phase 22 model checking work.
+/// Given `src/protocol/<Proto>/<proto>.rs`, this function resolves and reads:
+/// - `src/protocol/<Proto>/types.rs`
+/// - `src/protocol/<Proto>/<proto>.rs`
+///
+/// and returns both merged schema and parsed spec AST functions.
+pub fn ingest_protocol_sources<P: AsRef<Path>>(
+    protocol_file: P,
+) -> TranspileResult<ProtocolSourceBundle> {
+    let protocol_file = protocol_file.as_ref();
+    if !protocol_file.exists() {
+        return Err(crate::error::TranspileError::Config {
+            message: format!(
+                "Protocol source file not found: {}",
+                protocol_file.display()
+            ),
+        });
+    }
+    let protocol_name = protocol_file
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    if protocol_name == "types.rs" {
+        return Err(crate::error::TranspileError::Config {
+            message: format!(
+                "Protocol source must be <proto>.rs, not types.rs: {}",
+                protocol_file.display()
+            ),
+        });
+    }
+
+    let Some(protocol_dir) = protocol_file.parent() else {
+        return Err(crate::error::TranspileError::Config {
+            message: format!(
+                "Cannot resolve protocol directory for {}",
+                protocol_file.display()
+            ),
+        });
+    };
+    let types_file = protocol_dir.join("types.rs");
+    if !types_file.exists() {
+        return Err(crate::error::TranspileError::Config {
+            message: format!(
+                "Expected sibling types.rs for protocol source {}: missing {}",
+                protocol_file.display(),
+                types_file.display()
+            ),
+        });
+    }
+
+    let schema = analyze_spec_files(&[types_file.as_path(), protocol_file])?;
+
+    let mut spec_functions = parse_file(&types_file)?;
+    spec_functions.extend(parse_file(protocol_file)?);
+
+    Ok(ProtocolSourceBundle {
+        types_file,
+        protocol_file: protocol_file.to_path_buf(),
+        schema,
+        spec_functions,
+    })
 }
 
 /// Infers `TranspilerConfig` fields from a `SpecSchema`.
@@ -643,6 +727,8 @@ mod tests {
     use super::*;
     use crate::ast::{Generics, Path as AstPath, Type};
     use crate::types::{ParamSig, TypeParser};
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_empty_schema() {
@@ -1008,6 +1094,67 @@ verus! {
         let summary = schema.summary();
         assert!(summary.num_structs >= 2);
         assert!(summary.num_functions >= 3);
+    }
+
+    #[test]
+    fn test_ingest_protocol_sources_twophase() {
+        let proto_path = std::path::Path::new("../src/protocol/TwoPhase/twophase.rs");
+        if !proto_path.exists() {
+            return;
+        }
+
+        let bundle = ingest_protocol_sources(proto_path).unwrap();
+        assert_eq!(
+            bundle
+                .types_file
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default(),
+            "types.rs"
+        );
+        assert_eq!(bundle.protocol_file, proto_path);
+        assert!(bundle.schema.structs.contains_key("LState"));
+        assert!(bundle.schema.functions.contains_key("LInit"));
+        assert!(
+            bundle.spec_functions.iter().any(|f| f.name == "LInit"),
+            "ingestion should parse LInit from sources"
+        );
+        assert!(
+            bundle.spec_functions.iter().any(|f| f.name == "LNext"),
+            "ingestion should parse LNext from protocol source"
+        );
+    }
+
+    #[test]
+    fn test_ingest_protocol_sources_missing_types_file() {
+        let dir = tempdir().unwrap();
+        let proto_path = dir.path().join("demo.rs");
+        fs::write(
+            &proto_path,
+            "verus! { pub open spec fn LInit() -> bool { true } }",
+        )
+        .unwrap();
+
+        let err = ingest_protocol_sources(&proto_path).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::TranspileError::Config { .. }
+        ));
+        assert!(err.to_string().contains("missing"));
+    }
+
+    #[test]
+    fn test_ingest_protocol_sources_rejects_types_rs_input() {
+        let dir = tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        fs::write(&types_path, "verus! {}").unwrap();
+
+        let err = ingest_protocol_sources(&types_path).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::TranspileError::Config { .. }
+        ));
+        assert!(err.to_string().contains("not types.rs"));
     }
 
     #[test]
