@@ -6643,6 +6643,12 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Wired leads-to evaluation into `execute_model_check` (`transpiler/src/main.rs`) for fully explored runs; summary result now reports `leads_to_violated` when a violating SCC is found.
     - Relaxed command guard to allow `properties.leads_to` now, while still rejecting fairness config until leaf 22.x.5.
     - Added focused unit tests in `liveness.rs` and execution-level tests in `main.rs` for both violation and satisfaction scenarios.
-  - [ ] Leaf 22.x.5 (<500 LOC): add fairness filtering (`WF`/`SF`) over candidate SCC cycles using branch-label visitation conditions.
+  - [x] Leaf 22.x.5 (<500 LOC): add fairness filtering (`WF`/`SF`) over candidate SCC cycles using branch-label visitation conditions.
+    - Extended `check_leads_to_violations(...)` in `transpiler/src/modelcheck/liveness.rs` to accept `properties.fairness` and filter candidate violating SCCs before emitting counterexamples.
+    - Added SCC-level fairness visitation checks:
+      - `WF`: when a fairness branch label is continuously enabled across SCC states, it must appear on an internal SCC edge.
+      - `SF`: when a fairness branch label is enabled in SCC states, it must appear on an internal SCC edge.
+    - Wired fairness config through `execute_model_check` and removed the command-level fairness rejection in `transpiler/src/main.rs`.
+    - Added focused fairness tests in `liveness.rs` (weak/strong filtering + weak non-continuous enablement case) and execution/command-level tests in `main.rs`.
   - [ ] Leaf 22.x.6 (<500 LOC): integrate liveness/fairness results into `model-check` JSON/human reports and document the finalized workflow/caveats.
   - [ ] Leaf 22.x.7 (<500 LOC): add integration fixtures/tests for small protocols covering satisfied and violated `leads_to` obligations under fairness and non-fairness settings.

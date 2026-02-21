@@ -1318,6 +1318,7 @@ fn execute_model_check(
         leads_to_violation = check_leads_to_violations(
             &explored_graph,
             &resolved_leads_to,
+            &model_config.properties.fairness,
             Some(&constants_value),
             bounds,
             LivenessHooks {
@@ -1512,14 +1513,6 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     normalized.push(owned);
                 }
                 model_config.properties.invariants = normalized;
-            }
-            if !model_config.properties.fairness.weak.is_empty()
-                || !model_config.properties.fairness.strong.is_empty()
-            {
-                return Err(miette::miette!(
-                    "Source-first fairness checking is not implemented yet: \
-                     `properties.fairness` cannot be used with `model-check` yet."
-                ));
             }
             let selected_search = (*search).unwrap_or(CliSearchMode::Bfs);
             let selected_invariants = resolve_selected_invariants(
@@ -3386,7 +3379,7 @@ invariants = ["LInv"]
     }
 
     #[test]
-    fn test_model_check_command_rejects_fairness_until_supported() {
+    fn test_model_check_command_accepts_fairness_configuration() {
         let dir = tempfile::tempdir().unwrap();
         let types_path = dir.path().join("types.rs");
         let proto_path = dir.path().join("demo.rs");
@@ -3464,10 +3457,7 @@ fairness = { weak = ["branch_0"] }
             dump_config: false,
         };
 
-        let err = handle_command(&command, &cli).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("fairness checking is not implemented yet"));
+        handle_command(&command, &cli).unwrap();
     }
 
     #[test]
@@ -3914,6 +3904,88 @@ max = 1
 
 [properties]
 leads_to = [{ from = "LFrom", to = "LTo" }]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert!(execution.leads_to_violation.is_none());
+    }
+
+    #[test]
+    fn test_execute_model_check_filters_leads_to_violation_with_strong_fairness() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 2 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 0 && s_.value <= c.limit)
+        || (s.value == 0 && s_.value == 2 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 2 && s_.value <= c.limit)
+        || (s.value == 2 && s_.value == 2 && s_.value <= c.limit)
+    }
+
+    pub open spec fn LFrom(s: LState, c: LConstants) -> bool { s.value == 0 && 0 <= c.limit }
+    pub open spec fn LTo(s: LState, c: LConstants) -> bool { s.value == 2 && 0 <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 2
+
+[quantifiers.int]
+min = 0
+max = 2
+
+[properties]
+leads_to = [{ from = "LFrom", to = "LTo" }]
+fairness = { strong = ["branch_2", "branch_3"] }
 "#,
         )
         .unwrap();

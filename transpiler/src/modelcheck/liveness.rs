@@ -1,9 +1,11 @@
 use crate::ast::{SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
-use crate::modelcheck::config::LeadsToProperty;
+use crate::modelcheck::config::{FairnessConfig, LeadsToProperty};
 use crate::modelcheck::evaluator::{eval_expr, CallEvaluator, EvalContext, MethodEvaluator};
 use crate::modelcheck::explorer::{CounterexampleStep, CounterexampleTrace, StateDiffSummary};
-use crate::modelcheck::graph::{detect_cyclic_sccs_with_witness, ExploredGraphIndex, GraphEdgeKey};
+use crate::modelcheck::graph::{
+    detect_cyclic_sccs_with_witness, ExploredGraphIndex, GraphEdgeKey, SccComponent,
+};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -78,6 +80,7 @@ pub fn resolve_leads_to_obligations(
 pub fn check_leads_to_violations(
     graph: &ExploredGraphIndex,
     obligations: &[ResolvedLeadsToObligation],
+    fairness: &FairnessConfig,
     constants: Option<&RuntimeValue>,
     bounds: RuntimeCollectionBounds,
     hooks: LivenessHooks<'_>,
@@ -96,6 +99,10 @@ pub fn check_leads_to_violations(
         }
 
         for component in &cyclic_components {
+            if !component_satisfies_fairness(graph, component, fairness) {
+                continue;
+            }
+
             let has_from = component
                 .members
                 .iter()
@@ -132,6 +139,67 @@ pub fn check_leads_to_violations(
     }
 
     Ok(None)
+}
+
+fn component_satisfies_fairness(
+    graph: &ExploredGraphIndex,
+    component: &SccComponent,
+    fairness: &FairnessConfig,
+) -> bool {
+    if fairness.weak.is_empty() && fairness.strong.is_empty() {
+        return true;
+    }
+
+    let mut internal_edge_labels = BTreeSet::<String>::new();
+    let mut enabled_labels_by_state = BTreeMap::<String, BTreeSet<String>>::new();
+    for from_key in &component.members {
+        let mut enabled_labels = BTreeSet::new();
+        if let Some(successors) = graph.successors.get(from_key) {
+            for to_key in successors {
+                let edge_key = GraphEdgeKey {
+                    from_key: from_key.clone(),
+                    to_key: to_key.clone(),
+                };
+                if let Some(labels) = graph.edge_branches.get(&edge_key) {
+                    enabled_labels.extend(labels.iter().cloned());
+                    if component.members.contains(to_key) {
+                        internal_edge_labels.extend(labels.iter().cloned());
+                    }
+                }
+            }
+        }
+        enabled_labels_by_state.insert(from_key.clone(), enabled_labels);
+    }
+
+    // WF: if a branch is continuously enabled across a candidate cycle component,
+    // it must be visited on at least one internal cycle edge.
+    for weak_label in &fairness.weak {
+        let continuously_enabled = component.members.iter().all(|state_key| {
+            enabled_labels_by_state
+                .get(state_key)
+                .map(|labels| labels.contains(weak_label))
+                .unwrap_or(false)
+        });
+        if continuously_enabled && !internal_edge_labels.contains(weak_label) {
+            return false;
+        }
+    }
+
+    // SF: if a branch can be enabled infinitely often in the component,
+    // require that the cycle can visit that branch label.
+    for strong_label in &fairness.strong {
+        let enabled_somewhere = component.members.iter().any(|state_key| {
+            enabled_labels_by_state
+                .get(state_key)
+                .map(|labels| labels.contains(strong_label))
+                .unwrap_or(false)
+        });
+        if enabled_somewhere && !internal_edge_labels.contains(strong_label) {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn choose_component_cycle_edge(
@@ -449,6 +517,7 @@ mod tests {
         let violation = check_leads_to_violations(
             &index,
             &resolved,
+            &FairnessConfig::default(),
             None,
             RuntimeCollectionBounds {
                 max_seq_len: 4,
@@ -488,6 +557,7 @@ mod tests {
         let violation = check_leads_to_violations(
             &index,
             &resolved,
+            &FairnessConfig::default(),
             None,
             RuntimeCollectionBounds {
                 max_seq_len: 4,
@@ -499,5 +569,136 @@ mod tests {
         .unwrap();
 
         assert!(violation.is_none());
+    }
+
+    #[test]
+    fn test_check_leads_to_violations_filters_weak_fairness_when_branch_is_continuously_enabled() {
+        let from = eq_int("LFrom", 0);
+        let to = eq_int("LTo", 2);
+        let resolved = resolve_leads_to_obligations(
+            &[from.clone(), to.clone()],
+            &[LeadsToProperty {
+                from: "LFrom".to_string(),
+                to: "LTo".to_string(),
+                name: None,
+            }],
+        )
+        .unwrap();
+        let index = index_from_edges(
+            &[0, 1, 2],
+            &[
+                (0, 1, "stay_0"),
+                (1, 0, "stay_1"),
+                (0, 2, "fair_send"),
+                (1, 2, "fair_send"),
+                (2, 2, "done"),
+            ],
+        );
+
+        let violation = check_leads_to_violations(
+            &index,
+            &resolved,
+            &FairnessConfig {
+                weak: vec!["fair_send".to_string()],
+                strong: Vec::new(),
+            },
+            None,
+            RuntimeCollectionBounds {
+                max_seq_len: 4,
+                max_set_len: 4,
+                max_map_len: 4,
+            },
+            LivenessHooks::default(),
+        )
+        .unwrap();
+
+        assert!(violation.is_none());
+    }
+
+    #[test]
+    fn test_check_leads_to_violations_filters_strong_fairness_when_branch_enabled_recurrently() {
+        let from = eq_int("LFrom", 0);
+        let to = eq_int("LTo", 2);
+        let resolved = resolve_leads_to_obligations(
+            &[from.clone(), to.clone()],
+            &[LeadsToProperty {
+                from: "LFrom".to_string(),
+                to: "LTo".to_string(),
+                name: None,
+            }],
+        )
+        .unwrap();
+        let index = index_from_edges(
+            &[0, 1, 2],
+            &[
+                (0, 1, "stay_0"),
+                (1, 0, "stay_1"),
+                (0, 2, "fair_send"),
+                (2, 2, "done"),
+            ],
+        );
+
+        let violation = check_leads_to_violations(
+            &index,
+            &resolved,
+            &FairnessConfig {
+                weak: Vec::new(),
+                strong: vec!["fair_send".to_string()],
+            },
+            None,
+            RuntimeCollectionBounds {
+                max_seq_len: 4,
+                max_set_len: 4,
+                max_map_len: 4,
+            },
+            LivenessHooks::default(),
+        )
+        .unwrap();
+
+        assert!(violation.is_none());
+    }
+
+    #[test]
+    fn test_check_leads_to_violations_keeps_violation_when_weak_fairness_not_continuously_enabled()
+    {
+        let from = eq_int("LFrom", 0);
+        let to = eq_int("LTo", 2);
+        let resolved = resolve_leads_to_obligations(
+            &[from.clone(), to.clone()],
+            &[LeadsToProperty {
+                from: "LFrom".to_string(),
+                to: "LTo".to_string(),
+                name: None,
+            }],
+        )
+        .unwrap();
+        let index = index_from_edges(
+            &[0, 1, 2],
+            &[
+                (0, 1, "stay_0"),
+                (1, 0, "stay_1"),
+                (0, 2, "fair_send"),
+                (2, 2, "done"),
+            ],
+        );
+
+        let violation = check_leads_to_violations(
+            &index,
+            &resolved,
+            &FairnessConfig {
+                weak: vec!["fair_send".to_string()],
+                strong: Vec::new(),
+            },
+            None,
+            RuntimeCollectionBounds {
+                max_seq_len: 4,
+                max_set_len: 4,
+                max_map_len: 4,
+            },
+            LivenessHooks::default(),
+        )
+        .unwrap();
+
+        assert!(violation.is_some());
     }
 }
