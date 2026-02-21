@@ -5655,6 +5655,28 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
     assert_eq!(mc_count, 4, "Expected 4 MC wrapper TLA+ files, got {}", mc_count);
 }
 
+#[test]
+fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
+    let source = std::fs::read_to_string("../docs/dev/phase22-mvp-scope.md")
+        .expect("Failed to read Phase 22 MVP scope doc");
+
+    for marker in [
+        "source-first",
+        "safety model checker",
+        "LInit",
+        "LNext",
+        "not transpiled `.tla` files",
+        "Liveness and fairness",
+        "outside MVP scope",
+    ] {
+        assert!(
+            source.contains(marker),
+            "Phase 22 MVP scope doc should contain `{}`",
+            marker
+        );
+    }
+}
+
 /// Phase 19.4: Verify acceptor_gen.rs is fully standalone with no clone-delegate patterns
 #[test]
 fn test_acceptor_gen_no_delegate_patterns() {
