@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Optional evaluator hooks used while solving branch constraints.
 #[derive(Clone, Copy, Default)]
 pub struct SolverHooks<'a> {
-    pub call_evaluator: Option<&'a CallEvaluator>,
-    pub method_evaluator: Option<&'a MethodEvaluator>,
+    pub call_evaluator: Option<&'a CallEvaluator<'a>>,
+    pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
 }
 
 /// Semantics to apply when `LNext` yields no enabled successors.
@@ -40,7 +40,46 @@ pub fn solve_branch_successors(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
 ) -> TranspileResult<Vec<RuntimeValue>> {
+    solve_branch_successors_with_candidates(
+        transition,
+        branch,
+        current_state,
+        constants,
+        existential_assignments,
+        None,
+        bounds,
+        hooks,
+    )
+}
+
+/// Solve one normalized `LNext` branch with optional next-state candidates.
+///
+/// If a branch has direct `s_.* == expr` constraints, solving uses assignment-style
+/// mutation from `current_state`. If not, and `next_state_candidates` is provided,
+/// the solver evaluates the full branch predicate against each candidate `s_` value.
+pub fn solve_branch_successors_with_candidates(
+    transition: &TransitionIr,
+    branch: &TransitionBranchIr,
+    current_state: &RuntimeValue,
+    constants: Option<&RuntimeValue>,
+    existential_assignments: &[ExistentialAssignment],
+    next_state_candidates: Option<&[RuntimeValue]>,
+    bounds: RuntimeCollectionBounds,
+    hooks: SolverHooks<'_>,
+) -> TranspileResult<Vec<RuntimeValue>> {
     if !branch_has_next_state_assignment(branch) {
+        if let Some(candidates) = next_state_candidates {
+            return solve_branch_by_candidate_enumeration(
+                transition,
+                branch,
+                current_state,
+                constants,
+                existential_assignments,
+                candidates,
+                bounds,
+                hooks,
+            );
+        }
         return Err(unsupported_solver(
             format!(
                 "branch `{}` has no direct next-state equality constraints (`s_.field == ...`)",
@@ -48,7 +87,7 @@ pub fn solve_branch_successors(
             )
             .as_str(),
             Some(
-                "Inline called action predicates into equality constraints before solving."
+                "Inline called action predicates into equality constraints before solving, or provide candidate next-state values."
                     .to_string(),
             ),
         ));
@@ -80,6 +119,58 @@ pub fn solve_branch_successors(
             hooks,
         )? {
             successors.push(next_state);
+        }
+    }
+
+    Ok(deduplicate_successors(successors))
+}
+
+fn solve_branch_by_candidate_enumeration(
+    transition: &TransitionIr,
+    branch: &TransitionBranchIr,
+    current_state: &RuntimeValue,
+    constants: Option<&RuntimeValue>,
+    existential_assignments: &[ExistentialAssignment],
+    next_state_candidates: &[RuntimeValue],
+    bounds: RuntimeCollectionBounds,
+    hooks: SolverHooks<'_>,
+) -> TranspileResult<Vec<RuntimeValue>> {
+    let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
+        vec![BTreeMap::new()]
+    } else {
+        existential_assignments.to_vec()
+    };
+
+    let mut successors = Vec::new();
+    for assignment in assignments {
+        if !assignment_compatible_with_branch(branch, &assignment)? {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Branch `{}` received existential assignment missing required variables.",
+                    branch.label
+                ),
+            });
+        }
+
+        for candidate_next_state in next_state_candidates {
+            let env = build_environment(
+                transition,
+                current_state,
+                Some(candidate_next_state),
+                constants,
+                &assignment,
+            );
+
+            let mut enabled = true;
+            for constraint in &branch.constraints {
+                if !evaluate_constraint(constraint, &env, bounds, hooks)? {
+                    enabled = false;
+                    break;
+                }
+            }
+            if enabled {
+                successors.push(candidate_next_state.clone());
+            }
         }
     }
 
@@ -428,7 +519,7 @@ fn unsupported_solver(message: &str, help: Option<String>) -> TranspileError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{BinOp, Expr};
+    use crate::ast::{BinOp, Expr, Path};
     use crate::modelcheck::ir::{ConstraintRoot, ConstraintTarget, TransitionIr};
 
     fn bounds() -> RuntimeCollectionBounds {
@@ -794,6 +885,48 @@ mod tests {
         )
         .unwrap();
         assert_eq!(successors, vec![current]);
+    }
+
+    #[test]
+    fn test_solve_branch_successors_with_candidates_supports_predicate_only_branch() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Predicate {
+                expr: Expr::Call {
+                    func: Path::single("LHelper".to_string()),
+                    args: vec![Expr::Ident("s".to_string()), Expr::Ident("s_".to_string())],
+                },
+            }],
+        };
+        let candidate_next_states = vec![state(0, 0), state(1, 0)];
+        let call_hook = |func: &Path, args: &[RuntimeValue]| -> TranspileResult<RuntimeValue> {
+            if func.last() == Some("LHelper") {
+                let candidate_x = read_value_at_path(&args[1], &[String::from("x")])?;
+                return Ok(RuntimeValue::Bool(candidate_x == RuntimeValue::Int(1)));
+            }
+            Err(unsupported_solver(
+                "Unexpected helper call in solver test",
+                None,
+            ))
+        };
+        let hooks = SolverHooks {
+            call_evaluator: Some(&call_hook),
+            method_evaluator: None,
+        };
+
+        let successors = solve_branch_successors_with_candidates(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidate_next_states),
+            bounds(),
+            hooks,
+        )
+        .unwrap();
+        assert_eq!(successors, vec![state(1, 0)]);
     }
 
     #[test]

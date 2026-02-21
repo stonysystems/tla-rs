@@ -856,6 +856,135 @@ fn resolve_single_constants_value(
     Ok(filtered.remove(0))
 }
 
+fn normalize_call_path(path: &verus_transpiler::ast::Path) -> String {
+    path.segments
+        .iter()
+        .flat_map(|segment| segment.split("::"))
+        .map(|segment| {
+            if let Some(idx) = segment.find("::<") {
+                segment[..idx].to_string()
+            } else {
+                segment.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("::")
+}
+
+fn resolve_called_spec_function<'a>(
+    functions: &'a [verus_transpiler::ast::SpecFunction],
+    path: &verus_transpiler::ast::Path,
+) -> verus_transpiler::error::TranspileResult<&'a verus_transpiler::ast::SpecFunction> {
+    use verus_transpiler::error::TranspileError;
+
+    let normalized = normalize_call_path(path);
+    let short_name = normalized.rsplit("::").next().unwrap_or(normalized.as_str());
+
+    let exact_matches: Vec<&verus_transpiler::ast::SpecFunction> = functions
+        .iter()
+        .filter(|f| f.name == normalized)
+        .collect();
+    if exact_matches.len() == 1 {
+        return Ok(exact_matches[0]);
+    }
+    if exact_matches.len() > 1 {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Ambiguous model-check helper call `{}`: multiple exact function matches found.",
+                normalized
+            ),
+        });
+    }
+
+    let short_matches: Vec<&verus_transpiler::ast::SpecFunction> = functions
+        .iter()
+        .filter(|f| f.name == short_name)
+        .collect();
+    if short_matches.len() == 1 {
+        return Ok(short_matches[0]);
+    }
+    if short_matches.len() > 1 {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Ambiguous model-check helper call `{}`: short name `{}` matches multiple functions. \
+                 Use uniquely named helper predicates.",
+                normalized, short_name
+            ),
+        });
+    }
+
+    Err(TranspileError::UnsupportedPattern {
+        message: format!(
+            "Model-check evaluator could not resolve helper call `{}` to a parsed spec function.",
+            normalized
+        ),
+        span: None,
+        help: Some(
+            "Ensure helper predicates are in the ingested protocol sources and have unique names."
+                .to_string(),
+        ),
+    })
+}
+
+fn eval_spec_function_call_recursive(
+    functions: &[verus_transpiler::ast::SpecFunction],
+    func_path: &verus_transpiler::ast::Path,
+    args: &[verus_transpiler::modelcheck::value::RuntimeValue],
+    bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
+    depth: usize,
+) -> verus_transpiler::error::TranspileResult<verus_transpiler::modelcheck::value::RuntimeValue> {
+    use verus_transpiler::error::TranspileError;
+    use verus_transpiler::modelcheck::evaluator::{eval_expr, EvalContext};
+
+    if depth > 32 {
+        return Err(TranspileError::UnsupportedPattern {
+            message: format!(
+                "Model-check helper-call recursion exceeded depth limit while evaluating `{}`.",
+                normalize_call_path(func_path)
+            ),
+            span: None,
+            help: Some(
+                "Add a finite non-recursive helper subset for model checking or increase evaluator support."
+                    .to_string(),
+            ),
+        });
+    }
+
+    let function = resolve_called_spec_function(functions, func_path)?;
+    if function.params.len() != args.len() {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Model-check helper call `{}` arity mismatch: expected {} args, got {}.",
+                function.name,
+                function.params.len(),
+                args.len()
+            ),
+        });
+    }
+
+    let mut ctx = EvalContext::new(bounds);
+    for (param, value) in function.params.iter().zip(args.iter()) {
+        ctx = ctx.with_binding(param.name.clone(), value.clone());
+    }
+    let recursive_call = |inner_path: &verus_transpiler::ast::Path,
+                          inner_args: &[verus_transpiler::modelcheck::value::RuntimeValue]|
+     -> verus_transpiler::error::TranspileResult<
+        verus_transpiler::modelcheck::value::RuntimeValue,
+    > {
+        eval_spec_function_call_recursive(functions, inner_path, inner_args, bounds, depth + 1)
+    };
+    ctx = ctx.with_call_evaluator(&recursive_call);
+
+    eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
+        message: format!(
+            "Failed to evaluate helper call `{}` via `{}`: {}",
+            normalize_call_path(func_path),
+            function.name,
+            err
+        ),
+    })
+}
+
 fn execute_model_check(
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
@@ -871,7 +1000,9 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
     use verus_transpiler::modelcheck::invariant::{first_invariant_violation, InvariantHooks};
     use verus_transpiler::modelcheck::ir::build_transition_ir;
-    use verus_transpiler::modelcheck::solver::{solve_branch_successors, SolverHooks};
+    use verus_transpiler::modelcheck::solver::{
+        solve_branch_successors_with_candidates, SolverHooks,
+    };
     use verus_transpiler::modelcheck::value::RuntimeCollectionBounds;
 
     let started = Instant::now();
@@ -926,7 +1057,12 @@ fn execute_model_check(
         &state_candidates,
         Some(&constants_value),
         bounds,
-        InitHooks::default(),
+        InitHooks {
+            call_evaluator: Some(&|func_path, args| {
+                eval_spec_function_call_recursive(&bundle.spec_functions, func_path, args, bounds, 0)
+            }),
+            method_evaluator: None,
+        },
     )
     .map_err(|e| miette::miette!("{}", e))?;
 
@@ -949,14 +1085,29 @@ fn execute_model_check(
                     .get(&branch.label)
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
-                let successors = solve_branch_successors(
+                let call_evaluator =
+                    |func_path: &verus_transpiler::ast::Path,
+                     args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
+                        eval_spec_function_call_recursive(
+                            &bundle.spec_functions,
+                            func_path,
+                            args,
+                            bounds,
+                            0,
+                        )
+                    };
+                let successors = solve_branch_successors_with_candidates(
                     &transition,
                     branch,
                     state,
                     Some(&constants_value),
                     branch_assignments,
+                    Some(&state_candidates),
                     bounds,
-                    SolverHooks::default(),
+                    SolverHooks {
+                        call_evaluator: Some(&call_evaluator),
+                        method_evaluator: None,
+                    },
                 )?;
                 for successor in successors {
                     traced_successors.push(TracedSuccessor {
@@ -986,7 +1137,18 @@ fn execute_model_check(
                 state,
                 Some(&constants_value),
                 bounds,
-                InvariantHooks::default(),
+                InvariantHooks {
+                    call_evaluator: Some(&|func_path, args| {
+                        eval_spec_function_call_recursive(
+                            &bundle.spec_functions,
+                            func_path,
+                            args,
+                            bounds,
+                            0,
+                        )
+                    }),
+                    method_evaluator: None,
+                },
             )
         },
     )

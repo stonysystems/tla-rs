@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 /// Optional evaluator hooks used while checking state invariants.
 #[derive(Clone, Copy, Default)]
 pub struct InvariantHooks<'a> {
-    pub call_evaluator: Option<&'a CallEvaluator>,
-    pub method_evaluator: Option<&'a MethodEvaluator>,
+    pub call_evaluator: Option<&'a CallEvaluator<'a>>,
+    pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
 }
 
 /// Resolve user-selected invariant names to concrete spec functions in user order.

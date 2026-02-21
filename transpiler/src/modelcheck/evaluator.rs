@@ -3,17 +3,18 @@ use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::BTreeMap;
 
-pub type CallEvaluator = dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>;
-pub type MethodEvaluator =
-    dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue>;
+pub type CallEvaluator<'a> =
+    dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
+pub type MethodEvaluator<'a> =
+    dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
 
 /// Runtime evaluator context for source-first model checking.
 #[derive(Clone)]
 pub struct EvalContext<'a> {
     bindings: BTreeMap<String, RuntimeValue>,
     bounds: RuntimeCollectionBounds,
-    call_evaluator: Option<&'a CallEvaluator>,
-    method_evaluator: Option<&'a MethodEvaluator>,
+    call_evaluator: Option<&'a CallEvaluator<'a>>,
+    method_evaluator: Option<&'a MethodEvaluator<'a>>,
 }
 
 impl<'a> EvalContext<'a> {
@@ -31,12 +32,12 @@ impl<'a> EvalContext<'a> {
         self
     }
 
-    pub fn with_call_evaluator(mut self, evaluator: &'a CallEvaluator) -> Self {
+    pub fn with_call_evaluator(mut self, evaluator: &'a CallEvaluator<'a>) -> Self {
         self.call_evaluator = Some(evaluator);
         self
     }
 
-    pub fn with_method_evaluator(mut self, evaluator: &'a MethodEvaluator) -> Self {
+    pub fn with_method_evaluator(mut self, evaluator: &'a MethodEvaluator<'a>) -> Self {
         self.method_evaluator = Some(evaluator);
         self
     }
@@ -189,12 +190,16 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             }
         }
         Expr::Struct { name, fields } => {
-            let ty = path_name(name);
+            let ty_or_variant = path_name(name);
             let mut resolved = Vec::with_capacity(fields.len());
             for (field, value_expr) in fields {
                 resolved.push((field.clone(), eval_expr(value_expr, ctx)?));
             }
-            RuntimeValue::struct_value(ty, resolved)
+            if let Some((ty, variant)) = split_variant_path(&ty_or_variant) {
+                RuntimeValue::enum_value(ty, variant, resolved)
+            } else {
+                RuntimeValue::struct_value(ty_or_variant, resolved)
+            }
         }
         Expr::StructUpdate { .. } => Err(unsupported_construct("struct update expression")),
         Expr::SeqLit(items) => {
@@ -226,6 +231,9 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
                 .iter()
                 .map(|arg| eval_expr(arg, ctx))
                 .collect::<TranspileResult<Vec<_>>>()?;
+            if let Some(value) = eval_builtin_static_call(func, &args, ctx.bounds)? {
+                return Ok(value);
+            }
             if let Some(evaluator) = ctx.call_evaluator {
                 return evaluator(func, &args);
             }
@@ -257,9 +265,15 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::View(inner) => eval_expr(inner, ctx),
         Expr::Cast(inner, ty) => cast_value(eval_expr(inner, ctx)?, ty),
         Expr::Ident(name) => {
-            ctx.bindings.get(name).cloned().ok_or_else(|| {
-                type_error(format!("Unknown evaluator variable `{}`.", name).as_str())
-            })
+            if let Some(value) = ctx.bindings.get(name) {
+                return Ok(value.clone());
+            }
+            if let Some((ty, variant)) = split_variant_path(name) {
+                return RuntimeValue::enum_value(ty, variant, Vec::new());
+            }
+            Err(type_error(
+                format!("Unknown evaluator variable `{}`.", name).as_str(),
+            ))
         }
         Expr::Literal(lit) => Ok(match lit {
             crate::ast::Literal::Bool(v) => RuntimeValue::Bool(*v),
@@ -362,6 +376,26 @@ fn eval_builtin_method(
             };
             Ok(Some(RuntimeValue::Bool(present)))
         }
+        _ => Ok(None),
+    }
+}
+
+fn eval_builtin_static_call(
+    func: &Path,
+    args: &[RuntimeValue],
+    bounds: RuntimeCollectionBounds,
+) -> TranspileResult<Option<RuntimeValue>> {
+    let segments = normalized_path_segments(func);
+    if segments.len() != 2 {
+        return Ok(None);
+    }
+    if !args.is_empty() {
+        return Ok(None);
+    }
+    match (segments[0].as_str(), segments[1].as_str()) {
+        ("Seq", "empty") => Ok(Some(RuntimeValue::seq_bounded(Vec::new(), &bounds)?)),
+        ("Set", "empty") => Ok(Some(RuntimeValue::set_bounded(Vec::new(), &bounds)?)),
+        ("Map", "empty") => Ok(Some(RuntimeValue::map_bounded(Vec::new(), &bounds)?)),
         _ => Ok(None),
     }
 }
@@ -470,6 +504,39 @@ fn expect_index(value: &RuntimeValue, context: &str) -> TranspileResult<usize> {
 
 fn path_name(path: &Path) -> String {
     path.segments.join("::")
+}
+
+fn normalized_path_segments(path: &Path) -> Vec<String> {
+    path.segments
+        .iter()
+        .flat_map(|segment| {
+            let trimmed = if let Some(idx) = segment.find("::<") {
+                &segment[..idx]
+            } else {
+                segment.as_str()
+            };
+            trimmed
+                .split("::")
+                .map(|part| part.to_string())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn split_variant_path(path: &str) -> Option<(String, String)> {
+    let mut segments = path.split("::");
+    let first = segments.next()?;
+    let mut collected = vec![first.to_string()];
+    collected.extend(segments.map(|s| s.to_string()));
+    if collected.len() < 2 {
+        return None;
+    }
+    let variant = collected.pop()?;
+    let ty = collected.join("::");
+    if ty.is_empty() || variant.is_empty() {
+        return None;
+    }
+    Some((ty, variant))
 }
 
 fn unsupported_construct(construct: &str) -> TranspileError {
@@ -714,6 +781,75 @@ mod tests {
         let contains_key_out =
             eval_expr(&contains_key_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(contains_key_out, RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_eval_ident_resolves_enum_unit_variant_path() {
+        let expr = Expr::Ident("LNodeRole::Primary".to_string());
+        let out = eval_expr(&expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(
+            out,
+            RuntimeValue::enum_value("LNodeRole", "Primary", Vec::new()).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_eval_struct_with_path_resolves_enum_payload_constructor() {
+        let expr = Expr::Struct {
+            name: Path::single("LPBMessage::Replicate".to_string()),
+            fields: vec![("val".to_string(), Expr::Literal(Literal::Int(7)))],
+        };
+        let out = eval_expr(&expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(
+            out,
+            RuntimeValue::enum_value(
+                "LPBMessage",
+                "Replicate",
+                vec![("val".to_string(), RuntimeValue::Int(7))]
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_static_empty_calls() {
+        let ctx = EvalContext::new(test_bounds());
+
+        let seq_empty = eval_expr(
+            &Expr::Call {
+                func: Path {
+                    segments: vec!["Seq::<LPBMessage>".to_string(), "empty".to_string()],
+                },
+                args: vec![],
+            },
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(seq_empty, RuntimeValue::Seq(Vec::new()));
+
+        let set_empty = eval_expr(
+            &Expr::Call {
+                func: Path {
+                    segments: vec!["Set".to_string(), "empty".to_string()],
+                },
+                args: vec![],
+            },
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(set_empty, RuntimeValue::Set(Default::default()));
+
+        let map_empty = eval_expr(
+            &Expr::Call {
+                func: Path {
+                    segments: vec!["Map".to_string(), "empty".to_string()],
+                },
+                args: vec![],
+            },
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(map_empty, RuntimeValue::Map(Default::default()));
     }
 
     #[test]

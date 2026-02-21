@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 /// Optional evaluator hooks used while checking `LInit`.
 #[derive(Clone, Copy, Default)]
 pub struct InitHooks<'a> {
-    pub call_evaluator: Option<&'a CallEvaluator>,
-    pub method_evaluator: Option<&'a MethodEvaluator>,
+    pub call_evaluator: Option<&'a CallEvaluator<'a>>,
+    pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
 }
 
 /// Build concrete initial states by checking which candidate states satisfy `LInit`.

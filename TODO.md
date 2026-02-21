@@ -6550,8 +6550,9 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Expanded `modelcheck::evaluator` unit coverage for short-circuit connective semantics (`&&&`, `|||`, `==>`), `if` without `else`, `iff`/`not`, cast-to-`nat` edge cases, and map `index`/`contains_key` behavior.
   - Expanded `modelcheck::domain` unit coverage for named `values` overrides (without alias/enum schema), reference and generic container type expansion, payload-enum rejection diagnostics, and missing named-domain diagnostics.
 - [ ] Add integration tests for end-to-end model-check runs (split into protocol-sized leaves, each <500 LOC):
-  - [x] PrimaryBackup blocker regression: assert actionable unsupported-pattern diagnostics for helper-call `LNext` branches (current solver requires direct `s_.field == ...` constraints).
-  - [ ] PrimaryBackup success-path bounded run (after helper-call `LNext` branch lowering support lands).
+  - [x] PrimaryBackup helper-call `LNext` branch support regression: solve predicate-only helper branches by evaluating branch predicates over candidate `s_` states (instead of requiring direct `s_.field == ...` assignments).
+  - [x] PrimaryBackup success-path bounded run.
+    - Added bounded integration coverage in `transpiler/tests/integration.rs` to assert `model-check` succeeds with helper-call `LNext` branches and reports non-zero states/transitions.
   - [ ] TwoPhase (bounded run)
   - [ ] LeaderElection (bounded run)
   - [ ] Paxos (bounded run)

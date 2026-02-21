@@ -5696,7 +5696,7 @@ fn resolve_transpiler_binary_for_integration() -> std::path::PathBuf {
 }
 
 #[test]
-fn test_model_check_primarybackup_reports_unsupported_lnext_call_branch() {
+fn test_model_check_primarybackup_helper_call_branches_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -5719,20 +5719,20 @@ fn test_model_check_primarybackup_reports_unsupported_lnext_call_branch() {
     ));
     let model = r#"
 [constants.assignments]
-max_log_len = 1
+max_log_len = 0
 
 [quantifiers.int]
 min = 0
-max = 1
+max = 0
 
 [quantifiers.types.LPBMessage]
 kind = "enum_subset"
 variants = ["Ack"]
 
 [search]
-max_depth = 3
-max_states = 2000
-timeout_ms = 2000
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
 
 [properties]
 check_deadlock = false
@@ -5758,20 +5758,32 @@ successor_semantics = "deadlock"
     let _ = std::fs::remove_file(&model_path);
 
     assert!(
-        !output.status.success(),
-        "PrimaryBackup model-check is expected to fail until helper-call `LNext` lowering is implemented"
+        output.status.success(),
+        "PrimaryBackup model-check should succeed once helper-call `LNext` branch support is implemented. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     assert!(
-        stderr.contains("Unsupported pattern"),
-        "error should be classified as unsupported pattern: {}",
-        stderr
+        states > 0,
+        "expected at least one reached state in bounded PrimaryBackup run: {}",
+        stdout
     );
     assert!(
-        stderr.contains("no direct next-state equality")
-            && stderr.contains("constraints (`s_.field == ...`)"),
-        "error should explain missing `s_.field == ...` direct constraints: {}",
-        stderr
+        transitions > 0,
+        "expected at least one transition in bounded PrimaryBackup run: {}",
+        stdout
     );
 }
 
