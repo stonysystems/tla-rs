@@ -3211,12 +3211,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2c-2 value-context operator normalization:
-    // module-operator identifiers/calls in record value context are normalized
-    // to placeholders to avoid mismatched scalar/container shape emission.
+    // Baseline after 16.8.3d-2c-3 D1 inference-shape normalization:
+    // D1 generated-spec binop emission now applies targeted placeholder coercions
+    // for numeric/set contexts to reduce untyped `arbitrary()` inference blockers.
     assert_eq!(
-        passed, 11,
-        "Expected exactly eleven D1 files to compile at current baseline; pass files: {:?}",
+        passed, 12,
+        "Expected exactly twelve D1 files to compile at current baseline; pass files: {:?}",
         pass_files
     );
     assert_eq!(
@@ -3244,16 +3244,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 call-non-function (E0618) failures at baseline"
     );
     assert_eq!(
-        cat_e0277, 0,
-        "Expected 0 trait-bound (E0277) failures at baseline"
+        cat_e0277, 1,
+        "Expected 1 trait-bound (E0277) failure at baseline"
     );
     assert_eq!(
         cat_e0061, 0,
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 18,
-        "Expected 18 type-inference (E0282) failures at baseline"
+        cat_e0282, 16,
+        "Expected 16 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

@@ -21,42 +21,42 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    (((((((((((arbitrary() == 0) && (arbitrary() == 0)) && (arbitrary() == 0)) && (arbitrary() == 0)) && (arbitrary() == 5126177779int)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == 0)) && (arbitrary() == 0)) && (arbitrary() == 0)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == 0))
+    (((((((((((arbitrary::<int>() == 0) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary() == 5126177779int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0))
 }
 
 /// Send1a operator
 pub open spec fn LSend1a(s: LState, s_: LState, c: LConstants, b: int) -> bool {
-    (((((((((((((arbitrary() == 5126177779int) && (b > arbitrary())) && (arbitrary() == b)) && (arbitrary() == 9996969643int)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == 0)) && (arbitrary() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    (((((((((((((arbitrary() == 5126177779int) && (b > arbitrary::<int>())) && (arbitrary() == b)) && (arbitrary() == 9996969643int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// Send1b operator
 pub open spec fn LSend1b(s: LState, s_: LState, c: LConstants, b: int) -> bool {
-    ((((((((((((b >= arbitrary()) && (arbitrary() == b)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    ((((((((((((b >= arbitrary::<int>()) && (arbitrary() == b)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// RecvPromise operator
 pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_accepted_bal: int, a_accepted_val: int) -> bool {
-    (((((arbitrary() == 9996969643int) && arbitrary().contains(a)) && arbitrary().contains(!(a))) && (arbitrary() == arbitrary().union(set![a]))) && (arbitrary() == if (a_accepted_bal > arbitrary()) { a_accepted_bal } else { (arbitrary() && (arbitrary() == if (a_accepted_bal > arbitrary()) { a_accepted_val } else { ((((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == 9996969643int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) })) }))
+    (((((arbitrary() == 9996969643int) && Set::<int>::empty().contains(a)) && Set::<int>::empty().contains(!(a))) && (arbitrary() == Set::<int>::empty().union(set![a]))) && (arbitrary() == if (a_accepted_bal > arbitrary::<int>()) { a_accepted_bal } else { (arbitrary() && (arbitrary() == if (a_accepted_bal > arbitrary::<int>()) { a_accepted_val } else { ((((((((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == 9996969643int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) })) }))
 }
 
 /// Send2a operator
 pub open spec fn LSend2a(s: LState, s_: LState, c: LConstants, v: int) -> bool {
-    (((arbitrary() == 9996969643int) && (arbitrary().len() >= arbitrary())) && (arbitrary() == if (arbitrary() > 0) { arbitrary() } else { ((((((((((v && (arbitrary() == 2508597854int)) && (arbitrary() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) }))
+    (((arbitrary() == 9996969643int) && (arbitrary().len() >= arbitrary::<int>())) && (arbitrary() == if (arbitrary::<int>() > 0) { arbitrary() } else { ((((((((((v && (arbitrary() == 2508597854int)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) }))
 }
 
 /// Send2b operator
 pub open spec fn LSend2b(s: LState, s_: LState, c: LConstants, b: int, v: int) -> bool {
-    ((((((((((((b >= arbitrary()) && (arbitrary() == b)) && (arbitrary() == b)) && (arbitrary() == v)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    ((((((((((((b >= arbitrary::<int>()) && (arbitrary() == b)) && (arbitrary() == b)) && (arbitrary() == v)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// RecvAccepted operator
 pub open spec fn LRecvAccepted(s: LState, s_: LState, c: LConstants, a: int) -> bool {
-    ((((((((((((((arbitrary() == 2508597854int) && arbitrary().contains(a)) && arbitrary().contains(!(a))) && (arbitrary() == arbitrary().union(set![a]))) && (arbitrary() == arbitrary())) && (arbitrary() == 2508597854int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    ((((((((((((((arbitrary() == 2508597854int) && Set::<int>::empty().contains(a)) && Set::<int>::empty().contains(!(a))) && (arbitrary() == Set::<int>::empty().union(set![a]))) && (arbitrary() == arbitrary())) && (arbitrary() == 2508597854int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// Learn operator
 pub open spec fn LLearn(s: LState, s_: LState, c: LConstants) -> bool {
-    (((((((((((((arbitrary() == 2508597854int) && (arbitrary().len() >= arbitrary())) && (arbitrary() == 8313578207int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    (((((((((((((arbitrary() == 2508597854int) && (arbitrary().len() >= arbitrary::<int>())) && (arbitrary() == 8313578207int)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
 }
 
 /// Next operator

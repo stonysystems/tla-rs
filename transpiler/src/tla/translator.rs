@@ -277,7 +277,7 @@ impl<'a> ExprTranslator<'a> {
 
     fn translate_value_context_expr(&self, expr: &TlaExpr) -> String {
         if self.config.normalize_unknown_external_refs {
-            let is_generated_d1_context = self.config.variable_names.is_empty();
+            let is_generated_d1_context = self.is_generated_d1_context();
             match expr {
                 TlaExpr::Ident(name) => {
                     if is_builtin_type_token_ident(name) {
@@ -320,6 +320,37 @@ impl<'a> ExprTranslator<'a> {
             }
         }
         self.translate(expr)
+    }
+
+    fn is_generated_d1_context(&self) -> bool {
+        self.config.normalize_unknown_external_refs && self.config.variable_names.is_empty()
+    }
+
+    fn coerce_untyped_arbitrary_int(&self, rendered: &str) -> String {
+        if self.is_generated_d1_context() && rendered == "arbitrary()" {
+            "arbitrary::<int>()".to_string()
+        } else {
+            rendered.to_string()
+        }
+    }
+
+    fn coerce_untyped_arbitrary_set_int(&self, rendered: &str) -> String {
+        if self.is_generated_d1_context() && rendered == "arbitrary()" {
+            "Set::<int>::empty()".to_string()
+        } else {
+            rendered.to_string()
+        }
+    }
+
+    fn coerce_boolish_numeric_literal(&self, rendered: &str, expr: &TlaExpr) -> String {
+        if !self.is_generated_d1_context() {
+            return rendered.to_string();
+        }
+        match expr {
+            TlaExpr::Number(TlaNumber::Decimal(s)) if s == "0" => "false".to_string(),
+            TlaExpr::Number(TlaNumber::Decimal(s)) if s == "1" => "true".to_string(),
+            _ => rendered.to_string(),
+        }
     }
 
     // =========================================================================
@@ -476,15 +507,57 @@ impl<'a> ExprTranslator<'a> {
             }
         }
 
-        let left_str = self.translate(left);
-        let right_str = self.translate(right);
+        let mut left_str = self.translate(left);
+        let mut right_str = self.translate(right);
+
+        if self.is_generated_d1_context() && matches!(op, TlaBinOp::Eq | TlaBinOp::Neq) {
+            let coerce_int = |s: &mut String| {
+                if s == "arbitrary()" {
+                    *s = "arbitrary::<int>()".to_string();
+                }
+            };
+            let coerce_set = |s: &mut String| {
+                if s == "arbitrary()" {
+                    *s = "Set::<int>::empty()".to_string();
+                }
+            };
+
+            if matches!(left, TlaExpr::Number(_)) {
+                coerce_int(&mut right_str);
+            }
+            if matches!(right, TlaExpr::Number(_)) {
+                coerce_int(&mut left_str);
+            }
+            if matches!(left, TlaExpr::SetEnum(_)) {
+                coerce_set(&mut right_str);
+            }
+            if matches!(right, TlaExpr::SetEnum(_)) {
+                coerce_set(&mut left_str);
+            }
+        }
 
         match op {
             // Logical operators
-            TlaBinOp::And => format!("({} && {})", left_str, right_str),
-            TlaBinOp::Or => format!("({} || {})", left_str, right_str),
-            TlaBinOp::Implies => format!("({} ==> {})", left_str, right_str),
-            TlaBinOp::Iff => format!("({} <==> {})", left_str, right_str),
+            TlaBinOp::And => format!(
+                "({} && {})",
+                self.coerce_boolish_numeric_literal(&left_str, left),
+                self.coerce_boolish_numeric_literal(&right_str, right)
+            ),
+            TlaBinOp::Or => format!(
+                "({} || {})",
+                self.coerce_boolish_numeric_literal(&left_str, left),
+                self.coerce_boolish_numeric_literal(&right_str, right)
+            ),
+            TlaBinOp::Implies => format!(
+                "({} ==> {})",
+                self.coerce_boolish_numeric_literal(&left_str, left),
+                self.coerce_boolish_numeric_literal(&right_str, right)
+            ),
+            TlaBinOp::Iff => format!(
+                "({} <==> {})",
+                self.coerce_boolish_numeric_literal(&left_str, left),
+                self.coerce_boolish_numeric_literal(&right_str, right)
+            ),
 
             // Set operations (T5.1)
             TlaBinOp::In => {
@@ -499,7 +572,11 @@ impl<'a> ExprTranslator<'a> {
                     // Constructor-style type sets (Seq(...), Set(...), Map(...), [D -> R]) are
                     // type-level in Verus and cannot be called as runtime set constructors.
                     _ if is_constructor_style_type_set_expr(right) => "true".to_string(),
-                    _ => format!("{}.contains({})", right_str, left_str),
+                    _ => format!(
+                        "{}.contains({})",
+                        self.coerce_untyped_arbitrary_set_int(&right_str),
+                        self.coerce_untyped_arbitrary_int(&left_str)
+                    ),
                 }
             }
             TlaBinOp::NotIn => match right {
@@ -510,21 +587,69 @@ impl<'a> ExprTranslator<'a> {
                     }
                 }
                 _ if is_constructor_style_type_set_expr(right) => "false".to_string(),
-                _ => format!("!{}.contains({})", right_str, left_str),
+                _ => format!(
+                    "!{}.contains({})",
+                    self.coerce_untyped_arbitrary_set_int(&right_str),
+                    self.coerce_untyped_arbitrary_int(&left_str)
+                ),
             },
-            TlaBinOp::Subseteq => format!("{}.subset_of({})", left_str, right_str),
-            TlaBinOp::Cup => format!("{}.union({})", left_str, right_str),
-            TlaBinOp::Cap => format!("{}.intersect({})", left_str, right_str),
-            TlaBinOp::Setminus => format!("{}.difference({})", left_str, right_str),
-            TlaBinOp::CrossProd => format!("{}.cartesian_product({})", left_str, right_str),
+            TlaBinOp::Subseteq => format!(
+                "{}.subset_of({})",
+                self.coerce_untyped_arbitrary_set_int(&left_str),
+                self.coerce_untyped_arbitrary_set_int(&right_str)
+            ),
+            TlaBinOp::Cup => format!(
+                "{}.union({})",
+                self.coerce_untyped_arbitrary_set_int(&left_str),
+                self.coerce_untyped_arbitrary_set_int(&right_str)
+            ),
+            TlaBinOp::Cap => format!(
+                "{}.intersect({})",
+                self.coerce_untyped_arbitrary_set_int(&left_str),
+                self.coerce_untyped_arbitrary_set_int(&right_str)
+            ),
+            TlaBinOp::Setminus => format!(
+                "{}.difference({})",
+                self.coerce_untyped_arbitrary_set_int(&left_str),
+                self.coerce_untyped_arbitrary_set_int(&right_str)
+            ),
+            TlaBinOp::CrossProd => format!(
+                "{}.cartesian_product({})",
+                self.coerce_untyped_arbitrary_set_int(&left_str),
+                self.coerce_untyped_arbitrary_set_int(&right_str)
+            ),
 
             // Arithmetic
-            TlaBinOp::Plus => format!("({} + {})", left_str, right_str),
-            TlaBinOp::Minus => format!("({} - {})", left_str, right_str),
-            TlaBinOp::Times => format!("({} * {})", left_str, right_str),
-            TlaBinOp::Div => format!("({} / {})", left_str, right_str),
-            TlaBinOp::Mod => format!("({} % {})", left_str, right_str),
-            TlaBinOp::Slash => format!("({} / {})", left_str, right_str),
+            TlaBinOp::Plus => format!(
+                "({} + {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Minus => format!(
+                "({} - {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Times => format!(
+                "({} * {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Div => format!(
+                "({} / {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Mod => format!(
+                "({} % {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Slash => format!(
+                "({} / {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
             TlaBinOp::Caret => {
                 // Exponentiation - use pow function
                 format!("{}.pow({})", left_str, right_str)
@@ -537,10 +662,26 @@ impl<'a> ExprTranslator<'a> {
             // Comparison
             TlaBinOp::Eq => format!("({} == {})", left_str, right_str),
             TlaBinOp::Neq => format!("({} != {})", left_str, right_str),
-            TlaBinOp::Lt => format!("({} < {})", left_str, right_str),
-            TlaBinOp::Gt => format!("({} > {})", left_str, right_str),
-            TlaBinOp::Leq => format!("({} <= {})", left_str, right_str),
-            TlaBinOp::Geq => format!("({} >= {})", left_str, right_str),
+            TlaBinOp::Lt => format!(
+                "({} < {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Gt => format!(
+                "({} > {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Leq => format!(
+                "({} <= {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
+            TlaBinOp::Geq => format!(
+                "({} >= {})",
+                self.coerce_untyped_arbitrary_int(&left_str),
+                self.coerce_untyped_arbitrary_int(&right_str)
+            ),
 
             // Action composition
             TlaBinOp::Compose => {
@@ -3368,6 +3509,66 @@ mod tests {
             field: "client".to_string(),
         };
         assert_eq!(translator.translate(&unknown_root_access), "arbitrary()");
+    }
+
+    #[test]
+    fn test_generated_d1_binop_coerces_untyped_arbitrary_to_int_for_arithmetic() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Plus,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "seqno".to_string(),
+            },
+            TlaExpr::number(1),
+        );
+        assert_eq!(translator.translate(&expr), "(arbitrary::<int>() + 1)");
+    }
+
+    #[test]
+    fn test_generated_d1_binop_coerces_untyped_arbitrary_set_receiver_for_membership() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::In,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "id".to_string(),
+            },
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("pending")),
+                field: "requests".to_string(),
+            },
+        );
+        assert_eq!(
+            translator.translate(&expr),
+            "Set::<int>::empty().contains(arbitrary::<int>())"
+        );
+    }
+
+    #[test]
+    fn test_non_generated_context_does_not_coerce_untyped_arbitrary_in_arithmetic() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::Plus,
+            TlaExpr::RecordAccess {
+                record: Box::new(TlaExpr::ident("request")),
+                field: "seqno".to_string(),
+            },
+            TlaExpr::number(1),
+        );
+        assert_eq!(translator.translate(&expr), "(arbitrary() + 1)");
+    }
+
+    #[test]
+    fn test_generated_d1_logical_ops_coerce_boolish_numeric_literals() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(TlaBinOp::And, TlaExpr::number(0), TlaExpr::bool(true));
+        assert_eq!(translator.translate(&expr), "(false && true)");
     }
 
     #[test]

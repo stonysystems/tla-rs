@@ -35,7 +35,7 @@ pub open spec fn LParameters(c: LConstants) -> LRecord {
 
 /// WFLParameters operator
 pub open spec fn LWFLParameters(s: LState, c: LConstants, p: int) -> bool {
-    (((((arbitrary() > 0) && (arbitrary() > 0)) && (arbitrary() > 0)) && (arbitrary() > 0)) && (arbitrary() >= 0))
+    (((((arbitrary::<int>() > 0) && (arbitrary::<int>() > 0)) && (arbitrary::<int>() > 0)) && (arbitrary::<int>() > 0)) && (arbitrary::<int>() >= 0))
 }
 
 } // verus!

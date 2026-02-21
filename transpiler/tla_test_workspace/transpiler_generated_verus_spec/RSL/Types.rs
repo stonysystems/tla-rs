@@ -64,7 +64,7 @@ pub open spec fn LClockReading(c: LConstants) -> LRecord {
 
 /// BalLeq operator
 pub open spec fn LBalLeq(s: LState, c: LConstants, ba: int, bb: int) -> bool {
-    ((arbitrary() < arbitrary()) || ((arbitrary() == arbitrary()) && (arbitrary() <= arbitrary())))
+    ((arbitrary::<int>() < arbitrary::<int>()) || ((arbitrary() == arbitrary()) && (arbitrary::<int>() <= arbitrary::<int>())))
 }
 
 } // verus!

@@ -5270,7 +5270,13 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2c-2`: `11/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
           - Net effect: mismatched-type first errors reduced (`E0308: 6 -> 1`) and compile passes increased (`2 -> 11`), with remaining blockers now dominated by inference (`E0282`) for `16.8.3d-2c-3`.
-        - [ ] **16.8.3d-2c-3** Reduce remaining `E0282` inference blockers after `2c-2`.
+        - [x] **16.8.3d-2c-3** Reduce remaining `E0282` inference blockers after `2c-2`.
+          - Scope/LOC check: implemented as focused D1-spec-mode binop coercion in `ExprTranslator` plus targeted regressions; stayed under the <500 LOC leaf target.
+          - Added D1 generated-spec fallback coercions so untyped `arbitrary()` placeholders are specialized to `int`/`Set<int>` when surrounding operator shape is already numeric or set-typed, and boolish numeric literals (`0/1`) are normalized in logical operators for generated D1 context.
+          - Added focused regressions covering arithmetic/set-membership coercion and non-generated-context behavior.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2c-3`: `12/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `1` `E0308`, `0` `E0618`, `1` `E0277`, `0` `E0061`, `16` `E0282`.
+          - Net effect: inference blockers reduced (`E0282: 18 -> 16`) with one additional compile pass (`11 -> 12`); one file now leads with trait-bound (`E0277`) and remains tracked under `16.8.3d-2`/`16.8.3d-3`.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

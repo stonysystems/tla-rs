@@ -41,7 +41,7 @@ pub open spec fn LHandleRequestBatchHidden(s: LState, c: LConstants, state: int,
     let unused_2 = LHandleRequestBatchHidden(s, c, state, batch.subrange(0, batch.len() - 1));
     {
     let unused_2 = arbitrary();
-    seq![(arbitrary() + seq![arbitrary()]), (arbitrary() + seq![LRecord { client: batch[batch.len() - 1].client, reply: arbitrary(), seqno: batch[batch.len() - 1].seqno }])]
+    seq![(arbitrary::<int>() + seq![arbitrary()]), (arbitrary::<int>() + seq![LRecord { client: batch[batch.len() - 1].client, reply: arbitrary(), seqno: batch[batch.len() - 1].seqno }])]
 }
 } }
 }
