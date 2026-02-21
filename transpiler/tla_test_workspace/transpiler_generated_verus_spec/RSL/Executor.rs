@@ -78,7 +78,7 @@ pub open spec fn LGetPacketsFromReplies(c: LConstants, me: int, requests: Seq<in
 
 /// ClientsInReplies operator
 pub open spec fn LClientsInReplies(c: LConstants, replies: Seq<int>) -> Seq<int> {
-    if ((arbitrary::<Seq<int>>().len() as int) == 0) { Seq::<int>::empty() } else { LClientsInReplies(c, arbitrary::<Seq<int>>().drop_first()).insert(arbitrary::<Seq<int>>()[0].client, arbitrary::<Seq<int>>()[0]) }
+    if ((arbitrary::<Seq<int>>().len() as int) == 0) { Seq::<int>::empty() } else { LClientsInReplies(c, arbitrary::<Seq<int>>().drop_first()).insert(arbitrary(), arbitrary::<Seq<int>>()[0]) }
 }
 
 /// RepliesAreReplyType operator
@@ -89,8 +89,8 @@ pub open spec fn LRepliesAreReplyType(c: LConstants, replies: Set<int>) -> bool 
 /// UpdateNewCache operator
 pub open spec fn LUpdateNewCache(c: LConstants, c_: Map<int, int>, replies: Seq<int>) -> bool {
     {
-    let nc = LClientsInReplies(c, arbitrary());
-    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx: int| ((((0 <= req_idx) && (req_idx < (arbitrary::<Seq<int>>().len() as int))) && (arbitrary::<Seq<int>>()[req_idx].client == client)) && (c_[client] == arbitrary::<Seq<int>>()[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
+    let nc = LClientsInReplies(c, arbitrary::<Seq<int>>());
+    forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) ==> ((c.dom().contains(client) && (c_[client] == c[client])) || exists |req_idx: int| ((((0 <= req_idx) && (req_idx < (arbitrary::<Seq<int>>().len() as int))) && (arbitrary() == client)) && (c_[client] == arbitrary::<Seq<int>>()[req_idx])))) && forall |client| c.AbstractEndPoint.contains(client) ==> ((c_.dom().contains(client) <==> (nc.dom().contains(client) || c.dom().contains(client))) && forall |client| c.AbstractEndPoint.contains(client) ==> (c_.dom().contains(client) ==> (c_[client] == if c.dom().contains(client) { c[client] } else { (nc[client] && forall |client| c.AbstractEndPoint.contains(client) ==> ((nc.dom().contains(client) || c.dom().contains(client)) ==> (c_.dom().contains(client) && (c_[client] == if c.dom().contains(client) { c[client] } else { nc[client] })))) }))))
 }
 }
 
@@ -105,8 +105,8 @@ pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_pac
     {
     let replies = temp[2];
     {
-    let clients = LClientsInReplies(c, arbitrary());
-    ((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && LUpdateNewCache(c, arbitrary(), arbitrary(), arbitrary())) && (sent_packets == LGetPacketsFromReplies(c, arbitrary::<Seq<int>>()[arbitrary()], batch, arbitrary()))) && LRepliesAreReplyType(c, sent_packets)) }))
+    let clients = LClientsInReplies(c, arbitrary::<Seq<int>>());
+    ((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && LUpdateNewCache(c, arbitrary::<Map<int, int>>(), arbitrary::<Seq<int>>(), arbitrary())) && (sent_packets == LGetPacketsFromReplies(c, arbitrary::<Seq<int>>()[arbitrary()], batch, arbitrary::<int>()))) && LRepliesAreReplyType(c, sent_packets)) }))
 }
 }
 }
@@ -137,7 +137,7 @@ pub open spec fn LExecutorProcessStartingPhase2(s: LState, s_: LState, c: LConst
 
 /// ExecutorProcessRequest operator
 pub open spec fn LExecutorProcessRequest(c: LConstants, s: int, inp: int, sent_packets: Seq<int>) -> bool {
-    if ((arbitrary() == arbitrary::<Seq<int>>()[arbitrary()].seqno) && arbitrary()) { {
+    if ((arbitrary::<int>() == arbitrary::<int>()) && arbitrary()) { {
     let r = arbitrary::<Seq<int>>()[arbitrary()];
     (sent_packets == arbitrary::<Seq<int>>())
 } } else { (sent_packets == Seq::<int>::empty()) }

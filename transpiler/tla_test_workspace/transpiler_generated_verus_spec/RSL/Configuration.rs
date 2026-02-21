@@ -47,7 +47,7 @@ pub open spec fn LReplicasIsUnique(c: LConstants, replica_ids: Seq<int>) -> bool
 
 /// WellFormedLConfiguration operator
 pub open spec fn LWellFormedLConfiguration(c: LConstants) -> bool {
-    ((0 < (arbitrary::<Seq<int>>().len() as int)) && forall |i: int, j: int| (LReplicasDistinct(c, arbitrary(), i, j) && LReplicasIsUnique(c, arbitrary())))
+    ((0 < (arbitrary::<Seq<int>>().len() as int)) && forall |i: int, j: int| (LReplicasDistinct(c, arbitrary::<Seq<int>>(), i, j) && LReplicasIsUnique(c, arbitrary::<Seq<int>>())))
 }
 
 /// IsReplicaIndex operator

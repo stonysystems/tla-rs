@@ -167,6 +167,8 @@ pub struct TranslatorConfig {
     pub identifier_type_hints: std::collections::HashMap<String, String>,
     /// Per-module constants-field type hints for `c.<Field>` access coercion in generated D1.
     pub constant_field_type_hints: std::collections::HashMap<String, String>,
+    /// Per-operator parameter type hints (excluding auto-injected `s`/`s_`/`c`).
+    pub operator_param_type_hints: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -197,6 +199,7 @@ impl Default for TranslatorConfig {
             normalize_unknown_external_refs: false,
             identifier_type_hints: std::collections::HashMap::new(),
             constant_field_type_hints: std::collections::HashMap::new(),
+            operator_param_type_hints: std::collections::HashMap::new(),
         }
     }
 }
@@ -400,6 +403,37 @@ impl<'a> ExprTranslator<'a> {
             return rendered.to_string();
         }
         format!("arbitrary::<{}>()", trimmed)
+    }
+
+    fn coerce_generated_d1_call_arg_from_type_hint(
+        &self,
+        arg_expr: &TlaExpr,
+        rendered: &str,
+        hint: &str,
+    ) -> String {
+        if !self.is_generated_d1_context() {
+            return rendered.to_string();
+        }
+
+        if rendered == "arbitrary()" {
+            return self.coerce_untyped_arbitrary_from_type_hint(rendered, hint);
+        }
+
+        let normalized = hint
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>();
+        let is_structured = matches!(arg_expr, TlaExpr::Record(_) | TlaExpr::Tuple(_));
+
+        if !is_structured {
+            return rendered.to_string();
+        }
+
+        match normalized.as_str() {
+            "int" | "nat" => "arbitrary::<int>()".to_string(),
+            "bool" => "arbitrary::<bool>()".to_string(),
+            _ => rendered.to_string(),
+        }
     }
 
     fn identifier_type_hint<'b>(&'b self, name: &str) -> Option<&'b str> {
@@ -1226,7 +1260,7 @@ impl<'a> ExprTranslator<'a> {
                     return "arbitrary()".to_string();
                 }
             } else if self.config.variable_names.is_empty()
-                && matches!(record, TlaExpr::RecordAccess { .. })
+                && matches!(record, TlaExpr::RecordAccess { .. } | TlaExpr::FnApply { .. })
             {
                 return "arbitrary()".to_string();
             }
@@ -1409,12 +1443,41 @@ impl<'a> ExprTranslator<'a> {
                     (OperatorKind::ConstantOp, true) => vec!["c"],
                     (OperatorKind::ConstantOp, false) => Vec::new(),
                 };
-                let explicit_args: Vec<String> = args.iter().map(|a| self.translate(a)).collect();
-                let explicit_starts_with_implicit = explicit_args
+                let raw_explicit_args: Vec<String> =
+                    args.iter().map(|a| self.translate(a)).collect();
+                let explicit_starts_with_implicit = raw_explicit_args
                     .iter()
                     .take(implicit_args.len())
                     .map(|s| s.as_str())
                     .eq(implicit_args.iter().copied());
+                let explicit_args: Vec<String> = args
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, arg)| {
+                        let rendered = &raw_explicit_args[idx];
+                        let Some(param_hints) =
+                            self.config.operator_param_type_hints.get(op_name)
+                        else {
+                            return rendered.clone();
+                        };
+                        let param_idx = if explicit_starts_with_implicit {
+                            idx.checked_sub(implicit_args.len())
+                        } else {
+                            Some(idx)
+                        };
+                        if let Some(expected_type) =
+                            param_idx.and_then(|i| param_hints.get(i))
+                        {
+                            self.coerce_generated_d1_call_arg_from_type_hint(
+                                arg,
+                                rendered,
+                                expected_type,
+                            )
+                        } else {
+                            rendered.clone()
+                        }
+                    })
+                    .collect();
                 let call_args: Vec<String> = if explicit_starts_with_implicit {
                     explicit_args
                 } else {
@@ -2495,6 +2558,43 @@ impl ModuleTranslator {
                     _ => {}
                 }
             }
+        }
+        // Pass 3: collect per-operator parameter type hints for expression-call coercion.
+        for op in &module.operators {
+            let is_action =
+                config.operator_info.get(&op.name) == Some(&OperatorKind::Action);
+            let is_strict_init = op.name.eq_ignore_ascii_case("init");
+            let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
+            let refs_vars = self.operator_refs_declared_variables(
+                &op.body,
+                &op_param_names,
+                &module_var_names,
+            );
+
+            let mut used_param_names = std::collections::HashSet::<String>::new();
+            if refs_vars || is_action {
+                used_param_names.insert("s".to_string());
+                if is_action && !is_strict_init {
+                    used_param_names.insert("s_".to_string());
+                }
+            }
+            if !module.constants.is_empty() {
+                used_param_names.insert("c".to_string());
+            }
+
+            let mut param_type_hints = Vec::new();
+            for (param_idx, param) in op.params.iter().enumerate() {
+                if used_param_names.contains(&param.name) {
+                    continue;
+                }
+                let param_type =
+                    self.get_param_type(op, param_idx, &param.name, module.variables.is_empty());
+                param_type_hints.push(param_type);
+                used_param_names.insert(param.name.clone());
+            }
+            config
+                .operator_param_type_hints
+                .insert(op.name.clone(), param_type_hints);
         }
         let expr_translator = ExprTranslator::new(&config);
 
@@ -4264,6 +4364,80 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_module_operator_call_coerces_record_arg_from_param_type_hint() {
+        let mut config = TranslatorConfig::spec();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("Votes".to_string());
+        config.operator_info.insert(
+            "AddVoteAndRemoveOldOnes".to_string(),
+            OperatorKind::ConstantOp,
+        );
+        config.operator_param_type_hints.insert(
+            "AddVoteAndRemoveOldOnes".to_string(),
+            vec![
+                "Map<int, int>".to_string(),
+                "Map<int, int>".to_string(),
+                "int".to_string(),
+                "int".to_string(),
+                "int".to_string(),
+            ],
+        );
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("AddVoteAndRemoveOldOnes")),
+            args: vec![
+                TlaExpr::ident("votes"),
+                TlaExpr::ident("votes_"),
+                TlaExpr::number(1),
+                TlaExpr::Record(vec![("max_val".to_string(), TlaExpr::number(0))]),
+                TlaExpr::number(2),
+            ],
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "LAddVoteAndRemoveOldOnes(c, votes, votes_, 1, arbitrary::<int>(), 2)"
+        );
+    }
+
+    #[test]
+    fn test_non_generated_module_operator_call_preserves_record_arg_from_param_type_hint() {
+        let mut config = TranslatorConfig::default();
+        config.spec_prefix = "L".to_string();
+        config.constant_names.insert("Votes".to_string());
+        config.operator_info.insert(
+            "AddVoteAndRemoveOldOnes".to_string(),
+            OperatorKind::ConstantOp,
+        );
+        config.operator_param_type_hints.insert(
+            "AddVoteAndRemoveOldOnes".to_string(),
+            vec![
+                "Map<int, int>".to_string(),
+                "Map<int, int>".to_string(),
+                "int".to_string(),
+                "int".to_string(),
+                "int".to_string(),
+            ],
+        );
+        let translator = ExprTranslator::new(&config);
+
+        let expr = TlaExpr::OpApply {
+            op: Box::new(TlaExpr::ident("AddVoteAndRemoveOldOnes")),
+            args: vec![
+                TlaExpr::ident("votes"),
+                TlaExpr::ident("votes_"),
+                TlaExpr::number(1),
+                TlaExpr::Record(vec![("max_val".to_string(), TlaExpr::number(0))]),
+                TlaExpr::number(2),
+            ],
+        };
+        assert_eq!(
+            translator.translate(&expr),
+            "LAddVoteAndRemoveOldOnes(c, votes, votes_, 1, { max_val: 0 }, 2)"
+        );
+    }
+
+    #[test]
     fn test_translate_op_apply_parameterized_operator_without_args_in_value_context() {
         let mut config = TranslatorConfig::spec();
         config.spec_prefix = "L".to_string();
@@ -4543,6 +4717,22 @@ mod tests {
             field: "client".to_string(),
         };
         assert_eq!(translator.translate(&unknown_root_access), "arbitrary()");
+    }
+
+    #[test]
+    fn test_translate_record_access_fallback_for_fn_apply_roots_in_generated_d1() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+
+        let indexed_access = TlaExpr::RecordAccess {
+            record: Box::new(TlaExpr::FnApply {
+                func: Box::new(TlaExpr::ident("reply_cache")),
+                arg: Box::new(TlaExpr::ident("sender")),
+            }),
+            field: "seqno".to_string(),
+        };
+
+        assert_eq!(translator.translate(&indexed_access), "arbitrary()");
     }
 
     #[test]

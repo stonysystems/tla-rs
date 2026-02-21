@@ -3216,10 +3216,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-16:
-    // Generated-D1 now applies int binders for unbounded/Int/Nat quantifier
-    // vars, bool-coerces untyped negation placeholders, and coerces
-    // record/map-shaped peers for Eq/Domain/FnExcept fallback receivers.
+    // Baseline after 16.8.3d-2d-18:
+    // Generated-D1 record access now also normalizes fn-apply roots
+    // (for example `x[i].field`) to placeholder fallback in unknown-root contexts.
     assert_eq!(
         passed, 22,
         "Expected exactly twenty-two D1 files to compile at current baseline; pass files: {:?}",
@@ -3234,16 +3233,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 value/type-shape (E0423) failures at baseline"
     );
     assert_eq!(
-        cat_e0609, 1,
-        "Expected 1 unknown-field (E0609) failure at baseline"
+        cat_e0609, 0,
+        "Expected 0 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
         cat_e0599, 0,
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 7,
-        "Expected 7 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 6,
+        "Expected 6 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
         cat_e0600, 0,
@@ -3262,8 +3261,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 1,
-        "Expected 1 type-inference (E0282) failure at baseline"
+        cat_e0282, 3,
+        "Expected 3 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

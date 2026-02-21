@@ -102,7 +102,7 @@ pub open spec fn LHandleAppendReject(s: LState, s_: LState, c: LConstants, resp_
 
 /// AdvanceCommitIndex operator
 pub open spec fn LAdvanceCommitIndex(s: LState, s_: LState, c: LConstants, new_commit_index: int, sent_packets: Seq<int>) -> bool {
-    ((((((((((((((arbitrary::<int>() == 4100380100int) && (new_commit_index > arbitrary::<int>())) && (new_commit_index <= (arbitrary::<Seq<int>>().len() as int))) && (arbitrary::<Seq<int>>()[(new_commit_index - 1)].term == arbitrary())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == new_commit_index)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
+    ((((((((((((((arbitrary::<int>() == 4100380100int) && (new_commit_index > arbitrary::<int>())) && (new_commit_index <= (arbitrary::<Seq<int>>().len() as int))) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == new_commit_index)) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// StepDown operator

@@ -86,7 +86,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: i
     let m: int = arbitrary();
     {
     let newLogTruncationPoint = if (((arbitrary::<int>() - arbitrary::<int>()) + 1) > arbitrary::<int>()) { ((arbitrary::<int>() - arbitrary::<int>()) + 1) } else { arbitrary() };
-    (((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(c, arbitrary(), arbitrary(), arbitrary(), LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: arbitrary(), max_value_bal: arbitrary(), msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: 0int }, newLogTruncationPoint) } else { (((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })
+    (((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(c, arbitrary::<Map<int, int>>(), arbitrary::<Map<int, int>>(), arbitrary::<int>(), arbitrary::<int>(), newLogTruncationPoint) } else { (((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })
 }
 }
 }
@@ -101,7 +101,7 @@ pub open spec fn LAcceptorProcessHeartbeat(s: LState, s_: LState, c: LConstants,
 
 /// AcceptorTruncateLog operator
 pub open spec fn LAcceptorTruncateLog(s: LState, s_: LState, c: LConstants, opn: int) -> bool {
-    if (opn <= arbitrary::<int>()) { (s_ == s) } else { ((s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: arbitrary(), dst: 0int, last_checkpointed_operation: arbitrary(), log_truncation_point: opn, max_bal: arbitrary(), max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: arbitrary() }) && LRemoveVotesBeforeLogTruncationPoint(c, arbitrary(), arbitrary(), opn)) }
+    if (opn <= arbitrary::<int>()) { (s_ == s) } else { ((s_ == LRecord { bal_1b: 0int, bal_2b: 0int, constants: arbitrary(), dst: 0int, last_checkpointed_operation: arbitrary(), log_truncation_point: opn, max_bal: arbitrary(), max_val: 0int, max_value_bal: 0int, msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: arbitrary() }) && LRemoveVotesBeforeLogTruncationPoint(c, arbitrary::<Map<int, int>>(), arbitrary::<Map<int, int>>(), opn)) }
 }
 
 } // verus!
