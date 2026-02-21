@@ -1,14 +1,120 @@
 use crate::common::native::io_s::EndPoint;
-use crate::implementation::RSL::cconfiguration::CConfiguration;
+use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};
 use crate::implementation::RSL::types_i::{max_votes_len, RequestBatchSizeLimit};
-use crate::protocol::RSL::constants::LReplicaConstantsValid;
+use crate::generated::RSL::types_gen::CParameters;
+use crate::protocol::RSL::constants::{LConstants, LReplicaConstants, LReplicaConstantsValid};
 use vstd::prelude::*;
 
-// Type definitions are now in types_gen.rs.
-// This module keeps replica-constants helpers outside generated manual_code injection.
-pub use crate::generated::RSL::types_gen::{CConstants, CReplicaConstants};
-
 verus! {
+#[derive(Clone)]
+pub struct CConstants {
+    pub config: CConfiguration,
+    pub params: CParameters,
+}
+
+#[derive(Clone)]
+pub struct CReplicaConstants {
+    pub my_index: u64,
+    pub all: CConstants,
+}
+
+impl CConstants {
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result:Self)
+    ensures
+        self == result,
+        self@ == result@,
+        result.valid()
+    {
+        CConstants {
+            config: self.config.clone_up_to_view(),
+            params: self.params.clone_up_to_view(),
+        }
+    }
+
+    pub open spec fn abstractable(self) -> bool
+    {
+        self.config.abstractable()
+    }
+
+    pub open spec fn valid(self) -> bool
+    {
+        &&& self.config.valid()
+        &&& self.params.valid()
+        &&& self.abstractable()
+        &&& (0 <= self.params.heartbeat_period < self.params.max_integer_val)
+        &&& (0 < self.params.max_batch_size as int <= RequestBatchSizeLimit())
+        &&& (self.params.max_log_length < max_votes_len())
+    }
+
+    pub open spec fn view(self) -> LConstants
+        recommends self.abstractable()
+    {
+        LConstants{
+            config:self.config@,
+            params:self.params@,
+        }
+    }
+}
+
+impl View for CConstants {
+    type V = LConstants;
+
+    open spec fn view(&self) -> LConstants {
+        LConstants {
+            config: self.config@,
+            params: self.params@,
+        }
+    }
+}
+
+impl CReplicaConstants {
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (result:Self)
+    ensures
+        self == result,
+        self@ == result@,
+        result.valid()
+    {
+        CReplicaConstants {
+            my_index: self.my_index,
+            all: self.all.clone_up_to_view(),
+        }
+    }
+
+    pub open spec fn abstractable(self) -> bool
+    {
+        &&& self.all.abstractable()
+        &&& ReplicaIndexValid(self.my_index, self.all.config)
+    }
+
+    pub open spec fn valid(self) -> bool
+    {
+        &&& self.abstractable()
+        &&& self.all.valid()
+    }
+
+    pub open spec fn view(self) -> LReplicaConstants
+        recommends self.abstractable()
+    {
+        LReplicaConstants{
+            my_index: self.my_index as int,
+            all: self.all@,
+        }
+    }
+}
+
+impl View for CReplicaConstants {
+    type V = LReplicaConstants;
+
+    open spec fn view(&self) -> LReplicaConstants {
+        LReplicaConstants {
+            my_index: self.my_index as int,
+            all: self.all@,
+        }
+    }
+}
+
 impl CReplicaConstants {
     pub fn CReplicaConstantsValid(&self) -> (res:bool)
         requires self.valid(),

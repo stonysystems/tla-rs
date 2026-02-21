@@ -4,12 +4,81 @@ use crate::common::native::io_s::{AbstractEndPoint, EndPoint};
 use crate::protocol::RSL::configuration::*;
 use vstd::prelude::*;
 
-// Type definitions are now in types_gen.rs.
-// This module keeps quorum/index helpers outside generated manual_code injection.
-pub use crate::generated::RSL::types_gen::{CConfiguration, ReplicaIndexValid};
-
 verus! {
+#[derive(Clone)]
+pub struct CConfiguration {
+    pub replica_ids: Vec<EndPoint>,
+}
+
 impl CConfiguration {
+    #[verifier(external_body)]
+    pub fn clone_up_to_view(&self) -> (res:CConfiguration)
+    ensures
+        self@ == res@,
+        self == res,
+        res.valid(),
+    {
+        let mut newVec:Vec<EndPoint> = Vec::new();
+        let mut i = 0;
+        let len = self.replica_ids.len();
+        while i < len
+        {
+            assert(i >= 0);
+            assert(i < self.replica_ids@.len());
+            newVec.push(self.replica_ids[i].clone_up_to_view());
+            i += 1;
+        }
+        CConfiguration {
+            replica_ids: newVec,
+        }
+    }
+
+    pub open spec fn abstractable(self) -> bool
+    {
+        &&& (forall |i:int| 0 <= i < self.replica_ids.len() ==> self.replica_ids[i].abstractable())
+        &&& seq_is_unique(self.replica_ids@)
+    }
+
+    pub open spec fn valid(self) -> bool
+    {
+        &&& self.abstractable()
+        &&& (forall |i:int| 0 <= i < self.replica_ids.len() ==> self.replica_ids[i].abstractable() && self.replica_ids[i].valid_public_key())
+        &&& (0 < self.replica_ids.len() < 0xffff_ffff_ffff_ffff)
+    }
+
+    pub open spec fn view(self) -> LConfiguration
+    {
+        LConfiguration{
+            clientIds: Set::<AbstractEndPoint>::empty(),
+            replica_ids: self.replica_ids@.map(|i, e:EndPoint| e@)
+        }
+    }
+
+    pub open spec fn CReplicaDistinct(&self, i:int, j:int) -> bool
+    {
+        &&& 0 <= i < self.replica_ids.len()
+        &&& 0 <= j < self.replica_ids.len()
+        &&& self.replica_ids[i] == self.replica_ids[j] ==> i == j
+    }
+
+    pub open spec fn CReplicasIsUnique(&self) -> bool
+    {
+        forall |i:int, j:int| 0 <= i < self.replica_ids.len() && 0 <= j < self.replica_ids.len() && self.replica_ids[i] == self.replica_ids[j] ==> i == j
+    }
+
+    pub open spec fn CWellFormedCConfiguration(&self) -> bool
+    {
+        &&& 0 < self.replica_ids.len()
+        &&& (forall |i:int, j:int| self.CReplicaDistinct(i, j))
+        &&& self.CReplicasIsUnique()
+    }
+
+    pub open spec fn CIsReplicaIndex(&self, idx:usize, id:EndPoint) -> bool
+    {
+        &&& 0 <= idx < self.replica_ids.len()
+        &&& self.replica_ids[idx as int] == id
+    }
+
     pub fn CMinQuorumSize(&self) -> (q:usize)
         requires
             self.valid()
@@ -92,6 +161,22 @@ impl CConfiguration {
 
         (false, 0)
     }
+}
+
+impl View for CConfiguration {
+    type V = LConfiguration;
+
+    open spec fn view(&self) -> LConfiguration {
+        LConfiguration {
+            clientIds: Set::<AbstractEndPoint>::empty(),
+            replica_ids: self.replica_ids@.map(|i, e:EndPoint| e@),
+        }
+    }
+}
+
+pub open spec fn ReplicaIndexValid(index:u64, config:CConfiguration) -> bool
+{
+    0 <= index < config.replica_ids.len()
 }
 
 #[verifier::external_body]

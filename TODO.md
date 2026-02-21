@@ -6310,7 +6310,10 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
       - Removed helper bodies from `types_manual_helpers.rs`, regenerated `types_gen.rs`, and extended integration tests to enforce the new helper location.
   - [ ] 21.7.5 Remove `output.manual_code` from `types_transpile.toml` once type infrastructure parity is reached.
     - [x] 21.7.5.1 Analyze remaining `types_manual_helpers.rs` surface and document migration order/scope in `docs/dev/`.
-    - [ ] 21.7.5.2 Re-home foundational type blocks (`CConfiguration`, `CConstants`, `CReplicaConstants`) out of manual injection and keep generated public API/tests green.
+    - [x] 21.7.5.2 Re-home foundational type blocks (`CConfiguration`, `CConstants`, `CReplicaConstants`) out of manual injection and keep generated public API/tests green.
+      - Moved foundational struct/impl blocks into `src/implementation/RSL/cconfiguration.rs` and `src/implementation/RSL/cconstants.rs`.
+      - Updated `types_transpile.toml` to re-export those modules and keep the foundational spec types in `skip_types`.
+      - Removed foundational definitions from `types_manual_helpers.rs`, regenerated `types_gen.rs` using the full multi-input RSL type command, and extended integration assertions for the new ownership boundary.
     - [ ] 21.7.5.3 Re-home component type block A (`CAcceptor`, `CLearner`, `CElectionState`, `COutstandingOperation`) out of manual injection.
     - [ ] 21.7.5.4 Re-home component type block B (`CExecutor`, `CIncompleteBatchTimer`, `CProposer`, `CReplica`, `CScheduler`) out of manual injection.
     - [ ] 21.7.5.5 Remove `output.manual_code` from `types_transpile.toml`, regenerate `types_gen.rs`, and update parity/regression tests.

@@ -8,7 +8,7 @@
 # re-exported from their manual implementation modules.
 
 # Types to skip during generation (macro-defined, cannot be auto-generated)
-# RslMessage + concrete types now supplied by manual helper file / macro-backed modules.
+# RslMessage + selected concrete types supplied by macro-backed modules/manual helpers.
 skip_types = [
     "RslMessage",
     # Macro-defined marshalable types in types_i.rs
@@ -16,10 +16,11 @@ skip_types = [
     "Request",
     "Reply",
     "Vote",
-    # Types supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
+    # Foundational blocks are supplied by implementation modules via re_exports.
     "LConfiguration",
     "LConstants",
     "LReplicaConstants",
+    # Types still supplied by src/protocol/RSL/types_manual_helpers.rs via output.manual_code
     "LAcceptor",
     "LLearner",
     "ElectionState",
@@ -33,7 +34,7 @@ skip_types = [
     "LearnerTuple",
 ]
 
-# Types with hand-written valid/view semantics kept in types_manual_helpers.rs.
+# Types with hand-written valid/view semantics kept outside generated output.
 # Generate the struct/clone body, but keep these impl blocks manual for now.
 skip_validity_types = ["CParameters"]
 skip_view_types = ["CParameters"]
@@ -51,6 +52,9 @@ re_exports = [
     "crate::implementation::RSL::appinterface::{CAppState, CAppStateInit, CAppMessage}",
     # State machine (application-specific logic with complex proofs)
     "crate::implementation::RSL::CStateMachine::*",
+    # Foundational concrete type blocks moved out of manual injection
+    "crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid}",
+    "crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants}",
     # Broadcast helpers (CBroadcast, OutboundPackets with verified loops)
     "crate::implementation::RSL::cbroadcast::*",
     # Upper bound helpers (CUpperBound has spec int field, CUpperBoundedAddition)
