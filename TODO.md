@@ -6496,9 +6496,11 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Extended `modelcheck::explorer` with `ExplorationStats` in `ExplorationResult`, tracking visited/explored counts, frontier peak/final sizes, and successor considered/enqueued/deduplicated metrics for bounded BFS/DFS runs.
   - Scope check: implemented as a small leaf task (`<500` LOC including tests).
 - [ ] Check:
-  - `LInit` for initial-state construction
-  - User-selected invariants on every reached state
-  - Optional deadlock detection
+  - [x] `LInit` for initial-state construction
+    - Added `modelcheck::init` (`transpiler/src/modelcheck/init.rs`) with `construct_initial_states`, which evaluates `LInit` against finite candidate states (with optional constants binding) to build deduplicated concrete initial states.
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused unit tests).
+  - [ ] User-selected invariants on every reached state
+  - [ ] Optional deadlock detection
 - [ ] Emit counterexample traces with action branch + state diff summaries.
 
 ### 22.7 CLI Integration
