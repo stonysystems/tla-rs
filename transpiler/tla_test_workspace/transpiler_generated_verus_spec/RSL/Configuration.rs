@@ -36,12 +36,12 @@ pub open spec fn LMinQuorumSize(s: LState, c: LConstants) -> int {
 }
 
 /// ReplicasDistinct operator
-pub open spec fn LReplicasDistinct(s: LState, c: LConstants, replica_ids: int, i: int, j: int) -> bool {
+pub open spec fn LReplicasDistinct(s: LState, c: LConstants, replica_ids: Seq<int>, i: int, j: int) -> bool {
     ((((((0 <= i) && (i < replica_ids.len())) && (0 <= j)) && (j < replica_ids.len())) && (replica_ids[i] == replica_ids[j])) ==> (i == j))
 }
 
 /// ReplicasIsUnique operator
-pub open spec fn LReplicasIsUnique(s: LState, c: LConstants, replica_ids: int) -> bool {
+pub open spec fn LReplicasIsUnique(s: LState, c: LConstants, replica_ids: Seq<int>) -> bool {
     forall |i, j| ((((((0 <= i) && (i < replica_ids.len())) && (0 <= j)) && (j < replica_ids.len())) && (replica_ids[i] == replica_ids[j])) ==> (i == j))
 }
 

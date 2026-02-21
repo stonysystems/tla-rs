@@ -547,7 +547,7 @@ Output written to `transpiler/tla_test_workspace/transpiler_generated_verus_spec
 2. **D1 parser** (`tla/parser.rs`): Support dotted expressions (`s.field`) and function calls (`f(x)`) as `EXCEPT` base
 3. **D1 parser** (`tla/parser.rs`): Support `[Domain -> Range]` function set type notation (new `FnSet` AST variant)
 
-#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3d-2c-6)
+#### D1 Verus Compile Baseline on Generated Specs (Phase 16.8.3d-2d-1)
 
 Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <file>`), captured by
 `test_d1_generated_verus_spec_compile_baseline`.
@@ -560,20 +560,22 @@ Measured with Verus on each generated D1 `.rs` file (`verus --crate-type=lib <fi
 | `E0425` unresolved symbol | 0 |
 | `E0423` value/type constructor misuse | 0 |
 | `E0609` unknown field on scalar | 0 |
-| `E0599` missing method on scalar | 3 |
-| `E0308` mismatched types | 0 |
+| `E0599` missing method on scalar | 0 |
+| `E0308` mismatched types | 2 |
 | `E0618` call on non-function | 0 |
 | `E0277` trait-bound failure | 0 |
 | `E0061` wrong argument count | 0 |
-| `E0282` type annotations needed | 17 |
+| `E0282` type annotations needed | 18 |
 | Other categories | 0 |
 
 Current pass files: `ChainReplication/Types.rs`, `EPaxos/Types.rs`, `LeaderElection/Types.rs`, `PBFT/Types.rs`, `Paxos/Types.rs`, `PrimaryBackup/Types.rs`, `RSL/Environment.rs`, `RSL/Message.rs`, `RSL/Parameters.rs`, `RSL/State_machine.rs`, `Raft/Types.rs`, `TwoPhase/Types.rs`, `VerticalPaxos/Types.rs`.
 
-Update after `16.8.3d-2c-6` (D1 equality peer-type coercion + typed `let` fallback):
-- D1 spec-mode translation now coerces untyped equality placeholders from typed peers (`int`/`bool`/`seq`/`set`/`c`) and adds typed `let` fallback for generated-D1 `let x = arbitrary();` bindings.
-- compile pass improved to `13/33` (`RSL/State_machine.rs` now compiles).
-- current first-error mix is: `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `0` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+Update after `16.8.3d-2d-1` (conservative method-context fallback hinting for constants/parameters):
+- Added usage-evidence fallback hints in generated-D1 context:
+  - constants can fall back to `Set<int>` when module-wide usage shows set-membership/quantifier-bound shape;
+  - parameters only fall back to `Seq<int>`/`Map<int, int>` with combined evidence (`len`+index-like, `DOMAIN`+index-like), keeping single-signal behavior conservative.
+- The residual method-on-scalar first-error class is eliminated (`E0599: 3 -> 0`).
+- current first-error mix is now: `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282` (`13/33` compile pass).
 
 This compile gate is currently blocked by codegen quality in D1 output (symbol/value emission shape),
 not by D1 parsing coverage (which is already 33/33).

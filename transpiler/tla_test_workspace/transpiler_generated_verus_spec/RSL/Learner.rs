@@ -28,7 +28,7 @@ pub struct LConstants {
     pub ReplicaConstants: int,
     pub RslPacket: int,
     pub Learner: int,
-    pub OperationNumber: int,
+    pub OperationNumber: Set<int>,
 }
 
 
@@ -39,7 +39,7 @@ pub open spec fn LLearner(c: LConstants) -> LRecord {
 
 /// LearnerInit operator
 pub open spec fn LLearnerInit(s: LState, c: LConstants, l: int) -> bool {
-    (((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { candidate_learned_value: 0int, constants: 0int, max_ballot_seen: 0int, proposer_id: 0, received_2b_message_senders: 0int, seqno: 0, unexecuted_learner_state: 0int })) && (arbitrary::<Seq<int>>() == seq![]))
+    (((arbitrary::<LConstants>() == c) && (arbitrary() == LRecord { candidate_learned_value: 0int, constants: 0int, max_ballot_seen: 0int, proposer_id: 0, received_2b_message_senders: 0int, seqno: 0, unexecuted_learner_state: 0int })) && (arbitrary::<Seq<int>>() == Seq::<int>::empty()))
 }
 
 /// LearnerProcess2b operator

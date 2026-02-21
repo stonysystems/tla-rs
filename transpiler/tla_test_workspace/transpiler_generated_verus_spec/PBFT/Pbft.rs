@@ -29,52 +29,52 @@ pub struct LConstants {
 
 /// Init operator
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
-    ((((((((((((((arbitrary::<int>() == 0) && (arbitrary() == 3632816197int)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary::<int>() >= ((3 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() >= 0)) && (arbitrary::<int>() > 0))
+    ((((((((((((((arbitrary::<int>() == 0) && (arbitrary::<int>() == 3632816197int)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary::<int>() >= ((3 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() >= 0)) && (arbitrary::<int>() > 0))
 }
 
 /// PrePrepare operator
-pub open spec fn LPrePrepare(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: int) -> bool {
-    ((((((((((((((((arbitrary() == 3632816197int) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() >= arbitrary::<int>())) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary() == 6989001116int)) && (arbitrary() == digest)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
+pub open spec fn LPrePrepare(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: (LRecord)) -> bool {
+    ((((((((((((((((arbitrary::<int>() == 3632816197int) && (arbitrary::<bool>() == true)) && (arbitrary::<int>() >= arbitrary::<int>())) && (arbitrary::<int>() < arbitrary::<int>())) && (arbitrary::<int>() == 6989001116int)) && (arbitrary() == digest)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// ReceivePrePrepare operator
-pub open spec fn LReceivePrePrepare(s: LState, s_: LState, c: LConstants, view: int, seq: int, digest: int, sent_packets: int) -> bool {
-    (((((((((((((((arbitrary() == 3632816197int) && (arbitrary::<bool>() == false)) && (view == arbitrary())) && (arbitrary() == 6989001116int)) && (arbitrary() == digest)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == seq)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LReceivePrePrepare(s: LState, s_: LState, c: LConstants, view: int, seq: int, digest: int, sent_packets: ()) -> bool {
+    (((((((((((((((arbitrary::<int>() == 3632816197int) && (arbitrary::<bool>() == false)) && (view == arbitrary())) && (arbitrary::<int>() == 6989001116int)) && (arbitrary() == digest)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == seq)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ReceivePrepare operator
-pub open spec fn LReceivePrepare(s: LState, s_: LState, c: LConstants, sender: int, sent_packets: int) -> bool {
-    ((((((((((((((arbitrary() == 6989001116int) && Set::<int>::empty().contains(!(sender))) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LReceivePrepare(s: LState, s_: LState, c: LConstants, sender: bool, sent_packets: ()) -> bool {
+    ((((((((((((((arbitrary::<int>() == 6989001116int) && Set::<int>::empty().contains(!(sender))) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// EnterCommit operator
-pub open spec fn LEnterCommit(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
-    ((((((((((((((arbitrary() == 6989001116int) && (arbitrary().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary() == 9385017532int)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LEnterCommit(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+    ((((((((((((((arbitrary::<int>() == 6989001116int) && (arbitrary().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() == 9385017532int)) && (arbitrary() == Set::<int>::empty().union(set![arbitrary()]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ReceiveCommit operator
-pub open spec fn LReceiveCommit(s: LState, s_: LState, c: LConstants, sender: int, sent_packets: int) -> bool {
-    ((((((((((((((arbitrary() == 9385017532int) && Set::<int>::empty().contains(!(sender))) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LReceiveCommit(s: LState, s_: LState, c: LConstants, sender: bool, sent_packets: ()) -> bool {
+    ((((((((((((((arbitrary::<int>() == 9385017532int) && Set::<int>::empty().contains(!(sender))) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ExecuteReply operator
-pub open spec fn LExecuteReply(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
-    ((((((((((((((arbitrary() == 9385017532int) && (arbitrary().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary() == 6279280374int)) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LExecuteReply(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+    ((((((((((((((arbitrary::<int>() == 9385017532int) && (arbitrary().len() >= ((2 * arbitrary::<int>()) + 1))) && (arbitrary::<int>() == 6279280374int)) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// Checkpoint operator
-pub open spec fn LCheckpoint(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: int) -> bool {
-    ((((((((((((((arbitrary() == 6279280374int) && (arbitrary::<int>() > arbitrary::<int>())) && (arbitrary() == arbitrary())) && (arbitrary() == digest)) && (arbitrary() == arbitrary())) && (arbitrary::<int>() == (arbitrary::<int>() + arbitrary::<int>()))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LCheckpoint(s: LState, s_: LState, c: LConstants, digest: int, sent_packets: ()) -> bool {
+    ((((((((((((((arbitrary::<int>() == 6279280374int) && (arbitrary::<int>() > arbitrary::<int>())) && (arbitrary() == arbitrary())) && (arbitrary() == digest)) && (arbitrary() == arbitrary())) && (arbitrary::<int>() == (arbitrary::<int>() + arbitrary::<int>()))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ViewChange operator
-pub open spec fn LViewChange(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
-    ((((((((((((arbitrary::<int>() == (arbitrary::<int>() + 1)) && (arbitrary() == 3632816197int)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LViewChange(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+    ((((((((((((arbitrary::<int>() == (arbitrary::<int>() + 1)) && (arbitrary::<int>() == 3632816197int)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// NewRound operator
-pub open spec fn LNewRound(s: LState, s_: LState, c: LConstants, sent_packets: int) -> bool {
-    (((((((((((((arbitrary() == 6279280374int) && (arbitrary() == 3632816197int)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == seq![]))
+pub open spec fn LNewRound(s: LState, s_: LState, c: LConstants, sent_packets: ()) -> bool {
+    (((((((((((((arbitrary::<int>() == 6279280374int) && (arbitrary::<int>() == 3632816197int)) && (Set::<int>::empty() == Set::<int>::empty())) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<int>() == 0)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// Next operator

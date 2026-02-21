@@ -26,7 +26,7 @@ pub struct LState {
 
 /// Constants for the module
 pub struct LConstants {
-    pub AbstractEndPoint: int,
+    pub AbstractEndPoint: Set<int>,
     pub RslState: int,
     pub Constants: int,
     pub RslIo: int,
@@ -69,7 +69,7 @@ pub open spec fn LRslNextEnvironment(s: LState, c: LConstants, ps: int, ps_: int
 }
 
 /// RslNextOneExternal operator
-pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int, eid: int, ios: int) -> bool {
+pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int, eid: bool, ios: int) -> bool {
     (((LRslNextCommon(s, c, ps, ps_) && Set::<int>::empty().contains(!(eid))) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary() == arbitrary()))
 }
 

@@ -108,6 +108,14 @@ fn is_builtin_type_token_ident(name: &str) -> bool {
     matches!(name, "Nat" | "Int" | "BOOLEAN")
 }
 
+fn is_rendered_int_literal(s: &str) -> bool {
+    let trimmed = s.trim();
+    let Some(num) = trimmed.strip_suffix("int") else {
+        return false;
+    };
+    !num.is_empty() && num.chars().all(|c| c.is_ascii_digit())
+}
+
 /// Configuration for the expression translator
 #[derive(Debug, Clone)]
 pub struct TranslatorConfig {
@@ -632,6 +640,12 @@ impl<'a> ExprTranslator<'a> {
             if matches!(right, TlaExpr::Number(_)) {
                 coerce_int(&mut left_str);
             }
+            if is_rendered_int_literal(&left_str) {
+                coerce_int(&mut right_str);
+            }
+            if is_rendered_int_literal(&right_str) {
+                coerce_int(&mut left_str);
+            }
             if matches!(left, TlaExpr::SetEnum(_)) {
                 coerce_set(&mut right_str);
             }
@@ -1015,6 +1029,9 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn translate_tuple(&self, elements: &[TlaExpr]) -> String {
+        if elements.is_empty() {
+            return "Seq::<int>::empty()".to_string();
+        }
         if self.is_generated_d1_context()
             && elements
                 .iter()
@@ -1507,6 +1524,39 @@ pub struct ModuleTranslator {
     pub expr_config: TranslatorConfig,
     /// Inferred types (optional)
     pub type_env: Option<TypeEnv>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct UsageHintEvidence {
+    set_membership: bool,
+    seq_len: bool,
+    seq_index_like: bool,
+    map_domain: bool,
+    map_index_like: bool,
+}
+
+impl UsageHintEvidence {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            set_membership: self.set_membership || other.set_membership,
+            seq_len: self.seq_len || other.seq_len,
+            seq_index_like: self.seq_index_like || other.seq_index_like,
+            map_domain: self.map_domain || other.map_domain,
+            map_index_like: self.map_index_like || other.map_index_like,
+        }
+    }
+
+    fn to_hint(self) -> Option<&'static str> {
+        if self.map_domain && self.map_index_like {
+            Some("Map<int, int>")
+        } else if self.seq_len && self.seq_index_like {
+            Some("Seq<int>")
+        } else if self.set_membership {
+            Some("Set<int>")
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for ModuleTranslator {
@@ -2080,7 +2130,7 @@ impl ModuleTranslator {
                 self.config.spec_prefix
             ));
             for constant in &module.constants {
-                let const_type = self.get_constant_type(&constant.name);
+                let const_type = self.get_constant_type(module, &constant.name);
                 output.push_str(&format!("    pub {}: {},\n", constant.name, const_type));
             }
             output.push_str("}\n\n");
@@ -2265,13 +2315,14 @@ impl ModuleTranslator {
         }
 
         // Add operator parameters
-        for param in &op.params {
+        for (param_idx, param) in op.params.iter().enumerate() {
             // D1 round-trip can emit explicit params named s/s_/c even though those are
             // already auto-injected; skip duplicates to keep signatures parseable.
             if used_param_names.contains(&param.name) {
                 continue;
             }
-            let param_type = self.get_param_type(&param.name);
+            let param_type =
+                self.get_param_type(op, param_idx, &param.name, module.variables.is_empty());
             params.push(format!("{}: {}", param.name, param_type));
             used_param_names.insert(param.name.clone());
         }
@@ -2556,10 +2607,29 @@ impl ModuleTranslator {
     }
 
     /// Get the Verus type for a constant
-    fn get_constant_type(&self, const_name: &str) -> String {
+    fn get_constant_type(&self, module: &TlaModule, const_name: &str) -> String {
+        let generated_d1_context =
+            self.expr_config.normalize_unknown_external_refs && module.variables.is_empty();
         if let Some(env) = &self.type_env {
             if let Some(ty) = env.constants.get(const_name) {
-                return ty.to_verus_type_with_records(&self.expr_config.record_structs);
+                let inferred = ty.to_verus_type_with_records(&self.expr_config.record_structs);
+                if inferred != "int" {
+                    return inferred;
+                }
+                if generated_d1_context {
+                    if let Some(hint) =
+                        self.infer_constant_type_hint_from_module_usage(module, const_name)
+                    {
+                        return hint.to_string();
+                    }
+                }
+                return inferred;
+            }
+        }
+        if generated_d1_context {
+            if let Some(hint) = self.infer_constant_type_hint_from_module_usage(module, const_name)
+            {
+                return hint.to_string();
             }
         }
         // Default to spec type comment
@@ -2567,9 +2637,251 @@ impl ModuleTranslator {
     }
 
     /// Get the Verus type for a parameter
-    fn get_param_type(&self, _param_name: &str) -> String {
-        // Parameters need type inference context
+    fn get_param_type(
+        &self,
+        op: &TlaOperator,
+        param_index: usize,
+        param_name: &str,
+        generated_d1_context: bool,
+    ) -> String {
+        let usage_hint = if self.expr_config.normalize_unknown_external_refs && generated_d1_context
+        {
+            self.infer_identifier_type_hint_from_usage(&op.body, param_name)
+        } else {
+            None
+        };
+
+        if let Some(env) = &self.type_env {
+            if let Some(TlaType::Function { domain, .. }) = env.operators.get(&op.name) {
+                let param_ty = match domain.as_ref() {
+                    TlaType::Tuple(elements) => elements.get(param_index),
+                    _ if param_index == 0 => Some(domain.as_ref()),
+                    _ => None,
+                };
+                if let Some(param_ty) = param_ty {
+                    let inferred =
+                        param_ty.to_verus_type_with_records(&self.expr_config.record_structs);
+                    if inferred != "int" {
+                        return inferred;
+                    }
+                    if let Some(hint) = usage_hint {
+                        return hint.to_string();
+                    }
+                    return inferred;
+                }
+            }
+        }
+        if let Some(hint) = usage_hint {
+            return hint.to_string();
+        }
+        // Fallback when inference is unavailable or unresolved.
+        let _ = param_name;
         "int".to_string()
+    }
+
+    fn infer_constant_type_hint_from_module_usage(
+        &self,
+        module: &TlaModule,
+        const_name: &str,
+    ) -> Option<&'static str> {
+        let mut evidence = UsageHintEvidence::default();
+        for op in &module.operators {
+            evidence = evidence.merge(self.collect_identifier_usage_evidence(&op.body, const_name));
+        }
+        evidence.to_hint()
+    }
+
+    fn infer_identifier_type_hint_from_usage(
+        &self,
+        expr: &TlaExpr,
+        ident_name: &str,
+    ) -> Option<&'static str> {
+        self.collect_identifier_usage_evidence(expr, ident_name)
+            .to_hint()
+    }
+
+    fn collect_identifier_usage_evidence(
+        &self,
+        expr: &TlaExpr,
+        ident_name: &str,
+    ) -> UsageHintEvidence {
+        let is_target_ident = |node: &TlaExpr| match node {
+            TlaExpr::Ident(name) => name == ident_name,
+            _ => false,
+        };
+
+        match expr {
+            TlaExpr::BinOp { op, left, right } => {
+                let mut evidence = self
+                    .collect_identifier_usage_evidence(left, ident_name)
+                    .merge(self.collect_identifier_usage_evidence(right, ident_name));
+                if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(right) {
+                    evidence.set_membership = true;
+                }
+                evidence
+            }
+            TlaExpr::UnaryOp { op, operand } => {
+                let mut evidence = self.collect_identifier_usage_evidence(operand, ident_name);
+                if matches!(op, TlaUnaryOp::Domain) && is_target_ident(operand) {
+                    evidence.map_domain = true;
+                }
+                evidence
+            }
+            TlaExpr::OpApply { op, args } => {
+                let mut evidence = self.collect_identifier_usage_evidence(op, ident_name);
+                for arg in args {
+                    evidence = evidence.merge(self.collect_identifier_usage_evidence(arg, ident_name));
+                }
+
+                let op_name = match op.as_ref() {
+                    TlaExpr::Ident(name) => Some(name.as_str()),
+                    _ => None,
+                };
+                let first_is_target = args.first().is_some_and(is_target_ident);
+                if first_is_target {
+                    match op_name {
+                        Some("Cardinality" | "IsFiniteSet") => {
+                            evidence.set_membership = true;
+                        }
+                        Some("Len") => {
+                            evidence.seq_len = true;
+                        }
+                        Some("DOMAIN") => {
+                            evidence.map_domain = true;
+                        }
+                        Some("skip" | "drop_first" | "Tail" | "SubSeq" | "Append" | "Head"
+                        | "update") => {
+                            evidence.seq_index_like = true;
+                        }
+                        _ => {}
+                    }
+                }
+                evidence
+            }
+            TlaExpr::FnApply { func, arg } => {
+                let mut evidence = self
+                    .collect_identifier_usage_evidence(func, ident_name)
+                    .merge(self.collect_identifier_usage_evidence(arg, ident_name));
+                if is_target_ident(func) {
+                    evidence.seq_index_like = true;
+                    evidence.map_index_like = true;
+                }
+                evidence
+            }
+            TlaExpr::SetFilter { set, filter, .. } => {
+                let mut evidence = self
+                    .collect_identifier_usage_evidence(set, ident_name)
+                    .merge(self.collect_identifier_usage_evidence(filter, ident_name));
+                if is_target_ident(set) {
+                    evidence.set_membership = true;
+                }
+                evidence
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                let mut evidence = self
+                    .collect_identifier_usage_evidence(expr, ident_name)
+                    .merge(self.collect_identifier_usage_evidence(set, ident_name));
+                if is_target_ident(set) {
+                    evidence.set_membership = true;
+                }
+                evidence
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => self
+                .collect_identifier_usage_evidence(domain, ident_name)
+                .merge(self.collect_identifier_usage_evidence(body, ident_name)),
+            TlaExpr::FnExcept { func, updates } => {
+                let mut evidence = self.collect_identifier_usage_evidence(func, ident_name);
+                if is_target_ident(func) {
+                    evidence.map_index_like = true;
+                }
+                for update in updates {
+                    evidence = evidence
+                        .merge(self.collect_identifier_usage_evidence(&update.value, ident_name));
+                }
+                evidence
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                let mut evidence = self.collect_identifier_usage_evidence(body, ident_name);
+                for bound in vars {
+                    if let Some(set) = &bound.set {
+                        evidence =
+                            evidence.merge(self.collect_identifier_usage_evidence(set, ident_name));
+                        if is_target_ident(set) {
+                            evidence.set_membership = true;
+                        }
+                    }
+                }
+                evidence
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                let mut evidence = self.collect_identifier_usage_evidence(body, ident_name);
+                if let Some(set) = set {
+                    evidence = evidence.merge(self.collect_identifier_usage_evidence(set, ident_name));
+                    if is_target_ident(set) {
+                        evidence.set_membership = true;
+                    }
+                }
+                evidence
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => self
+                .collect_identifier_usage_evidence(cond, ident_name)
+                .merge(self.collect_identifier_usage_evidence(then_expr, ident_name))
+                .merge(self.collect_identifier_usage_evidence(else_expr, ident_name)),
+            TlaExpr::Case { arms, other } => {
+                let mut evidence = UsageHintEvidence::default();
+                for (cond, arm_body) in arms {
+                    evidence = evidence
+                        .merge(self.collect_identifier_usage_evidence(cond, ident_name))
+                        .merge(self.collect_identifier_usage_evidence(arm_body, ident_name));
+                }
+                if let Some(other_expr) = other {
+                    evidence =
+                        evidence.merge(self.collect_identifier_usage_evidence(other_expr, ident_name));
+                }
+                evidence
+            }
+            TlaExpr::LetIn { defs, body } => {
+                let mut evidence = self.collect_identifier_usage_evidence(body, ident_name);
+                for def in defs {
+                    evidence =
+                        evidence.merge(self.collect_identifier_usage_evidence(&def.body, ident_name));
+                }
+                evidence
+            }
+            TlaExpr::SetEnum(elements) | TlaExpr::Tuple(elements) | TlaExpr::Unchanged(elements) => {
+                let mut evidence = UsageHintEvidence::default();
+                for element in elements {
+                    evidence =
+                        evidence.merge(self.collect_identifier_usage_evidence(element, ident_name));
+                }
+                evidence
+            }
+            TlaExpr::Record(fields) => {
+                let mut evidence = UsageHintEvidence::default();
+                for (_, value) in fields {
+                    evidence = evidence.merge(self.collect_identifier_usage_evidence(value, ident_name));
+                }
+                evidence
+            }
+            TlaExpr::RecordAccess { record, .. }
+            | TlaExpr::Prime(record)
+            | TlaExpr::Enabled(record)
+            | TlaExpr::Always(record)
+            | TlaExpr::Eventually(record) => {
+                self.collect_identifier_usage_evidence(record, ident_name)
+            }
+            TlaExpr::LeadsTo { left, right } => self
+                .collect_identifier_usage_evidence(left, ident_name)
+                .merge(self.collect_identifier_usage_evidence(right, ident_name)),
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => self
+                .collect_identifier_usage_evidence(vars, ident_name)
+                .merge(self.collect_identifier_usage_evidence(action, ident_name)),
+            _ => UsageHintEvidence::default(),
+        }
     }
 
     /// Get the return type for an operator
@@ -3104,6 +3416,13 @@ mod tests {
             TlaExpr::number(3),
         ]);
         assert_eq!(translator.translate(&expr), "set![1, 2, 3]");
+    }
+
+    #[test]
+    fn test_translate_empty_tuple_emits_typed_empty_seq() {
+        let config = TranslatorConfig::default();
+        let translator = ExprTranslator::new(&config);
+        assert_eq!(translator.translate(&TlaExpr::Tuple(vec![])), "Seq::<int>::empty()");
     }
 
     #[test]
@@ -3863,7 +4182,10 @@ mod tests {
             },
             TlaExpr::Tuple(vec![]),
         );
-        assert_eq!(translator.translate(&expr), "(arbitrary::<Seq<int>>() == seq![])");
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<Seq<int>>() == Seq::<int>::empty())"
+        );
     }
 
     #[test]
@@ -3880,6 +4202,16 @@ mod tests {
             TlaExpr::ident("c"),
         );
         assert_eq!(translator.translate(&expr), "(arbitrary::<LConstants>() == c)");
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_arbitrary_to_int_from_symbolic_literal_peer() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("new_state"), TlaExpr::ident("Idle"));
+        let out = translator.translate(&expr);
+        assert!(out.starts_with("(arbitrary::<int>() == "));
+        assert!(out.ends_with("int)"));
     }
 
     #[test]
@@ -4549,6 +4881,114 @@ mod tests {
             result.contains("s.x == c.N"),
             "Constant N should be qualified as c.N, got:\n{}",
             result
+        );
+    }
+
+    #[test]
+    fn test_parameter_type_uses_inferred_operator_domain() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(S) == \A x \in S : x \in Nat
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(s: LState, S: Set<int>) -> bool"),
+            "Expected inferred set parameter type in signature, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_parameter_type_does_not_force_seq_from_len_usage() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(xs) == Len(xs) >= 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(s: LState, xs: int) -> bool"),
+            "Expected fallback int param (no aggressive Seq inference), got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_parameter_type_does_not_force_map_from_domain_usage() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(m) == DOMAIN m = {}
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(s: LState, m: int) -> bool"),
+            "Expected fallback int param (no aggressive Map inference), got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_parameter_type_infers_seq_from_len_and_index_usage() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(xs) == /\ Len(xs) >= 0
+                       /\ xs[0] = 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(s: LState, xs: Seq<int>) -> bool"),
+            "Expected Seq hint from combined len/index usage, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_parameter_type_infers_map_from_domain_and_index_usage() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(m) == /\ DOMAIN m = {}
+                      /\ m[0] = 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub open spec fn LFoo(s: LState, m: Map<int, int>) -> bool"),
+            "Expected Map hint from combined domain/index usage, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_constant_type_hint_uses_set_membership_usage_without_type_env() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT S
+            Foo(x) == x \in S
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("pub S: Set<int>,"),
+            "Expected Set hint for constant S from membership usage, got:\n{}",
+            output
         );
     }
 

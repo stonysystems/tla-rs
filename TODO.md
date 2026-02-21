@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `2/33` files compile with Verus after `16.8.3c-3`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `13/33` files compile with Verus after `16.8.3d-2d-1`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5298,6 +5298,25 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2c-6`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `0` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
           - Net effect: inference blockers reduced (`E0282: 18 -> 17`) with one additional compile pass (`12 -> 13`, `RSL/State_machine.rs` now compiles).
+        - [x] **16.8.3d-2c-7** Tighten generated-D1 inference normalization around empty-sequence emission and symbolic-int equality coercion, while keeping parameter-type fallback conservative.
+          - Scope/LOC check: implemented in `ExprTranslator` + `ModuleTranslator` parameter-typing fallback path with focused regressions; remained under the <500 LOC target.
+          - Added generated-D1 `Eq/Neq` coercion for symbolic-atom-lowered rendered int literals (`...int`) so untyped placeholders coerce to `arbitrary::<int>()` when peer shape is numeric-by-rendering.
+          - Normalized empty tuple emission to typed `Seq::<int>::empty()` to avoid generic inference failures from raw `seq![]` in generated D1 contexts.
+          - Added conservative usage-based parameter-type hints (set-membership patterns only) for generated D1 fallback, and explicitly avoided aggressive seq/map forcing that caused cross-operator type-shape regressions.
+          - Added translator regressions for typed empty tuple emission, symbolic-int equality coercion, and conservative parameter-type fallback behavior.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2c-7`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `3` `E0599`, `0` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+          - Net effect: no aggregate metric change versus `2c-6`, but new normalization is regression-covered and avoids the transient `12/33` regression observed with over-aggressive seq/map parameter hinting.
+      - [x] **16.8.3d-2d** Reduce residual method-on-scalar `E0599` first-error blockers by tightening generated-D1 fallback type hints for constants/parameters in method contexts.
+        - [x] **16.8.3d-2d-1** Add conservative generated-D1 hinting for set/seq/map method contexts (`contains`, `len`, `dom`, index/skip/update`) when fallback currently emits `int`, then regenerate and re-measure baseline.
+          - Scope/LOC check: implemented in `ModuleTranslator` fallback typing path with focused translator regressions + baseline/docs updates; stayed under the ~500 LOC target for this leaf.
+          - Added usage-evidence-based fallback hinting:
+            - constants: module-wide hint aggregation for unresolved `int` constants in generated-D1 context.
+            - parameters: conservative seq/map hints only when combined evidence is present (`len`+index-like for `Seq`, `DOMAIN`+index-like for `Map`), preserving prior single-signal non-forcing behavior.
+          - Added translator regressions for seq/map parameter inference with combined evidence and constant set-hinting without type-env support.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-1`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
+          - Net effect: method-on-scalar first-error class eliminated (`E0599: 3 -> 0`), with class shift to type/inference (`E0308: 0 -> 2`, `E0282: 17 -> 18`); compile pass count unchanged (`13/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
