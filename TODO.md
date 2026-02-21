@@ -5243,6 +5243,13 @@ transpiler/tla_test_workspace/
       - Measured first-error baseline after `16.8.3d-1`: `2/33` pass, `0` `E0425`, `0` `E0423`, `5` `E0609`, `17` `E0599`, `5` `E0308`, `0` `E0618`, `1` `E0277`, `1` `E0061`, `2` `E0282`.
       - Scope/LOC check: translator + tests + docs updates are under the <500 LOC leaf target.
     - [ ] **16.8.3d-2** Reduce remaining D1 first-error blockers (`E0609`, `E0599`, `E0308`, `E0277`, `E0061`, `E0282`) with targeted expression/type-shape normalization until compile pass reaches `33/33`.
+      - [x] **16.8.3d-2a** Reduce dominant `E0599` method-on-scalar failures by refining D1 fallback typing in expression emission (avoid fixed `int` placeholders in container-method contexts).
+        - Updated `translate_record_access` reserved-root fallback from `arbitrary::<int>()` to untyped `arbitrary()` so set/seq/map method calls can type-infer instead of immediately failing as scalar methods.
+        - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+        - Measured first-error baseline after `16.8.3d-2a`: `2/33` pass, `0` `E0425`, `0` `E0423`, `5` `E0609`, `12` `E0599`, `5` `E0308`, `0` `E0618`, `0` `E0277`, `1` `E0061`, `8` `E0282`.
+        - Net effect: dominant method-on-scalar failures reduced (`E0599: 17 -> 12`) and trait-bound blocker removed (`E0277: 1 -> 0`), with expected shift into inference blockers (`E0282: 2 -> 8`) to be addressed in `16.8.3d-2c`.
+      - [ ] **16.8.3d-2b** Reduce residual `E0609` field-on-scalar failures after fallback-typing update.
+      - [ ] **16.8.3d-2c** Reduce type/arity/inference blockers (`E0308`, `E0277`, `E0061`, `E0282`) after `2a/2b` normalization.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

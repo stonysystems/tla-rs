@@ -669,7 +669,8 @@ impl<'a> ExprTranslator<'a> {
                 TlaExpr::Ident(name) if name == "s" || name == "s_" || name == "c"
             ) || matches!(record, TlaExpr::RecordAccess { .. })
             {
-                return "arbitrary::<int>()".to_string();
+                // Leave placeholder untyped so downstream set/seq/map method calls can type-infer.
+                return "arbitrary()".to_string();
             }
         }
         let record_str = self.translate(record);
@@ -3143,7 +3144,7 @@ mod tests {
             record: Box::new(TlaExpr::ident("s")),
             field: "foo".to_string(),
         };
-        assert_eq!(translator.translate(&root_access), "arbitrary::<int>()");
+        assert_eq!(translator.translate(&root_access), "arbitrary()");
 
         let nested_access = TlaExpr::RecordAccess {
             record: Box::new(TlaExpr::RecordAccess {
@@ -3152,7 +3153,7 @@ mod tests {
             }),
             field: "value".to_string(),
         };
-        assert_eq!(translator.translate(&nested_access), "arbitrary::<int>()");
+        assert_eq!(translator.translate(&nested_access), "arbitrary()");
     }
 
     #[test]

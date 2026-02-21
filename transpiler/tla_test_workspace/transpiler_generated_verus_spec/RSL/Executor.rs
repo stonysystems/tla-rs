@@ -63,12 +63,12 @@ pub open spec fn LOutstandingOperation(c: LConstants) -> Set<int> {
 
 /// ExecutorInit operator
 pub open spec fn LExecutorInit(s: LState, c: LConstants) -> bool {
-    ((((((arbitrary::<int>() == c) && (arbitrary::<int>() == 2250457826int)) && (arbitrary::<int>() == 0)) && (arbitrary::<int>() == LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0, reply: 0int, reply_cache: 0int, seqno: 0, seqno_reply: 0int, src: 0int, v: 0int })) && (arbitrary::<int>() == seq![])) && (arbitrary::<int>() == seq![]))
+    ((((((arbitrary() == c) && (arbitrary() == 2250457826int)) && (arbitrary() == 0)) && (arbitrary() == LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0, reply: 0int, reply_cache: 0int, seqno: 0, seqno_reply: 0int, src: 0int, v: 0int })) && (arbitrary() == seq![])) && (arbitrary() == seq![]))
 }
 
 /// ExecutorGetDecision operator
 pub open spec fn LExecutorGetDecision(s: LState, c: LConstants, s_: int, bal: int, opn: int, v: int) -> bool {
-    (s_ == LRecord { app: arbitrary::<int>(), app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary::<int>(), dst: 0int, max_bal_reflected: arbitrary::<int>(), msg: 0int, next_op_to_execute: LRecord { app: 0int, app_state: 0int, bal: bal, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: 0int, v: v }, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary::<int>(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary::<int>(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
+    (s_ == LRecord { app: arbitrary(), app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary(), dst: 0int, max_bal_reflected: arbitrary(), msg: 0int, next_op_to_execute: LRecord { app: 0int, app_state: 0int, bal: bal, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: 0int, v: v }, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
 }
 
 /// GetPacketsFromReplies operator
@@ -83,7 +83,7 @@ pub open spec fn LClientsInReplies(s: LState, c: LConstants, replies: int) -> ()
 
 /// RepliesAreReplyType operator
 pub open spec fn LRepliesAreReplyType(s: LState, c: LConstants, replies: int) -> bool {
-    forall |p| c.RslPacket.contains(p) ==> (arbitrary().contains(p) ==> (arbitrary::<int>() == 1959719083int))
+    forall |p| c.RslPacket.contains(p) ==> (arbitrary().contains(p) ==> (arbitrary() == 1959719083int))
 }
 
 /// UpdateNewCache operator
@@ -97,7 +97,7 @@ pub open spec fn LUpdateNewCache(s: LState, c: LConstants, c_: int, replies: int
 /// ExecutorExecute operator
 pub open spec fn LExecutorExecute(s: LState, c: LConstants, s_: int, sent_packets: int) -> bool {
     {
-    let batch = arbitrary::<int>();
+    let batch = arbitrary();
     {
     let temp = arbitrary();
     {
@@ -106,7 +106,7 @@ pub open spec fn LExecutorExecute(s: LState, c: LConstants, s_: int, sent_packet
     let replies = temp[2];
     {
     let clients = LClientsInReplies(s, c, arbitrary());
-    ((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary::<int>() == if arbitrary() { arbitrary::<int>() } else { ((((arbitrary::<int>() && (arbitrary::<int>() == seq![])) && LUpdateNewCache(s, c, arbitrary::<int>(), arbitrary::<int>(), arbitrary())) && (sent_packets == LGetPacketsFromReplies(s, c, arbitrary::<int>()[arbitrary::<int>()], batch, arbitrary()))) && LRepliesAreReplyType(s, c, sent_packets)) }))
+    ((((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (arbitrary() == (arbitrary() + 1))) && (arbitrary() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary() == seq![])) && LUpdateNewCache(s, c, arbitrary(), arbitrary(), arbitrary())) && (sent_packets == LGetPacketsFromReplies(s, c, arbitrary()[arbitrary()], batch, arbitrary()))) && LRepliesAreReplyType(s, c, sent_packets)) }))
 }
 }
 }
@@ -118,7 +118,7 @@ pub open spec fn LExecutorExecute(s: LState, c: LConstants, s_: int, sent_packet
 pub open spec fn LExecutorProcessAppStateSupply(s: LState, c: LConstants, s_: int, inp: int) -> bool {
     {
     let m = inp.msg;
-    (s_ == LRecord { app: m.app_state, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary::<int>(), dst: 0int, max_bal_reflected: m.bal_state_supply, msg: 0int, next_op_to_execute: seq![], opn_state_req: 0int, opn_state_supply: 0int, ops_complete: m.opn_state_supply, proposer_id: 0int, reply: 0int, reply_cache: m.reply_cache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
+    (s_ == LRecord { app: m.app_state, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary(), dst: 0int, max_bal_reflected: m.bal_state_supply, msg: 0int, next_op_to_execute: seq![], opn_state_req: 0int, opn_state_supply: 0int, ops_complete: m.opn_state_supply, proposer_id: 0int, reply: 0int, reply_cache: m.reply_cache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int })
 }
 }
 
@@ -126,20 +126,20 @@ pub open spec fn LExecutorProcessAppStateSupply(s: LState, c: LConstants, s_: in
 pub open spec fn LExecutorProcessAppStateRequest(s: LState, c: LConstants, s_: int, inp: int, sent_packets: int) -> bool {
     {
     let m = inp.msg;
-    if (((arbitrary::<int>().contains(inp.src) && arbitrary()) && (arbitrary::<int>() >= m.opn_state_req)) && arbitrary()) { ((s_ == s) && (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: inp.src, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: arbitrary::<int>(), bal: 0int, bal_state_req: 0int, bal_state_supply: arbitrary::<int>(), constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: arbitrary::<int>(), ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: arbitrary::<int>(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: arbitrary::<int>()[arbitrary::<int>()], v: 0int }])) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (((arbitrary().contains(inp.src) && arbitrary()) && (arbitrary() >= m.opn_state_req)) && arbitrary()) { ((s_ == s) && (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: inp.src, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: arbitrary(), bal: 0int, bal_state_req: 0int, bal_state_supply: arbitrary(), constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: arbitrary(), ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: arbitrary(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: arbitrary()[arbitrary()], v: 0int }])) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 }
 
 /// ExecutorProcessStartingPhase2 operator
 pub open spec fn LExecutorProcessStartingPhase2(s: LState, c: LConstants, s_: int, inp: int, sent_packets: int) -> bool {
-    if (arbitrary::<int>().contains(inp.src) && (arbitrary::<int>() > arbitrary::<int>())) { ((s_ == s) && arbitrary()) } else { ((s_ == s) && (sent_packets == seq![])) }
+    if (arbitrary().contains(inp.src) && (arbitrary() > arbitrary())) { ((s_ == s) && arbitrary()) } else { ((s_ == s) && (sent_packets == seq![])) }
 }
 
 /// ExecutorProcessRequest operator
 pub open spec fn LExecutorProcessRequest(s: LState, c: LConstants, inp: int, sent_packets: int) -> bool {
-    if ((arbitrary::<int>() == arbitrary::<int>()[inp.src].seqno) && arbitrary()) { {
-    let r = arbitrary::<int>()[inp.src];
-    (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: r.client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: r.reply, reply_cache: 0int, seqno: 0int, seqno_reply: r.seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: arbitrary::<int>()[arbitrary::<int>()], v: 0int }])
+    if ((arbitrary() == arbitrary()[inp.src].seqno) && arbitrary()) { {
+    let r = arbitrary()[inp.src];
+    (sent_packets == seq![LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: r.client, max_bal_reflected: 0int, msg: LRecord { app: 0int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: 0int, dst: 0int, max_bal_reflected: 0int, msg: 0int, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: r.reply, reply_cache: 0int, seqno: 0int, seqno_reply: r.seqno, src: 0int, v: 0int }, next_op_to_execute: 0int, opn_state_req: 0int, opn_state_supply: 0int, ops_complete: 0int, proposer_id: 0int, reply: 0int, reply_cache: 0int, seqno: 0int, seqno_reply: 0int, src: arbitrary()[arbitrary()], v: 0int }])
 } } else { (sent_packets == seq![]) }
 }
 

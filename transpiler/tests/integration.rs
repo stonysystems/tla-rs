@@ -3211,8 +3211,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-1 reserved-root record-access normalization:
-    // E0609 drops substantially while remaining blockers shift toward method/typing/arity classes.
+    // Baseline after 16.8.3d-2a fallback typing refinement:
+    // untyped fallback reduces method-on-scalar failures while shifting residual issues toward type inference.
     assert_eq!(
         passed, 2,
         "Expected exactly two D1 files to compile at current baseline; pass files: {:?}",
@@ -3231,8 +3231,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 5 unknown-field (E0609) failures at baseline"
     );
     assert_eq!(
-        cat_e0599, 17,
-        "Expected 17 method-missing (E0599) failures at baseline"
+        cat_e0599, 12,
+        "Expected 12 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
         cat_e0308, 5,
@@ -3243,16 +3243,16 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 call-non-function (E0618) failures at baseline"
     );
     assert_eq!(
-        cat_e0277, 1,
-        "Expected 1 trait-bound (E0277) failure at baseline"
+        cat_e0277, 0,
+        "Expected 0 trait-bound (E0277) failures at baseline"
     );
     assert_eq!(
         cat_e0061, 1,
         "Expected 1 wrong-arity (E0061) failure at baseline"
     );
     assert_eq!(
-        cat_e0282, 2,
-        "Expected 2 type-inference (E0282) failures at baseline"
+        cat_e0282, 8,
+        "Expected 8 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),
