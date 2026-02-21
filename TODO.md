@@ -6621,7 +6621,14 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added `PropertyConfig::has_temporal_requirements()` and an explicit `model-check` guard in `transpiler/src/main.rs` so temporal properties are never silently ignored before the SCC-based engine lands.
     - Added focused unit coverage for temporal config parsing/validation and a command-level rejection test for temporal properties.
     - Updated `docs/model-checking-source-first.md` limitations to document current temporal-config behavior.
-  - [ ] Leaf 22.x.2 (<500 LOC): add reusable graph index builder for explored state graphs (successor + predecessor adjacency + per-state metadata) to support cycle analyses.
+  - [x] Leaf 22.x.2 (<500 LOC): add reusable graph index builder for explored state graphs (successor + predecessor adjacency + per-state metadata) to support cycle analyses.
+    - Added `transpiler/src/modelcheck/graph.rs` with `build_explored_graph_index(...)` to build reusable adjacency over explored states:
+      - per-node metadata (`state`, `depth`)
+      - successor/predecessor adjacency maps
+      - edge-branch labels per directed edge (`GraphEdgeKey -> {branch labels}`)
+      - build stats for within-explored vs dropped-to-unexplored edges
+    - Exported graph utilities via `transpiler/src/modelcheck/mod.rs` for upcoming SCC/fairness leaves.
+    - Added focused unit coverage for adjacency correctness, edge dropping to unexplored states, multi-label edge merging, and duplicate-node depth normalization.
   - [ ] Leaf 22.x.3 (<500 LOC): add SCC detection utility with witness extraction (component members + representative cycle edge) and focused unit tests.
   - [ ] Leaf 22.x.4 (<500 LOC): implement `leads_to` checking on explored graphs by searching SCCs that contain `from` states but can avoid `to` forever; emit counterexample traces.
   - [ ] Leaf 22.x.5 (<500 LOC): add fairness filtering (`WF`/`SF`) over candidate SCC cycles using branch-label visitation conditions.
