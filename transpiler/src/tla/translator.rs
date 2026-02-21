@@ -683,6 +683,10 @@ impl<'a> ExprTranslator<'a> {
             {
                 left_str = "arbitrary::<LConstants>()".to_string();
             }
+            if left_str == "arbitrary()" && right_str == "arbitrary()" {
+                left_str = "arbitrary::<int>()".to_string();
+                right_str = "arbitrary::<int>()".to_string();
+            }
         }
 
         match op {
@@ -4333,6 +4337,26 @@ mod tests {
         let out = translator.translate(&expr);
         assert!(out.starts_with("(arbitrary::<int>() == "));
         assert!(out.ends_with("int)"));
+    }
+
+    #[test]
+    fn test_generated_d1_eq_coerces_double_untyped_arbitrary_to_int() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("new_state"), TlaExpr::ident("reply"));
+        assert_eq!(
+            translator.translate(&expr),
+            "(arbitrary::<int>() == arbitrary::<int>())"
+        );
+    }
+
+    #[test]
+    fn test_non_generated_eq_preserves_double_untyped_arbitrary() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("known_state".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("new_state"), TlaExpr::ident("reply"));
+        assert_eq!(translator.translate(&expr), "(arbitrary() == arbitrary())");
     }
 
     #[test]

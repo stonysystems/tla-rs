@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `13/33` files compile with Verus after `16.8.3d-2d-4`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `14/33` files compile with Verus after `16.8.3d-2d-5`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5348,6 +5348,15 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-4`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `20` `E0282`.
           - Net effect: unary-operator mismatch first-error class eliminated (`E0600: 1 -> 0`) with class shift to inference (`E0282: 19 -> 20`); compile pass count unchanged (`13/33`).
+        - [x] **16.8.3d-2d-5** Reduce dominant generated placeholder equality inference blockers by typing `arbitrary()==arbitrary()` in D1 Eq/Neq fallback.
+          - Scope/LOC check: implemented as a focused `ExprTranslator` Eq/Neq normalization tweak plus targeted regressions and baseline/docs updates; stayed under the <500 LOC target.
+          - Added generated-D1 coercion for equality/inequality when both translated sides are untyped placeholders: `(arbitrary() == arbitrary())` now lowers to `(arbitrary::<int>() == arbitrary::<int>())`.
+          - Added regressions:
+            - `test_generated_d1_eq_coerces_double_untyped_arbitrary_to_int`
+            - `test_non_generated_eq_preserves_double_untyped_arbitrary`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-5`: `14/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
+          - Net effect: compile passes increased (`13 -> 14`) and inference blockers reduced (`E0282: 20 -> 17`) with surfaced mismatched-type first-error class (`E0308: 0 -> 2`), now tracked under `16.8.3d-2`/`16.8.3d-3`.
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

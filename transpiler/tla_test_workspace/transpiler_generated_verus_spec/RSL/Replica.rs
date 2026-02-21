@@ -71,7 +71,7 @@ pub open spec fn LReplicaNextProcess1a(s: LState, s_: LState, c: LConstants, rec
 
 /// ReplicaNextProcess1b operator
 pub open spec fn LReplicaNextProcess1b(s: LState, s_: LState, c: LConstants, received_packet: int, sent_packets: ()) -> bool {
-    if (((Set::<int>::empty().contains(arbitrary::<int>()) && (arbitrary() == arbitrary())) && (arbitrary::<int>() == 1)) && forall |other_packet| c.RslPacket.contains(other_packet) ==> (Set::<int>::empty().contains(other_packet) ==> (arbitrary() != arbitrary()))) { (((arbitrary() && arbitrary()) && (sent_packets == Seq::<int>::empty())) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
+    if (((Set::<int>::empty().contains(arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == 1)) && forall |other_packet| c.RslPacket.contains(other_packet) ==> (Set::<int>::empty().contains(other_packet) ==> (arbitrary::<int>() != arbitrary::<int>()))) { (((arbitrary() && arbitrary()) && (sent_packets == Seq::<int>::empty())) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) } else { ((s_ == s) && (sent_packets == Seq::<int>::empty())) }
 }
 
 /// ReplicaNextProcessStartingPhase2 operator
@@ -156,7 +156,7 @@ pub open spec fn LReplicaNextSpontaneousMaybeExecute(s: LState, s_: LState, c: L
 
 /// ReplicaNextReadClockMaybeSendHeartbeat operator
 pub open spec fn LReplicaNextReadClockMaybeSendHeartbeat(s: LState, s_: LState, c: LConstants, clock: int, sent_packets: ()) -> bool {
-    if (arbitrary::<int>() < arbitrary::<int>()) { ((s_ == s) && (sent_packets == Seq::<int>::empty())) } else { (((arbitrary() == arbitrary()) && arbitrary()) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) }
+    if (arbitrary::<int>() < arbitrary::<int>()) { ((s_ == s) && (sent_packets == Seq::<int>::empty())) } else { (((arbitrary::<int>() == arbitrary::<int>()) && arbitrary()) && (s_ == LRecord { acceptor: arbitrary(), bal_heartbeat: 0int, constants: arbitrary(), executor: arbitrary(), learner: arbitrary(), nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: arbitrary(), replica: 0int, suspicious: 0int, t: 0int })) }
 }
 
 /// ReplicaNextReadClockCheckForViewTimeout operator

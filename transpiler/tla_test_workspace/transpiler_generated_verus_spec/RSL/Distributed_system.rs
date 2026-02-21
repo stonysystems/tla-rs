@@ -45,7 +45,7 @@ pub open spec fn LRslMapsComplete(s: LState, c: LConstants, ps: int) -> bool {
 
 /// RslConstantsUnchanged operator
 pub open spec fn LRslConstantsUnchanged(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    (((arbitrary().len() == arbitrary().len()) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary()))
+    (((arbitrary().len() == arbitrary().len()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslInit operator
@@ -65,12 +65,12 @@ pub open spec fn LRslNextOneReplica(s: LState, c: LConstants, ps: int, ps_: int,
 
 /// RslNextEnvironment operator
 pub open spec fn LRslNextEnvironment(s: LState, c: LConstants, ps: int, ps_: int) -> bool {
-    ((LRslNextCommon(s, c, ps, ps_) && (!(arbitrary()) == 2375175031int)) && (arbitrary() == arbitrary()))
+    ((LRslNextCommon(s, c, ps, ps_) && (!(arbitrary()) == 2375175031int)) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslNextOneExternal operator
 pub open spec fn LRslNextOneExternal(s: LState, c: LConstants, ps: int, ps_: int, eid: bool, ios: int) -> bool {
-    (((LRslNextCommon(s, c, ps, ps_) && !Set::<int>::empty().contains(eid)) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary() == arbitrary()))
+    (((LRslNextCommon(s, c, ps, ps_) && !Set::<int>::empty().contains(eid)) && (arbitrary() == LRecord { actor: eid, all: 0int, clients: 0int, constants: 0int, environment: 0int, ios: ios, my_index: 0int, replicas: 0int })) && (arbitrary::<int>() == arbitrary::<int>()))
 }
 
 /// RslNext operator

@@ -86,7 +86,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: i
     let m: int = arbitrary();
     {
     let newLogTruncationPoint = if (((arbitrary::<int>() - arbitrary::<int>()) + 1) > arbitrary::<int>()) { ((arbitrary::<int>() - arbitrary::<int>()) + 1) } else { arbitrary() };
-    (((arbitrary() && (arbitrary() == arbitrary())) && (arbitrary() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(s, c, arbitrary(), arbitrary(), arbitrary(), LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: arbitrary(), max_value_bal: arbitrary(), msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: 0int }, newLogTruncationPoint) } else { (((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) })
+    (((arbitrary() && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary() == newLogTruncationPoint)) && if (arbitrary::<int>() <= arbitrary::<int>()) { LAddVoteAndRemoveOldOnes(s, c, arbitrary(), arbitrary(), arbitrary(), LRecord { bal_1b: 0int, bal_2b: 0int, constants: 0int, dst: 0int, last_checkpointed_operation: 0int, log_truncation_point: 0int, max_bal: 0int, max_val: arbitrary(), max_value_bal: arbitrary(), msg: 0int, opn_2b: 0int, proposer_id: 0int, seqno: 0int, src: 0int, val_2b: 0int, votes: 0int }, newLogTruncationPoint) } else { (((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) })
 }
 }
 }
@@ -95,7 +95,7 @@ pub open spec fn LAcceptorProcess2a(s: LState, s_: LState, c: LConstants, inp: i
 pub open spec fn LAcceptorProcessHeartbeat(s: LState, s_: LState, c: LConstants, inp: int) -> bool {
     if Set::<int>::empty().contains(arbitrary::<int>()) { {
     let sender_index: int = arbitrary();
-    if (((0 <= sender_index) && (sender_index < arbitrary().len())) && (arbitrary::<int>() > arbitrary()[sender_index])) { (((((arbitrary() == arbitrary().update(sender_index, arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) } else { (s_ == s) }
+    if (((0 <= sender_index) && (sender_index < arbitrary().len())) && (arbitrary::<int>() > arbitrary()[sender_index])) { (((((arbitrary() == arbitrary().update(sender_index, arbitrary())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == arbitrary::<int>())) } else { (s_ == s) }
 } } else { (s_ == s) }
 }
 

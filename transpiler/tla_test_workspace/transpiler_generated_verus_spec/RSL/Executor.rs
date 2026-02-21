@@ -106,7 +106,7 @@ pub open spec fn LExecutorExecute(s: LState, s_: LState, c: LConstants, sent_pac
     let replies = temp[2];
     {
     let clients = LClientsInReplies(s, c, arbitrary());
-    ((((arbitrary() == arbitrary()) && (arbitrary() == arbitrary())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && LUpdateNewCache(s, c, arbitrary(), arbitrary(), arbitrary())) && (sent_packets == LGetPacketsFromReplies(s, c, arbitrary()[arbitrary()], batch, arbitrary()))) && LRepliesAreReplyType(s, c, sent_packets)) }))
+    ((((arbitrary::<int>() == arbitrary::<int>()) && (arbitrary::<int>() == arbitrary::<int>())) && (arbitrary::<int>() == (arbitrary::<int>() + 1))) && (arbitrary() == if arbitrary() { arbitrary() } else { ((((arbitrary() && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && LUpdateNewCache(s, c, arbitrary(), arbitrary(), arbitrary())) && (sent_packets == LGetPacketsFromReplies(s, c, arbitrary()[arbitrary()], batch, arbitrary()))) && LRepliesAreReplyType(s, c, sent_packets)) }))
 }
 }
 }
