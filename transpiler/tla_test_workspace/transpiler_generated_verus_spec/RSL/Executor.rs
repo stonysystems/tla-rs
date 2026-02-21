@@ -53,7 +53,7 @@ pub struct LConstants {
 
 /// Executor operator
 pub open spec fn LExecutor(c: LConstants) -> LRecord {
-    LRecord { app: 2467764049int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: c.ReplicaConstants, dst: 0int, max_bal_reflected: c.Ballot, msg: 0int, next_op_to_execute: arbitrary(), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: c.ReplyCache, seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }
+    LRecord { app: 2467764049int, app_state: 0int, bal: 0int, bal_state_req: 0int, bal_state_supply: 0int, constants: arbitrary::<int>(), dst: 0int, max_bal_reflected: arbitrary::<int>(), msg: 0int, next_op_to_execute: arbitrary(), opn_state_req: 0int, opn_state_supply: 0int, ops_complete: arbitrary(), proposer_id: 0int, reply: 0int, reply_cache: arbitrary::<int>(), seqno: 0int, seqno_reply: 0int, src: 0int, v: 0int }
 }
 
 /// OutstandingOperation operator

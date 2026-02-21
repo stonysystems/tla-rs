@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `13/33` files compile with Verus after `16.8.3d-2d-1`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `13/33` files compile with Verus after `16.8.3d-2d-3`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5328,6 +5328,17 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-2`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `2` `E0308`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
           - Net effect: no aggregate metric change versus `2d-1`; normalization is now regression-covered and narrows a specific generated-D1 int-field mismatch path without reintroducing `E0599`.
+        - [x] **16.8.3d-2d-3** Eliminate residual `E0308` first-error class by normalizing `c.*` values in int-typed record fields and handling `In(Not(x), S)` fallback shape.
+          - Scope/LOC check: implemented as focused `ExprTranslator` normalization updates plus targeted regressions and baseline updates; stayed under the <500 LOC target.
+          - In record emission, when unknown-ref normalization is enabled and the target field is int-like, translated values rendered as `c.*` are normalized to `arbitrary::<int>()`.
+          - Added D1 fallback guard in `TlaBinOp::In` so `In(Not(x), S)` lowers to `!S.contains(x)` (prevents `contains(!(x))` unary-type mismatch exposure in generated specs).
+          - Added regressions:
+            - `test_record_int_field_normalizes_dotted_c_ident_value`
+            - `test_translate_in_with_not_operand_normalizes_to_not_contains_in_spec_mode`
+            - updated int-record fallback tests for generated/variable contexts.
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-3`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `1` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `19` `E0282`.
+          - Net effect: mismatched-type first-error class eliminated (`E0308: 2 -> 0`) with one newly surfaced unary-operator mismatch class (`E0600: 0 -> 1`); compile pass count unchanged (`13/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

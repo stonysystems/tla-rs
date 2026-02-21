@@ -721,11 +721,26 @@ impl<'a> ExprTranslator<'a> {
                     // Constructor-style type sets (Seq(...), Set(...), Map(...), [D -> R]) are
                     // type-level in Verus and cannot be called as runtime set constructors.
                     _ if is_constructor_style_type_set_expr(right) => "true".to_string(),
-                    _ => format!(
-                        "{}.contains({})",
-                        self.coerce_untyped_arbitrary_set_int(&right_str),
-                        self.coerce_untyped_arbitrary_int(&left_str)
-                    ),
+                    _ => {
+                        if self.config.normalize_unknown_external_refs {
+                            if let TlaExpr::UnaryOp {
+                                op: TlaUnaryOp::Not,
+                                operand,
+                            } = left
+                            {
+                                return format!(
+                                    "!{}.contains({})",
+                                    self.coerce_untyped_arbitrary_set_int(&right_str),
+                                    self.coerce_untyped_arbitrary_int(&self.translate(operand))
+                                );
+                            }
+                        }
+                        format!(
+                            "{}.contains({})",
+                            self.coerce_untyped_arbitrary_set_int(&right_str),
+                            self.coerce_untyped_arbitrary_int(&left_str)
+                        )
+                    }
                 }
             }
             TlaBinOp::NotIn => match right {
@@ -969,24 +984,22 @@ impl<'a> ExprTranslator<'a> {
                         .get(all_field)
                         .map(|s| s.as_str())
                         .unwrap_or("int");
-                    let rendered_value = if self.is_generated_d1_context()
-                        && expected_ty == "int"
-                        && matches!(
-                            value,
-                            TlaExpr::RecordAccess {
-                                record,
-                                field: _,
-                            } if matches!(record.as_ref(), TlaExpr::Ident(root) if root == "c")
-                        ) {
-                        "arbitrary::<int>()".to_string()
-                    } else {
-                        self.translate_value_context_expr(value)
-                    };
-                    all_field_strs.push(format!(
-                        "{}: {}",
-                        safe_name,
-                        rendered_value
-                    ));
+                    let normalized_expected_ty = expected_ty
+                        .chars()
+                        .filter(|c| !c.is_whitespace())
+                        .collect::<String>();
+                    let expected_is_int_like = normalized_expected_ty == "int"
+                        || normalized_expected_ty == "nat"
+                        || normalized_expected_ty.ends_with("*/int")
+                        || normalized_expected_ty.ends_with("*/nat");
+                    let mut rendered_value = self.translate_value_context_expr(value);
+                    if self.config.normalize_unknown_external_refs
+                        && expected_is_int_like
+                        && rendered_value.starts_with("c.")
+                    {
+                        rendered_value = "arbitrary::<int>()".to_string();
+                    }
+                    all_field_strs.push(format!("{}: {}", safe_name, rendered_value));
                 } else if !present.contains(all_field.as_str()) {
                     // Default value for missing fields (type-aware)
                     let default_val = match self
@@ -3394,7 +3407,7 @@ pub fn generate_mode_annotations(module: &TlaModule) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tla::ast::{TlaBinOp, TlaExpr, TlaQuantBound};
+    use crate::tla::ast::{TlaBinOp, TlaExpr, TlaQuantBound, TlaUnaryOp};
     use crate::tla::parser::parse_module;
 
     #[test]
@@ -3432,6 +3445,19 @@ mod tests {
 
         // x \notin S → !S.contains(x)
         let expr = TlaExpr::binop(TlaBinOp::NotIn, TlaExpr::ident("x"), TlaExpr::ident("S"));
+        assert_eq!(translator.translate(&expr), "!S.contains(x)");
+    }
+
+    #[test]
+    fn test_translate_in_with_not_operand_normalizes_to_not_contains_in_spec_mode() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::In,
+            TlaExpr::unary(TlaUnaryOp::Not, TlaExpr::ident("x")),
+            TlaExpr::ident("S"),
+        );
+
         assert_eq!(translator.translate(&expr), "!S.contains(x)");
     }
 
@@ -5073,6 +5099,8 @@ mod tests {
     fn test_generated_d1_record_int_field_normalizes_c_field_value_to_arbitrary_int() {
         let source = r"
             ---- MODULE Test ----
+            CONSTANT OperationNumber
+            IsValidOpn(op) == op \in OperationNumber
             Foo == [log_truncation_point |-> c.OperationNumber]
             ====
         ";
@@ -5081,14 +5109,14 @@ mod tests {
         let output = translator.translate(&module);
 
         assert!(
-            output.contains("log_truncation_point: arbitrary::<int>()"),
-            "Expected generated-D1 int field to normalize c.field value to arbitrary::<int>(), got:\n{}",
+            output.contains("log_truncation_point: arbitrary()"),
+            "Expected generated-D1 reserved-root fallback to normalize c.field value to arbitrary(), got:\n{}",
             output
         );
     }
 
     #[test]
-    fn test_non_generated_record_preserves_c_field_value_for_int_field() {
+    fn test_record_int_field_normalizes_c_field_value_with_variables_present() {
         let source = r"
             ---- MODULE Test ----
             VARIABLE x
@@ -5100,9 +5128,52 @@ mod tests {
         let output = translator.translate(&module);
 
         assert!(
-            output.contains("log_truncation_point: c.OperationNumber"),
-            "Expected non-generated context to preserve c.field value, got:\n{}",
+            output.contains("log_truncation_point: arbitrary::<int>()"),
+            "Expected int field with c.field value to normalize even when variables are present, got:\n{}",
             output
+        );
+    }
+
+    #[test]
+    fn test_record_int_field_preserves_non_c_value() {
+        let source = r"
+            ---- MODULE Test ----
+            VARIABLE x
+            Foo == [constants |-> x]
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains("constants: s.x"),
+            "Expected non-c int field value to be preserved, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_record_int_field_normalizes_dotted_c_ident_value() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .record_structs
+            .insert("log_truncation_point".to_string(), "LRecord".to_string());
+        config.record_all_fields = vec!["log_truncation_point".to_string()];
+        config
+            .record_field_types
+            .insert("log_truncation_point".to_string(), "int".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![(
+            "log_truncation_point".to_string(),
+            TlaExpr::Ident("c.OperationNumber".to_string()),
+        )]);
+
+        let out = translator.translate(&expr);
+        assert!(
+            out.contains("log_truncation_point: arbitrary::<int>()"),
+            "Expected dotted c.ident to normalize for int record field, got:\n{}",
+            out
         );
     }
 

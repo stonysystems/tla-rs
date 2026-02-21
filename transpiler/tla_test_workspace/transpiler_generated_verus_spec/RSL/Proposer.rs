@@ -49,7 +49,7 @@ pub struct LConstants {
 
 /// Proposer operator
 pub open spec fn LProposer(s: LState, c: LConstants) -> LRecord {
-    LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: c.ReplicaConstants, current_state: arbitrary(), election_state: 6986500239int, highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: c.Ballot, next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int }
+    LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: arbitrary::<int>(), current_state: arbitrary(), election_state: 6986500239int, highest_seqno_requested_by_client_this_view: arbitrary(), incomplete_batch_timer: arbitrary(), logTruncationPoint_2: 0int, max_ballot_i_sent_1a: arbitrary::<int>(), next_operation_number_to_propose: arbitrary(), opn_2a: 0int, proposer_id: 0int, received_1b_packets: arbitrary(), request: 0int, request_queue: arbitrary(), seqno: 0int, val_2a: 0int, when: 0int }
 }
 
 /// IncompleteBatchTimer operator
@@ -114,7 +114,7 @@ pub open spec fn LProposerCanNominateUsingOperationNumber(s: LState, c: LConstan
 
 /// ProposerInit operator
 pub open spec fn LProposerInit(s: LState, c: LConstants) -> bool {
-    (((((((((arbitrary::<LConstants>() == c) && (arbitrary::<int>() == 0)) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary() == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, opn_2a: 0int, proposer_id: arbitrary::<int>(), received_1b_packets: 0int, request: 0int, request_queue: 0int, seqno: 0, val_2a: 0int, when: 0int })) && (arbitrary::<int>() == 0)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && arbitrary()) && (arbitrary::<int>() == 7355767685int))
+    (((((((((arbitrary::<LConstants>() == c) && (arbitrary::<int>() == 0)) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && (arbitrary() == LRecord { bal_1a: 0int, bal_2: 0int, bal_2a: 0int, client: 0int, constants: 0int, current_state: 0int, election_state: 0int, highest_seqno_requested_by_client_this_view: 0int, incomplete_batch_timer: 0int, logTruncationPoint_2: 0int, max_ballot_i_sent_1a: 0int, next_operation_number_to_propose: 0int, opn_2a: 0int, proposer_id: arbitrary(), received_1b_packets: 0int, request: 0int, request_queue: 0int, seqno: 0, val_2a: 0int, when: 0int })) && (arbitrary::<int>() == 0)) && (Set::<int>::empty() == Set::<int>::empty())) && (arbitrary::<Seq<int>>() == Seq::<int>::empty())) && arbitrary()) && (arbitrary::<int>() == 7355767685int))
 }
 
 /// ProposerProcessRequest operator

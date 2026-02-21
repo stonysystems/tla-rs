@@ -3153,6 +3153,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     let mut cat_e0609 = 0; // unknown field access on inferred scalar
     let mut cat_e0599 = 0; // method missing on inferred scalar
     let mut cat_e0308 = 0; // mismatched types
+    let mut cat_e0600 = 0; // unary operator type mismatch
     let mut cat_e0618 = 0; // attempted call on non-function
     let mut cat_e0277 = 0; // trait bound failure
     let mut cat_e0061 = 0; // wrong number of arguments
@@ -3189,6 +3190,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
             Some("E0609") => cat_e0609 += 1,
             Some("E0599") => cat_e0599 += 1,
             Some("E0308") => cat_e0308 += 1,
+            Some("E0600") => cat_e0600 += 1,
             Some("E0618") => cat_e0618 += 1,
             Some("E0277") => cat_e0277 += 1,
             Some("E0061") => cat_e0061 += 1,
@@ -3211,10 +3213,10 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-1:
-    // D1 spec translation now includes conservative method-context fallback hinting
-    // for generated-D1 constants/parameters (set/seq/map evidence), which eliminates
-    // E0599 first-error class and shifts residual blockers into E0308/E0282.
+    // Baseline after 16.8.3d-2d-3:
+    // D1 spec translation now normalizes c.* values in int-typed record slots to
+    // typed placeholders and rewrites In(Not(x), S) fallback shape to !S.contains(x),
+    // eliminating E0308 first-error class and shifting one blocker to E0600.
     assert_eq!(
         passed, 13,
         "Expected exactly thirteen D1 files to compile at current baseline; pass files: {:?}",
@@ -3237,8 +3239,12 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 method-missing (E0599) failures at baseline"
     );
     assert_eq!(
-        cat_e0308, 2,
-        "Expected 2 mismatched-types (E0308) failures at baseline"
+        cat_e0308, 0,
+        "Expected 0 mismatched-types (E0308) failures at baseline"
+    );
+    assert_eq!(
+        cat_e0600, 1,
+        "Expected 1 unary-operator type mismatch (E0600) failure at baseline"
     );
     assert_eq!(
         cat_e0618, 0,
@@ -3253,8 +3259,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 18,
-        "Expected 18 type-inference (E0282) failures at baseline"
+        cat_e0282, 19,
+        "Expected 19 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),
@@ -3265,7 +3271,7 @@ fn test_d1_generated_verus_spec_compile_baseline() {
     eprintln!(
         "D1 Verus compile baseline: {passed}/{total} pass, \
 {cat_e0425} E0425, {cat_e0423} E0423, {cat_e0609} E0609, \
-{cat_e0599} E0599, {cat_e0308} E0308, {cat_e0618} E0618, \
+{cat_e0599} E0599, {cat_e0308} E0308, {cat_e0600} E0600, {cat_e0618} E0618, \
 {cat_e0277} E0277, {cat_e0061} E0061, {cat_e0282} E0282"
     );
 }

@@ -35,7 +35,7 @@ pub struct LConstants {
 
 /// RslState operator
 pub open spec fn LRslState(c: LConstants) -> LRecord {
-    LRecord { actor: 0int, all: 0int, clients: arbitrary(), constants: c.Constants, environment: 7208647130int, ios: 0int, my_index: 0int, replicas: arbitrary() }
+    LRecord { actor: 0int, all: 0int, clients: arbitrary(), constants: arbitrary::<int>(), environment: 7208647130int, ios: 0int, my_index: 0int, replicas: arbitrary() }
 }
 
 /// RslMapsComplete operator

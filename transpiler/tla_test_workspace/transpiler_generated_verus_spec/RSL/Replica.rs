@@ -41,7 +41,7 @@ pub struct LConstants {
 
 /// Replica operator
 pub open spec fn LReplica(c: LConstants) -> LRecord {
-    LRecord { acceptor: 8673820224int, bal_heartbeat: 0int, constants: c.ReplicaConstants, executor: 4113746780int, learner: 9096504070int, nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: 1982643813int, replica: 0int, suspicious: 0int, t: 0int }
+    LRecord { acceptor: 8673820224int, bal_heartbeat: 0int, constants: arbitrary::<int>(), executor: 4113746780int, learner: 9096504070int, nextActionIndex: 0int, nextHeartbeatTime: arbitrary(), opn_ckpt: 0int, proposer: 1982643813int, replica: 0int, suspicious: 0int, t: 0int }
 }
 
 /// Scheduler operator
