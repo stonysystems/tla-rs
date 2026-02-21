@@ -75,7 +75,7 @@ pub open spec fn LElectionStateInit(s: LState, c: LConstants, es: int) -> bool {
 
 /// ElectionStateProcessHeartbeat operator
 pub open spec fn LElectionStateProcessHeartbeat(s: LState, c: LConstants, es: LRecord, es_: LRecord, p: int, clock: int) -> bool {
-    if Set::<int>::empty().contains(!(arbitrary())) { (es_ == es) } else { {
+    if !Set::<int>::empty().contains(arbitrary::<int>()) { (es_ == es) } else { {
     let sender_index: int = arbitrary();
     if ((arbitrary() == arbitrary()) && arbitrary()) { (es_ == LRecord { constants: arbitrary(), current_view: arbitrary(), current_view_suspectors: (arbitrary::<int>() + set![sender_index]), epoch_end_time: arbitrary(), epoch_length: arbitrary(), proposer_id: 0int, requests_received_prev_epochs: arbitrary(), requests_received_this_epoch: arbitrary(), seqno: 0int }) } else { if arbitrary() { {
     let new_epoch_length: int = arbitrary();

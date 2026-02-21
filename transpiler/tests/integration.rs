@@ -3213,10 +3213,9 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Should process at least 33 generated D1 .rs files, got {total}"
     );
 
-    // Baseline after 16.8.3d-2d-3:
-    // D1 spec translation now normalizes c.* values in int-typed record slots to
-    // typed placeholders and rewrites In(Not(x), S) fallback shape to !S.contains(x),
-    // eliminating E0308 first-error class and shifting one blocker to E0600.
+    // Baseline after 16.8.3d-2d-4:
+    // D1 spec translation now additionally normalizes generated `~x \in S` renderings
+    // that surfaced as `S.contains(!(x))` into `!S.contains(x)`, eliminating E0600.
     assert_eq!(
         passed, 13,
         "Expected exactly thirteen D1 files to compile at current baseline; pass files: {:?}",
@@ -3243,8 +3242,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 mismatched-types (E0308) failures at baseline"
     );
     assert_eq!(
-        cat_e0600, 1,
-        "Expected 1 unary-operator type mismatch (E0600) failure at baseline"
+        cat_e0600, 0,
+        "Expected 0 unary-operator type mismatch (E0600) failures at baseline"
     );
     assert_eq!(
         cat_e0618, 0,
@@ -3259,8 +3258,8 @@ fn test_d1_generated_verus_spec_compile_baseline() {
         "Expected 0 wrong-arity (E0061) failures at baseline"
     );
     assert_eq!(
-        cat_e0282, 19,
-        "Expected 19 type-inference (E0282) failures at baseline"
+        cat_e0282, 20,
+        "Expected 20 type-inference (E0282) failures at baseline"
     );
     assert!(
         other_fails.is_empty(),

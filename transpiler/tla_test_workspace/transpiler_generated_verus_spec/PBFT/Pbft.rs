@@ -44,7 +44,7 @@ pub open spec fn LReceivePrePrepare(s: LState, s_: LState, c: LConstants, view: 
 
 /// ReceivePrepare operator
 pub open spec fn LReceivePrepare(s: LState, s_: LState, c: LConstants, sender: bool, sent_packets: ()) -> bool {
-    ((((((((((((((arbitrary::<int>() == 6989001116int) && Set::<int>::empty().contains(!(sender))) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
+    ((((((((((((((arbitrary::<int>() == 6989001116int) && !Set::<int>::empty().contains(sender)) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// EnterCommit operator
@@ -54,7 +54,7 @@ pub open spec fn LEnterCommit(s: LState, s_: LState, c: LConstants, sent_packets
 
 /// ReceiveCommit operator
 pub open spec fn LReceiveCommit(s: LState, s_: LState, c: LConstants, sender: bool, sent_packets: ()) -> bool {
-    ((((((((((((((arbitrary::<int>() == 9385017532int) && Set::<int>::empty().contains(!(sender))) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
+    ((((((((((((((arbitrary::<int>() == 9385017532int) && !Set::<int>::empty().contains(sender)) && (arbitrary() == Set::<int>::empty().union(set![sender]))) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == Seq::<int>::empty()))
 }
 
 /// ExecuteReply operator

@@ -34,7 +34,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// DetectFailure operator
 pub open spec fn LDetectFailure(s: LState, s_: LState, c: LConstants, node: int, sent_packets: (LRecord)) -> bool {
-    (((((((((((Set::<int>::empty().contains(node) && (arbitrary::<bool>() == true)) && Set::<int>::empty().contains(!(arbitrary()))) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
+    (((((((((((Set::<int>::empty().contains(node) && (arbitrary::<bool>() == true)) && !Set::<int>::empty().contains(arbitrary::<int>())) && (arbitrary() == Set::<int>::empty().union(set![node]))) && (arbitrary::<bool>() == true)) && (arbitrary() == node)) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (arbitrary() == arbitrary())) && (sent_packets == arbitrary()))
 }
 
 /// StartElection operator

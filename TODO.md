@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `13/33` files compile with Verus after `16.8.3d-2d-3`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `13/33` files compile with Verus after `16.8.3d-2d-4`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5339,6 +5339,15 @@ transpiler/tla_test_workspace/
           - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-3`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `1` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `19` `E0282`.
           - Net effect: mismatched-type first-error class eliminated (`E0308: 2 -> 0`) with one newly surfaced unary-operator mismatch class (`E0600: 0 -> 1`); compile pass count unchanged (`13/33`).
+        - [x] **16.8.3d-2d-4** Eliminate residual `E0600` first-error class by normalizing generated `~x \in S` renderings that lowered as `contains(!(x))`.
+          - Scope/LOC check: implemented as a focused `ExprTranslator` normalization tweak for generated-D1 context plus targeted regressions and baseline/docs updates; stayed under the <500 LOC target.
+          - Added generated-D1 fallback in `TlaBinOp::In` to normalize rendered not-operand shape `!(x)` to membership negation `!S.contains(x)` in addition to direct `In(Not(x), S)` AST handling.
+          - Added regressions:
+            - `test_translate_in_with_rendered_not_operand_normalizes_in_generated_d1_context`
+            - `test_translate_in_with_rendered_not_operand_preserves_non_generated_context`
+          - Re-generated all `33` D1 workspace specs and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-4`: `13/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `20` `E0282`.
+          - Net effect: unary-operator mismatch first-error class eliminated (`E0600: 1 -> 0`) with class shift to inference (`E0282: 19 -> 20`); compile pass count unchanged (`13/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 

@@ -56,7 +56,7 @@ pub open spec fn LIsLogTruncationPointValid(s: LState, c: LConstants, log_trunca
 
 /// RemoveVotesBeforeLogTruncationPoint operator
 pub open spec fn LRemoveVotesBeforeLogTruncationPoint(s: LState, c: LConstants, votes: Map<int, int>, votes_: Map<int, int>, log_truncation_point: int) -> bool {
-    forall |opn| c.OperationNumber.contains(opn) ==> ((votes_.dom().contains(opn) ==> (votes.dom().contains(opn) && (votes_[opn] == votes[opn]))) && forall |opn| c.OperationNumber.contains(opn) ==> (((opn < log_truncation_point) ==> votes_.dom().contains(!(opn))) && forall |opn| c.OperationNumber.contains(opn) ==> (((opn >= log_truncation_point) && votes.dom().contains(opn)) ==> votes_.dom().contains(opn))))
+    forall |opn| c.OperationNumber.contains(opn) ==> ((votes_.dom().contains(opn) ==> (votes.dom().contains(opn) && (votes_[opn] == votes[opn]))) && forall |opn| c.OperationNumber.contains(opn) ==> (((opn < log_truncation_point) ==> !votes_.dom().contains(opn)) && forall |opn| c.OperationNumber.contains(opn) ==> (((opn >= log_truncation_point) && votes.dom().contains(opn)) ==> votes_.dom().contains(opn))))
 }
 
 /// AddVoteAndRemoveOldOnes operator

@@ -734,6 +734,17 @@ impl<'a> ExprTranslator<'a> {
                                     self.coerce_untyped_arbitrary_int(&self.translate(operand))
                                 );
                             }
+                            if self.is_generated_d1_context() {
+                                if let Some(inner) =
+                                    left_str.strip_prefix("!(").and_then(|s| s.strip_suffix(')'))
+                                {
+                                    return format!(
+                                        "!{}.contains({})",
+                                        self.coerce_untyped_arbitrary_set_int(&right_str),
+                                        self.coerce_untyped_arbitrary_int(inner)
+                                    );
+                                }
+                            }
                         }
                         format!(
                             "{}.contains({})",
@@ -3459,6 +3470,33 @@ mod tests {
         );
 
         assert_eq!(translator.translate(&expr), "!S.contains(x)");
+    }
+
+    #[test]
+    fn test_translate_in_with_rendered_not_operand_normalizes_in_generated_d1_context() {
+        let config = TranslatorConfig::spec();
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::In,
+            TlaExpr::ident("!(opn)"),
+            TlaExpr::unary(TlaUnaryOp::Domain, TlaExpr::ident("votes_")),
+        );
+
+        assert_eq!(translator.translate(&expr), "!votes_.dom().contains(opn)");
+    }
+
+    #[test]
+    fn test_translate_in_with_rendered_not_operand_preserves_non_generated_context() {
+        let mut config = TranslatorConfig::spec();
+        config.variable_names.insert("x".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::binop(
+            TlaBinOp::In,
+            TlaExpr::ident("!(opn)"),
+            TlaExpr::unary(TlaUnaryOp::Domain, TlaExpr::ident("votes_")),
+        );
+
+        assert_eq!(translator.translate(&expr), "votes_.dom().contains(!(opn))");
     }
 
     #[test]
