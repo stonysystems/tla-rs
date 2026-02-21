@@ -19,6 +19,16 @@ This means MVP entrypoints are expected from source-level spec modules, with `LI
 - Source-first only for MVP: `.tla` input is not required for the primary checking path.
 - Liveness and fairness (`[]<>`, `WF`, `SF`, `~>`) are outside MVP scope and handled in later phases.
 
+## Deferred Work (Post-MVP)
+
+Liveness/fairness work is explicitly deferred to **Phase 22.10 Follow-Up** and is not required for Phase 22 MVP acceptance.
+
+Deferred items include:
+
+- `[]<>` (eventuality) checks
+- fairness constraints (`WF`, `SF`)
+- leads-to (`~>`) obligations and cycle/SCC-style algorithms
+
 ## Why This Boundary
 
 This keeps initial implementation complexity bounded while enabling direct verification workflows for existing tla-rs protocol specs without requiring an intermediate TLA+ conversion step.

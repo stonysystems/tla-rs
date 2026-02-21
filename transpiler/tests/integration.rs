@@ -5668,6 +5668,8 @@ fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
         "not transpiled `.tla` files",
         "Liveness and fairness",
         "outside MVP scope",
+        "deferred to **Phase 22.10 Follow-Up**",
+        "not required for Phase 22 MVP acceptance",
     ] {
         assert!(
             source.contains(marker),

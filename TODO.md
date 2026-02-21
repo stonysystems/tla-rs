@@ -6422,7 +6422,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 - [x] Define MVP as **safety model checking** over finite models using tla-rs spec source (`LInit`, `LNext`) directly (no `.tla` input required).
   - Documented in `docs/dev/phase22-mvp-scope.md` with explicit source-first and safety-only scope for Phase 22 MVP.
-- [ ] Explicitly defer liveness/fairness (`[]<>`, `WF`, `SF`, `~>`) to a later phase.
+- [x] Explicitly defer liveness/fairness (`[]<>`, `WF`, `SF`, `~>`) to a later phase.
+  - Deferred to Phase 22.10 in `docs/dev/phase22-mvp-scope.md` under "Deferred Work (Post-MVP)".
 - [ ] Define pass criteria:
   - Exhaustive checks for small finite models on TwoPhase, LeaderElection, PrimaryBackup.
   - Bounded/partial exploration support for large-state protocols (e.g., Paxos).
