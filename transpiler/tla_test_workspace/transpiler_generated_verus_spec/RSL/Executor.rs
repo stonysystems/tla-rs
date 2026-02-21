@@ -72,12 +72,12 @@ pub open spec fn LExecutorGetDecision(s: LState, s_: LState, c: LConstants, bal:
 }
 
 /// GetPacketsFromReplies operator
-pub open spec fn LGetPacketsFromReplies(c: LConstants, me: int, requests: Seq<int>, replies: int) -> () {
+pub open spec fn LGetPacketsFromReplies(c: LConstants, me: int, requests: Seq<int>, replies: int) -> Seq<int> {
     if ((requests.len() as int) == 0) { Seq::<int>::empty() } else { (arbitrary::<int>() + LGetPacketsFromReplies(c, me, requests.drop_first(), arbitrary::<Seq<int>>().drop_first())) }
 }
 
 /// ClientsInReplies operator
-pub open spec fn LClientsInReplies(c: LConstants, replies: Seq<int>) -> () {
+pub open spec fn LClientsInReplies(c: LConstants, replies: Seq<int>) -> Seq<int> {
     if ((arbitrary::<Seq<int>>().len() as int) == 0) { Seq::<int>::empty() } else { LClientsInReplies(c, arbitrary::<Seq<int>>().drop_first()).insert(arbitrary::<Seq<int>>()[0].client, arbitrary::<Seq<int>>()[0]) }
 }
 

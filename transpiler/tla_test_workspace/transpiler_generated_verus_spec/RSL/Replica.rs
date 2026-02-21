@@ -170,7 +170,7 @@ pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s: LState, 
 }
 
 /// ExtractSentPacketsFromIos operator
-pub open spec fn LExtractSentPacketsFromIos(c: LConstants, ios: Seq<int>) -> () {
+pub open spec fn LExtractSentPacketsFromIos(c: LConstants, ios: Seq<int>) -> Seq<int> {
     if ((ios.len() as int) == 0) { Seq::<int>::empty() } else { if (ios[0].tag == 5308382735int) { (seq![ios[0].s] + LExtractSentPacketsFromIos(c, ios.drop_first())) } else { LExtractSentPacketsFromIos(c, ios.drop_first()) } }
 }
 

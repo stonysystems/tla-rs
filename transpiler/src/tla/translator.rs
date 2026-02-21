@@ -2516,7 +2516,7 @@ impl ModuleTranslator {
 
         // Determine return type
         let mut return_type = self.get_operator_return_type(&op.name);
-        if module.variables.is_empty() && return_type == "int" {
+        if module.variables.is_empty() && (return_type == "int" || return_type == "()") {
             if let Some(inferred_return_ty) =
                 self.infer_generated_d1_return_type_from_expr(&op.body, &identifier_type_hints)
             {
@@ -3187,6 +3187,16 @@ impl ModuleTranslator {
                     self.infer_generated_d1_return_type_from_expr(else_expr, identifier_type_hints);
                 if lhs.is_some() && lhs == rhs {
                     lhs
+                } else if lhs.is_some()
+                    && rhs.is_none()
+                    && matches!(lhs.as_deref(), Some("Seq<int>" | "Set<int>"))
+                {
+                    lhs
+                } else if rhs.is_some()
+                    && lhs.is_none()
+                    && matches!(rhs.as_deref(), Some("Seq<int>" | "Set<int>"))
+                {
+                    rhs
                 } else {
                     None
                 }
@@ -3196,9 +3206,20 @@ impl ModuleTranslator {
             }
             TlaExpr::SetEnum(_) => Some("Set<int>".to_string()),
             TlaExpr::Tuple(_) => Some("Seq<int>".to_string()),
-            TlaExpr::BinOp { op, .. } => match op {
-                TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus => {
-                    Some("Set<int>".to_string())
+            TlaExpr::BinOp { op, left, right } => match op {
+                TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus => Some("Set<int>".to_string()),
+                TlaBinOp::Plus => {
+                    let lhs =
+                        self.infer_generated_d1_return_type_from_expr(left, identifier_type_hints);
+                    let rhs =
+                        self.infer_generated_d1_return_type_from_expr(right, identifier_type_hints);
+                    if matches!(lhs.as_deref(), Some("Seq<int>"))
+                        || matches!(rhs.as_deref(), Some("Seq<int>"))
+                    {
+                        Some("Seq<int>".to_string())
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             },
@@ -5178,6 +5199,46 @@ mod tests {
                 "pub open spec fn LBoundRequestSequence(c: LConstants, s: Seq<int>, lengthBound: int) -> Seq<int>"
             ),
             "Expected Seq<int> return type for BoundRequestSequence shape, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_return_type_uses_seq_shape_for_recursive_if_with_one_sided_hint() {
+        let source = r"
+            ---- MODULE Test ----
+            RECURSIVE KeepSeq(_, _)
+            KeepSeq(s, n) ==
+                IF n = 0
+                THEN <<>>
+                ELSE KeepSeq(s, n)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("pub open spec fn LKeepSeq(s: int, n: int) -> Seq<int>"),
+            "Expected Seq<int> return type for recursive IF with one-sided seq hint, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_return_type_uses_seq_shape_for_recursive_concat_expression() {
+        let source = r"
+            ---- MODULE Test ----
+            RECURSIVE ConcatSelf(_)
+            ConcatSelf(s) ==
+                <<s[0]>> + ConcatSelf(s)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let output = translate_module_with_types(&module);
+
+        assert!(
+            output.contains("pub open spec fn LConcatSelf(s: int) -> Seq<int>"),
+            "Expected Seq<int> return type for recursive sequence-concat expression, got:\n{}",
             output
         );
     }

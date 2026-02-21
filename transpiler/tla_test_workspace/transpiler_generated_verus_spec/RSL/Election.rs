@@ -64,7 +64,7 @@ pub open spec fn LRequestSatisfiedBy(c: LConstants, r1: int, r2: int) -> bool {
 }
 
 /// RemoveAllSatisfiedRequestsInSequence operator
-pub open spec fn LRemoveAllSatisfiedRequestsInSequence(c: LConstants, s: Seq<int>, r: int) -> () {
+pub open spec fn LRemoveAllSatisfiedRequestsInSequence(c: LConstants, s: Seq<int>, r: int) -> Seq<int> {
     if ((s.len() as int) == 0) { Seq::<int>::empty() } else { if LRequestSatisfiedBy(c, s[0], r) { LRemoveAllSatisfiedRequestsInSequence(c, s.drop_first(), r) } else { (seq![s[0]] + LRemoveAllSatisfiedRequestsInSequence(c, s.drop_first(), r)) } }
 }
 

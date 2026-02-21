@@ -5197,7 +5197,7 @@ transpiler/tla_test_workspace/
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
 - [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [ ] Require output to pass Verus compile/verification checks (currently blocked: `15/33` files compile with Verus after `16.8.3d-2d-11`; see compile baseline section)
+- [ ] Require output to pass Verus compile/verification checks (currently blocked: `15/33` files compile with Verus after `16.8.3d-2d-13`; see compile baseline section)
   - [x] **16.8.3a** Add a reproducible D1 Verus-compile baseline harness and categorize current blockers.
     - Added integration coverage (`test_d1_generated_verus_spec_compile_baseline`) that compiles all generated D1 `.rs` files with Verus and records failure categories.
     - Initial measured baseline (2026-02-21): `1/33` pass (`RSL/Environment.rs`), `22` files fail with `E0425` (unresolved symbols), `10` files fail with `E0423` (type/value constructor misuse), `0` other categories.
@@ -5433,6 +5433,18 @@ transpiler/tla_test_workspace/
           - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
           - Measured first-error baseline after `16.8.3d-2d-12`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `1` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `17` `E0282`.
           - Net effect: inference blockers reduced (`E0282: 18 -> 17`) with one surfaced mismatched-type first-error (`E0308: 0 -> 1`, `RSL/Election.rs`), compile pass count unchanged (`15/33`).
+        - [x] **16.8.3d-2d-13** Normalize generated-D1 recursive helper return-type refinement for fallback `()` signatures and one-sided seq/set branch evidence.
+          - Scope/LOC check: implemented as focused `ModuleTranslator` return-type inference refinement + targeted regression coverage + generated-workspace regeneration; stayed under the <500 LOC leaf target.
+          - Extended generated-D1 return-type refinement trigger to include fallback `()` signatures (in addition to fallback `int`) for no-state modules.
+          - Tightened expression-shape inference for:
+            - one-sided `IF` branches where only one side carries `Seq<int>`/`Set<int>` evidence; and
+            - `+` expressions when either operand carries `Seq<int>` evidence (recursive concat pattern).
+          - Added regressions:
+            - `test_generated_d1_return_type_uses_seq_shape_for_recursive_if_with_one_sided_hint`
+            - `test_generated_d1_return_type_uses_seq_shape_for_recursive_concat_expression`
+          - Re-built `target/release/verus-transpile`, re-generated all `33` D1 workspace specs, and re-ran full per-file Verus compile baseline.
+          - Measured first-error baseline after `16.8.3d-2d-13`: `15/33` pass, `0` `E0425`, `0` `E0423`, `0` `E0609`, `0` `E0599`, `0` `E0308`, `0` `E0600`, `0` `E0618`, `0` `E0277`, `0` `E0061`, `18` `E0282`.
+          - Net effect: residual mismatched-type class re-eliminated (`E0308: 1 -> 0`) with expected shift into inference (`E0282: 17 -> 18`); compile pass count unchanged (`15/33`).
     - [ ] **16.8.3d-3** Promote D1 gate from baseline-categorized to required full compile (`33/33`) and tighten integration assertions/docs accordingly.
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
