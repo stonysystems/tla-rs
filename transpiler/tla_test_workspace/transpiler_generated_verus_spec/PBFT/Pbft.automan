@@ -2,15 +2,15 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Pbft {
-    LInit(-, +, +, +);  // s is output (initialized state), c is input (constants), s is input, c is input
-    LPrePrepare(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, digest is input, sent_packets is input
-    LReceivePrePrepare(+, +, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, view is input, seq is input, digest is input, sent_packets is input
-    LReceivePrepare(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sender is input, sent_packets is input
-    LEnterCommit(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LReceiveCommit(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sender is input, sent_packets is input
-    LExecuteReply(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LCheckpoint(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, digest is input, sent_packets is input
-    LViewChange(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LNewRound(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input
+    LInit(-, +);  // s is output (initialized state), c is input (constants)
+    LPrePrepare(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, digest is input, sent_packets is input
+    LReceivePrePrepare(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, view is input, seq is input, digest is input, sent_packets is input
+    LReceivePrepare(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sender is input, sent_packets is input
+    LEnterCommit(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReceiveCommit(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sender is input, sent_packets is input
+    LExecuteReply(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LCheckpoint(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, digest is input, sent_packets is input
+    LViewChange(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LNewRound(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
 }

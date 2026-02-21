@@ -2,6 +2,6 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Broadcast {
-    LBroadcastToEveryone(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), c is input, myidx is input, m is input, sent_packets is input
+    LBroadcastToEveryone(+, +, +, +, +);  // s is input (state to check), c is input (constants), myidx is input, m is input, sent_packets is input
     helper LBuildLBroadcast(+, +, +, +, +);  // s is input (state to check), c is input (constants), src is input, dsts is input, m is input
 }

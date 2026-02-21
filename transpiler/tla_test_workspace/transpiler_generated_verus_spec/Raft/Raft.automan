@@ -2,19 +2,19 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Raft {
-    Lu64_inc(+, +);  // c is input (constants), x is input
-    Lu64_dec(+, +);  // c is input (constants), x is input
-    LInit(-, +, +, +);  // s is output (initialized state), c is input (constants), s is input, c is input
-    LTimeout(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LGrantVote(+, +, +, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, candidate_term is input, candidate_last_log_term is input, candidate_last_log_index is input, candidate_id is input, sent_packets is input
-    LReceiveVoteGranted(+, +, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, vote_term is input, vote_granted is input, voter is input, sent_packets is input
-    LBecomeLeader(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LClientRequest(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, value is input, sent_packets is input
-    LSendAppendEntries(+, +, +, +, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, follower is input, entry_value is input, prev_log_index is input, prev_log_term is input, has_entry is input, sent_packets is input
-    LFollowerAppendEntries(+, +, +, +, +, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, ae_term is input, ae_leader is input, ae_prev_index is input, ae_prev_term is input, ae_value is input, ae_has_entry is input, ae_leader_commit is input, sent_packets is input
-    LHandleAppendResponse(+, +, +, +, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, resp_term is input, resp_success is input, resp_match_index is input, resp_follower is input, follower is input, new_match_index is input, sent_packets is input
-    LHandleAppendReject(+, +, +, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, resp_term is input, resp_success is input, resp_match_index is input, resp_follower is input, follower is input, sent_packets is input
-    LAdvanceCommitIndex(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, new_commit_index is input, sent_packets is input
-    LStepDown(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, new_term is input, sent_packets is input
-    LNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input
+    Lu64_inc(+, +, +);  // s is input (state to check), c is input (constants), x is input
+    Lu64_dec(+, +, +);  // s is input (state to check), c is input (constants), x is input
+    LInit(-, +);  // s is output (initialized state), c is input (constants)
+    LTimeout(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LGrantVote(+, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, candidate_term is input, candidate_last_log_term is input, candidate_last_log_index is input, candidate_id is input, sent_packets is input
+    LReceiveVoteGranted(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, vote_term is input, vote_granted is input, voter is input, sent_packets is input
+    LBecomeLeader(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LClientRequest(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, value is input, sent_packets is input
+    LSendAppendEntries(+, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, follower is input, entry_value is input, prev_log_index is input, prev_log_term is input, has_entry is input, sent_packets is input
+    LFollowerAppendEntries(+, +, +, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, ae_term is input, ae_leader is input, ae_prev_index is input, ae_prev_term is input, ae_value is input, ae_has_entry is input, ae_leader_commit is input, sent_packets is input
+    LHandleAppendResponse(+, +, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, resp_term is input, resp_success is input, resp_match_index is input, resp_follower is input, follower is input, new_match_index is input, sent_packets is input
+    LHandleAppendReject(+, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, resp_term is input, resp_success is input, resp_match_index is input, resp_follower is input, follower is input, sent_packets is input
+    LAdvanceCommitIndex(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, new_commit_index is input, sent_packets is input
+    LStepDown(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, new_term is input, sent_packets is input
+    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
 }

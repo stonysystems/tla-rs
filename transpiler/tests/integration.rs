@@ -3122,18 +3122,16 @@ fn walkdir(dir: &str) -> Vec<String> {
 
 /// Phase 16.8.4: D2 (Verus Spec → Verus Exec) on D1-generated Verus spec workspace
 /// Attempts D2 transpilation on all 33 generated Verus spec files from D1 round-trip.
-/// Current baseline after 16.8.4d-3:
-/// - 12/33 pass
-/// - 21/33 fail due to remaining D1→D2 format mismatches
+/// Required gate baseline after 16.8.4d-4:
+/// - 27/33 pass
+/// - 6/33 fail due to recursive codegen pattern gaps
 ///
 /// Failure categories:
 /// - Category A (0 files): anonymous-record parser failures eliminated by 16.8.4d-3b
 /// - Category B (0 files after 16.8.4d-1): "Expected ')', found '('" parse failures from
 ///   malformed call-shape emission; retained as a regression check
-/// - Category C (20 files): annotation parameter count mismatch after D1 regen, where
-///   generated `.automan` signatures drift from emitted function signatures in module files
-/// - Other (1 file): `RSL/State_machine.rs` recursive helper currently misses known
-///   recursion lowering patterns in D2 codegen
+/// - Category C (0 files): annotation parameter mismatch class eliminated by 16.8.4d-3c
+/// - Other (6 files): recursive helper lowering gaps in D2 codegen
 ///
 /// These are fundamental D1→D2 pipeline gaps, not D2 bugs.
 #[test]
@@ -3209,14 +3207,14 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
         }
     }
 
-    // Document the expected state after 16.8.4d-3b
+    // Enforce the required D2 gate baseline promoted in 16.8.4d-4.
     assert!(
         total >= 33,
         "Should process at least 33 .rs files, got {total}"
     );
     assert!(
-        passed >= 12,
-        "Expected at least 12 files to pass D2 after 16.8.4d-3b, got {passed}"
+        passed >= 27,
+        "Expected at least 27 files to pass D2 for the required 16.8.4d-4 gate, got {passed}"
     );
     assert!(
         cat_a_fails == 0,
@@ -3227,12 +3225,12 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
         "Expected Category B call-shape parse failures to be eliminated, got {cat_b_fails}"
     );
     assert!(
-        cat_c_fails >= 19,
-        "Expected ~20 Category C annotation mismatch failures, got {cat_c_fails}"
+        cat_c_fails == 0,
+        "Expected Category C annotation mismatch failures to remain eliminated for the 16.8.4d-4 gate, got {cat_c_fails}"
     );
     assert!(
-        other_fails.len() <= 1,
-        "Expected at most one non-categorized failure (RSL recursion pattern), got {}",
+        other_fails.len() <= 6,
+        "Expected at most six non-categorized failures (recursive codegen patterns), got {}",
         other_fails.len()
     );
     eprintln!(

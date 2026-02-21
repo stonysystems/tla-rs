@@ -2109,6 +2109,10 @@ impl ModeAnnotationGenerator {
     pub fn generate(&self, module: &TlaModule) -> String {
         let mut output = String::new();
         let module_name = &module.name;
+        let mut inference = TypeInference::new();
+        let inferred = inference.infer_types(module);
+        let resolved = inference.resolve_with_fallback(&inferred);
+        let refs_helper = ModuleTranslator::new().with_types(resolved);
 
         // Pre-compute transitive action classification (same logic as ModuleTranslator)
         let mut operator_info: std::collections::HashMap<String, OperatorKind> =
@@ -2160,7 +2164,7 @@ impl ModeAnnotationGenerator {
 
         // Generate annotations for each operator
         for op in &module.operators {
-            let annotation = self.analyze_operator(op, module, &operator_info);
+            let annotation = self.analyze_operator(op, module, &operator_info, &refs_helper);
             output.push_str(&annotation.to_automan_line());
             output.push('\n');
         }
@@ -2224,10 +2228,12 @@ impl ModeAnnotationGenerator {
         op: &TlaOperator,
         module: &TlaModule,
         operator_info: &std::collections::HashMap<String, OperatorKind>,
+        refs_helper: &ModuleTranslator,
     ) -> OperatorModes {
         let fn_name = self.config.spec_fn_name(&op.name);
         let mut modes = Vec::new();
         let mut desc_parts: Vec<String> = Vec::new();
+        let mut used_param_names = std::collections::HashSet::<String>::new();
 
         // Check if this is an action (uses primed variables, directly or transitively)
         let is_action = operator_info.get(&op.name) == Some(&OperatorKind::Action);
@@ -2238,22 +2244,27 @@ impl ModeAnnotationGenerator {
         let is_strict_init = op.name.eq_ignore_ascii_case("init");
 
         // Check if operator body references any module variables (constant operators skip s param)
-        let refs_vars = Self::body_refs_variables(&op.body, &module.variables);
+        // Keep this in lock-step with spec signature generation.
+        let refs_vars = refs_helper.operator_refs_variables(&op.body, &[]);
 
         if is_strict_init {
             // Init operators: state is output only
             modes.push(ParameterMode::Output);
             desc_parts.push("s is output (initialized state)".to_string());
+            used_param_names.insert("s".to_string());
         } else if is_action {
             // Action operators: s is input, s_ is output
             modes.push(ParameterMode::Input);
             desc_parts.push("s is input (current state)".to_string());
+            used_param_names.insert("s".to_string());
             modes.push(ParameterMode::Output);
             desc_parts.push("s_ is output (next state)".to_string());
+            used_param_names.insert("s_".to_string());
         } else if refs_vars {
             // Pure predicates: state is input
             modes.push(ParameterMode::Input);
             desc_parts.push("s is input (state to check)".to_string());
+            used_param_names.insert("s".to_string());
         }
         // else: constant operator — no state parameter
 
@@ -2261,14 +2272,21 @@ impl ModeAnnotationGenerator {
         if !module.constants.is_empty() {
             modes.push(ParameterMode::Input);
             desc_parts.push("c is input (constants)".to_string());
+            used_param_names.insert("c".to_string());
         }
 
         // Add modes for explicit parameters - typically inputs
         for param in &op.params {
+            // D1 round-trip may emit explicit params named s/s_/c even though those are
+            // already auto-injected in generated signatures.
+            if used_param_names.contains(&param.name) {
+                continue;
+            }
             // Check if parameter appears on left side of primed assignment (output)
             // For simplicity, treat all explicit params as inputs
             modes.push(ParameterMode::Input);
             desc_parts.push(format!("{} is input", param.name));
+            used_param_names.insert(param.name.clone());
         }
 
         // Detect helper functions: operators that return non-boolean values
@@ -3420,6 +3438,77 @@ mod tests {
             result.contains("LInc(+, -, +);"),
             "Action with constants should be (+, -, +), got:\n{}",
             result
+        );
+    }
+
+    #[test]
+    fn test_mode_annotation_skips_duplicate_reserved_params() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT N
+            VARIABLE x
+            Step(s, s_, c, delta) == x' = x + delta
+            Next(s, s_, c) == Step(s, s_, c, 1)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let result = generate_mode_annotations(&module);
+
+        assert!(
+            result.contains("LStep(+, -, +, +);"),
+            "Step should only include one s/s_/c plus explicit delta, got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("LNext(+, -, +);"),
+            "Next should only include one s/s_/c after dedup, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_mode_annotation_param_counts_match_generated_signatures_for_param_only_predicate() {
+        let source = r"
+            ---- MODULE Dist ----
+            CONSTANT K
+            Foo(ps) == ps = K
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let spec = translate_module_with_types(&module);
+        let modes = generate_mode_annotations(&module);
+
+        let signature_param_count = |code: &str, fn_name: &str| -> usize {
+            let marker = format!("pub open spec fn {}(", fn_name);
+            let start = code.find(&marker).expect("missing function signature") + marker.len();
+            let rest = &code[start..];
+            let end = rest.find(')').expect("missing signature close paren");
+            let params = rest[..end].trim();
+            if params.is_empty() {
+                0
+            } else {
+                params.split(',').count()
+            }
+        };
+        let annotation_param_count = |code: &str, fn_name: &str| -> usize {
+            let marker = format!("{}(", fn_name);
+            let start = code.find(&marker).expect("missing mode annotation") + marker.len();
+            let rest = &code[start..];
+            let end = rest.find(')').expect("missing mode close paren");
+            let params = rest[..end].trim();
+            if params.is_empty() {
+                0
+            } else {
+                params.split(',').count()
+            }
+        };
+
+        assert_eq!(
+            signature_param_count(&spec, "LFoo"),
+            annotation_param_count(&modes, "LFoo"),
+            "LFoo annotation arity should match generated signature.\nSpec:\n{}\nModes:\n{}",
+            spec,
+            modes
         );
     }
 }

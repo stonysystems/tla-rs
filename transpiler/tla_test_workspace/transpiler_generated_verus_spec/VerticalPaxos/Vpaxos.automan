@@ -2,16 +2,16 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Vpaxos {
-    LInit(-, +, +, +);  // s is output (initialized state), c is input (constants), s is input, c is input
-    LPrepare(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, b is input, sent_packets is input
-    LSendPromise(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, prepare_bal is input, sent_packets is input
-    LReceivePromise(+, +, +, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, sender is input, promise_bal is input, promise_v_bal is input, promise_val is input, sent_packets is input
-    LAccept(+, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, b is input, v is input, sent_packets is input
-    LReceiveAccepted(+, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sender is input, accept_bal is input, sent_packets is input
-    LCommit(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LReconfigure(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LWitnessSync(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input, witness_val is input, sent_packets is input
-    LSync(+, +, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, new_config is input, val is input, sent_packets is input
-    LDeactivate(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, c is input, sent_packets is input
-    LNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, c is input
+    LInit(-, +);  // s is output (initialized state), c is input (constants)
+    LPrepare(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, b is input, sent_packets is input
+    LSendPromise(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, prepare_bal is input, sent_packets is input
+    LReceivePromise(+, +, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sender is input, promise_bal is input, promise_v_bal is input, promise_val is input, sent_packets is input
+    LAccept(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, b is input, v is input, sent_packets is input
+    LReceiveAccepted(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sender is input, accept_bal is input, sent_packets is input
+    LCommit(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReconfigure(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LWitnessSync(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, witness_val is input, sent_packets is input
+    LSync(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, new_config is input, val is input, sent_packets is input
+    LDeactivate(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LNext(+, +, +);  // s is input (state to check), c is input (constants), s_ is input
 }

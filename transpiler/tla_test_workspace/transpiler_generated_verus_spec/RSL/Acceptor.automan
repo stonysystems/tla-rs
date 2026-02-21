@@ -3,12 +3,12 @@
 
 module Acceptor {
     helper LAcceptor(+);  // c is input (constants)
-    LIsLogTruncationPointValid(+, +, +, +);  // c is input (constants), log_truncation_point is input, last_checkpointed_operation is input, config is input
+    LIsLogTruncationPointValid(+, +, +, +, +);  // s is input (state to check), c is input (constants), log_truncation_point is input, last_checkpointed_operation is input, config is input
     LRemoveVotesBeforeLogTruncationPoint(+, +, +, +, +);  // s is input (state to check), c is input (constants), votes is input, votes_ is input, log_truncation_point is input
     LAddVoteAndRemoveOldOnes(+, +, +, +, +, +, +);  // s is input (state to check), c is input (constants), votes is input, votes_ is input, new_opn is input, new_vote is input, log_truncation_point is input
-    LAcceptorInit(+, +, +, +);  // s is input (state to check), c is input (constants), a is input, c is input
-    LAcceptorProcess1a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, inp is input, sent_packets is input
-    LAcceptorProcess2a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, inp is input, sent_packets is input
-    LAcceptorProcessHeartbeat(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, inp is input
-    LAcceptorTruncateLog(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, opn is input
+    LAcceptorInit(+, +, +);  // s is input (state to check), c is input (constants), a is input
+    LAcceptorProcess1a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input, sent_packets is input
+    LAcceptorProcess2a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input, sent_packets is input
+    LAcceptorProcessHeartbeat(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, inp is input
+    LAcceptorTruncateLog(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, opn is input
 }

@@ -3,16 +3,16 @@
 
 module Election {
     helper LElectionState(+);  // c is input (constants)
-    helper LComputeSuccessorView(+, +, +, +);  // s is input (state to check), c is input (constants), b is input, c is input
-    LBoundRequestSequence(+, +, +, +);  // s is input (state to check), c is input (constants), s is input, lengthBound is input
-    LRequestsMatch(+, +, +);  // c is input (constants), r1 is input, r2 is input
-    LRequestSatisfiedBy(+, +, +);  // c is input (constants), r1 is input, r2 is input
-    helper LRemoveAllSatisfiedRequestsInSequence(+, +, +, +);  // s is input (state to check), c is input (constants), s is input, r is input
-    LElectionStateInit(+, +, +);  // c is input (constants), es is input, c is input
+    helper LComputeSuccessorView(+, +, +);  // s is input (state to check), c is input (constants), b is input
+    LBoundRequestSequence(+, +, +);  // s is input (state to check), c is input (constants), lengthBound is input
+    LRequestsMatch(+, +, +, +);  // s is input (state to check), c is input (constants), r1 is input, r2 is input
+    LRequestSatisfiedBy(+, +, +, +);  // s is input (state to check), c is input (constants), r1 is input, r2 is input
+    helper LRemoveAllSatisfiedRequestsInSequence(+, +, +);  // s is input (state to check), c is input (constants), r is input
+    LElectionStateInit(+, +, +);  // s is input (state to check), c is input (constants), es is input
     LElectionStateProcessHeartbeat(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), es is input, es_ is input, p is input, clock is input
     LElectionStateCheckForViewTimeout(+, +, +, +, +);  // s is input (state to check), c is input (constants), es is input, es_ is input, clock is input
     LElectionStateCheckForQuorumOfViewSuspicions(+, +, +, +, +);  // s is input (state to check), c is input (constants), es is input, es_ is input, clock is input
     LElectionStateReflectReceivedRequest(+, +, +, +, +);  // s is input (state to check), c is input (constants), es is input, es_ is input, req is input
     LRemoveExecutedRequestBatch(+, +, +, +);  // s is input (state to check), c is input (constants), reqs is input, batch is input
-    LElectionStateReflectExecutedRequestBatch(+, +, +, +);  // c is input (constants), es is input, es_ is input, batch is input
+    LElectionStateReflectExecutedRequestBatch(+, +, +, +, +);  // s is input (state to check), c is input (constants), es is input, es_ is input, batch is input
 }

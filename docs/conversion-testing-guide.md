@@ -554,29 +554,34 @@ Output directory: `transpiler/tla_test_workspace/transpiler_generated_verus_exec
 
 | Protocol | Files | D2 Parse | D2 Transpile | Failure Category |
 |----------|-------|----------|-------------|------------------|
-| TwoPhase | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Twophase.rs: Cat-C |
-| Paxos | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Paxos.rs: Cat-C |
-| LeaderElection | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Election.rs: Cat-C |
-| Raft | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Raft.rs: Cat-C |
-| ChainReplication | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Chain.rs: Cat-C |
-| PrimaryBackup | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Primarybackup.rs: Cat-C |
-| PBFT | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Pbft.rs: Cat-C |
-| VerticalPaxos | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Vpaxos.rs: Cat-C |
-| EPaxos | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Epaxos.rs: Cat-C |
-| RSL | 15 | 3 ✅ / 12 ❌ | 3 ✅ | Constants.rs/Environment.rs/Message.rs pass; State_machine.rs: recursive codegen unsupported (other); remaining failures Cat-C |
-| **Total** | **33** | **12/33** | **12/33** | |
+| TwoPhase | 2 | 1 ✅ / 1 ❌ | 1 ✅ | Types.rs passes; Twophase.rs: recursive codegen unsupported (other) |
+| Paxos | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| LeaderElection | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| Raft | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| ChainReplication | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| PrimaryBackup | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| PBFT | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| VerticalPaxos | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| EPaxos | 2 | 2 ✅ / 0 ❌ | 2 ✅ | all pass |
+| RSL | 15 | 10 ✅ / 5 ❌ | 10 ✅ | 5 recursive codegen unsupported (Broadcast/Election/Executor/Replica/State_machine) |
+| **Total** | **33** | **27/33** | **27/33** | |
 
-Revalidated after `16.8.4d-3b` nested-record-shape fix + full D1 workspace regeneration (2026-02-21) via:
+Revalidated after `16.8.4d-3c` annotation-arity fix + full D1 workspace regeneration (2026-02-21) via:
 `cargo test --test integration test_d2_spec_to_exec_on_generated_workspace -- --nocapture`
-with totals: `12/33` pass, `0` Cat-A, `0` Cat-B, `20` Cat-C, `1` other.
+with totals: `27/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `6` other.
+
+**Gate status (16.8.4d-4): REQUIRED**
+- Enforced by `test_d2_spec_to_exec_on_generated_workspace`.
+- Required baseline: `>=27/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `<=6` other.
+- Remaining "other" failures are the tracked recursive-codegen backlog (not parser/annotation blockers).
 
 **Failure Categories:**
 - **Cat-A (0 files)**: residual anonymous-record parser failures eliminated by `16.8.4d-3b`.
 - **Cat-B (0 files)**: call-shape parse failures ("Expected ')', found '('") were eliminated by `16.8.4d-1` (`translate_op_apply` fix).
-- **Cat-C (20 files)**: annotation parameter mismatch (`Parameter count mismatch: function has ...`) across all 9 main protocol modules plus 11 RSL modules; this is now the dominant blocker.
-- **Other (1 file)**: `RSL/State_machine.rs` now passes parsing but fails recursive helper lowering (`LHandleRequestBatchHidden` does not match supported recursion patterns).
+- **Cat-C (0 files)**: annotation parameter mismatch class eliminated by `16.8.4d-3c`.
+- **Other (6 files)**: recursive helper lowering gaps (`LBuildLBroadcast`, `LRemoveAllSatisfiedRequestsInSequence`, `LGetPacketsFromReplies`, `LExtractSentPacketsFromIos`, `LHandleRequestBatchHidden`, `TwoPhase::LInit`).
 
-**Root cause**: D1 (TLA+ → Verus) semantics are now substantially closer to D2 parsing expectations after the nested-record fix, but signature/annotation arity drift remains in module files and one recursive codegen pattern is still unsupported. The integrated D4 pipeline avoids these workspace serialization gaps through internal type propagation.
+**Root cause**: D1 (TLA+ → Verus) parsing/signature/annotation compatibility is now largely aligned with D2 after the nested-record and arity fixes. Remaining blockers are concentrated in recursive codegen pattern coverage for D2.
 
 #### D3 TLC Model Checking: `transpiler_generated_tla_with_properties/` (Phase 16.8.2)
 

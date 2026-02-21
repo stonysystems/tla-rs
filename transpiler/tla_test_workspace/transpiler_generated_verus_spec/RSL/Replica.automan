@@ -4,35 +4,35 @@
 module Replica {
     helper LReplica(+);  // c is input (constants)
     helper LScheduler(+);  // c is input (constants)
-    LReplicaInit(+, +, +);  // c is input (constants), r is input, c is input
-    LReplicaNextProcessInvalid(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcessRequest(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcess1a(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcess1b(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcessStartingPhase2(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcess2a(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcess2b(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcessReply(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcessAppStateSupply(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcessAppStateRequest(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, received_packet is input, sent_packets is input
-    LReplicaNextProcessHeartbeat(+, +, +, +, +, +);  // c is input (constants), s is input, s_ is input, received_packet is input, clock is input, sent_packets is input
-    LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(+, +, +, +);  // c is input (constants), s is input, s_ is input, sent_packets is input
-    LReplicaNextSpontaneousMaybeEnterPhase2(+, +, +, +);  // c is input (constants), s is input, s_ is input, sent_packets is input
-    LReplicaNextReadClockMaybeNominateValueAndSend2a(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, clock is input, sent_packets is input
-    LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, sent_packets is input
-    LReplicaNextSpontaneousMaybeMakeDecision(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, sent_packets is input
-    LReplicaNextSpontaneousMaybeExecute(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, sent_packets is input
-    LReplicaNextReadClockMaybeSendHeartbeat(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, clock is input, sent_packets is input
-    LReplicaNextReadClockCheckForViewTimeout(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, clock is input, sent_packets is input
-    LReplicaNextReadClockCheckForQuorumOfViewSuspicions(+, +, +, +, +);  // c is input (constants), s is input, s_ is input, clock is input, sent_packets is input
+    LReplicaInit(+, +, +);  // s is input (state to check), c is input (constants), r is input
+    LReplicaNextProcessInvalid(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcessRequest(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcess1a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcess1b(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcessStartingPhase2(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcess2a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcess2b(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcessReply(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcessAppStateSupply(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcessAppStateRequest(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, sent_packets is input
+    LReplicaNextProcessHeartbeat(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, received_packet is input, clock is input, sent_packets is input
+    LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReplicaNextSpontaneousMaybeEnterPhase2(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReplicaNextReadClockMaybeNominateValueAndSend2a(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input, sent_packets is input
+    LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReplicaNextSpontaneousMaybeMakeDecision(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReplicaNextSpontaneousMaybeExecute(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, sent_packets is input
+    LReplicaNextReadClockMaybeSendHeartbeat(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input, sent_packets is input
+    LReplicaNextReadClockCheckForViewTimeout(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input, sent_packets is input
+    LReplicaNextReadClockCheckForQuorumOfViewSuspicions(+, +, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, clock is input, sent_packets is input
     helper LExtractSentPacketsFromIos(+, +, +);  // s is input (state to check), c is input (constants), ios is input
-    LReplicaNextReadClockAndProcessPacket(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, ios is input
-    LReplicaNextProcessPacketWithoutReadingClock(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, ios is input
-    LReplicaNextProcessPacket(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, ios is input
+    LReplicaNextReadClockAndProcessPacket(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, ios is input
+    LReplicaNextProcessPacketWithoutReadingClock(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, ios is input
+    LReplicaNextProcessPacket(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, ios is input
     helper LReplicaNumActions(+);  // c is input (constants)
     LSpontaneousIos(+, +, +, +);  // s is input (state to check), c is input (constants), ios is input, clocks is input
     helper LSpontaneousClock(+, +, +);  // s is input (state to check), c is input (constants), ios is input
-    LReplicaNoReceiveNext(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, nextActionIndex is input, s_ is input, ios is input
-    LSchedulerInit(+, +, +);  // c is input (constants), s is input, c is input
-    LSchedulerNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), s is input, s_ is input, ios is input
+    LReplicaNoReceiveNext(+, +, +, +, +);  // s is input (state to check), c is input (constants), nextActionIndex is input, s_ is input, ios is input
+    LSchedulerInit(+, +);  // s is input (state to check), c is input (constants)
+    LSchedulerNext(+, +, +, +);  // s is input (state to check), c is input (constants), s_ is input, ios is input
 }

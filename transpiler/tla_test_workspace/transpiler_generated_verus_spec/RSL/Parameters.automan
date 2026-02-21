@@ -3,5 +3,5 @@
 
 module Parameters {
     helper LParameters(+);  // c is input (constants)
-    LWFLParameters(+, +);  // c is input (constants), p is input
+    LWFLParameters(+, +, +);  // s is input (state to check), c is input (constants), p is input
 }

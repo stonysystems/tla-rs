@@ -3,12 +3,12 @@
 
 module Distributed_system {
     helper LRslState(+);  // c is input (constants)
-    LRslMapsComplete(+, +);  // c is input (constants), ps is input
-    LRslConstantsUnchanged(+, +, +);  // c is input (constants), ps is input, ps_ is input
+    LRslMapsComplete(+, +, +);  // s is input (state to check), c is input (constants), ps is input
+    LRslConstantsUnchanged(+, +, +, +);  // s is input (state to check), c is input (constants), ps is input, ps_ is input
     LRslInit(+, +, +, +);  // s is input (state to check), c is input (constants), con is input, ps is input
-    LRslNextCommon(+, +, +);  // c is input (constants), ps is input, ps_ is input
-    LRslNextOneReplica(+, +, +, +, +);  // c is input (constants), ps is input, ps_ is input, idx is input, ios is input
-    LRslNextEnvironment(+, +, +);  // c is input (constants), ps is input, ps_ is input
-    LRslNextOneExternal(+, +, +, +, +);  // c is input (constants), ps is input, ps_ is input, eid is input, ios is input
+    LRslNextCommon(+, +, +, +);  // s is input (state to check), c is input (constants), ps is input, ps_ is input
+    LRslNextOneReplica(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), ps is input, ps_ is input, idx is input, ios is input
+    LRslNextEnvironment(+, +, +, +);  // s is input (state to check), c is input (constants), ps is input, ps_ is input
+    LRslNextOneExternal(+, +, +, +, +, +);  // s is input (state to check), c is input (constants), ps is input, ps_ is input, eid is input, ios is input
     LRslNext(+, +, +, +);  // s is input (state to check), c is input (constants), ps is input, ps_ is input
 }
