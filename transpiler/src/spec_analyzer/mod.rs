@@ -28,8 +28,8 @@ use crate::config::{NamingConfig, TranspilerConfig};
 use crate::error::TranspileResult;
 use crate::parser::parse_file;
 use crate::types::{
-    build_registry, parse_types_from_file, EnumDef, FieldDef, FunctionSig, StructDef, TypeAlias,
-    TypeRegistry, VariantDef, VariantFields,
+    build_registry, parse_types_from_file_without_functions, EnumDef, FieldDef, FunctionSig,
+    StructDef, TypeAlias, TypeRegistry, VariantDef, VariantFields,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -182,25 +182,52 @@ pub struct ProtocolSourceBundle {
     pub spec_functions: Vec<SpecFunction>,
 }
 
-/// Analyze a single spec file and return a SpecSchema.
-pub fn analyze_spec_file<P: AsRef<Path>>(path: P) -> TranspileResult<SpecSchema> {
-    let path = path.as_ref();
-    let type_defs = parse_types_from_file(path)?;
-    let registry = build_registry(type_defs);
+/// Analyze a single spec file and return both schema + parsed spec AST.
+///
+/// Function signatures in the returned schema are populated from the canonical
+/// parser/AST path (`parse_file` -> `SpecFunction`), not from the type parser.
+fn analyze_spec_file_with_ast(path: &Path) -> TranspileResult<(SpecSchema, Vec<SpecFunction>)> {
+    let type_defs = parse_types_from_file_without_functions(path)?;
+    let mut registry = build_registry(type_defs);
+
+    let spec_functions = parse_file(path)?;
+    for spec_fn in &spec_functions {
+        registry.register_spec_function(spec_fn);
+    }
+
     let mut schema = SpecSchema::from_registry(registry);
     schema.source_files.push(path.display().to_string());
+    Ok((schema, spec_functions))
+}
+
+/// Analyze a single spec file and return a SpecSchema.
+pub fn analyze_spec_file<P: AsRef<Path>>(path: P) -> TranspileResult<SpecSchema> {
+    let (schema, _) = analyze_spec_file_with_ast(path.as_ref())?;
     Ok(schema)
 }
 
 /// Analyze multiple spec files and return a merged SpecSchema.
 /// Typically used to combine types.rs + protocol.rs for a single protocol.
 pub fn analyze_spec_files<P: AsRef<Path>>(paths: &[P]) -> TranspileResult<SpecSchema> {
-    let mut schema = SpecSchema::new();
-    for path in paths {
-        let file_schema = analyze_spec_file(path)?;
-        schema.merge(file_schema);
-    }
+    let (schema, _) = analyze_spec_files_with_ast(paths)?;
     Ok(schema)
+}
+
+/// Analyze multiple spec files and return merged schema + parsed spec AST.
+///
+/// `spec_functions` are returned in file order (all functions from `paths[0]`,
+/// then `paths[1]`, etc.).
+pub fn analyze_spec_files_with_ast<P: AsRef<Path>>(
+    paths: &[P],
+) -> TranspileResult<(SpecSchema, Vec<SpecFunction>)> {
+    let mut schema = SpecSchema::new();
+    let mut spec_functions = Vec::new();
+    for path in paths {
+        let (file_schema, file_spec_functions) = analyze_spec_file_with_ast(path.as_ref())?;
+        schema.merge(file_schema);
+        spec_functions.extend(file_spec_functions);
+    }
+    Ok((schema, spec_functions))
 }
 
 /// Ingest protocol sources directly from `<proto>.rs` + sibling `types.rs`.
@@ -255,10 +282,8 @@ pub fn ingest_protocol_sources<P: AsRef<Path>>(
         });
     }
 
-    let schema = analyze_spec_files(&[types_file.as_path(), protocol_file])?;
-
-    let mut spec_functions = parse_file(&types_file)?;
-    spec_functions.extend(parse_file(protocol_file)?);
+    let (schema, spec_functions) =
+        analyze_spec_files_with_ast(&[types_file.as_path(), protocol_file])?;
 
     Ok(ProtocolSourceBundle {
         types_file,
@@ -494,18 +519,14 @@ impl<'a> ConfigInferer<'a> {
 
         for (enum_name, enum_def) in &self.schema.enums {
             // Get the exec enum name from remapping or apply prefix rule
-            let exec_enum_name = config
-                .remapping
-                .get(enum_name)
-                .cloned()
-                .unwrap_or_else(|| {
-                    if enum_name.starts_with(spec_prefix) {
-                        let base = &enum_name[spec_prefix.len()..];
-                        format!("{}{}", exec_prefix, base)
-                    } else {
-                        enum_name.clone()
-                    }
-                });
+            let exec_enum_name = config.remapping.get(enum_name).cloned().unwrap_or_else(|| {
+                if enum_name.starts_with(spec_prefix) {
+                    let base = &enum_name[spec_prefix.len()..];
+                    format!("{}{}", exec_prefix, base)
+                } else {
+                    enum_name.clone()
+                }
+            });
 
             for variant in &enum_def.variants {
                 if let VariantFields::Struct(fields) = &variant.fields {
@@ -517,12 +538,9 @@ impl<'a> ConfigInferer<'a> {
                         .remapping
                         .get(&variant.name)
                         .cloned()
-                        .unwrap_or_else(|| {
-                            format!("{}{}", exec_prefix, &variant.name)
-                        });
+                        .unwrap_or_else(|| format!("{}{}", exec_prefix, &variant.name));
 
-                    let exec_variant_path =
-                        format!("{}::{}", exec_enum_name, exec_variant_name);
+                    let exec_variant_path = format!("{}::{}", exec_enum_name, exec_variant_name);
 
                     for field in fields {
                         // Only add if not already mapped (first occurrence wins
@@ -552,8 +570,7 @@ impl<'a> ConfigInferer<'a> {
                 if let Type::Seq(inner) = &field.ty {
                     // Only for non-primitive struct element types
                     if let Type::Named(path) = inner.as_ref() {
-                        let type_name =
-                            path.segments.last().unwrap_or(&String::new()).clone();
+                        let type_name = path.segments.last().unwrap_or(&String::new()).clone();
 
                         // Skip if primitive
                         if self.is_primitive_inner_type(inner) {
@@ -579,10 +596,9 @@ impl<'a> ConfigInferer<'a> {
                                         format!("{}{}", exec_prefix, &type_name)
                                     }
                                 });
-                            config.struct_vec_fields.insert(
-                                field.name.clone(),
-                                vec![exec_type_name, type_name],
-                            );
+                            config
+                                .struct_vec_fields
+                                .insert(field.name.clone(), vec![exec_type_name, type_name]);
                         }
                     }
                 }
@@ -1126,6 +1142,61 @@ verus! {
     }
 
     #[test]
+    fn test_analyze_spec_files_with_ast_derives_function_signatures_from_parser() {
+        let dir = tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+
+        fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState {
+        pub value: int,
+    }
+
+    pub struct LConstants {
+        pub limit: int,
+    }
+
+    pub open spec fn LInit(s: LState, Ghost g: int) -> bool {
+        g >= s.value
+    }
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let (schema, spec_functions) =
+            analyze_spec_files_with_ast(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+        let function_names: Vec<&str> = spec_functions.iter().map(|f| f.name.as_str()).collect();
+
+        assert_eq!(
+            function_names,
+            vec!["LInit", "LNext"],
+            "spec functions should be returned in file order"
+        );
+        assert!(schema.functions.contains_key("LInit"));
+        assert!(schema.functions.contains_key("LNext"));
+
+        let init_sig = schema.functions.get("LInit").unwrap();
+        assert_eq!(init_sig.params.len(), 2);
+        assert_eq!(init_sig.params[1].name, "g");
+        assert!(matches!(init_sig.params[1].ty, Type::Int));
+    }
+
+    #[test]
     fn test_ingest_protocol_sources_missing_types_file() {
         let dir = tempdir().unwrap();
         let proto_path = dir.path().join("demo.rs");
@@ -1136,10 +1207,7 @@ verus! {
         .unwrap();
 
         let err = ingest_protocol_sources(&proto_path).unwrap_err();
-        assert!(matches!(
-            err,
-            crate::error::TranspileError::Config { .. }
-        ));
+        assert!(matches!(err, crate::error::TranspileError::Config { .. }));
         assert!(err.to_string().contains("missing"));
     }
 
@@ -1150,10 +1218,7 @@ verus! {
         fs::write(&types_path, "verus! {}").unwrap();
 
         let err = ingest_protocol_sources(&types_path).unwrap_err();
-        assert!(matches!(
-            err,
-            crate::error::TranspileError::Config { .. }
-        ));
+        assert!(matches!(err, crate::error::TranspileError::Config { .. }));
         assert!(err.to_string().contains("not types.rs"));
     }
 
@@ -1504,16 +1569,12 @@ verus! {
         let inferer = ConfigInferer::new(&schema, &naming);
         let config = inferer.infer();
 
-        assert!(
-            config
-                .hashmap_index_fields
-                .contains(&"match_index".to_string())
-        );
-        assert!(
-            config
-                .hashmap_index_fields
-                .contains(&"next_index".to_string())
-        );
+        assert!(config
+            .hashmap_index_fields
+            .contains(&"match_index".to_string()));
+        assert!(config
+            .hashmap_index_fields
+            .contains(&"next_index".to_string()));
     }
 
     #[test]
@@ -1545,10 +1606,7 @@ verus! {
         assert_eq!(config.clone_fields.len(), 1);
 
         // clone_field_types: field → CEnumName
-        assert_eq!(
-            config.clone_field_types.get("role").unwrap(),
-            "CServerRole"
-        );
+        assert_eq!(config.clone_field_types.get("role").unwrap(), "CServerRole");
     }
 
     #[test]
@@ -1647,10 +1705,7 @@ verus! {
         assert_eq!(config.remapping.get("LConstants").unwrap(), "CConstants");
         assert_eq!(config.remapping.get("LTMState").unwrap(), "CTMState");
         assert_eq!(config.remapping.get("LRMState").unwrap(), "CRMState");
-        assert_eq!(
-            config.remapping.get("LTPCMessage").unwrap(),
-            "CTPCMessage"
-        );
+        assert_eq!(config.remapping.get("LTPCMessage").unwrap(), "CTPCMessage");
 
         // Variant identity mappings
         assert_eq!(config.remapping.get("Prepare").unwrap(), "Prepare");
@@ -1671,13 +1726,15 @@ verus! {
         );
 
         // Collection fields (Set<int> fields)
-        assert!(config.collection_fields.contains(&"tm_prepared".to_string()));
-        assert!(config.collection_fields.contains(&"rm_prepared".to_string()));
-        assert!(
-            config
-                .collection_fields
-                .contains(&"rm_committed".to_string())
-        );
+        assert!(config
+            .collection_fields
+            .contains(&"tm_prepared".to_string()));
+        assert!(config
+            .collection_fields
+            .contains(&"rm_prepared".to_string()));
+        assert!(config
+            .collection_fields
+            .contains(&"rm_committed".to_string()));
         assert!(config.collection_fields.contains(&"rm_aborted".to_string()));
         assert!(config.collection_fields.contains(&"rm".to_string()));
 
@@ -1730,23 +1787,16 @@ verus! {
         );
 
         // Collection fields
-        assert!(
-            config
-                .collection_fields
-                .contains(&"promises_rcvd".to_string())
-        );
-        assert!(
-            config
-                .collection_fields
-                .contains(&"accepts_rcvd".to_string())
-        );
+        assert!(config
+            .collection_fields
+            .contains(&"promises_rcvd".to_string()));
+        assert!(config
+            .collection_fields
+            .contains(&"accepts_rcvd".to_string()));
 
         // Clone fields
         assert!(config.clone_fields.contains(&"phase".to_string()));
-        assert_eq!(
-            config.clone_field_types.get("phase").unwrap(),
-            "CPhase"
-        );
+        assert_eq!(config.clone_field_types.get("phase").unwrap(), "CPhase");
     }
 
     #[test]
@@ -1781,18 +1831,13 @@ verus! {
         );
 
         // Collection fields
-        assert!(
-            config
-                .collection_fields
-                .contains(&"votes_granted".to_string())
-        );
+        assert!(config
+            .collection_fields
+            .contains(&"votes_granted".to_string()));
 
         // Clone fields
         assert!(config.clone_fields.contains(&"role".to_string()));
-        assert_eq!(
-            config.clone_field_types.get("role").unwrap(),
-            "CServerRole"
-        );
+        assert_eq!(config.clone_field_types.get("role").unwrap(), "CServerRole");
 
         // Clone strategy
         assert_eq!(
@@ -1845,8 +1890,7 @@ verus! {
                 continue;
             }
 
-            let schema =
-                analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+            let schema = analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
             let inferer = ConfigInferer::new(&schema, &naming);
             let config = inferer.infer();
 
@@ -1891,15 +1935,12 @@ verus! {
         assert!(inferer.is_primitive_inner_type(&Type::Int));
         assert!(inferer.is_primitive_inner_type(&Type::Nat));
         assert!(inferer.is_primitive_inner_type(&Type::Bool));
-        assert!(inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
-            "u64".to_string()
-        ))));
-        assert!(inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
-            "OperationNumber".to_string()
-        ))));
-        assert!(!inferer.is_primitive_inner_type(&Type::Named(AstPath::single(
-            "LBallot".to_string()
-        ))));
+        assert!(inferer.is_primitive_inner_type(&Type::Named(AstPath::single("u64".to_string()))));
+        assert!(inferer
+            .is_primitive_inner_type(&Type::Named(AstPath::single("OperationNumber".to_string()))));
+        assert!(
+            !inferer.is_primitive_inner_type(&Type::Named(AstPath::single("LBallot".to_string())))
+        );
     }
 
     // --- Arrow variants tests ---
@@ -2020,8 +2061,10 @@ verus! {
     #[test]
     fn test_infer_arrow_variants_merge() {
         let mut base = TranspilerConfig::default();
-        base.arrow_variants
-            .insert("bal_1a".to_string(), "CustomEnum::CustomVariant".to_string());
+        base.arrow_variants.insert(
+            "bal_1a".to_string(),
+            "CustomEnum::CustomVariant".to_string(),
+        );
 
         let mut inferred = TranspilerConfig::default();
         inferred
@@ -2205,21 +2248,52 @@ verus! {
         // Validate that auto-inference produces non-empty, correct results
         // for all non-RSL protocols (Phase 21: TOMLs no longer contain Tier 1 fields)
         let protocols: Vec<(&str, &str, &str, &str)> = vec![
-            ("TwoPhase", "types.rs", "twophase.rs", "twophase_transpile.toml"),
+            (
+                "TwoPhase",
+                "types.rs",
+                "twophase.rs",
+                "twophase_transpile.toml",
+            ),
             ("Paxos", "types.rs", "paxos.rs", "paxos_transpile.toml"),
-            ("LeaderElection", "types.rs", "election.rs", "election_transpile.toml"),
+            (
+                "LeaderElection",
+                "types.rs",
+                "election.rs",
+                "election_transpile.toml",
+            ),
             ("Raft", "types.rs", "raft.rs", "raft_transpile.toml"),
-            ("ChainReplication", "types.rs", "chain.rs", "chain_transpile.toml"),
-            ("PrimaryBackup", "types.rs", "primarybackup.rs", "primarybackup_transpile.toml"),
+            (
+                "ChainReplication",
+                "types.rs",
+                "chain.rs",
+                "chain_transpile.toml",
+            ),
+            (
+                "PrimaryBackup",
+                "types.rs",
+                "primarybackup.rs",
+                "primarybackup_transpile.toml",
+            ),
             ("PBFT", "types.rs", "pbft.rs", "pbft_transpile.toml"),
-            ("VerticalPaxos", "types.rs", "vpaxos.rs", "vpaxos_transpile.toml"),
+            (
+                "VerticalPaxos",
+                "types.rs",
+                "vpaxos.rs",
+                "vpaxos_transpile.toml",
+            ),
             ("EPaxos", "types.rs", "epaxos.rs", "epaxos_transpile.toml"),
         ];
 
         // Protocols known to have HashSet fields (need clone_strategy = "external_body")
         let needs_clone_strategy: Vec<&str> = vec![
-            "TwoPhase", "Paxos", "LeaderElection", "Raft",
-            "ChainReplication", "PBFT", "VerticalPaxos", "EPaxos",
+            "TwoPhase",
+            "Paxos",
+            "LeaderElection",
+            "Raft",
+            "ChainReplication",
+            "PBFT",
+            "VerticalPaxos",
+            "EPaxos",
         ];
 
         let mut checked = 0;
@@ -2236,8 +2310,7 @@ verus! {
             let toml_config = load_file_config(&toml_path);
             let naming = &toml_config.naming;
 
-            let schema =
-                analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+            let schema = analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
             let inferer = ConfigInferer::new(&schema, naming);
             let inferred = inferer.infer();
 
@@ -2268,14 +2341,23 @@ verus! {
             checked += 1;
         }
 
-        assert!(checked >= 9, "Should have checked all 9 protocols, only checked {}", checked);
+        assert!(
+            checked >= 9,
+            "Should have checked all 9 protocols, only checked {}",
+            checked
+        );
     }
 
     #[test]
     fn test_merge_produces_same_output_as_explicit_toml() {
         // Test that merge_configs(toml_overrides, inferred) preserves all TOML entries
         let protocols: Vec<(&str, &str, &str, &str)> = vec![
-            ("TwoPhase", "types.rs", "twophase.rs", "twophase_transpile.toml"),
+            (
+                "TwoPhase",
+                "types.rs",
+                "twophase.rs",
+                "twophase_transpile.toml",
+            ),
             ("Paxos", "types.rs", "paxos.rs", "paxos_transpile.toml"),
             ("Raft", "types.rs", "raft.rs", "raft_transpile.toml"),
         ];
@@ -2294,8 +2376,7 @@ verus! {
             let toml_config = load_file_config(&toml_path);
 
             // Analyze spec files
-            let schema =
-                analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+            let schema = analyze_spec_files(&[types_path.as_path(), proto_path.as_path()]).unwrap();
             let inferer = ConfigInferer::new(&schema, &toml_config.naming);
             let inferred = inferer.infer();
 

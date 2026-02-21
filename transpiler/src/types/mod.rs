@@ -252,6 +252,8 @@ pub struct TypeParser<'a> {
     pos: usize,
     /// Whether we're currently inside a verus! block
     in_verus_block: bool,
+    /// Whether function signatures should be parsed into `TypeDef::Function`
+    parse_function_signatures: bool,
 }
 
 impl<'a> TypeParser<'a> {
@@ -261,7 +263,14 @@ impl<'a> TypeParser<'a> {
             content,
             pos: 0,
             in_verus_block: false,
+            parse_function_signatures: true,
         }
+    }
+
+    /// Configure whether function signatures are parsed as type defs.
+    pub fn with_function_signatures(mut self, enabled: bool) -> Self {
+        self.parse_function_signatures = enabled;
+        self
     }
 
     /// Parse all type definitions from the content
@@ -300,10 +309,12 @@ impl<'a> TypeParser<'a> {
                 continue;
             }
 
-            // Try to parse a spec function signature
-            if let Some(f) = self.try_parse_spec_fn()? {
-                types.push(TypeDef::Function(f));
-                continue;
+            if self.parse_function_signatures {
+                // Try to parse a spec function signature
+                if let Some(f) = self.try_parse_spec_fn()? {
+                    types.push(TypeDef::Function(f));
+                    continue;
+                }
             }
 
             // Skip other items
@@ -381,10 +392,12 @@ impl<'a> TypeParser<'a> {
                 continue;
             }
 
-            // Try to parse a spec function signature
-            if let Some(f) = self.try_parse_spec_fn()? {
-                types.push(TypeDef::Function(f));
-                continue;
+            if self.parse_function_signatures {
+                // Try to parse a spec function signature
+                if let Some(f) = self.try_parse_spec_fn()? {
+                    types.push(TypeDef::Function(f));
+                    continue;
+                }
             }
 
             // Skip other items while tracking braces
@@ -994,8 +1007,8 @@ impl<'a> TypeParser<'a> {
         let start = self.pos;
 
         // Handle raw identifier prefix: r#keyword
-        let has_raw_prefix = self.pos + 2 <= self.content.len()
-            && &self.content[self.pos..self.pos + 2] == "r#";
+        let has_raw_prefix =
+            self.pos + 2 <= self.content.len() && &self.content[self.pos..self.pos + 2] == "r#";
         if has_raw_prefix {
             self.pos += 2; // skip "r#"
         }
@@ -1174,6 +1187,18 @@ pub enum TypeDef {
 pub fn parse_types_from_file(path: &std::path::Path) -> TranspileResult<Vec<TypeDef>> {
     let source = std::fs::read_to_string(path)?;
     let mut parser = TypeParser::new(&source);
+    parser.parse_types()
+}
+
+/// Parse struct/enum/alias definitions from a file, skipping spec function signatures.
+///
+/// This is useful when function signatures are derived from the canonical parser AST
+/// (`parser::parse_file`) to avoid duplicate parsing paths.
+pub fn parse_types_from_file_without_functions(
+    path: &std::path::Path,
+) -> TranspileResult<Vec<TypeDef>> {
+    let source = std::fs::read_to_string(path)?;
+    let mut parser = TypeParser::new(&source).with_function_signatures(false);
     parser.parse_types()
 }
 
@@ -1712,12 +1737,10 @@ verus! {
         let sig = FunctionSig {
             name: "LAcceptorInit".to_string(),
             generics: Generics::default(),
-            params: vec![
-                ParamSig {
-                    name: "s".to_string(),
-                    ty: Type::Named(Path::single("LAcceptor".to_string())),
-                },
-            ],
+            params: vec![ParamSig {
+                name: "s".to_string(),
+                ty: Type::Named(Path::single("LAcceptor".to_string())),
+            }],
             return_type: Type::Bool,
             is_spec: true,
         };
@@ -1870,12 +1893,10 @@ verus! {
                     Type::Map(key_ty, val_ty) => {
                         assert!(matches!(key_ty.as_ref(), Type::Int));
                         match val_ty.as_ref() {
-                            Type::Seq(inner) => {
-                                match inner.as_ref() {
-                                    Type::Named(path) => assert_eq!(path.segments[0], "T"),
-                                    other => panic!("Expected Named type inside Seq, got {:?}", other),
-                                }
-                            }
+                            Type::Seq(inner) => match inner.as_ref() {
+                                Type::Named(path) => assert_eq!(path.segments[0], "T"),
+                                other => panic!("Expected Named type inside Seq, got {:?}", other),
+                            },
                             other => panic!("Expected Seq type for value, got {:?}", other),
                         }
                     }
@@ -1884,5 +1905,54 @@ verus! {
             }
             _ => panic!("Expected struct"),
         }
+    }
+
+    #[test]
+    fn test_skip_function_signatures_mode_only_collects_types() {
+        let source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                }
+
+                pub type Counter = int;
+
+                pub open spec fn LInit(s: LState) -> bool {
+                    s.value == 0
+                }
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source).with_function_signatures(false);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(types.len(), 2, "function signatures should be skipped");
+        assert!(matches!(types[0], TypeDef::Struct(_)));
+        assert!(matches!(types[1], TypeDef::Alias(_)));
+    }
+
+    #[test]
+    fn test_skip_function_signatures_mode_handles_ghost_params() {
+        let source = r#"
+            verus! {
+                pub struct LState {
+                    pub value: int,
+                }
+
+                pub open spec fn LGhostStep(s: LState, Ghost g: int) -> bool {
+                    g >= s.value
+                }
+            }
+        "#;
+
+        let mut parser = TypeParser::new(source).with_function_signatures(false);
+        let types = parser.parse_types().unwrap();
+
+        assert_eq!(
+            types.len(),
+            1,
+            "ghost-parameter functions should be skipped"
+        );
+        assert!(matches!(types[0], TypeDef::Struct(_)));
     }
 }
