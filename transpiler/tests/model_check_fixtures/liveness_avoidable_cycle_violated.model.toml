@@ -1,0 +1,14 @@
+[constants.assignments]
+limit = 2
+
+[quantifiers.int]
+min = 0
+max = 2
+
+[search]
+max_depth = 4
+max_states = 100
+timeout_ms = 1000
+
+[properties]
+leads_to = [{ name = "eventual_two", from = "LFrom", to = "LTo" }]

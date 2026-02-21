@@ -6658,4 +6658,13 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Extended JSON output with `liveness` section and fairness labels, and human output with a `liveness:` summary line.
     - Added execution-level assertions for liveness summary fields (violated/satisfied/fairness-filtered cases) plus an incomplete-exploration skip test (`max_states_reached`).
     - Updated `docs/model-checking-source-first.md` result/limitations sections to document current leads-to/fairness behavior and caveats.
-  - [ ] Leaf 22.x.7 (<500 LOC): add integration fixtures/tests for small protocols covering satisfied and violated `leads_to` obligations under fairness and non-fairness settings.
+  - [x] Leaf 22.x.7 (<500 LOC): add integration fixtures/tests for small protocols covering satisfied and violated `leads_to` obligations under fairness and non-fairness settings.
+    - Added dedicated model-check fixtures under `transpiler/tests/model_check_fixtures/` for two tiny source-first protocols:
+      - an avoidable-cycle protocol that violates `leads_to` without fairness but is filtered by strong fairness.
+      - a forced-progress protocol that satisfies `leads_to` in both non-fairness and strong-fairness modes.
+    - Added table-driven integration coverage in `transpiler/tests/integration.rs` that executes `verus-transpile model-check --json-report` across all four fixture models and asserts:
+      - expected top-level `result` (`leads_to_violated` vs `ok`)
+      - complete exploration (`stop_reason = FrontierExhausted`)
+      - liveness summary fields (`obligations`, `checked`, `violation_found`, `skipped_reason`)
+      - fairness reporting (`strong_count` and configured strong labels)
+      - `leads_to_violation` presence/absence alignment with each scenario.

@@ -6341,6 +6341,44 @@ fn resolve_model_check_fixture_path(name: &str) -> std::path::PathBuf {
     path
 }
 
+fn run_model_check_json_report_from_fixtures(
+    transpiler_bin: &std::path::Path,
+    input_fixture: &str,
+    types_fixture: &str,
+    model_fixture: &str,
+) -> serde_json::Value {
+    let input = resolve_model_check_fixture_path(input_fixture);
+    let types = resolve_model_check_fixture_path(types_fixture);
+    let model = resolve_model_check_fixture_path(model_fixture);
+
+    let output = std::process::Command::new(transpiler_bin)
+        .args([
+            "model-check",
+            "--input",
+            input.to_str().unwrap(),
+            "--types",
+            types.to_str().unwrap(),
+            "--model",
+            model.to_str().unwrap(),
+            "--search",
+            "bfs",
+            "--json-report",
+        ])
+        .output()
+        .expect("Failed to run model-check command");
+
+    assert!(
+        output.status.success(),
+        "model-check should succeed for fixtures input=`{}` types=`{}` model=`{}`. stderr={}",
+        input_fixture,
+        types_fixture,
+        model_fixture,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str(&stdout).expect("model-check should emit valid JSON report")
+}
+
 #[test]
 fn test_model_check_primarybackup_helper_call_branches_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
@@ -6567,6 +6605,168 @@ fn test_model_check_paxos_bounded_run() {
         "expected at least one transition in bounded Paxos run: {}",
         stdout
     );
+}
+
+#[test]
+fn test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    struct LivenessCase<'a> {
+        name: &'a str,
+        input_fixture: &'a str,
+        types_fixture: &'a str,
+        model_fixture: &'a str,
+        expected_result: &'a str,
+        expect_violation_report: bool,
+        expected_violation_found: bool,
+        expected_strong_fairness_labels: &'a [&'a str],
+    }
+
+    let cases = [
+        LivenessCase {
+            name: "violated_without_fairness",
+            input_fixture: "liveness_avoidable_cycle.protocol.rs",
+            types_fixture: "liveness_avoidable_cycle.types.rs",
+            model_fixture: "liveness_avoidable_cycle_violated.model.toml",
+            expected_result: "leads_to_violated",
+            expect_violation_report: true,
+            expected_violation_found: true,
+            expected_strong_fairness_labels: &[],
+        },
+        LivenessCase {
+            name: "filtered_by_strong_fairness",
+            input_fixture: "liveness_avoidable_cycle.protocol.rs",
+            types_fixture: "liveness_avoidable_cycle.types.rs",
+            model_fixture: "liveness_avoidable_cycle_strong_fairness.model.toml",
+            expected_result: "ok",
+            expect_violation_report: false,
+            expected_violation_found: false,
+            expected_strong_fairness_labels: &["branch_2", "branch_3"],
+        },
+        LivenessCase {
+            name: "satisfied_without_fairness",
+            input_fixture: "liveness_forced.protocol.rs",
+            types_fixture: "liveness_forced.types.rs",
+            model_fixture: "liveness_forced_unfair.model.toml",
+            expected_result: "ok",
+            expect_violation_report: false,
+            expected_violation_found: false,
+            expected_strong_fairness_labels: &[],
+        },
+        LivenessCase {
+            name: "satisfied_with_strong_fairness",
+            input_fixture: "liveness_forced.protocol.rs",
+            types_fixture: "liveness_forced.types.rs",
+            model_fixture: "liveness_forced_strong_fairness.model.toml",
+            expected_result: "ok",
+            expect_violation_report: false,
+            expected_violation_found: false,
+            expected_strong_fairness_labels: &["branch_1"],
+        },
+    ];
+
+    for case in cases {
+        let report = run_model_check_json_report_from_fixtures(
+            &transpiler_bin,
+            case.input_fixture,
+            case.types_fixture,
+            case.model_fixture,
+        );
+
+        let result = report
+            .get("result")
+            .and_then(|value| value.as_str())
+            .unwrap_or("<missing>");
+        assert_eq!(
+            result, case.expected_result,
+            "unexpected model-check result for case `{}`; report={}",
+            case.name, report
+        );
+
+        let stop_reason = report
+            .get("stop_reason")
+            .and_then(|value| value.as_str())
+            .unwrap_or("<missing>");
+        assert_eq!(
+            stop_reason, "FrontierExhausted",
+            "expected complete exploration for case `{}`; report={}",
+            case.name, report
+        );
+
+        let liveness = report
+            .get("liveness")
+            .expect("liveness section should exist")
+            .as_object()
+            .expect("liveness section should be an object");
+        assert_eq!(
+            liveness.get("obligations").and_then(|value| value.as_u64()),
+            Some(1),
+            "expected exactly one leads_to obligation in case `{}`",
+            case.name
+        );
+        assert_eq!(
+            liveness.get("checked").and_then(|value| value.as_bool()),
+            Some(true),
+            "expected checked=true in case `{}`",
+            case.name
+        );
+        assert_eq!(
+            liveness
+                .get("violation_found")
+                .and_then(|value| value.as_bool()),
+            Some(case.expected_violation_found),
+            "unexpected violation_found flag in case `{}`",
+            case.name
+        );
+        assert_eq!(
+            liveness
+                .get("skipped_reason")
+                .and_then(|value| value.as_str()),
+            None,
+            "did not expect skipped_reason for case `{}`",
+            case.name
+        );
+
+        let fairness = liveness
+            .get("fairness")
+            .and_then(|value| value.as_object())
+            .expect("liveness.fairness should be present");
+        let strong_labels = fairness
+            .get("strong")
+            .and_then(|value| value.as_array())
+            .expect("liveness.fairness.strong should be an array");
+        assert_eq!(
+            fairness
+                .get("strong_count")
+                .and_then(|value| value.as_u64()),
+            Some(case.expected_strong_fairness_labels.len() as u64),
+            "unexpected strong fairness count in case `{}`",
+            case.name
+        );
+        let strong_labels: Vec<&str> = strong_labels
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .expect("strong fairness labels should be strings")
+            })
+            .collect();
+        assert_eq!(
+            strong_labels, case.expected_strong_fairness_labels,
+            "unexpected strong fairness labels in case `{}`",
+            case.name
+        );
+
+        let has_violation_report = report
+            .get("leads_to_violation")
+            .map(|value| !value.is_null())
+            .unwrap_or(false);
+        assert_eq!(
+            has_violation_report, case.expect_violation_report,
+            "unexpected leads_to_violation report presence in case `{}`; report={}",
+            case.name, report
+        );
+    }
 }
 
 #[test]
