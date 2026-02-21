@@ -6287,7 +6287,8 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 
 - [x] types_manual_helpers.rs is **type infrastructure** (impl blocks, clone methods, view traits), NOT protocol functions
   - Added regression test `test_rsl_types_manual_helpers_contains_only_type_infrastructure` to guard against protocol exec/action functions being injected into this file.
-- [ ] Keep `manual_code = "types_manual_helpers.rs"` in types_transpile.toml
+- [x] Keep `manual_code = "types_manual_helpers.rs"` in types_transpile.toml
+  - Added regression test `test_rsl_types_transpile_toml_keeps_manual_helpers_binding` to enforce `output.manual_code` stays pinned to `types_manual_helpers.rs`.
 - [ ] Long-term (Phase 21.7): teach type generator to produce these impl blocks
 - [ ] Rationale: this file doesn't contain protocol logic — it's structural code the type generator should eventually handle
 

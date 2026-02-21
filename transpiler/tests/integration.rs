@@ -1129,6 +1129,32 @@ fn test_rsl_types_manual_helpers_contains_only_type_infrastructure() {
 }
 
 #[test]
+fn test_rsl_types_transpile_toml_keeps_manual_helpers_binding() {
+    let config_str = std::fs::read_to_string("../src/protocol/RSL/types_transpile.toml")
+        .expect("Failed to read RSL types transpile config");
+    let config: toml::Value = config_str.parse().expect("Failed to parse RSL types TOML");
+
+    let manual_code = config
+        .get("output")
+        .and_then(|output| output.get("manual_code"))
+        .and_then(|v| v.as_str())
+        .expect("types_transpile.toml should define output.manual_code");
+
+    assert_eq!(
+        manual_code, "types_manual_helpers.rs",
+        "RSL types generation must keep output.manual_code bound to types_manual_helpers.rs"
+    );
+
+    let helper_path = std::path::Path::new("../src/protocol/RSL").join(manual_code);
+    let helper_source =
+        std::fs::read_to_string(&helper_path).expect("manual helper file from output.manual_code must exist");
+    assert!(
+        helper_source.contains("pub struct CReplica"),
+        "manual helper file should include RSL type infrastructure symbols"
+    );
+}
+
+#[test]
 fn test_rsl_types_manual_helpers_extension_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
         .expect("Failed to read RSL types manual helpers");
