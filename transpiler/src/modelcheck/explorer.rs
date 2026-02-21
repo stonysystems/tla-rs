@@ -1,7 +1,8 @@
 use crate::error::{TranspileError, TranspileResult};
-use crate::modelcheck::config::SearchLimits;
+use crate::modelcheck::config::{SearchLimits, StateDedupMode};
 use crate::modelcheck::value::RuntimeValue;
 use std::collections::{BTreeSet, VecDeque};
+use std::hash::{Hash, Hasher};
 
 /// Traversal strategy for state-space exploration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -113,6 +114,10 @@ pub struct ExplorationStats {
     pub successors_enqueued: usize,
     /// Number of successor candidates dropped due to deduplication.
     pub duplicate_successors: usize,
+    /// Number of distinct states merged due to hash-compaction key collisions.
+    ///
+    /// Non-zero only when `state_dedup = "hash_compaction64"`.
+    pub hash_compaction_collisions: usize,
 }
 
 /// Result of running a bounded BFS/DFS exploration.
@@ -224,6 +229,31 @@ pub fn explore_state_space_with_traces<F, I>(
     mode: SearchMode,
     limits: ExplorationLimits,
     check_deadlock: bool,
+    successor_fn: F,
+    invariant_checker: I,
+) -> TranspileResult<ExplorationResult>
+where
+    F: FnMut(&RuntimeValue) -> TranspileResult<Vec<TracedSuccessor>>,
+    I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
+{
+    explore_state_space_with_traces_and_dedup(
+        initial_states,
+        mode,
+        limits,
+        StateDedupMode::Canonical,
+        check_deadlock,
+        successor_fn,
+        invariant_checker,
+    )
+}
+
+/// Same as `explore_state_space_with_traces`, but with explicit state-dedup mode.
+pub fn explore_state_space_with_traces_and_dedup<F, I>(
+    initial_states: &[RuntimeValue],
+    mode: SearchMode,
+    limits: ExplorationLimits,
+    state_dedup: StateDedupMode,
+    check_deadlock: bool,
     mut successor_fn: F,
     mut invariant_checker: I,
 ) -> TranspileResult<ExplorationResult>
@@ -234,11 +264,16 @@ where
     validate_limits(limits)?;
 
     let mut visited = BTreeSet::new();
+    let mut hash_representatives = std::collections::BTreeMap::<String, String>::new();
     let mut frontier = VecDeque::new();
     let mut states_by_key = std::collections::BTreeMap::new();
     for state in initial_states {
-        let key = state.canonical_key();
+        let canonical = state.canonical_key();
+        let key = dedup_key_from_canonical(&canonical, state_dedup);
         if visited.insert(key.clone()) {
+            if matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                hash_representatives.insert(key.clone(), canonical);
+            }
             states_by_key.insert(key.clone(), state.clone());
             frontier.push_back(FrontierItem {
                 key,
@@ -317,8 +352,12 @@ where
                 ));
             }
 
-            let key = successor.state.canonical_key();
+            let canonical = successor.state.canonical_key();
+            let key = dedup_key_from_canonical(&canonical, state_dedup);
             if visited.insert(key.clone()) {
+                if matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                    hash_representatives.insert(key.clone(), canonical);
+                }
                 states_by_key.insert(key.clone(), successor.state.clone());
                 parents.insert(
                     key.clone(),
@@ -334,6 +373,9 @@ where
                 });
                 stats.successors_enqueued += 1;
             } else {
+                if is_hash_collision(&hash_representatives, &key, &canonical) {
+                    stats.hash_compaction_collisions += 1;
+                }
                 stats.duplicate_successors += 1;
             }
         }
@@ -368,10 +410,16 @@ where
     validate_limits(limits)?;
 
     let mut visited = BTreeSet::new();
+    let state_dedup = StateDedupMode::Canonical;
+    let mut hash_representatives = std::collections::BTreeMap::<String, String>::new();
     let mut frontier = VecDeque::new();
     for state in initial_states {
-        let key = state.canonical_key();
+        let canonical = state.canonical_key();
+        let key = dedup_key_from_canonical(&canonical, state_dedup);
         if visited.insert(key.clone()) {
+            if matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                hash_representatives.insert(key.clone(), canonical);
+            }
             frontier.push_back(FrontierItem {
                 key,
                 state: state.clone(),
@@ -445,8 +493,12 @@ where
                 ));
             }
 
-            let key = successor.canonical_key();
+            let canonical = successor.canonical_key();
+            let key = dedup_key_from_canonical(&canonical, state_dedup);
             if visited.insert(key.clone()) {
+                if matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                    hash_representatives.insert(key.clone(), canonical);
+                }
                 to_enqueue.push(FrontierItem {
                     key,
                     state: successor,
@@ -454,6 +506,9 @@ where
                 });
                 stats.successors_enqueued += 1;
             } else {
+                if is_hash_collision(&hash_representatives, &key, &canonical) {
+                    stats.hash_compaction_collisions += 1;
+                }
                 stats.duplicate_successors += 1;
             }
         }
@@ -471,6 +526,28 @@ where
         None,
         None,
     ))
+}
+
+fn dedup_key_from_canonical(canonical: &str, mode: StateDedupMode) -> String {
+    match mode {
+        StateDedupMode::Canonical => canonical.to_string(),
+        StateDedupMode::HashCompaction64 => {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            canonical.hash(&mut hasher);
+            format!("h{:016x}", hasher.finish())
+        }
+    }
+}
+
+fn is_hash_collision(
+    representatives: &std::collections::BTreeMap<String, String>,
+    key: &str,
+    canonical: &str,
+) -> bool {
+    representatives
+        .get(key)
+        .map(|existing| existing != canonical)
+        .unwrap_or(false)
 }
 
 fn finalize_result(
@@ -1104,7 +1181,11 @@ mod tests {
 
     #[test]
     fn test_explore_state_space_with_traces_emits_invariant_counterexample() {
-        let graph = BTreeMap::from([(0, vec![(1, "LStep")]), (1, vec![(2, "LCommit")]), (2, vec![])]);
+        let graph = BTreeMap::from([
+            (0, vec![(1, "LStep")]),
+            (1, vec![(2, "LCommit")]),
+            (2, vec![]),
+        ]);
         let result = explore_state_space_with_traces(
             &[state(0)],
             SearchMode::Bfs,
@@ -1181,5 +1262,77 @@ mod tests {
         assert_eq!(trace.steps.len(), 1);
         assert_eq!(trace.steps[0].action_branch, "LAdvance");
         assert_eq!(state_id(&trace.steps[0].state), 1);
+    }
+
+    #[test]
+    fn test_dedup_key_from_canonical_hash_compaction64_is_stable() {
+        let canonical = "struct:LState{id=int:42}";
+        let key_a = dedup_key_from_canonical(canonical, StateDedupMode::HashCompaction64);
+        let key_b = dedup_key_from_canonical(canonical, StateDedupMode::HashCompaction64);
+        let exact = dedup_key_from_canonical(canonical, StateDedupMode::Canonical);
+
+        assert_eq!(key_a, key_b);
+        assert_ne!(key_a, exact);
+        assert!(key_a.starts_with('h'));
+        assert_eq!(key_a.len(), 17);
+    }
+
+    #[test]
+    fn test_is_hash_collision_detects_distinct_canonical_representatives() {
+        let mut reps = BTreeMap::new();
+        reps.insert(
+            "h00000000000000aa".to_string(),
+            "struct:LState{id=int:1}".to_string(),
+        );
+
+        assert!(!is_hash_collision(
+            &reps,
+            "h00000000000000aa",
+            "struct:LState{id=int:1}"
+        ));
+        assert!(is_hash_collision(
+            &reps,
+            "h00000000000000aa",
+            "struct:LState{id=int:2}"
+        ));
+        assert!(!is_hash_collision(
+            &reps,
+            "h00000000000000bb",
+            "struct:LState{id=int:2}"
+        ));
+    }
+
+    #[test]
+    fn test_explore_state_space_with_traces_hash_compaction_reports_collision_stats() {
+        let graph = BTreeMap::from([(0, vec![(1, "LStep")]), (1, vec![(0, "LBack")])]);
+        let result = explore_state_space_with_traces_and_dedup(
+            &[state(0)],
+            SearchMode::Bfs,
+            ExplorationLimits {
+                max_depth: 5,
+                max_states: 20,
+            },
+            StateDedupMode::HashCompaction64,
+            false,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|(id, action)| TracedSuccessor {
+                        action_branch: (*action).to_string(),
+                        state: state(*id),
+                    })
+                    .collect();
+                Ok(next)
+            },
+            |_s, _| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(ids(&result), vec![0, 1]);
+        assert_eq!(result.stats.duplicate_successors, 1);
+        assert_eq!(result.stats.hash_compaction_collisions, 0);
     }
 }

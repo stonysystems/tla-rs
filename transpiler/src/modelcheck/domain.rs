@@ -852,6 +852,7 @@ mod tests {
                 max_depth: 10,
                 max_states: 200,
                 timeout_ms: 1_000,
+                state_dedup: crate::modelcheck::config::StateDedupMode::Canonical,
             },
             ..Default::default()
         }

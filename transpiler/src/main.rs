@@ -1059,7 +1059,7 @@ fn execute_model_check(
     use std::time::Instant;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
     use verus_transpiler::modelcheck::explorer::{
-        explore_state_space_with_traces, ExplorationLimits, TracedSuccessor,
+        explore_state_space_with_traces_and_dedup, ExplorationLimits, TracedSuccessor,
     };
     use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
     use verus_transpiler::modelcheck::invariant::{first_invariant_violation, InvariantHooks};
@@ -1143,10 +1143,11 @@ fn execute_model_check(
         assignments_by_branch.insert(branch.label.clone(), assignments);
     }
 
-    let exploration = explore_state_space_with_traces(
+    let exploration = explore_state_space_with_traces_and_dedup(
         &initial_states,
         search_mode,
         limits,
+        model_config.search.state_dedup,
         model_config.properties.check_deadlock,
         |state| {
             let mut traced_successors = Vec::new();
@@ -1428,6 +1429,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     "search": {
                         "strategy": selected_search.as_str(),
                         "successor_semantics": model_config.properties.successor_semantics,
+                        "state_dedup": model_config.search.state_dedup,
                         "max_depth": model_config.search.max_depth,
                         "max_states": model_config.search.max_states,
                         "timeout_ms": model_config.search.timeout_ms,
@@ -1437,6 +1439,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "transitions": execution.summary.transitions,
                         "depth": execution.summary.depth,
                         "elapsed_ms": execution.summary.elapsed_ms,
+                        "hash_compaction_collisions": execution.exploration.stats.hash_compaction_collisions,
                     },
                     "stop_reason": format!("{:?}", execution.exploration.stop_reason),
                     "invariant_violation": execution.exploration.invariant_violation.as_ref().map(|violation| serde_json::json!({
@@ -1469,20 +1472,22 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 resolved_invariant_names.len()
             );
             println!(
-                "  search: strategy={}, mode_semantics={:?}, max_depth={}, max_states={}, timeout_ms={}",
+                "  search: strategy={}, mode_semantics={:?}, state_dedup={:?}, max_depth={}, max_states={}, timeout_ms={}",
                 selected_search.as_str(),
                 model_config.properties.successor_semantics,
+                model_config.search.state_dedup,
                 model_config.search.max_depth,
                 model_config.search.max_states,
                 model_config.search.timeout_ms
             );
             println!("  result: {}", execution.summary.result);
             println!(
-                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}",
+                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}, hash_compaction_collisions={}",
                 execution.summary.states,
                 execution.summary.transitions,
                 execution.summary.depth,
-                execution.summary.elapsed_ms
+                execution.summary.elapsed_ms,
+                execution.exploration.stats.hash_compaction_collisions
             );
             if let Some(violation) = &execution.exploration.invariant_violation {
                 println!(
@@ -3516,6 +3521,85 @@ invariants = ["LInvBad"]
             Some("LInvBad")
         );
         assert_eq!(execution.summary.states, 2);
+    }
+
+    #[test]
+    fn test_execute_model_check_respects_hash_compaction_dedup_mode() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value < c.limit && s_.value == s.value + 1) || (s_.value == s.value)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+state_dedup = "hash_compaction64"
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(
+            model_config.search.state_dedup,
+            verus_transpiler::modelcheck::config::StateDedupMode::HashCompaction64
+        );
+        assert_eq!(execution.summary.result, "ok");
+        assert!(execution.summary.states >= 1);
+        assert_eq!(execution.exploration.stats.hash_compaction_collisions, 0);
     }
 
     #[test]

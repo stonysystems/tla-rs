@@ -6595,4 +6595,12 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Linked wrapper guidance from `docs/model-checking-source-first.md` and `docs/model-checking-migration.md`.
     - Added integration coverage in `transpiler/tests/integration.rs` to lock required guide markers and cross-doc links.
 - [ ] Add stronger reduction techniques (symmetry, POR-like heuristics, hash compaction).
+  - [x] Leaf 22.10.5 (<500 LOC): add configurable hash-compaction state dedup mode for source-first exploration.
+    - Added `[search].state_dedup` with `canonical` (default, exact) and `hash_compaction64` (lossy) in `model.toml` parsing (`transpiler/src/modelcheck/config.rs`).
+    - Wired dedup mode into trace-capable exploration (`explore_state_space_with_traces_and_dedup`) and added `hash_compaction_collisions` diagnostics in exploration stats (`transpiler/src/modelcheck/explorer.rs`).
+    - Surfaced dedup mode and collision metric in `model-check` human/JSON output (`transpiler/src/main.rs`) and documented usage/caveats in `docs/model-checking-source-first.md`.
+    - Added focused unit tests for dedup-mode parsing/validation, hash-compaction helper behavior, and execution wiring.
+  - [ ] Leaf 22.10.6 (<500 LOC): introduce optional symmetry canonicalization hook for selected enum/set fields before visited-key generation.
+  - [ ] Leaf 22.10.7 (<500 LOC): add POR-like branch pruning heuristic for clearly independent next-branches (soundness-preserving when predicate is proven syntactic independence).
+  - [ ] Leaf 22.10.8 (<500 LOC): add reduction telemetry summary (`pruned_by_por`, `symmetry_collapses`) and docs on when each mode is safe to use.
 - [ ] Phase 22.x liveness/fairness extension (`WF/SF`, leads-to) with SCC/cycle algorithms.

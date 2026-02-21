@@ -76,6 +76,11 @@ Useful options for bounded runs:
 
 If `--types` is omitted, the tool defaults to sibling `types.rs`.
 
+`model.toml` can also choose state dedup mode under `[search]`:
+
+- `state_dedup = "canonical"` (default, exact)
+- `state_dedup = "hash_compaction64"` (lossy hash compaction)
+
 ## 6. Inspect Results
 
 With `--json-report`, output includes:
@@ -168,6 +173,9 @@ Finite-domain expansion and runtime values currently cover:
 - Domain expansion limitations:
   - generic domains are only supported for `Seq<T>`, `Set<T>`, and `Map<K, V>` container forms.
   - expansion is bounded by configured collection/search limits and can fail when domains are too large.
+- Hash-compaction caveat:
+  - `search.state_dedup = "hash_compaction64"` is intentionally lossy and can merge distinct states on hash collisions.
+  - Treat it as a bug-finding acceleration mode, not as a sound proof mode.
 - Helper-call limitations:
   - helper predicates/functions must resolve unambiguously from ingested sources.
   - recursive helper evaluation has a bounded recursion depth.

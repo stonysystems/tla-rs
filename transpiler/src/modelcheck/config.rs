@@ -67,6 +67,9 @@ pub struct SearchLimits {
     pub max_states: usize,
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
+    /// State deduplication strategy used by exploration.
+    #[serde(default)]
+    pub state_dedup: StateDedupMode,
 }
 
 impl Default for SearchLimits {
@@ -75,8 +78,22 @@ impl Default for SearchLimits {
             max_depth: default_max_depth(),
             max_states: default_max_states(),
             timeout_ms: default_timeout_ms(),
+            state_dedup: StateDedupMode::Canonical,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StateDedupMode {
+    /// Exact state deduplication using canonical runtime-value keys.
+    #[default]
+    Canonical,
+    /// Lossy deduplication using a 64-bit hash fingerprint of canonical keys.
+    ///
+    /// This can reduce memory pressure but may merge distinct states on hash collisions.
+    /// Use for bug-finding/exploration acceleration, not for sound proof obligations.
+    HashCompaction64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -474,6 +491,7 @@ max_map_len = 4
 max_depth = 12
 max_states = 5000
 timeout_ms = 1000
+state_dedup = "canonical"
 
 [properties]
 invariants = ["LTypeOK", "LSafety"]
@@ -490,6 +508,7 @@ successor_semantics = "deadlock"
             config.properties.successor_semantics,
             SuccessorSemantics::Deadlock
         );
+        assert_eq!(config.search.state_dedup, StateDedupMode::Canonical);
     }
 
     #[test]
@@ -503,6 +522,7 @@ invariants = ["LTypeOK"]
         assert_eq!(config.search.max_depth, 30);
         assert_eq!(config.search.max_states, 100_000);
         assert_eq!(config.search.timeout_ms, 30_000);
+        assert_eq!(config.search.state_dedup, StateDedupMode::Canonical);
         assert_eq!(config.properties.invariants, vec!["LTypeOK".to_string()]);
         assert_eq!(
             config.properties.successor_semantics,
@@ -597,6 +617,26 @@ successor_semantics = "stuttering"
             config.properties.successor_semantics,
             SuccessorSemantics::Stuttering
         );
+    }
+
+    #[test]
+    fn test_parse_model_config_accepts_hash_compaction_dedup_mode() {
+        let source = r#"
+[search]
+state_dedup = "hash_compaction64"
+"#;
+        let config = parse_model_config_str(source).unwrap();
+        assert_eq!(config.search.state_dedup, StateDedupMode::HashCompaction64);
+    }
+
+    #[test]
+    fn test_parse_model_config_rejects_unknown_dedup_mode() {
+        let source = r#"
+[search]
+state_dedup = "unknown_mode"
+"#;
+        let err = parse_model_config_str(source).unwrap_err();
+        assert!(err.to_string().contains("state_dedup"));
     }
 
     #[test]
