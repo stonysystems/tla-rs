@@ -195,6 +195,18 @@ enum Commands {
         #[arg(long, value_enum)]
         search: Option<CliSearchMode>,
 
+        /// Override [search].max_depth
+        #[arg(long)]
+        max_depth: Option<usize>,
+
+        /// Override [search].max_states
+        #[arg(long)]
+        max_states: Option<usize>,
+
+        /// Override [search].timeout_ms (milliseconds)
+        #[arg(long = "timeout", alias = "timeout-ms")]
+        timeout_ms: Option<u64>,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -615,9 +627,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             next,
             invariant,
             search,
+            max_depth,
+            max_states,
+            timeout_ms,
             model,
         } => {
-            use verus_transpiler::modelcheck::config::parse_model_config_file;
+            use verus_transpiler::modelcheck::config::{
+                apply_model_config_overrides, parse_model_config_file, ModelConfigOverrides,
+            };
             use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
             use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
             use std::collections::HashSet;
@@ -640,6 +657,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             .map_err(|e| miette::miette!("{}", e))?;
             let mut model_config =
                 parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
+            let overrides = ModelConfigOverrides {
+                max_depth: *max_depth,
+                max_states: *max_states,
+                timeout_ms: *timeout_ms,
+                ..ModelConfigOverrides::default()
+            };
+            apply_model_config_overrides(&mut model_config, &overrides)
+                .map_err(|e| miette::miette!("{}", e))?;
 
             if !invariant.is_empty() {
                 let mut normalized = Vec::with_capacity(invariant.len());
@@ -2001,6 +2026,12 @@ Next == count' = count + N
             "LSafety",
             "--search",
             "dfs",
+            "--max-depth",
+            "64",
+            "--max-states",
+            "4096",
+            "--timeout",
+            "2500",
             "--model",
             "model.toml",
         ]);
@@ -2013,6 +2044,9 @@ Next == count' = count + N
                 next,
                 invariant,
                 search,
+                max_depth,
+                max_states,
+                timeout_ms,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -2021,6 +2055,9 @@ Next == count' = count + N
                 assert_eq!(next, "NextOverride");
                 assert_eq!(invariant, vec!["LTypeOK".to_string(), "LSafety".to_string()]);
                 assert_eq!(search, Some(CliSearchMode::Dfs));
+                assert_eq!(max_depth, Some(64));
+                assert_eq!(max_states, Some(4096));
+                assert_eq!(timeout_ms, Some(2500));
                 assert_eq!(model, PathBuf::from("model.toml"));
             }
             _ => panic!("Expected ModelCheck command"),
@@ -2092,6 +2129,9 @@ invariants = ["LInv"]
             next: "LNext".to_string(),
             invariant: vec![],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2151,6 +2191,9 @@ verus! {
             next: "LNext".to_string(),
             invariant: vec![],
             search: Some(CliSearchMode::Dfs),
+            max_depth: Some(55),
+            max_states: Some(2048),
+            timeout_ms: Some(7777),
             model: model_path,
         };
         let cli = Cli {
@@ -2170,6 +2213,69 @@ verus! {
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_invalid_limit_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(&model_path, "").unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec![],
+            search: None,
+            max_depth: Some(0),
+            max_states: None,
+            timeout_ms: None,
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(err.to_string().contains("search limits must be > 0"));
     }
 
     #[test]
@@ -2210,6 +2316,9 @@ verus! {
             next: "LNext".to_string(),
             invariant: vec![],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2269,6 +2378,9 @@ verus! {
             next: "NextCustom".to_string(),
             invariant: vec![],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2328,6 +2440,9 @@ verus! {
             next: "NextCustom".to_string(),
             invariant: vec![],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2377,6 +2492,9 @@ verus! {
             next: "LNext".to_string(),
             invariant: vec![],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2444,6 +2562,9 @@ invariants = ["LMissing"]
             next: "LNext".to_string(),
             invariant: vec![],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2515,6 +2636,9 @@ invariants = ["LMissing"]
             next: "LNext".to_string(),
             invariant: vec!["LInv".to_string()],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2578,6 +2702,9 @@ verus! {
             next: "LNext".to_string(),
             invariant: vec!["LInv".to_string(), "LInv".to_string()],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {
@@ -2638,6 +2765,9 @@ verus! {
             next: "LNext".to_string(),
             invariant: vec!["   ".to_string()],
             search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
             model: model_path,
         };
         let cli = Cli {

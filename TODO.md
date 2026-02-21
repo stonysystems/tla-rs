@@ -6531,7 +6531,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added `--search <bfs|dfs>` to `verus-transpile model-check` (typed CLI enum), defaulting to `bfs` when omitted.
     - Wired selection into model-check preflight summary output and added focused tests for valid parsing (`dfs`), invalid mode rejection, and command preflight acceptance.
     - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
-  - [ ] `--max-depth`, `--max-states`, `--timeout`
+  - [x] `--max-depth`, `--max-states`, `--timeout`
+    - Added `--max-depth`, `--max-states`, and `--timeout` overrides to `verus-transpile model-check` (with `--timeout-ms` alias), wired through `ModelConfigOverrides` so preflight uses validated search-limit overrides from CLI.
+    - Added focused tests for CLI parsing of these flags, command acceptance with overrides, and rejection of invalid overrides (e.g., `max_depth = 0`).
+    - Scope check: implemented as a small leaf task (`<500` LOC including focused CLI tests).
   - [ ] `--json-report` (machine-readable result)
 - [ ] Add human-readable summary output (states, transitions, depth, elapsed, result).
 
