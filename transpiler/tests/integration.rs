@@ -6120,6 +6120,33 @@ fn test_phase22_mvp_scope_doc_is_source_first_safety_only() {
     }
 }
 
+#[test]
+fn test_phase22_source_first_model_checking_guide_has_core_steps() {
+    let source = std::fs::read_to_string("../docs/model-checking-source-first.md")
+        .expect("Failed to read source-first model-checking guide");
+
+    for marker in [
+        "Source-First Model Checking Guide",
+        "verus-transpile model-check",
+        "--input",
+        "--types",
+        "--model",
+        "--search bfs",
+        "--json-report",
+        "model.toml",
+        "LInit",
+        "LNext",
+        "verus-transpile model-config",
+        "docs/dev/phase22-model-toml-format.md",
+    ] {
+        assert!(
+            source.contains(marker),
+            "source-first model-checking guide should contain `{}`",
+            marker
+        );
+    }
+}
+
 /// Phase 19.4: Verify acceptor_gen.rs is fully standalone with no clone-delegate patterns
 #[test]
 fn test_acceptor_gen_no_delegate_patterns() {

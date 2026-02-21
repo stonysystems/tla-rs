@@ -6566,7 +6566,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.9 Documentation and Rollout
 
-- [ ] Document “how to model check tla-rs specs directly” in `docs/`.
+- [x] Document “how to model check tla-rs specs directly” in `docs/`.
+  - Added `docs/model-checking-source-first.md` with a source-first workflow (`model-check` command, minimal `model.toml`, key overrides, JSON report interpretation, and `model-config` validation step).
 - [ ] Provide migration guidance from TLC wrapper workflow to source-first workflow.
 - [ ] Document current limitations and supported expression/type subset.
 - [ ] Add troubleshooting section for common modeling errors (domain too large, unsupported constructs).
