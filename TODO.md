@@ -6561,7 +6561,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - Added bounded integration coverage in `transpiler/tests/integration.rs` with finite `LConstants` (`acceptors`, `quorum_size`, `node_id`) and tiny int/search domains, asserting successful JSON report with non-zero states/transitions.
 - [x] Add differential checks against existing TLC wrapper outcomes for shared small models.
   - Added `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` in `transpiler/tests/integration.rs` to run source-first model-check on shared protocols (TwoPhase, LeaderElection, PrimaryBackup, Paxos) and assert qualitative agreement with recorded TLC outcome categories (`PASS`/`PARTIAL`) via non-violating JSON results.
-- [ ] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
+- [x] Add reproducible fixtures under `transpiler/tests/` + sample `model.toml` files.
+  - Added checked-in fixture models under `transpiler/tests/model_check_fixtures/` (`primarybackup_small`, `twophase_small`, `leaderelection_small`, `paxos_small`) and switched model-check integration/differential tests to consume those fixture files directly (no per-run temp TOML generation).
 
 ### 22.9 Documentation and Rollout
 

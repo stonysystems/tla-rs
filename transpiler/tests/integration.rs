@@ -5695,50 +5695,32 @@ fn resolve_transpiler_binary_for_integration() -> std::path::PathBuf {
     built
 }
 
+fn resolve_repo_root_for_integration() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("transpiler crate should have repository root parent")
+        .to_path_buf()
+}
+
+fn resolve_model_check_fixture_path(name: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("model_check_fixtures")
+        .join(name);
+    assert!(path.exists(), "Missing model-check fixture: {}", path.display());
+    path
+}
+
 #[test]
 fn test_model_check_primarybackup_helper_call_branches_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/PrimaryBackup/primarybackup.rs");
     let types = repo_root.join("src/protocol/PrimaryBackup/types.rs");
+    let model_path = resolve_model_check_fixture_path("primarybackup_small.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
-
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    let model_path = std::env::temp_dir().join(format!(
-        "primarybackup_modelcheck_{}_{}.toml",
-        std::process::id(),
-        stamp
-    ));
-    let model = r#"
-[constants.assignments]
-max_log_len = 0
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[quantifiers.types.LPBMessage]
-kind = "enum_subset"
-variants = ["Ack"]
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#;
-    std::fs::write(&model_path, model).expect("Failed to write temporary model.toml");
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
@@ -5755,7 +5737,6 @@ successor_semantics = "deadlock"
         ])
         .output()
         .expect("Failed to run model-check command");
-    let _ = std::fs::remove_file(&model_path);
 
     assert!(
         output.status.success(),
@@ -5791,50 +5772,12 @@ successor_semantics = "deadlock"
 fn test_model_check_twophase_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/TwoPhase/twophase.rs");
     let types = repo_root.join("src/protocol/TwoPhase/types.rs");
+    let model_path = resolve_model_check_fixture_path("twophase_small.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
-
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    let model_path = std::env::temp_dir().join(format!(
-        "twophase_modelcheck_{}_{}.toml",
-        std::process::id(),
-        stamp
-    ));
-    let model = r#"
-[constants.domains.rm]
-kind = "values"
-values = ["set:{int:0}"]
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[quantifiers.types.LTPCMessage]
-kind = "enum_subset"
-variants = ["Prepare", "Commit", "Abort"]
-
-[collections]
-max_set_len = 1
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#;
-    std::fs::write(&model_path, model).expect("Failed to write temporary model.toml");
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
@@ -5851,7 +5794,6 @@ successor_semantics = "deadlock"
         ])
         .output()
         .expect("Failed to run model-check command");
-    let _ = std::fs::remove_file(&model_path);
 
     assert!(
         output.status.success(),
@@ -5887,54 +5829,12 @@ successor_semantics = "deadlock"
 fn test_model_check_leader_election_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/LeaderElection/election.rs");
     let types = repo_root.join("src/protocol/LeaderElection/types.rs");
+    let model_path = resolve_model_check_fixture_path("leaderelection_small.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
-
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    let model_path = std::env::temp_dir().join(format!(
-        "leaderelection_modelcheck_{}_{}.toml",
-        std::process::id(),
-        stamp
-    ));
-    let model = r#"
-[constants.assignments]
-num_nodes = 0
-
-[constants.domains.nodes]
-kind = "values"
-values = ["set:{int:0}"]
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[quantifiers.types.LElectionMessage]
-kind = "enum_subset"
-variants = ["Election", "Answer", "Coordinator"]
-
-[collections]
-max_seq_len = 1
-max_set_len = 1
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#;
-    std::fs::write(&model_path, model).expect("Failed to write temporary model.toml");
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
@@ -5951,7 +5851,6 @@ successor_semantics = "deadlock"
         ])
         .output()
         .expect("Failed to run model-check command");
-    let _ = std::fs::remove_file(&model_path);
 
     assert!(
         output.status.success(),
@@ -5987,50 +5886,12 @@ successor_semantics = "deadlock"
 fn test_model_check_paxos_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/Paxos/paxos.rs");
     let types = repo_root.join("src/protocol/Paxos/types.rs");
+    let model_path = resolve_model_check_fixture_path("paxos_small.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
-
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    let model_path = std::env::temp_dir().join(format!(
-        "paxos_modelcheck_{}_{}.toml",
-        std::process::id(),
-        stamp
-    ));
-    let model = r#"
-[constants.assignments]
-quorum_size = 0
-node_id = 0
-
-[constants.domains.acceptors]
-kind = "values"
-values = ["set:{int:0}"]
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[collections]
-max_set_len = 1
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#;
-    std::fs::write(&model_path, model).expect("Failed to write temporary model.toml");
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
@@ -6047,7 +5908,6 @@ successor_semantics = "deadlock"
         ])
         .output()
         .expect("Failed to run model-check command");
-    let _ = std::fs::remove_file(&model_path);
 
     assert!(
         output.status.success(),
@@ -6083,10 +5943,7 @@ successor_semantics = "deadlock"
 fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let repo_root = resolve_repo_root_for_integration();
     let tlc_outcomes_doc = std::fs::read_to_string("../docs/conversion-testing-guide.md")
         .expect("Failed to read TLC outcomes doc");
 
@@ -6094,7 +5951,7 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
         protocol_name: &'a str,
         input: &'a str,
         types: &'a str,
-        model_toml: &'a str,
+        model_fixture: &'a str,
         expected_tlc_label: &'a str,
     }
 
@@ -6103,124 +5960,28 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
             protocol_name: "TwoPhase",
             input: "src/protocol/TwoPhase/twophase.rs",
             types: "src/protocol/TwoPhase/types.rs",
-            model_toml: r#"
-[constants.domains.rm]
-kind = "values"
-values = ["set:{int:0}"]
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[quantifiers.types.LTPCMessage]
-kind = "enum_subset"
-variants = ["Prepare", "Commit", "Abort"]
-
-[collections]
-max_set_len = 1
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#,
+            model_fixture: "twophase_small.model.toml",
             expected_tlc_label: "PASS",
         },
         DiffCase {
             protocol_name: "LeaderElection",
             input: "src/protocol/LeaderElection/election.rs",
             types: "src/protocol/LeaderElection/types.rs",
-            model_toml: r#"
-[constants.assignments]
-num_nodes = 0
-
-[constants.domains.nodes]
-kind = "values"
-values = ["set:{int:0}"]
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[quantifiers.types.LElectionMessage]
-kind = "enum_subset"
-variants = ["Election", "Answer", "Coordinator"]
-
-[collections]
-max_seq_len = 1
-max_set_len = 1
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#,
+            model_fixture: "leaderelection_small.model.toml",
             expected_tlc_label: "PASS",
         },
         DiffCase {
             protocol_name: "PrimaryBackup",
             input: "src/protocol/PrimaryBackup/primarybackup.rs",
             types: "src/protocol/PrimaryBackup/types.rs",
-            model_toml: r#"
-[constants.assignments]
-max_log_len = 0
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[quantifiers.types.LPBMessage]
-kind = "enum_subset"
-variants = ["Ack"]
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#,
+            model_fixture: "primarybackup_small.model.toml",
             expected_tlc_label: "PASS",
         },
         DiffCase {
             protocol_name: "Paxos",
             input: "src/protocol/Paxos/paxos.rs",
             types: "src/protocol/Paxos/types.rs",
-            model_toml: r#"
-[constants.assignments]
-quorum_size = 0
-node_id = 0
-
-[constants.domains.acceptors]
-kind = "values"
-values = ["set:{int:0}"]
-
-[quantifiers.int]
-min = 0
-max = 0
-
-[collections]
-max_set_len = 1
-
-[search]
-max_depth = 1
-max_states = 200
-timeout_ms = 1000
-
-[properties]
-check_deadlock = false
-successor_semantics = "deadlock"
-"#,
+            model_fixture: "paxos_small.model.toml",
             expected_tlc_label: "PARTIAL",
         },
     ];
@@ -6239,20 +6000,9 @@ successor_semantics = "deadlock"
 
         let input = repo_root.join(case.input);
         let types = repo_root.join(case.types);
+        let model_path = resolve_model_check_fixture_path(case.model_fixture);
         assert!(input.exists(), "Missing input spec: {}", input.display());
         assert!(types.exists(), "Missing types spec: {}", types.display());
-
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        let model_path = std::env::temp_dir().join(format!(
-            "differential_{}_modelcheck_{}_{}.toml",
-            case.protocol_name.to_lowercase(),
-            std::process::id(),
-            stamp
-        ));
-        std::fs::write(&model_path, case.model_toml).expect("Failed to write temporary model.toml");
 
         let output = std::process::Command::new(&transpiler_bin)
             .args([
@@ -6269,7 +6019,6 @@ successor_semantics = "deadlock"
             ])
             .output()
             .expect("Failed to run model-check command");
-        let _ = std::fs::remove_file(&model_path);
 
         assert!(
             output.status.success(),

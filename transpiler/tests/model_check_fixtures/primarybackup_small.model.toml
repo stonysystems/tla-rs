@@ -1,0 +1,19 @@
+[constants.assignments]
+max_log_len = 0
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LPBMessage]
+kind = "enum_subset"
+variants = ["Ack"]
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

@@ -1,0 +1,23 @@
+[constants.assignments]
+quorum_size = 0
+node_id = 0
+
+[constants.domains.acceptors]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[collections]
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 1000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
