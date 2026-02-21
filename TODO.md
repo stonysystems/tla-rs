@@ -6476,7 +6476,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ### 22.5 Successor Generation from `LNext`
 
-- [ ] Reuse/discover `LNext` disjunction branches (including `exists`-quantified branches).
+- [x] Reuse/discover `LNext` disjunction branches (including `exists`-quantified branches).
+  - Extended `modelcheck::ir` branch discovery to recursively split `LNext` disjunctions (including `||` and `|||`) while preserving branch-scoped `exists` binders, including `exists` wrappers around disjunctions (`exists |x| (A ||| B)`), and added focused unit tests for nested/distributed forms.
 - [ ] Expand existential variables using configured finite domains.
 - [ ] Solve branch constraints to produce concrete successor states.
 - [ ] Deduplicate equivalent successor states via canonical state hashing.

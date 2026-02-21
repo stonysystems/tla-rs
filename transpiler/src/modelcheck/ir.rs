@@ -1,4 +1,4 @@
-use crate::ast::{Binding, Expr, SpecFunction, Type};
+use crate::ast::{Binding, BinOp, Expr, SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
 
 /// Normalized transition IR extracted from `LNext`.
@@ -59,6 +59,12 @@ pub enum ConstraintRoot {
     Other(String),
 }
 
+#[derive(Debug, Clone)]
+struct DiscoveredBranch {
+    existential_bindings: Vec<Binding>,
+    expr: Expr,
+}
+
 /// Build normalized transition IR from an `LNext` spec function.
 pub fn build_transition_ir(next_fn: &SpecFunction) -> TranspileResult<TransitionIr> {
     if next_fn.params.len() < 2 {
@@ -75,9 +81,46 @@ pub fn build_transition_ir(next_fn: &SpecFunction) -> TranspileResult<Transition
     let next_state_param = next_fn.params[1].name.clone();
     let constants_param = next_fn.params.get(2).map(|p| p.name.clone());
 
+    let branches = discover_lnext_branches(next_fn)?;
+
+    Ok(TransitionIr {
+        current_state_param,
+        next_state_param,
+        constants_param,
+        branches,
+    })
+}
+
+/// Discover normalized disjunctive branches from an `LNext` body.
+///
+/// This routine flattens disjunctions, carries branch-scoped existential
+/// variables, and normalizes conjunctions into branch constraints.
+pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<TransitionBranchIr>> {
+    if next_fn.params.len() < 2 {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Cannot discover transition branches from `{}`: expected at least 2 parameters (s, s_), got {}.",
+                next_fn.name,
+                next_fn.params.len()
+            ),
+        });
+    }
+
+    let current_state_param = next_fn.params[0].name.as_str();
+    let next_state_param = next_fn.params[1].name.as_str();
+    let constants_param = next_fn.params.get(2).map(|p| p.name.as_str());
+
     let mut branches = Vec::new();
-    for (idx, disjunct) in split_disjunction(&next_fn.body).into_iter().enumerate() {
-        let (existential_bindings, body_without_exists) = peel_exists(&disjunct);
+    for (idx, branch_expr) in discover_disjunctive_branches(&next_fn.body)
+        .into_iter()
+        .enumerate()
+    {
+        let (extra_existentials, constraint_exprs) = flatten_branch_body(branch_expr.expr);
+        let existential_bindings = branch_expr
+            .existential_bindings
+            .into_iter()
+            .chain(extra_existentials.into_iter())
+            .collect::<Vec<_>>();
         let existential_vars = existential_bindings
             .into_iter()
             .map(|binding| ExistentialVarIr {
@@ -86,14 +129,14 @@ pub fn build_transition_ir(next_fn: &SpecFunction) -> TranspileResult<Transition
             })
             .collect();
 
-        let constraints = split_conjunction(&body_without_exists)
+        let constraints = constraint_exprs
             .into_iter()
             .map(|expr| {
                 normalize_constraint(
                     expr,
-                    &current_state_param,
-                    &next_state_param,
-                    constants_param.as_deref(),
+                    current_state_param,
+                    next_state_param,
+                    constants_param,
                 )
             })
             .collect();
@@ -105,12 +148,7 @@ pub fn build_transition_ir(next_fn: &SpecFunction) -> TranspileResult<Transition
         });
     }
 
-    Ok(TransitionIr {
-        current_state_param,
-        next_state_param,
-        constants_param,
-        branches,
-    })
+    Ok(branches)
 }
 
 fn normalize_constraint(
@@ -143,44 +181,67 @@ fn normalize_constraint(
     BranchConstraintIr::Predicate { expr }
 }
 
-fn split_disjunction(expr: &Expr) -> Vec<Expr> {
+fn discover_disjunctive_branches(expr: &Expr) -> Vec<DiscoveredBranch> {
     match expr {
         Expr::Disjunction(items) => {
             let mut out = Vec::new();
             for item in items {
-                out.extend(split_disjunction(item));
+                out.extend(discover_disjunctive_branches(item));
             }
             out
         }
-        _ => vec![expr.clone()],
+        Expr::Binary(lhs, BinOp::Or, rhs) => {
+            let mut out = Vec::new();
+            out.extend(discover_disjunctive_branches(lhs));
+            out.extend(discover_disjunctive_branches(rhs));
+            out
+        }
+        Expr::Exists { vars, body } => discover_disjunctive_branches(body)
+            .into_iter()
+            .map(|branch| {
+                let mut existential_bindings = vars.clone();
+                existential_bindings.extend(branch.existential_bindings);
+                DiscoveredBranch {
+                    existential_bindings,
+                    expr: branch.expr,
+                }
+            })
+            .collect(),
+        _ => vec![DiscoveredBranch {
+            existential_bindings: Vec::new(),
+            expr: expr.clone(),
+        }],
     }
 }
 
-fn split_conjunction(expr: &Expr) -> Vec<Expr> {
+fn flatten_branch_body(expr: Expr) -> (Vec<Binding>, Vec<Expr>) {
+    let mut existential_bindings = Vec::new();
+    let mut constraints = Vec::new();
+    flatten_branch_body_into(expr, &mut existential_bindings, &mut constraints);
+    (existential_bindings, constraints)
+}
+
+fn flatten_branch_body_into(
+    expr: Expr,
+    existential_bindings: &mut Vec<Binding>,
+    constraints: &mut Vec<Expr>,
+) {
     match expr {
         Expr::Conjunction(items) => {
-            let mut out = Vec::new();
             for item in items {
-                out.extend(split_conjunction(item));
+                flatten_branch_body_into(item, existential_bindings, constraints);
             }
-            out
         }
-        _ => vec![expr.clone()],
+        Expr::Binary(lhs, BinOp::And, rhs) => {
+            flatten_branch_body_into(*lhs, existential_bindings, constraints);
+            flatten_branch_body_into(*rhs, existential_bindings, constraints);
+        }
+        Expr::Exists { vars, body } => {
+            existential_bindings.extend(vars);
+            flatten_branch_body_into(*body, existential_bindings, constraints);
+        }
+        other => constraints.push(other),
     }
-}
-
-fn peel_exists(expr: &Expr) -> (Vec<Binding>, Expr) {
-    let mut vars = Vec::new();
-    let mut cursor = expr.clone();
-    while let Expr::Exists {
-        vars: branch_vars,
-        body,
-    } = cursor
-    {
-        vars.extend(branch_vars);
-        cursor = *body;
-    }
-    (vars, cursor)
 }
 
 fn extract_target(
@@ -226,7 +287,7 @@ fn extract_segments(expr: &Expr) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, Literal, Parameter, Path, Type, VariableMode};
+    use crate::ast::{BinOp, Expr, Literal, Parameter, Path, Type, VariableMode};
 
     fn mk_param(name: &str) -> Parameter {
         Parameter {
@@ -384,5 +445,107 @@ mod tests {
         assert!(roots.contains(&ConstraintRoot::NextState));
         assert!(roots.contains(&ConstraintRoot::Constants));
         assert!(roots.contains(&ConstraintRoot::Other("other".to_string())));
+    }
+
+    #[test]
+    fn test_discover_lnext_branches_splits_exists_wrapped_disjunction() {
+        let body = Expr::Exists {
+            vars: vec![Binding {
+                pattern: crate::ast::Pattern::Ident("i".to_string()),
+                ty: Some(Type::Int),
+                variable_mode: VariableMode::Exec,
+            }],
+            body: Box::new(Expr::Disjunction(vec![
+                Expr::Eq(
+                    Box::new(s_next_field("x")),
+                    Box::new(Expr::Ident("i".to_string())),
+                ),
+                Expr::Eq(
+                    Box::new(s_next_field("x")),
+                    Box::new(Expr::Literal(Literal::Int(5))),
+                ),
+            ])),
+        };
+
+        let branches = discover_lnext_branches(&mk_lnext(body)).unwrap();
+        assert_eq!(branches.len(), 2);
+
+        for branch in &branches {
+            assert_eq!(branch.existential_vars.len(), 1);
+            assert_eq!(branch.existential_vars[0].name, "i");
+            assert_eq!(branch.constraints.len(), 1);
+            match &branch.constraints[0] {
+                BranchConstraintIr::Eq { target, .. } => {
+                    assert_eq!(target.root, ConstraintRoot::NextState);
+                    assert_eq!(target.path, vec!["x".to_string()]);
+                }
+                other => panic!("expected Eq constraint, got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_transition_ir_hoists_exists_inside_conjunction() {
+        let body = Expr::Conjunction(vec![
+            Expr::Exists {
+                vars: vec![Binding {
+                    pattern: crate::ast::Pattern::Ident("i".to_string()),
+                    ty: Some(Type::Int),
+                    variable_mode: VariableMode::Exec,
+                }],
+                body: Box::new(Expr::Eq(
+                    Box::new(s_next_field("x")),
+                    Box::new(Expr::Ident("i".to_string())),
+                )),
+            },
+            Expr::Eq(
+                Box::new(s_field("x")),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            ),
+        ]);
+
+        let ir = build_transition_ir(&mk_lnext(body)).unwrap();
+        assert_eq!(ir.branches.len(), 1);
+        assert_eq!(ir.branches[0].existential_vars.len(), 1);
+        assert_eq!(ir.branches[0].existential_vars[0].name, "i");
+        assert_eq!(ir.branches[0].constraints.len(), 2);
+
+        let roots: Vec<ConstraintRoot> = ir.branches[0]
+            .constraints
+            .iter()
+            .filter_map(|constraint| match constraint {
+                BranchConstraintIr::Eq { target, .. } => Some(target.root.clone()),
+                BranchConstraintIr::Predicate { .. } => None,
+            })
+            .collect();
+        assert!(roots.contains(&ConstraintRoot::NextState));
+        assert!(roots.contains(&ConstraintRoot::CurrentState));
+    }
+
+    #[test]
+    fn test_discover_lnext_branches_supports_binary_or_and_and() {
+        let body = Expr::Binary(
+            Box::new(Expr::Binary(
+                Box::new(Expr::Eq(
+                    Box::new(s_next_field("x")),
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+                BinOp::And,
+                Box::new(Expr::Eq(
+                    Box::new(s_field("x")),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+            )),
+            BinOp::Or,
+            Box::new(Expr::Eq(
+                Box::new(s_next_field("x")),
+                Box::new(Expr::Literal(Literal::Int(2))),
+            )),
+        );
+
+        let branches = discover_lnext_branches(&mk_lnext(body)).unwrap();
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].constraints.len(), 2);
+        assert_eq!(branches[1].constraints.len(), 1);
     }
 }
