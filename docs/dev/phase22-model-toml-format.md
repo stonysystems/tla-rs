@@ -84,3 +84,24 @@ check_deadlock = true
 - Collection bounds and search limits must be positive.
 - Invariant names must be non-empty and unique.
 
+## CLI Overrides (Current)
+
+Use:
+
+```bash
+verus-transpile model-config --model path/to/model.toml [overrides...]
+```
+
+Supported override flags:
+
+- `--max-depth <N>`
+- `--max-states <N>`
+- `--timeout-ms <N>`
+- `--max-seq-len <N>`
+- `--max-set-len <N>`
+- `--max-map-len <N>`
+- `--int-range <MIN..MAX>` (also accepts `MIN:MAX`)
+- `--nat-max <N>`
+
+The command applies overrides on top of `model.toml`, revalidates the final
+configuration, and prints the resolved TOML to stdout.

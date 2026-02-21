@@ -25,7 +25,9 @@
 use clap::{Parser, Subcommand};
 use miette::Result;
 use std::path::{Path, PathBuf};
-use verus_transpiler::spec_analyzer::{analyze_spec_file, analyze_spec_files, ConfigInferer, merge_configs};
+use verus_transpiler::spec_analyzer::{
+    analyze_spec_file, analyze_spec_files, merge_configs, ConfigInferer,
+};
 use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfig};
 
 /// Verus Spec-to-Implementation Transpiler
@@ -101,6 +103,46 @@ enum Commands {
         /// Annotation file to check
         #[arg(short, long)]
         annotations: PathBuf,
+    },
+
+    /// Load model.toml, apply CLI overrides for key limits/domains, and print
+    /// the resolved model config.
+    ModelConfig {
+        /// Input model-check config (model.toml)
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Override [search].max_depth
+        #[arg(long)]
+        max_depth: Option<usize>,
+
+        /// Override [search].max_states
+        #[arg(long)]
+        max_states: Option<usize>,
+
+        /// Override [search].timeout_ms
+        #[arg(long)]
+        timeout_ms: Option<u64>,
+
+        /// Override [collections].max_seq_len
+        #[arg(long)]
+        max_seq_len: Option<usize>,
+
+        /// Override [collections].max_set_len
+        #[arg(long)]
+        max_set_len: Option<usize>,
+
+        /// Override [collections].max_map_len
+        #[arg(long)]
+        max_map_len: Option<usize>,
+
+        /// Override quantifier int domain as MIN..MAX (or MIN:MAX)
+        #[arg(long, value_name = "MIN..MAX", allow_hyphen_values = true)]
+        int_range: Option<String>,
+
+        /// Override [quantifiers.nat].max
+        #[arg(long)]
+        nat_max: Option<u64>,
     },
 
     /// Generate type definitions from spec types
@@ -392,7 +434,10 @@ fn main() -> Result<()> {
             let mut translate_gaps = 0;
             let mut proof_gaps = 0;
             for sf in &skipped {
-                if sf.reason.starts_with("transpilation error") || sf.reason.starts_with("annotation error") || sf.reason.starts_with("not functionalizable") {
+                if sf.reason.starts_with("transpilation error")
+                    || sf.reason.starts_with("annotation error")
+                    || sf.reason.starts_with("not functionalizable")
+                {
                     eprintln!("TRANSLATE-GAP: {} — {}", sf.name, sf.reason);
                     translate_gaps += 1;
                 } else {
@@ -405,10 +450,7 @@ fn main() -> Result<()> {
                 proof_gaps, translate_gaps
             );
         } else {
-            eprintln!(
-                "Auto-skipped {} function(s):",
-                skipped.len()
-            );
+            eprintln!("Auto-skipped {} function(s):", skipped.len());
             for sf in &skipped {
                 eprintln!("  - {}: {}", sf.name, sf.reason);
             }
@@ -463,6 +505,52 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     return Err(miette::miette!("Parse error: {}", e));
                 }
             }
+            Ok(())
+        }
+        Commands::ModelConfig {
+            model,
+            max_depth,
+            max_states,
+            timeout_ms,
+            max_seq_len,
+            max_set_len,
+            max_map_len,
+            int_range,
+            nat_max,
+        } => {
+            use verus_transpiler::modelcheck::config::{
+                apply_model_config_overrides, parse_int_range_override, parse_model_config_file,
+                ModelConfigOverrides,
+            };
+
+            if cli.verbose {
+                eprintln!("Loading model config: {}", model.display());
+            }
+
+            let mut config =
+                parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
+            let parsed_int_range = if let Some(raw) = int_range {
+                Some(parse_int_range_override(raw).map_err(|e| miette::miette!("{}", e))?)
+            } else {
+                None
+            };
+
+            let overrides = ModelConfigOverrides {
+                max_depth: *max_depth,
+                max_states: *max_states,
+                timeout_ms: *timeout_ms,
+                max_seq_len: *max_seq_len,
+                max_set_len: *max_set_len,
+                max_map_len: *max_map_len,
+                int_range: parsed_int_range,
+                nat_max: *nat_max,
+            };
+            apply_model_config_overrides(&mut config, &overrides)
+                .map_err(|e| miette::miette!("{}", e))?;
+
+            let rendered = toml::to_string_pretty(&config)
+                .map_err(|e| miette::miette!("Failed to serialize resolved model config: {}", e))?;
+            println!("{}", rendered);
             Ok(())
         }
         Commands::GenerateTypes {
@@ -546,7 +634,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .as_ref()
                 .and_then(|config_path| {
                     file_config
-                        .output.manual_code.as_ref()
+                        .output
+                        .manual_code
+                        .as_ref()
                         .map(|rel_path| (config_path, rel_path))
                 })
                 .and_then(|(config_path, rel_path)| {
@@ -1261,7 +1351,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
             // Derive module name from protocol name
             let module_name = protocol.to_lowercase();
-            let gen_mod = gen_module.clone().unwrap_or_else(|| format!("{}_gen", module_name));
+            let gen_mod = gen_module
+                .clone()
+                .unwrap_or_else(|| format!("{}_gen", module_name));
 
             let params = verus_transpiler::codegen::scheduler::HostScaffoldParams {
                 protocol_name: protocol.clone(),
@@ -1660,6 +1752,98 @@ Next == count' = count + N
     }
 
     #[test]
+    fn test_model_config_cli_parsing() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "model-config",
+            "--model",
+            "model.toml",
+            "--max-depth",
+            "40",
+            "--max-states",
+            "20000",
+            "--timeout-ms",
+            "5000",
+            "--max-seq-len",
+            "8",
+            "--max-set-len",
+            "6",
+            "--max-map-len",
+            "10",
+            "--int-range",
+            "-2..5",
+            "--nat-max",
+            "12",
+        ]);
+
+        match cli.command {
+            Some(Commands::ModelConfig {
+                model,
+                max_depth,
+                max_states,
+                timeout_ms,
+                max_seq_len,
+                max_set_len,
+                max_map_len,
+                int_range,
+                nat_max,
+            }) => {
+                assert_eq!(model, PathBuf::from("model.toml"));
+                assert_eq!(max_depth, Some(40));
+                assert_eq!(max_states, Some(20000));
+                assert_eq!(timeout_ms, Some(5000));
+                assert_eq!(max_seq_len, Some(8));
+                assert_eq!(max_set_len, Some(6));
+                assert_eq!(max_map_len, Some(10));
+                assert_eq!(int_range, Some("-2..5".to_string()));
+                assert_eq!(nat_max, Some(12));
+            }
+            _ => panic!("Expected ModelConfig command"),
+        }
+    }
+
+    #[test]
+    fn test_model_config_command_rejects_invalid_int_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_path = dir.path().join("model.toml");
+        std::fs::write(&model_path, "[properties]\ninvariants=[]\n").unwrap();
+
+        let command = Commands::ModelConfig {
+            model: model_path,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
+            max_seq_len: None,
+            max_set_len: None,
+            max_map_len: None,
+            int_range: Some("oops".to_string()),
+            nat_max: None,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        assert!(
+            err.to_string().contains("Invalid int range override"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
     fn test_generate_types_injects_manual_code_from_config_file() {
         use std::io::Write;
 
@@ -1900,7 +2084,10 @@ validity_predicate_name = "valid"
         .unwrap();
 
         let config = load_config(&config_path).unwrap();
-        assert!(!config.auto_skip, "auto_skip should default to false from TOML");
+        assert!(
+            !config.auto_skip,
+            "auto_skip should default to false from TOML"
+        );
     }
 
     #[test]
@@ -2042,17 +2229,15 @@ validity_predicate_name = "valid"
                 .unwrap_or_else(|e| panic!("{}: failed to load TOML: {}", name, e));
 
             // Generate with full TOML + auto-inference
-            let full_output = transpile_with_auto_inference(
-                &input, &annot, full_config.clone(), &toml_path,
-            );
+            let full_output =
+                transpile_with_auto_inference(&input, &annot, full_config.clone(), &toml_path);
 
             // Create minimal TOML (strip Tier 1 fields)
             let minimal_config = strip_auto_derivable(&full_config);
 
             // Generate with minimal TOML + auto-inference
-            let minimal_output = transpile_with_auto_inference(
-                &input, &annot, minimal_config, &toml_path,
-            );
+            let minimal_output =
+                transpile_with_auto_inference(&input, &annot, minimal_config, &toml_path);
 
             if full_output == minimal_output {
                 passed += 1;

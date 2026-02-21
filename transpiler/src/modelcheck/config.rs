@@ -121,6 +121,101 @@ pub enum ModelValue {
     String(String),
 }
 
+/// CLI-provided override values for key model-check limits/domains.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModelConfigOverrides {
+    pub max_depth: Option<usize>,
+    pub max_states: Option<usize>,
+    pub timeout_ms: Option<u64>,
+    pub max_seq_len: Option<usize>,
+    pub max_set_len: Option<usize>,
+    pub max_map_len: Option<usize>,
+    pub int_range: Option<IntDomain>,
+    pub nat_max: Option<u64>,
+}
+
+/// Parse an `int` range override from `MIN..MAX` or `MIN:MAX` syntax.
+pub fn parse_int_range_override(raw: &str) -> TranspileResult<IntDomain> {
+    let (min_raw, max_raw) = raw
+        .split_once("..")
+        .or_else(|| raw.split_once(':'))
+        .ok_or_else(|| TranspileError::Config {
+            message: format!(
+                "Invalid int range override `{}`: expected `MIN..MAX` (or `MIN:MAX`).",
+                raw
+            ),
+        })?;
+
+    let min = min_raw
+        .trim()
+        .parse::<i64>()
+        .map_err(|e| TranspileError::Config {
+            message: format!(
+                "Invalid int range override `{}`: failed to parse min value `{}`: {}.",
+                raw,
+                min_raw.trim(),
+                e
+            ),
+        })?;
+    let max = max_raw
+        .trim()
+        .parse::<i64>()
+        .map_err(|e| TranspileError::Config {
+            message: format!(
+                "Invalid int range override `{}`: failed to parse max value `{}`: {}.",
+                raw,
+                max_raw.trim(),
+                e
+            ),
+        })?;
+
+    if min > max {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Invalid int range override `{}`: min ({}) must be <= max ({}).",
+                raw, min, max
+            ),
+        });
+    }
+
+    Ok(IntDomain { min, max })
+}
+
+/// Apply CLI overrides to a parsed `model.toml` and revalidate the resulting config.
+pub fn apply_model_config_overrides(
+    config: &mut ModelConfig,
+    overrides: &ModelConfigOverrides,
+) -> TranspileResult<()> {
+    if let Some(max_depth) = overrides.max_depth {
+        config.search.max_depth = max_depth;
+    }
+    if let Some(max_states) = overrides.max_states {
+        config.search.max_states = max_states;
+    }
+    if let Some(timeout_ms) = overrides.timeout_ms {
+        config.search.timeout_ms = timeout_ms;
+    }
+
+    if let Some(max_seq_len) = overrides.max_seq_len {
+        config.collections.max_seq_len = max_seq_len;
+    }
+    if let Some(max_set_len) = overrides.max_set_len {
+        config.collections.max_set_len = max_set_len;
+    }
+    if let Some(max_map_len) = overrides.max_map_len {
+        config.collections.max_map_len = max_map_len;
+    }
+
+    if let Some(int_range) = &overrides.int_range {
+        config.quantifiers.int = Some(int_range.clone());
+    }
+    if let Some(nat_max) = overrides.nat_max {
+        config.quantifiers.nat = Some(NatDomain { max: nat_max });
+    }
+
+    validate_model_config(config)
+}
+
 /// Parse and validate `model.toml` from a string.
 pub fn parse_model_config_str(source: &str) -> TranspileResult<ModelConfig> {
     let config: ModelConfig = toml::from_str(source).map_err(|e| TranspileError::Config {
@@ -452,5 +547,74 @@ invariants = ["LSafety", "LSafety"]
 "#;
         let err = parse_model_config_str(source).unwrap_err();
         assert!(err.to_string().contains("duplicate invariant `LSafety`"));
+    }
+
+    #[test]
+    fn test_parse_int_range_override_accepts_dotdot() {
+        let parsed = parse_int_range_override("-2..5").unwrap();
+        assert_eq!(parsed, IntDomain { min: -2, max: 5 });
+    }
+
+    #[test]
+    fn test_parse_int_range_override_accepts_colon() {
+        let parsed = parse_int_range_override("0:3").unwrap();
+        assert_eq!(parsed, IntDomain { min: 0, max: 3 });
+    }
+
+    #[test]
+    fn test_parse_int_range_override_rejects_invalid_format() {
+        let err = parse_int_range_override("0,3").unwrap_err();
+        assert!(err.to_string().contains("expected `MIN..MAX`"));
+    }
+
+    #[test]
+    fn test_apply_model_config_overrides_updates_limits_and_domains() {
+        let mut config = parse_model_config_str(
+            r#"
+[search]
+max_depth = 10
+max_states = 100
+timeout_ms = 1000
+
+[collections]
+max_seq_len = 2
+max_set_len = 2
+max_map_len = 2
+"#,
+        )
+        .unwrap();
+
+        let overrides = ModelConfigOverrides {
+            max_depth: Some(22),
+            max_states: Some(1500),
+            timeout_ms: Some(5000),
+            max_seq_len: Some(4),
+            max_set_len: Some(5),
+            max_map_len: Some(6),
+            int_range: Some(IntDomain { min: -1, max: 7 }),
+            nat_max: Some(9),
+        };
+
+        apply_model_config_overrides(&mut config, &overrides).unwrap();
+
+        assert_eq!(config.search.max_depth, 22);
+        assert_eq!(config.search.max_states, 1500);
+        assert_eq!(config.search.timeout_ms, 5000);
+        assert_eq!(config.collections.max_seq_len, 4);
+        assert_eq!(config.collections.max_set_len, 5);
+        assert_eq!(config.collections.max_map_len, 6);
+        assert_eq!(config.quantifiers.int, Some(IntDomain { min: -1, max: 7 }));
+        assert_eq!(config.quantifiers.nat, Some(NatDomain { max: 9 }));
+    }
+
+    #[test]
+    fn test_apply_model_config_overrides_revalidates_result() {
+        let mut config = parse_model_config_str("[properties]\ninvariants = []\n").unwrap();
+        let overrides = ModelConfigOverrides {
+            max_depth: Some(0),
+            ..Default::default()
+        };
+        let err = apply_model_config_overrides(&mut config, &overrides).unwrap_err();
+        assert!(err.to_string().contains("search limits must be > 0"));
     }
 }

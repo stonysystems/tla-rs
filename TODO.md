@@ -6453,7 +6453,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
   - Documented MVP format in `docs/dev/phase22-model-toml-format.md` and encoded as `ModelConfig` in `transpiler/src/modelcheck/config.rs`.
 - [x] Implement parser + validation for `model.toml`.
   - Added `parse_model_config_str`, `parse_model_config_file`, and `validate_model_config` with unit tests covering valid and invalid domain/search/property cases.
-- [ ] Support CLI overrides for key limits/domains.
+- [x] Support CLI overrides for key limits/domains.
+  - Added `verus-transpile model-config --model <path>` with overrides for search limits, collection bounds, `int` range, and `nat` max. The command applies overrides, revalidates, and prints the resolved model config.
 
 ### 22.4 Model Checking IR and Evaluator
 
