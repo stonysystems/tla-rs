@@ -2229,6 +2229,51 @@ fn test_replica_process1b_is_proof_fallback_generated_not_manual_injected() {
     );
 }
 
+#[test]
+fn test_replica_manual_code_contains_only_io_trust_boundary_wrappers() {
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
+        .expect("Failed to read replica_manual.rs");
+
+    let actual_fns: std::collections::BTreeSet<String> = manual_source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("pub exec fn "))
+        .map(|sig| {
+            sig.split('(')
+                .next()
+                .expect("function signature should include '('")
+                .trim()
+                .to_string()
+        })
+        .collect();
+
+    let expected_fns: std::collections::BTreeSet<String> = [
+        "CExtractSentPacketsFromIos",
+        "CReplicaNoReceiveNext",
+        "CSchedulerNext",
+        "CReplicaNextProcessPacketWithoutReadingClock",
+        "CReplicaNextReadClockAndProcessPacket",
+        "CReplicaNextProcessPacket",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    assert_eq!(
+        actual_fns, expected_fns,
+        "replica_manual.rs should only contain IO trust-boundary wrappers/helper"
+    );
+
+    let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
+    assert_eq!(
+        external_body_count, 1,
+        "replica_manual.rs should only carry one external_body helper boundary"
+    );
+    assert!(
+        manual_source.contains("pub exec fn CExtractSentPacketsFromIos"),
+        "replica_manual.rs should retain CExtractSentPacketsFromIos as the external helper"
+    );
+}
+
 /// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
 ///
 /// This ensures:
