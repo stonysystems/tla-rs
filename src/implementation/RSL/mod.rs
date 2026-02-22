@@ -10,7 +10,7 @@ pub mod ReplicaImpl;
 /// Standalone acceptor vote-map helpers moved out of generated manual injection.
 pub mod acceptor_helpers;
 /// Generated wrappers live in `crate::generated::RSL::acceptor_gen`.
-/// This module owns CAcceptor type infrastructure and log-truncation helper logic.
+/// This module owns CAcceptor type infrastructure and compatibility symbol wrappers.
 pub mod acceptorimpl;
 pub mod appinterface;
 pub mod cbroadcast;

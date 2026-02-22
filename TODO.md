@@ -6443,7 +6443,10 @@ Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
 - [x] **19.7.4b**: Add generated-import boundary guards so RSL generated modules do not directly import legacy impl modules.
   - Added dedicated transpiler regression test (`transpiler/tests/rsl_legacy_import_guard.rs`) that enforces: all generated `*_gen.rs` files except `types_gen.rs` must not import `acceptorimpl`/`ExecutorImpl`/`ElectionImpl`/`ProposerImpl`/`ReplicaImpl`.
   - Guard also asserts `types_gen.rs` remains the only generated ownership bridge for legacy type definitions.
-- [ ] **19.7.4c**: Evaluate re-homing `CIsLogTruncationPointValid` implementation from `acceptorimpl.rs` into shared helpers while preserving `CAcceptor` type ownership in `types_gen.rs` and keeping Verus proofs stable.
+- [x] **19.7.4c**: Evaluate re-homing `CIsLogTruncationPointValid` implementation from `acceptorimpl.rs` into shared helpers while preserving `CAcceptor` type ownership in `types_gen.rs` and keeping Verus proofs stable.
+  - Re-homed `CIsLogTruncationPointValid` and its sequence-count helpers (`CCountLargerInSeq`, `CCountLargerOrEqualInSeq`, `CIsNthHighestValueInSequence`) to `src/implementation/RSL/acceptor_helpers.rs`.
+  - Kept thin compatibility wrappers in `acceptorimpl.rs` so existing legacy symbol references remain stable while implementation ownership moves to shared helpers.
+  - Added transpiler regression guard `transpiler/tests/acceptor_log_truncation_rehome_guard.rs` to enforce helper ownership and wrapper delegation.
 - [x] **19.7.5**: Removed stale `ExecutorImpl` coupling for `COutstandingOperation`; `CExecutor` remains imported from `ExecutorImpl`, while `COutstandingOperation` now imports from its owner `ElectionImpl`.
 - [x] **19.7.6**: `src/implementation/RSL/mod.rs` still references legacy impl modules; keep only required exports and document ownership.
   - [x] **19.7.6a**: Add explicit rationale comments for required legacy runtime exports (`cmd_line_parser`, `netrsl_i`, `replicaimpl_*`) and guard with regression test coverage.
