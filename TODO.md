@@ -6993,7 +6993,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - [x] **21.11.2.4**: Audit resulting `replica_manual.rs` to ensure only IO trust-boundary wrappers/helpers remain.
   - [~] **21.11.3**: Executor final-mile decomposition (`<500` LOC per leaf) to retire `executor_manual.rs` without replacing proven logic with weaker stubs.
     - [x] **21.11.3.1**: Audit and regression-lock current `executor_manual.rs` footprint (function set + trust boundaries) and document migration order.
-    - [ ] **21.11.3.2**: Re-home pure cache external-body helpers (`CClientsInReplies`, `CUpdateNewCache`) out of manual injection and into shared implementation helpers.
+    - [x] **21.11.3.2**: Re-home pure cache external-body helpers (`CClientsInReplies`, `CUpdateNewCache`) out of manual injection and into shared implementation helpers.
     - [ ] **21.11.3.3**: Migrate recursive reply-packet helper (`CGetPacketsFromReplies`) off manual injection while preserving decreases/spec correspondence.
     - [ ] **21.11.3.4**: Migrate packet-processing actions (`CExecutorProcessRequest`, `CExecutorProcessStartingPhase2`, `CExecutorProcessAppStateRequest`) off manual injection with proof-fallback only where unavoidable.
     - [ ] **21.11.3.5**: Migrate state-only actions (`CExecutorInit`, `CExecutorGetDecision`, `CExecutorProcessAppStateSupply`) off manual injection and shrink `executor_manual.rs` to `CExecutorExecute` + irreducible lemmas only.

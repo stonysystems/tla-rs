@@ -2294,8 +2294,6 @@ fn test_executor_manual_code_footprint_audit_guard() {
     let expected_fns: std::collections::BTreeSet<String> = [
         "CExecutorInit",
         "CExecutorGetDecision",
-        "CClientsInReplies",
-        "CUpdateNewCache",
         "CGetPacketsFromReplies",
         "CExecutorExecute",
         "CExecutorProcessAppStateSupply",
@@ -2314,16 +2312,56 @@ fn test_executor_manual_code_footprint_audit_guard() {
 
     let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
     assert_eq!(
-        external_body_count, 6,
+        external_body_count, 4,
         "executor_manual.rs external_body boundary count changed unexpectedly"
     );
     assert!(
-        manual_source.contains("#[verifier(external_body)]\npub exec fn CClientsInReplies"),
-        "executor_manual.rs should still keep CClientsInReplies as external_body boundary"
+        !manual_source.contains("pub exec fn CClientsInReplies"),
+        "executor_manual.rs should no longer define CClientsInReplies"
     );
     assert!(
-        manual_source.contains("#[verifier(external_body)]\npub exec fn CUpdateNewCache"),
-        "executor_manual.rs should still keep CUpdateNewCache as external_body boundary"
+        !manual_source.contains("pub exec fn CUpdateNewCache"),
+        "executor_manual.rs should no longer define CUpdateNewCache"
+    );
+}
+
+#[test]
+fn test_executor_cache_helpers_rehomed_out_of_manual_injection() {
+    let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
+        .expect("Failed to read gen_helpers.rs");
+    assert!(
+        helper_source.contains("#[verifier(external_body)]\npub exec fn CClientsInReplies"),
+        "gen_helpers.rs should define CClientsInReplies as external_body helper"
+    );
+    assert!(
+        helper_source.contains("#[verifier(external_body)]\npub exec fn CUpdateNewCache"),
+        "gen_helpers.rs should define CUpdateNewCache as external_body helper"
+    );
+
+    let transpile_config = std::fs::read_to_string("../src/protocol/RSL/executor_transpile.toml")
+        .expect("Failed to read executor_transpile.toml");
+    assert!(
+        transpile_config.contains(
+            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache};",
+        ),
+        "executor_transpile.toml should import re-homed cache helpers from gen_helpers"
+    );
+
+    let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
+        .expect("Failed to read executor_gen.rs");
+    assert!(
+        generated_source.contains(
+            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache};"
+        ),
+        "executor_gen.rs should import cache helpers from gen_helpers"
+    );
+    assert!(
+        !generated_source.contains("pub exec fn CClientsInReplies"),
+        "executor_gen.rs should not define CClientsInReplies locally after helper re-home"
+    );
+    assert!(
+        !generated_source.contains("pub exec fn CUpdateNewCache"),
+        "executor_gen.rs should not define CUpdateNewCache locally after helper re-home"
     );
 }
 
@@ -2495,11 +2533,13 @@ fn test_gen_helpers_shared_module() {
     let source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
 
-    // Verify all 4 helper functions are present
+    // Verify all shared helper functions are present
     let expected_helpers = [
         "pub fn clone_cpacket_preserving_validity",
         "pub fn clone_cpacket_full",
         "pub fn clone_io_packet",
+        "pub exec fn CClientsInReplies",
+        "pub exec fn CUpdateNewCache",
         "pub fn outbound_packets_to_vec",
     ];
     for helper in expected_helpers {

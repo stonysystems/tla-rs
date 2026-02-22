@@ -149,59 +149,6 @@ ensures
 }
 
 // =============================================================================
-// CClientsInReplies — standalone with external_body
-// =============================================================================
-
-#[verifier(external_body)]
-pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
-requires
-    forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
-ensures
-    creplycache_is_valid(&result),
-    abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-    let mut result: HashMap<EndPoint, CReply> = HashMap::new();
-    for reply in replies.iter() {
-        result.insert(reply.client.clone(), reply.clone());
-    }
-    result
-}
-
-// =============================================================================
-// CUpdateNewCache — standalone with external_body
-// =============================================================================
-
-#[verifier(external_body)]
-pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime: CReplyCache)
-requires
-    creplycache_is_valid(c),
-    forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
-ensures
-    creplycache_is_valid(&c_prime),
-    UpdateNewCache(
-        abstractify_creplycache(c),
-        abstractify_creplycache(&c_prime),
-        replies@.map(|i, x: CReply| x@),
-    ),
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-    let nc = CClientsInReplies(replies);
-    let mut updated_cache = HashMap::<EndPoint, CReply>::new();
-    for (k, v) in c.iter() {
-        updated_cache.insert(k.clone(), v.clone());
-    }
-    for (k, v) in nc.iter() {
-        updated_cache.insert(k.clone(), v.clone());
-    }
-    updated_cache
-}
-
-// =============================================================================
 // CGetPacketsFromReplies — standalone recursive implementation
 // =============================================================================
 

@@ -13,6 +13,7 @@ use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
+use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache};
 use crate::implementation::RSL::types_i::{abstractify_crequestbatch, abstractify_creplycache};
 use crate::protocol::common::upper_bound::{LtUpperBound, UpperBound};
 use crate::protocol::RSL::broadcast::LBroadcastToEveryone;
@@ -28,9 +29,30 @@ use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 use vstd::std_specs::hash::HashMapAdditionalSpecFns;
 
 verus! {
+
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
+}
+
+/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
+#[verifier(external_body)]
+fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
+ensures
+    res@ == s@,
+{
+    s.clone()
+}
 
 /// Helper proof: mapping over an empty Seq yields an empty Seq.
 proof fn lemma_empty_seq_map()
@@ -44,6 +66,17 @@ proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)
 ensures
     s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),
 {
+}
+
+
+/// Helper: clone COutstandingOperation preserving view (workaround for missing derive Clone spec).
+#[verifier(external_body)]
+fn clone_next_op_to_execute(r: &COutstandingOperation) -> (res: COutstandingOperation)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    r.clone()
 }
 
 
@@ -196,59 +229,6 @@ ensures
     }
 
     result
-}
-
-// =============================================================================
-// CClientsInReplies — standalone with external_body
-// =============================================================================
-
-#[verifier(external_body)]
-pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
-requires
-    forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
-ensures
-    creplycache_is_valid(&result),
-    abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-    let mut result: HashMap<EndPoint, CReply> = HashMap::new();
-    for reply in replies.iter() {
-        result.insert(reply.client.clone(), reply.clone());
-    }
-    result
-}
-
-// =============================================================================
-// CUpdateNewCache — standalone with external_body
-// =============================================================================
-
-#[verifier(external_body)]
-pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime: CReplyCache)
-requires
-    creplycache_is_valid(c),
-    forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
-ensures
-    creplycache_is_valid(&c_prime),
-    UpdateNewCache(
-        abstractify_creplycache(c),
-        abstractify_creplycache(&c_prime),
-        replies@.map(|i, x: CReply| x@),
-    ),
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-    let nc = CClientsInReplies(replies);
-    let mut updated_cache = HashMap::<EndPoint, CReply>::new();
-    for (k, v) in c.iter() {
-        updated_cache.insert(k.clone(), v.clone());
-    }
-    for (k, v) in nc.iter() {
-        updated_cache.insert(k.clone(), v.clone());
-    }
-    updated_cache
 }
 
 // =============================================================================

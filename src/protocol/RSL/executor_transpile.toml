@@ -126,6 +126,7 @@ custom_imports = [
     "use crate::generated::RSL::types_gen::*;",
     "use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;",
     "use crate::implementation::RSL::cmessage::*;",
+    "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache};",
     "use crate::implementation::RSL::types_i::{abstractify_crequestbatch, abstractify_creplycache};",
     "use crate::implementation::RSL::cbroadcast::*;",
     "use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit};",

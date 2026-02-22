@@ -1,18 +1,19 @@
-use crate::implementation::RSL::types_i::*;
+use crate::generated::RSL::executor_gen::CGetPacketsFromReplies;
 use crate::implementation::RSL::appinterface::*;
 use crate::implementation::RSL::cbroadcast::OutboundPackets;
 use crate::implementation::RSL::cbroadcast::OutboundPackets::PacketSequence;
 use crate::implementation::RSL::cconstants::*;
-use crate::protocol::RSL::types::*;
-use vstd::prelude::*;
 use crate::implementation::RSL::cmessage::*;
+use crate::implementation::RSL::gen_helpers::CUpdateNewCache;
+use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::implementation::RSL::ElectionImpl::COutstandingOperation;
 use crate::protocol::common::upper_bound::*;
+use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::proposer::*;
-use crate::protocol::RSL::constants::*;
-use crate::generated::RSL::executor_gen::{CGetPacketsFromReplies, CUpdateNewCache};
+use crate::protocol::RSL::types::*;
+use vstd::prelude::*;
 // Generated wrappers live in `crate::generated::RSL::executor_gen`.
 // This module owns CExecutor/CIncompleteBatchTimer type infrastructure
 // and CExecutorExecute, which is still called from ReplicaImpl.rs.
