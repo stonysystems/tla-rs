@@ -755,6 +755,12 @@ struct ImplementationMethodSymbol {
     tuple_return_types: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EqHelperSymbol {
+    function_name: String,
+    exec_type: String,
+}
+
 fn insert_method_symbol(
     symbols: &mut HashMap<String, Vec<ImplementationMethodSymbol>>,
     method_name: String,
@@ -851,6 +857,74 @@ fn parse_tuple_return_types(signature_line: &str) -> Option<Vec<String>> {
     }
 }
 
+fn parse_param_exec_type(param: &str) -> Option<String> {
+    let (_, raw_ty) = param.split_once(':')?;
+    let mut ty = raw_ty.trim();
+    while let Some(rest) = ty.strip_prefix('&') {
+        ty = rest.trim_start();
+    }
+    if let Some(rest) = ty.strip_prefix("mut ") {
+        ty = rest.trim_start();
+    }
+
+    let token: String = ty
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+        .collect();
+    if token.is_empty() {
+        return None;
+    }
+    let base = token.rsplit("::").next()?.to_string();
+    if base.starts_with('C') && base.len() > 1 {
+        Some(base)
+    } else {
+        None
+    }
+}
+
+fn signature_returns_bool(signature_line: &str) -> bool {
+    let Some(arrow_idx) = signature_line.find("->") else {
+        return false;
+    };
+    let mut return_part = signature_line[arrow_idx + 2..].trim();
+    if let Some(block_idx) = return_part.find('{') {
+        return_part = return_part[..block_idx].trim();
+    }
+    if return_part.starts_with('(') {
+        let Some(inner) = extract_parenthesized_inner(return_part) else {
+            return false;
+        };
+        let mut candidate = inner.trim();
+        if let Some(colon_idx) = candidate.find(':') {
+            let (lhs, rhs) = candidate.split_at(colon_idx);
+            if lhs.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                candidate = rhs[1..].trim();
+            }
+        }
+        is_bool_like_type(candidate)
+    } else {
+        is_bool_like_type(return_part)
+    }
+}
+
+fn parse_eq_helper_exec_type(signature_line: &str) -> Option<String> {
+    if !signature_returns_bool(signature_line) {
+        return None;
+    }
+    let params_inner = extract_parenthesized_inner(signature_line)?;
+    let params = split_top_level_csv(&params_inner);
+    if params.len() < 2 {
+        return None;
+    }
+    let lhs = parse_param_exec_type(&params[0])?;
+    let rhs = parse_param_exec_type(&params[1])?;
+    if lhs == rhs {
+        Some(lhs)
+    } else {
+        None
+    }
+}
+
 fn collect_implementation_method_symbols(
     implementation_dir: &Path,
 ) -> HashMap<String, Vec<ImplementationMethodSymbol>> {
@@ -912,6 +986,52 @@ fn collect_implementation_method_symbols(
     }
 
     symbols
+}
+
+fn collect_implementation_eq_helper_symbols(implementation_dir: &Path) -> Vec<EqHelperSymbol> {
+    let mut helpers = Vec::new();
+    if !implementation_dir.exists() {
+        return helpers;
+    }
+
+    let Ok(entries) = std::fs::read_dir(implementation_dir) else {
+        return helpers;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+
+        for line in content.lines() {
+            let code = line.split("//").next().unwrap_or("").trim();
+            if code.is_empty() {
+                continue;
+            }
+            let Some(function_name) = extract_c_function_name(code) else {
+                continue;
+            };
+            if !function_name.ends_with("Eq") {
+                continue;
+            }
+            let Some(exec_type) = parse_eq_helper_exec_type(code) else {
+                continue;
+            };
+            let symbol = EqHelperSymbol {
+                function_name,
+                exec_type,
+            };
+            if !helpers.contains(&symbol) {
+                helpers.push(symbol);
+            }
+        }
+    }
+
+    helpers
 }
 
 fn choose_symbol_path(exec_name: &str, symbols: &HashMap<String, Vec<String>>) -> Option<String> {
@@ -1297,6 +1417,115 @@ fn infer_method_calls_from_spec_paths(
     inferred
 }
 
+fn infer_eq_function_fields_from_schema(
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+    eq_by_type: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut inferred = HashMap::new();
+    let mut ambiguous_fields: HashSet<String> = HashSet::new();
+
+    let mut maybe_insert_field = |field_name: &str, ty: &verus_transpiler::ast::Type| {
+        let Some(exec_type) = infer_exec_type_name_from_type(ty, schema, naming) else {
+            return;
+        };
+        let Some(eq_fn) = eq_by_type.get(&exec_type) else {
+            return;
+        };
+        if ambiguous_fields.contains(field_name) {
+            return;
+        }
+        if let Some(existing) = inferred.get(field_name) {
+            if existing != eq_fn {
+                inferred.remove(field_name);
+                ambiguous_fields.insert(field_name.to_string());
+            }
+            return;
+        }
+        inferred.insert(field_name.to_string(), eq_fn.clone());
+    };
+
+    for struct_name in &schema.struct_order {
+        let Some(struct_def) = schema.structs.get(struct_name) else {
+            continue;
+        };
+        for field in &struct_def.fields {
+            maybe_insert_field(&field.name, &field.ty);
+        }
+    }
+
+    for enum_name in &schema.enum_order {
+        let Some(enum_def) = schema.enums.get(enum_name) else {
+            continue;
+        };
+        for variant in &enum_def.variants {
+            if let verus_transpiler::types::VariantFields::Struct(fields) = &variant.fields {
+                for field in fields {
+                    maybe_insert_field(&field.name, &field.ty);
+                }
+            }
+        }
+    }
+
+    inferred
+}
+
+fn infer_eq_function_fields_from_spec_paths(
+    spec_paths: &[&Path],
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> HashMap<String, String> {
+    let mut seen_impl_dirs = HashSet::new();
+    let mut eq_symbols: Vec<EqHelperSymbol> = Vec::new();
+
+    for path in spec_paths {
+        let Some(protocol_dir) = path.parent() else {
+            continue;
+        };
+        let Some(protocol_name) = protocol_dir.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(protocol_root) = protocol_dir.parent() else {
+            continue;
+        };
+        if protocol_root.file_name().and_then(|s| s.to_str()) != Some("protocol") {
+            continue;
+        }
+        let Some(src_root) = protocol_root.parent() else {
+            continue;
+        };
+        let implementation_dir = src_root.join("implementation").join(protocol_name);
+        if !seen_impl_dirs.insert(implementation_dir.clone()) {
+            continue;
+        }
+        eq_symbols.extend(collect_implementation_eq_helper_symbols(
+            &implementation_dir,
+        ));
+    }
+
+    let mut eq_by_type: HashMap<String, String> = HashMap::new();
+    let mut ambiguous_types: HashSet<String> = HashSet::new();
+    for symbol in eq_symbols {
+        if ambiguous_types.contains(&symbol.exec_type) {
+            continue;
+        }
+        if let Some(existing) = eq_by_type.get(&symbol.exec_type) {
+            if existing != &symbol.function_name {
+                eq_by_type.remove(&symbol.exec_type);
+                ambiguous_types.insert(symbol.exec_type);
+            }
+            continue;
+        }
+        eq_by_type.insert(symbol.exec_type, symbol.function_name);
+    }
+
+    if eq_by_type.is_empty() {
+        return HashMap::new();
+    }
+
+    infer_eq_function_fields_from_schema(schema, naming, &eq_by_type)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -1357,13 +1586,19 @@ fn main() -> Result<()> {
                     infer_function_paths_from_spec_paths(&spec_paths, &schema, &file_config.naming);
                 let method_call_hints =
                     infer_method_calls_from_spec_paths(&spec_paths, &schema, &file_config.naming);
+                let eq_function_field_hints = infer_eq_function_fields_from_spec_paths(
+                    &spec_paths,
+                    &schema,
+                    &file_config.naming,
+                );
                 let inferer = if let Some(modules) = annotation_modules.as_ref() {
                     ConfigInferer::with_annotations(&schema, &file_config.naming, modules)
                 } else {
                     ConfigInferer::new(&schema, &file_config.naming)
                 }
                 .with_function_path_hints(function_path_hints)
-                .with_method_call_hints(method_call_hints);
+                .with_method_call_hints(method_call_hints)
+                .with_eq_function_field_hints(eq_function_field_hints);
                 let inferred = inferer.infer();
                 merge_configs(&mut file_config, &inferred);
                 if cli.verbose {
@@ -2704,9 +2939,15 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             &schema,
                             &file_config.naming,
                         );
+                        let eq_function_field_hints = infer_eq_function_fields_from_spec_paths(
+                            &spec_paths,
+                            &schema,
+                            &file_config.naming,
+                        );
                         let inferer = ConfigInferer::new(&schema, &file_config.naming)
                             .with_function_path_hints(function_path_hints)
-                            .with_method_call_hints(method_call_hints);
+                            .with_method_call_hints(method_call_hints)
+                            .with_eq_function_field_hints(eq_function_field_hints);
                         let inferred = inferer.infer();
                         merge_configs(&mut file_config, &inferred);
                         if cli.verbose {
@@ -6248,13 +6489,16 @@ validity_predicate_name = "valid"
                 infer_function_paths_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let method_call_hints =
                 infer_method_calls_from_spec_paths(&spec_paths, &schema, &fc.naming);
+            let eq_function_field_hints =
+                infer_eq_function_fields_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let inferer = if let Some(modules) = annotation_modules.as_ref() {
                 ConfigInferer::with_annotations(&schema, &fc.naming, modules)
             } else {
                 ConfigInferer::new(&schema, &fc.naming)
             }
             .with_function_path_hints(function_path_hints)
-            .with_method_call_hints(method_call_hints);
+            .with_method_call_hints(method_call_hints)
+            .with_eq_function_field_hints(eq_function_field_hints);
             let inferred = inferer.infer();
             merge_configs(&mut fc, &inferred);
         }
@@ -6472,6 +6716,108 @@ verus! {
         assert!(
             !inferred.contains_key("LAmbiguous"),
             "ambiguous receiver candidates should not be auto-inferred"
+        );
+    }
+
+    #[test]
+    fn test_infer_eq_function_fields_from_spec_paths_maps_struct_and_variant_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/election.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/types_i.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub struct Ballot {
+        pub seqno: int,
+    }
+
+    pub struct LElectionState {
+        pub current_view: Ballot,
+    }
+
+    pub enum RslMessage {
+        RslMessage1b { bal_1b: Ballot },
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    pub fn CBalEq(ba:&CBallot, bb:&CBallot) -> (r:bool) {
+        true
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let spec_paths = vec![spec_path.as_path()];
+        let inferred = infer_eq_function_fields_from_spec_paths(&spec_paths, &schema, &naming);
+
+        assert_eq!(inferred.get("current_view"), Some(&"CBalEq".to_string()));
+        assert_eq!(inferred.get("bal_1b"), Some(&"CBalEq".to_string()));
+    }
+
+    #[test]
+    fn test_infer_eq_function_fields_from_spec_paths_skips_ambiguous_helpers() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/election.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/types_i.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub struct Ballot {
+        pub seqno: int,
+    }
+
+    pub struct LElectionState {
+        pub current_view: Ballot,
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    pub fn CBalEq(ba:&CBallot, bb:&CBallot) -> (r:bool) {
+        true
+    }
+
+    pub fn CBallotEq(a:&CBallot, b:&CBallot) -> (r:bool) {
+        true
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let spec_paths = vec![spec_path.as_path()];
+        let inferred = infer_eq_function_fields_from_spec_paths(&spec_paths, &schema, &naming);
+
+        assert!(
+            !inferred.contains_key("current_view"),
+            "ambiguous helper matches for the same type should be skipped"
         );
     }
 

@@ -6579,7 +6579,7 @@ skip_functions = ["LNext"]
 #### 20.2.3 Auto-derive Tier 2 configs (with override)
 
 - [x] **Method calls**: Auto-derived by scanning implementation impl blocks (`src/implementation/<Protocol>/*.rs`) for exec methods and matching them to called spec functions by naming (`L*`/bare → `C*`) plus receiver-type position in function signatures. Inferred `destructure_index` is populated for tuple-return methods when the spec return type matches a tuple element (e.g., `GetReplicaIndex` → index `1`). Explicit TOML entries still override.
-- [~] **Eq function fields**: Deferred — RSL-only. Requires knowledge of Verus PartialEq derive support.
+- [x] **Eq function fields**: Auto-derived by scanning implementation modules for `*Eq` helpers with matching operand signatures (e.g., `CBalEq(&CBallot, &CBallot) -> bool`) and mapping spec struct/enum-variant fields whose inferred exec type matches that helper operand type. Ambiguous helper/type matches are skipped; explicit TOML entries still override.
 - [x] **Clone strategy** (Tier 2 extension): Already handled in Tier 1 — `infer_clone_strategy` detects `Set<T>` fields → `external_body`. All 9 non-RSL protocols match.
 - [x] **Struct vec fields**: Detect `Seq<StructType>` fields (non-primitive, non-enum element). Maps to `[CElementType, LElementType]`. (ConfigInferer.infer_struct_vec_fields, 4 tests)
 - [~] **Type view expressions**: Deferred — RSL-only. Requires knowledge of `abstractify_*` function existence.

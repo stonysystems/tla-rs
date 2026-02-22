@@ -614,6 +614,7 @@ pub struct ConfigInferer<'a> {
     annotation_param_modes: HashMap<String, Vec<ParameterMode>>,
     function_path_hints: HashMap<String, String>,
     method_call_hints: HashMap<String, MethodCallConfig>,
+    eq_function_field_hints: HashMap<String, String>,
 }
 
 impl<'a> ConfigInferer<'a> {
@@ -624,6 +625,7 @@ impl<'a> ConfigInferer<'a> {
             annotation_param_modes: HashMap::new(),
             function_path_hints: HashMap::new(),
             method_call_hints: HashMap::new(),
+            eq_function_field_hints: HashMap::new(),
         }
     }
 
@@ -648,6 +650,7 @@ impl<'a> ConfigInferer<'a> {
             annotation_param_modes,
             function_path_hints: HashMap::new(),
             method_call_hints: HashMap::new(),
+            eq_function_field_hints: HashMap::new(),
         }
     }
 
@@ -669,6 +672,15 @@ impl<'a> ConfigInferer<'a> {
         self
     }
 
+    /// Attach externally-derived `eq_function_fields` hints.
+    ///
+    /// This is used for data that depends on implementation helper symbols rather
+    /// than `SpecSchema` alone.
+    pub fn with_eq_function_field_hints(mut self, hints: HashMap<String, String>) -> Self {
+        self.eq_function_field_hints = hints;
+        self
+    }
+
     /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
     pub fn infer(&self) -> TranspilerConfig {
         let mut config = TranspilerConfig::default();
@@ -678,6 +690,7 @@ impl<'a> ConfigInferer<'a> {
         self.infer_variant_remapping(&mut config);
         self.infer_function_paths(&mut config);
         self.infer_method_calls(&mut config);
+        self.infer_eq_function_fields(&mut config);
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
         self.infer_spec_only_functions(&mut config);
@@ -886,6 +899,23 @@ impl<'a> ConfigInferer<'a> {
         for key in keys {
             if let Some(method_cfg) = self.method_call_hints.get(key) {
                 config.method_calls.insert(key.clone(), method_cfg.clone());
+            }
+        }
+    }
+
+    /// Derive `eq_function_fields` from caller-provided hints.
+    fn infer_eq_function_fields(&self, config: &mut TranspilerConfig) {
+        if self.eq_function_field_hints.is_empty() {
+            return;
+        }
+
+        let mut keys: Vec<&String> = self.eq_function_field_hints.keys().collect();
+        keys.sort();
+        for key in keys {
+            if let Some(function_name) = self.eq_function_field_hints.get(key) {
+                config
+                    .eq_function_fields
+                    .insert(key.clone(), function_name.clone());
             }
         }
     }
@@ -1112,6 +1142,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
     for (k, v) in &inferred.method_calls {
         if !base.method_calls.contains_key(k) {
             base.method_calls.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Eq function fields: add inferred entries not in base
+    for (k, v) in &inferred.eq_function_fields {
+        if !base.eq_function_fields.contains_key(k) {
+            base.eq_function_fields.insert(k.clone(), v.clone());
         }
     }
 
@@ -2420,11 +2457,34 @@ verus! {
     }
 
     #[test]
+    fn test_infer_eq_function_fields_from_hints() {
+        let schema = SpecSchema::new();
+        let naming = default_naming();
+        let mut hints = HashMap::new();
+        hints.insert("current_view".to_string(), "CBalEq".to_string());
+        hints.insert("bal_1b".to_string(), "CBalEq".to_string());
+
+        let inferer = ConfigInferer::new(&schema, &naming).with_eq_function_field_hints(hints);
+        let config = inferer.infer();
+
+        assert_eq!(
+            config.eq_function_fields.get("current_view"),
+            Some(&"CBalEq".to_string())
+        );
+        assert_eq!(
+            config.eq_function_fields.get("bal_1b"),
+            Some(&"CBalEq".to_string())
+        );
+    }
+
+    #[test]
     fn test_merge_configs_explicit_overrides_inferred() {
         let mut base = TranspilerConfig::default();
         base.remapping
             .insert("LState".to_string(), "MyCustomState".to_string());
         base.spec_only_functions.push("AlreadyExplicit".to_string());
+        base.eq_function_fields
+            .insert("current_view".to_string(), "CustomEq".to_string());
 
         let mut inferred = TranspilerConfig::default();
         inferred
@@ -2446,6 +2506,12 @@ verus! {
                 destructure_index: Some(1),
             },
         );
+        inferred
+            .eq_function_fields
+            .insert("current_view".to_string(), "CBalEq".to_string());
+        inferred
+            .eq_function_fields
+            .insert("bal_1b".to_string(), "CBalEq".to_string());
         inferred
             .spec_only_functions
             .push("WellFormedLConfiguration".to_string());
@@ -2471,6 +2537,14 @@ verus! {
                 mc.destructure_index
             )),
             Some((&"CGetReplicaIndex".to_string(), 1, Some(1)))
+        );
+        assert_eq!(
+            base.eq_function_fields.get("current_view"),
+            Some(&"CustomEq".to_string())
+        );
+        assert_eq!(
+            base.eq_function_fields.get("bal_1b"),
+            Some(&"CBalEq".to_string())
         );
         assert!(base
             .spec_only_functions
