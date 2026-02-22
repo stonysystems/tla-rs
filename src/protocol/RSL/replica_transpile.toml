@@ -32,7 +32,8 @@ skip_functions = [
     "LReplicaNextProcessPacket",
     "LReplicaNoReceiveNext",
     "LSchedulerNext",
-    # for..in iter: on HashSet fails invariant checks even with assume(false)
+    # Keep skipped so proof-fallback emits an explicit external-body stub.
+    # The hand-written manual body has been retired.
     "LReplicaNextProcess1b",
     # Helpers with manual implementations (prevent buggy auto-generation)
     "ExtractSentPacketsFromIos",
@@ -49,8 +50,6 @@ no_stub_functions = [
     "LReplicaNextProcessPacket",
     "LReplicaNoReceiveNext",
     "LSchedulerNext",
-    # for..in iter: on HashSet — manual implementation
-    "LReplicaNextProcess1b",
     # Non-spec helpers defined in replica_manual.rs
     "ExtractSentPacketsFromIos",
     # Spec-only predicates (no exec implementation needed)

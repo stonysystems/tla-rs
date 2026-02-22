@@ -2155,10 +2155,6 @@ fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
         !manual_source.contains("pub exec fn Packet1bHasUniqueSrc"),
         "replica_manual.rs should not define Packet1bHasUniqueSrc anymore"
     );
-    assert!(
-        manual_source.contains("crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc"),
-        "replica_manual.rs should call Packet1bHasUniqueSrc via gen_helpers"
-    );
 
     let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
@@ -2169,6 +2165,67 @@ fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
     assert!(
         helper_source.contains("#[verifier(external_body)]"),
         "Packet1bHasUniqueSrc helper in gen_helpers.rs should remain external_body"
+    );
+}
+
+#[test]
+fn test_replica_process1b_is_proof_fallback_generated_not_manual_injected() {
+    let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
+        .expect("Failed to read replica_transpile.toml");
+    let config: toml::Value = config_source
+        .parse()
+        .expect("Failed to parse replica_transpile.toml");
+
+    let skip_functions = config
+        .get("skip_functions")
+        .and_then(|value| value.as_array())
+        .expect("replica_transpile.toml must define skip_functions");
+    assert!(
+        skip_functions
+            .iter()
+            .any(|value| value.as_str() == Some("LReplicaNextProcess1b")),
+        "LReplicaNextProcess1b should remain in skip_functions for proof-fallback generation"
+    );
+
+    let no_stub_functions = config
+        .get("no_stub_functions")
+        .and_then(|value| value.as_array())
+        .expect("replica_transpile.toml must define no_stub_functions");
+    assert!(
+        !no_stub_functions
+            .iter()
+            .any(|value| value.as_str() == Some("LReplicaNextProcess1b")),
+        "LReplicaNextProcess1b should no longer be pinned to no_stub_functions/manual_code"
+    );
+
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
+        .expect("Failed to read replica_manual.rs");
+    assert!(
+        !manual_source.contains("pub exec fn CReplicaNextProcess1b"),
+        "replica_manual.rs should not define CReplicaNextProcess1b anymore"
+    );
+
+    let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+    assert!(
+        generated_source.contains("// TRANSLATE-TODO: explicitly skipped (skip_functions)"),
+        "replica_gen.rs should mark proof-fallback generation for skipped LReplicaNextProcess1b"
+    );
+    assert!(
+        generated_source.contains("pub exec fn CReplicaNextProcess1b"),
+        "replica_gen.rs should contain generated CReplicaNextProcess1b"
+    );
+    assert!(
+        generated_source.contains("#[verifier(external_body)]\npub exec fn CReplicaNextProcess1b"),
+        "generated CReplicaNextProcess1b should be an external-body proof-fallback stub"
+    );
+
+    let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNextProcess1b");
+    assert!(
+        fn_source.contains(
+            "LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@))"
+        ),
+        "generated CReplicaNextProcess1b should preserve the spec postcondition"
     );
 }
 

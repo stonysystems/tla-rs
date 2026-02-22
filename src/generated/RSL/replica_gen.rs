@@ -168,6 +168,18 @@ ensures
 
 }
 
+// TRANSLATE-TODO: explicitly skipped (skip_functions)
+#[verifier(external_body)]
+pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
+ensures
+    result.0.valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+    LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+{
+    unimplemented!()
+}
+
 pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
@@ -684,70 +696,6 @@ ensures
 //
 // All action functions (CReplicaInit, CReplicaNextProcess*, etc.) are now
 // auto-transpiled by the transpiler with assume_postconditions = true.
-
-// =============================================================================
-// CReplicaNextProcess1b -- manual (for..in iter: on HashSet fails invariant checks)
-// =============================================================================
-
-pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
-requires
-    s.valid(),
-    received_packet.valid(),
-    received_packet.msg is CMessage1b,
-ensures
-    result.0.valid(),
-    LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-
-    let log_truncation_point = match &received_packet.msg {
-        CMessage::CMessage1b { log_truncation_point, bal_1b, .. } => {
-            let samesrc = crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc(
-                &s.proposer.received_1b_packets,
-                received_packet,
-            );
-            if contains(&s.proposer.constants.all.config.replica_ids, &received_packet.src)
-                && CBalEq(bal_1b, &s.proposer.max_ballot_i_sent_1a)
-                && s.proposer.current_state == 1
-                && samesrc
-            {
-                let next_acceptor = CAcceptorTruncateLog(&s.acceptor, log_truncation_point);
-                let next_proposer = CProposerProcess1b(&s.proposer, received_packet);
-                let state = CReplica {
-                    constants: s.constants.clone_up_to_view(),
-                    nextHeartbeatTime: s.nextHeartbeatTime,
-                    proposer: next_proposer,
-                    acceptor: next_acceptor,
-                    learner: s.learner.clone_up_to_view(),
-                    executor: s.executor.clone_up_to_view(),
-                };
-                let empty_vec: Vec<CPacket> = vec![];
-                let ret = (state, empty_vec);
-                assume(ret.0.valid());
-                assume(LReplicaNextProcess1b(s@, ret.0@, received_packet@, ret.1@.map(|i, p: CPacket| p@)));
-                assume(forall |i:int| 0 <= i < ret.1@.len() ==> ret.1@[i].valid());
-                assume(forall |i:int| 0 <= i < ret.1@.len() ==> ret.1@[i].abstractable());
-                return ret;
-            }
-            *log_truncation_point
-        }
-        _ => unreachable_value(),
-    };
-
-    // Conditions not met -- return unchanged state
-    let s_clone = s.clone_up_to_view();
-    let empty_vec: Vec<CPacket> = vec![];
-    let ret = (s_clone, empty_vec);
-    assume(ret.0.valid());
-    assume(LReplicaNextProcess1b(s@, ret.0@, received_packet@, ret.1@.map(|i, p: CPacket| p@)));
-    assume(forall |i:int| 0 <= i < ret.1@.len() ==> ret.1@[i].valid());
-    assume(forall |i:int| 0 <= i < ret.1@.len() ==> ret.1@[i].abstractable());
-    ret
-}
 
 // =============================================================================
 // CExtractSentPacketsFromIos -- external body (IO <-> spec conversion)
