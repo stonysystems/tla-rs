@@ -2564,6 +2564,105 @@ fn test_rsl_mod_rs_keeps_required_runtime_module_exports_documented() {
 }
 
 #[test]
+fn test_rsl_legacy_runtime_exports_match_dispatch_reachability_audit() {
+    let mod_rs =
+        std::fs::read_to_string("../src/implementation/RSL/mod.rs").expect("Failed to read mod.rs");
+
+    let expected_legacy_exports = vec![
+        "cmd_line_parser",
+        "netrsl_i",
+        "replicaimpl_class",
+        "replicaimpl_delivery",
+        "replicaimpl_main",
+        "replicaimpl_no_receive_clock",
+        "replicaimpl_no_receive_no_clock",
+        "replicaimpl_process_packet_no_clock",
+        "replicaimpl_process_packet_x",
+        "replicaimpl_read_clock",
+    ];
+
+    let mut found_legacy_exports = Vec::new();
+    for line in mod_rs.lines() {
+        let trimmed = line.trim();
+        if let Some(name) = trimmed
+            .strip_prefix("pub mod ")
+            .and_then(|rest| rest.strip_suffix(';'))
+        {
+            if name == "cmd_line_parser" || name == "netrsl_i" || name.starts_with("replicaimpl_") {
+                found_legacy_exports.push(name.to_string());
+            }
+        }
+    }
+
+    assert_eq!(
+        found_legacy_exports,
+        expected_legacy_exports,
+        "legacy runtime exports in mod.rs should exactly match the audited host-dispatch reachability set"
+    );
+
+    let host_i = std::fs::read_to_string("../src/implementation/RSL/host_i.rs")
+        .expect("Failed to read host_i.rs");
+    assert!(
+        host_i.contains("parse_cmd_line("),
+        "host_i should keep the cmd_line_parser entrypoint wiring"
+    );
+    assert!(
+        host_i.contains("Replica_Next_main("),
+        "host_i should dispatch through Replica_Next_main"
+    );
+
+    let replicaimpl_main = std::fs::read_to_string("../src/implementation/RSL/replicaimpl_main.rs")
+        .expect("Failed to read replicaimpl_main.rs");
+    for callee in [
+        "replica_next_process_packet_x(",
+        "replica_no_receive_no_read_clock(",
+        "replica_no_receive_read_clock_next(",
+    ] {
+        assert!(
+            replicaimpl_main.contains(callee),
+            "replicaimpl_main should keep downstream dispatch call `{}`",
+            callee
+        );
+    }
+
+    let replicaimpl_process_packet_x =
+        std::fs::read_to_string("../src/implementation/RSL/replicaimpl_process_packet_x.rs")
+            .expect("Failed to read replicaimpl_process_packet_x.rs");
+    for callee in [
+        "replica_next_read_clock_and_process_packet(",
+        "replica_next_process_packet_without_reading_clock(",
+    ] {
+        assert!(
+            replicaimpl_process_packet_x.contains(callee),
+            "replicaimpl_process_packet_x should keep downstream dispatch call `{}`",
+            callee
+        );
+    }
+
+    for path in [
+        "../src/implementation/RSL/replicaimpl_no_receive_clock.rs",
+        "../src/implementation/RSL/replicaimpl_no_receive_no_clock.rs",
+        "../src/implementation/RSL/replicaimpl_process_packet_no_clock.rs",
+        "../src/implementation/RSL/replicaimpl_read_clock.rs",
+    ] {
+        let source =
+            std::fs::read_to_string(path).unwrap_or_else(|_| panic!("Failed to read {}", path));
+        assert!(
+            source.contains("deliver_outbound_packets("),
+            "{} should route packets through replicaimpl_delivery::deliver_outbound_packets",
+            path
+        );
+    }
+
+    let delivery = std::fs::read_to_string("../src/implementation/RSL/replicaimpl_delivery.rs")
+        .expect("Failed to read replicaimpl_delivery.rs");
+    assert!(
+        delivery.contains("netrsl_i::*"),
+        "replicaimpl_delivery should keep network glue import from netrsl_i"
+    );
+}
+
+#[test]
 fn test_replicaimpl_class_no_stale_imports() {
     let source = std::fs::read_to_string("../src/implementation/RSL/replicaimpl_class.rs")
         .expect("Failed to read replicaimpl_class.rs");

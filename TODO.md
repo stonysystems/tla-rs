@@ -6424,9 +6424,10 @@ Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
   - `ProposerImpl.rs`: Clone impl + 5 static methods (CSetOfMessage1bAboutBallot etc.)
   - `ReplicaImpl.rs` + `replicaimpl_class.rs`: Still in use for IO dispatch layer
 - [x] **19.7.5**: Removed stale `ExecutorImpl` coupling for `COutstandingOperation`; `CExecutor` remains imported from `ExecutorImpl`, while `COutstandingOperation` now imports from its owner `ElectionImpl`.
-- [~] **19.7.6**: `src/implementation/RSL/mod.rs` still references legacy impl modules; keep only required exports and document ownership.
+- [x] **19.7.6**: `src/implementation/RSL/mod.rs` still references legacy impl modules; keep only required exports and document ownership.
   - [x] **19.7.6a**: Add explicit rationale comments for required legacy runtime exports (`cmd_line_parser`, `netrsl_i`, `replicaimpl_*`) and guard with regression test coverage.
-  - [ ] **19.7.6b**: Re-audit legacy runtime exports and remove any module that is no longer reachable from `host_i`/`host_s` dispatch paths.
+  - [x] **19.7.6b**: Re-audit legacy runtime exports and remove any module that is no longer reachable from `host_i`/`host_s` dispatch paths.
+    - 2026-02-22 audit result: all legacy runtime modules (`cmd_line_parser`, `netrsl_i`, `replicaimpl_*`) remain transitively reachable from `host_i`/`host_s` via `Replica_Next_main`; no safe removals at this time.
 
 ### 19.8 Execution Order
 
