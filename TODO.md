@@ -6423,7 +6423,7 @@ Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
   - `ElectionImpl.rs`: Clone impl + CRequestHeader + clone_up_to_view + CBoundRequestSequence + helpers
   - `ProposerImpl.rs`: Clone impl + 5 static methods (CSetOfMessage1bAboutBallot etc.)
   - `ReplicaImpl.rs` + `replicaimpl_class.rs`: Still in use for IO dispatch layer
-- [~] **19.7.5**: `#[deprecated]` re-exports remain in ExecutorImpl.rs (CExecutor, COutstandingOperation) — needed by ReplicaImpl.rs
+- [x] **19.7.5**: Removed stale `ExecutorImpl` coupling for `COutstandingOperation`; `CExecutor` remains imported from `ExecutorImpl`, while `COutstandingOperation` now imports from its owner `ElectionImpl`.
 - [~] **19.7.6**: mod.rs still references impl modules — needed for structural types and Clone impls
 
 ### 19.8 Execution Order

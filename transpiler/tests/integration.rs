@@ -1291,6 +1291,43 @@ fn test_rsl_generated_types_include_simple_clone_up_to_view() {
 }
 
 #[test]
+fn test_rsl_transpile_toml_uses_current_executor_and_outstanding_operation_import_paths() {
+    let config_str = std::fs::read_to_string("../src/protocol/RSL/transpile.toml")
+        .expect("Failed to read RSL transpile config");
+    let config: toml::Value = config_str.parse().expect("Failed to parse RSL TOML");
+    let custom_imports = config
+        .get("output")
+        .and_then(|output| output.get("custom_imports"))
+        .and_then(|v| v.as_array())
+        .expect("RSL transpile.toml should define output.custom_imports");
+
+    assert!(
+        custom_imports.iter().any(|v| {
+            v.as_str() == Some("use crate::implementation::RSL::ExecutorImpl::CExecutor;")
+        }),
+        "RSL transpile.toml should import CExecutor from ExecutorImpl"
+    );
+    assert!(
+        custom_imports.iter().any(|v| {
+            v.as_str()
+                == Some(
+                    "use crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation};",
+                )
+        }),
+        "RSL transpile.toml should import COutstandingOperation from ElectionImpl"
+    );
+    assert!(
+        !custom_imports.iter().any(|v| {
+            v.as_str()
+                == Some(
+                    "use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};",
+                )
+        }),
+        "RSL transpile.toml should not keep stale COutstandingOperation import from ExecutorImpl"
+    );
+}
+
+#[test]
 fn test_rsl_types_manual_helpers_extension_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
         .expect("Failed to read RSL types manual helpers");

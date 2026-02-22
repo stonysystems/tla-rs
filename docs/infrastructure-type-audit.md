@@ -74,7 +74,7 @@ These are complex state types with impl blocks containing exec functions:
 | `CExecutor` | ExecutorImpl.rs | No | Has exec methods |
 | `CElectionState` | ElectionImpl.rs | No | Has exec methods |
 | `CReplica` | ReplicaImpl.rs | No | Has exec methods |
-| `COutstandingOperation` | ExecutorImpl.rs | No | Helper struct |
+| `COutstandingOperation` | ElectionImpl.rs | No | Helper struct |
 | `CIncompleteBatchTimer` | ProposerImpl.rs | No | Helper struct |
 
 ### 6. App Interface Types (from `appinterface.rs`)
@@ -163,9 +163,9 @@ use crate::implementation::RSL::cconfiguration::*;
 use crate::implementation::RSL::acceptorimpl::{CAcceptor, CIsLogTruncationPointValid};
 use crate::implementation::RSL::ProposerImpl::{CProposer, CIncompleteBatchTimer};
 use crate::implementation::RSL::learnerimpl::CLearner;
-use crate::implementation::RSL::ExecutorImpl::{CExecutor, COutstandingOperation};
+use crate::implementation::RSL::ExecutorImpl::CExecutor;
 use crate::implementation::RSL::ReplicaImpl::CReplica;
-use crate::implementation::RSL::ElectionImpl::CElectionState;
+use crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation};
 use crate::implementation::RSL::CStateMachine::CHandleRequestBatch;
 use crate::implementation::RSL::appinterface::CAppStateInit;
 use crate::implementation::common::upper_bound_i::*;
