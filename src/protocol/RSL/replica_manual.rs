@@ -2,33 +2,10 @@
 // Only functions that CANNOT be auto-transpiled remain here:
 // - IO dispatch with proof blocks (CReplicaNoReceiveNext, CSchedulerNext, etc.)
 // - Message type dispatch (CReplicaNextProcessPacketWithoutReadingClock)
-// - External body helpers (Packet1bHasUniqueSrc, CExtractSentPacketsFromIos)
+// - External body helper (CExtractSentPacketsFromIos)
 //
 // All action functions (CReplicaInit, CReplicaNextProcess*, etc.) are now
 // auto-transpiled by the transpiler with assume_postconditions = true.
-
-// =============================================================================
-// Packet1bHasUniqueSrc -- external body helper (not a spec predicate)
-// =============================================================================
-
-#[verifier(external_body)]
-pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &CPacket) -> (res: bool)
-requires
-    pkt.msg is CMessage1b,
-ensures
-    res ==> forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@,
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-    let mut res = true;
-    for p in received_1b_packets.iter() {
-        if p.src == pkt.src {
-            res = false;
-        }
-    }
-    res
-}
 
 // =============================================================================
 // CReplicaNextProcess1b -- manual (for..in iter: on HashSet fails invariant checks)
@@ -51,7 +28,10 @@ ensures
 
     let log_truncation_point = match &received_packet.msg {
         CMessage::CMessage1b { log_truncation_point, bal_1b, .. } => {
-            let samesrc = Packet1bHasUniqueSrc(&s.proposer.received_1b_packets, received_packet);
+            let samesrc = crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc(
+                &s.proposer.received_1b_packets,
+                received_packet,
+            );
             if contains(&s.proposer.constants.all.config.replica_ids, &received_packet.src)
                 && CBalEq(bal_1b, &s.proposer.max_ballot_i_sent_1a)
                 && s.proposer.current_state == 1

@@ -52,7 +52,6 @@ no_stub_functions = [
     # for..in iter: on HashSet — manual implementation
     "LReplicaNextProcess1b",
     # Non-spec helpers defined in replica_manual.rs
-    "Packet1bHasUniqueSrc",
     "ExtractSentPacketsFromIos",
     # Spec-only predicates (no exec implementation needed)
     "WellFormedLConfiguration",

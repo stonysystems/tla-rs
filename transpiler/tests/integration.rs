@@ -2130,6 +2130,48 @@ fn test_replica_num_actions_is_transpiled_not_manual_injected() {
     );
 }
 
+#[test]
+fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
+    let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
+        .expect("Failed to read replica_transpile.toml");
+    let config: toml::Value = config_source
+        .parse()
+        .expect("Failed to parse replica_transpile.toml");
+
+    let no_stub_functions = config
+        .get("no_stub_functions")
+        .and_then(|value| value.as_array())
+        .expect("replica_transpile.toml must define no_stub_functions");
+    assert!(
+        !no_stub_functions
+            .iter()
+            .any(|value| value.as_str() == Some("Packet1bHasUniqueSrc")),
+        "Packet1bHasUniqueSrc should not be tied to replica manual_code anymore"
+    );
+
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
+        .expect("Failed to read replica_manual.rs");
+    assert!(
+        !manual_source.contains("pub exec fn Packet1bHasUniqueSrc"),
+        "replica_manual.rs should not define Packet1bHasUniqueSrc anymore"
+    );
+    assert!(
+        manual_source.contains("crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc"),
+        "replica_manual.rs should call Packet1bHasUniqueSrc via gen_helpers"
+    );
+
+    let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
+        .expect("Failed to read gen_helpers.rs");
+    assert!(
+        helper_source.contains("pub exec fn Packet1bHasUniqueSrc"),
+        "gen_helpers.rs should define Packet1bHasUniqueSrc"
+    );
+    assert!(
+        helper_source.contains("#[verifier(external_body)]"),
+        "Packet1bHasUniqueSrc helper in gen_helpers.rs should remain external_body"
+    );
+}
+
 /// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
 ///
 /// This ensures:

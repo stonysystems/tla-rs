@@ -5,6 +5,7 @@
 // Centralizing them here eliminates duplication across those modules.
 
 use vstd::prelude::*;
+use std::collections::HashSet;
 
 use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
@@ -46,6 +47,29 @@ pub fn clone_io_packet(p: &LPacket<EndPoint, CMessage>) -> (res: CPacket)
         res.abstractable(),
 {
     CPacket { dst: p.dst.clone(), src: p.src.clone(), msg: p.msg.clone() }
+}
+
+/// Check that a 1b packet source is unique among previously received 1b packets.
+///
+/// Kept as an external-body runtime helper because it is an IO-adjacent
+/// HashSet iteration pattern used by replica packet-processing wrappers.
+#[verifier(external_body)]
+pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &CPacket) -> (res: bool)
+    requires
+        pkt.msg is CMessage1b,
+    ensures
+        res ==> forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@,
+{
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
+    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+    let mut res = true;
+    for p in received_1b_packets.iter() {
+        if p.src == pkt.src {
+            res = false;
+        }
+    }
+    res
 }
 
 /// Convert OutboundPackets (enum with Broadcast/PacketSequence/OutboundPacket variants)
