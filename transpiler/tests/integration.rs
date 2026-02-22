@@ -5783,6 +5783,80 @@ fn test_raft_helpers_not_in_generated() {
 }
 
 #[test]
+fn test_manual_code_footprint_is_limited_to_rsl_replica_and_executor() {
+    fn collect_transpile_tomls(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let entries = std::fs::read_dir(dir)
+            .unwrap_or_else(|_| panic!("Failed to read directory {}", dir.display()));
+        for entry in entries {
+            let entry = entry.expect("Failed to read directory entry");
+            let path = entry.path();
+            if path.is_dir() {
+                collect_transpile_tomls(&path, out);
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                if name.ends_with("_transpile.toml") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+
+    let mut transpile_tomls = Vec::new();
+    collect_transpile_tomls(
+        std::path::Path::new("../src/protocol"),
+        &mut transpile_tomls,
+    );
+    transpile_tomls.sort();
+
+    let mut manual_bindings = Vec::<(String, String)>::new();
+    for path in transpile_tomls {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("Failed to read {}", path.display()));
+        let parsed: toml::Value = source
+            .parse()
+            .unwrap_or_else(|_| panic!("Failed to parse TOML {}", path.display()));
+        if let Some(manual_code) = parsed
+            .get("output")
+            .and_then(|output| output.get("manual_code"))
+            .and_then(|value| value.as_str())
+        {
+            manual_bindings.push((path.to_string_lossy().into_owned(), manual_code.to_string()));
+        }
+    }
+    manual_bindings.sort();
+
+    let expected = vec![
+        (
+            "../src/protocol/RSL/executor_transpile.toml".to_string(),
+            "executor_manual.rs".to_string(),
+        ),
+        (
+            "../src/protocol/RSL/replica_transpile.toml".to_string(),
+            "replica_manual.rs".to_string(),
+        ),
+    ];
+    assert_eq!(
+        manual_bindings, expected,
+        "manual_code usage should stay restricted to the known final-mile RSL configs"
+    );
+
+    let replica_manual = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
+        .expect("Failed to read replica_manual.rs");
+    assert!(
+        replica_manual.contains("assume("),
+        "replica_manual.rs should still carry explicit IO trust-boundary assumptions"
+    );
+
+    let executor_manual = std::fs::read_to_string("../src/protocol/RSL/executor_manual.rs")
+        .expect("Failed to read executor_manual.rs");
+    assert!(
+        !executor_manual.contains("assume("),
+        "executor_manual.rs should remain proof-oriented (no direct assume calls)"
+    );
+}
+
+#[test]
 fn test_host_init_chain_replication() {
     run_host_init_test(
         "../src/protocol/ChainReplication/chain_transpile.toml",
