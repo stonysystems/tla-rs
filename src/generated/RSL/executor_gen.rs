@@ -80,6 +80,106 @@ ensures
 }
 
 
+pub exec fn CExecutorInit(c: &CReplicaConstants) -> (result: CExecutor)
+requires
+    c.valid(),
+ensures
+    result.valid(),
+    LExecutorInit(result@, c@),
+{
+CExecutor {
+        constants: c.clone(),
+        app: CAppStateInit(),
+        ops_complete: 0u64,
+        max_bal_reflected: CBallot {
+            seqno: 0u64,
+            proposer_id: 0u64,
+        },
+        next_op_to_execute: COutstandingOperation::OutstandingOpUnknown {
+        },
+        reply_cache: HashMap::new(),
+    }
+}
+
+pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CRequestBatch) -> (result: CExecutor)
+requires
+    s.valid(),
+    bal.valid(),
+    opn == s.ops_complete,
+    s.next_op_to_execute is COutstandingOpUnknown,
+ensures
+    result.valid(),
+    LExecutorGetDecision(s@, result@, bal@, *opn as int, abstractify_crequestbatch(v)),
+{
+CExecutor {
+        constants: s.constants.clone(),
+        app: s.app.clone(),
+        ops_complete: s.ops_complete.clone(),
+        max_bal_reflected: s.max_bal_reflected.clone(),
+        next_op_to_execute: COutstandingOperation::OutstandingOpKnown {
+            v: v.clone(),
+            bal: bal.clone(),
+        },
+        reply_cache: s.reply_cache.clone(),
+    }
+}
+
+pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CPacket) -> (result: CExecutor)
+requires
+    s.valid(),
+    inp.valid(),
+    inp.msg is CMessageAppStateSupply,
+    s@.constants.all.config.replica_ids.contains(inp@.src),
+    (inp.msg->opn_state_supply > s.ops_complete),
+ensures
+    result.valid(),
+    LExecutorProcessAppStateSupply(s@, result@, inp@),
+{
+    let m = &inp.msg;
+    CExecutor {
+        constants: s.constants.clone(),
+        app: match &m {
+            CMessage::CMessageAppStateSupply { app_state, .. } => app_state.clone(),
+            _  => {
+                proof {
+                    assert(false);
+                }
+                unreachable_value()
+            },
+        },
+        ops_complete: match &m {
+            CMessage::CMessageAppStateSupply { opn_state_supply, .. } => opn_state_supply.clone(),
+            _  => {
+                proof {
+                    assert(false);
+                }
+                unreachable_value()
+            },
+        },
+        max_bal_reflected: match &m {
+            CMessage::CMessageAppStateSupply { bal_state_supply, .. } => bal_state_supply.clone(),
+            _  => {
+                proof {
+                    assert(false);
+                }
+                unreachable_value()
+            },
+        },
+        next_op_to_execute: COutstandingOperation::OutstandingOpUnknown {
+        },
+        reply_cache: match &m {
+            CMessage::CMessageAppStateSupply { reply_cache, .. } => reply_cache.clone(),
+            _  => {
+                proof {
+                    assert(false);
+                }
+                unreachable_value()
+            },
+        },
+    }
+
+}
+
 pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
 requires
     s.valid(),
@@ -241,16 +341,6 @@ ensures
 // Helper lemmas
 // =============================================================================
 
-proof fn lemma_abstractify_empty_creplycache(m: CReplyCache)
-    requires
-        m@ == Map::<EndPoint, CReply>::empty(),
-    ensures
-        abstractify_creplycache(&m) =~= Map::<AbstractEndPoint, Reply>::empty(),
-{
-    let abs = abstractify_creplycache(&m);
-    assert forall |ak: AbstractEndPoint| !abs.contains_key(ak) by {}
-}
-
 #[verifier(external_body)]
 proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestBatch, states: Vec<CAppState>, replies: Vec<CReply>)
     requires
@@ -280,98 +370,6 @@ proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
         HandleRequestBatch(state, batch).0.len() > 0,
         HandleRequestBatch(state, batch).1.len() == batch.len(),
 {}
-
-// =============================================================================
-// CExecutorInit
-// =============================================================================
-
-pub exec fn CExecutorInit(c: &CReplicaConstants) -> (result: CExecutor)
-requires
-    c.valid(),
-ensures
-    result.valid(),
-    LExecutorInit(result@, c@),
-{
-    let constants = c.clone_up_to_view();
-    let app = CAppStateInit();
-    let reply_cache: HashMap<EndPoint, CReply> = HashMap::new();
-
-    proof {
-        lemma_abstractify_empty_creplycache(reply_cache);
-    }
-
-    let result = CExecutor {
-        constants: constants,
-        app: app,
-        ops_complete: 0,
-        max_bal_reflected: CBallot {
-            seqno: 0,
-            proposer_id: 0,
-        },
-        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-        },
-        reply_cache: reply_cache,
-    };
-
-    proof {
-        let ghost sr = result@;
-        let ghost sc = c@;
-        assert(sr.constants == sc);
-        assert(sr.app == AppInitialize());
-        assert(sr.ops_complete == 0int);
-        assert(sr.max_bal_reflected == Ballot{seqno: 0int, proposer_id: 0int});
-        assert(sr.next_op_to_execute == OutstandingOperation::OutstandingOpUnknown{});
-        assert(sr.reply_cache =~= Map::<AbstractEndPoint, Reply>::empty());
-        assert(LExecutorInit(sr, sc));
-    }
-
-    result
-}
-
-// =============================================================================
-// CExecutorGetDecision
-// =============================================================================
-
-pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CRequestBatch) -> (result: CExecutor)
-requires
-    s.valid(),
-    bal.valid(),
-    crequestbatch_is_valid(v),
-    (*opn == s.ops_complete),
-    s.next_op_to_execute is COutstandingOpUnknown,
-ensures
-    result.valid(),
-    LExecutorGetDecision(s@, result@, bal@, *opn as int, v@.map(|i, r: CRequest| r@)),
-{
-    let result = CExecutor {
-        constants: s.constants.clone_up_to_view(),
-        app: s.app,
-        ops_complete: s.ops_complete,
-        max_bal_reflected: s.max_bal_reflected,
-        next_op_to_execute: COutstandingOperation::COutstandingOpKnown {
-            v: clone_request_batch_up_to_view(v),
-            bal: bal.clone(),
-        },
-        reply_cache: clone_creply_cache_up_to_view(&s.reply_cache),
-    };
-
-    proof {
-        let ghost ss = s@;
-        let ghost sr = result@;
-        let ghost spec_result = LExecutor{
-            constants: ss.constants,
-            app: ss.app,
-            ops_complete: ss.ops_complete,
-            max_bal_reflected: ss.max_bal_reflected,
-            next_op_to_execute: OutstandingOperation::OutstandingOpKnown{v: v@.map(|i, r: CRequest| r@), bal: bal@},
-            reply_cache: ss.reply_cache,
-        };
-        assert(sr == spec_result);
-        assert(LExecutorGetDecision(ss, sr, bal@, *opn as int, v@.map(|i, r: CRequest| r@)));
-    }
-
-    result
-}
 
 // =============================================================================
 // CExecutorExecute — standalone with verified proof block
@@ -472,59 +470,6 @@ ensures
         assert(RepliesAreReplyType(sp));
 
         assert(LExecutorExecute(ss, sr, sp));
-    }
-
-    result
-}
-
-// =============================================================================
-// CExecutorProcessAppStateSupply
-// =============================================================================
-
-pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CPacket) -> (result: CExecutor)
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessageAppStateSupply,
-    s.constants.all.config.replica_ids@.contains(inp.src),
-    (inp.msg->opn_state_supply > s.ops_complete),
-ensures
-    result.valid(),
-    LExecutorProcessAppStateSupply(s@, result@, inp@),
-{
-    let (m_app_state, m_opn_state_supply, m_bal_state_supply, m_reply_cache) = match &inp.msg {
-        CMessage::CMessageAppStateSupply{app_state, opn_state_supply, bal_state_supply, reply_cache} =>
-            (*app_state, *opn_state_supply, *bal_state_supply, clone_creply_cache_up_to_view(reply_cache)),
-        _ => {
-            proof { assert(false); }
-            unreachable_value()
-        }
-    };
-
-    let result = CExecutor {
-        constants: s.constants.clone_up_to_view(),
-        app: m_app_state,
-        ops_complete: m_opn_state_supply,
-        max_bal_reflected: m_bal_state_supply,
-        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-        },
-        reply_cache: m_reply_cache,
-    };
-
-    proof {
-        let ghost ss = s@;
-        let ghost sr = result@;
-        let ghost sp = inp@;
-        let ghost spec_result = LExecutor{
-            constants: ss.constants,
-            app: sp.msg->app_state,
-            ops_complete: sp.msg->opn_state_supply,
-            max_bal_reflected: sp.msg->bal_state_supply,
-            next_op_to_execute: OutstandingOperation::OutstandingOpUnknown{},
-            reply_cache: sp.msg->reply_cache,
-        };
-        assert(sr == spec_result);
-        assert(LExecutorProcessAppStateSupply(ss, sr, sp));
     }
 
     result

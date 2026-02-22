@@ -2291,15 +2291,8 @@ fn test_executor_manual_code_footprint_audit_guard() {
         })
         .collect();
 
-    let expected_fns: std::collections::BTreeSet<String> = [
-        "CExecutorInit",
-        "CExecutorGetDecision",
-        "CExecutorExecute",
-        "CExecutorProcessAppStateSupply",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
+    let expected_fns: std::collections::BTreeSet<String> =
+        ["CExecutorExecute"].into_iter().map(String::from).collect();
 
     assert_eq!(
         actual_fns, expected_fns,
@@ -2310,6 +2303,18 @@ fn test_executor_manual_code_footprint_audit_guard() {
     assert_eq!(
         external_body_count, 3,
         "executor_manual.rs external_body boundary count changed unexpectedly"
+    );
+    assert!(
+        !manual_source.contains("pub exec fn CExecutorInit"),
+        "executor_manual.rs should no longer define CExecutorInit"
+    );
+    assert!(
+        !manual_source.contains("pub exec fn CExecutorGetDecision"),
+        "executor_manual.rs should no longer define CExecutorGetDecision"
+    );
+    assert!(
+        !manual_source.contains("pub exec fn CExecutorProcessAppStateSupply"),
+        "executor_manual.rs should no longer define CExecutorProcessAppStateSupply"
     );
     assert!(
         !manual_source.contains("pub exec fn CExecutorProcessAppStateRequest"),
@@ -2433,6 +2438,67 @@ fn test_executor_packet_processing_actions_migrated_off_manual_injection() {
         "CExecutorProcessAppStateRequest",
         "CExecutorProcessStartingPhase2",
         "CExecutorProcessRequest",
+    ] {
+        assert!(
+            generated_source.contains(&format!("pub exec fn {}", fn_name)),
+            "executor_gen.rs should define {} after migration",
+            fn_name
+        );
+    }
+}
+
+#[test]
+fn test_executor_state_only_actions_migrated_off_manual_injection() {
+    let transpile_config = std::fs::read_to_string("../src/protocol/RSL/executor_transpile.toml")
+        .expect("Failed to read executor_transpile.toml");
+    let parsed: toml::Value = transpile_config
+        .parse()
+        .expect("executor_transpile.toml should parse");
+    let skip_functions = parsed
+        .get("skip_functions")
+        .and_then(|value| value.as_array())
+        .expect("skip_functions should be an array");
+    let skip_set: std::collections::BTreeSet<String> = skip_functions
+        .iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect();
+
+    for fn_name in [
+        "LExecutorInit",
+        "LExecutorGetDecision",
+        "LExecutorProcessAppStateSupply",
+    ] {
+        assert!(
+            !skip_set.contains(fn_name),
+            "executor_transpile.toml should not skip {} after migration",
+            fn_name
+        );
+    }
+
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/executor_manual.rs")
+        .expect("Failed to read executor_manual.rs");
+    for fn_name in [
+        "CExecutorInit",
+        "CExecutorGetDecision",
+        "CExecutorProcessAppStateSupply",
+    ] {
+        assert!(
+            !manual_source.contains(&format!("pub exec fn {}", fn_name)),
+            "executor_manual.rs should not define {} after migration",
+            fn_name
+        );
+    }
+    assert!(
+        manual_source.contains("pub exec fn CExecutorExecute"),
+        "executor_manual.rs should retain CExecutorExecute until final-mile completion"
+    );
+
+    let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
+        .expect("Failed to read executor_gen.rs");
+    for fn_name in [
+        "CExecutorInit",
+        "CExecutorGetDecision",
+        "CExecutorProcessAppStateSupply",
     ] {
         assert!(
             generated_source.contains(&format!("pub exec fn {}", fn_name)),

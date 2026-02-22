@@ -6997,7 +6997,8 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - [x] **21.11.3.3**: Migrate recursive reply-packet helper (`CGetPacketsFromReplies`) off manual injection while preserving decreases/spec correspondence.
     - [x] **21.11.3.4**: Migrate packet-processing actions (`CExecutorProcessRequest`, `CExecutorProcessStartingPhase2`, `CExecutorProcessAppStateRequest`) off manual injection with proof-fallback only where unavoidable.  
       - Completed by removing these from `skip_functions` + `executor_manual.rs`; transpiler now emits them in `executor_gen.rs`.
-    - [ ] **21.11.3.5**: Migrate state-only actions (`CExecutorInit`, `CExecutorGetDecision`, `CExecutorProcessAppStateSupply`) off manual injection and shrink `executor_manual.rs` to `CExecutorExecute` + irreducible lemmas only.
+    - [x] **21.11.3.5**: Migrate state-only actions (`CExecutorInit`, `CExecutorGetDecision`, `CExecutorProcessAppStateSupply`) off manual injection and shrink `executor_manual.rs` to `CExecutorExecute` + irreducible lemmas only.  
+      - Completed by removing these from `skip_functions` + `executor_manual.rs`; transpiler now emits them in `executor_gen.rs`.
     - [ ] **21.11.3.6**: Resolve `CExecutorExecute` end-state (auto-proof parity or explicit trusted fallback policy), remove `output.manual_code` from `executor_transpile.toml`, regenerate, and run final trust-boundary audit.
 
 ## Phase 22: Native Model Checking for TLA-rs Spec (Source-First)
