@@ -24,10 +24,11 @@
 
 use clap::{Parser, Subcommand};
 use miette::Result;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use verus_transpiler::annotation::parse_annotation_file;
 use verus_transpiler::spec_analyzer::{
-    analyze_spec_file, analyze_spec_files, merge_configs, ConfigInferer,
+    analyze_spec_file, analyze_spec_files, merge_configs, ConfigInferer, SpecSchema,
 };
 use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfig};
 
@@ -454,6 +455,389 @@ enum Commands {
     },
 }
 
+fn strip_spec_prefix<'a>(name: &'a str, spec_prefix: &str) -> &'a str {
+    if name.starts_with(spec_prefix) {
+        let rest = &name[spec_prefix.len()..];
+        if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+            return rest;
+        }
+    }
+    name
+}
+
+fn collect_called_functions_from_expr(expr: &verus_transpiler::Expr, out: &mut HashSet<String>) {
+    use verus_transpiler::Expr;
+
+    match expr {
+        Expr::Call { func, args } => {
+            if func.segments.len() == 1 {
+                out.insert(func.segments[0].clone());
+            }
+            for arg in args {
+                collect_called_functions_from_expr(arg, out);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_called_functions_from_expr(receiver, out);
+            for arg in args {
+                collect_called_functions_from_expr(arg, out);
+            }
+        }
+        Expr::Conjunction(parts)
+        | Expr::Disjunction(parts)
+        | Expr::SeqLit(parts)
+        | Expr::SetLit(parts) => {
+            for part in parts {
+                collect_called_functions_from_expr(part, out);
+            }
+        }
+        Expr::MapLit(entries) => {
+            for (k, v) in entries {
+                collect_called_functions_from_expr(k, out);
+                collect_called_functions_from_expr(v, out);
+            }
+        }
+        Expr::Binary(lhs, _, rhs)
+        | Expr::Eq(lhs, rhs)
+        | Expr::Ne(lhs, rhs)
+        | Expr::Lt(lhs, rhs)
+        | Expr::Le(lhs, rhs)
+        | Expr::Gt(lhs, rhs)
+        | Expr::Ge(lhs, rhs)
+        | Expr::Implies(lhs, rhs)
+        | Expr::Iff(lhs, rhs)
+        | Expr::Index(lhs, rhs) => {
+            collect_called_functions_from_expr(lhs, out);
+            collect_called_functions_from_expr(rhs, out);
+        }
+        Expr::Not(inner)
+        | Expr::Field(inner, _)
+        | Expr::Arrow(inner, _)
+        | Expr::View(inner)
+        | Expr::Cast(inner, _)
+        | Expr::Unary(_, inner)
+        | Expr::Is(inner, _) => collect_called_functions_from_expr(inner, out),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            collect_called_functions_from_expr(cond, out);
+            collect_called_functions_from_expr(then_branch, out);
+            if let Some(e) = else_branch {
+                collect_called_functions_from_expr(e, out);
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_called_functions_from_expr(scrutinee, out);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_called_functions_from_expr(guard, out);
+                }
+                collect_called_functions_from_expr(&arm.body, out);
+            }
+        }
+        Expr::Let { value, body, .. } => {
+            collect_called_functions_from_expr(value, out);
+            collect_called_functions_from_expr(body, out);
+        }
+        Expr::Forall { triggers, body, .. } => {
+            for trigger in triggers {
+                for expr in &trigger.exprs {
+                    collect_called_functions_from_expr(expr, out);
+                }
+            }
+            collect_called_functions_from_expr(body, out);
+        }
+        Expr::Exists { body, .. } => collect_called_functions_from_expr(body, out),
+        Expr::Struct { fields, .. } => {
+            for (_, value) in fields {
+                collect_called_functions_from_expr(value, out);
+            }
+        }
+        Expr::StructUpdate { base, fields, .. } => {
+            collect_called_functions_from_expr(base, out);
+            for (_, value) in fields {
+                collect_called_functions_from_expr(value, out);
+            }
+        }
+        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Ident(_) | Expr::Literal(_) => {}
+    }
+}
+
+fn collect_called_functions_from_spec_file(spec_file: &Path) -> HashSet<String> {
+    let mut called = HashSet::new();
+    let Ok(spec_functions) = verus_transpiler::parse_file(spec_file) else {
+        return called;
+    };
+
+    for spec_fn in &spec_functions {
+        for req in &spec_fn.requires {
+            collect_called_functions_from_expr(req, &mut called);
+        }
+        for ens in &spec_fn.ensures {
+            collect_called_functions_from_expr(ens, &mut called);
+        }
+        for rec in &spec_fn.recommends {
+            collect_called_functions_from_expr(rec, &mut called);
+        }
+        for dec in &spec_fn.decreases {
+            collect_called_functions_from_expr(dec, &mut called);
+        }
+        collect_called_functions_from_expr(&spec_fn.body, &mut called);
+    }
+
+    called
+}
+
+fn extract_c_function_name(line: &str) -> Option<String> {
+    let idx = line.find("fn C")?;
+    let rest = &line[idx + 3..];
+    let mut chars = rest.chars();
+    if chars.next()? != 'C' {
+        return None;
+    }
+    let mut name = String::from("C");
+    for ch in chars {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            name.push(ch);
+        } else {
+            break;
+        }
+    }
+    if name.chars().nth(1).is_some_and(|c| c.is_ascii_uppercase()) {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+fn insert_symbol(symbols: &mut HashMap<String, Vec<String>>, name: String, path: String) {
+    let entry = symbols.entry(name).or_default();
+    if !entry.contains(&path) {
+        entry.push(path);
+    }
+}
+
+fn collect_generated_symbols(
+    protocol_name: &str,
+    generated_dir: &Path,
+    symbols: &mut HashMap<String, Vec<String>>,
+) {
+    if !generated_dir.exists() {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(generated_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Some(module_name) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+
+        for line in content.lines() {
+            let code = line.split("//").next().unwrap_or("").trim();
+            if let Some(func) = extract_c_function_name(code) {
+                let symbol_path = format!(
+                    "crate::generated::{}::{}::{}",
+                    protocol_name, module_name, func
+                );
+                insert_symbol(symbols, func, symbol_path);
+            }
+        }
+    }
+}
+
+fn parse_impl_type(line: &str) -> Option<String> {
+    if !line.starts_with("impl ") {
+        return None;
+    }
+    let rest = line.trim_start_matches("impl ").trim_start();
+    if rest.starts_with('<') {
+        return None;
+    }
+    let ty: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    if ty.starts_with('C') && ty.len() > 1 {
+        Some(ty)
+    } else {
+        None
+    }
+}
+
+fn count_braces(line: &str) -> (i32, i32) {
+    let opens = line.chars().filter(|c| *c == '{').count() as i32;
+    let closes = line.chars().filter(|c| *c == '}').count() as i32;
+    (opens, closes)
+}
+
+fn collect_implementation_symbols(
+    implementation_dir: &Path,
+    symbols: &mut HashMap<String, Vec<String>>,
+) {
+    if !implementation_dir.exists() {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(implementation_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+
+        let mut brace_depth: i32 = 0;
+        let mut impl_stack: Vec<(i32, String)> = Vec::new();
+
+        for line in content.lines() {
+            let code = line.split("//").next().unwrap_or("").trim();
+            if code.is_empty() {
+                continue;
+            }
+
+            if code.starts_with("impl ") && code.contains('{') {
+                if let Some(impl_ty) = parse_impl_type(code) {
+                    impl_stack.push((brace_depth + 1, impl_ty));
+                }
+            }
+
+            if let Some(func) = extract_c_function_name(code) {
+                let current_impl = impl_stack
+                    .iter()
+                    .rev()
+                    .find(|(depth, _)| brace_depth >= *depth)
+                    .map(|(_, ty)| ty.clone());
+                let symbol_path = if let Some(impl_ty) = current_impl {
+                    format!("{}::{}", impl_ty, func)
+                } else {
+                    func.clone()
+                };
+                insert_symbol(symbols, func, symbol_path);
+            }
+
+            let (opens, closes) = count_braces(code);
+            brace_depth += opens - closes;
+            impl_stack.retain(|(depth, _)| brace_depth >= *depth);
+        }
+    }
+}
+
+fn choose_symbol_path(exec_name: &str, symbols: &HashMap<String, Vec<String>>) -> Option<String> {
+    let candidates = symbols.get(exec_name)?;
+    let mut unique = candidates.clone();
+    unique.sort();
+    unique.dedup();
+
+    if unique.len() == 1 {
+        return unique.first().cloned();
+    }
+
+    let generated: Vec<&String> = unique
+        .iter()
+        .filter(|p| p.starts_with("crate::generated::"))
+        .collect();
+    if generated.len() == 1 {
+        return Some(generated[0].to_string());
+    }
+
+    let associated: Vec<&String> = unique
+        .iter()
+        .filter(|p| p.contains("::") && !p.starts_with("crate::generated::"))
+        .collect();
+    if associated.len() == 1 {
+        return Some(associated[0].to_string());
+    }
+
+    None
+}
+
+fn infer_function_paths_from_generated_symbols(
+    input: &Path,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> HashMap<String, String> {
+    let mut inferred = HashMap::new();
+
+    let called = collect_called_functions_from_spec_file(input);
+    if called.is_empty() {
+        return inferred;
+    }
+
+    let local_functions: HashSet<String> = schema.functions.keys().cloned().collect();
+
+    let Some(protocol_dir) = input.parent() else {
+        return inferred;
+    };
+    let Some(protocol_name) = protocol_dir.file_name().and_then(|s| s.to_str()) else {
+        return inferred;
+    };
+    let Some(protocol_root) = protocol_dir.parent() else {
+        return inferred;
+    };
+    if protocol_root.file_name().and_then(|s| s.to_str()) != Some("protocol") {
+        return inferred;
+    }
+    let Some(src_root) = protocol_root.parent() else {
+        return inferred;
+    };
+
+    let generated_dir = src_root.join("generated").join(protocol_name);
+    let implementation_dir = src_root.join("implementation").join(protocol_name);
+
+    let mut symbols: HashMap<String, Vec<String>> = HashMap::new();
+    collect_generated_symbols(protocol_name, &generated_dir, &mut symbols);
+    collect_implementation_symbols(&implementation_dir, &mut symbols);
+
+    for call_name in called {
+        if local_functions.contains(&call_name) {
+            continue;
+        }
+        let base_name = strip_spec_prefix(&call_name, &naming.spec_prefix).to_string();
+        if local_functions.contains(&base_name) {
+            continue;
+        }
+
+        let exec_name = format!("{}{}", naming.exec_prefix, base_name);
+        if let Some(path) = choose_symbol_path(&exec_name, &symbols) {
+            inferred.entry(base_name).or_insert(path);
+        }
+    }
+
+    inferred
+}
+
+fn infer_function_paths_from_spec_paths(
+    spec_paths: &[&Path],
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> HashMap<String, String> {
+    let mut hints = HashMap::new();
+    for path in spec_paths {
+        let inferred = infer_function_paths_from_generated_symbols(path, schema, naming);
+        for (name, symbol_path) in inferred {
+            hints.entry(name).or_insert(symbol_path);
+        }
+    }
+    hints
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -510,11 +894,14 @@ fn main() -> Result<()> {
         match analysis_result {
             Ok(schema) => {
                 let annotation_modules = parse_annotation_file(annotations).ok();
+                let function_path_hints =
+                    infer_function_paths_from_spec_paths(&spec_paths, &schema, &file_config.naming);
                 let inferer = if let Some(modules) = annotation_modules.as_ref() {
                     ConfigInferer::with_annotations(&schema, &file_config.naming, modules)
                 } else {
                     ConfigInferer::new(&schema, &file_config.naming)
-                };
+                }
+                .with_function_path_hints(function_path_hints);
                 let inferred = inferer.infer();
                 merge_configs(&mut file_config, &inferred);
                 if cli.verbose {
@@ -1845,7 +2232,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 };
                 match analysis_result {
                     Ok(schema) => {
-                        let inferer = ConfigInferer::new(&schema, &file_config.naming);
+                        let function_path_hints = infer_function_paths_from_spec_paths(
+                            &spec_paths,
+                            &schema,
+                            &file_config.naming,
+                        );
+                        let inferer = ConfigInferer::new(&schema, &file_config.naming)
+                            .with_function_path_hints(function_path_hints);
                         let inferred = inferer.infer();
                         merge_configs(&mut file_config, &inferred);
                         if cli.verbose {
@@ -5383,11 +5776,14 @@ validity_predicate_name = "valid"
 
         if let Ok(schema) = analysis_result {
             let annotation_modules = parse_annotation_file(annotations).ok();
+            let function_path_hints =
+                infer_function_paths_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let inferer = if let Some(modules) = annotation_modules.as_ref() {
                 ConfigInferer::with_annotations(&schema, &fc.naming, modules)
             } else {
                 ConfigInferer::new(&schema, &fc.naming)
-            };
+            }
+            .with_function_path_hints(function_path_hints);
             let inferred = inferer.infer();
             merge_configs(&mut fc, &inferred);
         }
@@ -5397,6 +5793,94 @@ validity_predicate_name = "valid"
         transpiler
             .transpile_file(input, annotations)
             .unwrap_or_else(|e| panic!("transpilation failed: {}", e))
+    }
+
+    #[test]
+    fn test_infer_function_paths_from_generated_symbols_prefers_generated_module() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/acceptor.rs");
+        let generated_path = dir.path().join("src/generated/RSL/broadcast_gen.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(generated_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub open spec fn LAcceptorStep() -> bool {
+        LBroadcastToEveryone()
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &generated_path,
+            r#"
+verus! {
+    pub exec fn CBroadcastToEveryone() -> bool {
+        true
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let inferred = infer_function_paths_from_generated_symbols(&spec_path, &schema, &naming);
+
+        assert_eq!(
+            inferred.get("BroadcastToEveryone"),
+            Some(&"crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string())
+        );
+    }
+
+    #[test]
+    fn test_infer_function_paths_from_generated_symbols_falls_back_to_impl_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/proposer.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/ProposerImpl.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub open spec fn LProposerStep() -> bool {
+        LSetOfMessage1bAboutBallot()
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    impl CProposer {
+        pub exec fn CSetOfMessage1bAboutBallot() -> bool {
+            true
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let inferred = infer_function_paths_from_generated_symbols(&spec_path, &schema, &naming);
+
+        assert_eq!(
+            inferred.get("SetOfMessage1bAboutBallot"),
+            Some(&"CProposer::CSetOfMessage1bAboutBallot".to_string())
+        );
     }
 
     #[test]

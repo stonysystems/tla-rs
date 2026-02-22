@@ -7604,10 +7604,13 @@ fn test_acceptor_vote_helpers_rehomed_out_of_manual_injection() {
     let generated = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
         .expect("Failed to read acceptor_gen.rs");
     assert!(
-        generated.contains(
-            "acceptor_helpers::{CAddVoteAndRemoveOldOnes, CRemoveVotesBeforeLogTruncationPoint}"
-        ),
-        "acceptor_gen.rs should import acceptor vote helpers from implementation module"
+        generated.contains("use crate::implementation::RSL::acceptor_helpers::"),
+        "acceptor_gen.rs should import acceptor helpers from implementation module"
+    );
+    assert!(
+        generated.contains("CAddVoteAndRemoveOldOnes")
+            && generated.contains("CRemoveVotesBeforeLogTruncationPoint"),
+        "acceptor_gen.rs should import both vote helper symbols"
     );
     assert!(
         !generated.contains("pub exec fn CRemoveVotesBeforeLogTruncationPoint"),

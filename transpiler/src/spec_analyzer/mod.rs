@@ -612,6 +612,7 @@ pub struct ConfigInferer<'a> {
     schema: &'a SpecSchema,
     naming: &'a NamingConfig,
     annotation_param_modes: HashMap<String, Vec<ParameterMode>>,
+    function_path_hints: HashMap<String, String>,
 }
 
 impl<'a> ConfigInferer<'a> {
@@ -620,6 +621,7 @@ impl<'a> ConfigInferer<'a> {
             schema,
             naming,
             annotation_param_modes: HashMap::new(),
+            function_path_hints: HashMap::new(),
         }
     }
 
@@ -642,7 +644,17 @@ impl<'a> ConfigInferer<'a> {
             schema,
             naming,
             annotation_param_modes,
+            function_path_hints: HashMap::new(),
         }
+    }
+
+    /// Attach externally-derived `function_paths` hints.
+    ///
+    /// This is used for data not present in `SpecSchema` itself (e.g. symbol
+    /// discovery from generated/implementation modules).
+    pub fn with_function_path_hints(mut self, hints: HashMap<String, String>) -> Self {
+        self.function_path_hints = hints;
+        self
     }
 
     /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
@@ -652,6 +664,7 @@ impl<'a> ConfigInferer<'a> {
 
         self.infer_remapping(&mut config);
         self.infer_variant_remapping(&mut config);
+        self.infer_function_paths(&mut config);
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
         self.infer_spec_only_functions(&mut config);
@@ -830,6 +843,21 @@ impl<'a> ConfigInferer<'a> {
                 config
                     .clone_strategy
                     .insert(exec_name, "external_body".to_string());
+            }
+        }
+    }
+
+    /// Derive `function_paths` from caller-provided hints.
+    fn infer_function_paths(&self, config: &mut TranspilerConfig) {
+        if self.function_path_hints.is_empty() {
+            return;
+        }
+
+        let mut keys: Vec<&String> = self.function_path_hints.keys().collect();
+        keys.sort();
+        for key in keys {
+            if let Some(path) = self.function_path_hints.get(key) {
+                config.function_paths.insert(key.clone(), path.clone());
             }
         }
     }
@@ -1042,6 +1070,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
     for (k, v) in &inferred.variant_remapping {
         if !base.variant_remapping.contains_key(k) {
             base.variant_remapping.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Function paths: add inferred entries not in base
+    for (k, v) in &inferred.function_paths {
+        if !base.function_paths.contains_key(k) {
+            base.function_paths.insert(k.clone(), v.clone());
         }
     }
 
@@ -1586,9 +1621,8 @@ verus! {
         let (_, spec_functions) =
             analyze_spec_files_with_ast(&[types_path.as_path(), proto_path.as_path()]).unwrap();
 
-        let err =
-            resolve_required_entrypoints_named(&spec_functions, "InitCustom", "NextCustom")
-                .unwrap_err();
+        let err = resolve_required_entrypoints_named(&spec_functions, "InitCustom", "NextCustom")
+            .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("Missing required entrypoint `NextCustom"));
         assert!(msg.contains("Fix: add/rename a function to `NextCustom`"));
@@ -1653,7 +1687,9 @@ verus! {
         let err =
             ingest_protocol_sources_with_types(&proto_path, Some(&missing_types_path)).unwrap_err();
         assert!(matches!(err, crate::error::TranspileError::Config { .. }));
-        assert!(err.to_string().contains("Explicit types source file not found"));
+        assert!(err
+            .to_string()
+            .contains("Explicit types source file not found"));
     }
 
     #[test]
@@ -2304,6 +2340,25 @@ verus! {
     }
 
     #[test]
+    fn test_infer_function_paths_from_hints() {
+        let schema = SpecSchema::new();
+        let naming = default_naming();
+        let mut hints = HashMap::new();
+        hints.insert(
+            "BroadcastToEveryone".to_string(),
+            "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string(),
+        );
+
+        let inferer = ConfigInferer::new(&schema, &naming).with_function_path_hints(hints);
+        let config = inferer.infer();
+
+        assert_eq!(
+            config.function_paths.get("BroadcastToEveryone"),
+            Some(&"crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string())
+        );
+    }
+
+    #[test]
     fn test_merge_configs_explicit_overrides_inferred() {
         let mut base = TranspilerConfig::default();
         base.remapping
@@ -2318,6 +2373,10 @@ verus! {
             .remapping
             .insert("LConstants".to_string(), "CConstants".to_string());
         inferred.collection_fields.push("prepared".to_string());
+        inferred.function_paths.insert(
+            "BroadcastToEveryone".to_string(),
+            "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string(),
+        );
         inferred
             .spec_only_functions
             .push("WellFormedLConfiguration".to_string());
@@ -2332,6 +2391,10 @@ verus! {
         // Inferred entry added where base was empty
         assert_eq!(base.remapping.get("LConstants").unwrap(), "CConstants");
         assert!(base.collection_fields.contains(&"prepared".to_string()));
+        assert_eq!(
+            base.function_paths.get("BroadcastToEveryone"),
+            Some(&"crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string())
+        );
         assert!(base
             .spec_only_functions
             .contains(&"AlreadyExplicit".to_string()));
