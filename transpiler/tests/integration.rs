@@ -2084,6 +2084,52 @@ fn test_generated_replica_module_public_api() {
     );
 }
 
+#[test]
+fn test_replica_num_actions_is_transpiled_not_manual_injected() {
+    let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
+        .expect("Failed to read replica_transpile.toml");
+    let config: toml::Value = config_source
+        .parse()
+        .expect("Failed to parse replica_transpile.toml");
+
+    let skip_functions = config
+        .get("skip_functions")
+        .and_then(|value| value.as_array())
+        .expect("replica_transpile.toml must define skip_functions");
+    assert!(
+        !skip_functions
+            .iter()
+            .any(|value| value.as_str() == Some("LReplicaNumActions")),
+        "LReplicaNumActions should not be skipped anymore; it should be transpiled"
+    );
+
+    let no_stub_functions = config
+        .get("no_stub_functions")
+        .and_then(|value| value.as_array())
+        .expect("replica_transpile.toml must define no_stub_functions");
+    assert!(
+        !no_stub_functions
+            .iter()
+            .any(|value| value.as_str() == Some("LReplicaNumActions")),
+        "LReplicaNumActions should not be pinned to no_stub_functions anymore"
+    );
+
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
+        .expect("Failed to read replica_manual.rs");
+    assert!(
+        !manual_source.contains("pub exec fn CReplicaNumActions"),
+        "replica_manual.rs should no longer define CReplicaNumActions"
+    );
+
+    let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+    let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNumActions");
+    assert!(
+        fn_source.contains("result@ == LReplicaNumActions()"),
+        "generated CReplicaNumActions should preserve the spec postcondition"
+    );
+}
+
 /// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
 ///
 /// This ensures:

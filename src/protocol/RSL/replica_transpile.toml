@@ -38,7 +38,6 @@ skip_functions = [
     "ExtractSentPacketsFromIos",
     "SpontaneousClock",
     "SpontaneousIos",
-    "LReplicaNumActions",
 ]
 
 # Functions that should NOT generate stubs even with proof_fallback
@@ -55,7 +54,6 @@ no_stub_functions = [
     # Non-spec helpers defined in replica_manual.rs
     "Packet1bHasUniqueSrc",
     "ExtractSentPacketsFromIos",
-    "LReplicaNumActions",
     # Spec-only predicates (no exec implementation needed)
     "WellFormedLConfiguration",
     "LeqUpperBound",

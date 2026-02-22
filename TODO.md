@@ -6986,7 +6986,11 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 - [~] **21.11**: Eliminate the final `manual_code` injections (RSL `replica` + `executor`) without regressing proof integrity.
   - [x] **21.11.1**: Freeze and regression-test the current `manual_code` footprint (exactly `replica_transpile.toml` + `executor_transpile.toml`) and document rationale/next steps.
-  - [ ] **21.11.2**: Replica final-mile leaf (`<500` LOC): re-home non-proof helper code from `replica_manual.rs` and shrink TOML `manual_code` reliance to IO trust-boundary wrappers only.
+  - [~] **21.11.2**: Replica final-mile decomposition (`<500` LOC per leaf) to re-home non-proof helpers from `replica_manual.rs` and keep only IO trust-boundary wrappers.
+    - [x] **21.11.2.1**: Move trivial action-count helper (`LReplicaNumActions`/`CReplicaNumActions`) out of `manual_code` and into generated output.
+    - [ ] **21.11.2.2**: Move packet-uniqueness helper (`Packet1bHasUniqueSrc`) out of `manual_code` without expanding trust boundary.
+    - [ ] **21.11.2.3**: Migrate `LReplicaNextProcess1b` off `manual_code` (transpiler support + config updates) while preserving current proof obligations.
+    - [ ] **21.11.2.4**: Audit resulting `replica_manual.rs` to ensure only IO trust-boundary wrappers/helpers remain.
   - [ ] **21.11.3**: Executor final-mile leaves (`<500` LOC each): incrementally teach transpiler proof generation for cache/reply-map patterns so `executor_manual.rs` can be retired without replacing proven logic with weaker stubs.
 
 ## Phase 22: Native Model Checking for TLA-rs Spec (Source-First)

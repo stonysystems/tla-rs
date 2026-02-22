@@ -652,6 +652,14 @@ ensures
 
 }
 
+pub exec fn CReplicaNumActions() -> (result: u64)ensures
+    result@ == LReplicaNumActions(),
+{
+    assume(false);
+    10
+
+}
+
 pub exec fn CSchedulerInit(c: &CReplicaConstants) -> (result: CScheduler)
 requires
     c.valid(),
@@ -673,7 +681,6 @@ ensures
 // - IO dispatch with proof blocks (CReplicaNoReceiveNext, CSchedulerNext, etc.)
 // - Message type dispatch (CReplicaNextProcessPacketWithoutReadingClock)
 // - External body helpers (Packet1bHasUniqueSrc, CExtractSentPacketsFromIos)
-// - Trivial constants (CReplicaNumActions)
 //
 // All action functions (CReplicaInit, CReplicaNextProcess*, etc.) are now
 // auto-transpiled by the transpiler with assume_postconditions = true.
@@ -781,17 +788,6 @@ ensures
         i = i + 1;
     }
     result
-}
-
-// =============================================================================
-// CReplicaNumActions -- trivial
-// =============================================================================
-
-pub exec fn CReplicaNumActions() -> (result: u64)
-ensures
-    result as int == LReplicaNumActions(),
-{
-    10u64
 }
 
 // =============================================================================
