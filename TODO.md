@@ -2608,7 +2608,7 @@ This is the main feature to port — a Verus spec → TLA+ converter.
   - CLI subcommand (verus2-tla with batch mode)
   - lib.rs module registration
   - Documentation (5 files)
-- [ ] Delete `origin/tla+2tlars` branch (deferred — requires maintainer approval)
+- [x] Delete `origin/tla+2tlars` branch (completed 2026-02-22 via GitHub API branch-ref delete)
 
 ### Success Criteria
 
