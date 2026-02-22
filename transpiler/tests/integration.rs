@@ -2276,65 +2276,56 @@ fn test_replica_manual_code_contains_only_io_trust_boundary_wrappers() {
 
 #[test]
 fn test_executor_manual_code_footprint_audit_guard() {
-    let manual_source = std::fs::read_to_string("../src/protocol/RSL/executor_manual.rs")
-        .expect("Failed to read executor_manual.rs");
+    let transpile_config = std::fs::read_to_string("../src/protocol/RSL/executor_transpile.toml")
+        .expect("Failed to read executor_transpile.toml");
+    let parsed: toml::Value = transpile_config
+        .parse()
+        .expect("executor_transpile.toml should parse");
 
-    let actual_fns: std::collections::BTreeSet<String> = manual_source
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("pub exec fn "))
-        .map(|sig| {
-            sig.split('(')
-                .next()
-                .expect("function signature should include '('")
-                .trim()
-                .to_string()
-        })
+    assert!(
+        parsed
+            .get("output")
+            .and_then(|output| output.get("manual_code"))
+            .is_none(),
+        "executor_transpile.toml should not define output.manual_code after final-mile migration"
+    );
+
+    let skip_functions = parsed
+        .get("skip_functions")
+        .and_then(|value| value.as_array())
+        .expect("skip_functions should be an array");
+    let skip_set: std::collections::BTreeSet<String> = skip_functions
+        .iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
         .collect();
-
-    let expected_fns: std::collections::BTreeSet<String> =
-        ["CExecutorExecute"].into_iter().map(String::from).collect();
-
-    assert_eq!(
-        actual_fns, expected_fns,
-        "executor_manual.rs function set drifted; update migration audit/plan intentionally"
+    assert!(
+        skip_set.contains("LExecutorExecute"),
+        "LExecutorExecute should remain an explicit trusted fallback boundary"
     );
 
-    let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
-    assert_eq!(
-        external_body_count, 3,
-        "executor_manual.rs external_body boundary count changed unexpectedly"
+    let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
+        .expect("Failed to read executor_gen.rs");
+    assert!(
+        !generated_source.contains("pub exec fn CExecutorExecute"),
+        "executor_gen.rs should not inject CExecutorExecute once manual_code is removed"
+    );
+
+    let executor_impl = std::fs::read_to_string("../src/implementation/RSL/ExecutorImpl.rs")
+        .expect("Failed to read ExecutorImpl.rs");
+    assert!(
+        executor_impl.contains("pub fn CExecutorExecute(&mut self)"),
+        "ExecutorImpl.rs should retain the CExecutorExecute fallback implementation"
     );
     assert!(
-        !manual_source.contains("pub exec fn CExecutorInit"),
-        "executor_manual.rs should no longer define CExecutorInit"
+        executor_impl.contains("#[verifier(external_body)]\n    pub fn CExecutorExecute"),
+        "ExecutorImpl.rs should keep CExecutorExecute as explicit external-body trust boundary"
     );
+
+    let replica_impl = std::fs::read_to_string("../src/implementation/RSL/ReplicaImpl.rs")
+        .expect("Failed to read ReplicaImpl.rs");
     assert!(
-        !manual_source.contains("pub exec fn CExecutorGetDecision"),
-        "executor_manual.rs should no longer define CExecutorGetDecision"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CExecutorProcessAppStateSupply"),
-        "executor_manual.rs should no longer define CExecutorProcessAppStateSupply"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CExecutorProcessAppStateRequest"),
-        "executor_manual.rs should no longer define CExecutorProcessAppStateRequest"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CExecutorProcessStartingPhase2"),
-        "executor_manual.rs should no longer define CExecutorProcessStartingPhase2"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CExecutorProcessRequest"),
-        "executor_manual.rs should no longer define CExecutorProcessRequest"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CClientsInReplies"),
-        "executor_manual.rs should no longer define CClientsInReplies"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CUpdateNewCache"),
-        "executor_manual.rs should no longer define CUpdateNewCache"
+        replica_impl.contains("self.executor.CExecutorExecute"),
+        "ReplicaImpl.rs should continue to route execute through the explicit fallback boundary"
     );
 }
 
@@ -2489,8 +2480,8 @@ fn test_executor_state_only_actions_migrated_off_manual_injection() {
         );
     }
     assert!(
-        manual_source.contains("pub exec fn CExecutorExecute"),
-        "executor_manual.rs should retain CExecutorExecute until final-mile completion"
+        !transpile_config.contains("manual_code = \"executor_manual.rs\""),
+        "executor manual_code injection should be removed after final-mile completion"
     );
 
     let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
@@ -2506,6 +2497,10 @@ fn test_executor_state_only_actions_migrated_off_manual_injection() {
             fn_name
         );
     }
+    assert!(
+        !generated_source.contains("pub exec fn CExecutorExecute"),
+        "executor_gen.rs should no longer define CExecutorExecute after manual_code removal"
+    );
 }
 
 /// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
@@ -6210,7 +6205,7 @@ fn test_raft_helpers_not_in_generated() {
 }
 
 #[test]
-fn test_manual_code_footprint_is_limited_to_rsl_replica_and_executor() {
+fn test_manual_code_footprint_is_limited_to_rsl_replica_only() {
     fn collect_transpile_tomls(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         let entries = std::fs::read_dir(dir)
             .unwrap_or_else(|_| panic!("Failed to read directory {}", dir.display()));
@@ -6253,19 +6248,13 @@ fn test_manual_code_footprint_is_limited_to_rsl_replica_and_executor() {
     }
     manual_bindings.sort();
 
-    let expected = vec![
-        (
-            "../src/protocol/RSL/executor_transpile.toml".to_string(),
-            "executor_manual.rs".to_string(),
-        ),
-        (
-            "../src/protocol/RSL/replica_transpile.toml".to_string(),
-            "replica_manual.rs".to_string(),
-        ),
-    ];
+    let expected = vec![(
+        "../src/protocol/RSL/replica_transpile.toml".to_string(),
+        "replica_manual.rs".to_string(),
+    )];
     assert_eq!(
         manual_bindings, expected,
-        "manual_code usage should stay restricted to the known final-mile RSL configs"
+        "manual_code usage should stay restricted to the known IO trust-boundary config"
     );
 
     let replica_manual = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
@@ -6275,12 +6264,6 @@ fn test_manual_code_footprint_is_limited_to_rsl_replica_and_executor() {
         "replica_manual.rs should still carry explicit IO trust-boundary assumptions"
     );
 
-    let executor_manual = std::fs::read_to_string("../src/protocol/RSL/executor_manual.rs")
-        .expect("Failed to read executor_manual.rs");
-    assert!(
-        !executor_manual.contains("assume("),
-        "executor_manual.rs should remain proof-oriented (no direct assume calls)"
-    );
 }
 
 #[test]
@@ -8633,11 +8616,12 @@ fn test_executor_gen_no_delegate_patterns() {
         "executor_gen.rs should not define CGetPacketsFromReplies locally after helper re-home"
     );
 
-    // CExecutor struct constructions (standalone functions construct directly; some branches use clone_up_to_view)
+    // CExecutor struct constructions (standalone functions construct directly; some branches use clone_up_to_view).
+    // After executor manual_code removal, CExecutorExecute is no longer injected into this file.
     let struct_constructions = source.matches("CExecutor {").count();
     assert!(
-        struct_constructions >= 4,
-        "executor_gen.rs should have >= 4 CExecutor {{}} struct constructions, found {}",
+        struct_constructions >= 3,
+        "executor_gen.rs should have >= 3 CExecutor {{}} struct constructions, found {}",
         struct_constructions
     );
 }

@@ -6991,7 +6991,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - [x] **21.11.2.2**: Move packet-uniqueness helper (`Packet1bHasUniqueSrc`) out of `manual_code` without expanding trust boundary.
     - [x] **21.11.2.3**: Migrate `LReplicaNextProcess1b` off `manual_code` (transpiler support + config updates) while preserving current proof obligations.
     - [x] **21.11.2.4**: Audit resulting `replica_manual.rs` to ensure only IO trust-boundary wrappers/helpers remain.
-  - [~] **21.11.3**: Executor final-mile decomposition (`<500` LOC per leaf) to retire `executor_manual.rs` without replacing proven logic with weaker stubs.
+  - [x] **21.11.3**: Executor final-mile decomposition (`<500` LOC per leaf) to retire `executor_manual.rs` without replacing proven logic with weaker stubs.
     - [x] **21.11.3.1**: Audit and regression-lock current `executor_manual.rs` footprint (function set + trust boundaries) and document migration order.
     - [x] **21.11.3.2**: Re-home pure cache external-body helpers (`CClientsInReplies`, `CUpdateNewCache`) out of manual injection and into shared implementation helpers.
     - [x] **21.11.3.3**: Migrate recursive reply-packet helper (`CGetPacketsFromReplies`) off manual injection while preserving decreases/spec correspondence.
@@ -6999,7 +6999,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
       - Completed by removing these from `skip_functions` + `executor_manual.rs`; transpiler now emits them in `executor_gen.rs`.
     - [x] **21.11.3.5**: Migrate state-only actions (`CExecutorInit`, `CExecutorGetDecision`, `CExecutorProcessAppStateSupply`) off manual injection and shrink `executor_manual.rs` to `CExecutorExecute` + irreducible lemmas only.  
       - Completed by removing these from `skip_functions` + `executor_manual.rs`; transpiler now emits them in `executor_gen.rs`.
-    - [ ] **21.11.3.6**: Resolve `CExecutorExecute` end-state (auto-proof parity or explicit trusted fallback policy), remove `output.manual_code` from `executor_transpile.toml`, regenerate, and run final trust-boundary audit.
+    - [x] **21.11.3.6**: Resolve `CExecutorExecute` end-state (auto-proof parity or explicit trusted fallback policy), remove `output.manual_code` from `executor_transpile.toml`, regenerate, and run final trust-boundary audit.
+      - Chosen policy: **explicit trusted fallback**. `LExecutorExecute` stays in `skip_functions`, `ExecutorImpl::CExecutorExecute` remains the explicit `external_body` boundary, and `ReplicaImpl` continues routing execution through that boundary.
+      - Removed `output.manual_code` from `src/protocol/RSL/executor_transpile.toml` and regenerated `src/generated/RSL/executor_gen.rs`; injected `CExecutorExecute` + helper lemmas were removed from generated output.
+      - Updated integration guards so `manual_code` footprint is now limited to `src/protocol/RSL/replica_transpile.toml` (IO trust-boundary only).
 
 ## Phase 22: Native Model Checking for TLA-rs Spec (Source-First)
 

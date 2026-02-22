@@ -19,9 +19,10 @@ skip_functions = [
     # Spec-only predicates that have no exec implementation
     "RepliesAreReplyType",
     "UpdateNewCache",
-    # Variable scoping issue: 'temp' undefined (app state machine result binding lost)
+    # Explicit trusted fallback: live implementation remains in ExecutorImpl::CExecutorExecute.
+    # We intentionally keep this skipped until transpiler parity is achieved.
     "LExecutorExecute",
-    # Phase 19.3: remaining executor functions still owned by executor_manual.rs
+    # Spec-only helper; exec helper is re-homed in implementation/RSL/gen_helpers.rs.
     "LClientsInReplies",
 ]
 
@@ -101,8 +102,6 @@ generate_loops_for_verification = true
 generate_proofs = true
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false
-# Path to manually-written complex functions (relative to this TOML file)
-manual_code = "executor_manual.rs"
 # Custom imports for executor module
 # Note: Still need implementation imports for shared infrastructure types.
 # CStateMachine is also needed for app state machine operations.
