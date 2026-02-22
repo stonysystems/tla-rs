@@ -2180,6 +2180,15 @@ Collection proof patterns (HashMap filter, HashSet iteration) were addressed in 
 - [x] Test: `test_arrow_unreachable_arm_has_proof_assert_false` (682 lib tests total)
 - ~~Extract contradiction from function's `requires` clause~~ — not needed; `assert(false)` suffices since requires ensures variant match is exhaustive
 
+**12.2.8: Reduce RSL `assume_postconditions` footprint** — DEFERRED, decomposed into <500 LOC leaves
+The remaining proof-generation work is larger than a single leaf. Keep each leaf scoped so it can be landed/tested independently.
+
+- [x] **12.2.8a** Add an integration drift guard that freezes current `assume(false)` footprint in generated RSL modules (`election_gen.rs`, `proposer_gen.rs`, `replica_gen.rs`) and fails on unexpected non-`assume(false)` trust sites.
+  - Implemented: `transpiler/tests/integration.rs::test_rsl_generated_assume_false_footprint_drift_guard`
+  - Current frozen baseline: election=8, proposer=9, replica=21 (`assume(false)` only)
+- [ ] **12.2.8b** Add a machine-readable proof-gap/assume report output (module + function + line) for generated RSL files to support planned reduction work.
+- [ ] **12.2.8c** Execute first reduction leaf on one module (`election_gen.rs`): remove at least one `assume(false)` by replacing it with transpiler-emitted proof/fallback structure that still verifies.
+
 #### Phase 12.3: Regenerate Simple Protocols (TwoPhase, Paxos, LeaderElection)
 
 **Prerequisite transpiler fixes** — Issues found when comparing fresh transpiler output against hand-verified reference code. These must be fixed before regeneration can produce Verus-verifiable code.

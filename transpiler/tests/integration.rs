@@ -1972,6 +1972,72 @@ fn collect_assume_lines(fn_start_line: usize, fn_source: &str) -> Vec<(usize, St
         .collect()
 }
 
+/// Drift guard for deferred Phase 12.2 proof generation:
+/// keep the trusted `assume(false)` footprint explicit and stable in generated RSL modules.
+#[test]
+fn test_rsl_generated_assume_false_footprint_drift_guard() {
+    let expected_counts: std::collections::BTreeMap<&str, usize> = [
+        ("election_gen.rs", 8usize),
+        ("proposer_gen.rs", 9usize),
+        ("replica_gen.rs", 21usize),
+    ]
+    .into_iter()
+    .collect();
+
+    let mut observed_counts = std::collections::BTreeMap::new();
+    let generated_dir =
+        std::fs::read_dir("../src/generated/RSL").expect("Failed to read src/generated/RSL");
+
+    for entry in generated_dir {
+        let entry = entry.expect("Failed to read directory entry");
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !file_name.ends_with("_gen.rs") {
+            continue;
+        }
+
+        let source =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("Failed to read {}", file_name));
+        let assume_sites: Vec<(usize, String)> = source
+            .lines()
+            .enumerate()
+            .filter_map(|(line_idx, line)| {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") || !line.contains("assume(") {
+                    return None;
+                }
+                Some((line_idx + 1, line.trim().to_string()))
+            })
+            .collect();
+
+        for (line_no, assume_line) in &assume_sites {
+            assert!(
+                assume_line.contains("assume(false);"),
+                "{}:{} contains non-fallback assume site: {}",
+                file_name,
+                line_no,
+                assume_line
+            );
+        }
+
+        let assume_false_count = assume_sites.len();
+        if assume_false_count > 0 {
+            observed_counts.insert(file_name.to_string(), assume_false_count);
+        }
+    }
+
+    let expected_as_owned: std::collections::BTreeMap<String, usize> = expected_counts
+        .into_iter()
+        .map(|(name, count)| (name.to_string(), count))
+        .collect();
+    assert_eq!(
+        observed_counts, expected_as_owned,
+        "RSL assume(false) footprint drifted; update TODO 12.2.8 baseline only after intentional proof-generation changes"
+    );
+}
+
 /// Verify replica_gen.rs has all expected public functions
 #[test]
 fn test_generated_replica_module_public_api() {

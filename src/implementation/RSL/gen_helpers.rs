@@ -224,11 +224,11 @@ pub exec fn CGetPacketsFromReplies(
         let new_req = truncate_vec(&requests, 1, requests.len());
         assert(
             new_req@.map(|i, r: CRequest| r@)
-                == requests@.map(|i, r: CRequest| r@).drop_first(),
+                == requests@.map(|i, r: CRequest| r@).drop_first()
         );
         let new_rep = truncate_vec(&replies, 1, replies.len());
         assert(
-            new_rep@.map(|i, r: CReply| r@) == replies@.map(|i, r: CReply| r@).drop_first(),
+            new_rep@.map(|i, r: CReply| r@) == replies@.map(|i, r: CReply| r@).drop_first()
         );
         let rest = CGetPacketsFromReplies(&me, &new_req, &new_rep);
         assert(
@@ -237,7 +237,7 @@ pub exec fn CGetPacketsFromReplies(
                     me@,
                     requests@.map(|i, r: CRequest| r@).drop_first(),
                     replies@.map(|i, r: CReply| r@).drop_first(),
-                ),
+                )
         );
         let pkt = CPacket {
             dst: requests[0].client.clone_up_to_view(),
@@ -269,7 +269,7 @@ pub exec fn CGetPacketsFromReplies(
                         me@,
                         requests@.map(|i, r: CRequest| r@).drop_first(),
                         replies@.map(|i, r: CReply| r@).drop_first(),
-                    ),
+                    )
         );
 
         res
