@@ -80,6 +80,158 @@ ensures
 }
 
 
+pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
+requires
+    s.valid(),
+    inp.valid(),
+    inp.msg is CMessageAppStateRequest,
+ensures
+    result.0.valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+    LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
+{
+    let result = {
+        let m = &inp.msg;
+        if {
+            let __rhs_0 = {
+                CBalLeq(&s.max_bal_reflected, &match &m {
+    CMessage::CMessageAppStateRequest { bal_state_req, .. } => bal_state_req.clone(),
+    _  => {
+        proof {
+            assert(false);
+        }
+        unreachable_value()
+    },
+});
+                (s.ops_complete >= match &m {
+                    CMessage::CMessageAppStateRequest { opn_state_req, .. } => opn_state_req.clone(),
+                    _  => {
+                        proof {
+                            assert(false);
+                        }
+                        unreachable_value()
+                    },
+                })
+            };
+            (contains(&s.constants.all.config.replica_ids, &inp.src) && __rhs_0)
+        } {
+            (s.clone(), vec![CPacket {
+    dst: inp.src.clone(),
+    src: s.constants.all.config.replica_ids[(s.constants.my_index as usize)].clone(),
+    msg: CMessage::CMessageAppStateSupply {
+        bal_state_supply: s.max_bal_reflected.clone(),
+        opn_state_supply: s.ops_complete.clone(),
+        app_state: s.app.clone(),
+        reply_cache: s.reply_cache.clone(),
+    },
+}])
+        } else {
+            (s.clone(), vec![])
+        }
+    };
+    proof {
+        lemma_empty_seq_map();
+    }
+    result
+
+}
+
+pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
+requires
+    s.valid(),
+    inp.valid(),
+    inp.msg is CMessageStartingPhase2,
+ensures
+    result.0.valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
+    LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
+{
+    let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
+        CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => logTruncationPoint_2.clone(),
+        _  => {
+            proof {
+                assert(false);
+            }
+            unreachable_value()
+        },
+    } > s.ops_complete)) {
+                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageAppStateRequest {
+    bal_state_req: match &inp.msg {
+        CMessage::CMessageStartingPhase2 { bal_2, .. } => bal_2.clone(),
+        _  => {
+            proof {
+                assert(false);
+            }
+            unreachable_value()
+        },
+    },
+    opn_state_req: match &inp.msg {
+        CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => logTruncationPoint_2.clone(),
+        _  => {
+            proof {
+                assert(false);
+            }
+            unreachable_value()
+        },
+    },
+});
+        (s.clone(), sent_packets)
+
+    } else {
+        (s.clone(), vec![])
+    };
+    proof {
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
+    }
+    result
+
+}
+
+pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Vec<CPacket>)
+requires
+    s.valid(),
+    inp.valid(),
+    inp.msg is CMessageRequest,
+    s@.reply_cache.contains_key(inp@.src),
+    s.reply_cache[inp.src] is CReply,
+    (inp.msg->seqno_req <= s.reply_cache[inp.src].seqno),
+ensures
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)),
+{
+    let result = if ((match &inp.msg {
+        CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
+        _  => {
+            proof {
+                assert(false);
+            }
+            unreachable_value()
+        },
+    } == s.reply_cache.get(&inp.src).unwrap().clone().seqno) && s.constants.CReplicaConstantsValid()) {
+                let r = s.reply_cache.get(&inp.src).unwrap().clone();
+        vec![CPacket {
+    dst: r.client,
+    src: s.constants.all.config.replica_ids[(s.constants.my_index as usize)].clone(),
+    msg: CMessage::CMessageReply {
+        seqno_reply: r.seqno,
+        reply: r.reply,
+    },
+}]
+
+    } else {
+        vec![]
+    };
+    proof {
+        lemma_empty_seq_map();
+    }
+    result
+
+}
+
 
 // Manual code for executor functions (Phase 19.3).
 // All executor functions are here with verified proof blocks.
@@ -127,16 +279,6 @@ proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
         HandleRequestBatch(state, batch).0.len() == batch.len() + 1,
         HandleRequestBatch(state, batch).0.len() > 0,
         HandleRequestBatch(state, batch).1.len() == batch.len(),
-{}
-
-#[verifier(external_body)]
-proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
-    requires
-        creplycache_is_valid(&cache),
-        cache@.contains_key(key),
-    ensures
-        abstractify_creplycache(&cache).contains_key(key@),
-        cache@[key]@ == abstractify_creplycache(&cache)[key@],
 {}
 
 // =============================================================================
@@ -386,291 +528,6 @@ ensures
     }
 
     result
-}
-
-// =============================================================================
-// CExecutorProcessAppStateRequest
-// =============================================================================
-
-pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessageAppStateRequest,
-ensures
-    result.0.valid(),
-    LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
-{
-    let (m_bal_state_req, m_opn_state_req) = match &inp.msg {
-        CMessage::CMessageAppStateRequest{bal_state_req, opn_state_req} => (*bal_state_req, *opn_state_req),
-        _ => {
-            proof { assert(false); }
-            unreachable_value()
-        }
-    };
-
-    let ghost ss = s@;
-    let ghost sp = inp@;
-
-    if contains(&s.constants.all.config.replica_ids, &inp.src)
-        && CBalLeq(&s.max_bal_reflected, &m_bal_state_req)
-        && s.ops_complete >= m_opn_state_req
-        && s.constants.CReplicaConstantsValid()
-    {
-        let s_clone = s.clone_up_to_view();
-        let msg = CMessage::CMessageAppStateSupply {
-            bal_state_supply: s.max_bal_reflected,
-            opn_state_supply: s.ops_complete,
-            app_state: s.app,
-            reply_cache: clone_creply_cache_up_to_view(&s.reply_cache),
-        };
-        let pkt = CPacket {
-            dst: inp.src.clone(),
-            src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone(),
-            msg: msg,
-        };
-        let pkt_vec = vec![pkt];
-
-        proof {
-            let ghost smsg = RslMessage::RslMessageAppStateSupply{
-                bal_state_supply: ss.max_bal_reflected,
-                opn_state_supply: ss.ops_complete,
-                app_state: ss.app,
-                reply_cache: ss.reply_cache,
-            };
-            let ghost spkt = LPacket{
-                dst: sp.src,
-                src: ss.constants.all.config.replica_ids[ss.constants.my_index],
-                msg: smsg,
-            };
-            assert(s_clone@ == ss);
-            assert(pkt_vec@.map(|i, p: CPacket| p@) =~= seq![spkt]);
-            assert(LExecutorProcessAppStateRequest(ss, s_clone@, sp, seq![spkt]));
-            assert(pkt_vec@.len() == 1);
-            assert(pkt_vec@[0] == pkt);
-
-            assert(s.max_bal_reflected.valid());
-            assert(s.max_bal_reflected.abstractable());
-            assert(creplycache_is_valid(&s.reply_cache));
-            assert(msg.valid());
-            assert(msg.abstractable());
-
-            assert(pkt.dst@ == inp.src@);
-            assert(pkt.dst.valid_public_key());
-            assert(pkt.dst.abstractable());
-
-            assert(s.constants.valid());
-            assert(s.constants.all.config.valid());
-            assert(LReplicaConstantsValid(s.constants@));
-            assert(pkt.src@ == s.constants.all.config.replica_ids[s.constants.my_index as int]@);
-            assert(pkt.src.valid_public_key());
-            assert(pkt.src.abstractable());
-
-            assert(pkt.valid());
-            assert(pkt.abstractable());
-
-            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].valid());
-            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].abstractable());
-        }
-
-        (s_clone, pkt_vec)
-    } else {
-        let s_clone = s.clone_up_to_view();
-        let empty_vec: Vec<CPacket> = vec![];
-        proof {
-            assert(s_clone@ == ss);
-            assert(empty_vec@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
-            assert(LExecutorProcessAppStateRequest(ss, s_clone@, sp, Seq::<RslPacket>::empty()));
-            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid()) by {
-                assert(empty_vec@.len() == 0);
-            }
-            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable()) by {
-                assert(empty_vec@.len() == 0);
-            }
-        }
-        (s_clone, empty_vec)
-    }
-}
-
-// =============================================================================
-// CExecutorProcessStartingPhase2
-// =============================================================================
-
-pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessageStartingPhase2,
-ensures
-    result.0.valid(),
-    LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
-{
-    let (m_bal_2, m_logTruncationPoint_2) = match &inp.msg {
-        CMessage::CMessageStartingPhase2{bal_2, logTruncationPoint_2} => (*bal_2, *logTruncationPoint_2),
-        _ => {
-            proof { assert(false); }
-            unreachable_value()
-        }
-    };
-
-    let ghost ss = s@;
-    let ghost sp = inp@;
-
-    if contains(&s.constants.all.config.replica_ids, &inp.src) && m_logTruncationPoint_2 > s.ops_complete {
-        let s_clone = s.clone_up_to_view();
-        let msg = CMessage::CMessageAppStateRequest {
-            bal_state_req: m_bal_2,
-            opn_state_req: m_logTruncationPoint_2,
-        };
-        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &msg);
-
-        proof {
-            assert(s_clone@ == ss);
-            assert(LExecutorProcessStartingPhase2(ss, s_clone@, sp, sent_packets@.map(|i, p: CPacket| p@)));
-            assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
-            assert(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
-        }
-
-        (s_clone, sent_packets)
-    } else {
-        let s_clone = s.clone_up_to_view();
-        let empty_vec: Vec<CPacket> = vec![];
-        proof {
-            assert(s_clone@ == ss);
-            assert(empty_vec@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
-            assert(LExecutorProcessStartingPhase2(ss, s_clone@, sp, Seq::<RslPacket>::empty()));
-            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid()) by {
-                assert(empty_vec@.len() == 0);
-            }
-            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable()) by {
-                assert(empty_vec@.len() == 0);
-            }
-        }
-        (s_clone, empty_vec)
-    }
-}
-
-// =============================================================================
-// CExecutorProcessRequest
-// =============================================================================
-
-pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Vec<CPacket>)
-requires
-    s.valid(),
-    inp.valid(),
-    inp.msg is CMessageRequest,
-    s.reply_cache@.dom().contains(inp.src),
-    (inp.msg->seqno_req <= s.reply_cache@[inp.src].seqno),
-ensures
-    LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)),
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
-{
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-
-    let m_seqno_req = match &inp.msg {
-        CMessage::CMessageRequest{seqno_req, ..} => *seqno_req,
-        _ => {
-            proof { assert(false); }
-            unreachable_value()
-        }
-    };
-
-    let ghost ss = s@;
-    let ghost sp = inp@;
-
-    let r_opt = s.reply_cache.get(&inp.src);
-
-    proof {
-        assert(r_opt.is_some());
-        lemma_creplycache_get(s.reply_cache, inp.src);
-    }
-
-    if r_opt.is_some() && m_seqno_req == r_opt.unwrap().seqno && s.constants.CReplicaConstantsValid() {
-        let r = r_opt.unwrap();
-
-        proof {
-            lemma_creplycache_get(s.reply_cache, inp.src);
-            assert(r@ == ss.reply_cache[sp.src]);
-        }
-
-        let pkt = CPacket {
-            dst: r.client.clone_up_to_view(),
-            src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone_up_to_view(),
-            msg: CMessage::CMessageReply {
-                seqno_reply: r.seqno,
-                reply: r.reply.clone_up_to_view(),
-            },
-        };
-        let pkt_vec = vec![pkt];
-
-        proof {
-            let ghost r_spec = ss.reply_cache[sp.src];
-            let ghost smsg = RslMessage::RslMessageReply{
-                seqno_reply: r_spec.seqno,
-                reply: r_spec.reply,
-            };
-            let ghost spkt = LPacket{
-                dst: r_spec.client,
-                src: ss.constants.all.config.replica_ids[ss.constants.my_index],
-                msg: smsg,
-            };
-            assert(pkt@ == spkt);
-            assert(pkt_vec@.map(|i, p: CPacket| p@) =~= seq![spkt]);
-            assert(LExecutorProcessRequest(ss, sp, seq![spkt]));
-            assert(pkt_vec@.len() == 1);
-            assert(pkt_vec@[0] == pkt);
-
-            assert(creplycache_is_valid(&s.reply_cache));
-            assert(s.reply_cache@.dom().contains(inp.src));
-            assert(s.reply_cache@[inp.src].valid());
-            assert(r.valid());
-            assert(r.abstractable());
-
-            assert(r.reply.valid());
-            assert(pkt.msg->reply@ == r.reply@);
-            assert(pkt.msg.valid());
-            assert(pkt.msg.abstractable());
-
-            assert(r.client.valid_public_key());
-            assert(pkt.dst@ == r.client@);
-            assert(pkt.dst.valid_public_key());
-            assert(pkt.dst.abstractable());
-
-            assert(s.constants.valid());
-            assert(s.constants.all.config.valid());
-            assert(LReplicaConstantsValid(s.constants@));
-            assert(pkt.src@ == s.constants.all.config.replica_ids[s.constants.my_index as int]@);
-            assert(pkt.src.valid_public_key());
-            assert(pkt.src.abstractable());
-
-            assert(pkt.valid());
-            assert(pkt.abstractable());
-
-            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].valid());
-            assert(forall |i:int| 0 <= i < pkt_vec@.len() ==> pkt_vec@[i].abstractable());
-        }
-
-        pkt_vec
-    } else {
-        let empty_vec: Vec<CPacket> = vec![];
-        proof {
-            assert(empty_vec@.map(|i, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
-            assert(LExecutorProcessRequest(ss, sp, Seq::<RslPacket>::empty()));
-            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].valid()) by {
-                assert(empty_vec@.len() == 0);
-            }
-            assert(forall |i:int| 0 <= i < empty_vec@.len() ==> empty_vec@[i].abstractable()) by {
-                assert(empty_vec@.len() == 0);
-            }
-        }
-        empty_vec
-    }
 }
 
 } // verus!

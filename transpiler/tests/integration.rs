@@ -2296,9 +2296,6 @@ fn test_executor_manual_code_footprint_audit_guard() {
         "CExecutorGetDecision",
         "CExecutorExecute",
         "CExecutorProcessAppStateSupply",
-        "CExecutorProcessAppStateRequest",
-        "CExecutorProcessStartingPhase2",
-        "CExecutorProcessRequest",
     ]
     .into_iter()
     .map(String::from)
@@ -2311,8 +2308,20 @@ fn test_executor_manual_code_footprint_audit_guard() {
 
     let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
     assert_eq!(
-        external_body_count, 4,
+        external_body_count, 3,
         "executor_manual.rs external_body boundary count changed unexpectedly"
+    );
+    assert!(
+        !manual_source.contains("pub exec fn CExecutorProcessAppStateRequest"),
+        "executor_manual.rs should no longer define CExecutorProcessAppStateRequest"
+    );
+    assert!(
+        !manual_source.contains("pub exec fn CExecutorProcessStartingPhase2"),
+        "executor_manual.rs should no longer define CExecutorProcessStartingPhase2"
+    );
+    assert!(
+        !manual_source.contains("pub exec fn CExecutorProcessRequest"),
+        "executor_manual.rs should no longer define CExecutorProcessRequest"
     );
     assert!(
         !manual_source.contains("pub exec fn CClientsInReplies"),
@@ -2374,6 +2383,63 @@ fn test_executor_cache_helpers_rehomed_out_of_manual_injection() {
         !generated_source.contains("pub exec fn CGetPacketsFromReplies"),
         "executor_gen.rs should not define CGetPacketsFromReplies locally after helper re-home"
     );
+}
+
+#[test]
+fn test_executor_packet_processing_actions_migrated_off_manual_injection() {
+    let transpile_config = std::fs::read_to_string("../src/protocol/RSL/executor_transpile.toml")
+        .expect("Failed to read executor_transpile.toml");
+    let parsed: toml::Value = transpile_config
+        .parse()
+        .expect("executor_transpile.toml should parse");
+    let skip_functions = parsed
+        .get("skip_functions")
+        .and_then(|value| value.as_array())
+        .expect("skip_functions should be an array");
+    let skip_set: std::collections::BTreeSet<String> = skip_functions
+        .iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect();
+
+    for fn_name in [
+        "LExecutorProcessAppStateRequest",
+        "LExecutorProcessStartingPhase2",
+        "LExecutorProcessRequest",
+    ] {
+        assert!(
+            !skip_set.contains(fn_name),
+            "executor_transpile.toml should not skip {} after migration",
+            fn_name
+        );
+    }
+
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/executor_manual.rs")
+        .expect("Failed to read executor_manual.rs");
+    for fn_name in [
+        "CExecutorProcessAppStateRequest",
+        "CExecutorProcessStartingPhase2",
+        "CExecutorProcessRequest",
+    ] {
+        assert!(
+            !manual_source.contains(&format!("pub exec fn {}", fn_name)),
+            "executor_manual.rs should not define {} after migration",
+            fn_name
+        );
+    }
+
+    let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
+        .expect("Failed to read executor_gen.rs");
+    for fn_name in [
+        "CExecutorProcessAppStateRequest",
+        "CExecutorProcessStartingPhase2",
+        "CExecutorProcessRequest",
+    ] {
+        assert!(
+            generated_source.contains(&format!("pub exec fn {}", fn_name)),
+            "executor_gen.rs should define {} after migration",
+            fn_name
+        );
+    }
 }
 
 /// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.

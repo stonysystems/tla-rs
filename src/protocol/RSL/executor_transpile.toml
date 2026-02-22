@@ -21,14 +21,11 @@ skip_functions = [
     "UpdateNewCache",
     # Variable scoping issue: 'temp' undefined (app state machine result binding lost)
     "LExecutorExecute",
-    # Phase 19.3: All executor functions in executor_manual.rs
+    # Phase 19.3: remaining executor functions still owned by executor_manual.rs
     "LClientsInReplies",
     "LExecutorInit",
     "LExecutorGetDecision",
     "LExecutorProcessAppStateSupply",
-    "LExecutorProcessAppStateRequest",
-    "LExecutorProcessStartingPhase2",
-    "LExecutorProcessRequest",
 ]
 
 # Spec-only functions that should NOT get C-prefix
