@@ -25,7 +25,7 @@
 
 use crate::annotation::ModuleAnnotations;
 use crate::ast::{ParameterMode, SpecFunction, Type};
-use crate::config::{NamingConfig, TranspilerConfig};
+use crate::config::{MethodCallConfig, NamingConfig, TranspilerConfig};
 use crate::error::TranspileResult;
 use crate::parser::parse_file;
 use crate::types::{
@@ -613,6 +613,7 @@ pub struct ConfigInferer<'a> {
     naming: &'a NamingConfig,
     annotation_param_modes: HashMap<String, Vec<ParameterMode>>,
     function_path_hints: HashMap<String, String>,
+    method_call_hints: HashMap<String, MethodCallConfig>,
 }
 
 impl<'a> ConfigInferer<'a> {
@@ -622,6 +623,7 @@ impl<'a> ConfigInferer<'a> {
             naming,
             annotation_param_modes: HashMap::new(),
             function_path_hints: HashMap::new(),
+            method_call_hints: HashMap::new(),
         }
     }
 
@@ -645,6 +647,7 @@ impl<'a> ConfigInferer<'a> {
             naming,
             annotation_param_modes,
             function_path_hints: HashMap::new(),
+            method_call_hints: HashMap::new(),
         }
     }
 
@@ -657,6 +660,15 @@ impl<'a> ConfigInferer<'a> {
         self
     }
 
+    /// Attach externally-derived `method_calls` hints.
+    ///
+    /// This is used for data that depends on implementation symbols rather than
+    /// `SpecSchema` alone.
+    pub fn with_method_call_hints(mut self, hints: HashMap<String, MethodCallConfig>) -> Self {
+        self.method_call_hints = hints;
+        self
+    }
+
     /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
     pub fn infer(&self) -> TranspilerConfig {
         let mut config = TranspilerConfig::default();
@@ -665,6 +677,7 @@ impl<'a> ConfigInferer<'a> {
         self.infer_remapping(&mut config);
         self.infer_variant_remapping(&mut config);
         self.infer_function_paths(&mut config);
+        self.infer_method_calls(&mut config);
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
         self.infer_spec_only_functions(&mut config);
@@ -858,6 +871,21 @@ impl<'a> ConfigInferer<'a> {
         for key in keys {
             if let Some(path) = self.function_path_hints.get(key) {
                 config.function_paths.insert(key.clone(), path.clone());
+            }
+        }
+    }
+
+    /// Derive `method_calls` from caller-provided hints.
+    fn infer_method_calls(&self, config: &mut TranspilerConfig) {
+        if self.method_call_hints.is_empty() {
+            return;
+        }
+
+        let mut keys: Vec<&String> = self.method_call_hints.keys().collect();
+        keys.sort();
+        for key in keys {
+            if let Some(method_cfg) = self.method_call_hints.get(key) {
+                config.method_calls.insert(key.clone(), method_cfg.clone());
             }
         }
     }
@@ -1077,6 +1105,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
     for (k, v) in &inferred.function_paths {
         if !base.function_paths.contains_key(k) {
             base.function_paths.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Method calls: add inferred entries not in base
+    for (k, v) in &inferred.method_calls {
+        if !base.method_calls.contains_key(k) {
+            base.method_calls.insert(k.clone(), v.clone());
         }
     }
 
@@ -2359,6 +2394,32 @@ verus! {
     }
 
     #[test]
+    fn test_infer_method_calls_from_hints() {
+        let schema = SpecSchema::new();
+        let naming = default_naming();
+        let mut hints = HashMap::new();
+        hints.insert(
+            "GetReplicaIndex".to_string(),
+            MethodCallConfig {
+                method_name: "CGetReplicaIndex".to_string(),
+                receiver_arg_index: 1,
+                destructure_index: Some(1),
+            },
+        );
+
+        let inferer = ConfigInferer::new(&schema, &naming).with_method_call_hints(hints);
+        let config = inferer.infer();
+
+        let inferred = config
+            .method_calls
+            .get("GetReplicaIndex")
+            .expect("method call should be inferred");
+        assert_eq!(inferred.method_name, "CGetReplicaIndex");
+        assert_eq!(inferred.receiver_arg_index, 1);
+        assert_eq!(inferred.destructure_index, Some(1));
+    }
+
+    #[test]
     fn test_merge_configs_explicit_overrides_inferred() {
         let mut base = TranspilerConfig::default();
         base.remapping
@@ -2377,6 +2438,14 @@ verus! {
             "BroadcastToEveryone".to_string(),
             "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string(),
         );
+        inferred.method_calls.insert(
+            "GetReplicaIndex".to_string(),
+            MethodCallConfig {
+                method_name: "CGetReplicaIndex".to_string(),
+                receiver_arg_index: 1,
+                destructure_index: Some(1),
+            },
+        );
         inferred
             .spec_only_functions
             .push("WellFormedLConfiguration".to_string());
@@ -2394,6 +2463,14 @@ verus! {
         assert_eq!(
             base.function_paths.get("BroadcastToEveryone"),
             Some(&"crate::generated::RSL::broadcast_gen::CBroadcastToEveryone".to_string())
+        );
+        assert_eq!(
+            base.method_calls.get("GetReplicaIndex").map(|mc| (
+                &mc.method_name,
+                mc.receiver_arg_index,
+                mc.destructure_index
+            )),
+            Some((&"CGetReplicaIndex".to_string(), 1, Some(1)))
         );
         assert!(base
             .spec_only_functions

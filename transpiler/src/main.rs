@@ -465,6 +465,16 @@ fn strip_spec_prefix<'a>(name: &'a str, spec_prefix: &str) -> &'a str {
     name
 }
 
+fn has_uppercase_prefixed_name(name: &str, prefix: &str) -> bool {
+    if !name.starts_with(prefix) {
+        return false;
+    }
+    name[prefix.len()..]
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+}
+
 fn collect_called_functions_from_expr(expr: &verus_transpiler::Expr, out: &mut HashSet<String>) {
     use verus_transpiler::Expr;
 
@@ -739,6 +749,171 @@ fn collect_implementation_symbols(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ImplementationMethodSymbol {
+    impl_type: String,
+    tuple_return_types: Option<Vec<String>>,
+}
+
+fn insert_method_symbol(
+    symbols: &mut HashMap<String, Vec<ImplementationMethodSymbol>>,
+    method_name: String,
+    symbol: ImplementationMethodSymbol,
+) {
+    let entry = symbols.entry(method_name).or_default();
+    if !entry.contains(&symbol) {
+        entry.push(symbol);
+    }
+}
+
+fn extract_parenthesized_inner(text: &str) -> Option<String> {
+    let mut depth: i32 = 0;
+    let mut start: Option<usize> = None;
+    for (i, ch) in text.char_indices() {
+        if ch == '(' {
+            depth += 1;
+            if depth == 1 {
+                start = Some(i + 1);
+            }
+        } else if ch == ')' {
+            depth -= 1;
+            if depth == 0 {
+                return start.map(|s| text[s..i].to_string());
+            }
+            if depth < 0 {
+                return None;
+            }
+        }
+    }
+    None
+}
+
+fn split_top_level_csv(text: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut paren_depth: i32 = 0;
+    let mut angle_depth: i32 = 0;
+    let mut bracket_depth: i32 = 0;
+    for (i, ch) in text.char_indices() {
+        match ch {
+            '(' => paren_depth += 1,
+            ')' => paren_depth -= 1,
+            '<' => angle_depth += 1,
+            '>' => angle_depth -= 1,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -= 1,
+            ',' if paren_depth == 0 && angle_depth == 0 && bracket_depth == 0 => {
+                parts.push(text[start..i].trim().to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = text[start..].trim();
+    if !tail.is_empty() {
+        parts.push(tail.to_string());
+    }
+    parts
+}
+
+fn parse_tuple_return_types(signature_line: &str) -> Option<Vec<String>> {
+    let arrow_idx = signature_line.find("->")?;
+    let mut return_part = signature_line[arrow_idx + 2..].trim();
+    if let Some(block_idx) = return_part.find('{') {
+        return_part = return_part[..block_idx].trim();
+    }
+    if !return_part.starts_with('(') {
+        return None;
+    }
+
+    // Parses named return style like `(rc:(bool, usize))` and unnamed `(bool, usize)`.
+    let outer = extract_parenthesized_inner(return_part)?;
+    let mut tuple_expr = outer.trim();
+    if let Some(colon_idx) = tuple_expr.find(':') {
+        let (lhs, rhs) = tuple_expr.split_at(colon_idx);
+        if lhs.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            tuple_expr = rhs[1..].trim();
+        }
+    }
+    if !tuple_expr.starts_with('(') {
+        return None;
+    }
+    let inner = extract_parenthesized_inner(tuple_expr)?;
+    let elems: Vec<String> = split_top_level_csv(&inner)
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if elems.is_empty() {
+        None
+    } else {
+        Some(elems)
+    }
+}
+
+fn collect_implementation_method_symbols(
+    implementation_dir: &Path,
+) -> HashMap<String, Vec<ImplementationMethodSymbol>> {
+    let mut symbols = HashMap::new();
+    if !implementation_dir.exists() {
+        return symbols;
+    }
+
+    let Ok(entries) = std::fs::read_dir(implementation_dir) else {
+        return symbols;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+
+        let mut brace_depth: i32 = 0;
+        let mut impl_stack: Vec<(i32, String)> = Vec::new();
+
+        for line in content.lines() {
+            let code = line.split("//").next().unwrap_or("").trim();
+            if code.is_empty() {
+                continue;
+            }
+
+            if code.starts_with("impl ") && code.contains('{') {
+                if let Some(impl_ty) = parse_impl_type(code) {
+                    impl_stack.push((brace_depth + 1, impl_ty));
+                }
+            }
+
+            if let Some(method_name) = extract_c_function_name(code) {
+                let current_impl = impl_stack
+                    .iter()
+                    .rev()
+                    .find(|(depth, _)| brace_depth >= *depth)
+                    .map(|(_, ty)| ty.clone());
+                if let Some(impl_ty) = current_impl {
+                    insert_method_symbol(
+                        &mut symbols,
+                        method_name,
+                        ImplementationMethodSymbol {
+                            impl_type: impl_ty,
+                            tuple_return_types: parse_tuple_return_types(code),
+                        },
+                    );
+                }
+            }
+
+            let (opens, closes) = count_braces(code);
+            brace_depth += opens - closes;
+            impl_stack.retain(|(depth, _)| brace_depth >= *depth);
+        }
+    }
+
+    symbols
+}
+
 fn choose_symbol_path(exec_name: &str, symbols: &HashMap<String, Vec<String>>) -> Option<String> {
     let candidates = symbols.get(exec_name)?;
     let mut unique = candidates.clone();
@@ -838,6 +1013,290 @@ fn infer_function_paths_from_spec_paths(
     hints
 }
 
+fn infer_exec_function_name(spec_name: &str, naming: &verus_transpiler::NamingConfig) -> String {
+    if has_uppercase_prefixed_name(spec_name, &naming.exec_prefix) {
+        return spec_name.to_string();
+    }
+    let base = strip_spec_prefix(spec_name, &naming.spec_prefix);
+    format!("{}{}", naming.exec_prefix, base)
+}
+
+fn is_int_like_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "nat" | "u64" | "u32" | "u16" | "u8" | "usize" | "i64" | "i32"
+    )
+}
+
+fn infer_exec_type_name_from_named(
+    name: &str,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> Option<String> {
+    if name == "bool" || is_int_like_type_name(name) {
+        return None;
+    }
+    if has_uppercase_prefixed_name(name, &naming.exec_prefix) {
+        return Some(name.to_string());
+    }
+    if let Some(alias) = schema.aliases.get(name) {
+        return infer_exec_type_name_from_type(&alias.ty, schema, naming);
+    }
+    if has_uppercase_prefixed_name(name, &naming.spec_prefix) {
+        return Some(format!(
+            "{}{}",
+            naming.exec_prefix,
+            strip_spec_prefix(name, &naming.spec_prefix)
+        ));
+    }
+    if schema.structs.contains_key(name) || schema.enums.contains_key(name) {
+        return Some(format!("{}{}", naming.exec_prefix, name));
+    }
+    None
+}
+
+fn infer_exec_type_name_from_type(
+    ty: &verus_transpiler::ast::Type,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> Option<String> {
+    use verus_transpiler::ast::Type;
+    match ty {
+        Type::Reference { ty, .. } => infer_exec_type_name_from_type(ty, schema, naming),
+        Type::Named(path) | Type::Generic(path, _) => path
+            .segments
+            .last()
+            .and_then(|name| infer_exec_type_name_from_named(name, schema, naming)),
+        _ => None,
+    }
+}
+
+fn find_receiver_arg_index(
+    sig: &verus_transpiler::types::FunctionSig,
+    impl_type: &str,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> Option<usize> {
+    let receiver_idxs: Vec<usize> = sig
+        .params
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, param)| {
+            infer_exec_type_name_from_type(&param.ty, schema, naming)
+                .filter(|exec_ty| exec_ty == impl_type)
+                .map(|_| idx)
+        })
+        .collect();
+    if receiver_idxs.len() == 1 {
+        receiver_idxs.first().copied()
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReturnKind {
+    Bool,
+    IntLike,
+    Named(String),
+    Unknown,
+}
+
+fn classify_spec_return_kind(
+    ty: &verus_transpiler::ast::Type,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> ReturnKind {
+    use verus_transpiler::ast::Type;
+    match ty {
+        Type::Bool => ReturnKind::Bool,
+        Type::Int | Type::Nat => ReturnKind::IntLike,
+        Type::Reference { ty, .. } => classify_spec_return_kind(ty, schema, naming),
+        Type::Named(path) => {
+            if let Some(name) = path.segments.last() {
+                if name == "bool" {
+                    ReturnKind::Bool
+                } else if is_int_like_type_name(name) {
+                    ReturnKind::IntLike
+                } else if let Some(alias) = schema.aliases.get(name) {
+                    classify_spec_return_kind(&alias.ty, schema, naming)
+                } else if let Some(exec_name) =
+                    infer_exec_type_name_from_named(name, schema, naming)
+                {
+                    ReturnKind::Named(exec_name)
+                } else {
+                    ReturnKind::Unknown
+                }
+            } else {
+                ReturnKind::Unknown
+            }
+        }
+        _ => ReturnKind::Unknown,
+    }
+}
+
+fn normalize_type_text(type_text: &str) -> String {
+    type_text
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect::<String>()
+}
+
+fn is_bool_like_type(type_text: &str) -> bool {
+    let normalized = normalize_type_text(type_text);
+    normalized == "bool" || normalized.ends_with("::bool")
+}
+
+fn tuple_element_matches_return_kind(type_text: &str, kind: &ReturnKind) -> bool {
+    let normalized = normalize_type_text(type_text);
+    match kind {
+        ReturnKind::Bool => is_bool_like_type(&normalized),
+        ReturnKind::IntLike => {
+            normalized.contains("u64")
+                || normalized.contains("u32")
+                || normalized.contains("u16")
+                || normalized.contains("u8")
+                || normalized.contains("usize")
+                || normalized.contains("i64")
+                || normalized.contains("i32")
+                || normalized.contains("int")
+                || normalized.contains("nat")
+        }
+        ReturnKind::Named(expected) => normalized.ends_with(expected),
+        ReturnKind::Unknown => false,
+    }
+}
+
+fn infer_destructure_index(
+    spec_return: &verus_transpiler::ast::Type,
+    tuple_return_types: Option<&Vec<String>>,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> Option<usize> {
+    let tuple_return_types = tuple_return_types?;
+    if tuple_return_types.len() < 2 {
+        return None;
+    }
+    let return_kind = classify_spec_return_kind(spec_return, schema, naming);
+    if return_kind == ReturnKind::Unknown {
+        return None;
+    }
+
+    let matching_indices: Vec<usize> = tuple_return_types
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, ty)| tuple_element_matches_return_kind(ty, &return_kind).then_some(idx))
+        .collect();
+
+    if matching_indices.len() == 1 {
+        return matching_indices.first().copied();
+    }
+
+    if matching_indices.is_empty()
+        && tuple_return_types.len() == 2
+        && is_bool_like_type(&tuple_return_types[0])
+        && return_kind != ReturnKind::Bool
+    {
+        return Some(1);
+    }
+
+    None
+}
+
+fn infer_method_calls_from_spec_paths(
+    spec_paths: &[&Path],
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> HashMap<String, verus_transpiler::config::MethodCallConfig> {
+    let mut inferred = HashMap::new();
+
+    let mut called_funcs = HashSet::new();
+    for path in spec_paths {
+        called_funcs.extend(collect_called_functions_from_spec_file(path));
+    }
+    if called_funcs.is_empty() {
+        return inferred;
+    }
+
+    let mut seen_impl_dirs = HashSet::new();
+    let mut method_symbols: HashMap<String, Vec<ImplementationMethodSymbol>> = HashMap::new();
+    for path in spec_paths {
+        let Some(protocol_dir) = path.parent() else {
+            continue;
+        };
+        let Some(protocol_name) = protocol_dir.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(protocol_root) = protocol_dir.parent() else {
+            continue;
+        };
+        if protocol_root.file_name().and_then(|s| s.to_str()) != Some("protocol") {
+            continue;
+        }
+        let Some(src_root) = protocol_root.parent() else {
+            continue;
+        };
+        let implementation_dir = src_root.join("implementation").join(protocol_name);
+        if !seen_impl_dirs.insert(implementation_dir.clone()) {
+            continue;
+        }
+
+        for (method_name, symbols) in collect_implementation_method_symbols(&implementation_dir) {
+            let entry = method_symbols.entry(method_name).or_default();
+            for symbol in symbols {
+                if !entry.contains(&symbol) {
+                    entry.push(symbol);
+                }
+            }
+        }
+    }
+
+    for call_name in called_funcs {
+        let Some(sig) = schema.functions.get(&call_name) else {
+            continue;
+        };
+        let exec_method_name = infer_exec_function_name(&call_name, naming);
+        let Some(candidates) = method_symbols.get(&exec_method_name) else {
+            continue;
+        };
+
+        let mut matches: Vec<(usize, &ImplementationMethodSymbol)> = candidates
+            .iter()
+            .filter_map(|candidate| {
+                find_receiver_arg_index(sig, &candidate.impl_type, schema, naming)
+                    .map(|idx| (idx, candidate))
+            })
+            .collect();
+        matches.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.impl_type.cmp(&b.1.impl_type))
+        });
+        matches.dedup_by(|a, b| a.0 == b.0 && a.1.impl_type == b.1.impl_type);
+
+        if matches.len() != 1 {
+            continue;
+        }
+
+        let (receiver_arg_index, selected_method) = matches[0];
+        let destructure_index = infer_destructure_index(
+            &sig.return_type,
+            selected_method.tuple_return_types.as_ref(),
+            schema,
+            naming,
+        );
+        inferred.insert(
+            call_name,
+            verus_transpiler::config::MethodCallConfig {
+                method_name: exec_method_name,
+                receiver_arg_index,
+                destructure_index,
+            },
+        );
+    }
+
+    inferred
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -896,12 +1355,15 @@ fn main() -> Result<()> {
                 let annotation_modules = parse_annotation_file(annotations).ok();
                 let function_path_hints =
                     infer_function_paths_from_spec_paths(&spec_paths, &schema, &file_config.naming);
+                let method_call_hints =
+                    infer_method_calls_from_spec_paths(&spec_paths, &schema, &file_config.naming);
                 let inferer = if let Some(modules) = annotation_modules.as_ref() {
                     ConfigInferer::with_annotations(&schema, &file_config.naming, modules)
                 } else {
                     ConfigInferer::new(&schema, &file_config.naming)
                 }
-                .with_function_path_hints(function_path_hints);
+                .with_function_path_hints(function_path_hints)
+                .with_method_call_hints(method_call_hints);
                 let inferred = inferer.infer();
                 merge_configs(&mut file_config, &inferred);
                 if cli.verbose {
@@ -2237,8 +2699,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             &schema,
                             &file_config.naming,
                         );
+                        let method_call_hints = infer_method_calls_from_spec_paths(
+                            &spec_paths,
+                            &schema,
+                            &file_config.naming,
+                        );
                         let inferer = ConfigInferer::new(&schema, &file_config.naming)
-                            .with_function_path_hints(function_path_hints);
+                            .with_function_path_hints(function_path_hints)
+                            .with_method_call_hints(method_call_hints);
                         let inferred = inferer.infer();
                         merge_configs(&mut file_config, &inferred);
                         if cli.verbose {
@@ -5778,12 +6246,15 @@ validity_predicate_name = "valid"
             let annotation_modules = parse_annotation_file(annotations).ok();
             let function_path_hints =
                 infer_function_paths_from_spec_paths(&spec_paths, &schema, &fc.naming);
+            let method_call_hints =
+                infer_method_calls_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let inferer = if let Some(modules) = annotation_modules.as_ref() {
                 ConfigInferer::with_annotations(&schema, &fc.naming, modules)
             } else {
                 ConfigInferer::new(&schema, &fc.naming)
             }
-            .with_function_path_hints(function_path_hints);
+            .with_function_path_hints(function_path_hints)
+            .with_method_call_hints(method_call_hints);
             let inferred = inferer.infer();
             merge_configs(&mut fc, &inferred);
         }
@@ -5880,6 +6351,127 @@ verus! {
         assert_eq!(
             inferred.get("SetOfMessage1bAboutBallot"),
             Some(&"CProposer::CSetOfMessage1bAboutBallot".to_string())
+        );
+    }
+
+    #[test]
+    fn test_infer_method_calls_from_spec_paths_infers_receiver_and_destructure() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/election.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/cconfiguration.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub struct LConfiguration {}
+
+    pub open spec fn LMinQuorumSize(config: LConfiguration) -> nat {
+        0
+    }
+
+    pub open spec fn GetReplicaIndex(id: int, config: LConfiguration) -> int {
+        0
+    }
+
+    pub open spec fn LEntry(config: LConfiguration, id: int) -> bool {
+        LMinQuorumSize(config) >= 0 && GetReplicaIndex(id, config) >= 0
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    impl CConfiguration {
+        pub fn CMinQuorumSize(&self) -> (q:usize) {
+            0
+        }
+
+        pub fn CGetReplicaIndex(&self, id:&u64) -> (rc:(bool, usize)) {
+            (true, 0)
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let spec_paths = vec![spec_path.as_path()];
+        let inferred = infer_method_calls_from_spec_paths(&spec_paths, &schema, &naming);
+
+        let min_quorum = inferred
+            .get("LMinQuorumSize")
+            .expect("LMinQuorumSize should be inferred as method call");
+        assert_eq!(min_quorum.method_name, "CMinQuorumSize");
+        assert_eq!(min_quorum.receiver_arg_index, 0);
+        assert_eq!(min_quorum.destructure_index, None);
+
+        let get_replica = inferred
+            .get("GetReplicaIndex")
+            .expect("GetReplicaIndex should be inferred as method call");
+        assert_eq!(get_replica.method_name, "CGetReplicaIndex");
+        assert_eq!(get_replica.receiver_arg_index, 1);
+        assert_eq!(get_replica.destructure_index, Some(1));
+    }
+
+    #[test]
+    fn test_infer_method_calls_from_spec_paths_skips_ambiguous_receivers() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/replica.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/cconfiguration.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub struct LConfiguration {}
+
+    pub open spec fn LAmbiguous(a: LConfiguration, b: LConfiguration) -> bool {
+        true
+    }
+
+    pub open spec fn LEntry(a: LConfiguration, b: LConfiguration) -> bool {
+        LAmbiguous(a, b)
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    impl CConfiguration {
+        pub fn CAmbiguous(&self, other:&CConfiguration) -> (res:bool) {
+            true
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let spec_paths = vec![spec_path.as_path()];
+        let inferred = infer_method_calls_from_spec_paths(&spec_paths, &schema, &naming);
+
+        assert!(
+            !inferred.contains_key("LAmbiguous"),
+            "ambiguous receiver candidates should not be auto-inferred"
         );
     }
 

@@ -6578,7 +6578,7 @@ skip_functions = ["LNext"]
 
 #### 20.2.3 Auto-derive Tier 2 configs (with override)
 
-- [~] **Method calls**: Deferred — requires knowledge of exec type impl blocks (not in SpecSchema). Used by RSL + 4 non-RSL protocols. Will address in Phase 20.2.6.
+- [x] **Method calls**: Auto-derived by scanning implementation impl blocks (`src/implementation/<Protocol>/*.rs`) for exec methods and matching them to called spec functions by naming (`L*`/bare → `C*`) plus receiver-type position in function signatures. Inferred `destructure_index` is populated for tuple-return methods when the spec return type matches a tuple element (e.g., `GetReplicaIndex` → index `1`). Explicit TOML entries still override.
 - [~] **Eq function fields**: Deferred — RSL-only. Requires knowledge of Verus PartialEq derive support.
 - [x] **Clone strategy** (Tier 2 extension): Already handled in Tier 1 — `infer_clone_strategy` detects `Set<T>` fields → `external_body`. All 9 non-RSL protocols match.
 - [x] **Struct vec fields**: Detect `Seq<StructType>` fields (non-primitive, non-enum element). Maps to `[CElementType, LElementType]`. (ConfigInferer.infer_struct_vec_fields, 4 tests)
