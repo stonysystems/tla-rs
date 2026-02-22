@@ -6569,7 +6569,7 @@ skip_functions = ["LNext"]
 - [x] **Variant remapping**: Enumerate enum variants used as struct fields, generate `"VariantName" = "CEnumName::VariantName"` entries. Only maps enums that appear as struct field types. (ConfigInferer.infer_variant_remapping)
 - [x] **Arrow variants**: For each enum with struct variants, map field names to `CEnum::CVariant` paths. Uses remapping for variant name resolution. (ConfigInferer.infer_arrow_variants, 5 tests)
 - [x] **Field classification**: From struct field types in SpecSchema: `Set<T>` → `collection_fields`, `Seq<primitive>` → `vec_fields`, `Map<prim,prim>` → `hashmap_index_fields`, enum-typed → `clone_fields` + `clone_field_types`. (ConfigInferer.infer_field_classification)
-- [~] **Spec-only functions**: Deferred — requires `.automan` analysis not available in SpecSchema. RSL-only (non-RSL protocols have empty `spec_only_functions`). Will address in Phase 20.2.6 migration validation.
+- [x] **Spec-only functions**: Auto-derived from `.automan` annotations when available. `ConfigInferer` now accepts annotation modules and infers functions with no output (`-`) params into `spec_only_functions`; inference is skipped if annotations are missing or arity mismatches.
 - [~] **Function paths**: Deferred — requires scanning generated output modules for matching function names. RSL-only (non-RSL protocols have empty `function_paths`). Will address in Phase 20.2.6 migration validation.
 - [x] **Default imports**: Auto-generate standard imports based on field types (HashMap→`std::collections::HashMap`, etc.)
 - [x] **Default output flags**: Set all `generate_*` to sensible defaults (true), only require override in TOML. (ConfigInferer.infer_default_output)

@@ -25,6 +25,7 @@
 use clap::{Parser, Subcommand};
 use miette::Result;
 use std::path::{Path, PathBuf};
+use verus_transpiler::annotation::parse_annotation_file;
 use verus_transpiler::spec_analyzer::{
     analyze_spec_file, analyze_spec_files, merge_configs, ConfigInferer,
 };
@@ -508,7 +509,12 @@ fn main() -> Result<()> {
 
         match analysis_result {
             Ok(schema) => {
-                let inferer = ConfigInferer::new(&schema, &file_config.naming);
+                let annotation_modules = parse_annotation_file(annotations).ok();
+                let inferer = if let Some(modules) = annotation_modules.as_ref() {
+                    ConfigInferer::with_annotations(&schema, &file_config.naming, modules)
+                } else {
+                    ConfigInferer::new(&schema, &file_config.naming)
+                };
                 let inferred = inferer.infer();
                 merge_configs(&mut file_config, &inferred);
                 if cli.verbose {
@@ -5376,7 +5382,12 @@ validity_predicate_name = "valid"
         };
 
         if let Ok(schema) = analysis_result {
-            let inferer = ConfigInferer::new(&schema, &fc.naming);
+            let annotation_modules = parse_annotation_file(annotations).ok();
+            let inferer = if let Some(modules) = annotation_modules.as_ref() {
+                ConfigInferer::with_annotations(&schema, &fc.naming, modules)
+            } else {
+                ConfigInferer::new(&schema, &fc.naming)
+            };
             let inferred = inferer.infer();
             merge_configs(&mut fc, &inferred);
         }

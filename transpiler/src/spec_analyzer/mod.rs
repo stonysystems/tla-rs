@@ -23,7 +23,8 @@
 //! assert!(schema.functions.contains_key("LInit"));
 //! ```
 
-use crate::ast::{SpecFunction, Type};
+use crate::annotation::ModuleAnnotations;
+use crate::ast::{ParameterMode, SpecFunction, Type};
 use crate::config::{NamingConfig, TranspilerConfig};
 use crate::error::TranspileResult;
 use crate::parser::parse_file;
@@ -602,18 +603,46 @@ pub fn ingest_protocol_sources_with_types_and_entrypoints(
 /// - Field classification: `collection_fields`, `vec_fields`, `clone_fields`, etc.
 /// - `clone_field_types`: maps clone_fields to their exec enum type
 /// - `clone_strategy`: `external_body` for structs with HashSet fields
-/// - `spec_only_functions`: functions with no output-mode params
+/// - `spec_only_functions`: functions with no output-mode params (when `.automan`
+///   annotations are available)
 ///
 /// The returned config is partial — callers should merge it with explicit TOML
 /// overrides (explicit entries take precedence over auto-derived ones).
 pub struct ConfigInferer<'a> {
     schema: &'a SpecSchema,
     naming: &'a NamingConfig,
+    annotation_param_modes: HashMap<String, Vec<ParameterMode>>,
 }
 
 impl<'a> ConfigInferer<'a> {
     pub fn new(schema: &'a SpecSchema, naming: &'a NamingConfig) -> Self {
-        Self { schema, naming }
+        Self {
+            schema,
+            naming,
+            annotation_param_modes: HashMap::new(),
+        }
+    }
+
+    /// Create an inferer with parsed `.automan` modules.
+    ///
+    /// When annotation modes are present, this enables deriving
+    /// `spec_only_functions` from functions that have no output (`-`) params.
+    pub fn with_annotations(
+        schema: &'a SpecSchema,
+        naming: &'a NamingConfig,
+        modules: &[ModuleAnnotations],
+    ) -> Self {
+        let mut annotation_param_modes = HashMap::new();
+        for module in modules {
+            for (name, annotation) in &module.functions {
+                annotation_param_modes.insert(name.clone(), annotation.param_modes.clone());
+            }
+        }
+        Self {
+            schema,
+            naming,
+            annotation_param_modes,
+        }
     }
 
     /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
@@ -625,6 +654,7 @@ impl<'a> ConfigInferer<'a> {
         self.infer_variant_remapping(&mut config);
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
+        self.infer_spec_only_functions(&mut config);
         self.infer_arrow_variants(&mut config);
         self.infer_struct_vec_fields(&mut config);
         self.infer_default_output(&mut config);
@@ -800,6 +830,40 @@ impl<'a> ConfigInferer<'a> {
                 config
                     .clone_strategy
                     .insert(exec_name, "external_body".to_string());
+            }
+        }
+    }
+
+    /// Derive `spec_only_functions` from `.automan` modes.
+    ///
+    /// A function is spec-only if all annotated parameter modes are input (`+`).
+    /// If annotations are unavailable, this inference is skipped.
+    fn infer_spec_only_functions(&self, config: &mut TranspilerConfig) {
+        if self.annotation_param_modes.is_empty() {
+            return;
+        }
+
+        let mut function_names: Vec<String> = self.schema.functions.keys().cloned().collect();
+        function_names.sort();
+
+        for function_name in function_names {
+            let Some(sig) = self.schema.functions.get(&function_name) else {
+                continue;
+            };
+            let Some(param_modes) = self.annotation_param_modes.get(&function_name) else {
+                continue;
+            };
+
+            // Only trust annotations that match signature arity.
+            if param_modes.len() != sig.params.len() {
+                continue;
+            }
+
+            let has_output_param = param_modes
+                .iter()
+                .any(|mode| matches!(mode, ParameterMode::Output));
+            if !has_output_param && !config.spec_only_functions.contains(&function_name) {
+                config.spec_only_functions.push(function_name);
             }
         }
     }
@@ -981,6 +1045,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
         }
     }
 
+    // Spec-only functions: add inferred entries not in base
+    for f in &inferred.spec_only_functions {
+        if !base.spec_only_functions.contains(f) {
+            base.spec_only_functions.push(f.clone());
+        }
+    }
+
     // Collection fields: add inferred entries not in base
     for f in &inferred.collection_fields {
         if !base.collection_fields.contains(f) {
@@ -1041,6 +1112,7 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::annotation::AnnotationParser;
     use crate::ast::{Generics, Path as AstPath, Type};
     use crate::types::{ParamSig, TypeParser};
     use std::fs;
@@ -2161,6 +2233,61 @@ verus! {
     }
 
     #[test]
+    fn test_infer_spec_only_functions_from_annotations() {
+        let source = r#"
+verus! {
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { true }
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LMessage>) -> bool { true }
+    pub open spec fn WellFormedLConfiguration(c: LConstants) -> bool { true }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+
+        let annotation_source = r#"
+module Test {
+    LInit(-, +);
+    LNext(+, -, +, -);
+    WellFormedLConfiguration(+);
+}
+        "#;
+        let modules = AnnotationParser::new(annotation_source.to_string())
+            .parse()
+            .unwrap();
+
+        let inferer = ConfigInferer::with_annotations(&schema, &naming, &modules);
+        let config = inferer.infer();
+
+        assert!(config
+            .spec_only_functions
+            .contains(&"WellFormedLConfiguration".to_string()));
+        assert!(!config.spec_only_functions.contains(&"LInit".to_string()));
+        assert!(!config.spec_only_functions.contains(&"LNext".to_string()));
+    }
+
+    #[test]
+    fn test_infer_spec_only_functions_without_annotations() {
+        let source = r#"
+verus! {
+    pub open spec fn WellFormedLConfiguration(c: LConstants) -> bool { true }
+}
+        "#;
+        let mut parser = TypeParser::new(source);
+        let types = parser.parse_types().unwrap();
+        let registry = build_registry(types);
+        let schema = SpecSchema::from_registry(registry);
+        let naming = default_naming();
+
+        let inferer = ConfigInferer::new(&schema, &naming);
+        let config = inferer.infer();
+
+        assert!(config.spec_only_functions.is_empty());
+    }
+
+    #[test]
     fn test_infer_default_output_flags() {
         let schema = SpecSchema::new();
         let naming = default_naming();
@@ -2181,6 +2308,7 @@ verus! {
         let mut base = TranspilerConfig::default();
         base.remapping
             .insert("LState".to_string(), "MyCustomState".to_string());
+        base.spec_only_functions.push("AlreadyExplicit".to_string());
 
         let mut inferred = TranspilerConfig::default();
         inferred
@@ -2190,6 +2318,12 @@ verus! {
             .remapping
             .insert("LConstants".to_string(), "CConstants".to_string());
         inferred.collection_fields.push("prepared".to_string());
+        inferred
+            .spec_only_functions
+            .push("WellFormedLConfiguration".to_string());
+        inferred
+            .spec_only_functions
+            .push("AlreadyExplicit".to_string());
 
         merge_configs(&mut base, &inferred);
 
@@ -2198,6 +2332,13 @@ verus! {
         // Inferred entry added where base was empty
         assert_eq!(base.remapping.get("LConstants").unwrap(), "CConstants");
         assert!(base.collection_fields.contains(&"prepared".to_string()));
+        assert!(base
+            .spec_only_functions
+            .contains(&"AlreadyExplicit".to_string()));
+        assert!(base
+            .spec_only_functions
+            .contains(&"WellFormedLConfiguration".to_string()));
+        assert_eq!(base.spec_only_functions.len(), 2);
     }
 
     #[test]
