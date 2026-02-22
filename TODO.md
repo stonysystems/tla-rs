@@ -6187,13 +6187,13 @@ Extend the C# entry point to support launching any protocol (not just RSL).
 
 For each protocol P, in order:
 
-1. [ ] **Modify spec types** (`src/protocol/P/types.rs`): Add `LPMessage` enum, remove all `msgs_*` fields from `LState`
-2. [ ] **Rewrite spec actions** (`src/protocol/P/*.rs`): Add `sent_packets: Seq<LPMessage>` output param to every action; sending actions set `sent_packets == seq![LPMessage::Variant{...}]`; receiving actions use scalar params instead of `s.msgs_*` preconditions; non-messaging actions set `sent_packets == Seq::<LPMessage>::empty()`; remove ALL frame condition lines
-3. [ ] **Update annotations** (`src/protocol/P/*.automan`): Add `-` mode for sent_packets output in every action
-4. [ ] **Update transpiler config** (`src/protocol/P/*_transpile.toml`): Add arrow_variants for message enum if needed
-5. [ ] **Regenerate** types_gen.rs and *_gen.rs via transpiler
-6. [ ] **Update host.rs** (`src/implementation/P/host.rs`): C* functions now return `(CState, Vec<CPMessage>)` tuples; remove flag injection/reading; pass message fields as scalar params
-7. [ ] **Verify**: transpiler tests pass, Verus 0 errors
+1. [x] **Modify spec types** (`src/protocol/P/types.rs`): Add `LPMessage` enum, remove all `msgs_*` fields from `LState` (template reference; completed concretely in `18.2.1`–`18.2.8`)
+2. [x] **Rewrite spec actions** (`src/protocol/P/*.rs`): Add `sent_packets: Seq<LPMessage>` output param to every action; sending actions set `sent_packets == seq![LPMessage::Variant{...}]`; receiving actions use scalar params instead of `s.msgs_*` preconditions; non-messaging actions set `sent_packets == Seq::<LPMessage>::empty()`; remove ALL frame condition lines (template reference; completed concretely in `18.2.1`–`18.2.8`)
+3. [x] **Update annotations** (`src/protocol/P/*.automan`): Add `-` mode for sent_packets output in every action (template reference; completed concretely in `18.2.1`–`18.2.8`)
+4. [x] **Update transpiler config** (`src/protocol/P/*_transpile.toml`): Add arrow_variants for message enum if needed (template reference; completed concretely in `18.2.1`–`18.2.8`)
+5. [x] **Regenerate** types_gen.rs and *_gen.rs via transpiler (template reference; completed concretely in `18.2.1`–`18.2.8`)
+6. [x] **Update host.rs** (`src/implementation/P/host.rs`): C* functions now return `(CState, Vec<CPMessage>)` tuples; remove flag injection/reading; pass message fields as scalar params (template reference; completed concretely in `18.2.1`–`18.2.8`)
+7. [x] **Verify**: transpiler tests pass, Verus 0 errors (template reference; completed concretely in `18.2.1`–`18.2.8`)
 
 ### 18.2 Implementation order (smallest-first)
 
