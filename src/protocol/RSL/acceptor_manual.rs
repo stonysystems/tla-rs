@@ -1,47 +1,8 @@
-// Manual code for all 7 acceptor functions.
+// Manual code for core acceptor action functions.
 // These functions have protocol-specific proofs too complex for auto-generation.
 // They are injected into acceptor_gen.rs by the transpiler via manual_code config.
 // Adapted from acceptorimpl.rs method-style to functional style.
 // Uses clone_up_to_view() instead of clone() for Verus view preservation.
-
-// HashMap helper functions: standalone external_body implementations.
-// These perform HashMap iteration with filtering, which requires complex loop invariants
-// that Verus cannot auto-derive. The ensures clauses specify the correct behavior.
-#[verifier(external_body)]
-pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)
-requires
-    cvotes_is_valid(votes),
-ensures
-    cvotes_is_valid(&result),
-    RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int),
-{
-    let mut result: HashMap<u64, CVote> = HashMap::new();
-    for (key, value) in votes.iter() {
-        if *key >= *log_truncation_point {
-            result.insert(*key, value.clone());
-        }
-    }
-    result
-}
-
-#[verifier(external_body)]
-pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64) -> (result: CVotes)
-requires
-    cvotes_is_valid(votes),
-    new_vote.valid(),
-ensures
-    cvotes_is_valid(&result),
-    LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&result), *new_opn as int, new_vote@, *log_truncation_point as int),
-{
-    let mut result: HashMap<u64, CVote> = HashMap::new();
-    for (key, value) in votes.iter() {
-        if *key >= *log_truncation_point {
-            result.insert(*key, value.clone());
-        }
-    }
-    result.insert(*new_opn, new_vote.clone());
-    result
-}
 
 pub exec fn CAcceptorInit(c: &CReplicaConstants) -> (result: CAcceptor)
 requires

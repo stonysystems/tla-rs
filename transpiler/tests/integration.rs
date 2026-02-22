@@ -7559,6 +7559,48 @@ fn test_acceptor_gen_no_delegate_patterns() {
     );
 }
 
+#[test]
+fn test_acceptor_vote_helpers_rehomed_out_of_manual_injection() {
+    let manual = std::fs::read_to_string("../src/protocol/RSL/acceptor_manual.rs")
+        .expect("Failed to read acceptor_manual.rs");
+    assert!(
+        !manual.contains("pub exec fn CRemoveVotesBeforeLogTruncationPoint"),
+        "acceptor_manual.rs should no longer define CRemoveVotesBeforeLogTruncationPoint"
+    );
+    assert!(
+        !manual.contains("pub exec fn CAddVoteAndRemoveOldOnes"),
+        "acceptor_manual.rs should no longer define CAddVoteAndRemoveOldOnes"
+    );
+
+    let helpers = std::fs::read_to_string("../src/implementation/RSL/acceptor_helpers.rs")
+        .expect("Failed to read acceptor_helpers.rs");
+    assert!(
+        helpers.contains("pub exec fn CRemoveVotesBeforeLogTruncationPoint"),
+        "acceptor_helpers.rs should define CRemoveVotesBeforeLogTruncationPoint"
+    );
+    assert!(
+        helpers.contains("pub exec fn CAddVoteAndRemoveOldOnes"),
+        "acceptor_helpers.rs should define CAddVoteAndRemoveOldOnes"
+    );
+
+    let generated = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
+        .expect("Failed to read acceptor_gen.rs");
+    assert!(
+        generated.contains(
+            "acceptor_helpers::{CAddVoteAndRemoveOldOnes, CRemoveVotesBeforeLogTruncationPoint}"
+        ),
+        "acceptor_gen.rs should import acceptor vote helpers from implementation module"
+    );
+    assert!(
+        !generated.contains("pub exec fn CRemoveVotesBeforeLogTruncationPoint"),
+        "acceptor_gen.rs should not inline CRemoveVotesBeforeLogTruncationPoint anymore"
+    );
+    assert!(
+        !generated.contains("pub exec fn CAddVoteAndRemoveOldOnes"),
+        "acceptor_gen.rs should not inline CAddVoteAndRemoveOldOnes anymore"
+    );
+}
+
 /// Phase 19.7: Verify impl files have been stripped of dead code.
 /// After Phase 19 standalone conversions, most &mut self methods on component
 /// types are dead code. This test ensures the stripped files only contain

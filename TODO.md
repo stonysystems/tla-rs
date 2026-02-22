@@ -6803,6 +6803,11 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] Added `type_view_exprs` in stub ensures (custom abstractify expressions)
 - [x] Tested: auto-generated code compiles but 5 verification errors (proofs need manual tuning)
 - **DEFERRED**: Acceptor `manual_code` stays — hand-written proofs (CAcceptorProcess1a, Process2a, ProcessHeartbeat, TruncateLog, AddVoteAndRemoveOldOnes) are too complex for auto-generation. The transpiler generates structurally correct code but cannot replicate the hand-written proof blocks. Infrastructure improvements (no_stub_functions, skip_valid_types, type_view_exprs) committed for use by other modules.
+- [x] **21.2.4a** Re-home pure vote-map external-body helpers out of `manual_code` injection (`<500` LOC leaf).
+  - Moved `CRemoveVotesBeforeLogTruncationPoint` and `CAddVoteAndRemoveOldOnes` into `src/implementation/RSL/acceptor_helpers.rs` and imported them from `acceptor_gen`.
+  - `src/protocol/RSL/acceptor_manual.rs` now contains only action/proof functions; helper ownership is explicit in implementation modules.
+- [ ] **21.2.4b** Remove remaining acceptor `manual_code` action functions via `--proof-fallback` stubs + focused config updates, then regenerate `acceptor_gen.rs`.
+- [ ] **21.2.4c** Re-run full verification/test gates and refresh proof-gap counts for acceptor after 21.2.4b.
 
 #### 21.2.5 RSL election: manual_code removed — 8 auto-transpiled + 4 stubs
 

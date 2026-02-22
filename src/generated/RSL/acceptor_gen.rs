@@ -7,6 +7,7 @@ use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
+use crate::implementation::RSL::acceptor_helpers::{CAddVoteAndRemoveOldOnes, CRemoveVotesBeforeLogTruncationPoint};
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::{abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid};
@@ -17,12 +18,34 @@ use crate::protocol::RSL::environment::RslPacket;
 use crate::protocol::RSL::message::RslMessage;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
+use vstd::set_lib::*;
 use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
+
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
+}
+
+/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
+#[verifier(external_body)]
+fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
+ensures
+    res@ == s@,
+{
+    s.clone()
+}
 
 /// Helper proof: mapping over an empty Seq yields an empty Seq.
 proof fn lemma_empty_seq_map()
@@ -40,50 +63,11 @@ ensures
 
 
 
-// Manual code for all 7 acceptor functions.
+// Manual code for core acceptor action functions.
 // These functions have protocol-specific proofs too complex for auto-generation.
 // They are injected into acceptor_gen.rs by the transpiler via manual_code config.
 // Adapted from acceptorimpl.rs method-style to functional style.
 // Uses clone_up_to_view() instead of clone() for Verus view preservation.
-
-// HashMap helper functions: standalone external_body implementations.
-// These perform HashMap iteration with filtering, which requires complex loop invariants
-// that Verus cannot auto-derive. The ensures clauses specify the correct behavior.
-#[verifier(external_body)]
-pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)
-requires
-    cvotes_is_valid(votes),
-ensures
-    cvotes_is_valid(&result),
-    RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int),
-{
-    let mut result: HashMap<u64, CVote> = HashMap::new();
-    for (key, value) in votes.iter() {
-        if *key >= *log_truncation_point {
-            result.insert(*key, value.clone());
-        }
-    }
-    result
-}
-
-#[verifier(external_body)]
-pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64) -> (result: CVotes)
-requires
-    cvotes_is_valid(votes),
-    new_vote.valid(),
-ensures
-    cvotes_is_valid(&result),
-    LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&result), *new_opn as int, new_vote@, *log_truncation_point as int),
-{
-    let mut result: HashMap<u64, CVote> = HashMap::new();
-    for (key, value) in votes.iter() {
-        if *key >= *log_truncation_point {
-            result.insert(*key, value.clone());
-        }
-    }
-    result.insert(*new_opn, new_vote.clone());
-    result
-}
 
 pub exec fn CAcceptorInit(c: &CReplicaConstants) -> (result: CAcceptor)
 requires
