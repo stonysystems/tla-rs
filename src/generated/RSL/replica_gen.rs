@@ -14,7 +14,6 @@ use crate::generated::RSL::proposer_gen::*;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};
@@ -544,31 +543,7 @@ ensures
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     assume(false);
-    { let result = if (matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingOpKnown { .. }) && ((s.executor.ops_complete < s.executor.constants.all.params.max_integer_val) && s.executor.constants.CReplicaConstantsValid())) {
-                let v = match &s.executor.next_op_to_execute {
-            COutstandingOperation::COutstandingOpKnown { v, .. } => v.clone(),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
-        };
-        { let s_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &v); let s_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete); let (s_executor, sent_packets) = CExecutor::CExecutorExecute(&s.executor); (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s_learner,
-    executor: s_executor,
-}, sent_packets) }
-
-    } else {
-        (s.clone(), vec![])
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
+    (s.clone(), vec![])
 
 }
 
@@ -668,7 +643,7 @@ ensures
 pub exec fn CReplicaNextReadClockAndProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
 ensures
     result.valid(),
-    LReplicaNextReadClockAndProcessPacket(s@, result@, ios@),
+    LReplicaNextReadClockAndProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
 {
     unimplemented!()
 }
@@ -678,7 +653,7 @@ ensures
 pub exec fn CReplicaNextProcessPacketWithoutReadingClock(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
 ensures
     result.valid(),
-    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, ios@),
+    LReplicaNextProcessPacketWithoutReadingClock(s@, result@, abstractify_crslio_seq(ios@)),
 {
     unimplemented!()
 }
@@ -688,7 +663,7 @@ ensures
 pub exec fn CReplicaNextProcessPacket(s: &CReplica, ios: &Vec<CRslIo>) -> (result: CReplica)
 ensures
     result.valid(),
-    LReplicaNextProcessPacket(s@, result@, ios@),
+    LReplicaNextProcessPacket(s@, result@, abstractify_crslio_seq(ios@)),
 {
     unimplemented!()
 }
@@ -706,7 +681,7 @@ pub exec fn CReplicaNumActions() -> (result: u64)ensures
 pub exec fn CReplicaNoReceiveNext(s: &CReplica, nextActionIndex: &u64, ios: &Vec<CRslIo>) -> (result: CReplica)
 ensures
     result.valid(),
-    LReplicaNoReceiveNext(s@, *nextActionIndex as int, result@, ios@),
+    LReplicaNoReceiveNext(s@, *nextActionIndex as int, result@, abstractify_crslio_seq(ios@)),
 {
     unimplemented!()
 }
@@ -719,7 +694,7 @@ ensures
     LSchedulerInit(result@, c@),
 {
     assume(false);
-    { let s_replica = c.CReplicaInit(); CScheduler {
+    { let s_replica = CReplicaInit(c); CScheduler {
         nextActionIndex: 0u64,
         replica: s_replica,
     } }
@@ -731,7 +706,7 @@ ensures
 pub exec fn CSchedulerNext(s: &CScheduler, ios: &Vec<CRslIo>) -> (result: CScheduler)
 ensures
     result.valid(),
-    LSchedulerNext(s@, result@, ios@),
+    LSchedulerNext(s@, result@, abstractify_crslio_seq(ios@)),
 {
     unimplemented!()
 }

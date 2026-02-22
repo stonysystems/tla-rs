@@ -170,7 +170,6 @@ custom_imports = [
     # "use crate::generated::RSL::election_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    "use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;",
     "use crate::common::framework::environment_s::LIoOp;",
     "use crate::protocol::RSL::environment::{RslIo, RslPacket};",
     "use crate::implementation::common::upper_bound_i::*;",
