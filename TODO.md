@@ -6991,6 +6991,10 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - [x] **21.11.2.2**: Move packet-uniqueness helper (`Packet1bHasUniqueSrc`) out of `manual_code` without expanding trust boundary.
     - [x] **21.11.2.3**: Migrate `LReplicaNextProcess1b` off `manual_code` (transpiler support + config updates) while preserving current proof obligations.
     - [x] **21.11.2.4**: Audit resulting `replica_manual.rs` to ensure only IO trust-boundary wrappers/helpers remain.
+    - [x] **21.11.2.5**: Re-home `CExtractSentPacketsFromIos` out of `replica_manual.rs` into shared implementation helpers, regenerate, and tighten regression guards.
+      - Completed by moving `CExtractSentPacketsFromIos` into `src/implementation/RSL/gen_helpers.rs`, keeping `replica_manual.rs` as IO-dispatch wrappers only, and updating replica integration guards.
+      - While regenerating `replica_gen.rs`, `CReplicaNextProcess1b` and `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` were emitted as imported helpers instead of local stubs; these were also re-homed to `gen_helpers.rs` with explicit `external_body` contracts to keep dispatch wiring stable.
+    - [ ] **21.11.2.6**: Re-evaluate whether remaining IO-dispatch wrappers (`CSchedulerNext`, `CReplicaNoReceiveNext`, packet-dispatch wrappers) can be generated with explicit fallback stubs so `replica_transpile.toml` can drop `output.manual_code`.
   - [x] **21.11.3**: Executor final-mile decomposition (`<500` LOC per leaf) to retire `executor_manual.rs` without replacing proven logic with weaker stubs.
     - [x] **21.11.3.1**: Audit and regression-lock current `executor_manual.rs` footprint (function set + trust boundaries) and document migration order.
     - [x] **21.11.3.2**: Re-home pure cache external-body helpers (`CClientsInReplies`, `CUpdateNewCache`) out of manual injection and into shared implementation helpers.

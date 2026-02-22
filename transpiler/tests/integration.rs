@@ -1984,7 +1984,6 @@ fn test_generated_replica_module_public_api() {
         "pub exec fn CReplicaNextProcessInvalid",
         "pub exec fn CReplicaNextProcessRequest",
         "pub exec fn CReplicaNextProcess1a",
-        "pub exec fn CReplicaNextProcess1b",
         "pub exec fn CReplicaNextProcessStartingPhase2",
         "pub exec fn CReplicaNextProcess2a",
         "pub exec fn CReplicaNextProcess2b",
@@ -2028,16 +2027,13 @@ fn test_generated_replica_module_public_api() {
         validity_count
     );
 
-    // Phase 19.6: All dispatch functions moved from replica_dispatch.rs into replica_gen.rs
-    // via manual_code injection. Verify they are now in replica_gen.rs.
+    // Replica dispatch wrappers still come from manual injection.
     let dispatch_functions = [
         "pub exec fn CSchedulerNext",
         "pub exec fn CReplicaNoReceiveNext",
         "pub exec fn CReplicaNextProcessPacket",
         "pub exec fn CReplicaNextProcessPacketWithoutReadingClock",
         "pub exec fn CReplicaNextReadClockAndProcessPacket",
-        "pub exec fn CExtractSentPacketsFromIos",
-        "pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
         "pub exec fn CReplicaNextSpontaneousMaybeExecute",
         "pub exec fn CReplicaNextReadClockMaybeNominateValueAndSend2a",
     ];
@@ -2061,6 +2057,22 @@ fn test_generated_replica_module_public_api() {
     assert!(
         helpers_source.contains("pub fn clone_io_packet"),
         "gen_helpers.rs should contain clone_io_packet"
+    );
+    assert!(
+        helpers_source.contains("pub exec fn CExtractSentPacketsFromIos"),
+        "gen_helpers.rs should contain CExtractSentPacketsFromIos after helper re-home"
+    );
+    assert!(
+        helpers_source.contains("pub exec fn CReplicaNextProcess1b"),
+        "gen_helpers.rs should contain re-homed CReplicaNextProcess1b helper"
+    );
+    assert!(
+        helpers_source.contains("pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints"),
+        "gen_helpers.rs should contain re-homed truncate-log helper"
+    );
+    assert!(
+        helpers_source.contains("ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))"),
+        "CExtractSentPacketsFromIos helper should preserve exact spec projection"
     );
     assert!(
         helpers_source.contains("res.valid()"),
@@ -2169,7 +2181,7 @@ fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
 }
 
 #[test]
-fn test_replica_process1b_is_proof_fallback_generated_not_manual_injected() {
+fn test_replica_process1b_is_rehomed_to_shared_helper() {
     let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
         .expect("Failed to read replica_transpile.toml");
     let config: toml::Value = config_source
@@ -2208,24 +2220,30 @@ fn test_replica_process1b_is_proof_fallback_generated_not_manual_injected() {
     let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
     assert!(
-        generated_source.contains("// TRANSLATE-TODO: explicitly skipped (skip_functions)"),
-        "replica_gen.rs should mark proof-fallback generation for skipped LReplicaNextProcess1b"
+        generated_source
+            .contains("CMessage::CMessage1b{..} => CReplicaNextProcess1b(s, &received_packet),"),
+        "replica_gen.rs dispatch should continue routing 1b packets through CReplicaNextProcess1b"
     );
     assert!(
-        generated_source.contains("pub exec fn CReplicaNextProcess1b"),
-        "replica_gen.rs should contain generated CReplicaNextProcess1b"
+        generated_source.contains("CReplicaNextProcess1b"),
+        "replica_gen.rs should import re-homed CReplicaNextProcess1b from gen_helpers"
     );
     assert!(
-        generated_source.contains("#[verifier(external_body)]\npub exec fn CReplicaNextProcess1b"),
-        "generated CReplicaNextProcess1b should be an external-body proof-fallback stub"
+        !generated_source.contains("pub exec fn CReplicaNextProcess1b"),
+        "replica_gen.rs should not define CReplicaNextProcess1b locally after helper re-home"
     );
 
-    let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNextProcess1b");
+    let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
+        .expect("Failed to read gen_helpers.rs");
     assert!(
-        fn_source.contains(
+        helper_source.contains("#[verifier(external_body)]\npub exec fn CReplicaNextProcess1b"),
+        "gen_helpers.rs should define CReplicaNextProcess1b as explicit helper trust boundary"
+    );
+    assert!(
+        helper_source.contains(
             "LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@))"
         ),
-        "generated CReplicaNextProcess1b should preserve the spec postcondition"
+        "re-homed CReplicaNextProcess1b helper should preserve the spec postcondition"
     );
 }
 
@@ -2247,7 +2265,6 @@ fn test_replica_manual_code_contains_only_io_trust_boundary_wrappers() {
         .collect();
 
     let expected_fns: std::collections::BTreeSet<String> = [
-        "CExtractSentPacketsFromIos",
         "CReplicaNoReceiveNext",
         "CSchedulerNext",
         "CReplicaNextProcessPacketWithoutReadingClock",
@@ -2265,12 +2282,19 @@ fn test_replica_manual_code_contains_only_io_trust_boundary_wrappers() {
 
     let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
     assert_eq!(
-        external_body_count, 1,
-        "replica_manual.rs should only carry one external_body helper boundary"
+        external_body_count, 0,
+        "replica_manual.rs should no longer carry external_body helpers after re-homing"
     );
     assert!(
-        manual_source.contains("pub exec fn CExtractSentPacketsFromIos"),
-        "replica_manual.rs should retain CExtractSentPacketsFromIos as the external helper"
+        !manual_source.contains("pub exec fn CExtractSentPacketsFromIos"),
+        "replica_manual.rs should no longer define CExtractSentPacketsFromIos"
+    );
+
+    let helpers_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
+        .expect("Failed to read gen_helpers.rs");
+    assert!(
+        helpers_source.contains("#[verifier(external_body)]\npub exec fn CExtractSentPacketsFromIos"),
+        "gen_helpers.rs should carry CExtractSentPacketsFromIos as the external helper boundary"
     );
 }
 
@@ -2525,7 +2549,6 @@ fn test_replica_dispatch_assume_drift_guard() {
         ("CReplicaNextProcessPacket", 0usize),
         ("CReplicaNextProcessPacketWithoutReadingClock", 1usize),
         ("CReplicaNextReadClockAndProcessPacket", 0usize),
-        ("CExtractSentPacketsFromIos", 0usize),
     ];
 
     let mut no_receive_count = 0usize;

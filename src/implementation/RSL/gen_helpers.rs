@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use vstd::prelude::*;
 
 use crate::common::collections::vecs::*;
-use crate::common::framework::environment_s::LPacket;
+use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cmessage::*;
@@ -17,6 +17,9 @@ use crate::implementation::RSL::types_i::abstractify_creplycache;
 use crate::protocol::RSL::environment::RslPacket;
 use crate::protocol::RSL::executor::{GetPacketsFromReplies, LClientsInReplies, UpdateNewCache};
 use crate::protocol::RSL::message::RslMessage;
+use crate::protocol::RSL::replica::{
+    ExtractSentPacketsFromIos, LReplicaNextProcess1b, LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints,
+};
 
 verus! {
 
@@ -53,6 +56,70 @@ pub fn clone_io_packet(p: &LPacket<EndPoint, CMessage>) -> (res: CPacket)
         res.abstractable(),
 {
     CPacket { dst: p.dst.clone(), src: p.src.clone(), msg: p.msg.clone() }
+}
+
+/// Convert runtime IO events to sent packets with the exact spec projection.
+/// Re-homed from replica_manual.rs to shrink manual_code footprint.
+#[verifier(external_body)]
+pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)
+ensures
+    result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)),
+{
+    let mut result: Vec<CPacket> = Vec::new();
+    let mut i: usize = 0;
+    while i < ios.len()
+    {
+        if let LIoOp::Send{s: pkt_s} = &ios[i] {
+            result.push(CPacket {
+                dst: pkt_s.dst.clone(),
+                src: pkt_s.src.clone(),
+                msg: pkt_s.msg.clone(),
+            })
+        }
+        i = i + 1;
+    }
+    result
+}
+
+/// Shared fallback for processing 1b packets.
+/// Re-homed from generated proof-fallback ownership so dispatch wrappers can
+/// reference a stable helper without relying on manual_code injection.
+#[verifier(external_body)]
+pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
+    requires
+        s.valid(),
+        received_packet.valid(),
+        received_packet.msg is CMessage1b,
+    ensures
+        result.0.valid(),
+        LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
+{
+    let mut state = s.clone_up_to_view();
+    let pkt = clone_cpacket_full(received_packet);
+    let sent = state.CReplicaNextProcess1b(pkt);
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
+}
+
+/// Shared fallback for spontaneous truncate-log action.
+/// Re-homed from generated ownership so no_receive dispatch can resolve it
+/// without relying on manual_code-injected local definitions.
+#[verifier(external_body)]
+pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
+    requires
+        s.valid(),
+    ensures
+        result.0.valid(),
+        LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
+            s@,
+            result.0@,
+            result.1@.map(|i, p: CPacket| p@),
+        ),
+{
+    let mut state = s.clone_up_to_view();
+    let sent = state.CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints();
+    let packets = outbound_packets_to_vec(sent);
+    (state, packets)
 }
 
 /// Check that a 1b packet source is unique among previously received 1b packets.

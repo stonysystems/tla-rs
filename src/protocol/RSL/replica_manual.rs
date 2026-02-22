@@ -2,31 +2,9 @@
 // Only functions that CANNOT be auto-transpiled remain here:
 // - IO dispatch with proof blocks (CReplicaNoReceiveNext, CSchedulerNext, etc.)
 // - Message type dispatch (CReplicaNextProcessPacketWithoutReadingClock)
-// - External body helper (CExtractSentPacketsFromIos)
 //
 // All action functions (CReplicaInit, CReplicaNextProcess*, etc.) are now
 // auto-transpiled by the transpiler with assume_postconditions = true.
-
-// =============================================================================
-// CExtractSentPacketsFromIos -- external body (IO <-> spec conversion)
-// =============================================================================
-
-#[verifier(external_body)]
-pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)
-ensures
-    result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)),
-{
-    let mut result: Vec<CPacket> = Vec::new();
-    let mut i: usize = 0;
-    while i < ios.len()
-    {
-        if let LIoOp::Send{s: pkt_s} = &ios[i] {
-            result.push(CPacket { dst: pkt_s.dst.clone(), src: pkt_s.src.clone(), msg: pkt_s.msg.clone() })
-        }
-        i = i + 1;
-    }
-    result
-}
 
 // =============================================================================
 // CReplicaNoReceiveNext -- dispatch to sub-functions by action index
