@@ -615,6 +615,7 @@ pub struct ConfigInferer<'a> {
     function_path_hints: HashMap<String, String>,
     method_call_hints: HashMap<String, MethodCallConfig>,
     eq_function_field_hints: HashMap<String, String>,
+    type_view_expr_hints: HashMap<String, String>,
 }
 
 impl<'a> ConfigInferer<'a> {
@@ -626,6 +627,7 @@ impl<'a> ConfigInferer<'a> {
             function_path_hints: HashMap::new(),
             method_call_hints: HashMap::new(),
             eq_function_field_hints: HashMap::new(),
+            type_view_expr_hints: HashMap::new(),
         }
     }
 
@@ -651,6 +653,7 @@ impl<'a> ConfigInferer<'a> {
             function_path_hints: HashMap::new(),
             method_call_hints: HashMap::new(),
             eq_function_field_hints: HashMap::new(),
+            type_view_expr_hints: HashMap::new(),
         }
     }
 
@@ -681,6 +684,15 @@ impl<'a> ConfigInferer<'a> {
         self
     }
 
+    /// Attach externally-derived `type_view_exprs` hints.
+    ///
+    /// This is used for data that depends on implementation helper symbols rather
+    /// than `SpecSchema` alone.
+    pub fn with_type_view_expr_hints(mut self, hints: HashMap<String, String>) -> Self {
+        self.type_view_expr_hints = hints;
+        self
+    }
+
     /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
     pub fn infer(&self) -> TranspilerConfig {
         let mut config = TranspilerConfig::default();
@@ -691,6 +703,7 @@ impl<'a> ConfigInferer<'a> {
         self.infer_function_paths(&mut config);
         self.infer_method_calls(&mut config);
         self.infer_eq_function_fields(&mut config);
+        self.infer_type_view_exprs(&mut config);
         self.infer_field_classification(&mut config);
         self.infer_clone_strategy(&mut config);
         self.infer_spec_only_functions(&mut config);
@@ -916,6 +929,23 @@ impl<'a> ConfigInferer<'a> {
                 config
                     .eq_function_fields
                     .insert(key.clone(), function_name.clone());
+            }
+        }
+    }
+
+    /// Derive `type_view_exprs` from caller-provided hints.
+    fn infer_type_view_exprs(&self, config: &mut TranspilerConfig) {
+        if self.type_view_expr_hints.is_empty() {
+            return;
+        }
+
+        let mut keys: Vec<&String> = self.type_view_expr_hints.keys().collect();
+        keys.sort();
+        for key in keys {
+            if let Some(view_expr) = self.type_view_expr_hints.get(key) {
+                config
+                    .type_view_exprs
+                    .insert(key.clone(), view_expr.clone());
             }
         }
     }
@@ -1149,6 +1179,13 @@ pub fn merge_configs(base: &mut TranspilerConfig, inferred: &TranspilerConfig) {
     for (k, v) in &inferred.eq_function_fields {
         if !base.eq_function_fields.contains_key(k) {
             base.eq_function_fields.insert(k.clone(), v.clone());
+        }
+    }
+
+    // Type view expressions: add inferred entries not in base
+    for (k, v) in &inferred.type_view_exprs {
+        if !base.type_view_exprs.contains_key(k) {
+            base.type_view_exprs.insert(k.clone(), v.clone());
         }
     }
 
@@ -2478,6 +2515,25 @@ verus! {
     }
 
     #[test]
+    fn test_infer_type_view_exprs_from_hints() {
+        let schema = SpecSchema::new();
+        let naming = default_naming();
+        let mut hints = HashMap::new();
+        hints.insert(
+            "Votes".to_string(),
+            "abstractify_cvotes({param})".to_string(),
+        );
+
+        let inferer = ConfigInferer::new(&schema, &naming).with_type_view_expr_hints(hints);
+        let config = inferer.infer();
+
+        assert_eq!(
+            config.type_view_exprs.get("Votes"),
+            Some(&"abstractify_cvotes({param})".to_string())
+        );
+    }
+
+    #[test]
     fn test_merge_configs_explicit_overrides_inferred() {
         let mut base = TranspilerConfig::default();
         base.remapping
@@ -2485,6 +2541,8 @@ verus! {
         base.spec_only_functions.push("AlreadyExplicit".to_string());
         base.eq_function_fields
             .insert("current_view".to_string(), "CustomEq".to_string());
+        base.type_view_exprs
+            .insert("Votes".to_string(), "custom_votes({param})".to_string());
 
         let mut inferred = TranspilerConfig::default();
         inferred
@@ -2512,6 +2570,14 @@ verus! {
         inferred
             .eq_function_fields
             .insert("bal_1b".to_string(), "CBalEq".to_string());
+        inferred.type_view_exprs.insert(
+            "Votes".to_string(),
+            "abstractify_cvotes({param})".to_string(),
+        );
+        inferred.type_view_exprs.insert(
+            "RequestBatch".to_string(),
+            "abstractify_crequestbatch({param})".to_string(),
+        );
         inferred
             .spec_only_functions
             .push("WellFormedLConfiguration".to_string());
@@ -2545,6 +2611,14 @@ verus! {
         assert_eq!(
             base.eq_function_fields.get("bal_1b"),
             Some(&"CBalEq".to_string())
+        );
+        assert_eq!(
+            base.type_view_exprs.get("Votes"),
+            Some(&"custom_votes({param})".to_string())
+        );
+        assert_eq!(
+            base.type_view_exprs.get("RequestBatch"),
+            Some(&"abstractify_crequestbatch({param})".to_string())
         );
         assert!(base
             .spec_only_functions

@@ -6582,7 +6582,7 @@ skip_functions = ["LNext"]
 - [x] **Eq function fields**: Auto-derived by scanning implementation modules for `*Eq` helpers with matching operand signatures (e.g., `CBalEq(&CBallot, &CBallot) -> bool`) and mapping spec struct/enum-variant fields whose inferred exec type matches that helper operand type. Ambiguous helper/type matches are skipped; explicit TOML entries still override.
 - [x] **Clone strategy** (Tier 2 extension): Already handled in Tier 1 — `infer_clone_strategy` detects `Set<T>` fields → `external_body`. All 9 non-RSL protocols match.
 - [x] **Struct vec fields**: Detect `Seq<StructType>` fields (non-primitive, non-enum element). Maps to `[CElementType, LElementType]`. (ConfigInferer.infer_struct_vec_fields, 4 tests)
-- [~] **Type view expressions**: Deferred — RSL-only. Requires knowledge of `abstractify_*` function existence.
+- [x] **Type view expressions**: Auto-derived by scanning implementation modules for `abstractify_*` helpers with one referenced exec parameter (e.g., `&CRequestBatch`) and named spec return type (e.g., `RequestBatch`), then inferring `type_view_exprs` as `<helper>({param})` when the helper is unique and type-compatible; ambiguous or mismatched helpers are skipped and explicit TOML entries still override.
 
 #### 20.2.4 Try-and-fallback for `skip_functions`
 

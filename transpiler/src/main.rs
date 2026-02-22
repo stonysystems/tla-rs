@@ -622,6 +622,28 @@ fn extract_c_function_name(line: &str) -> Option<String> {
     }
 }
 
+fn extract_prefixed_function_name(line: &str, prefix: &str) -> Option<String> {
+    let needle = format!("fn {}", prefix);
+    let idx = line.find(&needle)?;
+    let rest = &line[idx + 3..];
+    if !rest.starts_with(prefix) {
+        return None;
+    }
+    let mut name = String::new();
+    for ch in rest.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            name.push(ch);
+        } else {
+            break;
+        }
+    }
+    if name.starts_with(prefix) && name.len() > prefix.len() {
+        Some(name)
+    } else {
+        None
+    }
+}
+
 fn insert_symbol(symbols: &mut HashMap<String, Vec<String>>, name: String, path: String) {
     let entry = symbols.entry(name).or_default();
     if !entry.contains(&path) {
@@ -759,6 +781,13 @@ struct ImplementationMethodSymbol {
 struct EqHelperSymbol {
     function_name: String,
     exec_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TypeViewHelperSymbol {
+    function_name: String,
+    param_exec_type: String,
+    spec_type: String,
 }
 
 fn insert_method_symbol(
@@ -925,6 +954,45 @@ fn parse_eq_helper_exec_type(signature_line: &str) -> Option<String> {
     }
 }
 
+fn parse_return_named_type(signature_line: &str) -> Option<String> {
+    let arrow_idx = signature_line.find("->")?;
+    let mut return_part = signature_line[arrow_idx + 2..].trim();
+    if let Some(block_idx) = return_part.find('{') {
+        return_part = return_part[..block_idx].trim();
+    }
+    if return_part.starts_with('(') {
+        return None;
+    }
+    let token: String = return_part
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+        .collect();
+    if token.is_empty() {
+        return None;
+    }
+    token.rsplit("::").next().map(|s| s.to_string())
+}
+
+fn parse_type_view_helper_symbol(signature_line: &str) -> Option<TypeViewHelperSymbol> {
+    let function_name = extract_prefixed_function_name(signature_line, "abstractify_")?;
+    let params_inner = extract_parenthesized_inner(signature_line)?;
+    let params = split_top_level_csv(&params_inner);
+    if params.len() != 1 {
+        return None;
+    }
+    let (_, raw_ty) = params[0].split_once(':')?;
+    if !raw_ty.trim_start().starts_with('&') {
+        return None;
+    }
+    let param_exec_type = parse_param_exec_type(&params[0])?;
+    let spec_type = parse_return_named_type(signature_line)?;
+    Some(TypeViewHelperSymbol {
+        function_name,
+        param_exec_type,
+        spec_type,
+    })
+}
+
 fn collect_implementation_method_symbols(
     implementation_dir: &Path,
 ) -> HashMap<String, Vec<ImplementationMethodSymbol>> {
@@ -1024,6 +1092,44 @@ fn collect_implementation_eq_helper_symbols(implementation_dir: &Path) -> Vec<Eq
             let symbol = EqHelperSymbol {
                 function_name,
                 exec_type,
+            };
+            if !helpers.contains(&symbol) {
+                helpers.push(symbol);
+            }
+        }
+    }
+
+    helpers
+}
+
+fn collect_implementation_type_view_helper_symbols(
+    implementation_dir: &Path,
+) -> Vec<TypeViewHelperSymbol> {
+    let mut helpers = Vec::new();
+    if !implementation_dir.exists() {
+        return helpers;
+    }
+
+    let Ok(entries) = std::fs::read_dir(implementation_dir) else {
+        return helpers;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+
+        for line in content.lines() {
+            let code = line.split("//").next().unwrap_or("").trim();
+            if code.is_empty() {
+                continue;
+            }
+            let Some(symbol) = parse_type_view_helper_symbol(code) else {
+                continue;
             };
             if !helpers.contains(&symbol) {
                 helpers.push(symbol);
@@ -1526,6 +1632,102 @@ fn infer_eq_function_fields_from_spec_paths(
     infer_eq_function_fields_from_schema(schema, naming, &eq_by_type)
 }
 
+fn infer_expected_exec_type_for_type_view(
+    spec_type: &str,
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> Option<String> {
+    if let Some(exec_type) = infer_exec_type_name_from_named(spec_type, schema, naming) {
+        return Some(exec_type);
+    }
+    if spec_type == "bool" || is_int_like_type_name(spec_type) {
+        return None;
+    }
+    let base = strip_spec_prefix(spec_type, &naming.spec_prefix);
+    if base.is_empty() {
+        return None;
+    }
+    Some(format!("{}{}", naming.exec_prefix, base))
+}
+
+fn infer_type_view_exprs_from_spec_paths(
+    spec_paths: &[&Path],
+    schema: &SpecSchema,
+    naming: &verus_transpiler::NamingConfig,
+) -> HashMap<String, String> {
+    let mut seen_impl_dirs = HashSet::new();
+    let mut type_view_symbols: Vec<TypeViewHelperSymbol> = Vec::new();
+
+    for path in spec_paths {
+        let Some(protocol_dir) = path.parent() else {
+            continue;
+        };
+        let Some(protocol_name) = protocol_dir.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(protocol_root) = protocol_dir.parent() else {
+            continue;
+        };
+        if protocol_root.file_name().and_then(|s| s.to_str()) != Some("protocol") {
+            continue;
+        }
+        let Some(src_root) = protocol_root.parent() else {
+            continue;
+        };
+        let implementation_dir = src_root.join("implementation").join(protocol_name);
+        if !seen_impl_dirs.insert(implementation_dir.clone()) {
+            continue;
+        }
+        type_view_symbols.extend(collect_implementation_type_view_helper_symbols(
+            &implementation_dir,
+        ));
+    }
+
+    if type_view_symbols.is_empty() {
+        return HashMap::new();
+    }
+
+    let known_spec_types: HashSet<&str> = schema
+        .aliases
+        .keys()
+        .chain(schema.structs.keys())
+        .chain(schema.enums.keys())
+        .map(|k| k.as_str())
+        .collect();
+
+    let mut inferred = HashMap::new();
+    let mut ambiguous_types: HashSet<String> = HashSet::new();
+
+    for symbol in type_view_symbols {
+        if !known_spec_types.contains(symbol.spec_type.as_str()) {
+            continue;
+        }
+        let Some(expected_exec_type) =
+            infer_expected_exec_type_for_type_view(&symbol.spec_type, schema, naming)
+        else {
+            continue;
+        };
+        if symbol.param_exec_type != expected_exec_type {
+            continue;
+        }
+
+        let view_expr = format!("{}({{param}})", symbol.function_name);
+        if ambiguous_types.contains(&symbol.spec_type) {
+            continue;
+        }
+        if let Some(existing) = inferred.get(&symbol.spec_type) {
+            if existing != &view_expr {
+                inferred.remove(&symbol.spec_type);
+                ambiguous_types.insert(symbol.spec_type.clone());
+            }
+            continue;
+        }
+        inferred.insert(symbol.spec_type, view_expr);
+    }
+
+    inferred
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -1591,6 +1793,11 @@ fn main() -> Result<()> {
                     &schema,
                     &file_config.naming,
                 );
+                let type_view_expr_hints = infer_type_view_exprs_from_spec_paths(
+                    &spec_paths,
+                    &schema,
+                    &file_config.naming,
+                );
                 let inferer = if let Some(modules) = annotation_modules.as_ref() {
                     ConfigInferer::with_annotations(&schema, &file_config.naming, modules)
                 } else {
@@ -1598,7 +1805,8 @@ fn main() -> Result<()> {
                 }
                 .with_function_path_hints(function_path_hints)
                 .with_method_call_hints(method_call_hints)
-                .with_eq_function_field_hints(eq_function_field_hints);
+                .with_eq_function_field_hints(eq_function_field_hints)
+                .with_type_view_expr_hints(type_view_expr_hints);
                 let inferred = inferer.infer();
                 merge_configs(&mut file_config, &inferred);
                 if cli.verbose {
@@ -2944,10 +3152,16 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             &schema,
                             &file_config.naming,
                         );
+                        let type_view_expr_hints = infer_type_view_exprs_from_spec_paths(
+                            &spec_paths,
+                            &schema,
+                            &file_config.naming,
+                        );
                         let inferer = ConfigInferer::new(&schema, &file_config.naming)
                             .with_function_path_hints(function_path_hints)
                             .with_method_call_hints(method_call_hints)
-                            .with_eq_function_field_hints(eq_function_field_hints);
+                            .with_eq_function_field_hints(eq_function_field_hints)
+                            .with_type_view_expr_hints(type_view_expr_hints);
                         let inferred = inferer.infer();
                         merge_configs(&mut file_config, &inferred);
                         if cli.verbose {
@@ -6491,6 +6705,8 @@ validity_predicate_name = "valid"
                 infer_method_calls_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let eq_function_field_hints =
                 infer_eq_function_fields_from_spec_paths(&spec_paths, &schema, &fc.naming);
+            let type_view_expr_hints =
+                infer_type_view_exprs_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let inferer = if let Some(modules) = annotation_modules.as_ref() {
                 ConfigInferer::with_annotations(&schema, &fc.naming, modules)
             } else {
@@ -6498,7 +6714,8 @@ validity_predicate_name = "valid"
             }
             .with_function_path_hints(function_path_hints)
             .with_method_call_hints(method_call_hints)
-            .with_eq_function_field_hints(eq_function_field_hints);
+            .with_eq_function_field_hints(eq_function_field_hints)
+            .with_type_view_expr_hints(type_view_expr_hints);
             let inferred = inferer.infer();
             merge_configs(&mut fc, &inferred);
         }
@@ -6818,6 +7035,125 @@ verus! {
         assert!(
             !inferred.contains_key("current_view"),
             "ambiguous helper matches for the same type should be skipped"
+        );
+    }
+
+    #[test]
+    fn test_infer_type_view_exprs_from_spec_paths_maps_helpers() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/types.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/types_i.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub type RequestBatch = Seq<int>;
+    pub type ReplyCache = Map<int, int>;
+    pub type Votes = Set<int>;
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    pub fn abstractify_crequestbatch(s:&CRequestBatch) -> RequestBatch {
+        RequestBatch::empty()
+    }
+
+    pub fn abstractify_creplycache(m:&CReplyCache) -> ReplyCache {
+        ReplyCache::empty()
+    }
+
+    pub fn abstractify_cvotes(v:&CVotes) -> Votes {
+        Votes::empty()
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let spec_paths = vec![spec_path.as_path()];
+        let inferred = infer_type_view_exprs_from_spec_paths(&spec_paths, &schema, &naming);
+
+        assert_eq!(
+            inferred.get("RequestBatch"),
+            Some(&"abstractify_crequestbatch({param})".to_string())
+        );
+        assert_eq!(
+            inferred.get("ReplyCache"),
+            Some(&"abstractify_creplycache({param})".to_string())
+        );
+        assert_eq!(
+            inferred.get("Votes"),
+            Some(&"abstractify_cvotes({param})".to_string())
+        );
+    }
+
+    #[test]
+    fn test_infer_type_view_exprs_from_spec_paths_skips_ambiguous_or_mismatched_helpers() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("src/protocol/RSL/types.rs");
+        let implementation_path = dir.path().join("src/implementation/RSL/types_i.rs");
+
+        std::fs::create_dir_all(spec_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(implementation_path.parent().unwrap()).unwrap();
+
+        std::fs::write(
+            &spec_path,
+            r#"
+verus! {
+    pub type Votes = Set<int>;
+    pub type Foo = Set<int>;
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            &implementation_path,
+            r#"
+verus! {
+    pub fn abstractify_cvotes(v:CVotes) -> Votes {
+        Votes::empty()
+    }
+
+    pub fn abstractify_cfoo_wrong(v:&CBar) -> Foo {
+        Foo::empty()
+    }
+
+    pub fn abstractify_cfoo_a(v:&CFoo) -> Foo {
+        Foo::empty()
+    }
+
+    pub fn abstractify_cfoo_b(v:&CFoo) -> Foo {
+        Foo::empty()
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let schema = analyze_spec_file(&spec_path).unwrap();
+        let naming = verus_transpiler::NamingConfig::default();
+        let spec_paths = vec![spec_path.as_path()];
+        let inferred = infer_type_view_exprs_from_spec_paths(&spec_paths, &schema, &naming);
+
+        assert!(
+            !inferred.contains_key("Votes"),
+            "by-value helpers should not be auto-inferred as view expressions"
+        );
+        assert!(
+            !inferred.contains_key("Foo"),
+            "ambiguous or mismatched helper matches should be skipped"
         );
     }
 
