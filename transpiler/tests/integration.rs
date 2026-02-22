@@ -7521,41 +7521,59 @@ fn test_phase22_wrapper_generation_guide_has_workflow_and_selection_guidance() {
     );
 }
 
-/// Phase 19.4: Verify acceptor_gen.rs is fully standalone with no clone-delegate patterns
+/// Phase 21.2.4b: acceptor action functions use proof-fallback stubs (manual_code removed).
 #[test]
 fn test_acceptor_gen_no_delegate_patterns() {
     let source = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
         .expect("Failed to read acceptor_gen.rs");
 
-    // No clone-delegate pattern: "let mut acc = s.clone_up_to_view()"
-    // followed by acc.CAcceptorProcess1a(pkt)
+    // No clone-delegate pattern should remain.
     assert!(
         !source.contains("acc.CAcceptorProcess1a"),
         "acceptor_gen.rs should not delegate to CAcceptor::CAcceptorProcess1a method"
     );
 
-    // No outbound_packets_to_vec calls in function bodies
+    // No outbound_packets_to_vec calls in function bodies.
     let body_start = source.find("verus! {").unwrap_or(0);
     let body = &source[body_start..];
     let call_count = body.matches("outbound_packets_to_vec(").count();
     assert!(
         call_count == 0,
-        "acceptor_gen.rs should not call outbound_packets_to_vec (found {} calls) — all 7 functions should be standalone",
+        "acceptor_gen.rs should not call outbound_packets_to_vec (found {} calls)",
         call_count
     );
 
-    // Functions construct CAcceptor structs directly (5 explicit + clone_up_to_view for no-op branches)
-    let struct_constructions = source.matches("CAcceptor {").count();
+    // Action functions are now explicit skip-function stubs via --proof-fallback.
+    let skipped_stub_count = source
+        .matches("// TRANSLATE-TODO: explicitly skipped (skip_functions)")
+        .count();
     assert!(
-        struct_constructions >= 5,
-        "acceptor_gen.rs should have >= 5 CAcceptor {{}} struct constructions, found {}",
-        struct_constructions
+        skipped_stub_count == 5,
+        "acceptor_gen.rs should have exactly 5 skip-function stubs for acceptor actions, found {}",
+        skipped_stub_count
     );
 
-    // CAcceptorProcess1a should build packets directly (vec![packet] pattern)
+    // Ensure each action API is emitted as an external_body stub.
+    for stub_signature in [
+        "#[verifier(external_body)]\npub exec fn CAcceptorInit",
+        "#[verifier(external_body)]\npub exec fn CAcceptorProcess1a",
+        "#[verifier(external_body)]\npub exec fn CAcceptorProcess2a",
+        "#[verifier(external_body)]\npub exec fn CAcceptorProcessHeartbeat",
+        "#[verifier(external_body)]\npub exec fn CAcceptorTruncateLog",
+    ] {
+        assert!(
+            source.contains(stub_signature),
+            "acceptor_gen.rs should emit external_body stub `{}`",
+            stub_signature
+        );
+    }
+
+    // Stub bodies should remain trusted placeholders.
+    let unimplemented_count = source.matches("unimplemented!()").count();
     assert!(
-        source.contains("vec![packet]") || source.contains("Vec::new()"),
-        "CAcceptorProcess1a should construct packets directly"
+        unimplemented_count >= 5,
+        "acceptor_gen.rs should contain unimplemented!() in proof-fallback stubs (found {})",
+        unimplemented_count
     );
 }
 

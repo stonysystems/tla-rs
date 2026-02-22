@@ -7,7 +7,7 @@ spec_only_functions = [
     "BalLt",
 ]
 
-# Core action functions still injected from manual_code (proofs too complex for auto-generation)
+# Skip helper+action specs and rely on --proof-fallback for action stubs.
 skip_functions = [
     "RemoveVotesBeforeLogTruncationPoint",
     "LAddVoteAndRemoveOldOnes",
@@ -16,6 +16,13 @@ skip_functions = [
     "LAcceptorProcess2a",
     "LAcceptorProcessHeartbeat",
     "LAcceptorTruncateLog",
+]
+
+# Helper functions are provided by implementation module and should not emit stubs.
+no_stub_functions = [
+    "IsLogTruncationPointValid",
+    "RemoveVotesBeforeLogTruncationPoint",
+    "LAddVoteAndRemoveOldOnes",
 ]
 
 # Primitive types that map to *param as int in ensures clauses
@@ -115,8 +122,6 @@ generate_loops_for_verification = true
 generate_proofs = true
 # CAcceptor comes from types_gen.rs (includes optimization field min_vote_opn)
 generate_inline_types = false
-# Path to manually-written complex functions (relative to this TOML file)
-manual_code = "acceptor_manual.rs"
 # Custom imports for acceptor module
 # Note: Shared infrastructure types needed for CBallot, CMessage, etc.
 custom_imports = [

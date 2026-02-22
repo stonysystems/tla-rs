@@ -6806,8 +6806,12 @@ For each RSL module, remove `manual_code` and `skip_functions`, let the transpil
 - [x] **21.2.4a** Re-home pure vote-map external-body helpers out of `manual_code` injection (`<500` LOC leaf).
   - Moved `CRemoveVotesBeforeLogTruncationPoint` and `CAddVoteAndRemoveOldOnes` into `src/implementation/RSL/acceptor_helpers.rs` and imported them from `acceptor_gen`.
   - `src/protocol/RSL/acceptor_manual.rs` now contains only action/proof functions; helper ownership is explicit in implementation modules.
-- [ ] **21.2.4b** Remove remaining acceptor `manual_code` action functions via `--proof-fallback` stubs + focused config updates, then regenerate `acceptor_gen.rs`.
-- [ ] **21.2.4c** Re-run full verification/test gates and refresh proof-gap counts for acceptor after 21.2.4b.
+- [x] **21.2.4b** Remove remaining acceptor `manual_code` action functions via `--proof-fallback` stubs + focused config updates, then regenerate `acceptor_gen.rs`.
+  - Removed `output.manual_code` from `acceptor_transpile.toml`, kept action functions in `skip_functions`, and used `no_stub_functions` for helper-owned symbols (`IsLogTruncationPointValid`, `RemoveVotesBeforeLogTruncationPoint`, `LAddVoteAndRemoveOldOnes`) to avoid duplicate/mismatched helper stubs.
+  - Regenerated `src/generated/RSL/acceptor_gen.rs` with `--auto-skip --proof-fallback`: acceptor now has exactly 5 action stubs (`LAcceptorInit`, `LAcceptorProcess1a`, `LAcceptorProcess2a`, `LAcceptorProcessHeartbeat`, `LAcceptorTruncateLog`) and 0 translation-gap stubs.
+- [x] **21.2.4c** Re-run full verification/test gates and refresh proof-gap counts for acceptor after 21.2.4b.
+  - `cd transpiler && cargo test --all-features` ✅
+  - `scons --verus-path=/home/shuai/tools/verus-x86-linux/verus liblib.so` ✅ (`563 verified, 0 errors`)
 
 #### 21.2.5 RSL election: manual_code removed — 8 auto-transpiled + 4 stubs
 
