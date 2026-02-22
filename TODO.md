@@ -6991,7 +6991,13 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
     - [x] **21.11.2.2**: Move packet-uniqueness helper (`Packet1bHasUniqueSrc`) out of `manual_code` without expanding trust boundary.
     - [x] **21.11.2.3**: Migrate `LReplicaNextProcess1b` off `manual_code` (transpiler support + config updates) while preserving current proof obligations.
     - [x] **21.11.2.4**: Audit resulting `replica_manual.rs` to ensure only IO trust-boundary wrappers/helpers remain.
-  - [ ] **21.11.3**: Executor final-mile leaves (`<500` LOC each): incrementally teach transpiler proof generation for cache/reply-map patterns so `executor_manual.rs` can be retired without replacing proven logic with weaker stubs.
+  - [~] **21.11.3**: Executor final-mile decomposition (`<500` LOC per leaf) to retire `executor_manual.rs` without replacing proven logic with weaker stubs.
+    - [x] **21.11.3.1**: Audit and regression-lock current `executor_manual.rs` footprint (function set + trust boundaries) and document migration order.
+    - [ ] **21.11.3.2**: Re-home pure cache external-body helpers (`CClientsInReplies`, `CUpdateNewCache`) out of manual injection and into shared implementation helpers.
+    - [ ] **21.11.3.3**: Migrate recursive reply-packet helper (`CGetPacketsFromReplies`) off manual injection while preserving decreases/spec correspondence.
+    - [ ] **21.11.3.4**: Migrate packet-processing actions (`CExecutorProcessRequest`, `CExecutorProcessStartingPhase2`, `CExecutorProcessAppStateRequest`) off manual injection with proof-fallback only where unavoidable.
+    - [ ] **21.11.3.5**: Migrate state-only actions (`CExecutorInit`, `CExecutorGetDecision`, `CExecutorProcessAppStateSupply`) off manual injection and shrink `executor_manual.rs` to `CExecutorExecute` + irreducible lemmas only.
+    - [ ] **21.11.3.6**: Resolve `CExecutorExecute` end-state (auto-proof parity or explicit trusted fallback policy), remove `output.manual_code` from `executor_transpile.toml`, regenerate, and run final trust-boundary audit.
 
 ## Phase 22: Native Model Checking for TLA-rs Spec (Source-First)
 

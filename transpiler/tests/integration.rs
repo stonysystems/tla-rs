@@ -2274,6 +2274,59 @@ fn test_replica_manual_code_contains_only_io_trust_boundary_wrappers() {
     );
 }
 
+#[test]
+fn test_executor_manual_code_footprint_audit_guard() {
+    let manual_source = std::fs::read_to_string("../src/protocol/RSL/executor_manual.rs")
+        .expect("Failed to read executor_manual.rs");
+
+    let actual_fns: std::collections::BTreeSet<String> = manual_source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("pub exec fn "))
+        .map(|sig| {
+            sig.split('(')
+                .next()
+                .expect("function signature should include '('")
+                .trim()
+                .to_string()
+        })
+        .collect();
+
+    let expected_fns: std::collections::BTreeSet<String> = [
+        "CExecutorInit",
+        "CExecutorGetDecision",
+        "CClientsInReplies",
+        "CUpdateNewCache",
+        "CGetPacketsFromReplies",
+        "CExecutorExecute",
+        "CExecutorProcessAppStateSupply",
+        "CExecutorProcessAppStateRequest",
+        "CExecutorProcessStartingPhase2",
+        "CExecutorProcessRequest",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    assert_eq!(
+        actual_fns, expected_fns,
+        "executor_manual.rs function set drifted; update migration audit/plan intentionally"
+    );
+
+    let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
+    assert_eq!(
+        external_body_count, 6,
+        "executor_manual.rs external_body boundary count changed unexpectedly"
+    );
+    assert!(
+        manual_source.contains("#[verifier(external_body)]\npub exec fn CClientsInReplies"),
+        "executor_manual.rs should still keep CClientsInReplies as external_body boundary"
+    );
+    assert!(
+        manual_source.contains("#[verifier(external_body)]\npub exec fn CUpdateNewCache"),
+        "executor_manual.rs should still keep CUpdateNewCache as external_body boundary"
+    );
+}
+
 /// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
 ///
 /// This ensures:
