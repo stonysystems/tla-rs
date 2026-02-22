@@ -1,10 +1,9 @@
-use crate::generated::RSL::executor_gen::CGetPacketsFromReplies;
 use crate::implementation::RSL::appinterface::*;
 use crate::implementation::RSL::cbroadcast::OutboundPackets;
 use crate::implementation::RSL::cbroadcast::OutboundPackets::PacketSequence;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::gen_helpers::CUpdateNewCache;
+use crate::implementation::RSL::gen_helpers::{CGetPacketsFromReplies, CUpdateNewCache};
 use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::implementation::RSL::ElectionImpl::COutstandingOperation;

@@ -2294,7 +2294,6 @@ fn test_executor_manual_code_footprint_audit_guard() {
     let expected_fns: std::collections::BTreeSet<String> = [
         "CExecutorInit",
         "CExecutorGetDecision",
-        "CGetPacketsFromReplies",
         "CExecutorExecute",
         "CExecutorProcessAppStateSupply",
         "CExecutorProcessAppStateRequest",
@@ -2330,30 +2329,38 @@ fn test_executor_cache_helpers_rehomed_out_of_manual_injection() {
     let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
     assert!(
-        helper_source.contains("#[verifier(external_body)]\npub exec fn CClientsInReplies"),
-        "gen_helpers.rs should define CClientsInReplies as external_body helper"
-    );
-    assert!(
         helper_source.contains("#[verifier(external_body)]\npub exec fn CUpdateNewCache"),
         "gen_helpers.rs should define CUpdateNewCache as external_body helper"
+    );
+    assert!(
+        helper_source.contains("pub exec fn CGetPacketsFromReplies"),
+        "gen_helpers.rs should define CGetPacketsFromReplies helper"
     );
 
     let transpile_config = std::fs::read_to_string("../src/protocol/RSL/executor_transpile.toml")
         .expect("Failed to read executor_transpile.toml");
     assert!(
+        transpile_config.contains("CGetPacketsFromReplies"),
+        "executor_transpile.toml should import re-homed packet helper from gen_helpers"
+    );
+    assert!(
+        helper_source.contains("#[verifier(external_body)]\npub exec fn CClientsInReplies"),
+        "gen_helpers.rs should define CClientsInReplies as external_body helper"
+    );
+    assert!(
         transpile_config.contains(
-            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache};",
+            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};",
         ),
-        "executor_transpile.toml should import re-homed cache helpers from gen_helpers"
+        "executor_transpile.toml should import re-homed helpers from gen_helpers"
     );
 
     let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
         .expect("Failed to read executor_gen.rs");
     assert!(
         generated_source.contains(
-            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache};"
+            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};"
         ),
-        "executor_gen.rs should import cache helpers from gen_helpers"
+        "executor_gen.rs should import re-homed helpers from gen_helpers"
     );
     assert!(
         !generated_source.contains("pub exec fn CClientsInReplies"),
@@ -2362,6 +2369,10 @@ fn test_executor_cache_helpers_rehomed_out_of_manual_injection() {
     assert!(
         !generated_source.contains("pub exec fn CUpdateNewCache"),
         "executor_gen.rs should not define CUpdateNewCache locally after helper re-home"
+    );
+    assert!(
+        !generated_source.contains("pub exec fn CGetPacketsFromReplies"),
+        "executor_gen.rs should not define CGetPacketsFromReplies locally after helper re-home"
     );
 }
 
@@ -2540,6 +2551,7 @@ fn test_gen_helpers_shared_module() {
         "pub fn clone_io_packet",
         "pub exec fn CClientsInReplies",
         "pub exec fn CUpdateNewCache",
+        "pub exec fn CGetPacketsFromReplies",
         "pub fn outbound_packets_to_vec",
     ];
     for helper in expected_helpers {
@@ -8446,8 +8458,7 @@ fn test_impl_files_stripped_of_dead_code() {
     );
 }
 
-/// Phase 19.3.1: Verify executor_gen.rs has no delegate patterns.
-/// All 10 executor functions should be standalone — no CExecutor::method() calls.
+/// Verify executor_gen.rs has no delegate patterns and imports re-homed helpers.
 #[test]
 fn test_executor_gen_no_delegate_patterns() {
     let source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
@@ -8471,16 +8482,23 @@ fn test_executor_gen_no_delegate_patterns() {
         "executor_gen.rs should not delegate to CExecutor::CUpdateNewCache"
     );
 
+    assert!(
+        source.contains(
+            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};"
+        ),
+        "executor_gen.rs should import re-homed helpers from gen_helpers"
+    );
+
     // No outbound_packets_to_vec calls
     assert!(
         !source.contains("outbound_packets_to_vec"),
         "executor_gen.rs should not call outbound_packets_to_vec"
     );
 
-    // CGetPacketsFromReplies should be standalone with decreases clause (recursive)
+    // CGetPacketsFromReplies should no longer be defined locally.
     assert!(
-        source.contains("decreases requests.len()"),
-        "CGetPacketsFromReplies should have decreases clause (standalone recursive)"
+        !source.contains("pub exec fn CGetPacketsFromReplies"),
+        "executor_gen.rs should not define CGetPacketsFromReplies locally after helper re-home"
     );
 
     // CExecutor struct constructions (standalone functions construct directly; some branches use clone_up_to_view)

@@ -8,12 +8,15 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::prelude::*;
 
+use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::abstractify_creplycache;
-use crate::protocol::RSL::executor::{LClientsInReplies, UpdateNewCache};
+use crate::protocol::RSL::environment::RslPacket;
+use crate::protocol::RSL::executor::{GetPacketsFromReplies, LClientsInReplies, UpdateNewCache};
+use crate::protocol::RSL::message::RslMessage;
 
 verus! {
 
@@ -119,6 +122,91 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
         updated_cache.insert(k.clone(), v.clone());
     }
     updated_cache
+}
+
+/// Build reply packets from paired requests/replies.
+/// Kept as a standalone recursive helper to preserve exact decreases/spec relation.
+pub exec fn CGetPacketsFromReplies(
+    me: &EndPoint,
+    requests: &Vec<CRequest>,
+    replies: &Vec<CReply>,
+) -> (cr: Vec<CPacket>)
+    requires
+        me.valid_public_key(),
+        crequestbatch_is_valid(requests),
+        forall |i: int| 0 <= i < requests.len() ==> requests[i].valid(),
+        forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
+        requests.len() == replies.len(),
+    ensures
+        ({
+            let lr = GetPacketsFromReplies(
+                me@,
+                requests@.map(|i, x: CRequest| x@),
+                replies@.map(|i, x: CReply| x@),
+            );
+            &&& forall |i: int| 0 <= i < cr@.len() ==> cr@[i].valid()
+            &&& cr@.map(|i, x: CPacket| x@) == lr
+        }),
+    decreases requests.len(),
+{
+    if requests.len() == 0 {
+        let res = Vec::new();
+        assert(res@.map(|i, p: CPacket| p@) == Seq::<RslPacket>::empty());
+        res
+    } else {
+        let new_req = truncate_vec(&requests, 1, requests.len());
+        assert(
+            new_req@.map(|i, r: CRequest| r@)
+                == requests@.map(|i, r: CRequest| r@).drop_first(),
+        );
+        let new_rep = truncate_vec(&replies, 1, replies.len());
+        assert(
+            new_rep@.map(|i, r: CReply| r@) == replies@.map(|i, r: CReply| r@).drop_first(),
+        );
+        let rest = CGetPacketsFromReplies(&me, &new_req, &new_rep);
+        assert(
+            rest@.map(|i, p: CPacket| p@)
+                == GetPacketsFromReplies(
+                    me@,
+                    requests@.map(|i, r: CRequest| r@).drop_first(),
+                    replies@.map(|i, r: CReply| r@).drop_first(),
+                ),
+        );
+        let pkt = CPacket {
+            dst: requests[0].client.clone_up_to_view(),
+            src: me.clone_up_to_view(),
+            msg: CMessage::CMessageReply {
+                seqno_reply: requests[0].seqno,
+                reply: replies[0].reply.clone_up_to_view(),
+            },
+        };
+        let ghost spkt = LPacket {
+            dst: requests[0].client@,
+            src: me@,
+            msg: RslMessage::RslMessageReply {
+                seqno_reply: requests[0].seqno as int,
+                reply: replies[0].reply@,
+            },
+        };
+        assert(pkt@ == spkt);
+
+        let mut first: Vec<CPacket> = Vec::new();
+        first.push(pkt);
+        assert(first@.map(|i, p: CPacket| p@) == seq![spkt]);
+
+        let res = concat_vecs(&first, &rest);
+        assert(
+            res@.map(|i, p: CPacket| p@)
+                == seq![spkt]
+                    + GetPacketsFromReplies(
+                        me@,
+                        requests@.map(|i, r: CRequest| r@).drop_first(),
+                        replies@.map(|i, r: CReply| r@).drop_first(),
+                    ),
+        );
+
+        res
+    }
 }
 
 /// Convert OutboundPackets (enum with Broadcast/PacketSequence/OutboundPacket variants)
