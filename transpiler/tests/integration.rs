@@ -2531,6 +2531,39 @@ fn test_manual_impl_modules_have_deprecation_notices() {
 }
 
 #[test]
+fn test_rsl_mod_rs_keeps_required_runtime_module_exports_documented() {
+    let mod_rs =
+        std::fs::read_to_string("../src/implementation/RSL/mod.rs").expect("Failed to read mod.rs");
+
+    for required in [
+        "pub mod ExecutorImpl;",
+        "pub mod ProposerImpl;",
+        "pub mod ReplicaImpl;",
+        "pub mod cmd_line_parser;",
+        "pub mod netrsl_i;",
+        "pub mod replicaimpl_main;",
+    ] {
+        assert!(
+            mod_rs.contains(required),
+            "mod.rs should keep required runtime export `{}`",
+            required
+        );
+    }
+
+    for rationale in [
+        "Legacy runtime entrypoint parser glue still used by `host_i`/`host_s`.",
+        "Legacy runtime network glue used by host/replica orchestration modules.",
+        "Legacy runtime orchestration modules used by `host_i`/`host_s` dispatch paths.",
+    ] {
+        assert!(
+            mod_rs.contains(rationale),
+            "mod.rs should document why legacy runtime exports remain: `{}`",
+            rationale
+        );
+    }
+}
+
+#[test]
 fn test_replicaimpl_class_no_stale_imports() {
     let source = std::fs::read_to_string("../src/implementation/RSL/replicaimpl_class.rs")
         .expect("Failed to read replicaimpl_class.rs");
