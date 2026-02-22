@@ -2183,11 +2183,16 @@ Collection proof patterns (HashMap filter, HashSet iteration) were addressed in 
 **12.2.8: Reduce RSL `assume_postconditions` footprint** — DEFERRED, decomposed into <500 LOC leaves
 The remaining proof-generation work is larger than a single leaf. Keep each leaf scoped so it can be landed/tested independently.
 
-- [x] **12.2.8a** Add an integration drift guard that freezes current `assume(false)` footprint in generated RSL modules (`election_gen.rs`, `proposer_gen.rs`, `replica_gen.rs`) and fails on unexpected non-`assume(false)` trust sites.
+- [x] **12.2.8a** Add an integration drift guard that freezes current `assume(false)` footprint in generated RSL modules (`election_gen.rs`, `executor_gen.rs`, `proposer_gen.rs`, `replica_gen.rs`) and fails on unexpected non-`assume(false)` trust sites.
   - Implemented: `transpiler/tests/integration.rs::test_rsl_generated_assume_false_footprint_drift_guard`
-  - Current frozen baseline: election=8, proposer=9, replica=21 (`assume(false)` only)
-- [ ] **12.2.8b** Add a machine-readable proof-gap/assume report output (module + function + line) for generated RSL files to support planned reduction work.
-- [ ] **12.2.8c** Execute first reduction leaf on one module (`election_gen.rs`): remove at least one `assume(false)` by replacing it with transpiler-emitted proof/fallback structure that still verifies.
+  - Current frozen baseline: election=7, executor=6, proposer=9, replica=21 (`assume(false)` only; election reduced in 12.2.8c)
+- [x] **12.2.8b** Add a machine-readable proof-gap/assume report output (module + function + line) for generated RSL files to support planned reduction work.
+  - Added CLI command: `verus-transpile report-assumes --input-dir src/generated/RSL [--output report.json]`
+  - JSON report includes per-site fields: `module`, `function`, `line`, `text`, `assume_false`, plus aggregate summary counts.
+- [x] **12.2.8c** Execute first reduction leaf on one module (`election_gen.rs`): remove at least one `assume(false)` by replacing it with transpiler-emitted proof/fallback structure that still verifies.
+  - Implemented targeted proof-or-fallback in `translator`: when `assume_postconditions=true`, `ComputeSuccessorView` now emits `let result = ...; proof { assert(result@ == ComputeSuccessorView(...)); }` instead of leading `assume(false)`.
+  - Added targeted overflow-safety precondition `b.seqno < c.params.max_integer_val` so the generated `b.seqno + 1` step is Verus-safe without reintroducing `assume(false)`.
+  - Regenerated `src/generated/RSL/election_gen.rs`: `assume(false)` footprint reduced from 8 -> 7.
 
 #### Phase 12.3: Regenerate Simple Protocols (TwoPhase, Paxos, LeaderElection)
 
@@ -6427,11 +6432,18 @@ Each `CReplicaNextProcess*` method in ReplicaImpl.rs:
 - [x] **19.7.2**: Add integration tests for dead code stripping (2 tests: content + size assertions)
 - [x] **19.7.3**: Verify: 586 verified, 0 errors (count dropped from 627 due to ~41 dead verified functions removed)
 - [~] **19.7.4** (partial): Full removal of impl files not possible — structural necessities remain:
-  - `acceptorimpl.rs`: CIsLogTruncationPointValid helpers (called from acceptor_gen.rs)
+  - `acceptorimpl.rs`: `CAcceptor` type ownership (re-exported by `types_gen.rs`); `CIsLogTruncationPointValid` is no longer imported by generated `replica_gen.rs` (moved off generated dependency in 19.7.4a)
   - `ExecutorImpl.rs`: CExecutorExecute only (~76 LOC, called from ReplicaImpl.rs:732)
   - `ElectionImpl.rs`: Clone impl + CRequestHeader + clone_up_to_view + CBoundRequestSequence + helpers
   - `ProposerImpl.rs`: Clone impl + 5 static methods (CSetOfMessage1bAboutBallot etc.)
   - `ReplicaImpl.rs` + `replicaimpl_class.rs`: Still in use for IO dispatch layer
+- [x] **19.7.4a**: Remove stale generated dependency on `acceptorimpl::CIsLogTruncationPointValid`.
+  - Deleted the replica transpiler custom import for `acceptorimpl::CIsLogTruncationPointValid` and regenerated `src/generated/RSL/replica_gen.rs`.
+  - Added a regression guard in transpiler integration tests to ensure `replica_gen.rs` does not reintroduce this legacy import.
+- [x] **19.7.4b**: Add generated-import boundary guards so RSL generated modules do not directly import legacy impl modules.
+  - Added dedicated transpiler regression test (`transpiler/tests/rsl_legacy_import_guard.rs`) that enforces: all generated `*_gen.rs` files except `types_gen.rs` must not import `acceptorimpl`/`ExecutorImpl`/`ElectionImpl`/`ProposerImpl`/`ReplicaImpl`.
+  - Guard also asserts `types_gen.rs` remains the only generated ownership bridge for legacy type definitions.
+- [ ] **19.7.4c**: Evaluate re-homing `CIsLogTruncationPointValid` implementation from `acceptorimpl.rs` into shared helpers while preserving `CAcceptor` type ownership in `types_gen.rs` and keeping Verus proofs stable.
 - [x] **19.7.5**: Removed stale `ExecutorImpl` coupling for `COutstandingOperation`; `CExecutor` remains imported from `ExecutorImpl`, while `COutstandingOperation` now imports from its owner `ElectionImpl`.
 - [x] **19.7.6**: `src/implementation/RSL/mod.rs` still references legacy impl modules; keep only required exports and document ownership.
   - [x] **19.7.6a**: Add explicit rationale comments for required legacy runtime exports (`cmd_line_parser`, `netrsl_i`, `replicaimpl_*`) and guard with regression test coverage.
