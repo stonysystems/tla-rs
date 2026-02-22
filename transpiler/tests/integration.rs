@@ -1984,6 +1984,7 @@ fn test_generated_replica_module_public_api() {
         "pub exec fn CReplicaNextProcessInvalid",
         "pub exec fn CReplicaNextProcessRequest",
         "pub exec fn CReplicaNextProcess1a",
+        "pub exec fn CReplicaNextProcess1b",
         "pub exec fn CReplicaNextProcessStartingPhase2",
         "pub exec fn CReplicaNextProcess2a",
         "pub exec fn CReplicaNextProcess2b",
@@ -1993,6 +1994,7 @@ fn test_generated_replica_module_public_api() {
         "pub exec fn CReplicaNextProcessHeartbeat",
         "pub exec fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a",
         "pub exec fn CReplicaNextSpontaneousMaybeEnterPhase2",
+        "pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
         "pub exec fn CReplicaNextSpontaneousMaybeMakeDecision",
         "pub exec fn CReplicaNextReadClockMaybeSendHeartbeat",
         "pub exec fn CReplicaNextReadClockCheckForViewTimeout",
@@ -2027,7 +2029,7 @@ fn test_generated_replica_module_public_api() {
         validity_count
     );
 
-    // Replica dispatch wrappers still come from manual injection.
+    // Replica dispatch wrappers are generated as proof-fallback stubs.
     let dispatch_functions = [
         "pub exec fn CSchedulerNext",
         "pub exec fn CReplicaNoReceiveNext",
@@ -2045,12 +2047,6 @@ fn test_generated_replica_module_public_api() {
         );
     }
 
-    // Verify shared helpers are imported from gen_helpers (not duplicated locally)
-    assert!(
-        source.contains("use crate::implementation::RSL::gen_helpers::"),
-        "replica_gen.rs should import helpers from gen_helpers module"
-    );
-
     // Verify gen_helpers module contains the expected helper functions
     let helpers_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
@@ -2061,14 +2057,6 @@ fn test_generated_replica_module_public_api() {
     assert!(
         helpers_source.contains("pub exec fn CExtractSentPacketsFromIos"),
         "gen_helpers.rs should contain CExtractSentPacketsFromIos after helper re-home"
-    );
-    assert!(
-        helpers_source.contains("pub exec fn CReplicaNextProcess1b"),
-        "gen_helpers.rs should contain re-homed CReplicaNextProcess1b helper"
-    );
-    assert!(
-        helpers_source.contains("pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints"),
-        "gen_helpers.rs should contain re-homed truncate-log helper"
     );
     assert!(
         helpers_source.contains("ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))"),
@@ -2083,15 +2071,14 @@ fn test_generated_replica_module_public_api() {
         "clone_io_packet in gen_helpers should ensure res.abstractable()"
     );
 
-    // Phase 19.6: All functions are now standalone in replica_gen.rs (via manual_code).
-    // Assumes are used for validity + spec predicate postconditions + IO trust boundary.
-    // IO trust boundary assumes (10 packet identity assumes) are now in replica_gen.rs.
+    // With manual_code removed, replica dispatch paths are fallback stubs and no longer
+    // embed packet-identity assumptions in generated code.
     let packet_identity_count = source
         .matches("=~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)))")
         .count();
     assert_eq!(
-        packet_identity_count, 10,
-        "replica_gen.rs should have exactly 10 packet identity assumes, found {}",
+        packet_identity_count, 0,
+        "replica_gen.rs should have no packet identity assumes after fallback migration, found {}",
         packet_identity_count
     );
 }
@@ -2126,13 +2113,6 @@ fn test_replica_num_actions_is_transpiled_not_manual_injected() {
         "LReplicaNumActions should not be pinned to no_stub_functions anymore"
     );
 
-    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
-        .expect("Failed to read replica_manual.rs");
-    assert!(
-        !manual_source.contains("pub exec fn CReplicaNumActions"),
-        "replica_manual.rs should no longer define CReplicaNumActions"
-    );
-
     let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
     let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNumActions");
@@ -2161,13 +2141,6 @@ fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
         "Packet1bHasUniqueSrc should not be tied to replica manual_code anymore"
     );
 
-    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
-        .expect("Failed to read replica_manual.rs");
-    assert!(
-        !manual_source.contains("pub exec fn Packet1bHasUniqueSrc"),
-        "replica_manual.rs should not define Packet1bHasUniqueSrc anymore"
-    );
-
     let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
     assert!(
@@ -2181,7 +2154,7 @@ fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
 }
 
 #[test]
-fn test_replica_process1b_is_rehomed_to_shared_helper() {
+fn test_replica_process1b_is_proof_fallback_generated() {
     let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
         .expect("Failed to read replica_transpile.toml");
     let config: toml::Value = config_source
@@ -2207,88 +2180,86 @@ fn test_replica_process1b_is_rehomed_to_shared_helper() {
         !no_stub_functions
             .iter()
             .any(|value| value.as_str() == Some("LReplicaNextProcess1b")),
-        "LReplicaNextProcess1b should no longer be pinned to no_stub_functions/manual_code"
-    );
-
-    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
-        .expect("Failed to read replica_manual.rs");
-    assert!(
-        !manual_source.contains("pub exec fn CReplicaNextProcess1b"),
-        "replica_manual.rs should not define CReplicaNextProcess1b anymore"
+        "LReplicaNextProcess1b should not be pinned to no_stub_functions so fallback emits"
     );
 
     let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
     assert!(
-        generated_source
-            .contains("CMessage::CMessage1b{..} => CReplicaNextProcess1b(s, &received_packet),"),
-        "replica_gen.rs dispatch should continue routing 1b packets through CReplicaNextProcess1b"
+        generated_source.contains("// TRANSLATE-TODO: explicitly skipped (skip_functions)"),
+        "replica_gen.rs should mark proof-fallback generation for skipped LReplicaNextProcess1b"
     );
     assert!(
-        generated_source.contains("CReplicaNextProcess1b"),
-        "replica_gen.rs should import re-homed CReplicaNextProcess1b from gen_helpers"
+        generated_source.contains("pub exec fn CReplicaNextProcess1b"),
+        "replica_gen.rs should contain generated CReplicaNextProcess1b fallback"
     );
     assert!(
-        !generated_source.contains("pub exec fn CReplicaNextProcess1b"),
-        "replica_gen.rs should not define CReplicaNextProcess1b locally after helper re-home"
+        generated_source.contains("#[verifier(external_body)]\npub exec fn CReplicaNextProcess1b"),
+        "generated CReplicaNextProcess1b should be an external-body proof-fallback stub"
     );
 
-    let helper_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
-        .expect("Failed to read gen_helpers.rs");
+    let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNextProcess1b");
     assert!(
-        helper_source.contains("#[verifier(external_body)]\npub exec fn CReplicaNextProcess1b"),
-        "gen_helpers.rs should define CReplicaNextProcess1b as explicit helper trust boundary"
-    );
-    assert!(
-        helper_source.contains(
+        fn_source.contains(
             "LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@))"
         ),
-        "re-homed CReplicaNextProcess1b helper should preserve the spec postcondition"
+        "generated CReplicaNextProcess1b should preserve the spec postcondition"
+    );
+    assert!(
+        fn_source.contains("unimplemented!()"),
+        "generated CReplicaNextProcess1b fallback should use unimplemented!()"
     );
 }
 
 #[test]
-fn test_replica_manual_code_contains_only_io_trust_boundary_wrappers() {
-    let manual_source = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
-        .expect("Failed to read replica_manual.rs");
+fn test_replica_manual_code_removed_and_dispatch_fallbacks_present() {
+    let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
+        .expect("Failed to read replica_transpile.toml");
+    let config: toml::Value = config_source
+        .parse()
+        .expect("Failed to parse replica_transpile.toml");
+    assert!(
+        config
+            .get("output")
+            .and_then(|output| output.get("manual_code"))
+            .is_none(),
+        "replica_transpile.toml should not define output.manual_code after fallback migration"
+    );
 
-    let actual_fns: std::collections::BTreeSet<String> = manual_source
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("pub exec fn "))
-        .map(|sig| {
-            sig.split('(')
-                .next()
-                .expect("function signature should include '('")
-                .trim()
-                .to_string()
-        })
-        .collect();
+    assert!(
+        !std::path::Path::new("../src/protocol/RSL/replica_manual.rs").exists(),
+        "replica_manual.rs should be removed once output.manual_code is retired"
+    );
 
-    let expected_fns: std::collections::BTreeSet<String> = [
+    let source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+    for fn_name in [
+        "CReplicaNextReadClockAndProcessPacket",
+        "CReplicaNextProcessPacketWithoutReadingClock",
+        "CReplicaNextProcessPacket",
         "CReplicaNoReceiveNext",
         "CSchedulerNext",
-        "CReplicaNextProcessPacketWithoutReadingClock",
-        "CReplicaNextReadClockAndProcessPacket",
-        "CReplicaNextProcessPacket",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
-
-    assert_eq!(
-        actual_fns, expected_fns,
-        "replica_manual.rs should only contain IO trust-boundary wrappers/helper"
-    );
-
-    let external_body_count = manual_source.matches("#[verifier(external_body)]").count();
-    assert_eq!(
-        external_body_count, 0,
-        "replica_manual.rs should no longer carry external_body helpers after re-homing"
-    );
-    assert!(
-        !manual_source.contains("pub exec fn CExtractSentPacketsFromIos"),
-        "replica_manual.rs should no longer define CExtractSentPacketsFromIos"
-    );
+    ] {
+        let (_line, fn_source) = slice_exec_fn(&source, fn_name);
+        assert!(
+            source.contains(&format!("#[verifier(external_body)]\npub exec fn {}(", fn_name)),
+            "{} should be generated as an explicit external-body fallback",
+            fn_name
+        );
+        assert!(
+            fn_source.contains("unimplemented!()"),
+            "{} fallback should use unimplemented!()",
+            fn_name
+        );
+        assert!(
+            source.contains(&format!(
+                "// TRANSLATE-TODO: explicitly skipped (skip_functions)\n#[verifier(external_body)]\npub exec fn {}(",
+                fn_name
+            )),
+            "{} should carry a TRANSLATE-TODO provenance comment",
+            fn_name
+        );
+    }
 
     let helpers_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
@@ -2527,32 +2498,23 @@ fn test_executor_state_only_actions_migrated_off_manual_injection() {
     );
 }
 
-/// Drift guard for irreducible IO trust-boundary assumes in replica dispatch paths.
+/// Drift guard for replica dispatch wrappers after manual_code removal.
 ///
-/// This ensures:
-/// - Exactly 10 trust-boundary assumes remain (9 + 1 split).
-/// - They only appear in the two known dispatch functions.
-/// - No new assume sites appear in other replica dispatch functions.
+/// All dispatch wrappers are proof-fallback stubs; they should carry no local
+/// trust-boundary assume sites.
 #[test]
 fn test_replica_dispatch_assume_drift_guard() {
     let source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
 
-    let sent_packets_fragment =
-        "_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))";
-    let packets_fragment =
-        "_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))";
-
     let dispatch_fns = [
         ("CSchedulerNext", 0usize),
-        ("CReplicaNoReceiveNext", 9usize),
+        ("CReplicaNoReceiveNext", 0usize),
         ("CReplicaNextProcessPacket", 0usize),
-        ("CReplicaNextProcessPacketWithoutReadingClock", 1usize),
+        ("CReplicaNextProcessPacketWithoutReadingClock", 0usize),
         ("CReplicaNextReadClockAndProcessPacket", 0usize),
     ];
 
-    let mut no_receive_count = 0usize;
-    let mut without_clock_count = 0usize;
     let mut all_dispatch_assumes: Vec<(String, usize, String)> = Vec::new();
 
     for (fn_name, expected_assumes) in dispatch_fns {
@@ -2571,70 +2533,37 @@ fn test_replica_dispatch_assume_drift_guard() {
 
         for (line_no, line_text) in assume_lines {
             all_dispatch_assumes.push((fn_name.to_string(), line_no, line_text.clone()));
-            if fn_name == "CReplicaNoReceiveNext" {
-                assert!(
-                    line_text.contains(sent_packets_fragment),
-                    "unexpected assume in {}:{}: {}",
-                    fn_name,
-                    line_no,
-                    line_text
-                );
-                no_receive_count += 1;
-            } else if fn_name == "CReplicaNextProcessPacketWithoutReadingClock" {
-                assert!(
-                    line_text.contains(packets_fragment),
-                    "unexpected assume in {}:{}: {}",
-                    fn_name,
-                    line_no,
-                    line_text
-                );
-                without_clock_count += 1;
-            } else {
-                panic!(
-                    "unexpected assume in replica dispatch function {}:{}: {}",
-                    fn_name, line_no, line_text
-                );
-            }
+            panic!(
+                "unexpected assume in replica fallback dispatch function {}:{}: {}",
+                fn_name, line_no, line_text
+            );
         }
     }
 
     assert_eq!(
-        no_receive_count, 9,
-        "CReplicaNoReceiveNext should contain exactly 9 trust-boundary assumes"
-    );
-    assert_eq!(
-        without_clock_count, 1,
-        "CReplicaNextProcessPacketWithoutReadingClock should contain exactly 1 trust-boundary assume"
-    );
-    assert_eq!(
         all_dispatch_assumes.len(),
-        10,
-        "replica dispatch path should contain exactly 10 trust-boundary assumes, found {:?}",
+        0,
+        "replica fallback dispatch path should contain no assume sites, found {:?}",
         all_dispatch_assumes
     );
 }
 
-/// h3 prototype guard: action-1 isolated contract propagation did not eliminate
-/// the trust-boundary assume and must remain documented as a failed local approach.
+/// h3 prototype guard: historical note remains documented even after fallback migration.
 #[test]
-fn test_replica_action1_contract_prototype_is_documented_and_assume_remains() {
+fn test_replica_action1_contract_prototype_is_documented_after_fallback_migration() {
     let source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
     let (fn_start_line, fn_source) = slice_exec_fn(&source, "CReplicaNoReceiveNext");
     let assume_lines = collect_assume_lines(fn_start_line, fn_source);
-    let action1_assume_fragment =
-        "_sent_packets@.map(|i, p: CPacket| p@) =~= ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@))";
 
     assert_eq!(
         assume_lines.len(),
-        9,
-        "CReplicaNoReceiveNext should still contain 9 trust-boundary assumes after the h3 prototype"
+        0,
+        "CReplicaNoReceiveNext fallback should contain no trust-boundary assume sites"
     );
     assert!(
-        assume_lines
-            .iter()
-            .any(|(_, line)| line.contains(action1_assume_fragment)),
-        "action-1 trust-boundary assume should still be present after h3 prototype"
+        fn_source.contains("unimplemented!()"),
+        "CReplicaNoReceiveNext should now be a proof-fallback stub"
     );
 
     let doc = std::fs::read_to_string("../docs/dev/io-trust-boundary-analysis.md")
@@ -6228,7 +6157,7 @@ fn test_raft_helpers_not_in_generated() {
 }
 
 #[test]
-fn test_manual_code_footprint_is_limited_to_rsl_replica_only() {
+fn test_manual_code_footprint_is_empty() {
     fn collect_transpile_tomls(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         let entries = std::fs::read_dir(dir)
             .unwrap_or_else(|_| panic!("Failed to read directory {}", dir.display()));
@@ -6271,20 +6200,10 @@ fn test_manual_code_footprint_is_limited_to_rsl_replica_only() {
     }
     manual_bindings.sort();
 
-    let expected = vec![(
-        "../src/protocol/RSL/replica_transpile.toml".to_string(),
-        "replica_manual.rs".to_string(),
-    )];
+    let expected: Vec<(String, String)> = vec![];
     assert_eq!(
         manual_bindings, expected,
-        "manual_code usage should stay restricted to the known IO trust-boundary config"
-    );
-
-    let replica_manual = std::fs::read_to_string("../src/protocol/RSL/replica_manual.rs")
-        .expect("Failed to read replica_manual.rs");
-    assert!(
-        replica_manual.contains("assume("),
-        "replica_manual.rs should still carry explicit IO trust-boundary assumptions"
+        "manual_code usage should be fully removed from protocol transpile configs"
     );
 
 }

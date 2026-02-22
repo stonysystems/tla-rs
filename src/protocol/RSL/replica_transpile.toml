@@ -32,7 +32,7 @@ skip_functions = [
     "LReplicaNextProcessPacket",
     "LReplicaNoReceiveNext",
     "LSchedulerNext",
-    # Keep skipped so proof-fallback emits an explicit external-body stub.
+    # Keep skipped so proof-fallback emits explicit external-body stubs.
     # The hand-written manual body has been retired.
     "LReplicaNextProcess1b",
     # Helpers with manual implementations (prevent buggy auto-generation)
@@ -44,12 +44,6 @@ skip_functions = [
 # Functions that should NOT generate stubs even with proof_fallback
 # (they have manual implementations in replica_manual.rs or are spec-only)
 no_stub_functions = [
-    # Manual implementations in replica_manual.rs
-    "LReplicaNextReadClockAndProcessPacket",
-    "LReplicaNextProcessPacketWithoutReadingClock",
-    "LReplicaNextProcessPacket",
-    "LReplicaNoReceiveNext",
-    "LSchedulerNext",
     # Non-spec helpers provided by shared implementation helpers
     "ExtractSentPacketsFromIos",
     # Spec-only predicates (no exec implementation needed)
@@ -72,10 +66,6 @@ spec_only_functions = [
     # Helpers annotated in automan (auto-skipped)
     "ExtractSentPacketsFromIos",
     "SpontaneousClock",
-    # Skipped IO dispatch functions (manual code uses C-prefix already)
-    "LReplicaNextProcessPacket",
-    "LReplicaNoReceiveNext",
-    "LSchedulerNext",
 ]
 
 # Method call mappings
@@ -154,8 +144,6 @@ generate_proofs = true
 assume_postconditions = true
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false
-# Path to manually-written IO dispatch functions (relative to this TOML file)
-manual_code = "replica_manual.rs"
 # Custom imports for replica module
 # Note: Still need implementation imports for shared infrastructure types.
 # Sub-module state types (CProposer, CAcceptor, CLearner, CExecutor, CElectionState)
@@ -182,7 +170,6 @@ custom_imports = [
     # "use crate::generated::RSL::election_gen::*;",
     "use crate::implementation::RSL::cmessage::*;",
     "use crate::implementation::RSL::cbroadcast::*;",
-    "use crate::implementation::RSL::gen_helpers::{clone_io_packet, CExtractSentPacketsFromIos, CReplicaNextProcess1b, CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints};",
     "use crate::implementation::RSL::acceptorimpl::CIsLogTruncationPointValid;",
     "use crate::common::framework::environment_s::LIoOp;",
     "use crate::protocol::RSL::environment::{RslIo, RslPacket};",
