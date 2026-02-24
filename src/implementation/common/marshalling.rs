@@ -2,9 +2,9 @@
 //!
 //! Not really a translation so much as a re-implementation
 
+use std::collections::HashMap;
 use std::hash::Hash;
 use vstd::bytes::*;
-use std::collections::HashMap;
 use vstd::prelude::*;
 use vstd::slice::*;
 

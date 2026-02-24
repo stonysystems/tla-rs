@@ -27,11 +27,7 @@ pub struct ProtocolError {
 ///     protocol_main::<TwoPhaseHost>(netc, args)
 /// }
 /// ```
-pub fn protocol_main<H: ProtocolHost>(
-    netc: NetClient,
-    args: Args,
-) -> Result<(), ProtocolError>
-{
+pub fn protocol_main<H: ProtocolHost>(netc: NetClient, args: Args) -> Result<(), ProtocolError> {
     let mut netc = netc;
 
     let host_state = GenericHostState::<H>::init(&netc, &args);
@@ -40,7 +36,7 @@ pub fn protocol_main<H: ProtocolHost>(
             return Err(ProtocolError {
                 message: String::from("Failed to initialize protocol host state"),
             });
-        },
+        }
         Some(hs) => hs,
     };
 

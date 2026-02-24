@@ -490,8 +490,14 @@ mod tests {
 
     #[test]
     fn test_type_reference() {
-        let immut = Type::Reference { ty: Box::new(Type::Bool), mutable: false };
-        let mutable = Type::Reference { ty: Box::new(Type::Int), mutable: true };
+        let immut = Type::Reference {
+            ty: Box::new(Type::Bool),
+            mutable: false,
+        };
+        let mutable = Type::Reference {
+            ty: Box::new(Type::Int),
+            mutable: true,
+        };
         assert!(matches!(immut, Type::Reference { mutable: false, .. }));
         assert!(matches!(mutable, Type::Reference { mutable: true, .. }));
     }

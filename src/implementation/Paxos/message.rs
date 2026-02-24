@@ -17,7 +17,11 @@ pub enum PaxosMessage {
     Prepare { ballot: u64 },
     /// Phase 1b: Acceptor promises not to accept lower ballots.
     /// Includes the highest ballot/value it has already accepted (0 if none).
-    Promise { ballot: u64, accepted_bal: u64, accepted_val: u64 },
+    Promise {
+        ballot: u64,
+        accepted_bal: u64,
+        accepted_val: u64,
+    },
     /// Phase 2a: Proposer sends Accept with ballot and chosen value.
     Accept { ballot: u64, value: u64 },
     /// Phase 2b: Acceptor confirms it has accepted the ballot/value.
@@ -36,23 +40,27 @@ impl ProtocolMessage for PaxosMessage {
             PaxosMessage::Prepare { ballot } => {
                 buf.extend_from_slice(&TAG_PREPARE.to_le_bytes());
                 buf.extend_from_slice(&ballot.to_le_bytes());
-            },
-            PaxosMessage::Promise { ballot, accepted_bal, accepted_val } => {
+            }
+            PaxosMessage::Promise {
+                ballot,
+                accepted_bal,
+                accepted_val,
+            } => {
                 buf.extend_from_slice(&TAG_PROMISE.to_le_bytes());
                 buf.extend_from_slice(&ballot.to_le_bytes());
                 buf.extend_from_slice(&accepted_bal.to_le_bytes());
                 buf.extend_from_slice(&accepted_val.to_le_bytes());
-            },
+            }
             PaxosMessage::Accept { ballot, value } => {
                 buf.extend_from_slice(&TAG_ACCEPT.to_le_bytes());
                 buf.extend_from_slice(&ballot.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             PaxosMessage::Accepted { ballot, value } => {
                 buf.extend_from_slice(&TAG_ACCEPTED.to_le_bytes());
                 buf.extend_from_slice(&ballot.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            },
+            }
         }
     }
 
@@ -61,8 +69,7 @@ impl ProtocolMessage for PaxosMessage {
             return None;
         }
         let tag = u64::from_le_bytes([
-            data[0], data[1], data[2], data[3],
-            data[4], data[5], data[6], data[7],
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
         ]);
         match tag {
             TAG_PREPARE => {
@@ -70,57 +77,53 @@ impl ProtocolMessage for PaxosMessage {
                     return None;
                 }
                 let ballot = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 Some(PaxosMessage::Prepare { ballot })
-            },
+            }
             TAG_PROMISE => {
                 if data.len() < 32 {
                     return None;
                 }
                 let ballot = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 let accepted_bal = u64::from_le_bytes([
-                    data[16], data[17], data[18], data[19],
-                    data[20], data[21], data[22], data[23],
+                    data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
                 ]);
                 let accepted_val = u64::from_le_bytes([
-                    data[24], data[25], data[26], data[27],
-                    data[28], data[29], data[30], data[31],
+                    data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
                 ]);
-                Some(PaxosMessage::Promise { ballot, accepted_bal, accepted_val })
-            },
+                Some(PaxosMessage::Promise {
+                    ballot,
+                    accepted_bal,
+                    accepted_val,
+                })
+            }
             TAG_ACCEPT => {
                 if data.len() < 24 {
                     return None;
                 }
                 let ballot = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 let value = u64::from_le_bytes([
-                    data[16], data[17], data[18], data[19],
-                    data[20], data[21], data[22], data[23],
+                    data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
                 ]);
                 Some(PaxosMessage::Accept { ballot, value })
-            },
+            }
             TAG_ACCEPTED => {
                 if data.len() < 24 {
                     return None;
                 }
                 let ballot = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 let value = u64::from_le_bytes([
-                    data[16], data[17], data[18], data[19],
-                    data[20], data[21], data[22], data[23],
+                    data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
                 ]);
                 Some(PaxosMessage::Accepted { ballot, value })
-            },
+            }
             _ => None,
         }
     }

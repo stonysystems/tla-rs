@@ -1,3 +1,4 @@
+use crate::protocol::EPaxos::types::*;
 /// EPaxos (Egalitarian Paxos) protocol.
 ///
 /// Models the key EPaxos innovations from a single replica's perspective:
@@ -22,7 +23,6 @@
 /// - NewInstance: Reset to accept a new command after execution
 use vstd::prelude::*;
 use vstd::set::*;
-use crate::protocol::EPaxos::types::*;
 
 verus! {
 

@@ -58,7 +58,13 @@ impl TemplateCodeGenerator {
                 map_var,
             } => {
                 let map_var_ref = map_var.as_deref().unwrap_or("_map");
-                self.generate_map_comprehension(key_var, domain_predicate, value_expr, map_var_ref, ctx)
+                self.generate_map_comprehension(
+                    key_var,
+                    domain_predicate,
+                    value_expr,
+                    map_var_ref,
+                    ctx,
+                )
             }
 
             QuantifierTemplate::SimpleAssignment {
@@ -93,9 +99,14 @@ impl TemplateCodeGenerator {
             | QuantifierTemplate::MapInclusion { .. }
             | QuantifierTemplate::CollectionCheck { .. } => {
                 Err(TranspileError::UnsupportedPattern {
-                    message: "QuantifierMatcher-only template variant passed to TemplateCodeGenerator".to_string(),
+                    message:
+                        "QuantifierMatcher-only template variant passed to TemplateCodeGenerator"
+                            .to_string(),
                     span: None,
-                    help: Some("Use translator::translate_quantifier_template() for these patterns".to_string()),
+                    help: Some(
+                        "Use translator::translate_quantifier_template() for these patterns"
+                            .to_string(),
+                    ),
                 })
             }
         }
@@ -649,24 +660,14 @@ mod tests {
         let template = QuantifierTemplate::StructConstruction {
             output_var: "result_".to_string(),
             fields: vec![
-                (
-                    "field_a".to_string(),
-                    Expr::Literal(Literal::Int(1)),
-                ),
-                (
-                    "field_b".to_string(),
-                    Expr::Literal(Literal::Int(2)),
-                ),
+                ("field_a".to_string(), Expr::Literal(Literal::Int(1))),
+                ("field_b".to_string(), Expr::Literal(Literal::Int(2))),
             ],
         };
 
         let result = generator.generate(&template, &ctx).unwrap();
         match &result {
-            ExecExpr::StructUpdate {
-                name,
-                base,
-                fields,
-            } => {
+            ExecExpr::StructUpdate { name, base, fields } => {
                 // Type is LResult -> translate_name -> CResult
                 assert_eq!(name, "CResult");
                 // Base should be Clone(Var("result"))
@@ -693,10 +694,7 @@ mod tests {
         // So this should produce full Struct construction
         let template = QuantifierTemplate::StructConstruction {
             output_var: "result".to_string(),
-            fields: vec![(
-                "value".to_string(),
-                Expr::Literal(Literal::Int(42)),
-            )],
+            fields: vec![("value".to_string(), Expr::Literal(Literal::Int(42)))],
         };
 
         let result = generator.generate(&template, &ctx).unwrap();

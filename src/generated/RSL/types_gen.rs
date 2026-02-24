@@ -20,8 +20,8 @@ use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::parameters::*;
 use crate::protocol::RSL::proposer::*;
-use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::replica::LScheduler;
+use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
 use std::collections::{HashMap, HashSet};
@@ -30,21 +30,25 @@ use vstd::seq::*;
 use vstd::{map::*, modes::*, seq_lib::*};
 use vstd::{set::*, set_lib::*};
 
-pub use crate::implementation::RSL::types_i::*;
-pub use crate::implementation::RSL::cmessage::*;
-pub use crate::implementation::RSL::appinterface::{CAppState, CAppStateInit, CAppMessage};
-pub use crate::implementation::RSL::CStateMachine::*;
-pub use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};
-pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};
-pub use crate::implementation::RSL::acceptorimpl::CAcceptor;
-pub use crate::implementation::RSL::learnerimpl::CLearner;
-pub use crate::implementation::RSL::ElectionImpl::{CElectionState, COutstandingOperation, CRequestHeader};
-pub use crate::implementation::RSL::ExecutorImpl::{CExecutor, CIncompleteBatchTimer};
-pub use crate::implementation::RSL::ProposerImpl::CProposer;
-pub use crate::implementation::RSL::ReplicaImpl::{CReplica, CScheduler, abstractify_clpacket, abstractify_crslio, abstractify_crslio_seq};
-pub use crate::implementation::RSL::cbroadcast::*;
 pub use crate::implementation::common::upper_bound::*;
 pub use crate::implementation::common::upper_bound_i::*;
+pub use crate::implementation::RSL::acceptorimpl::CAcceptor;
+pub use crate::implementation::RSL::appinterface::{CAppMessage, CAppState, CAppStateInit};
+pub use crate::implementation::RSL::cbroadcast::*;
+pub use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};
+pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};
+pub use crate::implementation::RSL::cmessage::*;
+pub use crate::implementation::RSL::learnerimpl::CLearner;
+pub use crate::implementation::RSL::types_i::*;
+pub use crate::implementation::RSL::CStateMachine::*;
+pub use crate::implementation::RSL::ElectionImpl::{
+    CElectionState, COutstandingOperation, CRequestHeader,
+};
+pub use crate::implementation::RSL::ExecutorImpl::{CExecutor, CIncompleteBatchTimer};
+pub use crate::implementation::RSL::ProposerImpl::CProposer;
+pub use crate::implementation::RSL::ReplicaImpl::{
+    abstractify_clpacket, abstractify_crslio, abstractify_crslio_seq, CReplica, CScheduler,
+};
 
 verus! {
 

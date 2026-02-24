@@ -36,7 +36,9 @@ impl ProtocolConfig for TwoPhaseConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -48,7 +50,7 @@ impl ProtocolConfig for TwoPhaseConfig {
             None => {
                 eprintln!("TwoPhase: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         // Build RM set: all indices except 0 (TM)
@@ -96,14 +98,14 @@ impl TwoPhaseHost {
             match pkt.msg {
                 TwoPhaseMessage::PreparedVote { rm_id } => {
                     return self.tm_receive_prepared(config, rm_id);
-                },
+                }
                 _ => {
                     // TM ignores other message types
                     return StepResult {
                         ok: true,
                         outbound: GenericOutbound::None,
                     };
-                },
+                }
             }
         }
 
@@ -118,20 +120,21 @@ impl TwoPhaseHost {
     }
 
     /// TM: Try to broadcast Prepare.
-    fn tm_try_send_prepare(
-        &mut self,
-        config: &TwoPhaseConfig,
-    ) -> StepResult<TwoPhaseMessage> {
+    fn tm_try_send_prepare(&mut self, config: &TwoPhaseConfig) -> StepResult<TwoPhaseMessage> {
         // Guard: tm_state is Init
         if !matches!(self.state.tm_state, CTMState::Init) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = twophase_gen::CTMSendPrepare(&self.state, &config.constants);
         self.state = new_state;
 
         // Broadcast Prepare to all RMs
-        let rm_endpoints: Vec<EndPoint> = config.peers[1..].iter()
+        let rm_endpoints: Vec<EndPoint> = config.peers[1..]
+            .iter()
             .map(|ep| ep.clone_up_to_view())
             .collect();
 
@@ -152,60 +155,69 @@ impl TwoPhaseHost {
     ) -> StepResult<TwoPhaseMessage> {
         // Guard: tm_state is Init
         if !matches!(self.state.tm_state, CTMState::Init) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // In our distributed model, receiving a PreparedVote over the network
         // is equivalent to the RM having prepared. Record the RM as prepared
         // in the shared-state simulation.
         if !self.state.rm_prepared.contains(&rm_id) {
-            if config.constants.rm.contains(&rm_id) &&
-               !self.state.rm_aborted.contains(&rm_id) {
-                let (new_state, _sent) = twophase_gen::CRMReceivePrepare(
-                    &self.state, &config.constants, &rm_id,
-                );
+            if config.constants.rm.contains(&rm_id) && !self.state.rm_aborted.contains(&rm_id) {
+                let (new_state, _sent) =
+                    twophase_gen::CRMReceivePrepare(&self.state, &config.constants, &rm_id);
                 self.state = new_state;
             }
         }
 
         // Now TM can process the prepared vote
-        if self.state.rm_prepared.contains(&rm_id) &&
-           !self.state.tm_prepared.contains(&rm_id) {
-            let (new_state, _sent) = twophase_gen::CTMRcvPrepared(
-                &self.state, &config.constants, &rm_id,
-            );
+        if self.state.rm_prepared.contains(&rm_id) && !self.state.tm_prepared.contains(&rm_id) {
+            let (new_state, _sent) =
+                twophase_gen::CTMRcvPrepared(&self.state, &config.constants, &rm_id);
             self.state = new_state;
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// TM: Try to broadcast Commit (when all RMs prepared).
-    fn tm_try_send_commit(
-        &mut self,
-        config: &TwoPhaseConfig,
-    ) -> StepResult<TwoPhaseMessage> {
+    fn tm_try_send_commit(&mut self, config: &TwoPhaseConfig) -> StepResult<TwoPhaseMessage> {
         if !matches!(self.state.tm_state, CTMState::Init) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Check if all RMs have prepared: tm_prepared == c.rm
         // We check by comparing set sizes (since tm_prepared ⊆ c.rm by construction)
         if self.state.tm_prepared.len() != config.constants.rm.len() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Verify all RMs are in tm_prepared
         for rm in config.constants.rm.iter() {
             if !self.state.tm_prepared.contains(rm) {
-                return StepResult { ok: true, outbound: GenericOutbound::None };
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                };
             }
         }
 
         let (new_state, _sent) = twophase_gen::CTMSendCommit(&self.state, &config.constants);
         self.state = new_state;
 
-        let rm_endpoints: Vec<EndPoint> = config.peers[1..].iter()
+        let rm_endpoints: Vec<EndPoint> = config.peers[1..]
+            .iter()
             .map(|ep| ep.clone_up_to_view())
             .collect();
 
@@ -219,13 +231,13 @@ impl TwoPhaseHost {
     }
 
     /// TM: Try to broadcast Abort.
-    fn tm_try_send_abort(
-        &mut self,
-        _config: &TwoPhaseConfig,
-    ) -> StepResult<TwoPhaseMessage> {
+    fn tm_try_send_abort(&mut self, _config: &TwoPhaseConfig) -> StepResult<TwoPhaseMessage> {
         // For now, TM doesn't spontaneously abort in the scheduler.
         // In a real system, this would be triggered by timeout or RM failure.
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Try to run an RM action based on incoming message.
@@ -240,21 +252,24 @@ impl TwoPhaseHost {
             match pkt.msg {
                 TwoPhaseMessage::Prepare => {
                     return self.rm_receive_prepare(config, my_rm_id);
-                },
+                }
                 TwoPhaseMessage::Commit => {
                     return self.rm_receive_commit(config, my_rm_id);
-                },
+                }
                 TwoPhaseMessage::Abort => {
                     return self.rm_receive_abort(config, my_rm_id);
-                },
+                }
                 _ => {
                     // RM ignores PreparedVote messages
-                },
+                }
             }
         }
 
         // No message — RM does nothing on timeout
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// RM: Receive Prepare, vote Prepared.
@@ -264,15 +279,18 @@ impl TwoPhaseHost {
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
         // Guard checks — receiving Prepare over the network is evidence it was sent
-        if !config.constants.rm.contains(&rm_id) ||
-           self.state.rm_prepared.contains(&rm_id) ||
-           self.state.rm_aborted.contains(&rm_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !config.constants.rm.contains(&rm_id)
+            || self.state.rm_prepared.contains(&rm_id)
+            || self.state.rm_aborted.contains(&rm_id)
+        {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = twophase_gen::CRMReceivePrepare(
-            &self.state, &config.constants, &rm_id,
-        );
+        let (new_state, _sent) =
+            twophase_gen::CRMReceivePrepare(&self.state, &config.constants, &rm_id);
         self.state = new_state;
 
         // Send PreparedVote back to TM (index 0)
@@ -292,18 +310,24 @@ impl TwoPhaseHost {
         config: &TwoPhaseConfig,
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
-        if !config.constants.rm.contains(&rm_id) ||
-           !self.state.rm_prepared.contains(&rm_id) ||
-           self.state.rm_committed.contains(&rm_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !config.constants.rm.contains(&rm_id)
+            || !self.state.rm_prepared.contains(&rm_id)
+            || self.state.rm_committed.contains(&rm_id)
+        {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = twophase_gen::CRMReceiveCommit(
-            &self.state, &config.constants, &rm_id,
-        );
+        let (new_state, _sent) =
+            twophase_gen::CRMReceiveCommit(&self.state, &config.constants, &rm_id);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// RM: Receive Abort, apply.
@@ -312,18 +336,24 @@ impl TwoPhaseHost {
         config: &TwoPhaseConfig,
         rm_id: u64,
     ) -> StepResult<TwoPhaseMessage> {
-        if !config.constants.rm.contains(&rm_id) ||
-           self.state.rm_committed.contains(&rm_id) ||
-           self.state.rm_aborted.contains(&rm_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !config.constants.rm.contains(&rm_id)
+            || self.state.rm_committed.contains(&rm_id)
+            || self.state.rm_aborted.contains(&rm_id)
+        {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = twophase_gen::CRMReceiveAbort(
-            &self.state, &config.constants, &rm_id,
-        );
+        let (new_state, _sent) =
+            twophase_gen::CRMReceiveAbort(&self.state, &config.constants, &rm_id);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 }
 

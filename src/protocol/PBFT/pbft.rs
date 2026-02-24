@@ -1,3 +1,4 @@
+use crate::protocol::PBFT::types::*;
 /// Simplified PBFT (Practical Byzantine Fault Tolerance) protocol.
 ///
 /// Models the core PBFT consensus phases:
@@ -8,7 +9,6 @@
 /// 5. View change: On timeout, increment view number
 /// 6. Checkpoint: Periodic stable checkpoints to bound log growth
 use vstd::prelude::*;
-use crate::protocol::PBFT::types::*;
 
 verus! {
 

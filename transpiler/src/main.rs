@@ -24,6 +24,7 @@
 
 use clap::{Parser, Subcommand};
 use miette::Result;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use verus_transpiler::annotation::parse_annotation_file;
@@ -234,6 +235,19 @@ enum Commands {
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
+    },
+
+    /// Emit a machine-readable JSON report of `assume(...)` sites in generated files.
+    ///
+    /// Intended for tracking deferred proof gaps in generated RSL modules.
+    ReportAssumes {
+        /// Directory containing generated modules (typically `src/generated/RSL`)
+        #[arg(long, default_value = "src/generated/RSL")]
+        input_dir: PathBuf,
+
+        /// Optional output path for JSON report (defaults to stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
 
     /// Generate a generic TLC wrapper from a relational TLA+ module (`Init/Next`).
@@ -1927,6 +1941,157 @@ struct ModelCheckExecution {
     leads_to_violation: Option<verus_transpiler::modelcheck::liveness::LeadsToViolation>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct AssumeSiteReport {
+    module: String,
+    function: Option<String>,
+    line: usize,
+    text: String,
+    assume_false: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct AssumeFileReport {
+    module: String,
+    assume_count: usize,
+    assume_false_count: usize,
+    assume_sites: Vec<AssumeSiteReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct AssumeReportSummary {
+    files_scanned: usize,
+    files_with_assumes: usize,
+    assume_count: usize,
+    assume_false_count: usize,
+    non_fallback_assume_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct AssumeReportOutput {
+    generated_dir: String,
+    summary: AssumeReportSummary,
+    files: Vec<AssumeFileReport>,
+}
+
+fn parse_function_name_from_signature(line: &str) -> Option<String> {
+    let trimmed = line.trim_start();
+    for prefix in ["pub exec fn ", "pub fn ", "exec fn ", "fn "] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let candidate = rest.split('(').next()?.trim();
+            if !candidate.is_empty() {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn collect_assume_report_for_file(module: &str, source: &str) -> AssumeFileReport {
+    let mut current_fn: Option<String> = None;
+    let mut assume_sites = Vec::new();
+
+    for (idx, line) in source.lines().enumerate() {
+        if let Some(name) = parse_function_name_from_signature(line) {
+            current_fn = Some(name);
+        }
+
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") || !line.contains("assume(") {
+            continue;
+        }
+
+        let normalized = trimmed.to_string();
+        let assume_false = normalized.contains("assume(false);");
+        assume_sites.push(AssumeSiteReport {
+            module: module.to_string(),
+            function: current_fn.clone(),
+            line: idx + 1,
+            text: normalized,
+            assume_false,
+        });
+    }
+
+    let assume_count = assume_sites.len();
+    let assume_false_count = assume_sites.iter().filter(|site| site.assume_false).count();
+
+    AssumeFileReport {
+        module: module.to_string(),
+        assume_count,
+        assume_false_count,
+        assume_sites,
+    }
+}
+
+fn collect_assume_report(generated_dir: &Path) -> Result<AssumeReportOutput> {
+    if !generated_dir.exists() {
+        return Err(miette::miette!(
+            "Generated directory `{}` does not exist.",
+            generated_dir.display()
+        ));
+    }
+    if !generated_dir.is_dir() {
+        return Err(miette::miette!(
+            "Generated path `{}` is not a directory.",
+            generated_dir.display()
+        ));
+    }
+
+    let mut files = Vec::new();
+    let mut files_scanned = 0usize;
+
+    for entry in std::fs::read_dir(generated_dir).map_err(|e| {
+        miette::miette!(
+            "Failed to read generated directory `{}`: {}",
+            generated_dir.display(),
+            e
+        )
+    })? {
+        let entry = entry.map_err(|e| {
+            miette::miette!(
+                "Failed to iterate generated directory `{}`: {}",
+                generated_dir.display(),
+                e
+            )
+        })?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !file_name.ends_with("_gen.rs") {
+            continue;
+        }
+
+        files_scanned += 1;
+        let source = std::fs::read_to_string(&path).map_err(|e| {
+            miette::miette!("Failed to read generated file `{}`: {}", path.display(), e)
+        })?;
+        files.push(collect_assume_report_for_file(file_name, &source));
+    }
+
+    files.sort_by(|left, right| left.module.cmp(&right.module));
+
+    let files_with_assumes = files.iter().filter(|file| file.assume_count > 0).count();
+    let assume_count = files.iter().map(|file| file.assume_count).sum::<usize>();
+    let assume_false_count = files.iter().map(|file| file.assume_false_count).sum::<usize>();
+    let non_fallback_assume_count = assume_count.saturating_sub(assume_false_count);
+
+    Ok(AssumeReportOutput {
+        generated_dir: generated_dir.display().to_string(),
+        summary: AssumeReportSummary {
+            files_scanned,
+            files_with_assumes,
+            assume_count,
+            assume_false_count,
+            non_fallback_assume_count,
+        },
+        files,
+    })
+}
+
 fn model_check_result_label(
     reason: verus_transpiler::modelcheck::explorer::ExplorationStopReason,
 ) -> &'static str {
@@ -3023,6 +3188,43 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     violation.to_name,
                     violation.violating_component.len()
                 );
+            }
+
+            Ok(())
+        }
+        Commands::ReportAssumes { input_dir, output } => {
+            if cli.verbose {
+                eprintln!("Collecting assume report from {}", input_dir.display());
+            }
+
+            let report = collect_assume_report(input_dir.as_path())?;
+            let rendered = serde_json::to_string_pretty(&report)
+                .map_err(|e| miette::miette!("Failed to serialize assume report: {}", e))?;
+
+            if let Some(output_path) = output {
+                if let Some(parent) = output_path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent).map_err(|e| {
+                            miette::miette!(
+                                "Failed to create report output directory `{}`: {}",
+                                parent.display(),
+                                e
+                            )
+                        })?;
+                    }
+                }
+                std::fs::write(output_path, rendered).map_err(|e| {
+                    miette::miette!(
+                        "Failed to write assume report `{}`: {}",
+                        output_path.display(),
+                        e
+                    )
+                })?;
+                if cli.verbose {
+                    eprintln!("Wrote assume report to {}", output_path.display());
+                }
+            } else {
+                println!("{}", rendered);
             }
 
             Ok(())
@@ -4681,6 +4883,75 @@ Next(s, s_, c) ==
             }
             _ => panic!("Expected ModelCheck command"),
         }
+    }
+
+    #[test]
+    fn test_report_assumes_cli_parsing() {
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "report-assumes",
+            "--input-dir",
+            "src/generated/RSL",
+            "--output",
+            "report.json",
+        ]);
+
+        match cli.command {
+            Some(Commands::ReportAssumes { input_dir, output }) => {
+                assert_eq!(input_dir, PathBuf::from("src/generated/RSL"));
+                assert_eq!(output, Some(PathBuf::from("report.json")));
+            }
+            _ => panic!("Expected ReportAssumes command"),
+        }
+    }
+
+    #[test]
+    fn test_collect_assume_report_for_file_tracks_function_and_line() {
+        let source = r#"
+pub exec fn COne() {
+    assume(false);
+}
+
+pub exec fn CTwo() {
+    // assume(false);
+    assume(x > 0);
+}
+"#;
+
+        let report = collect_assume_report_for_file("demo_gen.rs", source);
+        assert_eq!(report.assume_count, 2);
+        assert_eq!(report.assume_false_count, 1);
+        assert_eq!(report.assume_sites[0].function.as_deref(), Some("COne"));
+        assert_eq!(report.assume_sites[0].line, 3);
+        assert!(report.assume_sites[0].assume_false);
+        assert_eq!(report.assume_sites[1].function.as_deref(), Some("CTwo"));
+        assert_eq!(report.assume_sites[1].line, 8);
+        assert!(!report.assume_sites[1].assume_false);
+    }
+
+    #[test]
+    fn test_collect_assume_report_directory_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let generated_dir = dir.path().join("generated");
+        std::fs::create_dir_all(&generated_dir).unwrap();
+
+        std::fs::write(
+            generated_dir.join("alpha_gen.rs"),
+            "pub exec fn CAlpha() {\n    assume(false);\n}\n",
+        )
+        .unwrap();
+        std::fs::write(generated_dir.join("beta_gen.rs"), "pub exec fn CBeta() { }\n").unwrap();
+        std::fs::write(generated_dir.join("notes.txt"), "assume(false);\n").unwrap();
+
+        let report = collect_assume_report(generated_dir.as_path()).unwrap();
+        assert_eq!(report.summary.files_scanned, 2);
+        assert_eq!(report.summary.files_with_assumes, 1);
+        assert_eq!(report.summary.assume_count, 1);
+        assert_eq!(report.summary.assume_false_count, 1);
+        assert_eq!(report.summary.non_fallback_assume_count, 0);
+        assert_eq!(report.files.len(), 2);
+        assert_eq!(report.files[0].module, "alpha_gen.rs");
+        assert_eq!(report.files[1].module, "beta_gen.rs");
     }
 
     #[test]

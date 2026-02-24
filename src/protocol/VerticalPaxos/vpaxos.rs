@@ -1,3 +1,4 @@
+use crate::protocol::VerticalPaxos::types::*;
 /// Simplified Vertical Paxos (Reconfigurable Paxos) protocol.
 ///
 /// Models Paxos with reconfiguration from a single node's perspective:
@@ -9,7 +10,6 @@
 /// 6. WitnessSync: Witness transfers state from old config to new
 /// 7. Deactivate: Node leaves active set for reconfiguration
 use vstd::prelude::*;
-use crate::protocol::VerticalPaxos::types::*;
 
 verus! {
 

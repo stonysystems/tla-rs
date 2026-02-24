@@ -36,7 +36,9 @@ impl ProtocolConfig for ChainConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -48,7 +50,7 @@ impl ProtocolConfig for ChainConfig {
             None => {
                 eprintln!("ChainReplication: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         let chain_len = peers.len() as u64;
@@ -120,7 +122,10 @@ impl ChainHost {
         packet: Option<GenericPacket<ChainMessage>>,
     ) -> StepResult<ChainMessage> {
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Handle incoming message
@@ -128,14 +133,17 @@ impl ChainHost {
             match pkt.msg {
                 ChainMessage::ClientWrite { value } => {
                     return self.head_receive_write(config, value);
-                },
+                }
                 ChainMessage::Ack { value } => {
                     return self.receive_ack(config, value);
-                },
+                }
                 _ => {
                     // Head ignores Forward and ClientRead
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             }
         }
 
@@ -152,7 +160,10 @@ impl ChainHost {
         packet: Option<GenericPacket<ChainMessage>>,
     ) -> StepResult<ChainMessage> {
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Handle incoming message
@@ -160,14 +171,17 @@ impl ChainHost {
             match pkt.msg {
                 ChainMessage::Forward { value } => {
                     return self.receive_update(config, value);
-                },
+                }
                 ChainMessage::Ack { value } => {
                     return self.receive_ack(config, value);
-                },
+                }
                 _ => {
                     // Middle ignores ClientWrite and ClientRead
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             }
         }
 
@@ -184,7 +198,10 @@ impl ChainHost {
         packet: Option<GenericPacket<ChainMessage>>,
     ) -> StepResult<ChainMessage> {
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Handle incoming message
@@ -192,14 +209,17 @@ impl ChainHost {
             match pkt.msg {
                 ChainMessage::Forward { value } => {
                     return self.receive_update(config, value);
-                },
+                }
                 ChainMessage::ClientRead => {
                     return self.client_read(config);
-                },
+                }
                 _ => {
                     // Tail ignores ClientWrite and Ack
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             }
         }
 
@@ -210,111 +230,153 @@ impl ChainHost {
     }
 
     /// Head: receive a ClientWrite, add to history and pending_sent.
-    fn head_receive_write(
-        &mut self,
-        config: &ChainConfig,
-        value: u64,
-    ) -> StepResult<ChainMessage> {
+    fn head_receive_write(&mut self, config: &ChainConfig, value: u64) -> StepResult<ChainMessage> {
         // Guard: role is Head, alive, !pending_sent.contains(value)
         if !matches!(self.state.role, CNodeRole::Head) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.pending_sent.contains(&value) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = chain_gen::CHeadReceiveWrite(&self.state, &config.constants, &value);
+        let (new_state, _sent) =
+            chain_gen::CHeadReceiveWrite(&self.state, &config.constants, &value);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Head/Middle: pick a value from pending_sent and forward to successor.
-    fn try_forward_to_successor(
-        &mut self,
-        config: &ChainConfig,
-    ) -> StepResult<ChainMessage> {
+    fn try_forward_to_successor(&mut self, config: &ChainConfig) -> StepResult<ChainMessage> {
         // Guard: role is Head|Middle, alive, pending_sent non-empty, has_successor
         if !matches!(self.state.role, CNodeRole::Head | CNodeRole::Middle) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.has_successor {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.pending_sent.is_empty() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Pick first element from pending_sent
         let value = match self.state.pending_sent.iter().next() {
             Some(v) => *v,
-            None => return StepResult { ok: true, outbound: GenericOutbound::None },
+            None => {
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                }
+            }
         };
 
-        let (new_state, _sent) = chain_gen::CForwardToSuccessor(&self.state, &config.constants, &value);
+        let (new_state, _sent) =
+            chain_gen::CForwardToSuccessor(&self.state, &config.constants, &value);
         self.state = new_state;
 
         // Send Forward message to successor
         match Self::successor_endpoint(config, &self.state) {
-            Some(succ_ep) => {
-                StepResult {
-                    ok: true,
-                    outbound: GenericOutbound::Send {
-                        dst: succ_ep,
-                        msg: ChainMessage::Forward { value },
-                    },
-                }
+            Some(succ_ep) => StepResult {
+                ok: true,
+                outbound: GenericOutbound::Send {
+                    dst: succ_ep,
+                    msg: ChainMessage::Forward { value },
+                },
             },
-            None => StepResult { ok: true, outbound: GenericOutbound::None },
+            None => StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            },
         }
     }
 
     /// Middle/Tail: receive a Forward message, add to history.
-    fn receive_update(
-        &mut self,
-        config: &ChainConfig,
-        value: u64,
-    ) -> StepResult<ChainMessage> {
+    fn receive_update(&mut self, config: &ChainConfig, value: u64) -> StepResult<ChainMessage> {
         // Guard: role is Middle|Tail, alive, !history.contains(value)
         if !matches!(self.state.role, CNodeRole::Middle | CNodeRole::Tail) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.history.contains(&value) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = chain_gen::CReceiveUpdate(&self.state, &config.constants, &value);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Tail: commit a value from history, send Ack to predecessor.
-    fn try_tail_commit(
-        &mut self,
-        config: &ChainConfig,
-    ) -> StepResult<ChainMessage> {
+    fn try_tail_commit(&mut self, config: &ChainConfig) -> StepResult<ChainMessage> {
         // Guard: role is Tail, alive, history non-empty, committed_count < u64::MAX
         if !matches!(self.state.role, CNodeRole::Tail) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.history.is_empty() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.committed_count >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Pick a value from history to commit (use first element)
@@ -325,34 +387,40 @@ impl ChainHost {
 
         // Send Ack to predecessor
         match Self::predecessor_endpoint(config, &self.state) {
-            Some(pred_ep) => {
-                StepResult {
-                    ok: true,
-                    outbound: GenericOutbound::Send {
-                        dst: pred_ep,
-                        msg: ChainMessage::Ack { value },
-                    },
-                }
+            Some(pred_ep) => StepResult {
+                ok: true,
+                outbound: GenericOutbound::Send {
+                    dst: pred_ep,
+                    msg: ChainMessage::Ack { value },
+                },
             },
-            None => StepResult { ok: true, outbound: GenericOutbound::None },
+            None => StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            },
         }
     }
 
     /// Head/Middle: receive an Ack, remove value from pending_sent.
-    fn receive_ack(
-        &mut self,
-        config: &ChainConfig,
-        value: u64,
-    ) -> StepResult<ChainMessage> {
+    fn receive_ack(&mut self, config: &ChainConfig, value: u64) -> StepResult<ChainMessage> {
         // Guard: role is Head|Middle, alive, pending_sent.contains(value)
         if !matches!(self.state.role, CNodeRole::Head | CNodeRole::Middle) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.pending_sent.contains(&value) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = chain_gen::CReceiveAck(&self.state, &config.constants, &value);
@@ -369,24 +437,30 @@ impl ChainHost {
                             msg: ChainMessage::Ack { value },
                         },
                     };
-                },
-                None => {},
+                }
+                None => {}
             }
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Tail: handle a ClientRead (returns current obj_value, no state change).
-    fn client_read(
-        &mut self,
-        config: &ChainConfig,
-    ) -> StepResult<ChainMessage> {
+    fn client_read(&mut self, config: &ChainConfig) -> StepResult<ChainMessage> {
         if !matches!(self.state.role, CNodeRole::Tail) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.alive {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = chain_gen::CClientRead(&self.state, &config.constants);
@@ -394,7 +468,10 @@ impl ChainHost {
 
         // In a real deployment, the read result (self.state.obj_value) would be
         // returned to the client. For now, this is a no-op on the network.
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 }
 
@@ -431,11 +508,17 @@ impl ProtocolHost for ChainHost {
                 successor: if config.constants.chain_len > 1 { 1 } else { 0 },
                 alive: true,
             };
-            Some(ChainHost { state, action_index: 0 })
+            Some(ChainHost {
+                state,
+                action_index: 0,
+            })
         } else {
             // Non-head nodes: use generated CInit
             let state = chain_gen::CInit(&config.constants);
-            Some(ChainHost { state, action_index: 0 })
+            Some(ChainHost {
+                state,
+                action_index: 0,
+            })
         }
     }
 

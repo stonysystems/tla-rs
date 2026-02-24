@@ -7,13 +7,15 @@ use crate::common::collections::vecs::*;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::election_gen::*;
-use crate::generated::RSL::types_gen::*;
 use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTimerOff;
+use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::gen_helpers::{clone_cpacket_preserving_validity, clone_cpacket_full, outbound_packets_to_vec};
+use crate::implementation::RSL::gen_helpers::{
+    clone_cpacket_full, clone_cpacket_preserving_validity, outbound_packets_to_vec,
+};
 use crate::implementation::RSL::types_i::abstractify_crequestbatch;
 use crate::implementation::RSL::types_i::clone_request_batch_up_to_view;
 use crate::protocol::RSL::configuration::*;

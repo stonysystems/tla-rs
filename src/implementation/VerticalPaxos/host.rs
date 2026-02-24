@@ -16,8 +16,8 @@
 use crate::common::framework::args_t::*;
 use crate::common::framework::protocol_trait::*;
 use crate::common::native::io_s::*;
-use crate::generated::VerticalPaxos::vpaxos_gen;
 use crate::generated::VerticalPaxos::types_gen::*;
+use crate::generated::VerticalPaxos::vpaxos_gen;
 use crate::implementation::VerticalPaxos::message::*;
 use std::collections::HashSet;
 
@@ -45,7 +45,9 @@ impl ProtocolConfig for VerticalPaxosConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -57,7 +59,7 @@ impl ProtocolConfig for VerticalPaxosConfig {
             None => {
                 eprintln!("VerticalPaxos: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         let num_nodes = peers.len() as u64;
@@ -139,21 +141,25 @@ impl VerticalPaxosHost {
     ) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // CSendPromise requires: prepare_bal > max_bal
         if ballot <= self.state.max_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Capture current accepted state before updating max_bal
         let promise_v_bal = self.state.max_v_bal;
         let promise_val = self.state.max_val;
 
-        let (new_state, _sent) = vpaxos_gen::CSendPromise(
-            &self.state, &config.constants, &ballot,
-        );
+        let (new_state, _sent) = vpaxos_gen::CSendPromise(&self.state, &config.constants, &ballot);
         self.state = new_state;
 
         // Send Promise back to the proposer
@@ -183,17 +189,26 @@ impl VerticalPaxosHost {
     ) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: promise ballot must match our current max_bal
         if ballot != self.state.max_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must not have already received a promise from this sender
         if self.state.promises_rcvd.contains(&sender) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = vpaxos_gen::CReceivePromise(
@@ -206,7 +221,10 @@ impl VerticalPaxosHost {
         );
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming Accept message (Phase 2a) as an acceptor.
@@ -220,24 +238,29 @@ impl VerticalPaxosHost {
     ) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // CAccept requires: b == max_bal and b > max_v_bal
         if ballot != self.state.max_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         if ballot <= self.state.max_v_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CAccept(
-            &self.state,
-            &config.constants,
-            &ballot,
-            &value,
-        );
+        let (new_state, _sent) =
+            vpaxos_gen::CAccept(&self.state, &config.constants, &ballot, &value);
         self.state = new_state;
 
         // Send AcceptOk back to the proposer
@@ -261,7 +284,10 @@ impl VerticalPaxosHost {
     ) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // CReceiveAccepted requires: accept_bal == max_bal
@@ -270,18 +296,20 @@ impl VerticalPaxosHost {
 
         // Guard: must not have already received an accept from this sender
         if self.state.accepts_rcvd.contains(&sender) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CReceiveAccepted(
-            &self.state,
-            &config.constants,
-            &sender,
-            &accept_bal,
-        );
+        let (new_state, _sent) =
+            vpaxos_gen::CReceiveAccepted(&self.state, &config.constants, &sender, &accept_bal);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming Commit message.
@@ -292,7 +320,10 @@ impl VerticalPaxosHost {
         value: u64,
     ) -> StepResult<VerticalPaxosMessage> {
         eprintln!("VerticalPaxos: received COMMIT for value = {}", value);
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming Sync message (reconfiguration).
@@ -305,19 +336,21 @@ impl VerticalPaxosHost {
     ) -> StepResult<VerticalPaxosMessage> {
         // CSync requires: is_active == false, new_config > config_num
         if self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         if new_config <= self.state.config_num {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CSync(
-            &self.state,
-            &config.constants,
-            &new_config,
-            &val,
-        );
+        let (new_state, _sent) =
+            vpaxos_gen::CSync(&self.state, &config.constants, &new_config, &val);
         self.state = new_state;
 
         eprintln!(
@@ -325,7 +358,10 @@ impl VerticalPaxosHost {
             new_config, val
         );
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -334,25 +370,26 @@ impl VerticalPaxosHost {
 
     /// Timer action: Try to start a new proposal (Phase 1a via CPrepare).
     /// Only fires when the node is active and idle (no pending prepare/accept).
-    fn try_prepare(
-        &mut self,
-        config: &VerticalPaxosConfig,
-    ) -> StepResult<VerticalPaxosMessage> {
+    fn try_prepare(&mut self, config: &VerticalPaxosConfig) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let new_ballot = self.next_ballot(config);
 
         // CPrepare requires: b > max_bal
         if new_ballot <= self.state.max_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CPrepare(
-            &self.state, &config.constants, &new_ballot,
-        );
+        let (new_state, _sent) = vpaxos_gen::CPrepare(&self.state, &config.constants, &new_ballot);
         self.state = new_state;
 
         // Broadcast Prepare to all other nodes
@@ -368,18 +405,21 @@ impl VerticalPaxosHost {
 
     /// Timer action: Try to send Accept (Phase 2a via CAccept).
     /// Only fires when we have collected a quorum of promises.
-    fn try_accept(
-        &mut self,
-        config: &VerticalPaxosConfig,
-    ) -> StepResult<VerticalPaxosMessage> {
+    fn try_accept(&mut self, config: &VerticalPaxosConfig) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have received enough promises
         if (self.state.promises_rcvd.len() as u64) < config.constants.quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let ballot = self.state.max_bal;
@@ -387,15 +427,14 @@ impl VerticalPaxosHost {
 
         // CAccept requires: b == max_bal, b > max_v_bal
         if ballot <= self.state.max_v_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CAccept(
-            &self.state,
-            &config.constants,
-            &ballot,
-            &value,
-        );
+        let (new_state, _sent) =
+            vpaxos_gen::CAccept(&self.state, &config.constants, &ballot, &value);
         self.state = new_state;
 
         // Broadcast Accept to all other nodes
@@ -411,23 +450,29 @@ impl VerticalPaxosHost {
 
     /// Timer action: Try to commit.
     /// Only fires when we have collected a quorum of accepts and have not committed yet.
-    fn try_commit(
-        &mut self,
-        config: &VerticalPaxosConfig,
-    ) -> StepResult<VerticalPaxosMessage> {
+    fn try_commit(&mut self, config: &VerticalPaxosConfig) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must not have already committed
         if self.state.committed {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have a quorum of accepts
         if (self.state.accepts_rcvd.len() as u64) < config.constants.quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = vpaxos_gen::CCommit(&self.state, &config.constants);
@@ -455,17 +500,26 @@ impl VerticalPaxosHost {
     ) -> StepResult<VerticalPaxosMessage> {
         // Guard: must be active
         if !self.state.is_active {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // CReconfigure requires: config_num < u64::MAX
         if self.state.config_num >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Only reconfigure after a commit to move to the next configuration
         if !self.state.committed {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let old_val = self.state.committed_val;
@@ -518,29 +572,32 @@ impl ProtocolHost for VerticalPaxosHost {
                 Some(id) => id,
                 None => {
                     // Unknown sender, ignore
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             };
 
             return match pkt.msg {
                 VerticalPaxosMessage::Prepare { ballot } => {
                     self.handle_prepare(config, &pkt.src, ballot)
-                },
-                VerticalPaxosMessage::Promise { ballot, v_bal, val, sender } => {
-                    self.handle_promise(config, ballot, v_bal, val, sender)
-                },
+                }
+                VerticalPaxosMessage::Promise {
+                    ballot,
+                    v_bal,
+                    val,
+                    sender,
+                } => self.handle_promise(config, ballot, v_bal, val, sender),
                 VerticalPaxosMessage::Accept { ballot, value } => {
                     self.handle_accept(config, &pkt.src, ballot, value)
-                },
-                VerticalPaxosMessage::AcceptOk { sender } => {
-                    self.handle_accept_ok(config, sender)
-                },
-                VerticalPaxosMessage::Commit { value } => {
-                    self.handle_commit(config, value)
-                },
-                VerticalPaxosMessage::Sync { config: new_config, value } => {
-                    self.handle_sync(config, new_config, value)
-                },
+                }
+                VerticalPaxosMessage::AcceptOk { sender } => self.handle_accept_ok(config, sender),
+                VerticalPaxosMessage::Commit { value } => self.handle_commit(config, value),
+                VerticalPaxosMessage::Sync {
+                    config: new_config,
+                    value,
+                } => self.handle_sync(config, new_config, value),
             };
         }
 

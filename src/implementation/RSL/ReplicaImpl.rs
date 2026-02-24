@@ -1,5 +1,4 @@
-use crate::implementation::common::upper_bound::*;
-use crate::implementation::common::upper_bound_i::*;
+use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::acceptor_gen as generated_acceptor;
@@ -7,25 +6,26 @@ use crate::generated::RSL::executor_gen as generated_executor;
 use crate::generated::RSL::learner_gen as generated_learner;
 use crate::generated::RSL::proposer_gen as generated_proposer;
 use crate::generated::RSL::types_gen::CRslIo;
-use crate::implementation::RSL::types_i::*;
-use vstd::prelude::*;
+use crate::implementation::common::upper_bound::*;
+use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::acceptorimpl::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::learnerimpl::*;
+use crate::implementation::RSL::types_i::*;
 use crate::implementation::RSL::ElectionImpl::COutstandingOperation;
 use crate::implementation::RSL::ExecutorImpl::*;
 use crate::implementation::RSL::ProposerImpl::*;
 use crate::implementation::RSL::{cconfiguration::*, ProposerImpl::*};
-use crate::protocol::RSL::{environment::*, replica::*};
-use crate::common::collections::vecs::*;
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::{
-    acceptor::*, configuration::*, constants::*, executor::*, learner::*, message::*,
-    proposer::*, types::*,
+    acceptor::*, configuration::*, constants::*, executor::*, learner::*, message::*, proposer::*,
+    types::*,
 };
+use crate::protocol::RSL::{environment::*, replica::*};
 use std::collections::*;
+use vstd::prelude::*;
 use vstd::std_specs::hash::*;
 use vstd::{map::*, map_lib::*, prelude::*, seq::*};
 

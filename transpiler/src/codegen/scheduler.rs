@@ -8,9 +8,9 @@
 //! using name-based heuristics and optional message variant mapping.
 
 use crate::ast::{Binding, Expr, Path, SpecFunction, Type};
-use crate::config::{MessageVariant, RoleDispatchConfig, SchedulerActionConfig};
 #[cfg(test)]
 use crate::config::RoleConfig;
+use crate::config::{MessageVariant, RoleDispatchConfig, SchedulerActionConfig};
 
 /// How an action is triggered at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,11 +77,7 @@ pub fn extract_lnext_actions(
         _ => return None,
     };
 
-    let params: Vec<String> = spec_fn
-        .params
-        .iter()
-        .map(|p| p.name.clone())
-        .collect();
+    let params: Vec<String> = spec_fn.params.iter().map(|p| p.name.clone()).collect();
 
     let mut actions = Vec::new();
 
@@ -171,11 +167,10 @@ fn extract_bindings(bindings: &[Binding]) -> Vec<(String, String)> {
         .iter()
         .map(|b| {
             let name = b.name_string();
-            let ty = b
-                .ty
-                .as_ref()
-                .map(type_to_string)
-                .unwrap_or_else(|| "int".to_string());
+            let ty =
+                b.ty.as_ref()
+                    .map(type_to_string)
+                    .unwrap_or_else(|| "int".to_string());
             (name, ty)
         })
         .collect()
@@ -231,7 +226,7 @@ fn classify_single_action(
     // Timer-driven override: checked FIRST because some action names contain
     // message keywords (like "Handle") but are actually timer/state-driven.
     let timer_override_patterns = [
-        "HandleAppendReject",  // Raft: failure sub-case, handled within AppendResponse
+        "HandleAppendReject", // Raft: failure sub-case, handled within AppendResponse
     ];
     if timer_override_patterns.iter().any(|p| name.contains(p)) {
         return (ActionKind::TimerDriven, None);
@@ -260,16 +255,17 @@ fn classify_single_action(
     // - ExecuteReply (quorum state transition on commit_senders count)
     // - PrimaryWrite (client request action, not triggered by network message)
     let message_response_patterns = [
-        "Send1b", "Send2b",        // Paxos (acceptor responds to Prepare/Accept)
-        "SendAnswer",              // LeaderElection (response to Election msg)
-        "GrantVote",               // Raft (response to RequestVote)
-        "FollowerAppendEntries",   // Raft (response to AppendEntries)
-        "SendPreAcceptOk",         // EPaxos (response to PreAccept)
-        "SendAcceptOk",            // EPaxos (response to Accept)
-        "SendPromise",             // VerticalPaxos (response to Prepare)
-        "WitnessSync",             // VerticalPaxos (response to Sync message)
-        "Sync",                    // VerticalPaxos (joining new config via Sync)
-        "ClientRead",              // ChainReplication (tail responds to read)
+        "Send1b",
+        "Send2b",                // Paxos (acceptor responds to Prepare/Accept)
+        "SendAnswer",            // LeaderElection (response to Election msg)
+        "GrantVote",             // Raft (response to RequestVote)
+        "FollowerAppendEntries", // Raft (response to AppendEntries)
+        "SendPreAcceptOk",       // EPaxos (response to PreAccept)
+        "SendAcceptOk",          // EPaxos (response to Accept)
+        "SendPromise",           // VerticalPaxos (response to Prepare)
+        "WitnessSync",           // VerticalPaxos (response to Sync message)
+        "Sync",                  // VerticalPaxos (joining new config via Sync)
+        "ClientRead",            // ChainReplication (tail responds to read)
     ];
     if message_response_patterns.iter().any(|p| name.contains(p)) {
         let variant = find_matching_variant(name, message_variants);
@@ -374,8 +370,16 @@ fn extract_action_keyword(name: &str) -> &str {
 /// Strip common role prefixes from action names for variant matching.
 fn strip_role_prefix(name: &str) -> &str {
     let role_prefixes = [
-        "TM", "RM", "Primary", "Backup", "Head", "Tail", "Middle",
-        "Follower", "Leader", "Candidate",
+        "TM",
+        "RM",
+        "Primary",
+        "Backup",
+        "Head",
+        "Tail",
+        "Middle",
+        "Follower",
+        "Leader",
+        "Candidate",
     ];
     for prefix in &role_prefixes {
         if let Some(rest) = name.strip_prefix(prefix) {
@@ -394,10 +398,7 @@ pub fn scheduler_config_to_toml(config: &SchedulerConfig) -> String {
         config.actions.len()
     ));
     out.push_str("[scheduler]\n");
-    out.push_str(&format!(
-        "next_fn = \"{}\"\n",
-        config.next_fn_name
-    ));
+    out.push_str(&format!("next_fn = \"{}\"\n", config.next_fn_name));
     out.push_str(&format!(
         "params = [{}]\n",
         config
@@ -423,10 +424,7 @@ pub fn scheduler_config_to_toml(config: &SchedulerConfig) -> String {
                 .iter()
                 .map(|(name, ty)| format!("[\"{}\", \"{}\"]", name, ty))
                 .collect();
-            out.push_str(&format!(
-                "existential_params = [{}]\n",
-                params.join(", ")
-            ));
+            out.push_str(&format!("existential_params = [{}]\n", params.join(", ")));
         }
         if i < config.actions.len() - 1 {
             out.push('\n');
@@ -476,7 +474,11 @@ pub struct HostScaffoldParams {
 /// - No two message_driven actions map to the same variant (shared variant conflict)
 pub fn validate_scaffold_params(params: &HostScaffoldParams) -> Vec<String> {
     let mut warnings = Vec::new();
-    let variant_names: Vec<&str> = params.message_variants.iter().map(|v| v.name.as_str()).collect();
+    let variant_names: Vec<&str> = params
+        .message_variants
+        .iter()
+        .map(|v| v.name.as_str())
+        .collect();
 
     // Track variant → action mapping for conflict detection
     let mut variant_to_actions: std::collections::HashMap<&str, Vec<&str>> =
@@ -570,7 +572,9 @@ fn emit_header(out: &mut String, params: &HostScaffoldParams) {
     ));
     out.push_str("//!\n");
     out.push_str("//! Auto-generated scaffold by the transpiler.\n");
-    out.push_str("//! TODO: Add protocol-specific guard logic and outbound message construction.\n");
+    out.push_str(
+        "//! TODO: Add protocol-specific guard logic and outbound message construction.\n",
+    );
     out.push('\n');
 }
 
@@ -642,11 +646,10 @@ fn emit_config(out: &mut String, params: &HostScaffoldParams) {
     out.push_str("            },\n");
     out.push_str("        };\n\n");
     out.push_str("        // TODO: Build protocol-specific constants from peers\n");
-    out.push_str("        let constants = CConstants::default(); // FIXME: initialize properly\n\n");
-    out.push_str(&format!(
-        "        Some({}Config {{\n",
-        params.protocol_name
-    ));
+    out.push_str(
+        "        let constants = CConstants::default(); // FIXME: initialize properly\n\n",
+    );
+    out.push_str(&format!("        Some({}Config {{\n", params.protocol_name));
     out.push_str("            peers,\n");
     out.push_str("            my_index,\n");
     out.push_str("            constants,\n");
@@ -721,10 +724,7 @@ fn emit_handler_methods(out: &mut String, params: &HostScaffoldParams) {
 
     for action in &msg_actions {
         let handler_name = to_snake_case(&action.exec_name);
-        let variant_name = action
-            .message_variant
-            .as_deref()
-            .unwrap_or("Unknown");
+        let variant_name = action.message_variant.as_deref().unwrap_or("Unknown");
 
         // Find the message variant to get its fields
         let variant_fields = params
@@ -746,14 +746,12 @@ fn emit_handler_methods(out: &mut String, params: &HostScaffoldParams) {
             for field in &variant.fields {
                 if field.len() >= 2 {
                     // If this field is referenced in flag_injections, emit without _ prefix
-                    let is_used = action.flag_injections.iter().any(|inj| {
-                        inj.len() >= 2 && inj[1] == field[0]
-                    });
+                    let is_used = action
+                        .flag_injections
+                        .iter()
+                        .any(|inj| inj.len() >= 2 && inj[1] == field[0]);
                     let prefix = if is_used { "" } else { "_" };
-                    out.push_str(&format!(
-                        "        {}{}: {},\n",
-                        prefix, field[0], field[1]
-                    ));
+                    out.push_str(&format!("        {}{}: {},\n", prefix, field[0], field[1]));
                 }
             }
         }
@@ -765,10 +763,7 @@ fn emit_handler_methods(out: &mut String, params: &HostScaffoldParams) {
             out.push_str("        // Flag injection: simulate receiving the message\n");
             for inj in &action.flag_injections {
                 if inj.len() >= 2 {
-                    out.push_str(&format!(
-                        "        self.state.{} = {};\n",
-                        inj[0], inj[1]
-                    ));
+                    out.push_str(&format!("        self.state.{} = {};\n", inj[0], inj[1]));
                 }
             }
             out.push('\n');
@@ -868,7 +863,9 @@ fn emit_role_step_methods(out: &mut String, params: &HostScaffoldParams) {
         // Message dispatch for this role
         if !role_msg_actions.is_empty() || !params.message_variants.is_empty() {
             out.push_str("        if let Some(pkt) = packet {\n");
-            out.push_str("            let sender_id = Self::resolve_sender_index(config, &pkt.src);\n");
+            out.push_str(
+                "            let sender_id = Self::resolve_sender_index(config, &pkt.src);\n",
+            );
             out.push_str("            let sender_id = match sender_id {\n");
             out.push_str("                Some(id) => id,\n");
             out.push_str("                None => {\n");
@@ -1029,18 +1026,12 @@ fn emit_role_dispatch_host_impl(out: &mut String, params: &HostScaffoldParams) {
             // Cascading if-else
             for (i, role) in rd.roles.iter().enumerate() {
                 if i == 0 {
-                    out.push_str(&format!(
-                        "        if {} {{\n",
-                        role.condition
-                    ));
+                    out.push_str(&format!("        if {} {{\n", role.condition));
                 } else if role.condition.is_empty() || i == rd.roles.len() - 1 {
                     // Last role or empty condition = else
                     out.push_str("        } else {\n");
                 } else {
-                    out.push_str(&format!(
-                        "        }} else if {} {{\n",
-                        role.condition
-                    ));
+                    out.push_str(&format!("        }} else if {} {{\n", role.condition));
                 }
                 out.push_str(&format!(
                     "            self.{}_step(config, packet)\n",
@@ -1051,10 +1042,7 @@ fn emit_role_dispatch_host_impl(out: &mut String, params: &HostScaffoldParams) {
         }
         _ => {
             // Match on the dispatch field
-            out.push_str(&format!(
-                "        match {} {{\n",
-                rd.dispatch_field
-            ));
+            out.push_str(&format!("        match {} {{\n", rd.dispatch_field));
             for (i, role) in rd.roles.iter().enumerate() {
                 if i == rd.roles.len() - 1 {
                     out.push_str(&format!(
@@ -1111,7 +1099,9 @@ fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
     out.push_str("            let sender_id = match sender_id {\n");
     out.push_str("                Some(id) => id,\n");
     out.push_str("                None => {\n");
-    out.push_str("                    return StepResult { ok: true, outbound: GenericOutbound::None };\n");
+    out.push_str(
+        "                    return StepResult { ok: true, outbound: GenericOutbound::None };\n",
+    );
     out.push_str("                },\n");
     out.push_str("            };\n\n");
     out.push_str("            return match pkt.msg {\n");
@@ -1160,10 +1150,10 @@ fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
         };
 
         // Find the message-driven action that maps to this variant
-        let handler = params.actions.iter().find(|a| {
-            a.is_message_driven()
-                && a.message_variant.as_deref() == Some(&variant.name)
-        });
+        let handler = params
+            .actions
+            .iter()
+            .find(|a| a.is_message_driven() && a.message_variant.as_deref() == Some(&variant.name));
 
         if let Some(action) = handler {
             let handler_name = to_snake_case(&action.exec_name);
@@ -1188,7 +1178,9 @@ fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
                 msg_type, variant.name, fields_pattern
             ));
             out.push_str("                    // TODO: No handler mapped for this variant\n");
-            out.push_str("                    StepResult { ok: true, outbound: GenericOutbound::None }\n");
+            out.push_str(
+                "                    StepResult { ok: true, outbound: GenericOutbound::None }\n",
+            );
             out.push_str("                },\n");
         }
     }
@@ -1243,11 +1235,10 @@ fn emit_protocol_host_impl(out: &mut String, params: &HostScaffoldParams) {
 fn emit_guard_checks(out: &mut String, action: &SchedulerActionConfig) {
     if action.has_guard_checks() {
         for guard in &action.guard_checks {
-            out.push_str(&format!(
-                "        if !({}) {{\n",
-                guard
-            ));
-            out.push_str("            return StepResult { ok: true, outbound: GenericOutbound::None };\n");
+            out.push_str(&format!("        if !({}) {{\n", guard));
+            out.push_str(
+                "            return StepResult { ok: true, outbound: GenericOutbound::None };\n",
+            );
             out.push_str("        }\n");
         }
     } else {
@@ -1455,7 +1446,11 @@ mod tests {
         assert_eq!(config.actions.len(), 8, "TwoPhase LNext has 8 branches");
 
         // Check specific actions
-        let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+        let names: Vec<&str> = config
+            .actions
+            .iter()
+            .map(|a| a.spec_name.as_str())
+            .collect();
         assert!(names.contains(&"LTMSendPrepare"));
         assert!(names.contains(&"LRMReceivePrepare"));
         assert!(names.contains(&"LTMRcvPrepared"));
@@ -1463,12 +1458,20 @@ mod tests {
         assert!(names.contains(&"LTMSendAbort"));
 
         // LTMSendPrepare has exists |sent_packets|
-        let send_prepare = config.actions.iter().find(|a| a.spec_name == "LTMSendPrepare").unwrap();
+        let send_prepare = config
+            .actions
+            .iter()
+            .find(|a| a.spec_name == "LTMSendPrepare")
+            .unwrap();
         assert_eq!(send_prepare.existential_params.len(), 1);
         assert_eq!(send_prepare.existential_params[0].0, "sent_packets");
 
         // LRMReceivePrepare has exists |rm: int, sent_packets|
-        let rcv_prepare = config.actions.iter().find(|a| a.spec_name == "LRMReceivePrepare").unwrap();
+        let rcv_prepare = config
+            .actions
+            .iter()
+            .find(|a| a.spec_name == "LRMReceivePrepare")
+            .unwrap();
         assert_eq!(rcv_prepare.existential_params.len(), 2);
         assert_eq!(rcv_prepare.existential_params[0].0, "rm");
     }
@@ -1481,7 +1484,11 @@ mod tests {
         let config = find_and_analyze_lnext(&fns, "LNext", "L", "C").unwrap();
         assert_eq!(config.actions.len(), 11, "Raft LNext has 11 branches");
 
-        let names: Vec<&str> = config.actions.iter().map(|a| a.spec_name.as_str()).collect();
+        let names: Vec<&str> = config
+            .actions
+            .iter()
+            .map(|a| a.spec_name.as_str())
+            .collect();
         assert!(names.contains(&"LTimeout"));
         assert!(names.contains(&"LGrantVote"));
         assert!(names.contains(&"LBecomeLeader"));
@@ -1533,13 +1540,21 @@ mod tests {
     #[test]
     fn test_classify_paxos_send1b_message_response() {
         let (kind, _) = classify_single_action("LSend1b", &[]);
-        assert_eq!(kind, ActionKind::MessageDriven, "Send1b is a response to Prepare");
+        assert_eq!(
+            kind,
+            ActionKind::MessageDriven,
+            "Send1b is a response to Prepare"
+        );
     }
 
     #[test]
     fn test_classify_paxos_send2b_message_response() {
         let (kind, _) = classify_single_action("LSend2b", &[]);
-        assert_eq!(kind, ActionKind::MessageDriven, "Send2b is a response to Accept");
+        assert_eq!(
+            kind,
+            ActionKind::MessageDriven,
+            "Send2b is a response to Accept"
+        );
     }
 
     #[test]
@@ -1679,9 +1694,18 @@ mod tests {
         assert_eq!(find("LTMRcvPrepared").kind, ActionKind::MessageDriven);
 
         // Variant matching
-        assert_eq!(find("LRMReceivePrepare").message_variant, Some("Prepare".to_string()));
-        assert_eq!(find("LRMReceiveCommit").message_variant, Some("Commit".to_string()));
-        assert_eq!(find("LTMRcvPrepared").message_variant, Some("PreparedVote".to_string()));
+        assert_eq!(
+            find("LRMReceivePrepare").message_variant,
+            Some("Prepare".to_string())
+        );
+        assert_eq!(
+            find("LRMReceiveCommit").message_variant,
+            Some("Commit".to_string())
+        );
+        assert_eq!(
+            find("LTMRcvPrepared").message_variant,
+            Some("PreparedVote".to_string())
+        );
     }
 
     #[test]
@@ -1733,15 +1757,21 @@ mod tests {
         assert_eq!(find("LSendAppendEntries").kind, ActionKind::TimerDriven);
         assert_eq!(find("LAdvanceCommitIndex").kind, ActionKind::TimerDriven);
         assert_eq!(find("LClientRequest").kind, ActionKind::TimerDriven);
-        assert_eq!(find("LBecomeLeader").kind, ActionKind::TimerDriven);     // quorum state transition
-        assert_eq!(find("LStepDown").kind, ActionKind::TimerDriven);         // cross-cutting term detection
+        assert_eq!(find("LBecomeLeader").kind, ActionKind::TimerDriven); // quorum state transition
+        assert_eq!(find("LStepDown").kind, ActionKind::TimerDriven); // cross-cutting term detection
         assert_eq!(find("LHandleAppendReject").kind, ActionKind::TimerDriven); // failure sub-case
 
         // Message-driven (actions that check msgs_* flags for specific variants)
         assert_eq!(find("LGrantVote").kind, ActionKind::MessageDriven);
         assert_eq!(find("LReceiveVoteGranted").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LFollowerAppendEntries").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LHandleAppendResponse").kind, ActionKind::MessageDriven);
+        assert_eq!(
+            find("LFollowerAppendEntries").kind,
+            ActionKind::MessageDriven
+        );
+        assert_eq!(
+            find("LHandleAppendResponse").kind,
+            ActionKind::MessageDriven
+        );
     }
 
     #[test]
@@ -1771,8 +1801,14 @@ mod tests {
         assert_eq!(find("LReceiveCoordinator").kind, ActionKind::MessageDriven);
 
         // Variant matching
-        assert_eq!(find("LReceiveAnswer").message_variant, Some("Answer".to_string()));
-        assert_eq!(find("LReceiveCoordinator").message_variant, Some("Coordinator".to_string()));
+        assert_eq!(
+            find("LReceiveAnswer").message_variant,
+            Some("Answer".to_string())
+        );
+        assert_eq!(
+            find("LReceiveCoordinator").message_variant,
+            Some("Coordinator".to_string())
+        );
     }
 
     #[test]
@@ -1799,12 +1835,21 @@ mod tests {
         assert_eq!(find("LPrimaryWrite").kind, ActionKind::TimerDriven); // client request, no msgs_* flags
 
         // Message-driven
-        assert_eq!(find("LBackupReceiveReplicate").kind, ActionKind::MessageDriven);
+        assert_eq!(
+            find("LBackupReceiveReplicate").kind,
+            ActionKind::MessageDriven
+        );
         assert_eq!(find("LPrimaryReceiveAck").kind, ActionKind::MessageDriven);
 
         // Variant matching
-        assert_eq!(find("LBackupReceiveReplicate").message_variant, Some("Replicate".to_string()));
-        assert_eq!(find("LPrimaryReceiveAck").message_variant, Some("Ack".to_string()));
+        assert_eq!(
+            find("LBackupReceiveReplicate").message_variant,
+            Some("Replicate".to_string())
+        );
+        assert_eq!(
+            find("LPrimaryReceiveAck").message_variant,
+            Some("Ack".to_string())
+        );
     }
 
     #[test]
@@ -1859,8 +1904,8 @@ mod tests {
         assert_eq!(find("LCheckpoint").kind, ActionKind::TimerDriven);
         assert_eq!(find("LViewChange").kind, ActionKind::TimerDriven);
         assert_eq!(find("LNewRound").kind, ActionKind::TimerDriven);
-        assert_eq!(find("LPrePrepare").kind, ActionKind::TimerDriven);   // primary initiates, no incoming msg
-        assert_eq!(find("LEnterCommit").kind, ActionKind::TimerDriven);  // quorum state transition
+        assert_eq!(find("LPrePrepare").kind, ActionKind::TimerDriven); // primary initiates, no incoming msg
+        assert_eq!(find("LEnterCommit").kind, ActionKind::TimerDriven); // quorum state transition
         assert_eq!(find("LExecuteReply").kind, ActionKind::TimerDriven); // quorum state transition
 
         // Message-driven (actions that check msgs_* flags)
@@ -1869,9 +1914,18 @@ mod tests {
         assert_eq!(find("LReceiveCommit").kind, ActionKind::MessageDriven);
 
         // Variant matching
-        assert_eq!(find("LReceivePrePrepare").message_variant, Some("PrePrepare".to_string()));
-        assert_eq!(find("LReceivePrepare").message_variant, Some("Prepare".to_string()));
-        assert_eq!(find("LReceiveCommit").message_variant, Some("Commit".to_string()));
+        assert_eq!(
+            find("LReceivePrePrepare").message_variant,
+            Some("PrePrepare".to_string())
+        );
+        assert_eq!(
+            find("LReceivePrepare").message_variant,
+            Some("Prepare".to_string())
+        );
+        assert_eq!(
+            find("LReceiveCommit").message_variant,
+            Some("Commit".to_string())
+        );
     }
 
     #[test]
@@ -1940,8 +1994,14 @@ mod tests {
         assert_eq!(find("LReceiveAcceptOk").kind, ActionKind::MessageDriven);
 
         // Variant matching
-        assert_eq!(find("LReceivePreAcceptOk").message_variant, Some("PreAcceptOk".to_string()));
-        assert_eq!(find("LReceiveAcceptOk").message_variant, Some("AcceptOk".to_string()));
+        assert_eq!(
+            find("LReceivePreAcceptOk").message_variant,
+            Some("PreAcceptOk".to_string())
+        );
+        assert_eq!(
+            find("LReceiveAcceptOk").message_variant,
+            Some("AcceptOk".to_string())
+        );
     }
 
     #[test]
@@ -2007,7 +2067,11 @@ mod tests {
             vec![make_variant("Prepare")],
         );
         let warnings = validate_scaffold_params(&params);
-        assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {:?}",
+            warnings
+        );
     }
 
     #[test]
@@ -2025,7 +2089,11 @@ mod tests {
     #[test]
     fn test_validate_nonexistent_variant_reference() {
         let params = make_params(
-            vec![make_action("LReceivePrepare", "message_driven", Some("Bogus"))],
+            vec![make_action(
+                "LReceivePrepare",
+                "message_driven",
+                Some("Bogus"),
+            )],
             vec![make_variant("Prepare")],
         );
         let warnings = validate_scaffold_params(&params);
@@ -2066,15 +2134,19 @@ mod tests {
     fn test_validate_multiple_issues() {
         let params = make_params(
             vec![
-                make_action("LReceivePrepare", "message_driven", None),          // missing variant
-                make_action("LSendPromise", "message_driven", Some("Bogus")),     // non-existent
-                make_action("LRecvAccepted", "message_driven", Some("Accept")),   // shared
-                make_action("LSend2b", "message_driven", Some("Accept")),         // shared
+                make_action("LReceivePrepare", "message_driven", None), // missing variant
+                make_action("LSendPromise", "message_driven", Some("Bogus")), // non-existent
+                make_action("LRecvAccepted", "message_driven", Some("Accept")), // shared
+                make_action("LSend2b", "message_driven", Some("Accept")), // shared
             ],
             vec![make_variant("Prepare"), make_variant("Accept")],
         );
         let warnings = validate_scaffold_params(&params);
-        assert!(warnings.len() >= 3, "expected >=3 warnings, got: {:?}", warnings);
+        assert!(
+            warnings.len() >= 3,
+            "expected >=3 warnings, got: {:?}",
+            warnings
+        );
         // Should have: missing variant, non-existent reference, shared conflict
         let joined = warnings.join(" | ");
         assert!(joined.contains("no message_variant"));
@@ -2339,7 +2411,9 @@ mod tests {
         assert!(code.contains("PaxosMessage::Promise { ballot, accepted_bal, accepted_val }"));
         assert!(code.contains("self.handle_crecv_promise(config, &pkt.src, sender_id, ballot, accepted_bal, accepted_val)"));
         assert!(code.contains("PaxosMessage::Accepted { ballot, value }"));
-        assert!(code.contains("self.handle_crecv_accepted(config, &pkt.src, sender_id, ballot, value)"));
+        assert!(
+            code.contains("self.handle_crecv_accepted(config, &pkt.src, sender_id, ballot, value)")
+        );
     }
 
     #[test]
@@ -2453,7 +2527,7 @@ mod tests {
                 message_variant: Some("Ping".to_string()),
                 existential_params: vec![],
                 flag_injections: vec![],
-                    guard_checks: vec![],
+                guard_checks: vec![],
             }],
             role_dispatch: None,
         };
@@ -2680,26 +2754,17 @@ mod tests {
                     RoleConfig {
                         name: "head".to_string(),
                         condition: "CNodeRole::Head".to_string(),
-                        actions: vec![
-                            "CHeadRecvWrite".to_string(),
-                            "CHeadForward".to_string(),
-                        ],
+                        actions: vec!["CHeadRecvWrite".to_string(), "CHeadForward".to_string()],
                     },
                     RoleConfig {
                         name: "middle".to_string(),
                         condition: "CNodeRole::Middle".to_string(),
-                        actions: vec![
-                            "CMiddleRecvFwd".to_string(),
-                            "CMiddleRecvAck".to_string(),
-                        ],
+                        actions: vec!["CMiddleRecvFwd".to_string(), "CMiddleRecvAck".to_string()],
                     },
                     RoleConfig {
                         name: "tail".to_string(),
                         condition: "CNodeRole::Tail".to_string(),
-                        actions: vec![
-                            "CTailRecvFwd".to_string(),
-                            "CTailCommit".to_string(),
-                        ],
+                        actions: vec!["CTailRecvFwd".to_string(), "CTailCommit".to_string()],
                     },
                 ],
             }),
@@ -2776,7 +2841,10 @@ mod tests {
         let params = make_chain_role_params();
         let code = generate_host_scaffold(&params);
         assert!(code.contains("fn head_step("), "Missing head_step method");
-        assert!(code.contains("fn middle_step("), "Missing middle_step method");
+        assert!(
+            code.contains("fn middle_step("),
+            "Missing middle_step method"
+        );
         assert!(code.contains("fn tail_step("), "Missing tail_step method");
     }
 
@@ -2806,7 +2874,8 @@ mod tests {
 
         // Count occurrences of handler calls — each role's step method
         // calls different handlers for the same message variant
-        let head_write = code.contains("self.handle_chead_recv_write(config, &pkt.src, sender_id, value)");
+        let head_write =
+            code.contains("self.handle_chead_recv_write(config, &pkt.src, sender_id, value)");
         assert!(head_write, "Head should handle ClientWrite");
     }
 
@@ -2826,7 +2895,10 @@ mod tests {
         let params = make_paxos_params();
         let code = generate_host_scaffold(&params);
         // Should NOT have any role step methods
-        assert!(!code.contains("_step("), "Flat dispatch should not have role step methods");
+        assert!(
+            !code.contains("_step("),
+            "Flat dispatch should not have role step methods"
+        );
         // Should have flat ProtocolHost impl
         assert!(code.contains("impl ProtocolHost for PaxosHost {"));
         assert!(code.contains("return match pkt.msg {"));
@@ -2880,14 +2952,13 @@ name = "follower"
 condition = ""
 actions = ["CAction2"]
 "#;
-        let config: crate::config::SchedulerTomlConfig =
-            toml::from_str::<toml::Value>(toml_str)
-                .unwrap()
-                .get("scheduler")
-                .unwrap()
-                .clone()
-                .try_into()
-                .unwrap();
+        let config: crate::config::SchedulerTomlConfig = toml::from_str::<toml::Value>(toml_str)
+            .unwrap()
+            .get("scheduler")
+            .unwrap()
+            .clone()
+            .try_into()
+            .unwrap();
 
         let rd = config.role_dispatch.unwrap();
         assert_eq!(rd.dispatch_style, "config_index");
@@ -2955,7 +3026,7 @@ actions = ["CAction2"]
                     vec!["msgs_election".to_string(), "true".to_string()],
                     vec!["msgs_election_sender".to_string(), "sender".to_string()],
                 ],
-                    guard_checks: vec![],
+                guard_checks: vec![],
             }],
             role_dispatch: None,
         };
@@ -2999,7 +3070,7 @@ actions = ["CAction2"]
                     vec!["msgs_election".to_string(), "true".to_string()],
                     vec!["msgs_election_sender".to_string(), "sender".to_string()],
                 ],
-                    guard_checks: vec![],
+                guard_checks: vec![],
             }],
             role_dispatch: None,
         };
@@ -3035,7 +3106,7 @@ actions = ["CAction2"]
                 message_variant: Some("Ping".to_string()),
                 existential_params: vec![],
                 flag_injections: vec![],
-                    guard_checks: vec![],
+                guard_checks: vec![],
             }],
             role_dispatch: None,
         };
@@ -3084,7 +3155,7 @@ actions = ["CAction2"]
                     vec!["msgs_promise_bal".to_string(), "ballot".to_string()],
                     // v_bal and val are NOT used in injections
                 ],
-                    guard_checks: vec![],
+                guard_checks: vec![],
             }],
             role_dispatch: None,
         };
@@ -3126,10 +3197,8 @@ actions = ["CAction2"]
                 kind: "message_driven".to_string(),
                 message_variant: Some("Reset".to_string()),
                 existential_params: vec![],
-                flag_injections: vec![
-                    vec!["msgs_active".to_string(), "false".to_string()],
-                ],
-                    guard_checks: vec![],
+                flag_injections: vec![vec!["msgs_active".to_string(), "false".to_string()]],
+                guard_checks: vec![],
             }],
             role_dispatch: None,
         };
@@ -3154,21 +3223,23 @@ kind = "message_driven"
 message_variant = "Election"
 flag_injections = [["msgs_election", "true"], ["msgs_election_sender", "sender"]]
 "#;
-        let config: crate::config::SchedulerTomlConfig =
-            toml::from_str::<toml::Value>(toml_str)
-                .unwrap()
-                .get("scheduler")
-                .unwrap()
-                .clone()
-                .try_into()
-                .unwrap();
+        let config: crate::config::SchedulerTomlConfig = toml::from_str::<toml::Value>(toml_str)
+            .unwrap()
+            .get("scheduler")
+            .unwrap()
+            .clone()
+            .try_into()
+            .unwrap();
 
         assert_eq!(config.actions.len(), 1);
         let action = &config.actions[0];
         assert!(action.has_flag_injections());
         assert_eq!(action.flag_injections.len(), 2);
         assert_eq!(action.flag_injections[0], vec!["msgs_election", "true"]);
-        assert_eq!(action.flag_injections[1], vec!["msgs_election_sender", "sender"]);
+        assert_eq!(
+            action.flag_injections[1],
+            vec!["msgs_election_sender", "sender"]
+        );
     }
 
     #[test]
@@ -3183,14 +3254,13 @@ spec_name = "LSend1a"
 exec_name = "CSend1a"
 kind = "timer_driven"
 "#;
-        let config: crate::config::SchedulerTomlConfig =
-            toml::from_str::<toml::Value>(toml_str)
-                .unwrap()
-                .get("scheduler")
-                .unwrap()
-                .clone()
-                .try_into()
-                .unwrap();
+        let config: crate::config::SchedulerTomlConfig = toml::from_str::<toml::Value>(toml_str)
+            .unwrap()
+            .get("scheduler")
+            .unwrap()
+            .clone()
+            .try_into()
+            .unwrap();
 
         let action = &config.actions[0];
         assert!(!action.has_flag_injections());
@@ -3220,7 +3290,7 @@ kind = "timer_driven"
                     vec!["msgs_election".to_string(), "true".to_string()],
                     vec!["msgs_election_sender".to_string(), "sender".to_string()],
                 ],
-                    guard_checks: vec![],
+                guard_checks: vec![],
             }],
             role_dispatch: Some(RoleDispatchConfig {
                 dispatch_style: "config_index".to_string(),
@@ -3263,9 +3333,7 @@ kind = "timer_driven"
                 message_variant: Some("Prepare".to_string()),
                 existential_params: vec![],
                 flag_injections: vec![],
-                guard_checks: vec![
-                    "ballot >= self.state.promised_bal".to_string(),
-                ],
+                guard_checks: vec!["ballot >= self.state.promised_bal".to_string()],
             }],
             role_dispatch: None,
         };
@@ -3301,9 +3369,7 @@ kind = "timer_driven"
                 message_variant: None,
                 existential_params: vec![],
                 flag_injections: vec![],
-                guard_checks: vec![
-                    "matches!(self.state.phase, CPhase::Phase1)".to_string(),
-                ],
+                guard_checks: vec!["matches!(self.state.phase, CPhase::Phase1)".to_string()],
             }],
             role_dispatch: None,
         };
@@ -3405,9 +3471,7 @@ kind = "timer_driven"
                     vec!["msgs_election".to_string(), "true".to_string()],
                     vec!["msgs_election_sender".to_string(), "sender".to_string()],
                 ],
-                guard_checks: vec![
-                    "self.state.my_id > self.state.msgs_election_sender".to_string(),
-                ],
+                guard_checks: vec!["self.state.my_id > self.state.msgs_election_sender".to_string()],
             }],
             role_dispatch: None,
         };
@@ -3444,14 +3508,13 @@ guard_checks = [
     "matches!(self.state.phase, CPhase::Phase1)",
 ]
 "#;
-        let config: crate::config::SchedulerTomlConfig =
-            toml::from_str::<toml::Value>(toml_str)
-                .unwrap()
-                .get("scheduler")
-                .unwrap()
-                .clone()
-                .try_into()
-                .unwrap();
+        let config: crate::config::SchedulerTomlConfig = toml::from_str::<toml::Value>(toml_str)
+            .unwrap()
+            .get("scheduler")
+            .unwrap()
+            .clone()
+            .try_into()
+            .unwrap();
 
         let action = &config.actions[0];
         assert!(action.has_guard_checks());
@@ -3475,14 +3538,13 @@ spec_name = "LSend1a"
 exec_name = "CSend1a"
 kind = "timer_driven"
 "#;
-        let config: crate::config::SchedulerTomlConfig =
-            toml::from_str::<toml::Value>(toml_str)
-                .unwrap()
-                .get("scheduler")
-                .unwrap()
-                .clone()
-                .try_into()
-                .unwrap();
+        let config: crate::config::SchedulerTomlConfig = toml::from_str::<toml::Value>(toml_str)
+            .unwrap()
+            .get("scheduler")
+            .unwrap()
+            .clone()
+            .try_into()
+            .unwrap();
 
         let action = &config.actions[0];
         assert!(!action.has_guard_checks());

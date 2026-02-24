@@ -1718,20 +1718,22 @@ mod tests {
         assert_eq!(module.operators.len(), 1);
         // Should parse successfully with FnExcept whose func is a RecordAccess
         match &module.operators[0].body {
-            TlaExpr::BinOp { op: TlaBinOp::Eq, right, .. } => {
-                match right.as_ref() {
-                    TlaExpr::FnExcept { func, updates } => {
-                        match func.as_ref() {
-                            TlaExpr::RecordAccess { field, .. } => {
-                                assert_eq!(field, "field");
-                            }
-                            other => panic!("Expected RecordAccess, got {:?}", other),
+            TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                right,
+                ..
+            } => match right.as_ref() {
+                TlaExpr::FnExcept { func, updates } => {
+                    match func.as_ref() {
+                        TlaExpr::RecordAccess { field, .. } => {
+                            assert_eq!(field, "field");
                         }
-                        assert_eq!(updates.len(), 1);
+                        other => panic!("Expected RecordAccess, got {:?}", other),
                     }
-                    other => panic!("Expected FnExcept, got {:?}", other),
+                    assert_eq!(updates.len(), 1);
                 }
-            }
+                other => panic!("Expected FnExcept, got {:?}", other),
+            },
             other => panic!("Expected BinOp Eq, got {:?}", other),
         }
     }
@@ -1771,15 +1773,13 @@ mod tests {
         let module = parse_module(source).unwrap();
         assert_eq!(module.operators.len(), 1);
         match &module.operators[0].body {
-            TlaExpr::FnSet { domain, range } => {
-                match (domain.as_ref(), range.as_ref()) {
-                    (TlaExpr::Ident(d), TlaExpr::Ident(r)) => {
-                        assert_eq!(d, "Int");
-                        assert_eq!(r, "Int");
-                    }
-                    other => panic!("Expected Ident/Ident, got {:?}", other),
+            TlaExpr::FnSet { domain, range } => match (domain.as_ref(), range.as_ref()) {
+                (TlaExpr::Ident(d), TlaExpr::Ident(r)) => {
+                    assert_eq!(d, "Int");
+                    assert_eq!(r, "Int");
                 }
-            }
+                other => panic!("Expected Ident/Ident, got {:?}", other),
+            },
             other => panic!("Expected FnSet, got {:?}", other),
         }
     }

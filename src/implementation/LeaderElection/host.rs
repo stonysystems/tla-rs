@@ -43,7 +43,9 @@ impl ProtocolConfig for LeaderElectionConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -55,7 +57,7 @@ impl ProtocolConfig for LeaderElectionConfig {
             None => {
                 eprintln!("LeaderElection: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         // Build the nodes set: all indices 0..n-1
@@ -105,15 +107,22 @@ impl LeaderElectionHost {
 
         // Guard: we must be alive and have higher ID than sender
         if !self.state.alive.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if my_id <= sender {
             // We don't have a higher ID; ignore the election message.
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // All CSendAnswer preconditions met: alive, my_id > sender
-        let (new_state, _sent) = election_gen::CSendAnswer(&self.state, &config.constants, &my_id, &sender);
+        let (new_state, _sent) =
+            election_gen::CSendAnswer(&self.state, &config.constants, &my_id, &sender);
         self.state = new_state;
 
         // Send Answer back to the sender to suppress their election
@@ -127,7 +136,10 @@ impl LeaderElectionHost {
                 },
             }
         } else {
-            StepResult { ok: true, outbound: GenericOutbound::None }
+            StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            }
         }
     }
 
@@ -149,19 +161,27 @@ impl LeaderElectionHost {
 
         // Check all guards for CReceiveAnswer
         if !self.state.alive.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.waiting_answer || self.state.waiting_node != my_id {
             // We were not waiting for an answer, ignore
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = election_gen::CReceiveAnswer(
-            &self.state, &config.constants, &my_id, &responder,
-        );
+        let (new_state, _sent) =
+            election_gen::CReceiveAnswer(&self.state, &config.constants, &my_id, &responder);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming Coordinator message.
@@ -179,15 +199,20 @@ impl LeaderElectionHost {
 
         // Check guard for CReceiveCoordinator
         if !self.state.alive.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = election_gen::CReceiveCoordinator(
-            &self.state, &config.constants, &my_id, &leader,
-        );
+        let (new_state, _sent) =
+            election_gen::CReceiveCoordinator(&self.state, &config.constants, &my_id, &leader);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer-driven actions, executed round-robin when no message arrives.
@@ -196,10 +221,7 @@ impl LeaderElectionHost {
     /// 0: CStartElection - periodic election trigger (leader heartbeat timeout)
     /// 1: CSendCoordinator - claim victory if waiting and no answer received
     /// 2: CDetectFailure - detect that the current leader has failed
-    fn timer_step(
-        &mut self,
-        config: &LeaderElectionConfig,
-    ) -> StepResult<LeaderElectionMessage> {
+    fn timer_step(&mut self, config: &LeaderElectionConfig) -> StepResult<LeaderElectionMessage> {
         let my_id = self.my_node_id;
         let result = match self.action_index % 3 {
             0 => self.try_start_election(config, my_id),
@@ -225,28 +247,38 @@ impl LeaderElectionHost {
     ) -> StepResult<LeaderElectionMessage> {
         // Guard: must be alive
         if !self.state.alive.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Heuristic: don't start election if we already have a leader
         // and are not currently in an election. In a real system, this
         // would be triggered by a leader heartbeat timeout.
         if self.state.has_leader && self.state.alive.contains(&self.state.leader) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Don't start if we are already electing
         if self.state.electing.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = election_gen::CStartElection(
-            &self.state, &config.constants, &my_id,
-        );
+        let (new_state, _sent) =
+            election_gen::CStartElection(&self.state, &config.constants, &my_id);
         self.state = new_state;
 
         // Send Election message to all nodes with higher IDs
-        let higher_peers: Vec<EndPoint> = config.peers.iter()
+        let higher_peers: Vec<EndPoint> = config
+            .peers
+            .iter()
             .enumerate()
             .filter(|(i, _)| (*i as u64) > my_id)
             .map(|(_, ep)| ep.clone_up_to_view())
@@ -255,7 +287,10 @@ impl LeaderElectionHost {
         if higher_peers.is_empty() {
             // No higher-ID nodes: we win immediately.
             // Try to send Coordinator right away on the next timer tick.
-            StepResult { ok: true, outbound: GenericOutbound::None }
+            StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            }
         } else {
             StepResult {
                 ok: true,
@@ -286,22 +321,32 @@ impl LeaderElectionHost {
     ) -> StepResult<LeaderElectionMessage> {
         // Check all CSendCoordinator guards
         if !self.state.alive.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.electing.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.waiting_answer || self.state.waiting_node != my_id {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = election_gen::CSendCoordinator(
-            &self.state, &config.constants, &my_id,
-        );
+        let (new_state, _sent) =
+            election_gen::CSendCoordinator(&self.state, &config.constants, &my_id);
         self.state = new_state;
 
         // Broadcast Coordinator message to all peers
-        let all_peers: Vec<EndPoint> = config.peers.iter()
+        let all_peers: Vec<EndPoint> = config
+            .peers
+            .iter()
             .enumerate()
             .filter(|(i, _)| (*i as u64) != my_id)
             .map(|(_, ep)| ep.clone_up_to_view())
@@ -329,10 +374,16 @@ impl LeaderElectionHost {
     ) -> StepResult<LeaderElectionMessage> {
         // Guard: must be alive and have a leader
         if !self.state.alive.contains(&my_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !self.state.has_leader {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // The spec requires !s.alive.contains(s.leader).
@@ -343,24 +394,31 @@ impl LeaderElectionHost {
         // heuristics) for leader-less situations.
         if self.state.alive.contains(&self.state.leader) {
             // Leader still considered alive; cannot trigger CDetectFailure.
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Leader is not in alive set: precondition satisfied.
-        let (new_state, _sent) = election_gen::CDetectFailure(
-            &self.state, &config.constants, &my_id,
-        );
+        let (new_state, _sent) =
+            election_gen::CDetectFailure(&self.state, &config.constants, &my_id);
         self.state = new_state;
 
         // Send Election message to all higher-ID nodes
-        let higher_peers: Vec<EndPoint> = config.peers.iter()
+        let higher_peers: Vec<EndPoint> = config
+            .peers
+            .iter()
             .enumerate()
             .filter(|(i, _)| (*i as u64) > my_id)
             .map(|(_, ep)| ep.clone_up_to_view())
             .collect();
 
         if higher_peers.is_empty() {
-            StepResult { ok: true, outbound: GenericOutbound::None }
+            StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            }
         } else {
             StepResult {
                 ok: true,
@@ -393,15 +451,13 @@ impl ProtocolHost for LeaderElectionHost {
     ) -> StepResult<Self::Msg> {
         if let Some(pkt) = packet {
             match pkt.msg {
-                LeaderElectionMessage::Election { sender } => {
-                    self.handle_election(config, sender)
-                },
+                LeaderElectionMessage::Election { sender } => self.handle_election(config, sender),
                 LeaderElectionMessage::Answer { responder } => {
                     self.handle_answer(config, responder)
-                },
+                }
                 LeaderElectionMessage::Coordinator { leader } => {
                     self.handle_coordinator(config, leader)
-                },
+                }
             }
         } else {
             // Timeout: run timer-driven actions

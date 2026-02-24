@@ -39,15 +39,15 @@ impl ProtocolMessage for LeaderElectionMessage {
             LeaderElectionMessage::Election { sender } => {
                 buf.extend_from_slice(&TAG_ELECTION.to_le_bytes());
                 buf.extend_from_slice(&sender.to_le_bytes());
-            },
+            }
             LeaderElectionMessage::Answer { responder } => {
                 buf.extend_from_slice(&TAG_ANSWER.to_le_bytes());
                 buf.extend_from_slice(&responder.to_le_bytes());
-            },
+            }
             LeaderElectionMessage::Coordinator { leader } => {
                 buf.extend_from_slice(&TAG_COORDINATOR.to_le_bytes());
                 buf.extend_from_slice(&leader.to_le_bytes());
-            },
+            }
         }
     }
 
@@ -56,12 +56,10 @@ impl ProtocolMessage for LeaderElectionMessage {
             return None;
         }
         let tag = u64::from_le_bytes([
-            data[0], data[1], data[2], data[3],
-            data[4], data[5], data[6], data[7],
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
         ]);
         let payload = u64::from_le_bytes([
-            data[8], data[9], data[10], data[11],
-            data[12], data[13], data[14], data[15],
+            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
         ]);
         match tag {
             TAG_ELECTION => Some(LeaderElectionMessage::Election { sender: payload }),

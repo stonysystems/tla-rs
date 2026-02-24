@@ -221,7 +221,7 @@ ensures
         match &s.role {
             CNodeRole::Middle => {
                 __pending_sent.insert(value.clone());
-                
+
             },
             _ => {},
         };

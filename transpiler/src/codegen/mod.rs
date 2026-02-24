@@ -282,10 +282,7 @@ impl TypeGenerator {
         let generated_fields: Vec<&FieldDef> = spec
             .fields
             .iter()
-            .filter(|field| {
-                !skip_fields
-                    .is_some_and(|skips| skips.contains(&field.name))
-            })
+            .filter(|field| !skip_fields.is_some_and(|skips| skips.contains(&field.name)))
             .collect();
 
         // Generate struct definition
@@ -2252,7 +2249,10 @@ mod tests {
         let naming = make_config();
         let remapping = HashMap::new();
         let mut extra_aliases = HashMap::new();
-        extra_aliases.insert("CRslIo".to_string(), "LIoOp<EndPoint, CMessage>".to_string());
+        extra_aliases.insert(
+            "CRslIo".to_string(),
+            "LIoOp<EndPoint, CMessage>".to_string(),
+        );
         extra_aliases.insert(
             "CReplyMap".to_string(),
             "HashMap<EndPoint, CReply>".to_string(),
@@ -2281,12 +2281,16 @@ mod tests {
 
         let result = generate_all_types_full(&cfg);
         assert!(
-            result.code.contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
+            result
+                .code
+                .contains("pub type CRslIo = LIoOp<EndPoint, CMessage>;"),
             "Should include configured CRslIo alias: {}",
             result.code
         );
         assert!(
-            result.code.contains("pub type CReplyMap = HashMap<EndPoint, CReply>;"),
+            result
+                .code
+                .contains("pub type CReplyMap = HashMap<EndPoint, CReply>;"),
             "Should include configured CReplyMap alias: {}",
             result.code
         );
@@ -2428,7 +2432,9 @@ mod tests {
         };
         let result = generate_all_types_full(&cfg);
         assert!(
-            !result.code.contains("pub open spec fn valid(&self) -> bool"),
+            !result
+                .code
+                .contains("pub open spec fn valid(&self) -> bool"),
             "CClockReading valid() should be skipped: {}",
             result.code
         );
@@ -2478,7 +2484,9 @@ mod tests {
         };
         let result = generate_all_types_full(&cfg);
         assert!(
-            result.code.contains("pub open spec fn valid(&self) -> bool"),
+            result
+                .code
+                .contains("pub open spec fn valid(&self) -> bool"),
             "valid() should still be generated when only View impl is skipped: {}",
             result.code
         );
@@ -3035,7 +3043,9 @@ mod tests {
 
         let result = generate_all_types_full(&cfg);
         assert!(
-            result.code.contains("pub fn unreachable_value<T>() -> (result: T)"),
+            result
+                .code
+                .contains("pub fn unreachable_value<T>() -> (result: T)"),
             "types output should include unreachable_value helper when enabled: {}",
             result.code
         );
@@ -3350,7 +3360,10 @@ mod tests {
         let generator = TypeGenerator::new(make_config());
         let mut code = String::new();
         generator.generate_external_body_clone("CNode", &mut code);
-        assert!(code.contains("impl Clone for CNode"), "Should generate Clone impl");
+        assert!(
+            code.contains("impl Clone for CNode"),
+            "Should generate Clone impl"
+        );
         assert!(
             code.contains("#[verifier(external_body)]"),
             "Should mark fn as external_body"

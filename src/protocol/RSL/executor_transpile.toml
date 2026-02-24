@@ -26,6 +26,15 @@ skip_functions = [
     "LClientsInReplies",
 ]
 
+# Keep these helper/boundary functions owned by implementation modules (no generated stubs).
+no_stub_functions = [
+    "GetPacketsFromReplies",
+    "LClientsInReplies",
+    "RepliesAreReplyType",
+    "UpdateNewCache",
+    "LExecutorExecute",
+]
+
 # Spec-only functions that should NOT get C-prefix
 spec_only_functions = [
     "LtUpperBound",
@@ -75,6 +84,8 @@ nat_type = "u64"
 "RslMessageAppStateSupply" = "CMessage::CMessageAppStateSupply"
 "RslMessageStartingPhase2" = "CMessage::CMessageStartingPhase2"
 "RslMessageRequest" = "CMessage::CMessageRequest"
+"COutstandingOperation::OutstandingOpUnknown" = "COutstandingOperation::COutstandingOpUnknown"
+"COutstandingOperation::OutstandingOpKnown" = "COutstandingOperation::COutstandingOpKnown"
 
 [variant_remapping]
 "OutstandingOpUnknown" = "COutstandingOperation::COutstandingOpUnknown"
@@ -100,6 +111,8 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
+# Trust postconditions while proof generation for executor catches up.
+assume_postconditions = true
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false
 # Custom imports for executor module

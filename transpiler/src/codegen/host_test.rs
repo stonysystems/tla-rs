@@ -154,7 +154,8 @@ pub fn strip_verus_types(code: &str) -> String {
             || trimmed.starts_with("use std::collections::")
             || trimmed == "verus! {"
             || trimmed == "} // verus!"
-            || (trimmed.starts_with("//") && (trimmed.contains("Auto-generated") || trimmed.contains("DO NOT EDIT")))
+            || (trimmed.starts_with("//")
+                && (trimmed.contains("Auto-generated") || trimmed.contains("DO NOT EDIT")))
         {
             i += 1;
             continue;
@@ -200,7 +201,9 @@ pub fn strip_verus_types(code: &str) -> String {
         }
 
         // Skip CState/CConstants impl blocks with only spec fns
-        if trimmed.starts_with("impl C") && trimmed.contains('{') && !trimmed.contains("Clone")
+        if trimmed.starts_with("impl C")
+            && trimmed.contains('{')
+            && !trimmed.contains("Clone")
             && impl_block_is_spec_only(&lines, i)
         {
             i = skip_brace_block(&lines, i);
@@ -244,7 +247,10 @@ fn collect_function_names(code: &str) -> Vec<String> {
     let mut names = Vec::new();
     for line in code.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("pub fn ").or_else(|| trimmed.strip_prefix("fn ")) {
+        if let Some(rest) = trimmed
+            .strip_prefix("pub fn ")
+            .or_else(|| trimmed.strip_prefix("fn "))
+        {
             if let Some(name) = rest.split('(').next() {
                 let name = name.split('<').next().unwrap_or(name).trim();
                 if !name.is_empty() {
@@ -294,7 +300,8 @@ pub fn strip_verus_gen(code: &str, skip_fns: &[String]) -> String {
             || trimmed.starts_with("use std::collections::")
             || trimmed == "verus! {"
             || trimmed == "} // verus!"
-            || (trimmed.starts_with("//") && (trimmed.contains("Auto-generated") || trimmed.contains("DO NOT EDIT")))
+            || (trimmed.starts_with("//")
+                && (trimmed.contains("Auto-generated") || trimmed.contains("DO NOT EDIT")))
         {
             i += 1;
             continue;
@@ -322,7 +329,8 @@ pub fn strip_verus_gen(code: &str, skip_fns: &[String]) -> String {
         // Handle exec function signatures: strip `exec` keyword, fix return type
         if trimmed.starts_with("pub exec fn ") {
             // Extract function name to check for duplicates
-            let fn_name = trimmed.strip_prefix("pub exec fn ")
+            let fn_name = trimmed
+                .strip_prefix("pub exec fn ")
                 .and_then(|r| r.split('(').next())
                 .unwrap_or("");
             if skip_fns.iter().any(|n| n == fn_name) {
@@ -396,9 +404,7 @@ pub fn strip_verus_gen(code: &str, skip_fns: &[String]) -> String {
 fn is_external_body_helper(lines: &[&str], i: usize) -> bool {
     let trimmed = lines[i].trim();
     // Pattern 1: current line is #[verifier(external_body)], next line is fn
-    if trimmed.starts_with("#[verifier(external_body)]")
-        && i + 1 < lines.len()
-    {
+    if trimmed.starts_with("#[verifier(external_body)]") && i + 1 < lines.len() {
         let next = lines[i + 1].trim();
         if next.starts_with("fn clone_hashset") || next.starts_with("fn clone_log") {
             return true;
@@ -425,15 +431,22 @@ fn skip_requires_ensures(lines: &[&str], mut i: usize) -> usize {
             return i;
         }
         // Also handle: the body starts with the struct name like `CState {`
-        if paren_depth == 0 && !trimmed.starts_with("requires") && !trimmed.starts_with("ensures")
-            && !trimmed.starts_with("//") && !trimmed.is_empty()
+        if paren_depth == 0
+            && !trimmed.starts_with("requires")
+            && !trimmed.starts_with("ensures")
+            && !trimmed.starts_with("//")
+            && !trimmed.is_empty()
         {
             // Check if this looks like the start of a body expression
             // (not a spec continuation)
-            if !trimmed.contains("@") && !trimmed.contains("=~=")
-                && !trimmed.starts_with("*") && !trimmed.starts_with("!")
-                && !trimmed.starts_with("(") && !trimmed.starts_with("||")
-                && !trimmed.starts_with("&&") && !trimmed.ends_with(',')
+            if !trimmed.contains("@")
+                && !trimmed.contains("=~=")
+                && !trimmed.starts_with("*")
+                && !trimmed.starts_with("!")
+                && !trimmed.starts_with("(")
+                && !trimmed.starts_with("||")
+                && !trimmed.starts_with("&&")
+                && !trimmed.ends_with(',')
                 && trimmed.contains('{')
             {
                 return i;
@@ -442,8 +455,12 @@ fn skip_requires_ensures(lines: &[&str], mut i: usize) -> usize {
 
         // Track paren depth for spec expressions like `({ ... })`
         for c in trimmed.chars() {
-            if c == '(' { paren_depth += 1; }
-            if c == ')' { paren_depth -= 1; }
+            if c == '(' {
+                paren_depth += 1;
+            }
+            if c == ')' {
+                paren_depth -= 1;
+            }
         }
 
         i += 1;
@@ -471,13 +488,21 @@ fn emit_function_body(lines: &[&str], start: usize, result: &mut String) -> usiz
             in_proof = true;
             proof_depth = 0;
             for c in trimmed.chars() {
-                if c == '{' { proof_depth += 1; }
-                if c == '}' { proof_depth -= 1; }
+                if c == '{' {
+                    proof_depth += 1;
+                }
+                if c == '}' {
+                    proof_depth -= 1;
+                }
             }
             // Still count toward overall depth
             for c in trimmed.chars() {
-                if c == '{' { depth += 1; }
-                if c == '}' { depth -= 1; }
+                if c == '{' {
+                    depth += 1;
+                }
+                if c == '}' {
+                    depth -= 1;
+                }
             }
             i += 1;
             if proof_depth <= 0 {
@@ -488,8 +513,14 @@ fn emit_function_body(lines: &[&str], start: usize, result: &mut String) -> usiz
 
         if in_proof {
             for c in trimmed.chars() {
-                if c == '{' { proof_depth += 1; depth += 1; }
-                if c == '}' { proof_depth -= 1; depth -= 1; }
+                if c == '{' {
+                    proof_depth += 1;
+                    depth += 1;
+                }
+                if c == '}' {
+                    proof_depth -= 1;
+                    depth -= 1;
+                }
             }
             i += 1;
             if proof_depth <= 0 {
@@ -500,8 +531,12 @@ fn emit_function_body(lines: &[&str], start: usize, result: &mut String) -> usiz
 
         // Count braces
         for c in trimmed.chars() {
-            if c == '{' { depth += 1; }
-            if c == '}' { depth -= 1; }
+            if c == '{' {
+                depth += 1;
+            }
+            if c == '}' {
+                depth -= 1;
+            }
         }
 
         result.push_str(lines[i]);
@@ -524,7 +559,10 @@ fn skip_brace_block_from_fn(lines: &[&str], i: usize) -> usize {
     while j < lines.len() {
         let trimmed = lines[j].trim();
         j += 1;
-        if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") || trimmed.starts_with("pub exec fn ") {
+        if trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("pub exec fn ")
+        {
             // Now skip requires/ensures and body
             while j < lines.len() {
                 let t = lines[j].trim();
@@ -543,10 +581,7 @@ fn skip_brace_block_from_fn(lines: &[&str], i: usize) -> usize {
 /// Strip message code imports for standalone compilation.
 fn strip_message_imports(code: &str) -> String {
     code.lines()
-        .filter(|line| {
-            !line.starts_with("use crate::")
-                && !line.starts_with("//!")
-        })
+        .filter(|line| !line.starts_with("use crate::") && !line.starts_with("//!"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -558,8 +593,7 @@ pub fn fixup_host_imports(host_code: &str, gen_module: &str, _protocol: &str) ->
         .lines()
         .filter(|line| {
             let trimmed = line.trim();
-            !trimmed.starts_with("use crate::")
-                && !trimmed.starts_with("use std::collections::")
+            !trimmed.starts_with("use crate::") && !trimmed.starts_with("use std::collections::")
         })
         .map(|line| {
             // Convert inner doc comments to regular comments
@@ -967,17 +1001,49 @@ ensures
 "#;
         let result = strip_verus_gen(input, &[]);
         // Should contain both functions
-        assert!(result.contains("pub fn CInit"), "Should have CInit: {}", result);
-        assert!(result.contains("pub fn CDoThing"), "Should have CDoThing: {}", result);
+        assert!(
+            result.contains("pub fn CInit"),
+            "Should have CInit: {}",
+            result
+        );
+        assert!(
+            result.contains("pub fn CDoThing"),
+            "Should have CDoThing: {}",
+            result
+        );
         // Should contain helper
-        assert!(result.contains("fn clone_phase"), "Should have clone_phase: {}", result);
+        assert!(
+            result.contains("fn clone_phase"),
+            "Should have clone_phase: {}",
+            result
+        );
         // Should not contain Verus syntax
-        assert!(!result.contains("verus!"), "Should not have verus!: {}", result);
-        assert!(!result.contains("requires"), "Should not have requires: {}", result);
-        assert!(!result.contains("ensures"), "Should not have ensures: {}", result);
-        assert!(!result.contains("exec fn"), "Should not have exec fn: {}", result);
+        assert!(
+            !result.contains("verus!"),
+            "Should not have verus!: {}",
+            result
+        );
+        assert!(
+            !result.contains("requires"),
+            "Should not have requires: {}",
+            result
+        );
+        assert!(
+            !result.contains("ensures"),
+            "Should not have ensures: {}",
+            result
+        );
+        assert!(
+            !result.contains("exec fn"),
+            "Should not have exec fn: {}",
+            result
+        );
         // Should contain the struct body
-        assert!(result.contains("CPhase::Idle"), "Should have CPhase::Idle in body: {}", result);
+        assert!(
+            result.contains("CPhase::Idle"),
+            "Should have CPhase::Idle in body: {}",
+            result
+        );
     }
 
     #[test]
@@ -1016,19 +1082,45 @@ ensures
 } // verus!
 "#;
         let result = strip_verus_gen(input, &[]);
-        assert!(result.contains("pub fn CInit"), "Should have CInit: {}", result);
-        assert!(!result.contains("lemma_empty_set_map"), "Should not have proof fn: {}", result);
-        assert!(!result.contains("proof {"), "Should not have proof block: {}", result);
-        assert!(result.contains("HashSet::new()"), "Should have body: {}", result);
+        assert!(
+            result.contains("pub fn CInit"),
+            "Should have CInit: {}",
+            result
+        );
+        assert!(
+            !result.contains("lemma_empty_set_map"),
+            "Should not have proof fn: {}",
+            result
+        );
+        assert!(
+            !result.contains("proof {"),
+            "Should not have proof block: {}",
+            result
+        );
+        assert!(
+            result.contains("HashSet::new()"),
+            "Should have body: {}",
+            result
+        );
         // Should have our clone_hashset stub
-        assert!(result.contains("fn clone_hashset"), "Should have clone_hashset stub: {}", result);
+        assert!(
+            result.contains("fn clone_hashset"),
+            "Should have clone_hashset stub: {}",
+            result
+        );
     }
 
     // --- skip_requires_ensures tests ---
 
     #[test]
     fn test_skip_requires_ensures_simple() {
-        let lines = vec!["requires", "    c.valid(),", "ensures", "    result.valid(),", "{"];
+        let lines = vec![
+            "requires",
+            "    c.valid(),",
+            "ensures",
+            "    result.valid(),",
+            "{",
+        ];
         assert_eq!(skip_requires_ensures(&lines, 0), 4);
     }
 
@@ -1057,7 +1149,15 @@ ensures
 
     #[test]
     fn test_emit_function_body_strips_proof() {
-        let lines = vec!["{", "    let x = 1;", "    proof {", "        lemma();", "    }", "    x", "}"];
+        let lines = vec![
+            "{",
+            "    let x = 1;",
+            "    proof {",
+            "        lemma();",
+            "    }",
+            "    x",
+            "}",
+        ];
         let mut result = String::new();
         let end = emit_function_body(&lines, 0, &mut result);
         assert_eq!(end, 7);
@@ -1093,7 +1193,8 @@ ensures
 
     #[test]
     fn test_collect_function_names_generic() {
-        let code = "fn clone_hashset<K: Hash + Eq + Clone>(s: &HashSet<K>) -> HashSet<K> { s.clone() }";
+        let code =
+            "fn clone_hashset<K: Hash + Eq + Clone>(s: &HashSet<K>) -> HashSet<K> { s.clone() }";
         let names = collect_function_names(code);
         assert_eq!(names, vec!["clone_hashset"]);
     }
@@ -1132,7 +1233,10 @@ ensures
 
     #[test]
     fn test_extract_clone_name_no_match() {
-        assert_eq!(extract_struct_name_from_clone_impl("impl Display for Foo {"), None);
+        assert_eq!(
+            extract_struct_name_from_clone_impl("impl Display for Foo {"),
+            None
+        );
     }
 
     // --- skip_brace_block tests ---
@@ -1159,13 +1263,21 @@ ensures
 
     #[test]
     fn test_impl_block_is_spec_only_true() {
-        let lines = vec!["impl CState {", "    pub open spec fn view(&self) -> LState { }", "}"];
+        let lines = vec![
+            "impl CState {",
+            "    pub open spec fn view(&self) -> LState { }",
+            "}",
+        ];
         assert!(impl_block_is_spec_only(&lines, 0));
     }
 
     #[test]
     fn test_impl_block_is_spec_only_false() {
-        let lines = vec!["impl CState {", "    pub fn helper(&self) -> u64 { 42 }", "}"];
+        let lines = vec![
+            "impl CState {",
+            "    pub fn helper(&self) -> u64 { 42 }",
+            "}",
+        ];
         assert!(!impl_block_is_spec_only(&lines, 0));
     }
 
@@ -1173,13 +1285,19 @@ ensures
 
     #[test]
     fn test_is_external_body_helper_clone_hashset() {
-        let lines = vec!["#[verifier(external_body)]", "fn clone_hashset<K>(s: &HashSet<K>) -> HashSet<K>"];
+        let lines = vec![
+            "#[verifier(external_body)]",
+            "fn clone_hashset<K>(s: &HashSet<K>) -> HashSet<K>",
+        ];
         assert!(is_external_body_helper(&lines, 0));
     }
 
     #[test]
     fn test_is_external_body_helper_clone_log() {
-        let lines = vec!["#[verifier(external_body)]", "fn clone_log(v: &Vec<CLogEntry>) -> Vec<CLogEntry>"];
+        let lines = vec![
+            "#[verifier(external_body)]",
+            "fn clone_log(v: &Vec<CLogEntry>) -> Vec<CLogEntry>",
+        ];
         assert!(is_external_body_helper(&lines, 0));
     }
 
@@ -1202,7 +1320,11 @@ ensures
         let input = "verus! {\n\npub exec fn Cu64_inc(x: u64) -> (result: u64)\nrequires\n    x < u64::MAX,\nensures\n    result == x + 1,\n{\n    x + 1\n}\n\n} // verus!\n";
         let skip = vec!["Cu64_inc".to_string()];
         let result = strip_verus_gen(input, &skip);
-        assert!(!result.contains("pub fn Cu64_inc"), "Should skip Cu64_inc: {}", result);
+        assert!(
+            !result.contains("pub fn Cu64_inc"),
+            "Should skip Cu64_inc: {}",
+            result
+        );
     }
 
     #[test]
@@ -1218,15 +1340,24 @@ ensures
     fn test_strip_verus_gen_clone_log_only_when_used() {
         let input = "verus! {\n\npub exec fn CInit(c: &CConstants) -> (result: CState)\n{\n    CState {}\n}\n\n} // verus!\n";
         let result = strip_verus_gen(input, &[]);
-        assert!(result.contains("fn clone_hashset"), "Always has clone_hashset stub");
-        assert!(!result.contains("fn clone_log"), "Should not have clone_log when not used");
+        assert!(
+            result.contains("fn clone_hashset"),
+            "Always has clone_hashset stub"
+        );
+        assert!(
+            !result.contains("fn clone_log"),
+            "Should not have clone_log when not used"
+        );
     }
 
     #[test]
     fn test_strip_verus_gen_clone_log_when_used() {
         let input = "verus! {\n\npub exec fn CInit(c: &CConstants) -> (result: CState)\n{\n    let log = clone_log(&old_log);\n    CState { log }\n}\n\n} // verus!\n";
         let result = strip_verus_gen(input, &[]);
-        assert!(result.contains("fn clone_log"), "Should have clone_log when used");
+        assert!(
+            result.contains("fn clone_log"),
+            "Should have clone_log when used"
+        );
     }
 
     // --- strip_verus_types additional tests ---

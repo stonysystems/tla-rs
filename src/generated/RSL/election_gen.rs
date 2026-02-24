@@ -97,12 +97,12 @@ pub exec fn CComputeSuccessorView(b: &CBallot, c: &CConstants) -> (result: CBall
 requires
     b.valid(),
     c.valid(),
+    b.seqno < c.params.max_integer_val,
 ensures
     result.valid(),
     result@ == ComputeSuccessorView(b@, c@),
 {
-    assume(false);
-    if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
+    let result = if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
         CBallot {
             seqno: b.seqno.clone(),
             proposer_id: (b.proposer_id + 1),
@@ -112,7 +112,11 @@ ensures
             seqno: (b.seqno + 1),
             proposer_id: 0u64,
         }
+    };
+    proof {
+        assert(result@ == ComputeSuccessorView(b@, c@));
     }
+    result
 
 }
 
@@ -177,7 +181,7 @@ ensures
         prev_req_set: HashSet::new(),
     }; proof {
         lemma_empty_set_map();
-        lemma_empty_requests_received_prev_epochs_map();
+        lemma_empty_requests_received_this_epoch_map();
     }; result }
 
 }
@@ -287,7 +291,7 @@ ensures
     }; proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_requests_received_prev_epochs_map();
+        lemma_empty_requests_received_this_epoch_map();
     }; result }
 
 }
@@ -341,7 +345,7 @@ ensures
     }; proof {
         lemma_empty_set_map();
         broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_requests_received_prev_epochs_map();
+        lemma_empty_requests_received_this_epoch_map();
     }; result }
 
 }
@@ -372,7 +376,7 @@ ensures
 
     }; proof {
         lemma_empty_set_map();
-        lemma_empty_requests_received_prev_epochs_map();
+        lemma_empty_requests_received_this_epoch_map();
     }; result }
 
 }

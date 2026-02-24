@@ -40,11 +40,7 @@ pub fn generate_marshalable_impls(config: &MarshalableConfig) -> String {
             out.push('\n');
         }
         first = false;
-        let fields: Vec<Field> = ty
-            .fields
-            .iter()
-            .map(|f| Field::new(&f[0], &f[1]))
-            .collect();
+        let fields: Vec<Field> = ty.fields.iter().map(|f| Field::new(&f[0], &f[1])).collect();
         generate_one_impl(&mut out, &ty.name, &fields);
     }
     for e in &config.enums {
@@ -58,11 +54,7 @@ pub fn generate_marshalable_impls(config: &MarshalableConfig) -> String {
             .map(|v| Variant {
                 name: v.name.clone(),
                 tag: v.tag,
-                fields: v
-                    .fields
-                    .iter()
-                    .map(|f| Field::new(&f[0], &f[1]))
-                    .collect(),
+                fields: v.fields.iter().map(|f| Field::new(&f[0], &f[1])).collect(),
             })
             .collect();
         generate_enum_impl(&mut out, &e.name, &variants);
@@ -72,10 +64,7 @@ pub fn generate_marshalable_impls(config: &MarshalableConfig) -> String {
 
 /// Generate a single `impl Marshalable for StructName { ... }`.
 fn generate_one_impl(out: &mut String, struct_name: &str, fields: &[Field]) {
-    out.push_str(&format!(
-        "impl Marshalable for {} {{\n",
-        struct_name
-    ));
+    out.push_str(&format!("impl Marshalable for {} {{\n", struct_name));
 
     gen_view_equal(out, fields);
     gen_lemma_view_equal_symmetric(out, fields);
@@ -125,10 +114,7 @@ fn gen_is_marshalable(out: &mut String, fields: &[Field]) {
     out.push_str("    open spec fn is_marshalable(&self) -> bool {\n");
     for (i, f) in fields.iter().enumerate() {
         let prefix = if i == 0 { "        " } else { "        &&& " };
-        out.push_str(&format!(
-            "{}self.{}.is_marshalable()\n",
-            prefix, f.name
-        ));
+        out.push_str(&format!("{}self.{}.is_marshalable()\n", prefix, f.name));
     }
     // overflow guard
     out.push_str("        &&& 0");
@@ -146,10 +132,7 @@ fn gen_exec_is_marshalable(out: &mut String, fields: &[Field]) {
     // Build the conjunction of field._is_marshalable() && no_usize_overflows
     for (i, f) in fields.iter().enumerate() {
         let prefix = if i == 0 { "        " } else { "        &&& " };
-        out.push_str(&format!(
-            "{}self.{}._is_marshalable()\n",
-            prefix, f.name
-        ));
+        out.push_str(&format!("{}self.{}._is_marshalable()\n", prefix, f.name));
     }
     // overflow check: chain of `usize::MAX - running_total >= next_size`
     out.push_str("        &&& ");
@@ -251,7 +234,9 @@ fn gen_deserialize(out: &mut String, struct_name: &str, fields: &[Field]) {
     }
     out.push_str("        };\n");
     out.push_str("        proof {\n");
-    out.push_str("            assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());\n");
+    out.push_str(
+        "            assert(data@.subrange(start as int, end as int) =~= res.ghost_serialize());\n",
+    );
     out.push_str("        }\n");
     out.push_str("        Some((res, end))\n");
     out.push_str("    }\n");
@@ -277,9 +262,7 @@ fn gen_lemma_serialization_is_not_a_prefix_of(out: &mut String, fields: &[Field]
             "            let (x0, x1) = (self.{f}, other.{f});\n",
             f = f.name
         ));
-        out.push_str(
-            "            let (s0, s1) = (x0.ghost_serialize(), x1.ghost_serialize());\n",
-        );
+        out.push_str("            let (s0, s1) = (x0.ghost_serialize(), x1.ghost_serialize());\n");
         out.push_str("            x0.lemma_view_equal_symmetric(&x1);\n");
         out.push_str("            let (x0, x1, s0, s1) = if s0.len() <= s1.len() {\n");
         out.push_str("                (x0, x1, s0, s1)\n");
@@ -287,16 +270,12 @@ fn gen_lemma_serialization_is_not_a_prefix_of(out: &mut String, fields: &[Field]
         out.push_str("                (x1, x0, s1, s0)\n");
         out.push_str("            };\n");
         out.push_str("            x0.lemma_serialization_is_not_a_prefix_of(&x1);\n");
-        out.push_str(
-            "            assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE\n",
-        );
+        out.push_str("            assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE\n");
         out.push_str(
             "            let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];\n",
         );
         out.push_str("            if si == so.subrange(0, si.len() as int) {\n");
-        out.push_str(
-            "                assert(si[mid + idx] == so[mid + idx]); // OBSERVE\n",
-        );
+        out.push_str("                assert(si[mid + idx] == so[mid + idx]); // OBSERVE\n");
         out.push_str("            }\n");
         out.push_str("            return;\n");
         out.push_str("        } else {\n");
@@ -415,11 +394,7 @@ fn enum_gen_view_equal(out: &mut String, enum_name: &str, variants: &[Variant]) 
     out.push_str("    }\n");
 }
 
-fn enum_gen_lemma_view_equal_symmetric(
-    out: &mut String,
-    enum_name: &str,
-    variants: &[Variant],
-) {
+fn enum_gen_lemma_view_equal_symmetric(out: &mut String, enum_name: &str, variants: &[Variant]) {
     out.push_str("    proof fn lemma_view_equal_symmetric(&self, other: &Self)\n");
     out.push_str("    // req, ens from trait\n");
     out.push_str("    {\n");
@@ -569,10 +544,7 @@ fn enum_gen_serialize(out: &mut String, enum_name: &str, variants: &[Variant]) {
                 ));
                 out.push_str("                    assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);\n");
                 out.push_str("                }\n");
-                out.push_str(&format!(
-                    "                {}.serialize(data);\n",
-                    f.name
-                ));
+                out.push_str(&format!("                {}.serialize(data);\n", f.name));
             }
         }
         out.push_str("                proof {\n");
@@ -614,12 +586,7 @@ fn enum_gen_deserialize(out: &mut String, enum_name: &str, variants: &[Variant])
             format!("{}::{}", enum_name, v.name)
         } else {
             let field_names: Vec<&str> = v.fields.iter().map(|f| f.name.as_str()).collect();
-            format!(
-                "{}::{} {{ {} }}",
-                enum_name,
-                v.name,
-                field_names.join(", ")
-            )
+            format!("{}::{} {{ {} }}", enum_name, v.name, field_names.join(", "))
         };
         out.push_str(&format!("            ({}, mid)\n", construction));
         out.push_str("        } else ");
@@ -678,14 +645,10 @@ fn enum_gen_lemma_serialization_is_not_a_prefix_of(
             out.push_str("                    } else {\n");
             out.push_str("                        (x1, x0, s1, s0)\n");
             out.push_str("                    };\n");
-            out.push_str(
-                "                    x0.lemma_serialization_is_not_a_prefix_of(&x1);\n",
-            );
+            out.push_str("                    x0.lemma_serialization_is_not_a_prefix_of(&x1);\n");
             out.push_str("                    assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE\n");
             out.push_str("                    let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];\n");
-            out.push_str(
-                "                    if si == so.subrange(0, si.len() as int) {\n",
-            );
+            out.push_str("                    if si == so.subrange(0, si.len() as int) {\n");
             out.push_str(
                 "                        assert(si[mid + idx] == so[mid + idx]); // OBSERVE\n",
             );
@@ -747,10 +710,15 @@ fn enum_gen_lemma_same_views_serialize_the_same(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{MarshalableConfig, MarshalableEnum, MarshalableEnumVariant, MarshalableType};
+    use crate::config::{
+        MarshalableConfig, MarshalableEnum, MarshalableEnumVariant, MarshalableType,
+    };
 
     fn make_config(types: Vec<MarshalableType>) -> MarshalableConfig {
-        MarshalableConfig { types, enums: vec![] }
+        MarshalableConfig {
+            types,
+            enums: vec![],
+        }
     }
 
     fn make_type(name: &str, fields: Vec<(&str, &str)>) -> MarshalableType {
@@ -797,9 +765,8 @@ mod tests {
             "Seq::empty() + self.seqno.ghost_serialize() + self.proposer_id.ghost_serialize()"
         ));
         // serialized_size: addition
-        assert!(
-            result.contains("0 + self.seqno.serialized_size() + self.proposer_id.serialized_size()")
-        );
+        assert!(result
+            .contains("0 + self.seqno.serialized_size() + self.proposer_id.serialized_size()"));
         // deserialize: sequential
         assert!(result.contains("let (seqno, mid) = match u64::deserialize(data, mid)"));
         assert!(result.contains("let (proposer_id, mid) = match u64::deserialize(data, mid)"));
@@ -813,9 +780,7 @@ mod tests {
         )]);
         let result = generate_marshalable_impls(&config);
         assert!(result.contains("let (max_value_bal, mid) = match CBallot::deserialize(data, mid)"));
-        assert!(
-            result.contains("let (max_val, mid) = match CRequestBatch::deserialize(data, mid)")
-        );
+        assert!(result.contains("let (max_val, mid) = match CRequestBatch::deserialize(data, mid)"));
     }
 
     #[test]
@@ -830,14 +795,12 @@ mod tests {
 
     #[test]
     fn test_is_marshalable_overflow_guard() {
-        let config = make_config(vec![make_type(
-            "T",
-            vec![("a", "u64"), ("b", "u64")],
-        )]);
+        let config = make_config(vec![make_type("T", vec![("a", "u64"), ("b", "u64")])]);
         let result = generate_marshalable_impls(&config);
         // spec is_marshalable overflow guard
-        assert!(result
-            .contains("0 + self.a.ghost_serialize().len() + self.b.ghost_serialize().len() <= usize::MAX"));
+        assert!(result.contains(
+            "0 + self.a.ghost_serialize().len() + self.b.ghost_serialize().len() <= usize::MAX"
+        ));
     }
 
     #[test]
@@ -849,9 +812,9 @@ mod tests {
         let result = generate_marshalable_impls(&config);
         // Should have chained overflow checks
         assert!(result.contains("usize::MAX - (0) >= self.a.serialized_size()"));
-        assert!(result.contains(
-            "usize::MAX - (self.a.serialized_size()) >= self.b.serialized_size()"
-        ));
+        assert!(
+            result.contains("usize::MAX - (self.a.serialized_size()) >= self.b.serialized_size()")
+        );
         assert!(result.contains(
             "usize::MAX - (self.a.serialized_size() + self.b.serialized_size()) >= self.c.serialized_size()"
         ));
@@ -861,9 +824,9 @@ mod tests {
     fn test_serialize_proof_block() {
         let config = make_config(vec![make_type("T", vec![("x", "u64")])]);
         let result = generate_marshalable_impls(&config);
-        assert!(result.contains(
-            "assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);"
-        ));
+        assert!(
+            result.contains("assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);")
+        );
         assert!(result.contains(
             "assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize());"
         ));
@@ -880,18 +843,13 @@ mod tests {
 
     #[test]
     fn test_prefix_lemma_structure() {
-        let config = make_config(vec![make_type(
-            "T",
-            vec![("a", "u64"), ("b", "u64")],
-        )]);
+        let config = make_config(vec![make_type("T", vec![("a", "u64"), ("b", "u64")])]);
         let result = generate_marshalable_impls(&config);
         // Should have the divergence detection pattern for each field
         assert!(result.contains("if !self.a.view_equal(&other.a) {"));
         assert!(result.contains("if !self.b.view_equal(&other.b) {"));
-        assert!(result
-            .contains("let mid = mid + self.a.ghost_serialize().len();"));
-        assert!(result
-            .contains("let mid = mid + self.b.ghost_serialize().len();"));
+        assert!(result.contains("let mid = mid + self.a.ghost_serialize().len();"));
+        assert!(result.contains("let mid = mid + self.b.ghost_serialize().len();"));
     }
 
     #[test]
@@ -973,10 +931,7 @@ mod tests {
     fn test_enum_unit_variants_only() {
         let config = make_enum_config(vec![make_enum(
             "SimpleEnum",
-            vec![
-                make_variant("A", 0, vec![]),
-                make_variant("B", 1, vec![]),
-            ],
+            vec![make_variant("A", 0, vec![]), make_variant("B", 1, vec![])],
         )]);
         let result = generate_marshalable_impls(&config);
         assert!(result.contains("impl Marshalable for SimpleEnum {"));
@@ -1022,8 +977,7 @@ mod tests {
             vec![make_variant("V", 5, vec![("x", "u64"), ("y", "u64")])],
         )]);
         let result = generate_marshalable_impls(&config);
-        assert!(result
-            .contains("seq![5u8] + x.ghost_serialize() + y.ghost_serialize()"));
+        assert!(result.contains("seq![5u8] + x.ghost_serialize() + y.ghost_serialize()"));
     }
 
     #[test]
@@ -1044,13 +998,11 @@ mod tests {
         )]);
         let result = generate_marshalable_impls(&config);
         // spec is_marshalable: 1 + field ghost sizes
-        assert!(result.contains(
-            "1 + x.ghost_serialize().len() + y.ghost_serialize().len() <= usize::MAX"
-        ));
+        assert!(result
+            .contains("1 + x.ghost_serialize().len() + y.ghost_serialize().len() <= usize::MAX"));
         // exec _is_marshalable: overflow chain starting from 1
         assert!(result.contains("usize::MAX - (1) >= x.serialized_size()"));
-        assert!(result
-            .contains("usize::MAX - (1 + x.serialized_size()) >= y.serialized_size()"));
+        assert!(result.contains("usize::MAX - (1 + x.serialized_size()) >= y.serialized_size()"));
     }
 
     #[test]
@@ -1075,10 +1027,7 @@ mod tests {
     fn test_enum_prefix_lemma_tag_divergence() {
         let config = make_enum_config(vec![make_enum(
             "M",
-            vec![
-                make_variant("A", 0, vec![]),
-                make_variant("B", 1, vec![]),
-            ],
+            vec![make_variant("A", 0, vec![]), make_variant("B", 1, vec![])],
         )]);
         let result = generate_marshalable_impls(&config);
         // Cross-variant catch-all with tag divergence
@@ -1230,7 +1179,9 @@ mod tests {
         // Macro produces: &&& match self { Variant => { ... &&& 1 [+ sizes] <= usize::MAX } }
         assert!(code.contains("&&& match self {"));
         // Unit variant: just 1 <= usize::MAX
-        assert!(code.contains("CAppMessage::CAppIncrement => {\n                &&& 1 <= usize::MAX"));
+        assert!(
+            code.contains("CAppMessage::CAppIncrement => {\n                &&& 1 <= usize::MAX")
+        );
         // Field variant: 1 + field size
         assert!(code.contains("&&& response.is_marshalable()"));
         assert!(code.contains("&&& 1 + response.ghost_serialize().len() <= usize::MAX"));
@@ -1251,7 +1202,8 @@ mod tests {
 
         // Macro produces: match self { Variant => { &&& true [&&& field._is_marshalable()]* [&&& no_usize_overflows!(...)] } }
         // Unit variants: just &&& true (no overflow check)
-        assert!(code.contains("CAppMessage::CAppIncrement => {\n                &&& true\n            }"));
+        assert!(code
+            .contains("CAppMessage::CAppIncrement => {\n                &&& true\n            }"));
         // Field variant: &&& true &&& field._is_marshalable() &&& overflow
         assert!(code.contains("&&& response._is_marshalable()"));
         assert!(code.contains("usize::MAX - (1) >= response.serialized_size()"));
@@ -1294,7 +1246,9 @@ mod tests {
         // Field variant has mid_data_len ghost
         assert!(code.contains("let mid_data_len: Ghost<int> = Ghost(data@.len() as int);"));
         // Mid-field proof for CAppReply
-        assert!(code.contains("assert(data@.subrange(old(data)@.len() as int, mid_data_len@) =~= seq![1u8]);"));
+        assert!(code.contains(
+            "assert(data@.subrange(old(data)@.len() as int, mid_data_len@) =~= seq![1u8]);"
+        ));
         assert!(code.contains("response.serialize(data);"));
         // Final proof in every arm
         assert_eq!(
@@ -1332,9 +1286,13 @@ mod tests {
         assert!(code.contains("(CAppMessage::CAppInvalid, mid)"));
         // Final else + proof block
         assert!(code.contains("} else {\n            return None;\n        };"));
-        assert!(code.contains("assert(data@.subrange(start as int, end as int) == x.ghost_serialize())"));
-        assert!(code.contains("assert(data@.subrange(start as int, end as int).len() == x.ghost_serialize().len());"));
-        assert!(code.contains("assert(data@.subrange(start as int, end as int) =~= x.ghost_serialize());"));
+        assert!(code
+            .contains("assert(data@.subrange(start as int, end as int) == x.ghost_serialize())"));
+        assert!(code.contains(
+            "assert(data@.subrange(start as int, end as int).len() == x.ghost_serialize().len());"
+        ));
+        assert!(code
+            .contains("assert(data@.subrange(start as int, end as int) =~= x.ghost_serialize());"));
     }
 
     #[test]
@@ -1358,7 +1316,9 @@ mod tests {
         assert!(code.contains("x0.lemma_view_equal_symmetric(&x1);"));
         assert!(code.contains("x0.lemma_serialization_is_not_a_prefix_of(&x1);"));
         assert!(code.contains("assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE"));
-        assert!(code.contains("let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];"));
+        assert!(
+            code.contains("let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];")
+        );
         // Cross-variant catch-all
         assert!(code.contains("assert(si[0] == so[0]); // OBSERVE"));
     }

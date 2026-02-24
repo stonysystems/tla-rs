@@ -1,6 +1,5 @@
 use crate::common::collections::seq_is_unique_v::{endpoints_contain, seq_is_unique};
 use crate::common::framework::environment_s::*;
-use vstd::prelude::*;
 use crate::common::native::io_s::*;
 use crate::implementation::common::marshalling::*;
 use crate::implementation::RSL::appinterface::*;
@@ -10,6 +9,7 @@ use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::*;
 use std::collections::*;
+use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 

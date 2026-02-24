@@ -1,8 +1,8 @@
 // Exec helper functions for Raft protocol
 // These implement exec versions of spec helper functions u64_inc/u64_dec
 
-use vstd::prelude::*;
 use crate::protocol::Raft::raft::*;
+use vstd::prelude::*;
 
 verus! {
 

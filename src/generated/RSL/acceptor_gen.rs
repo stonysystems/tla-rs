@@ -7,10 +7,14 @@ use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::acceptor_helpers::{CAddVoteAndRemoveOldOnes, CRemoveVotesBeforeLogTruncationPoint};
+use crate::implementation::RSL::acceptor_helpers::{
+    CAddVoteAndRemoveOldOnes, CRemoveVotesBeforeLogTruncationPoint,
+};
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::types_i::{abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid};
+use crate::implementation::RSL::types_i::{
+    abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid,
+};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::constants::LReplicaConstantsValid;

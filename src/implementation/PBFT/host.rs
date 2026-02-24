@@ -37,7 +37,9 @@ impl ProtocolConfig for PBFTConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -49,7 +51,7 @@ impl ProtocolConfig for PBFTConfig {
             None => {
                 eprintln!("PBFT: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         let num_nodes = peers.len() as u64;
@@ -132,15 +134,24 @@ impl PBFTHost {
         digest: u64,
     ) -> StepResult<PBFTMessage> {
         if !self.is_primary() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CPhase::PrePrepare) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.seq_num < self.state.low_watermark
             || self.state.seq_num >= self.state.high_watermark
         {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
@@ -171,18 +182,28 @@ impl PBFTHost {
         digest: u64,
     ) -> StepResult<PBFTMessage> {
         if self.is_primary() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CPhase::PrePrepare) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: view must equal current view
         if view != self.state.view {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = pbft_gen::CReceivePrePrepare(&self.state, &config.constants, &view, &seq, &digest);
+        let (new_state, _sent) =
+            pbft_gen::CReceivePrePrepare(&self.state, &config.constants, &view, &seq, &digest);
         self.state = new_state;
 
         // Broadcast Prepare to all peers
@@ -203,18 +224,20 @@ impl PBFTHost {
 
     /// Receive a Prepare message and call CReceivePrepare.
     /// Guards: phase is Prepare, sender not already in prepare_senders.
-    fn handle_prepare(
-        &mut self,
-        config: &PBFTConfig,
-        sender: u64,
-    ) -> StepResult<PBFTMessage> {
+    fn handle_prepare(&mut self, config: &PBFTConfig, sender: u64) -> StepResult<PBFTMessage> {
         if !matches!(self.state.phase, CPhase::Prepare) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: sender must not already be in prepare_senders
         if self.state.prepare_senders.contains(&sender) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = pbft_gen::CReceivePrepare(&self.state, &config.constants, &sender);
@@ -242,23 +265,28 @@ impl PBFTHost {
             };
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Receive a Commit message and call CReceiveCommit.
     /// Guards: phase is Commit, sender not already in commit_senders.
-    fn handle_commit(
-        &mut self,
-        config: &PBFTConfig,
-        sender: u64,
-    ) -> StepResult<PBFTMessage> {
+    fn handle_commit(&mut self, config: &PBFTConfig, sender: u64) -> StepResult<PBFTMessage> {
         if !matches!(self.state.phase, CPhase::Commit) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: sender must not already be in commit_senders
         if self.state.commit_senders.contains(&sender) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = pbft_gen::CReceiveCommit(&self.state, &config.constants, &sender);
@@ -268,9 +296,7 @@ impl PBFTHost {
         // Guard for CExecuteReply: phase is Commit, commit_senders.len() >= 2f+1,
         //                          seq_num < u64::MAX.
         let threshold = 2 * config.constants.f + 1;
-        if self.state.commit_senders.len() as u64 >= threshold
-            && self.state.seq_num < u64::MAX
-        {
+        if self.state.commit_senders.len() as u64 >= threshold && self.state.seq_num < u64::MAX {
             let (new_state, _sent) = pbft_gen::CExecuteReply(&self.state, &config.constants);
             self.state = new_state;
             eprintln!(
@@ -279,7 +305,10 @@ impl PBFTHost {
             );
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -289,18 +318,24 @@ impl PBFTHost {
     /// Timer action: attempt a checkpoint.
     /// Guards: phase is Replied, seq_num > checkpoint_seq,
     ///         seq_num <= u64::MAX - checkpoint_interval.
-    fn try_checkpoint(
-        &mut self,
-        config: &PBFTConfig,
-    ) -> StepResult<PBFTMessage> {
+    fn try_checkpoint(&mut self, config: &PBFTConfig) -> StepResult<PBFTMessage> {
         if !matches!(self.state.phase, CPhase::Replied) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.seq_num <= self.state.checkpoint_seq {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.seq_num > u64::MAX - config.constants.checkpoint_interval {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Use seq_num as a simple digest for the checkpoint.
@@ -308,47 +343,53 @@ impl PBFTHost {
         let (new_state, _sent) = pbft_gen::CCheckpoint(&self.state, &config.constants, &digest);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer action: attempt a view change.
     /// Guards: view < u64::MAX.
-    fn try_view_change(
-        &mut self,
-        config: &PBFTConfig,
-    ) -> StepResult<PBFTMessage> {
+    fn try_view_change(&mut self, config: &PBFTConfig) -> StepResult<PBFTMessage> {
         if self.state.view >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = pbft_gen::CViewChange(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer action: attempt a new round.
     /// Guards: phase is Replied.
-    fn try_new_round(
-        &mut self,
-        config: &PBFTConfig,
-    ) -> StepResult<PBFTMessage> {
+    fn try_new_round(&mut self, config: &PBFTConfig) -> StepResult<PBFTMessage> {
         if !matches!(self.state.phase, CPhase::Replied) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = pbft_gen::CNewRound(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Primary timer action: attempt CPrePrepare with a synthetic digest
     /// followed by CNewRound to advance through rounds.
-    fn try_pre_prepare_and_new_round(
-        &mut self,
-        config: &PBFTConfig,
-    ) -> StepResult<PBFTMessage> {
+    fn try_pre_prepare_and_new_round(&mut self, config: &PBFTConfig) -> StepResult<PBFTMessage> {
         // First try new round if in Replied phase
         if matches!(self.state.phase, CPhase::Replied) {
             let (new_state, _sent) = pbft_gen::CNewRound(&self.state, &config.constants);
@@ -357,15 +398,24 @@ impl PBFTHost {
 
         // Then try pre-prepare if primary and in PrePrepare phase
         if !self.is_primary() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CPhase::PrePrepare) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if self.state.seq_num < self.state.low_watermark
             || self.state.seq_num >= self.state.high_watermark
         {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Use action_index as a synthetic digest for timer-driven proposals
@@ -412,23 +462,29 @@ impl ProtocolHost for PBFTHost {
                 Some(id) => id,
                 None => {
                     // Unknown sender, ignore
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             };
 
             return match pkt.msg {
-                PBFTMessage::ClientRequest { digest } => {
-                    self.handle_client_request(config, digest)
-                },
+                PBFTMessage::ClientRequest { digest } => self.handle_client_request(config, digest),
                 PBFTMessage::PrePrepare { view, seq, digest } => {
                     self.handle_pre_prepare(config, view, seq, digest)
-                },
-                PBFTMessage::Prepare { view: _, seq: _, digest: _, sender } => {
-                    self.handle_prepare(config, sender)
-                },
-                PBFTMessage::Commit { view: _, seq: _, sender } => {
-                    self.handle_commit(config, sender)
-                },
+                }
+                PBFTMessage::Prepare {
+                    view: _,
+                    seq: _,
+                    digest: _,
+                    sender,
+                } => self.handle_prepare(config, sender),
+                PBFTMessage::Commit {
+                    view: _,
+                    seq: _,
+                    sender,
+                } => self.handle_commit(config, sender),
             };
         }
 

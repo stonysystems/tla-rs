@@ -35,7 +35,9 @@ impl ProtocolConfig for PrimaryBackupConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -47,11 +49,13 @@ impl ProtocolConfig for PrimaryBackupConfig {
             None => {
                 eprintln!("PrimaryBackup: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         // Default max_log_len; could be made configurable via extra args.
-        let constants = CConstants { max_log_len: 1_000_000 };
+        let constants = CConstants {
+            max_log_len: 1_000_000,
+        };
 
         Some(PrimaryBackupConfig {
             peers,
@@ -117,12 +121,14 @@ impl PrimaryBackupHost {
             || self.state.has_pending
             || self.state.log_length >= config.constants.max_log_len
         {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CPrimaryWrite(
-            &self.state, &config.constants, &value,
-        );
+        let (new_state, _sent) =
+            primarybackup_gen::CPrimaryWrite(&self.state, &config.constants, &value);
         self.state = new_state;
 
         // After writing, immediately attempt to send replicate to backup.
@@ -136,19 +142,18 @@ impl PrimaryBackupHost {
         &mut self,
         config: &PrimaryBackupConfig,
     ) -> StepResult<PrimaryBackupMessage> {
-        if !self.is_primary()
-            || !self.state.has_pending
-            || self.state.acked
-        {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !self.is_primary() || !self.state.has_pending || self.state.acked {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Capture pending_value before the state transition for the outbound message.
         let value = self.state.pending_value;
 
-        let (new_state, _sent) = primarybackup_gen::CPrimarySendReplicate(
-            &self.state, &config.constants,
-        );
+        let (new_state, _sent) =
+            primarybackup_gen::CPrimarySendReplicate(&self.state, &config.constants);
         self.state = new_state;
 
         // Send Replicate to backup
@@ -169,15 +174,15 @@ impl PrimaryBackupHost {
         &mut self,
         config: &PrimaryBackupConfig,
     ) -> StepResult<PrimaryBackupMessage> {
-        if !self.is_primary()
-            || !self.state.has_pending
-        {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !self.is_primary() || !self.state.has_pending {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CPrimaryReceiveAck(
-            &self.state, &config.constants,
-        );
+        let (new_state, _sent) =
+            primarybackup_gen::CPrimaryReceiveAck(&self.state, &config.constants);
         self.state = new_state;
 
         // After receiving ack, try to commit
@@ -197,34 +202,39 @@ impl PrimaryBackupHost {
             || !self.state.has_pending
             || self.state.log_length >= u64::MAX
         {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CPrimaryCommit(
-            &self.state, &config.constants,
-        );
+        let (new_state, _sent) = primarybackup_gen::CPrimaryCommit(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Primary: simulate failure (transition to Inactive).
     /// Guards from CPrimaryFail requires:
     ///   s.role is Primary
-    fn primary_fail(
-        &mut self,
-        config: &PrimaryBackupConfig,
-    ) -> StepResult<PrimaryBackupMessage> {
+    fn primary_fail(&mut self, config: &PrimaryBackupConfig) -> StepResult<PrimaryBackupMessage> {
         if !self.is_primary() {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CPrimaryFail(
-            &self.state, &config.constants,
-        );
+        let (new_state, _sent) = primarybackup_gen::CPrimaryFail(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -240,14 +250,15 @@ impl PrimaryBackupHost {
         config: &PrimaryBackupConfig,
         value: u64,
     ) -> StepResult<PrimaryBackupMessage> {
-        if self.state.backup_log_length >= u64::MAX
-        {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if self.state.backup_log_length >= u64::MAX {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CBackupReceiveReplicate(
-            &self.state, &config.constants, &value,
-        );
+        let (new_state, _sent) =
+            primarybackup_gen::CBackupReceiveReplicate(&self.state, &config.constants, &value);
         self.state = new_state;
 
         // After receiving replicate, try to send ack
@@ -262,14 +273,14 @@ impl PrimaryBackupHost {
         &mut self,
         config: &PrimaryBackupConfig,
     ) -> StepResult<PrimaryBackupMessage> {
-        if !self.state.backup_synced
-        {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !self.state.backup_synced {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CBackupSendAck(
-            &self.state, &config.constants,
-        );
+        let (new_state, _sent) = primarybackup_gen::CBackupSendAck(&self.state, &config.constants);
         self.state = new_state;
 
         // Send Ack to primary
@@ -290,18 +301,20 @@ impl PrimaryBackupHost {
         &mut self,
         config: &PrimaryBackupConfig,
     ) -> StepResult<PrimaryBackupMessage> {
-        if !self.is_inactive()
-            || self.state.view >= u64::MAX
-        {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !self.is_inactive() || self.state.view >= u64::MAX {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CBackupPromote(
-            &self.state, &config.constants,
-        );
+        let (new_state, _sent) = primarybackup_gen::CBackupPromote(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -319,14 +332,17 @@ impl PrimaryBackupHost {
             match pkt.msg {
                 PrimaryBackupMessage::ClientRequest { value } => {
                     return self.primary_handle_client_request(config, value);
-                },
+                }
                 PrimaryBackupMessage::Ack => {
                     return self.primary_receive_ack(config);
-                },
+                }
                 _ => {
                     // Primary ignores Replicate messages
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             }
         }
 
@@ -337,8 +353,11 @@ impl PrimaryBackupHost {
             _ => {
                 // Slot 2: no spontaneous primary fail in normal operation.
                 // In a real system, failure would be injected externally.
-                StepResult { ok: true, outbound: GenericOutbound::None }
-            },
+                StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                }
+            }
         };
         self.action_index = self.action_index.wrapping_add(1);
         result
@@ -355,11 +374,14 @@ impl PrimaryBackupHost {
             match pkt.msg {
                 PrimaryBackupMessage::Replicate { value } => {
                     return self.backup_receive_replicate(config, value);
-                },
+                }
                 _ => {
                     // Backup ignores Ack and ClientRequest messages
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             }
         }
 

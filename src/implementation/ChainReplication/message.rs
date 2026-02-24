@@ -35,18 +35,18 @@ impl ProtocolMessage for ChainMessage {
             ChainMessage::Forward { value } => {
                 buf.extend_from_slice(&TAG_FORWARD.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             ChainMessage::Ack { value } => {
                 buf.extend_from_slice(&TAG_ACK.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             ChainMessage::ClientWrite { value } => {
                 buf.extend_from_slice(&TAG_CLIENT_WRITE.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             ChainMessage::ClientRead => {
                 buf.extend_from_slice(&TAG_CLIENT_READ.to_le_bytes());
-            },
+            }
         }
     }
 
@@ -55,8 +55,7 @@ impl ProtocolMessage for ChainMessage {
             return None;
         }
         let tag = u64::from_le_bytes([
-            data[0], data[1], data[2], data[3],
-            data[4], data[5], data[6], data[7],
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
         ]);
         match tag {
             TAG_FORWARD => {
@@ -64,31 +63,28 @@ impl ProtocolMessage for ChainMessage {
                     return None;
                 }
                 let value = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 Some(ChainMessage::Forward { value })
-            },
+            }
             TAG_ACK => {
                 if data.len() < 16 {
                     return None;
                 }
                 let value = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 Some(ChainMessage::Ack { value })
-            },
+            }
             TAG_CLIENT_WRITE => {
                 if data.len() < 16 {
                     return None;
                 }
                 let value = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11],
-                    data[12], data[13], data[14], data[15],
+                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
                 ]);
                 Some(ChainMessage::ClientWrite { value })
-            },
+            }
             TAG_CLIENT_READ => Some(ChainMessage::ClientRead),
             _ => None,
         }

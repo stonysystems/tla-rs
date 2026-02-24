@@ -1,4 +1,4 @@
-use crate::ast::{Binding, BinOp, Expr, SpecFunction, Type};
+use crate::ast::{BinOp, Binding, Expr, SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
 
 /// Normalized transition IR extracted from `LNext`.
@@ -132,12 +132,7 @@ pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<Tr
         let constraints = constraint_exprs
             .into_iter()
             .map(|expr| {
-                normalize_constraint(
-                    expr,
-                    current_state_param,
-                    next_state_param,
-                    constants_param,
-                )
+                normalize_constraint(expr, current_state_param, next_state_param, constants_param)
             })
             .collect();
 

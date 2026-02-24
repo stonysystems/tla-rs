@@ -1977,7 +1977,8 @@ fn collect_assume_lines(fn_start_line: usize, fn_source: &str) -> Vec<(usize, St
 #[test]
 fn test_rsl_generated_assume_false_footprint_drift_guard() {
     let expected_counts: std::collections::BTreeMap<&str, usize> = [
-        ("election_gen.rs", 8usize),
+        ("election_gen.rs", 7usize),
+        ("executor_gen.rs", 6usize),
         ("proposer_gen.rs", 9usize),
         ("replica_gen.rs", 21usize),
     ]

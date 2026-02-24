@@ -223,7 +223,9 @@ impl ModeAnalyzer {
                     .collect();
 
                 // Check for output parameters assigned inside quantifier bodies
-                if let Some(reason) = Self::check_output_in_quantifier(&spec_fn.body, &output_names, false) {
+                if let Some(reason) =
+                    Self::check_output_in_quantifier(&spec_fn.body, &output_names, false)
+                {
                     return (false, Some(reason));
                 }
 
@@ -277,8 +279,9 @@ impl ModeAnalyzer {
                     }
                 }
                 // Recurse into both sides for nested quantifiers
-                Self::check_output_in_quantifier(left, output_names, inside_quantifier)
-                    .or_else(|| Self::check_output_in_quantifier(right, output_names, inside_quantifier))
+                Self::check_output_in_quantifier(left, output_names, inside_quantifier).or_else(
+                    || Self::check_output_in_quantifier(right, output_names, inside_quantifier),
+                )
             }
 
             // Quantifiers: recurse with inside_quantifier = true
@@ -288,7 +291,11 @@ impl ModeAnalyzer {
             Expr::Forall { vars, body, .. } => {
                 if vars.len() == 1 {
                     if let Expr::Implies(_, assign_expr) = body.as_ref() {
-                        if Self::is_seq_comprehension_assignment(assign_expr, output_names, &vars[0].name_string()) {
+                        if Self::is_seq_comprehension_assignment(
+                            assign_expr,
+                            output_names,
+                            &vars[0].name_string(),
+                        ) {
                             // This is a convertible Seq comprehension — allow it
                             return None;
                         }
@@ -296,38 +303,40 @@ impl ModeAnalyzer {
                 }
                 Self::check_output_in_quantifier(body, output_names, true)
             }
-            Expr::Exists { body, .. } => {
-                Self::check_output_in_quantifier(body, output_names, true)
-            }
+            Expr::Exists { body, .. } => Self::check_output_in_quantifier(body, output_names, true),
 
             // Conjunction/disjunction: recurse into clauses
-            Expr::Conjunction(clauses) | Expr::Disjunction(clauses) => {
-                clauses.iter().find_map(|c| {
-                    Self::check_output_in_quantifier(c, output_names, inside_quantifier)
-                })
-            }
+            Expr::Conjunction(clauses) | Expr::Disjunction(clauses) => clauses
+                .iter()
+                .find_map(|c| Self::check_output_in_quantifier(c, output_names, inside_quantifier)),
 
             // Implication: recurse into both sides
             Expr::Implies(left, right) | Expr::Iff(left, right) => {
-                Self::check_output_in_quantifier(left, output_names, inside_quantifier)
-                    .or_else(|| Self::check_output_in_quantifier(right, output_names, inside_quantifier))
+                Self::check_output_in_quantifier(left, output_names, inside_quantifier).or_else(
+                    || Self::check_output_in_quantifier(right, output_names, inside_quantifier),
+                )
             }
 
             // Conditional: recurse into all branches
-            Expr::If { cond, then_branch, else_branch } => {
-                Self::check_output_in_quantifier(cond, output_names, inside_quantifier)
-                    .or_else(|| Self::check_output_in_quantifier(then_branch, output_names, inside_quantifier))
-                    .or_else(|| {
-                        else_branch.as_ref().and_then(|e| {
-                            Self::check_output_in_quantifier(e, output_names, inside_quantifier)
-                        })
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => Self::check_output_in_quantifier(cond, output_names, inside_quantifier)
+                .or_else(|| {
+                    Self::check_output_in_quantifier(then_branch, output_names, inside_quantifier)
+                })
+                .or_else(|| {
+                    else_branch.as_ref().and_then(|e| {
+                        Self::check_output_in_quantifier(e, output_names, inside_quantifier)
                     })
-            }
+                }),
 
             // Let binding: recurse into value and body
             Expr::Let { value, body, .. } => {
-                Self::check_output_in_quantifier(value, output_names, inside_quantifier)
-                    .or_else(|| Self::check_output_in_quantifier(body, output_names, inside_quantifier))
+                Self::check_output_in_quantifier(value, output_names, inside_quantifier).or_else(
+                    || Self::check_output_in_quantifier(body, output_names, inside_quantifier),
+                )
             }
 
             // Binary: recurse
@@ -337,8 +346,9 @@ impl ModeAnalyzer {
             | Expr::Le(left, right)
             | Expr::Gt(left, right)
             | Expr::Ge(left, right) => {
-                Self::check_output_in_quantifier(left, output_names, inside_quantifier)
-                    .or_else(|| Self::check_output_in_quantifier(right, output_names, inside_quantifier))
+                Self::check_output_in_quantifier(left, output_names, inside_quantifier).or_else(
+                    || Self::check_output_in_quantifier(right, output_names, inside_quantifier),
+                )
             }
 
             // Match: recurse into scrutinee and arms
@@ -346,7 +356,11 @@ impl ModeAnalyzer {
                 Self::check_output_in_quantifier(scrutinee, output_names, inside_quantifier)
                     .or_else(|| {
                         arms.iter().find_map(|arm| {
-                            Self::check_output_in_quantifier(&arm.body, output_names, inside_quantifier)
+                            Self::check_output_in_quantifier(
+                                &arm.body,
+                                output_names,
+                                inside_quantifier,
+                            )
                         })
                     })
             }
@@ -424,21 +438,23 @@ impl ModeAnalyzer {
             }
 
             Expr::Implies(left, right) | Expr::Iff(left, right) => {
-                Self::check_multi_var_exists(left)
-                    .or_else(|| Self::check_multi_var_exists(right))
+                Self::check_multi_var_exists(left).or_else(|| Self::check_multi_var_exists(right))
             }
 
-            Expr::If { cond, then_branch, else_branch } => {
-                Self::check_multi_var_exists(cond)
-                    .or_else(|| Self::check_multi_var_exists(then_branch))
-                    .or_else(|| {
-                        else_branch.as_deref().and_then(Self::check_multi_var_exists)
-                    })
-            }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => Self::check_multi_var_exists(cond)
+                .or_else(|| Self::check_multi_var_exists(then_branch))
+                .or_else(|| {
+                    else_branch
+                        .as_deref()
+                        .and_then(Self::check_multi_var_exists)
+                }),
 
             Expr::Let { value, body, .. } => {
-                Self::check_multi_var_exists(value)
-                    .or_else(|| Self::check_multi_var_exists(body))
+                Self::check_multi_var_exists(value).or_else(|| Self::check_multi_var_exists(body))
             }
 
             Expr::Binary(left, _, right)
@@ -448,15 +464,14 @@ impl ModeAnalyzer {
             | Expr::Le(left, right)
             | Expr::Gt(left, right)
             | Expr::Ge(left, right) => {
-                Self::check_multi_var_exists(left)
-                    .or_else(|| Self::check_multi_var_exists(right))
+                Self::check_multi_var_exists(left).or_else(|| Self::check_multi_var_exists(right))
             }
 
             Expr::Match { scrutinee, arms } => {
-                Self::check_multi_var_exists(scrutinee)
-                    .or_else(|| {
-                        arms.iter().find_map(|arm| Self::check_multi_var_exists(&arm.body))
-                    })
+                Self::check_multi_var_exists(scrutinee).or_else(|| {
+                    arms.iter()
+                        .find_map(|arm| Self::check_multi_var_exists(&arm.body))
+                })
             }
 
             _ => None,
@@ -1462,8 +1477,13 @@ mod tests {
             Box::new(Expr::Ident("s1_".to_string())),
             Box::new(Expr::Ident("s0".to_string())),
         );
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(is_func, "Simple equality should be functionalizable, reason: {:?}", reason);
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            is_func,
+            "Simple equality should be functionalizable, reason: {:?}",
+            reason
+        );
     }
 
     #[test]
@@ -1499,8 +1519,12 @@ mod tests {
                 )),
             )),
         };
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(!is_func, "Output inside forall should not be functionalizable");
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            !is_func,
+            "Output inside forall should not be functionalizable"
+        );
         assert!(
             reason.as_ref().unwrap().contains("inside a quantifier"),
             "Expected quantifier message, got: {:?}",
@@ -1521,8 +1545,12 @@ mod tests {
                 Box::new(Expr::Ident("x".to_string())),
             )),
         };
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(!is_func, "Output inside exists should not be functionalizable");
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            !is_func,
+            "Output inside exists should not be functionalizable"
+        );
         assert!(
             reason.as_ref().unwrap().contains("inside a quantifier"),
             "Expected quantifier message, got: {:?}",
@@ -1556,8 +1584,13 @@ mod tests {
                 )),
             },
         ]);
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(is_func, "Forall over input should be functionalizable, reason: {:?}", reason);
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            is_func,
+            "Forall over input should be functionalizable, reason: {:?}",
+            reason
+        );
     }
 
     #[test]
@@ -1583,8 +1616,12 @@ mod tests {
                 )),
             },
         ]);
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(!is_func, "Multi-variable exists should not be functionalizable");
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            !is_func,
+            "Multi-variable exists should not be functionalizable"
+        );
         assert!(
             reason.as_ref().unwrap().contains("2 variables"),
             "Expected multi-var message, got: {:?}",
@@ -1616,8 +1653,13 @@ mod tests {
                 )),
             },
         ]);
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(is_func, "Single-var exists should be functionalizable, reason: {:?}", reason);
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            is_func,
+            "Single-var exists should be functionalizable, reason: {:?}",
+            reason
+        );
     }
 
     #[test]
@@ -1645,8 +1687,12 @@ mod tests {
                 Box::new(Expr::Ident("s0".to_string())),
             ))),
         };
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(!is_func, "Output inside forall in if-branch should not be functionalizable");
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            !is_func,
+            "Output inside forall in if-branch should not be functionalizable"
+        );
         assert!(
             reason.as_ref().unwrap().contains("inside a quantifier"),
             "Expected quantifier message, got: {:?}",
@@ -1711,12 +1757,10 @@ mod tests {
                 triggers: vec![],
                 body: Box::new(Expr::Implies(
                     // bounds
-                    Box::new(Expr::Conjunction(vec![
-                        Expr::Le(
-                            Box::new(Expr::Literal(Literal::Int(0))),
-                            Box::new(Expr::Ident("idx".to_string())),
-                        ),
-                    ])),
+                    Box::new(Expr::Conjunction(vec![Expr::Le(
+                        Box::new(Expr::Literal(Literal::Int(0))),
+                        Box::new(Expr::Ident("idx".to_string())),
+                    )])),
                     // sent_packets[idx] == some_expr
                     Box::new(Expr::Eq(
                         Box::new(Expr::Index(
@@ -1728,7 +1772,8 @@ mod tests {
                 )),
             },
         ]);
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
         assert!(
             is_func,
             "Seq comprehension pattern should be functionalizable, got: {:?}",
@@ -1762,8 +1807,12 @@ mod tests {
                 )),
             )),
         };
-        let (_, is_func, reason) = make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
-        assert!(!is_func, "Output.field[i] pattern should not be a seq comprehension");
+        let (_, is_func, reason) =
+            make_annotated(body, vec![ParameterMode::Input, ParameterMode::Output]);
+        assert!(
+            !is_func,
+            "Output.field[i] pattern should not be a seq comprehension"
+        );
         assert!(
             reason.as_ref().unwrap().contains("inside a quantifier"),
             "Expected quantifier message, got: {:?}",

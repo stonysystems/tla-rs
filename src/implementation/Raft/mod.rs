@@ -1,3 +1,3 @@
-pub mod message;
-pub mod host;
 pub mod helpers;
+pub mod host;
+pub mod message;

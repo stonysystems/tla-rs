@@ -93,5 +93,9 @@ pub trait ProtocolHost: Sized {
     ///
     /// If `packet` is None, this is a timeout — the implementation may
     /// run timer-driven actions or do nothing.
-    fn next(&mut self, config: &Self::Cfg, packet: Option<GenericPacket<Self::Msg>>) -> StepResult<Self::Msg>;
+    fn next(
+        &mut self,
+        config: &Self::Cfg,
+        packet: Option<GenericPacket<Self::Msg>>,
+    ) -> StepResult<Self::Msg>;
 }

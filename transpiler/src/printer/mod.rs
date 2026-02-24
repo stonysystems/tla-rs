@@ -174,7 +174,10 @@ impl Printer {
                                         | ExecExpr::GhostVar { .. }
                                 );
                                 let inner_is_last = j == inner.len() - 1;
-                                if !inner_has_own_semi && (!inner_is_last || matches!(inner_stmt, ExecExpr::MethodCall { .. })) {
+                                if !inner_has_own_semi
+                                    && (!inner_is_last
+                                        || matches!(inner_stmt, ExecExpr::MethodCall { .. }))
+                                {
                                     self.write("; ");
                                 } else {
                                     self.write(" ");
@@ -1285,7 +1288,11 @@ mod tests {
             ],
         });
         let output = &printer.output;
-        assert!(output.contains("match x {"), "expected match header: {}", output);
+        assert!(
+            output.contains("match x {"),
+            "expected match header: {}",
+            output
+        );
         assert!(output.contains("A => 1,"), "expected arm A: {}", output);
         assert!(output.contains("B => 2,"), "expected arm B: {}", output);
     }
@@ -1437,7 +1444,11 @@ mod tests {
             body: Box::new(ExecExpr::Block(vec![])),
         });
         let output = &printer.output;
-        assert!(output.contains("while (i < n)"), "expected while header: {}", output);
+        assert!(
+            output.contains("while (i < n)"),
+            "expected while header: {}",
+            output
+        );
         assert!(
             !output.contains("invariant"),
             "empty invariants should produce no invariant line: {}",

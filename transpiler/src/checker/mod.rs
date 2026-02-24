@@ -60,10 +60,8 @@ impl SaturationChecker {
                 match required_fields {
                     Some(fields) => {
                         // We know the struct fields — check each is assigned
-                        let missing: Vec<_> = fields
-                            .iter()
-                            .filter(|f| !assigned.contains(f))
-                            .collect();
+                        let missing: Vec<_> =
+                            fields.iter().filter(|f| !assigned.contains(f)).collect();
                         if !missing.is_empty() {
                             acc.add_error(TranspileError::Saturation {
                                 message: format!(
@@ -1722,7 +1720,11 @@ mod tests {
                 span: None,
             },
             kind: crate::ast::FunctionKind::Predicate,
-            param_modes: vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
             return_type: None,
             is_recursive: false,
             is_functionalizable: true,
@@ -2068,10 +2070,7 @@ mod tests {
                 // Second should be Harmony (for double-assigned s_)
                 assert!(matches!(errors[1], TranspileError::Harmony { .. }));
             }
-            other => panic!(
-                "Expected Multiple with 2 errors, got {:?}",
-                other
-            ),
+            other => panic!("Expected Multiple with 2 errors, got {:?}", other),
         }
     }
 
@@ -2254,7 +2253,12 @@ mod tests {
         let err = result.unwrap_err();
         match err {
             TranspileError::Multiple { errors } => {
-                assert_eq!(errors.len(), 3, "expected 3 saturation errors, got {:?}", errors);
+                assert_eq!(
+                    errors.len(),
+                    3,
+                    "expected 3 saturation errors, got {:?}",
+                    errors
+                );
                 for e in &errors {
                     assert!(matches!(e, TranspileError::Saturation { .. }));
                 }
@@ -2303,7 +2307,12 @@ mod tests {
         let err = result.unwrap_err();
         match err {
             TranspileError::Multiple { errors } => {
-                assert_eq!(errors.len(), 2, "expected 2 harmony errors, got {:?}", errors);
+                assert_eq!(
+                    errors.len(),
+                    2,
+                    "expected 2 harmony errors, got {:?}",
+                    errors
+                );
                 for e in &errors {
                     assert!(matches!(e, TranspileError::Harmony { .. }));
                 }
@@ -2375,7 +2384,10 @@ mod tests {
                     Expr::Eq(
                         Box::new(Expr::Call {
                             func: Path::single("f".to_string()),
-                            args: vec![Expr::Ident("a_".to_string()), Expr::Ident("b_".to_string())],
+                            args: vec![
+                                Expr::Ident("a_".to_string()),
+                                Expr::Ident("b_".to_string()),
+                            ],
                         }),
                         Box::new(Expr::Literal(Literal::Bool(true))),
                     ),
@@ -2391,7 +2403,11 @@ mod tests {
                 span: None,
             },
             kind: crate::ast::FunctionKind::Predicate,
-            param_modes: vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
             return_type: None,
             is_recursive: false,
             is_functionalizable: true,
@@ -2404,7 +2420,12 @@ mod tests {
         let err = result.unwrap_err();
         match err {
             TranspileError::Multiple { errors } => {
-                assert_eq!(errors.len(), 2, "expected 2 obligation errors, got {:?}", errors);
+                assert_eq!(
+                    errors.len(),
+                    2,
+                    "expected 2 obligation errors, got {:?}",
+                    errors
+                );
                 for e in &errors {
                     assert!(matches!(e, TranspileError::Obligation { .. }));
                 }
@@ -2472,7 +2493,11 @@ mod tests {
                 span: None,
             },
             kind: crate::ast::FunctionKind::Predicate,
-            param_modes: vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            param_modes: vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
             return_type: None,
             is_recursive: false,
             is_functionalizable: true,
@@ -2497,8 +2522,12 @@ mod tests {
                     errors.len(),
                     errors
                 );
-                let has_saturation = errors.iter().any(|e| matches!(e, TranspileError::Saturation { .. }));
-                let has_harmony = errors.iter().any(|e| matches!(e, TranspileError::Harmony { .. }));
+                let has_saturation = errors
+                    .iter()
+                    .any(|e| matches!(e, TranspileError::Saturation { .. }));
+                let has_harmony = errors
+                    .iter()
+                    .any(|e| matches!(e, TranspileError::Harmony { .. }));
                 assert!(has_saturation, "expected at least one Saturation error");
                 assert!(has_harmony, "expected at least one Harmony error");
             }
@@ -2579,15 +2608,24 @@ mod tests {
 
         let registry = make_registry_with_fields(&["max_bal", "votes"]);
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
-        assert!(result.is_ok(), "Root assignment should satisfy saturation even with registry");
+        assert!(
+            result.is_ok(),
+            "Root assignment should satisfy saturation even with registry"
+        );
     }
 
     #[test]
     fn test_saturation_all_fields_assigned_passes() {
         let func = make_test_function();
         let mut tracker = AssignmentTracker::new();
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "votes".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()),
+        );
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "votes".to_string()),
+        );
 
         let registry = make_registry_with_fields(&["max_bal", "votes"]);
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
@@ -2599,7 +2637,10 @@ mod tests {
         let func = make_test_function();
         let mut tracker = AssignmentTracker::new();
         // Only assign max_bal, not votes
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()),
+        );
 
         let registry = make_registry_with_fields(&["max_bal", "votes"]);
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
@@ -2626,10 +2667,16 @@ mod tests {
         // Without a registry, field assignments are accepted as best-effort
         let func = make_test_function();
         let mut tracker = AssignmentTracker::new();
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()),
+        );
 
         let result = SaturationChecker::check(&func, &tracker);
-        assert!(result.is_ok(), "Field assignment without registry should pass (best-effort)");
+        assert!(
+            result.is_ok(),
+            "Field assignment without registry should pass (best-effort)"
+        );
     }
 
     #[test]
@@ -2638,7 +2685,10 @@ mod tests {
         let tracker = AssignmentTracker::new();
 
         let result = SaturationChecker::check(&func, &tracker);
-        assert!(result.is_err(), "No assignment should fail even without registry");
+        assert!(
+            result.is_err(),
+            "No assignment should fail even without registry"
+        );
     }
 
     #[test]
@@ -2680,12 +2730,18 @@ mod tests {
             non_functionalizable_reason: None,
         };
         let mut tracker = AssignmentTracker::new();
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "some_field".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "some_field".to_string()),
+        );
 
         let registry = make_registry_with_fields(&["max_bal", "votes"]);
         // "UnknownType" not in registry, so falls back to heuristic (field exists = ok)
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
-        assert!(result.is_ok(), "Unknown type with field assignment should pass via heuristic");
+        assert!(
+            result.is_ok(),
+            "Unknown type with field assignment should pass via heuristic"
+        );
     }
 
     #[test]
@@ -2695,13 +2751,22 @@ mod tests {
 
         // Assign only two of three fields
         let mut tracker = AssignmentTracker::new();
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "field_a".to_string()));
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "field_b".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "field_a".to_string()),
+        );
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "field_b".to_string()),
+        );
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
         assert!(result.is_err(), "Missing field_c should be detected");
 
         // Now assign all three
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "field_c".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "field_c".to_string()),
+        );
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
         assert!(result.is_ok(), "All three fields assigned should pass");
     }
@@ -2750,36 +2815,57 @@ mod tests {
         // No assignment — should fail
         let tracker = AssignmentTracker::new();
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
-        assert!(result.is_err(), "Primitive type with no assignment should fail");
+        assert!(
+            result.is_err(),
+            "Primitive type with no assignment should fail"
+        );
 
         // Root assignment — should pass
         let mut tracker = AssignmentTracker::new();
         tracker.record_assignment("y_", MemberPath::Root);
         let result = SaturationChecker::check_with_registry(&func, &tracker, Some(&registry));
-        assert!(result.is_ok(), "Primitive type with Root assignment should pass");
+        assert!(
+            result.is_ok(),
+            "Primitive type with Root assignment should pass"
+        );
     }
 
     #[test]
     fn test_validate_with_registry() {
         let func = make_test_function();
         let mut tracker = AssignmentTracker::new();
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "votes".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()),
+        );
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "votes".to_string()),
+        );
 
         let registry = make_registry_with_fields(&["max_bal", "votes"]);
         let result = validate_function_with_registry(&func, &tracker, Some(&registry));
-        assert!(result.is_ok(), "validate_function_with_registry should accept full field coverage");
+        assert!(
+            result.is_ok(),
+            "validate_function_with_registry should accept full field coverage"
+        );
     }
 
     #[test]
     fn test_validate_with_registry_detects_missing() {
         let func = make_test_function();
         let mut tracker = AssignmentTracker::new();
-        tracker.record_assignment("s_", MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()));
+        tracker.record_assignment(
+            "s_",
+            MemberPath::Field(Box::new(MemberPath::Root), "max_bal".to_string()),
+        );
         // votes not assigned
 
         let registry = make_registry_with_fields(&["max_bal", "votes"]);
         let result = validate_function_with_registry(&func, &tracker, Some(&registry));
-        assert!(result.is_err(), "validate_function_with_registry should detect missing field");
+        assert!(
+            result.is_err(),
+            "validate_function_with_registry should detect missing field"
+        );
     }
 }

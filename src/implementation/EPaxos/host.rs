@@ -46,7 +46,9 @@ impl ProtocolConfig for EPaxosConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -58,7 +60,7 @@ impl ProtocolConfig for EPaxosConfig {
             None => {
                 eprintln!("EPaxos: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         let num_nodes = peers.len() as u64;
@@ -182,20 +184,32 @@ impl EPaxosHost {
     ) -> StepResult<EPaxosMessage> {
         // Guard: must be leader in PreAccepted phase
         if !self.state.is_leader {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CInstancePhase::PreAccepted) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must not have already received from this sender
         if self.state.preaccept_senders.contains(&sender_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: dep_count overflow protection
         if conflict && self.state.dep_count >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = epaxos_gen::CReceivePreAcceptOk(
@@ -207,7 +221,10 @@ impl EPaxosHost {
         );
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming Accept message (slow path).
@@ -220,10 +237,7 @@ impl EPaxosHost {
         _cmd: u64,
         _seq: u64,
     ) -> StepResult<EPaxosMessage> {
-        let (new_state, _sent) = epaxos_gen::CSendAcceptOk(
-            &self.state,
-            &config.constants,
-        );
+        let (new_state, _sent) = epaxos_gen::CSendAcceptOk(&self.state, &config.constants);
         self.state = new_state;
 
         StepResult {
@@ -246,25 +260,34 @@ impl EPaxosHost {
     ) -> StepResult<EPaxosMessage> {
         // Guard: must be leader in Accepted phase
         if !self.state.is_leader {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CInstancePhase::Accepted) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must not have already received from this sender
         if self.state.accept_senders.contains(&sender_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CReceiveAcceptOk(
-            &self.state,
-            &config.constants,
-            &sender_id,
-        );
+        let (new_state, _sent) =
+            epaxos_gen::CReceiveAcceptOk(&self.state, &config.constants, &sender_id);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming CommitMsg. No state transition needed beyond
@@ -276,7 +299,10 @@ impl EPaxosHost {
         _seq: u64,
     ) -> StepResult<EPaxosMessage> {
         // CommitMsg is informational; no protocol action required.
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -285,29 +311,28 @@ impl EPaxosHost {
 
     /// Timer action: Propose a new command.
     /// Only fires when the instance is Empty and the node is not already a leader.
-    fn try_propose(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_propose(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: phase must be Empty
         if !matches!(self.state.phase, CInstancePhase::Empty) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: committed_count overflow protection
         if self.state.committed_count >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Generate a proposal value
         self.propose_counter = self.propose_counter.wrapping_add(1);
         let value = self.propose_counter;
 
-        let (new_state, _sent) = epaxos_gen::CPropose(
-            &self.state,
-            &config.constants,
-            &value,
-        );
+        let (new_state, _sent) = epaxos_gen::CPropose(&self.state, &config.constants, &value);
         self.state = new_state;
 
         // Broadcast PreAccept to all other replicas
@@ -327,40 +352,52 @@ impl EPaxosHost {
 
     /// Timer action: Try fast-path commit.
     /// Fires when the leader has a fast quorum of PreAcceptOk with no conflicts.
-    fn try_fast_commit(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_fast_commit(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: must be leader in PreAccepted phase
         if !self.state.is_leader {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CInstancePhase::PreAccepted) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have fast quorum
         if (self.state.preaccept_senders.len() as u64) < config.constants.fast_quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: no conflicts detected
         if self.state.has_conflict {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: committed_count overflow protection
         if self.state.committed_count >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CFastCommit(
-            &self.state,
-            &config.constants,
-        );
+        let (new_state, _sent) = epaxos_gen::CFastCommit(&self.state, &config.constants);
         self.state = new_state;
 
-        eprintln!("EPaxos: FAST COMMIT cmd={} seq={}", self.state.cmd, self.state.seq);
+        eprintln!(
+            "EPaxos: FAST COMMIT cmd={} seq={}",
+            self.state.cmd, self.state.seq
+        );
 
         // Broadcast commit to all replicas
         let others = Self::other_peers(config);
@@ -378,32 +415,38 @@ impl EPaxosHost {
 
     /// Timer action: Start slow-path Accept phase.
     /// Fires when the leader has a quorum of PreAcceptOk but with conflicts.
-    fn try_start_accept(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_start_accept(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: must be leader in PreAccepted phase
         if !self.state.is_leader {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CInstancePhase::PreAccepted) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have at least quorum_size responses
         if (self.state.preaccept_senders.len() as u64) < config.constants.fast_quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have conflicts
         if !self.state.has_conflict {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CStartAccept(
-            &self.state,
-            &config.constants,
-        );
+        let (new_state, _sent) = epaxos_gen::CStartAccept(&self.state, &config.constants);
         self.state = new_state;
 
         // Broadcast Accept to all other replicas
@@ -423,35 +466,44 @@ impl EPaxosHost {
 
     /// Timer action: Slow-path commit.
     /// Fires when the leader in Accepted phase has a classic quorum of AcceptOk.
-    fn try_slow_commit(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_slow_commit(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: must be leader in Accepted phase
         if !self.state.is_leader {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
         if !matches!(self.state.phase, CInstancePhase::Accepted) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have classic quorum of accept acks
         if (self.state.accept_senders.len() as u64) < config.constants.quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: committed_count overflow protection
         if self.state.committed_count >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CSlowCommit(
-            &self.state,
-            &config.constants,
-        );
+        let (new_state, _sent) = epaxos_gen::CSlowCommit(&self.state, &config.constants);
         self.state = new_state;
 
-        eprintln!("EPaxos: SLOW COMMIT cmd={} seq={}", self.state.cmd, self.state.seq);
+        eprintln!(
+            "EPaxos: SLOW COMMIT cmd={} seq={}",
+            self.state.cmd, self.state.seq
+        );
 
         // Broadcast commit to all replicas
         let others = Self::other_peers(config);
@@ -469,74 +521,82 @@ impl EPaxosHost {
 
     /// Timer action: Execute a committed command.
     /// Fires when the instance is in Committed phase.
-    fn try_execute(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_execute(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: phase must be Committed
         if !matches!(self.state.phase, CInstancePhase::Committed) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: executed_count overflow protection
         if self.state.executed_count >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CExecute(
-            &self.state,
-            &config.constants,
-        );
+        let (new_state, _sent) = epaxos_gen::CExecute(&self.state, &config.constants);
         self.state = new_state;
 
-        eprintln!("EPaxos: EXECUTED cmd={} seq={}", self.state.cmd, self.state.seq);
+        eprintln!(
+            "EPaxos: EXECUTED cmd={} seq={}",
+            self.state.cmd, self.state.seq
+        );
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer action: Start a new instance after execution.
     /// Fires when the instance is in Executed phase.
-    fn try_new_instance(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_new_instance(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: phase must be Executed
         if !matches!(self.state.phase, CInstancePhase::Executed) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CNewInstance(
-            &self.state,
-            &config.constants,
-        );
+        let (new_state, _sent) = epaxos_gen::CNewInstance(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer action: Recover a stalled instance by proposing a new ballot.
     /// Fires when phase is PreAccepted or Accepted (not yet committed/executed).
-    fn try_recover(
-        &mut self,
-        config: &EPaxosConfig,
-    ) -> StepResult<EPaxosMessage> {
+    fn try_recover(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: phase must be PreAccepted or Accepted
-        if !matches!(self.state.phase, CInstancePhase::PreAccepted | CInstancePhase::Accepted) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !matches!(
+            self.state.phase,
+            CInstancePhase::PreAccepted | CInstancePhase::Accepted
+        ) {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let new_ballot = self.next_ballot(config);
 
         // Guard: new ballot must be strictly greater than current
         if new_ballot <= self.state.ballot {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = epaxos_gen::CRecover(
-            &self.state,
-            &config.constants,
-            &new_ballot,
-        );
+        let (new_state, _sent) = epaxos_gen::CRecover(&self.state, &config.constants, &new_ballot);
         self.state = new_state;
 
         // Broadcast PreAccept with new ballot to all replicas
@@ -581,26 +641,27 @@ impl ProtocolHost for EPaxosHost {
                 Some(id) => id,
                 None => {
                     // Unknown sender, ignore
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             };
 
             return match pkt.msg {
                 EPaxosMessage::PreAccept { ballot, cmd, seq } => {
                     self.handle_preaccept(config, &pkt.src, ballot, cmd, seq)
-                },
-                EPaxosMessage::PreAcceptOk { sender, seq, conflict } => {
-                    self.handle_preaccept_ok(config, sender, seq, conflict)
-                },
+                }
+                EPaxosMessage::PreAcceptOk {
+                    sender,
+                    seq,
+                    conflict,
+                } => self.handle_preaccept_ok(config, sender, seq, conflict),
                 EPaxosMessage::Accept { ballot, cmd, seq } => {
                     self.handle_accept(config, &pkt.src, ballot, cmd, seq)
-                },
-                EPaxosMessage::AcceptOk { sender } => {
-                    self.handle_accept_ok(config, sender)
-                },
-                EPaxosMessage::CommitMsg { cmd, seq } => {
-                    self.handle_commit(config, cmd, seq)
-                },
+                }
+                EPaxosMessage::AcceptOk { sender } => self.handle_accept_ok(config, sender),
+                EPaxosMessage::CommitMsg { cmd, seq } => self.handle_commit(config, cmd, seq),
             };
         }
 

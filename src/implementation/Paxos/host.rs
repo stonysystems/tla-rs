@@ -37,7 +37,9 @@ impl ProtocolConfig for PaxosConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -49,7 +51,7 @@ impl ProtocolConfig for PaxosConfig {
             None => {
                 eprintln!("Paxos: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         let num_nodes = peers.len() as u64;
@@ -136,7 +138,10 @@ impl PaxosHost {
     ) -> StepResult<PaxosMessage> {
         // Guard: b >= promised_bal (CSend1b precondition)
         if ballot < self.state.promised_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         self.state = paxos_gen::CSend1b(&self.state, &config.constants, &ballot);
@@ -167,17 +172,26 @@ impl PaxosHost {
     ) -> StepResult<PaxosMessage> {
         // Guard: phase must be Phase1
         if !matches!(self.state.phase, CPhase::Phase1) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: acceptor must be in the acceptor set
         if !config.constants.acceptors.contains(&acceptor_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must not have already received a promise from this acceptor
         if self.state.promises_rcvd.contains(&acceptor_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         self.state = paxos_gen::CRecvPromise(
@@ -188,7 +202,10 @@ impl PaxosHost {
             &accepted_val,
         );
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Handle an incoming Accept message (Phase 2a).
@@ -202,7 +219,10 @@ impl PaxosHost {
     ) -> StepResult<PaxosMessage> {
         // Guard: b >= promised_bal (CSend2b precondition)
         if ballot < self.state.promised_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         self.state = paxos_gen::CSend2b(&self.state, &config.constants, &ballot, &value);
@@ -228,26 +248,34 @@ impl PaxosHost {
     ) -> StepResult<PaxosMessage> {
         // Guard: phase must be Phase2
         if !matches!(self.state.phase, CPhase::Phase2) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: acceptor must be in the acceptor set
         if !config.constants.acceptors.contains(&acceptor_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must not have already received an accepted from this acceptor
         if self.state.accepts_rcvd.contains(&acceptor_id) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        self.state = paxos_gen::CRecvAccepted(
-            &self.state,
-            &config.constants,
-            &acceptor_id,
-        );
+        self.state = paxos_gen::CRecvAccepted(&self.state, &config.constants, &acceptor_id);
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -256,20 +284,23 @@ impl PaxosHost {
 
     /// Timer action: Try to start a new proposal (Phase 1a).
     /// Only fires when the node is Idle (not already running a proposal).
-    fn try_send1a(
-        &mut self,
-        config: &PaxosConfig,
-    ) -> StepResult<PaxosMessage> {
+    fn try_send1a(&mut self, config: &PaxosConfig) -> StepResult<PaxosMessage> {
         // Guard: phase must be Idle
         if !matches!(self.state.phase, CPhase::Idle) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let new_ballot = self.next_ballot(config);
 
         // Guard: new ballot must be > proposer_bal
         if new_ballot <= self.state.proposer_bal {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         self.state = paxos_gen::CSend1a(&self.state, &config.constants, &new_ballot);
@@ -287,18 +318,21 @@ impl PaxosHost {
 
     /// Timer action: Try to send Accept (Phase 2a).
     /// Only fires when we have collected a quorum of promises in Phase 1.
-    fn try_send2a(
-        &mut self,
-        config: &PaxosConfig,
-    ) -> StepResult<PaxosMessage> {
+    fn try_send2a(&mut self, config: &PaxosConfig) -> StepResult<PaxosMessage> {
         // Guard: phase must be Phase1
         if !matches!(self.state.phase, CPhase::Phase1) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have received a quorum of promises
         if (self.state.promises_rcvd.len() as u64) < config.constants.quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // The value to propose: if any acceptor reported a previously accepted
@@ -306,11 +340,7 @@ impl PaxosHost {
         // Otherwise we can propose our own value (proposed_val, which defaults to 0).
         let proposed_value = self.state.proposed_val;
 
-        self.state = paxos_gen::CSend2a(
-            &self.state,
-            &config.constants,
-            &proposed_value,
-        );
+        self.state = paxos_gen::CSend2a(&self.state, &config.constants, &proposed_value);
 
         let ballot = self.state.proposer_bal;
         let value = self.state.proposed_val;
@@ -328,25 +358,31 @@ impl PaxosHost {
 
     /// Timer action: Try to learn a decided value.
     /// Only fires when we have collected a quorum of Accepted in Phase 2.
-    fn try_learn(
-        &mut self,
-        config: &PaxosConfig,
-    ) -> StepResult<PaxosMessage> {
+    fn try_learn(&mut self, config: &PaxosConfig) -> StepResult<PaxosMessage> {
         // Guard: phase must be Phase2
         if !matches!(self.state.phase, CPhase::Phase2) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must have received a quorum of accepts
         if (self.state.accepts_rcvd.len() as u64) < config.constants.quorum_size {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         self.state = paxos_gen::CLearn(&self.state, &config.constants);
 
         eprintln!("Paxos: DECIDED value = {}", self.state.decided_val);
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Resolve the sender's node index from their endpoint.
@@ -385,23 +421,26 @@ impl ProtocolHost for PaxosHost {
                 Some(id) => id,
                 None => {
                     // Unknown sender, ignore
-                    return StepResult { ok: true, outbound: GenericOutbound::None };
-                },
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
             };
 
             return match pkt.msg {
-                PaxosMessage::Prepare { ballot } => {
-                    self.handle_prepare(config, &pkt.src, ballot)
-                },
-                PaxosMessage::Promise { ballot, accepted_bal, accepted_val } => {
-                    self.handle_promise(config, sender_id, ballot, accepted_bal, accepted_val)
-                },
+                PaxosMessage::Prepare { ballot } => self.handle_prepare(config, &pkt.src, ballot),
+                PaxosMessage::Promise {
+                    ballot,
+                    accepted_bal,
+                    accepted_val,
+                } => self.handle_promise(config, sender_id, ballot, accepted_bal, accepted_val),
                 PaxosMessage::Accept { ballot, value } => {
                     self.handle_accept(config, &pkt.src, ballot, value)
-                },
+                }
                 PaxosMessage::Accepted { ballot, value } => {
                     self.handle_accepted(config, sender_id, ballot, value)
-                },
+                }
             };
         }
 

@@ -1,7 +1,7 @@
 use crate::common::native::io_s::EndPoint;
+use crate::generated::RSL::types_gen::CParameters;
 use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};
 use crate::implementation::RSL::types_i::{max_votes_len, RequestBatchSizeLimit};
-use crate::generated::RSL::types_gen::CParameters;
 use crate::protocol::RSL::constants::{LConstants, LReplicaConstants, LReplicaConstantsValid};
 use vstd::prelude::*;
 

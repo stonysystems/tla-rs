@@ -155,10 +155,7 @@ impl TlaType {
 
     /// Convert to Verus type string, using named structs for record types.
     /// `record_structs` maps sorted comma-joined field names to struct names.
-    pub fn to_verus_type_with_records(
-        &self,
-        record_structs: &HashMap<String, String>,
-    ) -> String {
+    pub fn to_verus_type_with_records(&self, record_structs: &HashMap<String, String>) -> String {
         match self {
             TlaType::Set(elem) => {
                 format!("Set<{}>", elem.to_verus_type_with_records(record_structs))

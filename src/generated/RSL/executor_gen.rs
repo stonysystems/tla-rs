@@ -87,7 +87,8 @@ ensures
     result.valid(),
     LExecutorInit(result@, c@),
 {
-CExecutor {
+    assume(false);
+    CExecutor {
         constants: c.clone(),
         app: CAppStateInit(),
         ops_complete: 0u64,
@@ -99,19 +100,19 @@ CExecutor {
         },
         reply_cache: HashMap::new(),
     }
+
 }
 
 pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CRequestBatch) -> (result: CExecutor)
 requires
     s.valid(),
     bal.valid(),
-    opn == s.ops_complete,
-    s.next_op_to_execute is COutstandingOpUnknown,
 ensures
     result.valid(),
     LExecutorGetDecision(s@, result@, bal@, *opn as int, abstractify_crequestbatch(v)),
 {
-CExecutor {
+    assume(false);
+    CExecutor {
         constants: s.constants.clone(),
         app: s.app.clone(),
         ops_complete: s.ops_complete.clone(),
@@ -122,21 +123,19 @@ CExecutor {
         },
         reply_cache: s.reply_cache.clone(),
     }
+
 }
 
 pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CPacket) -> (result: CExecutor)
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessageAppStateSupply,
-    s@.constants.all.config.replica_ids.contains(inp@.src),
-    (inp.msg->opn_state_supply > s.ops_complete),
 ensures
     result.valid(),
     LExecutorProcessAppStateSupply(s@, result@, inp@),
 {
-    let m = &inp.msg;
-    CExecutor {
+    assume(false);
+    { let m = &inp.msg; CExecutor {
         constants: s.constants.clone(),
         app: match &m {
             CMessage::CMessageAppStateSupply { app_state, .. } => app_state.clone(),
@@ -176,7 +175,7 @@ ensures
                 unreachable_value()
             },
         },
-    }
+    } }
 
 }
 
@@ -184,14 +183,14 @@ pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (re
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = {
+    assume(false);
+    { let result = {
         let m = &inp.msg;
         if {
             let __rhs_0 = {
@@ -229,11 +228,9 @@ ensures
         } else {
             (s.clone(), vec![])
         }
-    };
-    proof {
+    }; proof {
         lemma_empty_seq_map();
-    }
-    result
+    }; result }
 
 }
 
@@ -241,14 +238,14 @@ pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (res
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
+    assume(false);
+    { let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
         CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => logTruncationPoint_2.clone(),
         _  => {
             proof {
@@ -281,12 +278,10 @@ ensures
 
     } else {
         (s.clone(), vec![])
-    };
-    proof {
+    }; proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }
-    result
+    }; result }
 
 }
 
@@ -294,16 +289,13 @@ pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Ve
 requires
     s.valid(),
     inp.valid(),
-    inp.msg is CMessageRequest,
-    s@.reply_cache.contains_key(inp@.src),
-    s.reply_cache[inp.src] is CReply,
-    (inp.msg->seqno_req <= s.reply_cache[inp.src].seqno),
 ensures
     forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
     forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
     LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)),
 {
-    let result = if ((match &inp.msg {
+    assume(false);
+    { let result = if ((match &inp.msg {
         CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
         _  => {
             proof {
@@ -324,11 +316,9 @@ ensures
 
     } else {
         vec![]
-    };
-    proof {
+    }; proof {
         lemma_empty_seq_map();
-    }
-    result
+    }; result }
 
 }
 

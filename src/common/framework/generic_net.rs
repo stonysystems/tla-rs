@@ -16,23 +16,16 @@ use vstd::prelude::*;
 pub fn receive_packet<M: ProtocolMessage>(
     netc: &mut NetClient,
     local_addr: &EndPoint,
-) -> GenericReceiveResult<M>
-{
+) -> GenericReceiveResult<M> {
     let timeout = 0i32;
     let netr = netc.receive(timeout);
 
     match netr {
-        NetcReceiveResult::Error => {
-            GenericReceiveResult::Fail
-        },
-        NetcReceiveResult::TimedOut {} => {
-            GenericReceiveResult::Timeout
-        },
+        NetcReceiveResult::Error => GenericReceiveResult::Fail,
+        NetcReceiveResult::TimedOut {} => GenericReceiveResult::Timeout,
         NetcReceiveResult::Received { sender, message } => {
             match M::deserialize_from_bytes(&message) {
-                None => {
-                    GenericReceiveResult::Fail
-                },
+                None => GenericReceiveResult::Fail,
                 Some(msg) => {
                     let packet = GenericPacket {
                         dst: local_addr.clone_up_to_view(),
@@ -49,12 +42,7 @@ pub fn receive_packet<M: ProtocolMessage>(
 /// Serialize and send a single packet over the network.
 ///
 /// Returns true on success, false on send failure.
-pub fn send_packet<M: ProtocolMessage>(
-    dst: &EndPoint,
-    msg: &M,
-    netc: &mut NetClient,
-) -> bool
-{
+pub fn send_packet<M: ProtocolMessage>(dst: &EndPoint, msg: &M, netc: &mut NetClient) -> bool {
     let mut buf: Vec<u8> = Vec::new();
     msg.serialize_to_bytes(&mut buf);
 
@@ -70,13 +58,10 @@ pub fn send_packet<M: ProtocolMessage>(
 pub fn deliver_outbound<M: ProtocolMessage>(
     outbound: &GenericOutbound<M>,
     netc: &mut NetClient,
-) -> bool
-{
+) -> bool {
     match outbound {
         GenericOutbound::None => true,
-        GenericOutbound::Send { dst, msg } => {
-            send_packet(dst, msg, netc)
-        },
+        GenericOutbound::Send { dst, msg } => send_packet(dst, msg, netc),
         GenericOutbound::Broadcast { dsts, msg } => {
             for dst in dsts.iter() {
                 if !send_packet(dst, msg, netc) {
@@ -84,7 +69,7 @@ pub fn deliver_outbound<M: ProtocolMessage>(
                 }
             }
             true
-        },
+        }
         GenericOutbound::Sequence { packets } => {
             for packet in packets.iter() {
                 if !send_packet(&packet.dst, &packet.msg, netc) {
@@ -92,6 +77,6 @@ pub fn deliver_outbound<M: ProtocolMessage>(
                 }
             }
             true
-        },
+        }
     }
 }

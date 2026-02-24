@@ -24,7 +24,7 @@ use crate::common::native::io_s::*;
 use crate::generated::Raft::raft_gen;
 use crate::generated::Raft::types_gen::*;
 use crate::implementation::Raft::message::*;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 /// Raft protocol configuration.
 pub struct RaftConfig {
@@ -50,7 +50,9 @@ impl ProtocolConfig for RaftConfig {
         let mut my_index: Option<u64> = None;
 
         for i in 0..args.len() {
-            let ep = EndPoint { id: args[i].clone() };
+            let ep = EndPoint {
+                id: args[i].clone(),
+            };
             if ep.id == me.id {
                 my_index = Some(i as u64);
             }
@@ -62,7 +64,7 @@ impl ProtocolConfig for RaftConfig {
             None => {
                 eprintln!("Raft: own endpoint not found in args");
                 return None;
-            },
+            }
         };
 
         let num_nodes = peers.len() as u64;
@@ -163,12 +165,18 @@ impl RaftHost {
 
         // Guard: candidate_term >= current_term
         if term < self.state.current_term {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: !has_voted || voted_for == candidate_id
         if self.state.has_voted && self.state.voted_for != candidate_id {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: log up-to-date check
@@ -179,10 +187,12 @@ impl RaftHost {
             self.state.log[self.state.log.len() - 1].term
         };
         let log_ok = last_log_term > my_last_log_term
-            || (last_log_term == my_last_log_term
-                && last_log_index >= self.state.log.len() as u64);
+            || (last_log_term == my_last_log_term && last_log_index >= self.state.log.len() as u64);
         if !log_ok {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let (new_state, _sent) = raft_gen::CGrantVote(
@@ -253,7 +263,10 @@ impl RaftHost {
 
         // Guard: log.len() < u64::MAX
         if self.state.log.len() as u64 >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Compute the match_index for the response before updating state
@@ -296,18 +309,24 @@ impl RaftHost {
     /// CTimeout requires:
     ///   role is Follower or Candidate
     ///   current_term < u64::MAX
-    fn try_follower_timeout(
-        &mut self,
-        config: &RaftConfig,
-    ) -> StepResult<RaftMessage> {
+    fn try_follower_timeout(&mut self, config: &RaftConfig) -> StepResult<RaftMessage> {
         // Guard: role is Follower or Candidate
-        if !matches!(self.state.role, CServerRole::Follower | CServerRole::Candidate) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+        if !matches!(
+            self.state.role,
+            CServerRole::Follower | CServerRole::Candidate
+        ) {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: current_term < MAX
         if self.state.current_term >= u64::MAX {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let new_term = self.state.current_term + 1;
@@ -353,31 +372,38 @@ impl RaftHost {
         if term > self.state.current_term && term < u64::MAX {
             let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
             self.state = new_state;
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must be a candidate
         if !matches!(self.state.role, CServerRole::Candidate) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: vote must be granted
         if !granted {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: voter must be in servers set
         if !config.constants.servers.contains(&voter) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
-        let (new_state, _sent) = raft_gen::CReceiveVoteGranted(
-            &self.state,
-            &config.constants,
-            &term,
-            granted,
-            &voter,
-        );
+        let (new_state, _sent) =
+            raft_gen::CReceiveVoteGranted(&self.state, &config.constants, &term, granted, &voter);
         self.state = new_state;
 
         // Check if we now have enough votes to become leader.
@@ -392,7 +418,10 @@ impl RaftHost {
             );
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -415,17 +444,26 @@ impl RaftHost {
         if term > self.state.current_term && term < u64::MAX {
             let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
             self.state = new_state;
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: must be leader
         if !matches!(self.state.role, CServerRole::Leader) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Guard: follower must be in servers set
         if !config.constants.servers.contains(&follower) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         if success {
@@ -434,10 +472,16 @@ impl RaftHost {
             //   new_match_index <= log.len() (spec domain)
             //   new_match_index < u64::MAX
             if match_index > self.state.log.len() as u64 {
-                return StepResult { ok: true, outbound: GenericOutbound::None };
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                };
             }
             if match_index >= u64::MAX {
-                return StepResult { ok: true, outbound: GenericOutbound::None };
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                };
             }
 
             let (new_state, _sent) = raft_gen::CHandleAppendResponse(
@@ -464,7 +508,10 @@ impl RaftHost {
             self.state = new_state;
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer action: Leader sends AppendEntries to each follower.
@@ -475,13 +522,13 @@ impl RaftHost {
     ///
     /// Iterates over all peers and sends appropriate entries based on
     /// each follower's next_index.
-    fn try_send_append_entries(
-        &mut self,
-        config: &RaftConfig,
-    ) -> StepResult<RaftMessage> {
+    fn try_send_append_entries(&mut self, config: &RaftConfig) -> StepResult<RaftMessage> {
         // Guard: must be leader
         if !matches!(self.state.role, CServerRole::Leader) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let mut packets: Vec<GenericPacket<RaftMessage>> = Vec::new();
@@ -548,7 +595,10 @@ impl RaftHost {
         }
 
         if packets.is_empty() {
-            StepResult { ok: true, outbound: GenericOutbound::None }
+            StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            }
         } else {
             StepResult {
                 ok: true,
@@ -567,18 +617,21 @@ impl RaftHost {
     ///
     /// Scans match_index values to find the highest index replicated
     /// on a quorum of servers.
-    fn try_advance_commit_index(
-        &mut self,
-        config: &RaftConfig,
-    ) -> StepResult<RaftMessage> {
+    fn try_advance_commit_index(&mut self, config: &RaftConfig) -> StepResult<RaftMessage> {
         // Guard: must be leader
         if !matches!(self.state.role, CServerRole::Leader) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         let log_len = self.state.log.len() as u64;
         if log_len == 0 {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Find the highest index N such that:
@@ -615,11 +668,8 @@ impl RaftHost {
         }
 
         if let Some(new_commit_index) = best_n {
-            let (new_state, _sent) = raft_gen::CAdvanceCommitIndex(
-                &self.state,
-                &config.constants,
-                &new_commit_index,
-            );
+            let (new_state, _sent) =
+                raft_gen::CAdvanceCommitIndex(&self.state, &config.constants, &new_commit_index);
             self.state = new_state;
             eprintln!(
                 "Raft: Node {} advanced commit_index to {}",
@@ -627,7 +677,10 @@ impl RaftHost {
             );
         }
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 
     /// Timer action: Leader processes a client request.
@@ -637,27 +690,26 @@ impl RaftHost {
     ///
     /// In a real system, client requests would arrive via a separate channel.
     /// Here we use the timer to simulate periodic client requests.
-    fn try_client_request(
-        &mut self,
-        config: &RaftConfig,
-    ) -> StepResult<RaftMessage> {
+    fn try_client_request(&mut self, config: &RaftConfig) -> StepResult<RaftMessage> {
         // Guard: must be leader
         if !matches!(self.state.role, CServerRole::Leader) {
-            return StepResult { ok: true, outbound: GenericOutbound::None };
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
         }
 
         // Generate a unique value for this request
         self.client_request_counter = self.client_request_counter.wrapping_add(1);
         let value = self.client_request_counter;
 
-        let (new_state, _sent) = raft_gen::CClientRequest(
-            &self.state,
-            &config.constants,
-            &value,
-        );
+        let (new_state, _sent) = raft_gen::CClientRequest(&self.state, &config.constants, &value);
         self.state = new_state;
 
-        StepResult { ok: true, outbound: GenericOutbound::None }
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::None,
+        }
     }
 }
 
@@ -694,23 +746,19 @@ impl ProtocolHost for RaftHost {
                     candidate_id,
                     last_log_index,
                     last_log_term,
-                } => {
-                    self.handle_request_vote(
-                        config,
-                        &pkt.src,
-                        term,
-                        candidate_id,
-                        last_log_index,
-                        last_log_term,
-                    )
-                },
+                } => self.handle_request_vote(
+                    config,
+                    &pkt.src,
+                    term,
+                    candidate_id,
+                    last_log_index,
+                    last_log_term,
+                ),
                 RaftMessage::VoteResponse {
                     term,
                     granted,
                     voter,
-                } => {
-                    self.handle_vote_response(config, term, granted, voter)
-                },
+                } => self.handle_vote_response(config, term, granted, voter),
                 RaftMessage::AppendEntries {
                     term,
                     leader_id,
@@ -719,27 +767,23 @@ impl ProtocolHost for RaftHost {
                     value,
                     has_entry,
                     leader_commit,
-                } => {
-                    self.handle_append_entries(
-                        config,
-                        &pkt.src,
-                        term,
-                        leader_id,
-                        prev_log_index,
-                        prev_log_term,
-                        value,
-                        has_entry,
-                        leader_commit,
-                    )
-                },
+                } => self.handle_append_entries(
+                    config,
+                    &pkt.src,
+                    term,
+                    leader_id,
+                    prev_log_index,
+                    prev_log_term,
+                    value,
+                    has_entry,
+                    leader_commit,
+                ),
                 RaftMessage::AppendResponse {
                     term,
                     success,
                     match_index,
                     follower,
-                } => {
-                    self.handle_append_response(config, term, success, match_index, follower)
-                },
+                } => self.handle_append_response(config, term, success, match_index, follower),
             };
         }
 
@@ -748,7 +792,7 @@ impl ProtocolHost for RaftHost {
             CServerRole::Follower | CServerRole::Candidate => {
                 // Followers and candidates: election timeout
                 self.try_follower_timeout(config)
-            },
+            }
             CServerRole::Leader => {
                 // Leader cycles through: send heartbeats, advance commit, client requests
                 let result = match self.action_index % 3 {
@@ -758,7 +802,7 @@ impl ProtocolHost for RaftHost {
                 };
                 self.action_index = self.action_index.wrapping_add(1);
                 result
-            },
+            }
         };
         result
     }

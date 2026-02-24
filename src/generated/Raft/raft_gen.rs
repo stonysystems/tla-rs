@@ -328,7 +328,7 @@ ensures
     term: *ae_term,
     value: *ae_value,
 });
-            
+
 
         };
         (CState {
@@ -432,7 +432,7 @@ ensures
         let mut __next_index = s.next_index.clone();
         if (s.next_index.contains_key(&follower) && (s.next_index.get(&follower).unwrap().clone() > 0)) {
                         __next_index.insert(follower.clone(), Cu64_dec(&s.next_index.get(&follower).unwrap().clone()));
-            
+
 
         };
         (CState {

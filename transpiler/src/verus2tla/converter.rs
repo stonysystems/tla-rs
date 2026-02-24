@@ -562,7 +562,11 @@ impl Verus2TlaConverter {
                 // Multi-segment paths in TLA+ are invalid (:: is not TLA+ syntax),
                 // so use only the last segment (the variant/function name).
                 let tla_name = if func_name.contains("::") {
-                    func_name.rsplit("::").next().unwrap_or(&func_name).to_string()
+                    func_name
+                        .rsplit("::")
+                        .next()
+                        .unwrap_or(&func_name)
+                        .to_string()
                 } else {
                     func_name
                 };
@@ -596,7 +600,11 @@ impl Verus2TlaConverter {
                 let stripped = self.strip_prefix(name);
                 // Strip Rust enum type prefix: "TPCMessage::Prepare" -> "Prepare"
                 let tla_name = if stripped.contains("::") {
-                    stripped.rsplit("::").next().unwrap_or(&stripped).to_string()
+                    stripped
+                        .rsplit("::")
+                        .next()
+                        .unwrap_or(&stripped)
+                        .to_string()
                 } else {
                     stripped
                 };

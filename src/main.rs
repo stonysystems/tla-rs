@@ -8,11 +8,11 @@ use vstd::prelude::*;
 use crate::implementation::common::marshalling::Marshalable;
 
 mod common;
+mod generated;
 mod implementation;
 mod protocol;
 mod services;
 mod verus_extra;
-mod generated;
 
 use crate::common::native::io_s::EndPoint;
 use crate::common::native::io_s::NetcReceiveResult;

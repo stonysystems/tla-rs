@@ -66,11 +66,7 @@ fn generate_tag_constants(out: &mut String, config: &MessageConfig) {
     out.push_str("// Message tags for serialization\n");
     for (i, variant) in config.variants.iter().enumerate() {
         let tag_name = variant_to_tag_name(&variant.name);
-        out.push_str(&format!(
-            "const {}: u64 = {};\n",
-            tag_name,
-            i + 1
-        ));
+        out.push_str(&format!("const {}: u64 = {};\n", tag_name, i + 1));
     }
     out.push('\n');
 }
@@ -91,10 +87,7 @@ fn generate_read_u64_helper(out: &mut String) {
 fn generate_protocol_message_impl(out: &mut String, config: &MessageConfig) {
     let enum_name = &config.enum_name;
 
-    out.push_str(&format!(
-        "impl ProtocolMessage for {} {{\n",
-        enum_name
-    ));
+    out.push_str(&format!("impl ProtocolMessage for {} {{\n", enum_name));
 
     // serialize_to_bytes
     generate_serialize(out, config);
@@ -128,8 +121,7 @@ fn generate_serialize(out: &mut String, config: &MessageConfig) {
             out.push_str("            },\n");
         } else {
             // Pattern: EnumName::Variant { field1, field2, ... }
-            let field_names: Vec<&str> =
-                variant.fields.iter().map(|f| f[0].as_str()).collect();
+            let field_names: Vec<&str> = variant.fields.iter().map(|f| f[0].as_str()).collect();
             out.push_str(&format!(
                 "            {}::{} {{ {} }} => {{\n",
                 enum_name,
@@ -564,7 +556,11 @@ mod tests {
         };
         let code = generate_message_code(&config);
         // Total: tag(8) + 6*8 = 56
-        assert!(code.contains("if data.len() < 56"), "Should check length 56: {}", code);
+        assert!(
+            code.contains("if data.len() < 56"),
+            "Should check length 56: {}",
+            code
+        );
         // Check individual offsets
         assert!(code.contains("read_u64(data, 8)"), "f0 at offset 8");
         assert!(code.contains("read_u64(data, 16)"), "f1 at offset 16");
@@ -616,10 +612,24 @@ mod tests {
         };
         let code = generate_message_code(&config);
         // a: u64 at offset 8, b: bool at offset 16, c: u64 at offset 24, d: bool at offset 32
-        assert!(code.contains("let a = read_u64(data, 8);"), "a at 8: {}", code);
-        assert!(code.contains("let b = read_u64(data, 16) != 0;"), "b bool at 16");
-        assert!(code.contains("let c = read_u64(data, 24);"), "c at 24: {}", code);
-        assert!(code.contains("let d = read_u64(data, 32) != 0;"), "d bool at 32");
+        assert!(
+            code.contains("let a = read_u64(data, 8);"),
+            "a at 8: {}",
+            code
+        );
+        assert!(
+            code.contains("let b = read_u64(data, 16) != 0;"),
+            "b bool at 16"
+        );
+        assert!(
+            code.contains("let c = read_u64(data, 24);"),
+            "c at 24: {}",
+            code
+        );
+        assert!(
+            code.contains("let d = read_u64(data, 32) != 0;"),
+            "d bool at 32"
+        );
         // Total: tag(8) + 4*8 = 40
         assert!(code.contains("if data.len() < 40"));
     }
@@ -637,7 +647,10 @@ mod tests {
             }],
         };
         let code = generate_message_code(&config);
-        assert!(!code.contains("//!"), "Empty doc_comment should produce no //! lines");
+        assert!(
+            !code.contains("//!"),
+            "Empty doc_comment should produce no //! lines"
+        );
     }
 
     #[test]
@@ -700,12 +713,23 @@ mod tests {
             import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
             doc_comment: String::new(),
             variants: vec![
-                MessageVariant { name: "A".to_string(), fields: vec![], doc: String::new() },
-                MessageVariant { name: "B".to_string(), fields: vec![], doc: String::new() },
+                MessageVariant {
+                    name: "A".to_string(),
+                    fields: vec![],
+                    doc: String::new(),
+                },
+                MessageVariant {
+                    name: "B".to_string(),
+                    fields: vec![],
+                    doc: String::new(),
+                },
             ],
         };
         let code = generate_message_code(&config);
-        assert!(code.contains("match tag {"), "Should have match tag dispatch");
+        assert!(
+            code.contains("match tag {"),
+            "Should have match tag dispatch"
+        );
         assert!(code.contains("_ => None"), "Should have fallback None arm");
     }
 

@@ -19,7 +19,6 @@ use crate::ast::{BinOp, Expr};
 #[derive(Debug, Clone)]
 pub enum QuantifierTemplate {
     // ── Shared variants (used by both matchers) ──────────────────────
-
     /// Sequence comprehension pattern
     /// Pattern: `forall |i| 0 <= i < len ==> seq[i] == element_expr(i)`
     /// Generates: `Vec::from_fn(len, |i| element_expr(i))`
@@ -59,7 +58,6 @@ pub enum QuantifierTemplate {
     },
 
     // ── TemplateMatcher-only variants ────────────────────────────────
-
     /// Map comprehension pattern - domain
     /// Pattern: `forall |k| k in map <==> domain_pred(k)`
     /// Combined with value pattern to generate full map
@@ -122,7 +120,6 @@ pub enum QuantifierTemplate {
     },
 
     // ── QuantifierMatcher-only variants ──────────────────────────────
-
     /// Map filtering: filter keys from source map based on predicate
     /// Pattern: `forall |k| output.contains_key(k) ==> source.contains_key(k) && output[k] == source[k]`
     MapFilter {
@@ -839,7 +836,10 @@ mod tests {
             Box::new(Expr::Ident("src".to_string())),
         );
         match matcher.match_template(&expr) {
-            QuantifierTemplate::Copy { output_var, input_var } => {
+            QuantifierTemplate::Copy {
+                output_var,
+                input_var,
+            } => {
                 assert_eq!(output_var, "result");
                 assert_eq!(input_var, "src");
             }
@@ -872,7 +872,10 @@ mod tests {
             Box::new(Expr::Ident("output".to_string())),
         );
         match matcher.match_template(&expr) {
-            QuantifierTemplate::Copy { output_var, input_var } => {
+            QuantifierTemplate::Copy {
+                output_var,
+                input_var,
+            } => {
                 assert_eq!(output_var, "output");
                 assert_eq!(input_var, "input");
             }
@@ -966,7 +969,9 @@ mod tests {
             )),
         };
         match matcher.match_template(&expr) {
-            QuantifierTemplate::SeqComprehension { index_var, seq_var, .. } => {
+            QuantifierTemplate::SeqComprehension {
+                index_var, seq_var, ..
+            } => {
                 assert_eq!(index_var, "i");
                 assert_eq!(seq_var, Some("seq".to_string()));
             }
@@ -1000,7 +1005,9 @@ mod tests {
             )),
         };
         match matcher.match_template(&expr) {
-            QuantifierTemplate::MapDomain { key_var, map_var, .. } => {
+            QuantifierTemplate::MapDomain {
+                key_var, map_var, ..
+            } => {
                 assert_eq!(key_var, "k");
                 assert_eq!(map_var, "m");
             }
@@ -1038,7 +1045,9 @@ mod tests {
             )),
         };
         match matcher.match_template(&expr) {
-            QuantifierTemplate::MapValue { key_var, map_var, .. } => {
+            QuantifierTemplate::MapValue {
+                key_var, map_var, ..
+            } => {
                 assert_eq!(key_var, "k");
                 assert_eq!(map_var, "m");
             }
@@ -1070,11 +1079,16 @@ mod tests {
             )),
         };
         match matcher.match_template(&expr) {
-            QuantifierTemplate::MapDomain { key_var, map_var, .. } => {
+            QuantifierTemplate::MapDomain {
+                key_var, map_var, ..
+            } => {
                 assert_eq!(key_var, "x");
                 assert_eq!(map_var, "s");
             }
-            other => panic!("Expected MapDomain (higher priority than SetComprehension), got {:?}", other),
+            other => panic!(
+                "Expected MapDomain (higher priority than SetComprehension), got {:?}",
+                other
+            ),
         }
     }
 
@@ -1115,14 +1129,26 @@ mod tests {
         let matcher = TemplateMatcher::new(vec!["out".to_string()]);
         let expr = Expr::Forall {
             vars: vec![
-                Binding { pattern: Pattern::Ident("a".into()), ty: None, variable_mode: crate::ast::VariableMode::Exec },
-                Binding { pattern: Pattern::Ident("b".into()), ty: None, variable_mode: crate::ast::VariableMode::Exec },
+                Binding {
+                    pattern: Pattern::Ident("a".into()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                },
+                Binding {
+                    pattern: Pattern::Ident("b".into()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                },
             ],
             triggers: vec![],
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
         let hint = matcher.generate_hint(&expr);
-        assert!(hint.contains("forall"), "Hint should mention forall: {}", hint);
+        assert!(
+            hint.contains("forall"),
+            "Hint should mention forall: {}",
+            hint
+        );
     }
 
     #[test]
@@ -1133,13 +1159,21 @@ mod tests {
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
         let hint = matcher.generate_hint(&expr);
-        assert!(hint.contains("Exists"), "Hint should mention Exists: {}", hint);
+        assert!(
+            hint.contains("Exists"),
+            "Hint should mention Exists: {}",
+            hint
+        );
     }
 
     #[test]
     fn test_hint_for_other() {
         let matcher = TemplateMatcher::new(vec![]);
         let hint = matcher.generate_hint(&Expr::Literal(Literal::Int(42)));
-        assert!(hint.contains("manual"), "Hint should suggest manual impl: {}", hint);
+        assert!(
+            hint.contains("manual"),
+            "Hint should suggest manual impl: {}",
+            hint
+        );
     }
 }
