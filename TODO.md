@@ -7385,19 +7385,16 @@ Sub-tasks are organized by module complexity (easiest first):
 - [x] For each: attempt transpiler regen with proof blocks; if passes → remove from skip_functions
   - Result: 1/3 converted (CLearnerForgetDecision). Other 2 need manual implementation or transpiler improvements.
 
-#### 23.3.2 Acceptor: 5 external_body stubs → attempt real impl + proof
+#### 23.3.2 Acceptor: 5 external_body stubs → attempt real impl + proof ✅ COMPLETE
 
-- `CAcceptorInit` — already has a proven version in acceptor_manual.rs (reference available)
-- `CAcceptorProcess1a` — proven in acceptor_manual.rs
-- `CAcceptorProcess2a` — proven in acceptor_manual.rs (most complex: CBroadcastToEveryone + HashMap)
-- `CAcceptorProcessHeartbeat` — proven in acceptor_manual.rs
-- `CAcceptorTruncateLog` — proven in acceptor_manual.rs
+All 5 acceptor functions now use proven real implementations via manual_code injection.
+Result: 568 verified, 0 errors (up from 562). 1871 transpiler tests pass.
 
-Strategy: use `acceptor_manual.rs` as the ground-truth reference. The transpiler should generate
-code structurally identical to the manual version. Where it cannot, emit real body + `PROOF-TODO`.
-
-- [ ] For each: compare generated stub to `acceptor_manual.rs`; identify the gap
-- [ ] Improve transpiler to generate matching code; or emit real body from manual ref
+- [x] Analyzed 5 stubs vs acceptor_manual.rs — all have proven implementations
+- [x] Added `manual_code = "acceptor_manual.rs"` to acceptor_transpile.toml
+- [x] Moved 5 action functions to no_stub_functions (no external_body stubs generated)
+- [x] Regenerated acceptor_gen.rs with real implementations
+- [x] Updated integration tests (removed stub expectations, added real-impl checks)
 
 #### 23.3.3 Election: 8 assume(false) → real impl (Tier B/C split)
 

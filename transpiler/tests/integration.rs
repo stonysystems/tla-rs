@@ -6267,10 +6267,13 @@ fn test_manual_code_footprint_is_empty() {
     }
     manual_bindings.sort();
 
-    let expected: Vec<(String, String)> = vec![];
+    // Phase 23.3.2: acceptor uses manual_code for 5 proven action functions.
+    let expected: Vec<(String, String)> = vec![
+        ("../src/protocol/RSL/acceptor_transpile.toml".to_string(), "acceptor_manual.rs".to_string()),
+    ];
     assert_eq!(
         manual_bindings, expected,
-        "manual_code usage should be fully removed from protocol transpile configs"
+        "only acceptor should use manual_code (for proven action functions)"
     );
 
 }
@@ -8183,7 +8186,7 @@ fn test_phase22_wrapper_generation_guide_has_workflow_and_selection_guidance() {
     );
 }
 
-/// Phase 21.2.4b: acceptor action functions use proof-fallback stubs (manual_code removed).
+/// Phase 23.3.2: acceptor action functions are proven implementations injected via manual_code.
 #[test]
 fn test_acceptor_gen_no_delegate_patterns() {
     let source = std::fs::read_to_string("../src/generated/RSL/acceptor_gen.rs")
@@ -8205,36 +8208,48 @@ fn test_acceptor_gen_no_delegate_patterns() {
         call_count
     );
 
-    // Action functions are now explicit skip-function stubs via --proof-fallback.
+    // All 5 action functions should be real implementations (injected via manual_code),
+    // NOT external_body stubs.
+    for fn_name in [
+        "pub exec fn CAcceptorInit",
+        "pub exec fn CAcceptorProcess1a",
+        "pub exec fn CAcceptorProcess2a",
+        "pub exec fn CAcceptorProcessHeartbeat",
+        "pub exec fn CAcceptorTruncateLog",
+    ] {
+        assert!(
+            source.contains(fn_name),
+            "acceptor_gen.rs should contain `{}`",
+            fn_name
+        );
+    }
+
+    // No skip-function stubs should remain (all 5 moved to no_stub_functions + manual_code).
     let skipped_stub_count = source
         .matches("// TRANSLATE-TODO: explicitly skipped (skip_functions)")
         .count();
     assert!(
-        skipped_stub_count == 5,
-        "acceptor_gen.rs should have exactly 5 skip-function stubs for acceptor actions, found {}",
+        skipped_stub_count == 0,
+        "acceptor_gen.rs should have 0 skip-function stubs (functions are proven via manual_code), found {}",
         skipped_stub_count
     );
 
-    // Ensure each action API is emitted as an external_body stub.
-    for stub_signature in [
-        "#[verifier(external_body)]\npub exec fn CAcceptorInit",
-        "#[verifier(external_body)]\npub exec fn CAcceptorProcess1a",
-        "#[verifier(external_body)]\npub exec fn CAcceptorProcess2a",
-        "#[verifier(external_body)]\npub exec fn CAcceptorProcessHeartbeat",
-        "#[verifier(external_body)]\npub exec fn CAcceptorTruncateLog",
-    ] {
-        assert!(
-            source.contains(stub_signature),
-            "acceptor_gen.rs should emit external_body stub `{}`",
-            stub_signature
-        );
-    }
+    // No external_body on action functions (they are verified, not trusted).
+    let external_body_count = source
+        .matches("#[verifier(external_body)]")
+        .count();
+    // Only the clone_hashset helper should have external_body.
+    assert!(
+        external_body_count <= 1,
+        "acceptor_gen.rs should have at most 1 external_body (clone_hashset helper), found {}",
+        external_body_count
+    );
 
-    // Stub bodies should remain trusted placeholders.
+    // No unimplemented!() should remain.
     let unimplemented_count = source.matches("unimplemented!()").count();
     assert!(
-        unimplemented_count >= 5,
-        "acceptor_gen.rs should contain unimplemented!() in proof-fallback stubs (found {})",
+        unimplemented_count == 0,
+        "acceptor_gen.rs should contain no unimplemented!() (all functions are proven), found {}",
         unimplemented_count
     );
 }

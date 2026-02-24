@@ -19,10 +19,16 @@ skip_functions = [
 ]
 
 # Helper functions are provided by implementation module and should not emit stubs.
+# Action functions are provided by manual_code (acceptor_manual.rs) — proven implementations.
 no_stub_functions = [
     "IsLogTruncationPointValid",
     "RemoveVotesBeforeLogTruncationPoint",
     "LAddVoteAndRemoveOldOnes",
+    "LAcceptorInit",
+    "LAcceptorProcess1a",
+    "LAcceptorProcess2a",
+    "LAcceptorProcessHeartbeat",
+    "LAcceptorTruncateLog",
 ]
 
 # Primitive types that map to *param as int in ensures clauses
@@ -113,6 +119,8 @@ nat_type = "u64"
 "logTruncationPoint_2" = "CMessage::CMessageStartingPhase2"
 
 [output]
+# Inject proven manual implementations for the 5 action functions
+manual_code = "acceptor_manual.rs"
 generate_abstraction_fns = true
 generate_validity_predicates = true
 validity_predicate_name = "valid"

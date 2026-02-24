@@ -1,6 +1,5 @@
-// Manual reference implementation for core acceptor action functions.
-// These protocol-specific proofs are retained as reference material.
-// acceptor_gen.rs now uses proof-fallback stubs instead of manual_code injection.
+// Manual proven implementations for core acceptor action functions.
+// Injected into acceptor_gen.rs via manual_code config.
 // Adapted from acceptorimpl.rs method-style to functional style.
 // Uses clone_up_to_view() instead of clone() for Verus view preservation.
 
