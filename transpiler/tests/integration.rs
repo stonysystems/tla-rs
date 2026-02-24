@@ -1980,7 +1980,7 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
         ("election_gen.rs", 5usize),
         ("executor_gen.rs", 6usize),
         ("proposer_gen.rs", 9usize),
-        ("replica_gen.rs", 21usize),
+        ("replica_gen.rs", 20usize),
     ]
     .into_iter()
     .collect();

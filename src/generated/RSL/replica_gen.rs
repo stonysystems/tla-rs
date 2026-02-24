@@ -671,9 +671,7 @@ ensures
 pub exec fn CReplicaNumActions() -> (result: u64)ensures
     result@ == LReplicaNumActions(),
 {
-    assume(false);
     10
-
 }
 
 // TRANSLATE-TODO: explicitly skipped (skip_functions)

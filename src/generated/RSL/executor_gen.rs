@@ -14,7 +14,7 @@ use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::CStateMachine::*;
 use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};
-use crate::implementation::RSL::types_i::{abstractify_crequestbatch, abstractify_creplycache};
+use crate::implementation::RSL::types_i::{abstractify_crequestbatch, abstractify_creplycache, clone_request_batch_up_to_view};
 use crate::protocol::common::upper_bound::{LtUpperBound, UpperBound};
 use crate::protocol::RSL::broadcast::LBroadcastToEveryone;
 use crate::protocol::RSL::constants::LReplicaConstantsValid;
@@ -69,14 +69,21 @@ ensures
 }
 
 
-/// Helper: clone COutstandingOperation preserving view (workaround for missing derive Clone spec).
-#[verifier(external_body)]
+/// Helper: clone COutstandingOperation preserving view.
 fn clone_next_op_to_execute(r: &COutstandingOperation) -> (res: COutstandingOperation)
 ensures
     res@ == r@,
     res.valid() == r.valid(),
 {
-    r.clone()
+    match r {
+        COutstandingOperation::COutstandingOpUnknown {} =>
+            COutstandingOperation::COutstandingOpUnknown {},
+        COutstandingOperation::COutstandingOpKnown { v, bal } =>
+            COutstandingOperation::COutstandingOpKnown {
+                v: clone_request_batch_up_to_view(v),
+                bal: *bal,
+            },
+    }
 }
 
 

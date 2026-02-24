@@ -142,6 +142,9 @@ generate_loops_for_verification = true
 generate_proofs = true
 # Proofs not yet mature — trust postconditions via assume(false)
 assume_postconditions = true
+proven_functions = [
+    "LReplicaNumActions",
+]
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false
 # Custom imports for replica module

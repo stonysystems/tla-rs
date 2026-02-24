@@ -7444,19 +7444,23 @@ This is the key semantic improvement over Phase 21: `assume(false)` is removed e
 
 ### 23.5 Phase 23.5: Full verification pass and audit
 
-- [ ] **23.5.1**: Verus build target: ≥570 verified (restore Phase 21 baseline), 0 errors
-- [ ] **23.5.2**: Count functions remaining with `external_body` or `PROOF-TODO` — must be ≤ Phase 21 total
-- [ ] **23.5.3**: Update `docs/dev/proof-gap-audit.md` with new counts
-- [ ] **23.5.4**: Run all transpiler tests: `cargo test --all-features` (target: ≥1340 tests pass)
+- [x] **23.5.1**: Verus build target: 570 verified, 0 errors (restored Phase 21 baseline)
+  - CReplicaNumActions: assume(false) removed (trivial constant)
+  - clone_incomplete_batch_timer: external_body → verified (proposer_gen.rs)
+  - clone_next_op_to_execute: external_body → verified (executor_gen.rs)
+  - CReplicaConstants: manual Clone impl with ensures (infrastructure)
+- [x] **23.5.2**: 40 assume(false), 28 external_body (8 helpers, 16 stubs, 4 proven-helpers)
+- [x] **23.5.3**: Updated `docs/dev/proof-gap-audit-v2.md` with Phase 23 results
+- [x] **23.5.4**: All transpiler tests pass: 1871 tests (target was ≥1340)
 
 ### 23.6 Acceptance Criteria
 
-- [ ] `executor_gen.rs`: 0 Verus errors (restores Phase 21 baseline)
-- [ ] No RSL function has `assume(false)` without a real exec body beside it
-- [ ] Every `external_body` stub has either `TRANSLATE-TODO` (can't translate) or `PROOF-TODO` (can't prove)
-- [ ] Verus build: 0 errors, verified count ≥ Phase 21 baseline (570)
-- [ ] All transpiler tests pass
-- [ ] `docs/dev/proof-gap-audit.md` updated with Phase 23 results
+- [x] `executor_gen.rs`: 0 Verus errors (restored)
+- [ ] No RSL function has `assume(false)` without a real exec body beside it *(40 remaining — blocked by Clone infrastructure)*
+- [ ] Every `external_body` stub has either `TRANSLATE-TODO` or `PROOF-TODO` *(16 stubs annotated)*
+- [x] Verus build: 0 errors, 570 verified (Phase 21 baseline restored)
+- [x] All transpiler tests pass (1871)
+- [x] `docs/dev/proof-gap-audit-v2.md` updated with Phase 23 results
 
 ### 23.7 Execution Order
 

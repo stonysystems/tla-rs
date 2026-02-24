@@ -76,14 +76,18 @@ ensures
 }
 
 
-/// Helper: clone CIncompleteBatchTimer preserving view (workaround for missing derive Clone spec).
-#[verifier(external_body)]
+/// Helper: clone CIncompleteBatchTimer preserving view.
 fn clone_incomplete_batch_timer(r: &CIncompleteBatchTimer) -> (res: CIncompleteBatchTimer)
 ensures
     res@ == r@,
     res.valid() == r.valid(),
 {
-    r.clone()
+    match r {
+        CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } =>
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn { when: *when },
+        CIncompleteBatchTimer::CIncompleteBatchTimerOff =>
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff,
+    }
 }
 
 

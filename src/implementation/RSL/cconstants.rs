@@ -12,10 +12,22 @@ pub struct CConstants {
     pub params: CParameters,
 }
 
-#[derive(Clone)]
 pub struct CReplicaConstants {
     pub my_index: u64,
     pub all: CConstants,
+}
+
+impl Clone for CReplicaConstants {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result == *self,
+        result@ == self@,
+    {
+        CReplicaConstants {
+            my_index: self.my_index,
+            all: self.all.clone_up_to_view(),
+        }
+    }
 }
 
 impl CConstants {
