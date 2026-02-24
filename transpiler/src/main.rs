@@ -4215,6 +4215,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             vec_element_ensures: file_config.vec_element_ensures.clone(),
             set_fields: std::collections::HashSet::new(),
             assume_postconditions: file_config.output.assume_postconditions,
+            proven_functions: file_config.output.proven_functions.iter().cloned().collect(),
             spec_prefix: file_config.naming.spec_prefix.clone(),
             exec_prefix: file_config.naming.exec_prefix.clone(),
             generate_abstraction_fns: false,

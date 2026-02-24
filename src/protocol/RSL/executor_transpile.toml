@@ -113,6 +113,12 @@ generate_loops_for_verification = true
 generate_proofs = true
 # Trust postconditions while proof generation for executor catches up.
 assume_postconditions = true
+# Functions verified to work without assume(false) — uses spec name (L-prefix).
+# Uncomment when proof infrastructure (map_fields lemmas, proof blocks) is ready.
+# proven_functions = [
+#     "LExecutorInit",
+#     "LExecutorGetDecision",
+# ]
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false
 # Custom imports for executor module

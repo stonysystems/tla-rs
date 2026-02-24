@@ -128,6 +128,10 @@ pub struct TranslatorConfig {
     /// This makes all postconditions trivially satisfied (trusted).
     /// Used in the TLA+ pipeline to get passing verification without full proofs.
     pub assume_postconditions: bool,
+    /// Spec function names that should NOT get `assume(false)` even when
+    /// `assume_postconditions = true`. These functions have been verified to
+    /// work without the assume. Uses L-prefix spec names (e.g., "LExecutorInit").
+    pub proven_functions: HashSet<String>,
 }
 
 impl Default for TranslatorConfig {
@@ -164,6 +168,7 @@ impl Default for TranslatorConfig {
             vec_element_ensures: Vec::new(),
             set_fields: HashSet::new(),
             assume_postconditions: false,
+            proven_functions: HashSet::new(),
         }
     }
 }
@@ -5200,6 +5205,7 @@ impl Translator {
     }
 
     /// Apply assume-postconditions strategy:
+    /// - for proven_functions, emit body without assume(false)
     /// - for targeted first-leaf reductions, emit a proof wrapper
     /// - otherwise keep trusted `assume(false)` fallback
     fn apply_assume_postcondition_strategy(
@@ -5210,6 +5216,11 @@ impl Translator {
         body: ExecExpr,
     ) -> ExecExpr {
         if !self.config.assume_postconditions {
+            return body;
+        }
+
+        // Functions listed in proven_functions skip assume(false) entirely
+        if self.config.proven_functions.contains(&func.spec_fn.name) {
             return body;
         }
 
@@ -5871,7 +5882,13 @@ impl Translator {
 
         // Add recommends clauses from the spec as requires
         // (skip when assume_postconditions is enabled — extra requires would break callers)
-        if !self.config.assume_postconditions {
+        // Exception: proven_functions need recommends since they don't have assume(false)
+        if !self.config.assume_postconditions
+            || self
+                .config
+                .proven_functions
+                .contains(&func.spec_fn.name)
+        {
             for recommends_expr in &func.spec_fn.recommends {
                 requires.push(self.expr_to_requires_string(recommends_expr));
             }
@@ -6016,14 +6033,19 @@ impl Translator {
     /// Translate spec name to exec name for function DEFINITIONS (L* -> C*)
     /// This never uses qualified paths - just simple name translation.
     fn translate_definition_name(&self, spec_name: &str) -> String {
-        // Check if type is in explicit remapping
-        if let Some(remapped) = self.config.type_remapping.get(spec_name) {
+        // Check variant_remapping FIRST — it maps bare variant names to
+        // fully-qualified exec enum paths (e.g., "OutstandingOpUnknown" ->
+        // "COutstandingOperation::COutstandingOpUnknown"). This must precede
+        // type_remapping because the spec_analyzer auto-injects identity
+        // mappings for variant names into type_remapping to prevent
+        // double-prefixing, which would otherwise shadow the more specific
+        // variant_remapping entries.
+        if let Some(remapped) = self.config.variant_remapping.get(spec_name) {
             return remapped.clone();
         }
 
-        // Check variant_remapping — identity mappings (e.g., "Forward" = "Forward")
-        // prevent the C-prefix from being applied to enum variant names.
-        if let Some(remapped) = self.config.variant_remapping.get(spec_name) {
+        // Check if type is in explicit remapping
+        if let Some(remapped) = self.config.type_remapping.get(spec_name) {
             return remapped.clone();
         }
 
@@ -6482,7 +6504,13 @@ impl Translator {
         // Add recommends clauses from the spec as requires
         // (recommends in spec functions become requires in exec functions)
         // Skip when assume_postconditions is enabled — extra requires would break callers
-        if !self.config.assume_postconditions {
+        // Exception: proven_functions need recommends since they don't have assume(false)
+        if !self.config.assume_postconditions
+            || self
+                .config
+                .proven_functions
+                .contains(&func.spec_fn.name)
+        {
             for recommends_expr in &func.spec_fn.recommends {
                 requires.push(self.expr_to_view_requires_string(
                     recommends_expr,
@@ -24409,6 +24437,33 @@ mod tests {
                 );
             }
             other => panic!("Expected Block body, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_proven_functions_skip_assume_false() {
+        let mut config = TranslatorConfig::default();
+        config.assume_postconditions = true;
+        config
+            .proven_functions
+            .insert("RequestsMatch".to_string());
+        let translator = Translator::new(config);
+        let annotated = make_helper_for_assume_postconditions_tests("RequestsMatch");
+
+        let exec_fn = translator
+            .translate_helper(&annotated)
+            .expect("RequestsMatch helper should translate");
+
+        // When in proven_functions, the body should NOT have assume(false)
+        match &exec_fn.body {
+            ExecExpr::Block(stmts) => {
+                assert!(
+                    stmts.is_empty() || !is_assume_false_stmt(&stmts[0]),
+                    "proven_functions should skip assume(false)"
+                );
+            }
+            // Non-block body means no assume(false) was prepended — also correct
+            _ => {}
         }
     }
 

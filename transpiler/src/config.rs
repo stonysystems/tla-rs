@@ -820,6 +820,13 @@ pub struct OutputConfig {
     #[serde(default)]
     pub assume_postconditions: bool,
 
+    /// Spec function names for which `assume(false)` should NOT be emitted,
+    /// even when `assume_postconditions = true`. Use to selectively un-trust
+    /// functions whose proofs have been verified to work without assume(false).
+    /// Uses the L-prefix spec name (e.g., "LExecutorInit").
+    #[serde(default)]
+    pub proven_functions: Vec<String>,
+
     /// Whether to generate wrapper methods in an impl block for &mut self pattern.
     /// When true, generates wrapper methods that call the functional-style generated
     /// functions and update `*self` with the result.
@@ -886,6 +893,7 @@ impl Default for OutputConfig {
             generate_unreachable_value_helper: false,
             manual_code: None,
             assume_postconditions: false,
+            proven_functions: Vec::new(),
         }
     }
 }
