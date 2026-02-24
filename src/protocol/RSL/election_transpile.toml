@@ -83,8 +83,14 @@ generate_clone = true
 include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
-# Proofs not yet mature — trust postconditions via assume(false)
+# Proofs not yet mature — trust postconditions via assume(false).
+# Functions listed in proven_functions have been verified without assume(false).
 assume_postconditions = true
+proven_functions = [
+    "ComputeSuccessorView",
+    "RequestsMatch",
+    "RequestSatisfiedBy",
+]
 # CElectionState comes from types_gen.rs (includes optimization fields)
 generate_inline_types = false
 # manual_code removed — using --auto-skip --proof-fallback for untranslatable functions

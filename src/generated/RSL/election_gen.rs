@@ -102,7 +102,7 @@ ensures
     result.valid(),
     result@ == ComputeSuccessorView(b@, c@),
 {
-    let result = if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
+if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
         CBallot {
             seqno: b.seqno.clone(),
             proposer_id: (b.proposer_id + 1),
@@ -112,12 +112,7 @@ ensures
             seqno: (b.seqno + 1),
             proposer_id: 0u64,
         }
-    };
-    proof {
-        assert(result@ == ComputeSuccessorView(b@, c@));
     }
-    result
-
 }
 
 // TRANSLATE-TODO: explicitly skipped (skip_functions)
@@ -134,9 +129,7 @@ requires
 ensures
     result@ == RequestsMatch(r1@, r2@),
 {
-    assume(false);
-    (((true && true) && (r1.client == r2.client)) && (r1.seqno == r2.seqno))
-
+(((true && true) && (r1.client == r2.client)) && (r1.seqno == r2.seqno))
 }
 
 pub exec fn CRequestSatisfiedBy(r1: &CRequest, r2: &CRequest) -> (result: bool)
@@ -146,9 +139,7 @@ requires
 ensures
     result@ == RequestSatisfiedBy(r1@, r2@),
 {
-    assume(false);
-    (((true && true) && (r1.client == r2.client)) && (r1.seqno <= r2.seqno))
-
+(((true && true) && (r1.client == r2.client)) && (r1.seqno <= r2.seqno))
 }
 
 // TRANSLATE-TODO: explicitly skipped (skip_functions)

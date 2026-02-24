@@ -56,7 +56,9 @@ verus! {
 
     impl PartialEq for EndPoint{
         #[verifier(external_body)]
-        fn eq(&self, other: &Self) -> bool {
+        fn eq(&self, other: &Self) -> (result: bool)
+            ensures result == (self@ == other@)
+        {
             self.id.len() == other.id.len() && self.id.iter().zip(&other.id).all(|(a, b)| a == b)
         }
     }

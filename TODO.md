@@ -7396,50 +7396,35 @@ Result: 568 verified, 0 errors (up from 562). 1871 transpiler tests pass.
 - [x] Regenerated acceptor_gen.rs with real implementations
 - [x] Updated integration tests (removed stub expectations, added real-impl checks)
 
-#### 23.3.3 Election: 8 assume(false) → real impl (Tier B/C split)
+#### 23.3.3 Election: 8 assume(false) → real impl (Tier B/C split) — PARTIAL
 
-Election functions use `assume_postconditions = true` — every function body starts with `assume(false)`.
-The implementations are generated correctly; only the proofs are missing.
+Proved 2 of 7 functions via `proven_functions` config. Remaining 5 need clone_up_to_view
+infrastructure for struct fields (CReplicaConstants.clone() lacks ensures).
+Also fixed EndPoint PartialEq ensures (foundational: unlocks all EndPoint equality proofs).
 
-- `CElectionStateInit` — struct init; likely Tier A (provable)
-- `CComputeSuccessorView` — arithmetic; likely Tier A
-- `CRequestsMatch` / `CRequestSatisfiedBy` — field equality; likely Tier A
-- `CElectionStateProcessHeartbeat` — conditional update; Tier B
-- `CElectionStateCheckForViewTimeout` — timer comparison; Tier B
-- `CElectionStateCheckForQuorumOfViewSuspicions` — count/quorum; Tier B
-- `CElectionStateReflectReceivedRequest` — Vec/HashSet update; likely Tier B/C
+- [x] `CComputeSuccessorView` — already proven (no assume(false) in original)
+- [x] `CRequestsMatch` — PROVEN (added to proven_functions; enabled by EndPoint PartialEq fix)
+- [x] `CRequestSatisfiedBy` — PROVEN (same)
+- [ ] `CElectionStateInit` — needs clone_up_to_view for CReplicaConstants field (clone_method too broad)
+- [ ] `CElectionStateProcessHeartbeat` — Tier B: needs deep proof blocks
+- [ ] `CElectionStateCheckForViewTimeout` — Tier B
+- [ ] `CElectionStateCheckForQuorumOfViewSuspicions` — Tier B
+- [ ] `CElectionStateReflectExecutedRequestBatch` — Tier B
+- Skip: `CElectionStateReflectReceivedRequest` (external_body: skip_functions)
 
-- [ ] Remove `assume_postconditions` from election_transpile.toml and attempt regen
-- [ ] For each function: if Verus passes → keep; if fails → add `PROOF-TODO` comment
+Result: 5 assume(false) remaining (down from 7). 568 verified, 0 errors.
 
-#### 23.3.4 Proposer: 9 assume(false) → real impl (Tier B/C split)
+#### 23.3.4 Proposer: 9 assume(false) → real impl (Tier B/C split) — DEFERRED
 
-Similar to election but more complex due to election state integration.
+Blocked by same clone_up_to_view infrastructure gap as election. All 9 functions use
+`.clone()` on CReplicaConstants/CElectionState fields that lack proof-compatible ensures.
+Need either: (a) selective clone_method per field type, or (b) manual_code injection.
+9 assume(false) remaining.
 
-- `CProposerInit` — struct init, likely Tier A/B
-- `CProposerProcessRequest` — Vec append; likely Tier B
-- `CProposerMaybeEnterNewViewAndSend1a` — complex: HashSet, broadcast; Tier B/C
-- `CProposerProcess1b` — HashSet insert; Tier B
-- `CProposerMaybeEnterPhase2` — quorum check; Tier B
-- `CProposerProcessHeartbeat` — conditional update; Tier B
-- `CProposerCheckForViewTimeout` — timer; Tier A/B
-- `CProposerCheckForQuorumOfViewSuspicions` — quorum; Tier B
-- `CProposerResetViewTimerDueToExecution` — simple update; Tier A
+#### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C) — DEFERRED
 
-- [ ] Remove `assume_postconditions` from proposer_transpile.toml and attempt regen
-- [ ] For each function: if Verus passes → keep; if fails → add `PROOF-TODO` to body
-
-#### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C)
-
-Replica functions orchestrate all sub-components. Most are Tier B/C due to compositional proofs.
-
-- `CReplicaInit` — struct init calling sub-inits; Tier A/B
-- `CReplicaNextProcessInvalid` — trivial identity; Tier A
-- `CReplicaNextProcessRequest` → `CReplicaNextProcess*` variants — component dispatch; Tier B/C
-- IO dispatch functions — Tier C (IO trust boundary; will remain external_body)
-
-- [ ] Remove `assume_postconditions` from replica_transpile.toml and attempt regen
-- [ ] Separate: functions that can have real bodies (even if unproven) vs IO dispatch (keep external_body)
+Same clone infrastructure gap, plus compositional complexity (calls into sub-components).
+21 assume(false) remaining. IO dispatch functions will remain external_body regardless.
 
 ### 23.4 Phase 23.4: Fix Tier B gaps — emit real bodies with PROOF-TODO
 
