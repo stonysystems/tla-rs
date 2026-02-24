@@ -674,13 +674,34 @@ impl ProofNeeds {
                 let prefix = &map_fields[site.field_name.as_ref().unwrap()].1;
                 let field_name = site.field_name.as_ref().unwrap();
                 // For map_fields, call lemma_abstractify_{prefix}_remove(s.field, result.field, key)
-                stmts.push(ExecExpr::Call {
+                // Guard with contains_key: the lemma requires m2@ =~= old@.remove(k),
+                // which only holds when the remove actually happened (key was present).
+                let lemma_call = ExecExpr::Call {
                     func: format!("lemma_abstractify_{}_remove", prefix),
                     args: vec![
                         ExecExpr::Var(format!("s.{}", field_name)),
                         ExecExpr::Var(format!("result.{}", field_name)),
-                        element_expr,
+                        element_expr.clone(),
                     ],
+                };
+                stmts.push(ExecExpr::If {
+                    cond: Box::new(ExecExpr::Var(format!(
+                        "s.{}@.contains_key({})",
+                        field_name,
+                        match &element_expr {
+                            ExecExpr::Var(v) => v.clone(),
+                            ExecExpr::Unary { expr, .. } => {
+                                if let ExecExpr::Var(v) = expr.as_ref() {
+                                    format!("*{}", v)
+                                } else {
+                                    "key".to_string()
+                                }
+                            }
+                            _ => "key".to_string(),
+                        }
+                    ))),
+                    then_branch: Box::new(lemma_call),
+                    else_branch: None,
                 });
             } else {
                 stmts.push(ExecExpr::Call {

@@ -7378,11 +7378,12 @@ Sub-tasks are organized by module complexity (easiest first):
 
 #### 23.3.1 Learner: 3 external_body stubs → attempt full proof
 
-- `CLearnerProcess2b` — HashSet update + map insert; proof needs HashMap spec lemmas
-- `CLearnerForgetDecision` — map remove; likely provable with existing Verus map lemmas
-- `CLearnerForgetOperationsBefore` — forall filter on map; may need loop invariant
+- `CLearnerProcess2b` — HashSet update + map insert; proof needs HashMap spec lemmas (HIGH complexity, remains skip_functions)
+- `CLearnerForgetDecision` — map remove; ✅ DONE: removed from skip_functions, transpiler generates real impl + conditional proof block, Verus verifies (562 verified)
+- `CLearnerForgetOperationsBefore` — forall filter on map; non-functionalizable (quantifier-defined output), remains external_body
 
-- [ ] For each: attempt transpiler regen with proof blocks; if passes → remove from skip_functions
+- [x] For each: attempt transpiler regen with proof blocks; if passes → remove from skip_functions
+  - Result: 1/3 converted (CLearnerForgetDecision). Other 2 need manual implementation or transpiler improvements.
 
 #### 23.3.2 Acceptor: 5 external_body stubs → attempt real impl + proof
 

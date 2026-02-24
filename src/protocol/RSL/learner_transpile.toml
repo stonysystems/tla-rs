@@ -10,7 +10,6 @@ primitive_types = [
 # Functions requiring manual proofs or trusted-enum destructuring
 skip_functions = [
     "LLearnerProcess2b",
-    "LLearnerForgetDecision",
 ]
 
 # Field categories for clone dispatch

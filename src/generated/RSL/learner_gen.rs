@@ -38,6 +38,30 @@ ensures
     s.clone()
 }
 
+/// Helper proof: removing an element commutes with mapping for injective functions.
+proof fn lemma_set_map_remove_commute(s: Set<u64>, elt: u64)
+ensures
+    s.remove(elt).map(|x: u64| x as int) =~= s.map(|x: u64| x as int).remove(elt as int),
+{
+    let f = |x: u64| x as int;
+    let lhs = s.remove(elt).map(f);
+    let rhs = s.map(f).remove(f(elt));
+    assert forall|y: int| (#[trigger] lhs.contains(y)) implies rhs.contains(y) by {
+        let x = choose|x: u64| s.remove(elt).contains(x) && f(x) == y;
+        assert(s.contains(x));
+        assert(x != elt);
+        assert(f(x) != f(elt));
+        assert(s.map(f).contains(y));
+    }
+    assert forall|y: int| (#[trigger] rhs.contains(y)) implies lhs.contains(y) by {
+        let x = choose|x: u64| s.contains(x) && f(x) == y;
+        assert(y != f(elt));
+        assert(f(x) != f(elt));
+        assert(x != elt);
+        assert(s.remove(elt).contains(x));
+    }
+}
+
 
 /// If m@ is empty, abstractify_clearnerstate is empty.
 proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)
@@ -253,14 +277,32 @@ ensures
     unimplemented!()
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
-#[verifier(external_body)]
 pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &u64) -> (result: CLearner)
+requires
+    s.valid(),
 ensures
     result.valid(),
     LLearnerForgetDecision(s@, result@, *opn as int),
 {
-    unimplemented!()
+    let result = if s.unexecuted_learner_state.contains_key(&opn) {
+                let mut __unexecuted_learner_state = clone_clearnerstate(&s.unexecuted_learner_state);
+        __unexecuted_learner_state.remove(&opn);
+        CLearner {
+            constants: s.constants.clone_up_to_view(),
+            max_ballot_seen: s.max_ballot_seen.clone(),
+            unexecuted_learner_state: __unexecuted_learner_state,
+        }
+
+    } else {
+        s.clone_up_to_view()
+    };
+    proof {
+        if s.unexecuted_learner_state@.contains_key(*opn) {
+            lemma_abstractify_clearnerstate_remove(s.unexecuted_learner_state, result.unexecuted_learner_state, *opn)
+        };
+    }
+    result
+
 }
 
 // TRANSLATE-TODO: not functionalizable: Output parameter 's_' is assigned inside a quantifier body (cannot convert quantified assignment to executable code)
