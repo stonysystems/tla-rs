@@ -95,7 +95,7 @@ CExecutor {
             seqno: 0u64,
             proposer_id: 0u64,
         },
-        next_op_to_execute: COutstandingOperation::OutstandingOpUnknown {
+        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: HashMap::new(),
     }
@@ -116,7 +116,7 @@ CExecutor {
         app: s.app.clone(),
         ops_complete: s.ops_complete.clone(),
         max_bal_reflected: s.max_bal_reflected.clone(),
-        next_op_to_execute: COutstandingOperation::OutstandingOpKnown {
+        next_op_to_execute: COutstandingOperation::COutstandingOpKnown {
             v: v.clone(),
             bal: bal.clone(),
         },
@@ -165,7 +165,7 @@ ensures
                 unreachable_value()
             },
         },
-        next_op_to_execute: COutstandingOperation::OutstandingOpUnknown {
+        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: match &m {
             CMessage::CMessageAppStateSupply { reply_cache, .. } => reply_cache.clone(),

@@ -7286,3 +7286,208 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
       - liveness summary fields (`obligations`, `checked`, `violation_found`, `skipped_reason`)
       - fairness reporting (`strong_count` and configured strong labels)
       - `leads_to_violation` presence/absence alignment with each scenario.
+
+## Phase 23: RSL Proof Coverage Improvement — Fix Verification Failures and Eliminate assume(false)
+
+### 23.0 Problem Statement
+
+After Phase 21 (`git pull` b129a0d), the RSL Verus build has **regressed** to 554 verified / 6 errors.
+Additionally, Phase 21 left a large number of functions with `assume(false)` or `external_body` stubs
+that have no real implementation or proof.
+
+Current state of RSL proof gaps:
+
+| Module | `external_body` stubs | `assume(false)` bodies | Verus errors | Root cause |
+|--------|-----------------------|------------------------|--------------|------------|
+| Executor | 0 | 0 | **6** | upstream regen broke postconditions |
+| Acceptor | 6 | 0 | 0 | skip_functions → stubs |
+| Learner | 3 | 0 | 0 | skip_functions → stubs |
+| Proposer | 3 | 9 | 0 | skip_functions + assume_postconditions |
+| Election | 2 | 8 | 0 | skip_functions + assume_postconditions |
+| Replica | 7 | 19 | 0 | skip_functions + assume_postconditions |
+
+**Goal**: For every function that currently has `external_body`, `assume(false)`, or fails Verus:
+1. Try to generate a working exec implementation + proof
+2. If proof passes Verus → emit fully verified function (remove stub/assume)
+3. If exec is correct but proof fails → emit real impl body + `PROOF-TODO` comment (honest gap)
+4. If function is untranslatable → keep `external_body` stub with `TRANSLATE-TODO` comment
+
+This is strictly better than the status quo because:
+- `assume(false)` hides a real body that Rust executes but Verus never checks
+- `external_body` with `unimplemented!()` panics at runtime
+- Honest `PROOF-TODO` on a real body is auditable and runnable
+
+### 23.1 Phase 23.1: Fix executor_gen.rs Verus errors (6 errors)
+
+The 6 postcondition failures in `executor_gen.rs` were introduced by the upstream regeneration
+(commit b129a0d). These functions have correct implementations but no proof blocks to help Verus.
+
+**Affected functions** (all postcondition failures):
+- `CExecutorInit` — `LExecutorInit(result@, c@)` not satisfied
+- `CExecutorGetDecision` — `LExecutorGetDecision(...)` not satisfied
+- `CExecutorProcessAppStateSupply` — `LExecutorProcessAppStateSupply(...)` not satisfied
+- `CExecutorProcessAppStateRequest` — `LExecutorProcessAppStateRequest(...)` not satisfied
+- `CExecutorProcessStartingPhase2` — `LExecutorProcessStartingPhase2(...)` not satisfied
+- `CExecutorProcessRequest` — `LExecutorProcessRequest(...)` not satisfied
+
+**Strategy**: For each function, add a `proof { ... }` block that asserts the spec postcondition
+equality, similar to the pattern used in `acceptor_manual.rs` and `broadcast_gen.rs`.
+
+**Reference**: `src/protocol/RSL/acceptor_manual.rs` and `src/generated/RSL/broadcast_gen.rs`
+contain working examples of proof blocks that bridge exec struct fields to spec postconditions.
+
+- [ ] **23.1.1**: Analyze each failing function and identify which spec fields need explicit assertions
+- [ ] **23.1.2**: Add proof blocks to the 6 failing functions in executor_gen.rs (or fix transpiler
+  to generate them, then regenerate)
+- [ ] **23.1.3**: Restore build to 0 errors (target: ≥554 verified, 0 errors)
+- [ ] **23.1.4**: Confirm that the fix is either (a) in the transpiler + regenerated, or (b) documented
+  as a known transpiler gap so it does not regress again on next regeneration
+
+### 23.2 Phase 23.2: Audit current proof gaps — categorize by fixability
+
+Before attempting to fix each module, categorize every `external_body`/`assume(false)` function
+into one of three tiers:
+
+- **Tier A (Transpiler can prove)**: The function body is correctly generated; only needs a
+  better proof block. Fix: improve transpiler proof generation or add manual proof hints in TOML.
+- **Tier B (Correct impl, proof too hard)**: The function is correctly translatable to exec code,
+  but the Verus proof requires complex lemmas (e.g., HashMap invariants, recursive structure).
+  Fix: emit real exec body + `PROOF-TODO` comment, remove `assume(false)`.
+- **Tier C (Untranslatable)**: The spec pattern cannot be translated to exec by the transpiler
+  (e.g., complex existentials, recursive spec predicates). Fix: keep `external_body` stub with
+  `TRANSLATE-TODO`, document root cause.
+
+- [ ] **23.2.1**: For each `external_body` stub in acceptor_gen.rs, proposer_gen.rs, learner_gen.rs,
+  election_gen.rs, replica_gen.rs — classify as Tier A/B/C
+- [ ] **23.2.2**: For each `assume(false)` body in proposer_gen.rs, election_gen.rs, replica_gen.rs
+  — classify as Tier A/B/C
+- [ ] **23.2.3**: Produce a table in `docs/dev/proof-gap-audit-v2.md` with:
+  - function name, module, current status, tier classification, reason, estimated fix complexity
+
+### 23.3 Phase 23.3: Fix Tier A gaps — improve transpiler proof generation
+
+For functions classified Tier A (correct impl, proof just needs help), improve the transpiler's
+proof generation so it emits the necessary assertions automatically.
+
+Sub-tasks are organized by module complexity (easiest first):
+
+#### 23.3.1 Learner: 3 external_body stubs → attempt full proof
+
+- `CLearnerProcess2b` — HashSet update + map insert; proof needs HashMap spec lemmas
+- `CLearnerForgetDecision` — map remove; likely provable with existing Verus map lemmas
+- `CLearnerForgetOperationsBefore` — forall filter on map; may need loop invariant
+
+- [ ] For each: attempt transpiler regen with proof blocks; if passes → remove from skip_functions
+
+#### 23.3.2 Acceptor: 5 external_body stubs → attempt real impl + proof
+
+- `CAcceptorInit` — already has a proven version in acceptor_manual.rs (reference available)
+- `CAcceptorProcess1a` — proven in acceptor_manual.rs
+- `CAcceptorProcess2a` — proven in acceptor_manual.rs (most complex: CBroadcastToEveryone + HashMap)
+- `CAcceptorProcessHeartbeat` — proven in acceptor_manual.rs
+- `CAcceptorTruncateLog` — proven in acceptor_manual.rs
+
+Strategy: use `acceptor_manual.rs` as the ground-truth reference. The transpiler should generate
+code structurally identical to the manual version. Where it cannot, emit real body + `PROOF-TODO`.
+
+- [ ] For each: compare generated stub to `acceptor_manual.rs`; identify the gap
+- [ ] Improve transpiler to generate matching code; or emit real body from manual ref
+
+#### 23.3.3 Election: 8 assume(false) → real impl (Tier B/C split)
+
+Election functions use `assume_postconditions = true` — every function body starts with `assume(false)`.
+The implementations are generated correctly; only the proofs are missing.
+
+- `CElectionStateInit` — struct init; likely Tier A (provable)
+- `CComputeSuccessorView` — arithmetic; likely Tier A
+- `CRequestsMatch` / `CRequestSatisfiedBy` — field equality; likely Tier A
+- `CElectionStateProcessHeartbeat` — conditional update; Tier B
+- `CElectionStateCheckForViewTimeout` — timer comparison; Tier B
+- `CElectionStateCheckForQuorumOfViewSuspicions` — count/quorum; Tier B
+- `CElectionStateReflectReceivedRequest` — Vec/HashSet update; likely Tier B/C
+
+- [ ] Remove `assume_postconditions` from election_transpile.toml and attempt regen
+- [ ] For each function: if Verus passes → keep; if fails → add `PROOF-TODO` comment
+
+#### 23.3.4 Proposer: 9 assume(false) → real impl (Tier B/C split)
+
+Similar to election but more complex due to election state integration.
+
+- `CProposerInit` — struct init, likely Tier A/B
+- `CProposerProcessRequest` — Vec append; likely Tier B
+- `CProposerMaybeEnterNewViewAndSend1a` — complex: HashSet, broadcast; Tier B/C
+- `CProposerProcess1b` — HashSet insert; Tier B
+- `CProposerMaybeEnterPhase2` — quorum check; Tier B
+- `CProposerProcessHeartbeat` — conditional update; Tier B
+- `CProposerCheckForViewTimeout` — timer; Tier A/B
+- `CProposerCheckForQuorumOfViewSuspicions` — quorum; Tier B
+- `CProposerResetViewTimerDueToExecution` — simple update; Tier A
+
+- [ ] Remove `assume_postconditions` from proposer_transpile.toml and attempt regen
+- [ ] For each function: if Verus passes → keep; if fails → add `PROOF-TODO` to body
+
+#### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C)
+
+Replica functions orchestrate all sub-components. Most are Tier B/C due to compositional proofs.
+
+- `CReplicaInit` — struct init calling sub-inits; Tier A/B
+- `CReplicaNextProcessInvalid` — trivial identity; Tier A
+- `CReplicaNextProcessRequest` → `CReplicaNextProcess*` variants — component dispatch; Tier B/C
+- IO dispatch functions — Tier C (IO trust boundary; will remain external_body)
+
+- [ ] Remove `assume_postconditions` from replica_transpile.toml and attempt regen
+- [ ] Separate: functions that can have real bodies (even if unproven) vs IO dispatch (keep external_body)
+
+### 23.4 Phase 23.4: Fix Tier B gaps — emit real bodies with PROOF-TODO
+
+For functions where the exec body is correct but proof fails, replace `assume(false)` with:
+1. A real executable body (generated by transpiler, same as current body minus assume)
+2. A `// PROOF-TODO: <specific reason the proof fails>` comment
+3. NO `assume(false)` — the function is now honestly unverified but runnable
+
+This is the key semantic improvement over Phase 21: `assume(false)` is removed even when proof fails.
+
+- [ ] **23.4.1**: Teach transpiler to emit `assume_postconditions = false` mode that generates
+  a body without the leading `assume(false)` prefix
+- [ ] **23.4.2**: For Tier B functions: regenerate with real bodies, mark with PROOF-TODO
+- [ ] **23.4.3**: Run `cargo test` on transpiler to verify no regressions
+- [ ] **23.4.4**: Run Verus build; document which functions now pass (Tier A upgraded) vs still
+  fail (confirmed Tier B)
+
+### 23.5 Phase 23.5: Full verification pass and audit
+
+- [ ] **23.5.1**: Verus build target: ≥570 verified (restore Phase 21 baseline), 0 errors
+- [ ] **23.5.2**: Count functions remaining with `external_body` or `PROOF-TODO` — must be ≤ Phase 21 total
+- [ ] **23.5.3**: Update `docs/dev/proof-gap-audit.md` with new counts
+- [ ] **23.5.4**: Run all transpiler tests: `cargo test --all-features` (target: ≥1340 tests pass)
+
+### 23.6 Acceptance Criteria
+
+- [ ] `executor_gen.rs`: 0 Verus errors (restores Phase 21 baseline)
+- [ ] No RSL function has `assume(false)` without a real exec body beside it
+- [ ] Every `external_body` stub has either `TRANSLATE-TODO` (can't translate) or `PROOF-TODO` (can't prove)
+- [ ] Verus build: 0 errors, verified count ≥ Phase 21 baseline (570)
+- [ ] All transpiler tests pass
+- [ ] `docs/dev/proof-gap-audit.md` updated with Phase 23 results
+
+### 23.7 Execution Order
+
+```
+23.1 Fix executor 6 errors               ← immediate (restores build)
+    ↓
+23.2 Audit all gaps → Tier A/B/C table   ← before attempting fixes
+    ↓
+23.3.1 Learner (3 stubs, easiest)
+    ↓
+23.3.2 Acceptor (5 stubs, proofs available in manual ref)
+    ↓
+23.3.3 Election (8 assume(false), moderate complexity)
+    ↓
+23.3.4 Proposer (9 assume(false), depends on election)
+    ↓
+23.3.5 Replica (19 assume(false), mostly IO-dispatch Tier C)
+    ↓
+23.4 Tier B: replace assume(false) with real bodies + PROOF-TODO
+    ↓
+23.5 Full verification pass + audit update
+```
