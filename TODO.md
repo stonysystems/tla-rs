@@ -7766,3 +7766,201 @@ The stubs exist only for the Verus type checker and are never invoked at runtime
 - [x] Verus build: 0 errors, verified count ≥ 571 ✅ 572 verified, 0 errors
 - [x] Any unprovable postconditions use `external_body` proof lemmas (not `assume(false)`) ✅
 - [x] IO-dispatch stubs (5 functions) unchanged — documented as trust boundary ✅
+
+## Phase 24: clone_up_to_view Migration and Trusted Proof Lemma Elimination
+
+### 24.0 Problem Statement
+
+After Phase 23.8, RSL has 572 verified / 0 errors, but 34 `external_body` functions remain.
+The **single largest systemic blocker** is that the transpiler generates `.clone()` for
+marshalable types (CRequest, CReply, etc.) instead of `.clone_up_to_view()`.
+
+Verus's derived `Clone` trait has no `ensures res@ == self@` guarantee. The hand-written
+`clone_up_to_view()` methods on these types DO have this guarantee. Switching from `.clone()`
+to `.clone_up_to_view()` in the transpiler output would unblock proof for ~8 functions.
+
+Additionally, 7 `external_body` proof lemmas have empty bodies `{}` — their properties are
+simply trusted without proof. Most of these assert HashMap/Seq abstraction relationships that
+should be provable with appropriate Verus lemmas.
+
+**Current `external_body` breakdown (34 total):**
+
+| Category | Count | Fixable in Phase 24? |
+|----------|-------|---------------------|
+| Utility helpers (clone/insert/filter) | 12 | 4-5 (Vec clone → clone_up_to_view loop) |
+| Trusted proof lemmas (empty `{}`) | 7 | 5-7 (HashMap/Seq abstraction proofs) |
+| Protocol functions (real body, proof fails) | 10 | 6-8 (unblocked by clone_up_to_view) |
+| IO dispatch (trust boundary) | 5 | 0 (irreducible) |
+
+### 24.1 Phase 24.1: Transpiler — generate `.clone_up_to_view()` instead of `.clone()`
+
+The transpiler currently emits `.clone()` for all types. When a type has `clone_up_to_view`,
+the transpiler should use it instead, because it provides the `ensures res@ == self@` that
+Verus needs for proof.
+
+**Types with `clone_up_to_view` already defined** (in `types_i.rs`):
+- `CBallot` (line 77) — Copy type, but clone_up_to_view available
+- `CRequest` (line 127) — `ensures res@ == self@, res == self`
+- `CReply` (line 162) — `ensures res@ == self@, res == self`
+- `CVote` (line 307) — `ensures res@ == self@`
+- `CLearnerTuple` (line 415) — `ensures res@ == self@`
+- `EndPoint` — `clone_up_to_view` in io_s.rs
+- `CReplicaConstants` — `clone_up_to_view` in cconstants.rs
+
+**Implementation approaches** (choose one):
+
+**Option A: TOML config `clone_up_to_view_types`** — list types that should use `.clone_up_to_view()`:
+```toml
+clone_up_to_view_types = ["CRequest", "CReply", "CVote", "CLearnerTuple", "EndPoint"]
+```
+Transpiler checks this list when generating clone calls; if type is listed, emit
+`.clone_up_to_view()` instead of `.clone()`.
+
+**Option B: Auto-detect** — transpiler scans implementation modules for `clone_up_to_view`
+method signatures and automatically uses them. More robust but requires impl-block scanning.
+
+- [ ] **24.1.1**: Add `clone_up_to_view_types` config support (or auto-detection) to transpiler
+- [ ] **24.1.2**: Update translator code generation: when cloning a value of a listed type,
+  emit `.clone_up_to_view()` instead of `.clone()`
+- [ ] **24.1.3**: Handle Vec<T> cloning: when T has `clone_up_to_view`, generate a verified
+  clone loop instead of `external_body` Vec clone:
+  ```rust
+  fn clone_vec_of_T(v: &Vec<T>) -> (res: Vec<T>)
+  ensures res@ == v@, res@.map(|i,e:T| e@) =~= v@.map(|i,e:T| e@)
+  {
+      let mut res = Vec::new();
+      let mut i = 0;
+      while i < v.len()
+          invariant res.len() == i, ...
+      { res.push(v[i].clone_up_to_view()); i += 1; }
+      res
+  }
+  ```
+  This eliminates `clone_request_queue`, `clone_requests_received_prev_epochs`,
+  `clone_requests_received_this_epoch` as `external_body`.
+- [ ] **24.1.4**: Add transpiler unit tests for clone_up_to_view code generation
+- [ ] **24.1.5**: Regenerate all RSL modules and run Verus build
+
+### 24.2 Phase 24.2: Unblock protocol functions via clone_up_to_view
+
+With `.clone_up_to_view()` providing `ensures res@ == self@`, several currently-external_body
+functions should now pass Verus verification. Attempt to remove `external_body` from each:
+
+#### Election functions (3 expected to be unblocked):
+
+- [ ] **24.2.1**: `CRemoveAllSatisfiedRequestsInSequence` — the loop body `s[idx].clone()` becomes
+  `s[idx].clone_up_to_view()`, providing `res@ == s[idx]@`. The filter-map equality proof should
+  then follow from element-wise view preservation + induction on loop index.
+
+- [ ] **24.2.2**: `CRemoveExecutedRequestBatch` — depends on 24.2.1's ensures. Once
+  `CRemoveAllSatisfiedRequestsInSequence` has proper ensures, the fold loop can compose them.
+
+- [ ] **24.2.3**: `CElectionStateReflectReceivedRequest` — the `req.clone()` in the append
+  path becomes `req.clone_up_to_view()`, unblocking the push-map-commute proof for the
+  `requests_received_this_epoch` view equality.
+
+#### Proposer functions (2-3 expected to be unblocked):
+
+- [ ] **24.2.4**: `CProposerNominateNewValueAndSend2a` — Vec subrange clone uses clone_up_to_view
+  per element; timer view mapping may still need a targeted assume for `UpperBoundedAddition`.
+
+- [ ] **24.2.5**: `CProposerMaybeNominateValueAndSend2a` — dispatcher; depends on sub-function
+  ensures from NominateNew/NominateOld. If both sub-functions have ensures, this should compose.
+
+- [ ] **24.2.6**: `CProposerNominateOldValueAndSend2a` — hardest: existential search over
+  HashSet + `LValIsHighestNumberedProposal` spec predicate. clone_up_to_view helps with
+  the value extraction but the spec predicate proof likely still needs an external_body lemma.
+
+#### Learner functions (2 expected to be unblocked):
+
+- [ ] **24.2.7**: `CLearnerProcess2b` — HashMap insert + set union with clone_up_to_view;
+  the 5-branch chain should be provable if CLearnerTuple.clone_up_to_view() ensures propagate
+  through HashMap.insert view correspondence.
+
+- [ ] **24.2.8**: `CLearnerForgetOperationsBefore` — filter_clearnerstate already exists;
+  clone_up_to_view ensures on entries may help prove the biconditional quantifier.
+
+### 24.3 Phase 24.3: Prove trusted proof lemmas (eliminate empty `{}` bodies)
+
+7 proof lemmas are `external_body` with empty bodies. Most assert HashMap/Seq abstraction
+properties that are provable with appropriate Verus proof strategies.
+
+#### Replica HashMap lemmas (3 lemmas):
+
+- [ ] **24.3.1**: `lemma_clearnerstate_contains_key` — asserts
+  `m@.contains_key(key) == abstractify_clearnerstate(m).contains_key(key as int)`.
+  Proof strategy: unfold `abstractify_clearnerstate` definition, use `Map::map_keys`
+  containment properties. Requires showing the key mapping `|k| k as int` is injective.
+
+- [ ] **24.3.2**: `lemma_clearnerstate_get` — asserts
+  `m@[key]@ == abstractify_clearnerstate(m)[key as int]`.
+  Proof strategy: similar to 24.3.1, plus value View correspondence via
+  `CLearnerTuple::view()` definition.
+
+- [ ] **24.3.3**: `lemma_clearnerstate_value_valid` — asserts
+  `m@[key].valid()`.
+  Proof strategy: instantiate `clearnerstate_is_valid` quantifier at `key`. This should be
+  trivially provable: `clearnerstate_is_valid` already states `forall |k| contains_key(k) ==> m@[k].valid()`.
+  Remove `external_body`, add `assert(m@.contains_key(key))` trigger.
+
+#### Executor proof lemmas (4 lemmas):
+
+- [ ] **24.3.4**: `lemma_creplycache_get` — asserts
+  `cache@[key]@ == abstractify_creplycache(&cache)[key@]`.
+  Proof strategy: unfold `abstractify_creplycache`, use `Map::map_keys` properties.
+  Similar to clearnerstate lemmas but for `CReplyCache = HashMap<EndPoint, CReply>`.
+
+- [ ] **24.3.5**: `lemma_CHandleRequestBatch_properties` — asserts batch processing length properties.
+  Proof strategy: induction on `batch.len()`. The recursive spec `HandleRequestBatch` has
+  `decreases batch.len()`. Prove: `states.len() == batch.len() + 1` and `replies.len() == batch.len()`
+  by structural induction, base case `batch.len() == 0` → 1 state + 0 replies.
+
+- [ ] **24.3.6**: `lemma_RepliesAreReplyType` — asserts `RepliesAreReplyType(packets)`.
+  Proof strategy: unfold `GetPacketsFromReplies` (recursive), show each packet has
+  `msg is RslMessageReply`. Induction on `requests.len()`.
+
+- [ ] **24.3.7**: `lemma_HandleRequestBatch_spec_len` — asserts length properties on spec.
+  Proof strategy: same induction as 24.3.5 but on pure spec types. May be trivially provable
+  by Verus SMT if the recursive definition unfolds correctly.
+
+### 24.4 Phase 24.4: Verify and audit
+
+- [ ] **24.4.1**: Run Verus build: target ≥572 verified, 0 errors
+- [ ] **24.4.2**: Count remaining `external_body`: target ≤22 (down from 34)
+  - ~12 expected remaining: 5 IO dispatch + ~5 Verus-std helpers (clone_hashset, hashset_insert)
+    + 1-2 irreducible proof gaps
+- [ ] **24.4.3**: Update `docs/dev/proof-gap-audit-v2.md`
+- [ ] **24.4.4**: Run transpiler tests: `cargo test --all-features`
+
+### 24.5 Execution Order
+
+```
+24.1.1-24.1.2 Transpiler: clone_up_to_view support        ← core change
+    ↓
+24.1.3 Vec<T> clone loop generation                       ← eliminates 3 external_body helpers
+    ↓
+24.1.5 Regenerate all RSL modules
+    ↓
+24.2.1-24.2.3 Election functions (depend on clone fix)
+24.2.7-24.2.8 Learner functions (depend on clone fix)
+    ↓
+24.2.4-24.2.6 Proposer functions (depend on election)
+    ↓
+24.3.3 lemma_clearnerstate_value_valid (trivial)          ← easiest lemma
+24.3.7 lemma_HandleRequestBatch_spec_len (induction)
+    ↓
+24.3.1-24.3.2 clearnerstate contains_key/get (Map proof)
+24.3.4 creplycache_get (Map proof, same pattern)
+    ↓
+24.3.5-24.3.6 HandleRequestBatch/RepliesAreReplyType (induction)
+    ↓
+24.4 Full verification + audit
+```
+
+### 24.6 Acceptance Criteria
+
+- [ ] Transpiler generates `.clone_up_to_view()` for configured marshalable types
+- [ ] ≥6 protocol functions upgraded from `external_body` to verified (or real body + PROOF-TODO)
+- [ ] ≥4 trusted proof lemmas upgraded from `external_body` to proven
+- [ ] 0 Verus errors, verified count ≥ 572
+- [ ] All transpiler tests pass
