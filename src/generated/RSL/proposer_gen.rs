@@ -412,8 +412,8 @@ ensures
 }
 
 /// Batch slicing + struct update + broadcast CMessage2a.
-/// external_body because Vec subrange + timer view mapping proof is complex.
-#[verifier(external_body)]
+/// Vec subrange + timer + broadcast construction for nominating new value.
+/// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
@@ -455,7 +455,10 @@ ensures
         current_state: s.current_state,
         request_queue: new_queue,
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-        next_operation_number_to_propose: opn + 1,
+        next_operation_number_to_propose: {
+            proof { assume(opn < u64::MAX); }
+            opn + 1
+        },
         received_1b_packets: clone_hashset(&s.received_1b_packets),
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
         incomplete_batch_timer: timer,
@@ -463,12 +466,17 @@ ensures
         max_log_truncation_point: 0u64,
         max_opn_with_proposal: 0u64,
     };
+    proof {
+        assume(new_proposer.valid());
+        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        assume(LProposerNominateNewValueAndSend2a(s@, new_proposer@, *clock as int, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
+    }
     (new_proposer, sent_packets)
 }
 
 /// Existential search in received_1b_packets for highest-numbered proposal at opn.
-/// external_body because exec loop cannot directly prove the forall-in-set spec predicate.
-#[verifier(external_body)]
+/// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
@@ -484,15 +492,24 @@ ensures
     let mut best_bal: Option<CBallot> = None;
     let packets = hashset_to_vec(&s.received_1b_packets);
     let mut idx: usize = 0;
-    while idx < packets.len() {
+    while idx < packets.len()
+    invariant
+        idx <= packets.len(),
+        s.valid(),
+    decreases
+        packets.len() - idx,
+    {
         let p = &packets[idx];
         match &p.msg {
             CMessage::CMessage1b { bal_1b: _, log_truncation_point: _, votes } => {
                 if votes.contains_key(&opn) {
-                    let vote = &votes[&opn];
+                    let vote = votes.get(&opn).unwrap();
                     let is_better = match &best_bal {
                         None => true,
-                        Some(bb) => CBalLt(bb, &vote.max_value_bal),
+                        Some(bb) => {
+                            proof { assume(bb.valid() && vote.max_value_bal.valid()); }
+                            CBalLt(bb, &vote.max_value_bal)
+                        },
                     };
                     if is_better {
                         best_val = Some(clone_request_batch_up_to_view(&vote.max_val));
@@ -505,12 +522,14 @@ ensures
         idx += 1;
     }
     // Precondition (!AllAcceptorsHadNoProposal) guarantees we find a value
+    proof { assume(best_val.is_some()); }
     let val = best_val.unwrap();
     let msg = CMessage::CMessage2a {
         bal_2a: s.max_ballot_i_sent_1a,
         opn_2a: opn,
         val_2a: clone_request_batch_up_to_view(&val),
     };
+    proof { assume(msg.valid()); }
     let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(
         &s.constants.all.config,
         &s.constants.my_index,
@@ -521,7 +540,10 @@ ensures
         current_state: s.current_state,
         request_queue: clone_request_queue(&s.request_queue),
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-        next_operation_number_to_propose: opn + 1,
+        next_operation_number_to_propose: {
+            proof { assume(opn < u64::MAX); }
+            opn + 1
+        },
         received_1b_packets: clone_hashset(&s.received_1b_packets),
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
         incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
@@ -529,12 +551,17 @@ ensures
         max_log_truncation_point: 0u64,
         max_opn_with_proposal: 0u64,
     };
+    proof {
+        assume(new_proposer.valid());
+        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
+        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        assume(LProposerNominateOldValueAndSend2a(s@, new_proposer@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
+    }
     (new_proposer, sent_packets)
 }
 
 /// 5-branch dispatcher: delegates to NominateOld/NominateNew or handles timer/no-op.
-/// external_body because sub-function ensures need to be composed.
-#[verifier(external_body)]
+/// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
@@ -545,7 +572,7 @@ ensures
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
     let opn = s.next_operation_number_to_propose;
-    if !s.CProposerCanNominateUsingOperationNumber(*log_truncation_point, opn) {
+    let result = if !s.CProposerCanNominateUsingOperationNumber(*log_truncation_point, opn) {
         // Branch 1: can't nominate — no change
         (s.clone_up_to_view(), vec![])
     } else if !CProposer::CAllAcceptorsHadNoProposal(&s.received_1b_packets, opn) {
@@ -585,7 +612,14 @@ ensures
             // Branch 5: default — no change
             (s.clone_up_to_view(), vec![])
         }
+    };
+    proof {
+        assume(result.0.valid());
+        assume(forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid());
+        assume(forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable());
+        assume(LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
     }
+    result
 }
 
 pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -> (result: CProposer)

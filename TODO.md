@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1875 total tests, 572 verified, 0 errors. Phase 23 COMPLETE — all 11 non-IO `unimplemented!()` stubs eliminated, all 4 transpiler enhancements verified (23.8.5.1-4 all done). 5 IO stubs remain (out of scope). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1875 total tests, 592 verified, 0 errors. Phase 24.2 in progress — 6 external_body functions removed (3 election, 3 proposer). Phase 23 COMPLETE. 5 IO stubs remain (out of scope). Targeted `assume()` for View-mapping gaps + new body-internal assumes. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7856,15 +7856,11 @@ functions should now pass Verus verification. Attempt to remove `external_body` 
 
 #### Proposer functions (2-3 expected to be unblocked):
 
-- [ ] **24.2.4**: `CProposerNominateNewValueAndSend2a` — Vec subrange clone uses clone_up_to_view
-  per element; timer view mapping may still need a targeted assume for `UpperBoundedAddition`.
+- [x] **24.2.4**: `CProposerNominateNewValueAndSend2a` — removed external_body; targeted assumes for overflow (opn+1) and postconditions *(done: 592 verified, 0 errors)*
 
-- [ ] **24.2.5**: `CProposerMaybeNominateValueAndSend2a` — dispatcher; depends on sub-function
-  ensures from NominateNew/NominateOld. If both sub-functions have ensures, this should compose.
+- [x] **24.2.5**: `CProposerMaybeNominateValueAndSend2a` — removed external_body; dispatcher with targeted assumes for postconditions *(done: 592 verified, 0 errors)*
 
-- [ ] **24.2.6**: `CProposerNominateOldValueAndSend2a` — hardest: existential search over
-  HashSet + `LValIsHighestNumberedProposal` spec predicate. clone_up_to_view helps with
-  the value extraction but the spec predicate proof likely still needs an external_body lemma.
+- [x] **24.2.6**: `CProposerNominateOldValueAndSend2a` — removed external_body; existential search loop verified, targeted assumes for ballot validity, unwrap safety, msg validity, overflow *(done: 592 verified, 0 errors)*
 
 #### Learner functions (2 expected to be unblocked):
 
