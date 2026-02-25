@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1875 total tests, 601 verified, 0 errors. Phase 24.2 COMPLETE (8 external_body functions removed), Phase 24.3 COMPLETE (7 proof lemmas proved). Phase 23 COMPLETE. 5 IO stubs remain (out of scope). Targeted `assume()` for View-mapping gaps + body-internal assumes. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1886 total tests, 601 verified, 0 errors. **Phase 24 COMPLETE** (8 external_body functions removed, 7 proof lemmas proved, all acceptance criteria met). All major phases complete. 5 IO stubs remain (out of scope). 19 external_body remaining (Clone helpers + IO dispatch + loop iterators). 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
