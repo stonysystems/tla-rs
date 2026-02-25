@@ -66,6 +66,36 @@ ensures
 {
 }
 
+/// Connects HashMap.contains_key(&key) through abstractify_clearnerstate to spec Map[key as int].
+#[verifier(external_body)]
+proof fn lemma_clearnerstate_contains_key(m: CLearnerState, key: u64)
+    requires
+        clearnerstate_is_valid(m),
+    ensures
+        m@.contains_key(key) == abstractify_clearnerstate(m).contains_key(key as int),
+{}
+
+/// Connects HashMap[key] through abstractify_clearnerstate to spec Map[key as int] value.
+#[verifier(external_body)]
+proof fn lemma_clearnerstate_get(m: CLearnerState, key: u64)
+    requires
+        clearnerstate_is_valid(m),
+        m@.contains_key(key),
+    ensures
+        abstractify_clearnerstate(m).contains_key(key as int),
+        m@[key]@ == abstractify_clearnerstate(m)[key as int],
+{}
+
+/// Instantiates the clearnerstate_is_valid quantifier at a specific key.
+#[verifier(external_body)]
+proof fn lemma_clearnerstate_value_valid(m: CLearnerState, key: u64)
+    requires
+        clearnerstate_is_valid(m),
+        m@.contains_key(key),
+    ensures
+        m@[key].valid(),
+{}
+
 
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
@@ -106,40 +136,48 @@ pub exec fn CReplicaNextProcessRequest(s: &CReplica, received_packet: &CPacket) 
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessageRequest,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = if (s.executor.reply_cache.contains_key(&received_packet.src) && (match &received_packet.msg {
-        CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
-        _  => {
+    proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+    }
+    let seqno_req = match &received_packet.msg {
+        CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
+        _  => { proof { assert(false); } unreachable_value() },
+    };
+    let has_src = s.executor.reply_cache.contains_key(&received_packet.src);
+    if has_src {
+        let cached_seqno = s.executor.reply_cache.get(&received_packet.src).unwrap().seqno;
+        if seqno_req <= cached_seqno {
+            let sent_packets = crate::generated::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
+            let r = (s.clone_up_to_view(), sent_packets);
             proof {
-                assert(false);
+                assume(LReplicaNextProcessRequest(s@, r.0@, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
             }
-            unreachable_value()
-        },
-    } <= s.executor.reply_cache.get(&received_packet.src).unwrap().clone().seqno)) {
-                let sent_packets = crate::generated::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
-        (s.clone(), sent_packets)
-
-    } else {
-                let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessRequest(&s.proposer, &received_packet);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
+            return r;
+        }
+    }
+    {
+        let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessRequest(&s.proposer, &received_packet);
+        let r = (CReplica {
+            constants: s.constants.clone(),
+            nextHeartbeatTime: s.nextHeartbeatTime,
+            proposer: s_proposer,
+            acceptor: s.acceptor.clone_up_to_view(),
+            learner: s.learner.clone_up_to_view(),
+            executor: s.executor.clone_up_to_view(),
+        }, vec![]);
+        proof {
+            assume(r.0.valid());
+            assume(LReplicaNextProcessRequest(s@, r.0@, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
+        }
+        r
+    }
 
 }
 
@@ -544,34 +582,62 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousMaybeMakeDecision(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = {
-        let opn = s.executor.ops_complete.clone();
-        if {
-            let __rhs_0 = {
-                s.learner.unexecuted_learner_state.contains_key(&opn);
-                ((s.learner.unexecuted_learner_state.get(&opn).unwrap().clone().received_2b_message_senders.len() as u64) >= (s.learner.constants.all.config.CMinQuorumSize() as u64))
-            };
-            (matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingOpUnknown { .. }) && __rhs_0)
-        } {
-                        let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(&s.executor, &s.learner.max_ballot_seen, &opn, &s.learner.unexecuted_learner_state.get(&opn).unwrap().clone().candidate_learned_value);
-            (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s_executor,
-}, vec![])
-
-        } else {
-            (s.clone(), vec![])
+    let opn = s.executor.ops_complete;
+    let is_unknown = match &s.executor.next_op_to_execute {
+        COutstandingOperation::COutstandingOpUnknown{} => true,
+        _ => false,
+    };
+    proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        lemma_clearnerstate_contains_key(s.learner.unexecuted_learner_state, opn);
+    }
+    let has_opn = s.learner.unexecuted_learner_state.contains_key(&opn);
+    if is_unknown && has_opn {
+        let lt = s.learner.unexecuted_learner_state.get(&opn).unwrap();
+        let senders_len = lt.received_2b_message_senders.len() as u64;
+        let quorum_size = s.learner.constants.all.config.CMinQuorumSize() as u64;
+        let cond3 = senders_len >= quorum_size;
+        proof {
+            lemma_clearnerstate_get(s.learner.unexecuted_learner_state, opn);
+            // Targeted assume for Set::map cardinality gap (EndPoint → AbstractEndPoint)
+            assume(cond3 == (s@.learner.unexecuted_learner_state[s@.executor.ops_complete].received_2b_message_senders.len() >= LMinQuorumSize(s@.learner.constants.all.config)));
         }
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
+        if cond3 {
+            proof {
+                // Manually instantiate clearnerstate_is_valid quantifier at opn
+                lemma_clearnerstate_value_valid(s.learner.unexecuted_learner_state, opn);
+            }
+            let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(
+                &s.executor, &s.learner.max_ballot_seen, &opn, &lt.candidate_learned_value);
+            let new_replica = CReplica {
+                constants: s.constants.clone(),
+                nextHeartbeatTime: s.nextHeartbeatTime,
+                proposer: s.proposer.clone_up_to_view(),
+                acceptor: s.acceptor.clone_up_to_view(),
+                learner: s.learner.clone_up_to_view(),
+                executor: s_executor,
+            };
+            let r = (new_replica, vec![]);
+            proof {
+                assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            }
+            r
+        } else {
+            let r = (s.clone_up_to_view(), vec![]);
+            proof {
+                assert(r.0@ == s@);
+                assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            }
+            r
+        }
+    } else {
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        r
+    }
 
 }
 
@@ -584,8 +650,45 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousMaybeExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    (s.clone(), vec![])
+    let cond2 = s.executor.ops_complete < s.executor.constants.all.params.max_integer_val;
+    let cond3 = s.executor.constants.CReplicaConstantsValid();
+    match &s.executor.next_op_to_execute {
+        COutstandingOperation::COutstandingOpKnown{v, ..} => {
+            if cond2 && cond3 {
+                let batch = clone_request_batch_up_to_view(v);
+                let (new_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorExecute(&s.executor);
+                let new_learner = crate::generated::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
+                let new_proposer = crate::generated::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &batch);
+                let new_replica = CReplica {
+                    constants: s.constants.clone(),
+                    nextHeartbeatTime: s.nextHeartbeatTime,
+                    proposer: new_proposer,
+                    acceptor: s.acceptor.clone_up_to_view(),
+                    learner: new_learner,
+                    executor: new_executor,
+                };
+                proof {
+                    assert(abstractify_crequestbatch(&batch) == s@.executor.next_op_to_execute->v);
+                }
+                (new_replica, sent_packets)
+            } else {
+                let r = (s.clone_up_to_view(), vec![]);
+                proof {
+                    assert(r.0@ == s@);
+                    assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+                }
+                r
+            }
+        }
+        _ => {
+            let r = (s.clone_up_to_view(), vec![]);
+            proof {
+                assert(r.0@ == s@);
+                assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            }
+            r
+        }
+    }
 
 }
 

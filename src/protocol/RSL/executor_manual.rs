@@ -48,6 +48,8 @@ requires
     LReplicaConstantsValid(s.constants@),
 ensures
     result.0.valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
+    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LExecutorExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
     let (batch, op_bal) = match &s.next_op_to_execute {

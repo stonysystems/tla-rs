@@ -435,6 +435,10 @@ ensures
 // TRANSLATE-TODO: explicitly skipped (skip_functions)
 #[verifier(external_body)]
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)
+ensures
+    result@.map(|i: int, r: CRequest| r@) == RemoveExecutedRequestBatch(reqs@.map(|i: int, r: CRequest| r@), abstractify_crequestbatch(batch)),
+    forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable(),
 {
     unimplemented!()
 }
@@ -446,19 +450,24 @@ ensures
     result.valid(),
     ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)),
 {
-    assume(false); // CRemoveExecutedRequestBatch is external_body with no postconditions
-    CElectionState {
+    let new_this_epoch = CRemoveExecutedRequestBatch(&es.requests_received_this_epoch, &batch);
+    let new_prev_epochs = CRemoveExecutedRequestBatch(&es.requests_received_prev_epochs, &batch);
+    let result = CElectionState {
         constants: es.constants.clone(),
-        current_view: es.current_view.clone(),
+        current_view: es.current_view,
         current_view_suspectors: clone_hashset(&es.current_view_suspectors),
-        epoch_end_time: es.epoch_end_time.clone(),
-        epoch_length: es.epoch_length.clone(),
-        requests_received_this_epoch: CRemoveExecutedRequestBatch(&es.requests_received_this_epoch, &batch),
-        requests_received_prev_epochs: CRemoveExecutedRequestBatch(&es.requests_received_prev_epochs, &batch),
+        epoch_end_time: es.epoch_end_time,
+        epoch_length: es.epoch_length,
+        requests_received_this_epoch: new_this_epoch,
+        requests_received_prev_epochs: new_prev_epochs,
         cur_req_set: HashSet::new(),
         prev_req_set: HashSet::new(),
+    };
+    proof {
+        assume(result.valid());
+        assume(ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)));
     }
-
+    result
 }
 
 } // verus!

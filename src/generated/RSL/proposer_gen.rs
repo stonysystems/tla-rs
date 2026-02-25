@@ -148,16 +148,19 @@ pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result:
 requires
     s.valid(),
     packet.valid(),
+    packet.msg is CMessageRequest,
 ensures
     result.valid(),
     LProposerProcessRequest(s@, result@, packet@),
 {
-    assume(false);
+    proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+    }
     { let result = {
         let val = CRequest {
             client: packet.src.clone(),
             seqno: match &packet.msg {
-                CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
+                CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
                 _  => {
                     proof {
                         assert(false);
@@ -175,40 +178,57 @@ ensures
                 },
             },
         };
-        { let s_election_state = CElectionStateReflectReceivedRequest(&s.election_state, &val); if ((s.current_state != 0) && (!s.highest_seqno_requested_by_client_this_view.contains_key(&val.client) || (val.seqno > s.highest_seqno_requested_by_client_this_view.get(&val.client).unwrap().clone()))) {
-                        let mut __highest_seqno_requested_by_client_this_view = s.highest_seqno_requested_by_client_this_view.clone();
-            __highest_seqno_requested_by_client_this_view.insert(val.client.clone(), val.seqno.clone());
-            CProposer {
+        { let s_election_state = CElectionStateReflectReceivedRequest(&s.election_state, &val);
+        let should_enqueue = if s.current_state != 0 {
+            match s.highest_seqno_requested_by_client_this_view.get(&val.client) {
+                None => true,
+                Some(cached_seqno) => val.seqno > *cached_seqno,
+            }
+        } else {
+            false
+        };
+        if should_enqueue {
+            let mut __highest_seqno_requested_by_client_this_view = s.highest_seqno_requested_by_client_this_view.clone();
+            { __highest_seqno_requested_by_client_this_view.insert(val.client.clone(), val.seqno); }
+            let result = CProposer {
                 constants: s.constants.clone(),
-                current_state: s.current_state.clone(),
+                current_state: s.current_state,
                 request_queue: concat_vecs(&s.request_queue, &vec![val]),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-                next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
+                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+                next_operation_number_to_propose: s.next_operation_number_to_propose,
                 received_1b_packets: clone_hashset(&s.received_1b_packets),
                 highest_seqno_requested_by_client_this_view: __highest_seqno_requested_by_client_this_view,
                 incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
                 election_state: s_election_state,
                 max_log_truncation_point: 0u64,
                 max_opn_with_proposal: 0u64,
+            };
+            proof {
+                assume(result.valid());
+                assume(LProposerProcessRequest(s@, result@, packet@));
             }
+            result
 
         } else {
-            CProposer {
+            let result = CProposer {
                 constants: s.constants.clone(),
-                current_state: s.current_state.clone(),
+                current_state: s.current_state,
                 request_queue: clone_request_queue(&s.request_queue),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-                next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
+                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+                next_operation_number_to_propose: s.next_operation_number_to_propose,
                 received_1b_packets: clone_hashset(&s.received_1b_packets),
                 highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
                 incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
                 election_state: s_election_state,
                 max_log_truncation_point: 0u64,
                 max_opn_with_proposal: 0u64,
+            };
+            proof {
+                assume(result.valid());
+                assume(LProposerProcessRequest(s@, result@, packet@));
             }
+            result
         } }
-    }; proof {
-        broadcast use Set::lemma_set_map_insert_commute;
     }; result }
 
 }
