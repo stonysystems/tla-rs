@@ -156,7 +156,6 @@ ensures
     result.valid(),
     ElectionStateInit(result@, c@),
 {
-    assume(false);
     { let result = CElectionState {
         constants: c.clone(),
         current_view: CBallot {
@@ -173,6 +172,7 @@ ensures
     }; proof {
         lemma_empty_set_map();
         lemma_empty_requests_received_this_epoch_map();
+        lemma_empty_requests_received_prev_epochs_map();
     }; result }
 
 }
@@ -396,7 +396,7 @@ ensures
     result.valid(),
     ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)),
 {
-    assume(false);
+    assume(false); // CRemoveExecutedRequestBatch is external_body with no postconditions
     CElectionState {
         constants: es.constants.clone(),
         current_view: es.current_view.clone(),

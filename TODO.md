@@ -7398,33 +7398,33 @@ Result: 568 verified, 0 errors (up from 562). 1871 transpiler tests pass.
 
 #### 23.3.3 Election: 8 assume(false) → real impl (Tier B/C split) — PARTIAL
 
-Proved 2 of 7 functions via `proven_functions` config. Remaining 5 need clone_up_to_view
-infrastructure for struct fields (CReplicaConstants.clone() lacks ensures).
-Also fixed EndPoint PartialEq ensures (foundational: unlocks all EndPoint equality proofs).
+Proved 3 of 7 functions. Phase 23.5+ added CReplicaConstants Clone ensures + CElectionState Clone ensures,
+unblocking CElectionStateInit. Remaining 4 are Tier B (complex multi-branch logic, dead-arm assertions,
+CBoundRequestSequence preconditions).
 
 - [x] `CComputeSuccessorView` — already proven (no assume(false) in original)
 - [x] `CRequestsMatch` — PROVEN (added to proven_functions; enabled by EndPoint PartialEq fix)
 - [x] `CRequestSatisfiedBy` — PROVEN (same)
-- [ ] `CElectionStateInit` — needs clone_up_to_view for CReplicaConstants field (clone_method too broad)
-- [ ] `CElectionStateProcessHeartbeat` — Tier B: needs deep proof blocks
-- [ ] `CElectionStateCheckForViewTimeout` — Tier B
-- [ ] `CElectionStateCheckForQuorumOfViewSuspicions` — Tier B
-- [ ] `CElectionStateReflectExecutedRequestBatch` — Tier B
+- [x] `CElectionStateInit` — PROVEN (enabled by CReplicaConstants Clone ensures + empty set/seq lemmas)
+- [ ] `CElectionStateProcessHeartbeat` — Tier B: needs dead-arm proof, CBoundRequestSequence precondition, deep proof blocks
+- [ ] `CElectionStateCheckForViewTimeout` — Tier B: same pattern
+- [ ] `CElectionStateCheckForQuorumOfViewSuspicions` — Tier B: same pattern
+- [ ] `CElectionStateReflectExecutedRequestBatch` — blocked by CRemoveExecutedRequestBatch (external_body, no ensures)
 - Skip: `CElectionStateReflectReceivedRequest` (external_body: skip_functions)
 
-Result: 5 assume(false) remaining (down from 7). 568 verified, 0 errors.
+Result: 4 assume(false) remaining (down from 5). 570 verified, 0 errors.
 
-#### 23.3.4 Proposer: 9 assume(false) → real impl (Tier B/C split) — DEFERRED
+#### 23.3.4 Proposer: 9 assume(false) → real impl (Tier B/C split) — PARTIAL
 
-Blocked by same clone_up_to_view infrastructure gap as election. All 9 functions use
-`.clone()` on CReplicaConstants/CElectionState fields that lack proof-compatible ensures.
-Need either: (a) selective clone_method per field type, or (b) manual_code injection.
-9 assume(false) remaining.
+CProposerInit PROVEN (Phase 23.5+). Enabled by CElectionStateInit ensures + empty set/map proof blocks.
+Remaining 8 functions use CElectionState/CProposer clone in no-op branches (Tier B: need deep proof blocks).
+8 assume(false) remaining.
 
-#### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C) — DEFERRED
+#### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C) — PARTIAL
 
-Same clone infrastructure gap, plus compositional complexity (calls into sub-components).
-21 assume(false) remaining. IO dispatch functions will remain external_body regardless.
+CReplicaInit + CSchedulerInit PROVEN (Phase 23.5+). Compositional: uses sub-component Init ensures.
+Remaining 18 functions are complex state-transition functions (Tier B/C).
+18 assume(false) remaining. IO dispatch functions will remain external_body regardless.
 
 ### 23.4 Phase 23.4: Fix Tier B gaps — emit real bodies with PROOF-TODO
 
@@ -7452,11 +7452,19 @@ This is the key semantic improvement over Phase 21: `assume(false)` is removed e
 - [x] **23.5.2**: 40 assume(false), 28 external_body (8 helpers, 16 stubs, 4 proven-helpers)
 - [x] **23.5.3**: Updated `docs/dev/proof-gap-audit-v2.md` with Phase 23 results
 - [x] **23.5.4**: All transpiler tests pass: 1871 tests (target was ≥1340)
+- [x] **23.5.5**: Prove all Init functions across RSL (5 assume(false) eliminated)
+  - CElectionState Clone: added ensures to external_body impl (infrastructure)
+  - CElectionStateInit: proven via empty set/seq lemmas + CReplicaConstants Clone ensures
+  - CExecutorInit: proven via empty reply_cache abstractification proof
+  - CProposerInit: proven via empty received_1b_packets + highest_seqno map proofs
+  - CReplicaInit: proven compositionally (all sub-Init functions have ensures)
+  - CSchedulerInit: proven (delegates to CReplicaInit)
+  - Total: 35 assume(false) remaining (down from 40). 570 verified, 0 errors.
 
 ### 23.6 Acceptance Criteria
 
 - [x] `executor_gen.rs`: 0 Verus errors (restored)
-- [ ] No RSL function has `assume(false)` without a real exec body beside it *(40 remaining — blocked by Clone infrastructure)*
+- [ ] No RSL function has `assume(false)` without a real exec body beside it *(35 remaining — Init functions proven, Tier B blocked by deep proof infrastructure)*
 - [ ] Every `external_body` stub has either `TRANSLATE-TODO` or `PROOF-TODO` *(16 stubs annotated)*
 - [x] Verus build: 0 errors, 570 verified (Phase 21 baseline restored)
 - [x] All transpiler tests pass (1871)

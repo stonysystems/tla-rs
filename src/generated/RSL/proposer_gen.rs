@@ -4,7 +4,8 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
-use crate::common::native::io_s::EndPoint;
+use crate::common::native::io_s::{EndPoint, AbstractEndPoint};
+use crate::protocol::RSL::environment::RslPacket;
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::election_gen::*;
 use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTimerOff;
@@ -98,7 +99,6 @@ ensures
     result.valid(),
     LProposerInit(result@, c@),
 {
-    assume(false);
     { let result = {
         let s_election_state = CElectionStateInit(&c);
         CProposer {
@@ -120,6 +120,14 @@ ensures
     }; proof {
         lemma_empty_set_map();
         lemma_empty_request_queue_map();
+        // Prove received_1b_packets: empty HashSet maps to empty Set
+        let pkt_set = result.received_1b_packets@.map(|p: CPacket| p@);
+        assert forall|y: RslPacket| !(#[trigger] pkt_set.contains(y)) by {}
+        assert(pkt_set =~= Set::<RslPacket>::empty());
+        // Prove highest_seqno_requested_by_client_this_view: empty HashMap maps to empty Map
+        let hsm = result@.highest_seqno_requested_by_client_this_view;
+        assert forall|ak: AbstractEndPoint| !(#[trigger] hsm.dom().contains(ak)) by {}
+        assert(hsm =~= Map::<AbstractEndPoint, int>::empty());
     }; result }
 
 }

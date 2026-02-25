@@ -94,8 +94,7 @@ ensures
     result.valid(),
     LExecutorInit(result@, c@),
 {
-    assume(false);
-    CExecutor {
+    { let result = CExecutor {
         constants: c.clone(),
         app: CAppStateInit(),
         ops_complete: 0u64,
@@ -106,7 +105,13 @@ ensures
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: HashMap::new(),
-    }
+    }; proof {
+        lemma_empty_set_map();
+        // Prove abstractify_creplycache on empty HashMap yields empty Map
+        let rc = abstractify_creplycache(&result.reply_cache);
+        assert forall|ak: AbstractEndPoint| !(#[trigger] rc.dom().contains(ak)) by {}
+        assert(rc =~= Map::<AbstractEndPoint, Reply>::empty());
+    }; result }
 
 }
 

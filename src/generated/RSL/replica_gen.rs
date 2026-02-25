@@ -73,7 +73,6 @@ ensures
     result.valid(),
     LReplicaInit(result@, c@),
 {
-    assume(false);
     { let r_proposer = crate::generated::RSL::proposer_gen::CProposerInit(&c); let r_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorInit(&c); let r_learner = crate::generated::RSL::learner_gen::CLearnerInit(&c); let r_executor = crate::generated::RSL::executor_gen::CExecutorInit(&c); CReplica {
         constants: c.clone(),
         nextHeartbeatTime: 0u64,
@@ -691,7 +690,6 @@ ensures
     result.valid(),
     LSchedulerInit(result@, c@),
 {
-    assume(false);
     { let s_replica = CReplicaInit(c); CScheduler {
         nextActionIndex: 0u64,
         replica: s_replica,

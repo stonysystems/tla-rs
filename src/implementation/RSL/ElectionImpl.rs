@@ -148,7 +148,11 @@ impl View for COutstandingOperation {
 // CElectionState contains HashSet<u64> and HashSet<CRequestHeader>, so Clone can't be derived by Verus.
 impl Clone for CElectionState {
     #[verifier(external_body)]
-    fn clone(&self) -> Self {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
         CElectionState {
             constants: self.constants.clone(),
             current_view: self.current_view,
