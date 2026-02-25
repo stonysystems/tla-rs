@@ -57,14 +57,32 @@ ensures
 }
 
 /// Helper: clone a Vec<CRequest> preserving both raw and mapped view.
-/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.
-#[verifier(external_body)]
+/// Uses clone_up_to_view() per element for verified view preservation.
 fn clone_requests_received_prev_epochs(v: &Vec<CRequest>) -> (res: Vec<CRequest>)
 ensures
     res@ == v@,
     res@.map(|i: int, e: CRequest| e@) =~= v@.map(|i: int, e: CRequest| e@),
 {
-    v.clone()
+    let mut res: Vec<CRequest> = Vec::new();
+    let mut idx: usize = 0;
+    while idx < v.len()
+    invariant
+        idx <= v.len(),
+        res@.len() == idx as int,
+        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j]) == v@[j],
+        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j])@ == v@[j]@,
+    decreases
+        v.len() - idx,
+    {
+        let elem = v[idx].clone_up_to_view();
+        res.push(elem);
+        idx = idx + 1;
+    }
+    proof {
+        assert(res@ =~= v@);
+        assert(res@.map(|i: int, e: CRequest| e@) =~= v@.map(|i: int, e: CRequest| e@));
+    }
+    res
 }
 
 /// Helper proof: mapping over an empty Vec<CRequest> yields an empty seq.
@@ -82,14 +100,32 @@ ensures
 }
 
 /// Helper: clone a Vec<CRequest> preserving both raw and mapped view.
-/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.
-#[verifier(external_body)]
+/// Uses clone_up_to_view() per element for verified view preservation.
 fn clone_requests_received_this_epoch(v: &Vec<CRequest>) -> (res: Vec<CRequest>)
 ensures
     res@ == v@,
     res@.map(|i: int, e: CRequest| e@) =~= v@.map(|i: int, e: CRequest| e@),
 {
-    v.clone()
+    let mut res: Vec<CRequest> = Vec::new();
+    let mut idx: usize = 0;
+    while idx < v.len()
+    invariant
+        idx <= v.len(),
+        res@.len() == idx as int,
+        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j]) == v@[j],
+        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j])@ == v@[j]@,
+    decreases
+        v.len() - idx,
+    {
+        let elem = v[idx].clone_up_to_view();
+        res.push(elem);
+        idx = idx + 1;
+    }
+    proof {
+        assert(res@ =~= v@);
+        assert(res@.map(|i: int, e: CRequest| e@) =~= v@.map(|i: int, e: CRequest| e@));
+    }
+    res
 }
 
 

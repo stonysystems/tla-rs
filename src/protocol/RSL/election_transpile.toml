@@ -24,6 +24,9 @@ skip_functions = [
 collection_fields = ["current_view_suspectors"]
 vec_fields = ["requests_received_this_epoch", "requests_received_prev_epochs"]
 
+# Types that should use .clone_up_to_view() instead of .clone() for verified clone loops
+clone_up_to_view_types = ["CRequest"]
+
 # Custom view expressions for types in ensures clauses
 # RequestBatch (= Seq<Request>) needs deep conversion from Vec<CRequest>
 [type_view_exprs]

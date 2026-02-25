@@ -7839,7 +7839,7 @@ method signatures and automatically uses them. More robust but requires impl-blo
   This eliminates `clone_request_queue`, `clone_requests_received_prev_epochs`,
   `clone_requests_received_this_epoch` as `external_body`.
 - [x] **24.1.4**: Add transpiler unit tests for clone_up_to_view code generation *(done: commit 36e2e4f — 9 new tests)*
-- [ ] **24.1.5**: Regenerate all RSL modules and run Verus build
+- [x] **24.1.5**: Regenerate all RSL modules and run Verus build *(done: 3 external_body clone helpers replaced with verified while loops using clone_up_to_view(); 578 verified, 0 errors; 1454 transpiler tests pass)*
 
 ### 24.2 Phase 24.2: Unblock protocol functions via clone_up_to_view
 

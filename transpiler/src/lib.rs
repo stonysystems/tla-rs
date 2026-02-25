@@ -1239,6 +1239,8 @@ impl Transpiler {
                     output.push_str(&format!(
                         "        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j])@ == v@[j]@,\n",
                     ));
+                    output.push_str("    decreases\n");
+                    output.push_str("        v.len() - idx,\n");
                     output.push_str("    {\n");
                     output.push_str("        let elem = v[idx].clone_up_to_view();\n");
                     output.push_str("        res.push(elem);\n");
@@ -2833,6 +2835,14 @@ mod tests {
         assert!(
             output.contains("res@ =~= v@"),
             "Should have extensional equality proof assertion: {}", output
+        );
+        assert!(
+            output.contains("decreases"),
+            "Should have decreases clause for while loop: {}", output
+        );
+        assert!(
+            output.contains("v.len() - idx"),
+            "Should have v.len() - idx as decreases measure: {}", output
         );
     }
 
