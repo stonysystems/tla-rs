@@ -4,6 +4,7 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc;
 use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::acceptor_gen::*;
@@ -203,16 +204,46 @@ ensures
 
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+// Phase 23.8.4.1: CReplicaNextProcess1b — check 4 conditions, dispatch to proposer+acceptor
 #[verifier(external_body)]
 pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
+requires
+    s.valid(),
+    received_packet.valid(),
+    received_packet.msg is CMessage1b,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    unimplemented!()
+    let (bal_1b, log_truncation_point) = match &received_packet.msg {
+        CMessage::CMessage1b { bal_1b, log_truncation_point, .. } => (*bal_1b, *log_truncation_point),
+        _ => unreachable!(),
+    };
+
+    let samesrc = Packet1bHasUniqueSrc(&s.proposer.received_1b_packets, received_packet);
+
+    if contains(&s.proposer.constants.all.config.replica_ids, &received_packet.src)
+        && CBalEq(&bal_1b, &s.proposer.max_ballot_i_sent_1a)
+        && s.proposer.current_state == 1
+        && samesrc
+    {
+        // All 4 conditions met: dispatch to proposer and acceptor
+        let s_proposer = CProposerProcess1b(&s.proposer, received_packet);
+        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &log_truncation_point);
+        (CReplica {
+            constants: s.constants.clone(),
+            nextHeartbeatTime: s.nextHeartbeatTime,
+            proposer: s_proposer,
+            acceptor: s_acceptor,
+            learner: s.learner.clone_up_to_view(),
+            executor: s.executor.clone_up_to_view(),
+        }, vec![])
+    } else {
+        // Conditions not met: no-op
+        (s.clone_up_to_view(), vec![])
+    }
 }
 
 pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
@@ -561,16 +592,50 @@ ensures
 
 }
 
-// TRANSLATE-TODO: not functionalizable: Output parameter 's_' is assigned inside a quantifier body (cannot convert quantified assignment to executable code)
+// Phase 23.8.4.2: CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints — find valid truncation point, truncate if higher
 #[verifier(external_body)]
 pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
+requires
+    s.valid(),
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    unimplemented!()
+    // Search last_checkpointed_operation for a valid log truncation point
+    let mut found = false;
+    let mut target: u64 = 0;
+    let mut idx: usize = 0;
+    while idx < s.acceptor.last_checkpointed_operation.len() {
+        let opn = s.acceptor.last_checkpointed_operation[idx];
+        if crate::implementation::RSL::acceptor_helpers::CIsLogTruncationPointValid(
+            opn,
+            &s.acceptor.last_checkpointed_operation,
+            &s.constants.all.config,
+        ) {
+            found = true;
+            target = opn;
+            break;
+        }
+        idx += 1;
+    }
+
+    if found && target > s.acceptor.log_truncation_point {
+        // Truncation point is valid and higher than current — truncate
+        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &target);
+        (CReplica {
+            constants: s.constants.clone(),
+            nextHeartbeatTime: s.nextHeartbeatTime,
+            proposer: s.proposer.clone_up_to_view(),
+            acceptor: s_acceptor,
+            learner: s.learner.clone_up_to_view(),
+            executor: s.executor.clone_up_to_view(),
+        }, vec![])
+    } else {
+        // No valid truncation point or not higher — no-op
+        (s.clone_up_to_view(), vec![])
+    }
 }
 
 pub exec fn CReplicaNextSpontaneousMaybeMakeDecision(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))

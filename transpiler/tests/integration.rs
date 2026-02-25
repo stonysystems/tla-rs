@@ -2077,6 +2077,8 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
         ("proposer_gen.rs", "CProposerNominateNewValueAndSend2a"),
         ("proposer_gen.rs", "CProposerNominateOldValueAndSend2a"),
         ("proposer_gen.rs", "CProposerMaybeNominateValueAndSend2a"),
+        ("replica_gen.rs", "CReplicaNextProcess1b"),
+        ("replica_gen.rs", "CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints"),
     ];
     let sources: std::collections::BTreeMap<&str, &str> = [
         ("election_gen.rs", election_src.as_str()),
@@ -2105,35 +2107,11 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
         );
     }
 
-    // Remaining non-IO stubs (update as more are implemented)
-    let remaining_stubs: Vec<(&str, &str)> = vec![
-        ("replica_gen.rs", "CReplicaNextProcess1b"),
-        ("replica_gen.rs", "CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints"),
-    ];
-    for (file, fn_name) in &remaining_stubs {
-        let src = sources[file];
-        // Check for TRANSLATE-TODO comment (two patterns: "explicitly skipped" and "not functionalizable")
-        let fn_sig = format!("pub exec fn {}(", fn_name);
-        let fn_pos = src.find(&fn_sig).unwrap_or_else(|| panic!("{} not found in {}", fn_name, file));
-        let prefix = &src[..fn_pos];
-        assert!(
-            prefix.contains("// TRANSLATE-TODO:"),
-            "{} in {} should have a TRANSLATE-TODO comment (update test when implemented)",
-            fn_name, file
-        );
-        // Check it's still external_body with unimplemented!()
-        let fn_end = src[fn_pos..].find("\n}\n").map(|i| fn_pos + i + 3).unwrap_or(src.len());
-        let fn_body = &src[fn_pos..fn_end];
-        assert!(
-            fn_body.contains("unimplemented!()"),
-            "{} in {} should still have unimplemented!() body (update test when implemented)",
-            fn_name, file
-        );
-    }
+    // All 11 non-IO stubs have been implemented — no remaining stubs
+    // (5 IO stubs remain but are out of scope for Phase 23.8)
 
     // Summary counts
-    assert_eq!(implemented_functions.len(), 9, "implemented non-IO stubs count");
-    assert_eq!(remaining_stubs.len(), 2, "remaining non-IO stubs count");
+    assert_eq!(implemented_functions.len(), 11, "implemented non-IO stubs count");
 }
 
 /// Verify replica_gen.rs has all expected public functions
@@ -2318,48 +2296,12 @@ fn test_replica_packet1b_unique_src_helper_is_not_manual_injected() {
 }
 
 #[test]
-fn test_replica_process1b_is_proof_fallback_generated() {
-    let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
-        .expect("Failed to read replica_transpile.toml");
-    let config: toml::Value = config_source
-        .parse()
-        .expect("Failed to parse replica_transpile.toml");
-
-    let skip_functions = config
-        .get("skip_functions")
-        .and_then(|value| value.as_array())
-        .expect("replica_transpile.toml must define skip_functions");
-    assert!(
-        skip_functions
-            .iter()
-            .any(|value| value.as_str() == Some("LReplicaNextProcess1b")),
-        "LReplicaNextProcess1b should remain in skip_functions for proof-fallback generation"
-    );
-
-    let no_stub_functions = config
-        .get("no_stub_functions")
-        .and_then(|value| value.as_array())
-        .expect("replica_transpile.toml must define no_stub_functions");
-    assert!(
-        !no_stub_functions
-            .iter()
-            .any(|value| value.as_str() == Some("LReplicaNextProcess1b")),
-        "LReplicaNextProcess1b should not be pinned to no_stub_functions so fallback emits"
-    );
-
+fn test_replica_process1b_is_implemented() {
     let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
     assert!(
-        generated_source.contains("// TRANSLATE-TODO: explicitly skipped (skip_functions)"),
-        "replica_gen.rs should mark proof-fallback generation for skipped LReplicaNextProcess1b"
-    );
-    assert!(
         generated_source.contains("pub exec fn CReplicaNextProcess1b"),
-        "replica_gen.rs should contain generated CReplicaNextProcess1b fallback"
-    );
-    assert!(
-        generated_source.contains("#[verifier(external_body)]\npub exec fn CReplicaNextProcess1b"),
-        "generated CReplicaNextProcess1b should be an external-body proof-fallback stub"
+        "replica_gen.rs should contain CReplicaNextProcess1b"
     );
 
     let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNextProcess1b");
@@ -2367,11 +2309,15 @@ fn test_replica_process1b_is_proof_fallback_generated() {
         fn_source.contains(
             "LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@))"
         ),
-        "generated CReplicaNextProcess1b should preserve the spec postcondition"
+        "CReplicaNextProcess1b should preserve the spec postcondition"
     );
     assert!(
-        fn_source.contains("unimplemented!()"),
-        "generated CReplicaNextProcess1b fallback should use unimplemented!()"
+        !fn_source.contains("unimplemented!()"),
+        "CReplicaNextProcess1b should no longer have unimplemented!() — it has a real implementation"
+    );
+    assert!(
+        fn_source.contains("CProposerProcess1b") && fn_source.contains("CAcceptorTruncateLog"),
+        "CReplicaNextProcess1b should dispatch to proposer and acceptor sub-component functions"
     );
 }
 

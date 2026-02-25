@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (2 non-IO remaining, 9 done). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 COMPLETE — all 11 non-IO `unimplemented!()` stubs eliminated (5 IO stubs remain, out of scope). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7677,20 +7677,15 @@ because the code actually runs.
 | `CReplicaNextProcess1b` | `forall` no-duplicate guard + two sub-calls | linear scan + delegation | MEDIUM |
 | `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` | `exists \|opn\|` in Option + spec predicate | match on Option + `external_body` lemma for `IsLogTruncationPointValid` | MEDIUM-HIGH |
 
-- [ ] **23.8.4.1**: `CReplicaNextProcess1b` — uniqueness guard + sub-component dispatch.
-  Spec: `forall |other| received_1b_packets.contains(other) ==> other.src != received_packet.src`
-  → linear scan of HashSet for duplicate src. If valid: call `CProposerProcess1b` +
-  `CAcceptorTruncateLog`; else: no-op clone.
-  Transpiler should emit: `for pkt in received_1b_packets.iter() { if pkt.src == src { dup=true } }`.
-  Proof: loop invariant for forall-in-set; sub-component ensures available from proven functions.
+- [x] **23.8.4.1**: `CReplicaNextProcess1b` — uniqueness guard + sub-component dispatch.
+  Used `Packet1bHasUniqueSrc` from gen_helpers.rs for the forall-no-duplicate check.
+  If all 4 conditions met: call `CProposerProcess1b` + `CAcceptorTruncateLog`; else: no-op clone.
+  Kept `external_body`. 572 verified, 0 errors.
 
-- [ ] **23.8.4.2**: `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` — existential on Option.
-  Spec: `exists |opn| last_checkpointed_operation.contains(opn) && IsLogTruncationPointValid(opn, ...)`.
-  The `last_checkpointed_operation` is `Option<OperationNumber>` (finite domain).
-  Transpiler should emit: `if let Some(opn) = ... { if opn > log_truncation_point { truncate } else { noop } }`.
-  Proof: `IsLogTruncationPointValid` is spec-only; **requires `external_body` proof lemma**
-  or runtime check equivalent. The helper `CIsLogTruncationPointValid` may already exist
-  in `acceptor_helpers.rs`.
+- [x] **23.8.4.2**: `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` — existential search.
+  Iterates `last_checkpointed_operation` Vec, calls `CIsLogTruncationPointValid` from
+  acceptor_helpers.rs to find a valid truncation point. If found and > current: truncate via
+  `CAcceptorTruncateLog`; else: no-op clone. Kept `external_body`. 572 verified, 0 errors.
 
 #### 23.8.5 Transpiler enhancements needed
 
@@ -7763,8 +7758,8 @@ The stubs exist only for the Verus type checker and are never invoked at runtime
 
 #### 23.8.8 Acceptance criteria
 
-- [ ] 0 `unimplemented!()` stubs in non-IO functions (down from 11)
-- [ ] All 11 functions have real executable bodies
-- [ ] Verus build: 0 errors, verified count ≥ 571
-- [ ] Any unprovable postconditions use `external_body` proof lemmas (not `assume(false)`)
-- [ ] IO-dispatch stubs (5 functions) unchanged — documented as trust boundary
+- [x] 0 `unimplemented!()` stubs in non-IO functions (down from 11) ✅ ALL 11 DONE
+- [x] All 11 functions have real executable bodies ✅
+- [x] Verus build: 0 errors, verified count ≥ 571 ✅ 572 verified, 0 errors
+- [x] Any unprovable postconditions use `external_body` proof lemmas (not `assume(false)`) ✅
+- [x] IO-dispatch stubs (5 functions) unchanged — documented as trust boundary ✅
