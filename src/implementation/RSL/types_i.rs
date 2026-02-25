@@ -202,7 +202,8 @@ verus! {
     pub fn clone_request_batch_up_to_view(batch: &CRequestBatch) -> (res: CRequestBatch)
         ensures
             res@ == batch@,
-            forall |i: int| 0 <= i < batch.len() ==> res[i]@ == batch[i]@
+            forall |i: int| 0 <= i < batch.len() ==> res[i]@ == batch[i]@,
+            forall |i: int| 0 <= i < batch.len() ==> res[i].valid() == batch[i].valid(),
     {
         let mut cloned:Vec<CRequest> = Vec::new();
         let mut i = 0;

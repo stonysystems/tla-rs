@@ -7424,8 +7424,11 @@ Remaining 8 functions use CElectionState/CProposer clone in no-op branches (Tier
 
 CReplicaInit + CSchedulerInit PROVEN (Phase 23.5+). Compositional: uses sub-component Init ensures.
 CReplicaNextProcessInvalid + CReplicaNextProcessReply PROVEN: pure no-op functions using clone_up_to_view().
-Remaining 16 functions are complex state-transition functions (Tier B/C).
-16 assume(false) remaining. IO dispatch functions will remain external_body regardless.
+7 delegation functions PROVEN (Phase 23.5.7): sub-component ensures + clone_up_to_view for unchanged fields.
+Remaining 9 functions blocked by: message-variant preconditions (Process1a, ProcessHeartbeat),
+complex if/else logic (ProcessRequest, Process2a, Process2b, ProcessAppStateSupply, MaybeMakeDecision,
+MaybeSendHeartbeat, MaybeExecute). IO dispatch functions remain external_body.
+9 assume(false) remaining.
 
 ### 23.4 Phase 23.4: Fix Tier B gaps — emit real bodies with PROOF-TODO
 
@@ -7465,11 +7468,24 @@ This is the key semantic improvement over Phase 21: `assume(false)` is removed e
   - CReplicaNextProcessInvalid: proven via clone_up_to_view() (no-op: s_ == s, empty packets)
   - CReplicaNextProcessReply: proven via clone_up_to_view() (no-op: s_ == s, empty packets)
   - Total: 33 assume(false) remaining (down from 35). 570 verified, 0 errors.
+- [x] **23.5.7**: Prove 7 replica delegation functions via clone_up_to_view (7 more assume(false) eliminated)
+  - Pattern: sub-component functions still have assume(false) so their postconditions are trivially available;
+    clone_up_to_view() on unchanged sub-components (acceptor/learner/executor/proposer) provides view + validity ensures
+  - CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a: delegates to CProposerMaybeEnterNewViewAndSend1a
+  - CReplicaNextSpontaneousMaybeEnterPhase2: delegates to CProposerMaybeEnterPhase2
+  - CReplicaNextReadClockMaybeNominateValueAndSend2a: delegates to CProposerMaybeNominateValueAndSend2a
+  - CReplicaNextProcessStartingPhase2: delegates to CExecutorProcessStartingPhase2
+  - CReplicaNextProcessAppStateRequest: delegates to CExecutorProcessAppStateRequest
+  - CReplicaNextReadClockCheckForViewTimeout: delegates to CProposerCheckForViewTimeout
+  - CReplicaNextReadClockCheckForQuorumOfViewSuspicions: delegates to CProposerCheckForQuorumOfViewSuspicions
+  - Blocked: Process1a/ProcessHeartbeat need message-variant preconditions (acceptor requires inp.msg is CMessage1a etc.)
+  - Infrastructure: clone_reply_cache helper, strengthened clone_request_batch_up_to_view ensures (for future use)
+  - Total: 26 assume(false) remaining (down from 33). 570 verified, 0 errors.
 
 ### 23.6 Acceptance Criteria
 
 - [x] `executor_gen.rs`: 0 Verus errors (restored)
-- [ ] No RSL function has `assume(false)` without a real exec body beside it *(33 remaining — Init + no-op functions proven, Tier B blocked by deep proof infrastructure)*
+- [ ] No RSL function has `assume(false)` without a real exec body beside it *(26 remaining — Init + no-op + delegation functions proven, Tier B blocked by message-variant preconditions + complex logic)*
 - [ ] Every `external_body` stub has either `TRANSLATE-TODO` or `PROOF-TODO` *(16 stubs annotated)*
 - [x] Verus build: 0 errors, 570 verified (Phase 21 baseline restored)
 - [x] All transpiler tests pass (1871)

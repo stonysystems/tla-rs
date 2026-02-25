@@ -186,13 +186,12 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessStartingPhase2(&s.executor, &received_packet); (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
+    proposer: s.proposer.clone_up_to_view(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
     executor: s_executor,
 }, sent_packets) }
 
@@ -373,13 +372,12 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet); (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
+    proposer: s.proposer.clone_up_to_view(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
     executor: s_executor,
 }, sent_packets) }
 
@@ -423,14 +421,13 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterNewViewAndSend1a(&s.proposer); (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
+    executor: s.executor.clone_up_to_view(),
 }, sent_packets) }
 
 }
@@ -444,14 +441,13 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point); (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
+    executor: s.executor.clone_up_to_view(),
 }, sent_packets) }
 
 }
@@ -466,14 +462,13 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let (s_proposer, sent_packets) = crate::generated::RSL::proposer_gen::CProposerMaybeNominateValueAndSend2a(&s.proposer, &clock.t, &s.acceptor.log_truncation_point); (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
+    executor: s.executor.clone_up_to_view(),
 }, sent_packets) }
 
 }
@@ -589,16 +584,15 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let result = {
         let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForViewTimeout(&s.proposer, &clock.t);
         (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
+    executor: s.executor.clone_up_to_view(),
 }, vec![])
     }; proof {
         lemma_empty_seq_map();
@@ -617,16 +611,15 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let result = {
         let s_proposer = crate::generated::RSL::proposer_gen::CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
         (CReplica {
     constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
+    acceptor: s.acceptor.clone_up_to_view(),
+    learner: s.learner.clone_up_to_view(),
+    executor: s.executor.clone_up_to_view(),
 }, vec![])
     }; proof {
         lemma_empty_seq_map();

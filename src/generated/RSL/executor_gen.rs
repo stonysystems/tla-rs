@@ -69,6 +69,18 @@ ensures
 }
 
 
+/// Helper: clone a CReplyCache preserving view and validity.
+/// Verus has no spec for HashMap::clone(), so we trust this via external_body.
+#[verifier(external_body)]
+fn clone_reply_cache(m: &CReplyCache) -> (res: CReplyCache)
+ensures
+    res@ == m@,
+    creplycache_is_abstractable(&res) == creplycache_is_abstractable(m),
+    creplycache_is_valid(&res) == creplycache_is_valid(m),
+{
+    m.clone()
+}
+
 /// Helper: clone COutstandingOperation preserving view.
 fn clone_next_op_to_execute(r: &COutstandingOperation) -> (res: COutstandingOperation)
 ensures
