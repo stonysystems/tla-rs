@@ -7934,3 +7934,235 @@ properties that are provable with appropriate Verus proof strategies.
 - [x] ≥4 trusted proof lemmas upgraded from `external_body` to proven: **7 lemmas** (3 clearnerstate + 4 executor) ✅
 - [x] 0 Verus errors, verified count ≥ 572: **601 verified, 0 errors** ✅
 - [x] All transpiler tests pass: **1886 tests, 0 failures** ✅
+
+## Phase 25: Transpiler Generalization and Protocol Proof Hardening
+
+### 25.0 Problem Statement
+
+After Phase 24 (601 verified, 0 errors), two categories of technical debt remain:
+
+**A. Transpiler ad-hoc hardcoding** — 5 locations where transpiler uses hardcoded function/type
+names or protocol-specific pattern lists instead of general, config-driven mechanisms. These
+limit the transpiler's ability to handle new protocols without code changes.
+
+**B. Protocol proof gaps** — ~6 RSL functions in `generated/` and `implementation/` have real
+implementation bodies but use `external_body` because Verus proof fails. These are not blocked
+by Verus std limitations or IO boundary — they are solvable with better proof strategies.
+
+**Current `external_body` in generated RSL (19 total):**
+
+| Category | Count | Fixable in Phase 25? |
+|----------|-------|---------------------|
+| HashSet/HashMap clone/insert/filter | 9 | 0 (Verus std limitation) |
+| IO dispatch stubs (unimplemented!()) | 5 | 0 (IO trust boundary) |
+| unreachable_value<T> | 1 | 0 (by design) |
+| Protocol logic — proof difficulty | 2 | 2 (Process1b, TruncateLog) |
+| Implementation layer — proof difficulty | ~4 | 2-4 (ExecutorExecute, TruncateLog_optimized) |
+
+### 25.1 Phase 25.1: Eliminate `ComputeSuccessorView` hardcoding
+
+**Problem**: `is_targeted_assume_reduction_candidate()` at translator/mod.rs:5331 hardcodes
+`func.spec_fn.name == "ComputeSuccessorView"` to add extra requires and targeted proof.
+This is a single-function special case with zero generalization.
+
+**Solution**: The TOML config already has `extra_requires` (config.rs:244) which does exactly
+the same thing — adds per-function preconditions. The transpiler also has `proven_functions`
+for proof control. Replace the hardcoded check with these existing config mechanisms.
+
+**Steps:**
+- [ ] **25.1.1**: Move the extra requires `b.seqno < c.params.max_integer_val` to TOML
+  `extra_requires` for `CComputeSuccessorView` in `election_transpile.toml`
+- [ ] **25.1.2**: Generalize the "targeted assume reduction" pattern: instead of checking
+  one function name, check if the function is in `proven_functions` (or a new TOML list
+  `targeted_proof_functions`) — if so, emit `assert(result@ == ...)` instead of `assume(false)`
+- [ ] **25.1.3**: Delete `is_targeted_assume_reduction_candidate()` and
+  `targeted_assume_reduction_requires()` functions from translator/mod.rs
+- [ ] **25.1.4**: Add transpiler tests verifying the config-driven behavior matches old output
+- [ ] **25.1.5**: Regenerate election_gen.rs to verify identical output
+
+### 25.2 Phase 25.2: Generalize UpperBound arithmetic helpers
+
+**Problem**: 4 function names (`LeqUpperBound`, `LtUpperBound`, `UpperBoundedAddition`,
+`BoundRequestSequence`) are hardcoded in translator/mod.rs at lines 7686-7698 and 9322-9382.
+Each has custom inline expansion or argument-passing logic.
+
+These are IronFleet framework-level mathematical abstractions (not protocol-specific), but
+the hardcoding prevents other projects using similar patterns from benefiting.
+
+**Solution**: Add a new TOML config section `[inline_expansions]` that maps spec function
+names to their exec-level expansions:
+
+```toml
+[inline_expansions]
+# Binary operator expansion: f(a, b) → (a op b)
+"LeqUpperBound" = { kind = "binary_op", op = "<=", condition = "!is_upper_bound_type" }
+"LtUpperBound" = { kind = "binary_op", op = "<", condition = "!is_upper_bound_type" }
+
+# Owned argument pass-through
+"UpperBoundedAddition" = { kind = "call", owned_args = true }
+
+# Mixed borrow: first arg borrowed, rest owned
+"BoundRequestSequence" = { kind = "call", borrow_args = [0], own_args = [1] }
+```
+
+**Steps:**
+- [ ] **25.2.1**: Design `InlineExpansionConfig` struct in config.rs with variants:
+  `BinaryOp { op, condition }`, `OwnedCall`, `MixedBorrowCall { borrow, own }`
+- [ ] **25.2.2**: Add `[inline_expansions]` section to TranspilerConfig with serde support
+- [ ] **25.2.3**: Replace hardcoded checks in `expr_to_simple_string()` (line 7686) and
+  `transform_call()` (line 9322) with config table lookups
+- [ ] **25.2.4**: Move the 4 function entries to RSL TOML configs (or a shared base config)
+- [ ] **25.2.5**: Add transpiler tests for config-driven inline expansion
+- [ ] **25.2.6**: Regenerate all RSL modules, verify identical output
+
+### 25.3 Phase 25.3: Move scheduler action classification to TOML
+
+**Problem**: `classify_single_action()` in scheduler.rs:218-284 has 11 hardcoded
+`message_response_patterns` and `strip_role_prefix()` has 10 hardcoded `role_prefixes`.
+Adding a new protocol requires editing transpiler source code.
+
+**Solution**: Extend the existing `[scheduler]` TOML section with optional override lists:
+
+```toml
+[scheduler]
+next_fn = "LNext"
+# Optional overrides (empty = use defaults / heuristic only)
+message_response_overrides = ["Send1b", "Send2b"]
+role_prefixes = ["TM", "RM"]
+timer_overrides = ["HandleAppendReject"]
+```
+
+The generic keyword detection (`receive`, `handle`, `timeout`) stays as-is in code — it's
+genuinely general. Only the protocol-specific override lists move to TOML.
+
+**Steps:**
+- [ ] **25.3.1**: Add `message_response_overrides`, `role_prefixes`, `timer_overrides`
+  optional fields to `SchedulerTomlConfig` in config.rs
+- [ ] **25.3.2**: Update `classify_single_action()` to merge TOML overrides with the
+  default keyword-based heuristic (TOML overrides take priority)
+- [ ] **25.3.3**: Update `strip_role_prefix()` to accept an external prefix list
+- [ ] **25.3.4**: Distribute current hardcoded values to per-protocol TOML configs
+- [ ] **25.3.5**: Add transpiler tests for TOML-driven classification
+- [ ] **25.3.6**: Verify all 9 non-RSL protocol host scaffolds generate identically
+
+### 25.4 Phase 25.4: Prove `CReplicaNextProcess1b` (generated, proof difficulty)
+
+**Problem**: replica_gen.rs:239 has a real implementation body (4-condition check + dispatch
+to proposer+acceptor) but is `external_body` because Verus proof fails.
+
+**Proof difficulty analysis**:
+- The function checks 4 conditions, then dispatches to `CProposerProcess1b` + `CAcceptorTruncateLog`
+- The spec `LReplicaNextProcess1b` is a conjunction of these same conditions
+- Proof needs to show: (1) the 4 conditions match the spec, (2) the resulting CReplica
+  fields map correctly under `@`, (3) sent_packets is empty (`vec![]@ == Seq::empty()`)
+
+**Proof strategy**:
+- The structure is similar to `CReplicaNextProcessStartingPhase2` (line 280) which IS verified
+- Key difference: Process1b needs `Packet1bHasUniqueSrc` (HashSet operation) + combines
+  results from TWO sub-modules (proposer + acceptor) rather than one
+- Strategy: add targeted `assert` statements proving each spec conjunct separately,
+  then use `assert(...) by { ... }` blocks for the cross-module composition
+
+**Steps:**
+- [ ] **25.4.1**: Analyze the spec `LReplicaNextProcess1b` to enumerate exact proof obligations
+- [ ] **25.4.2**: Add proof assertions in transpiler output for the 4-condition check:
+  assert each condition individually, then assert the spec predicate
+- [ ] **25.4.3**: Handle the cross-module composition: the result CReplica combines
+  `s_proposer` from `CProposerProcess1b` and `s_acceptor` from `CAcceptorTruncateLog`
+  with unchanged learner/executor — assert each field's view mapping
+- [ ] **25.4.4**: If proof still fails, use targeted assumes for specific conjuncts and
+  document which obligations remain unproven
+- [ ] **25.4.5**: Regenerate replica_gen.rs and verify
+
+### 25.5 Phase 25.5: Prove `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (generated)
+
+**Problem**: replica_gen.rs:627 has a real implementation (search loop + conditional truncation)
+but is `external_body` because proof fails.
+
+**Proof difficulty analysis**:
+- The function searches `last_checkpointed_operation` for a valid truncation point
+- The spec uses an existential quantifier: `exists |opn| CIsLogTruncationPointValid(opn, ...) && opn > current`
+- The search loop is the exec realization of this existential
+- Proof must connect: "loop found a valid point" ↔ "existential is satisfied in spec"
+
+**Proof strategy**:
+- Add loop invariants: `found ==> CIsLogTruncationPointValid(target, ...) && target > log_truncation_point`
+- After the loop, the existential witness is `target`
+- For the no-op branch (`!found || target <= current`), prove the identity case
+- For the truncation branch, compose `CAcceptorTruncateLog` result into CReplica fields
+
+**Steps:**
+- [ ] **25.5.1**: Add loop invariants to the search loop in transpiler output
+- [ ] **25.5.2**: Add existential witness assertion after the loop:
+  `assert(exists |opn: u64| ... ) by { /* witness: target */ }`
+- [ ] **25.5.3**: Add field-by-field view mapping assertions for the CReplica construction
+- [ ] **25.5.4**: If proof still fails, use targeted assumes and document remaining gaps
+- [ ] **25.5.5**: Regenerate replica_gen.rs and verify
+
+### 25.6 Phase 25.6: Prove `CExecutorExecute` (implementation layer)
+
+**Problem**: ExecutorImpl.rs:136 has a complete implementation but is `external_body`.
+This is the most complex remaining proof target — it executes a committed operation:
+destructures `COutstandingOpKnown`, calls `CHandleRequestBatch`, updates reply cache,
+and constructs reply packets.
+
+**Proof difficulty analysis**:
+- Calls `CHandleRequestBatch` (app state machine execution) — needs ensures chain
+- Calls `CUpdateNewCache` (HashMap merge) — external_body, ensures `creplycache_is_valid`
+- Calls `CGetPacketsFromReplies` (verified recursive) — already has good ensures
+- Must prove `LExecutorExecute(old(self)@, self@, res@)` — requires all sub-results
+  to compose correctly under `@`
+- The `max_bal_reflected` conditional update needs separate proof for each branch
+
+**Proof strategy**:
+- Add intermediate `assert` after each sub-call to establish its contribution
+- Use `CHandleRequestBatch` ensures to establish app state and replies validity
+- Use `CGetPacketsFromReplies` ensures for packet construction
+- Assert `LExecutorExecute` conjuncts individually, then combine
+- Most likely need targeted assumes for HashMap-related properties
+
+**Steps:**
+- [ ] **25.6.1**: Analyze `LExecutorExecute` spec to enumerate all proof obligations
+- [ ] **25.6.2**: Add proof assertions after `CHandleRequestBatch` call
+- [ ] **25.6.3**: Add proof assertions for `max_bal_reflected` conditional
+- [ ] **25.6.4**: Add proof assertions for `CUpdateNewCache` and `CGetPacketsFromReplies`
+- [ ] **25.6.5**: Remove `external_body`, attempt verification, add targeted assumes for
+  remaining gaps. Document what remains unproven
+- [ ] **25.6.6**: Run Verus build to verify
+
+### 25.7 Phase 25.7: Verify and audit
+
+- [ ] **25.7.1**: Run full Verus build: target ≥601 verified, 0 errors
+- [ ] **25.7.2**: Run transpiler tests: target 0 failures
+- [ ] **25.7.3**: Count remaining `external_body` in generated RSL:
+  target ≤17 (down from 19, removing Process1b + TruncateLog)
+- [ ] **25.7.4**: Verify no new hardcoded function/type names in transpiler source
+  (grep for string literals matching protocol-specific names)
+- [ ] **25.7.5**: Audit that all TOML configs for 9 non-RSL protocols still work correctly
+
+### 25.8 Execution Order
+
+```
+25.1 ComputeSuccessorView generalization     ← easiest, ~30 min, zero risk
+  ↓
+25.2 UpperBound inline expansion config      ← config design + migration
+  ↓
+25.3 Scheduler action TOML migration         ← config extension + distribution
+  ↓  (transpiler generalization complete)
+25.4 CReplicaNextProcess1b proof             ← cross-module composition proof
+  ↓
+25.5 TruncateLogBasedOnCheckpoints proof     ← existential search loop proof
+  ↓
+25.6 CExecutorExecute proof                  ← most complex, multi-call composition
+  ↓
+25.7 Full verification + audit
+```
+
+### 25.9 Acceptance Criteria
+
+- [ ] 0 hardcoded RSL function names in translator/mod.rs (ComputeSuccessorView, UpperBound*)
+- [ ] Scheduler action classification driven by TOML, not hardcoded arrays
+- [ ] ≥2 protocol functions upgraded from `external_body` to verified/targeted-assume
+- [ ] CExecutorExecute proof attempted with documented remaining gaps
+- [ ] 0 Verus errors, verified count ≥ 601
+- [ ] All transpiler tests pass
