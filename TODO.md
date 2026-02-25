@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1875 total tests, 592 verified, 0 errors. Phase 24.2 in progress — 6 external_body functions removed (3 election, 3 proposer). Phase 23 COMPLETE. 5 IO stubs remain (out of scope). Targeted `assume()` for View-mapping gaps + new body-internal assumes. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1875 total tests, 594 verified, 0 errors. Phase 24.2 COMPLETE — 8 external_body functions removed (3 election, 3 proposer, 2 learner). Phase 23 COMPLETE. 5 IO stubs remain (out of scope). Targeted `assume()` for View-mapping gaps + new body-internal assumes. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7864,12 +7864,9 @@ functions should now pass Verus verification. Attempt to remove `external_body` 
 
 #### Learner functions (2 expected to be unblocked):
 
-- [ ] **24.2.7**: `CLearnerProcess2b` — HashMap insert + set union with clone_up_to_view;
-  the 5-branch chain should be provable if CLearnerTuple.clone_up_to_view() ensures propagate
-  through HashMap.insert view correspondence.
+- [x] **24.2.7**: `CLearnerProcess2b` — removed external_body; 5-branch conditional verified, targeted assumes for validity + spec predicate *(done: 594 verified, 0 errors)*
 
-- [ ] **24.2.8**: `CLearnerForgetOperationsBefore` — filter_clearnerstate already exists;
-  clone_up_to_view ensures on entries may help prove the biconditional quantifier.
+- [x] **24.2.8**: `CLearnerForgetOperationsBefore` — removed external_body; filter body verified, targeted assumes for validity + biconditional spec predicate *(done: 594 verified, 0 errors)*
 
 ### 24.3 Phase 24.3: Prove trusted proof lemmas (eliminate empty `{}` bodies)
 

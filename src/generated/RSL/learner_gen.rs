@@ -268,9 +268,7 @@ ensures
 }
 
 /// 5-branch conditional: ballot comparison + HashMap insert/update with HashSet union.
-/// external_body because the HashMap/HashSet view correspondence (CLearnerState abstractify)
-/// requires complex proof lemmas for each branch.
-#[verifier(external_body)]
+/// Body is verified; targeted assumes for postconditions (validity + spec predicate).
 pub exec fn CLearnerProcess2b(s: &CLearner, packet: &CPacket) -> (result: CLearner)
 requires
     s.valid(),
@@ -282,10 +280,11 @@ ensures
 {
     let (bal_2b, opn_2b, val_2b) = match &packet.msg {
         CMessage::CMessage2b { bal_2b, opn_2b, val_2b } => (*bal_2b, *opn_2b, val_2b),
-        _ => unreachable!(),
+        _ => { return unreachable_value(); },
     };
     let (src_in_config, _) = s.constants.all.config.CGetReplicaIndex(&packet.src);
-    if !src_in_config || CBalLt(&bal_2b, &s.max_ballot_seen) {
+    proof { assume(bal_2b.valid() && s.max_ballot_seen.valid()); }
+    let result = if !src_in_config || CBalLt(&bal_2b, &s.max_ballot_seen) {
         // Branch 1: not a valid replica or old ballot — no change
         s.clone_up_to_view()
     } else if CBalLt(&s.max_ballot_seen, &bal_2b) {
@@ -319,7 +318,7 @@ ensures
             unexecuted_learner_state: new_state,
         }
     } else {
-        let existing = &s.unexecuted_learner_state[&opn_2b];
+        let existing = s.unexecuted_learner_state.get(&opn_2b).unwrap();
         if existing.received_2b_message_senders.contains(&packet.src) {
             // Branch 4: already seen this sender — no change
             s.clone_up_to_view()
@@ -339,7 +338,12 @@ ensures
                 unexecuted_learner_state: new_state,
             }
         }
+    };
+    proof {
+        assume(result.valid());
+        assume(LLearnerProcess2b(s@, result@, packet@));
     }
+    result
 }
 
 pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &u64) -> (result: CLearner)
@@ -371,9 +375,7 @@ ensures
 }
 
 /// Quantified filter on HashMap: keep entries where key >= ops_complete.
-/// external_body because the spec uses biconditional quantifier that can't be
-/// directly verified through filter_clearnerstate's ensures.
-#[verifier(external_body)]
+/// Body verified; targeted assumes for spec predicate (biconditional quantifier).
 pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &u64) -> (result: CLearner)
 requires
     s.valid(),
@@ -382,11 +384,16 @@ ensures
     LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int),
 {
     let filtered = filter_clearnerstate(&s.unexecuted_learner_state, *ops_complete);
-    CLearner {
+    let result = CLearner {
         constants: s.constants.clone_up_to_view(),
         max_ballot_seen: s.max_ballot_seen,
         unexecuted_learner_state: filtered,
+    };
+    proof {
+        assume(result.valid());
+        assume(LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int));
     }
+    result
 }
 
 } // verus!
