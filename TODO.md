@@ -7417,8 +7417,10 @@ Result: 4 assume(false) remaining (down from 5). 570 verified, 0 errors.
 #### 23.3.4 Proposer: 9 assume(false) → real impl (Tier B/C split) — PARTIAL
 
 CProposerInit PROVEN (Phase 23.5+). Enabled by CElectionStateInit ensures + empty set/map proof blocks.
-Remaining 8 functions use CElectionState/CProposer clone in no-op branches (Tier B: need deep proof blocks).
-8 assume(false) remaining.
+CProposerCheckForViewTimeout + CProposerResetViewTimerDueToExecution PROVEN (Phase 23.5.8):
+struct update + clone_up_to_view pattern.
+Remaining 6 functions have conditional branches with exec↔spec matching (Tier B).
+6 assume(false) remaining.
 
 #### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C) — PARTIAL
 
@@ -7481,11 +7483,19 @@ This is the key semantic improvement over Phase 21: `assume(false)` is removed e
   - Blocked: Process1a/ProcessHeartbeat need message-variant preconditions (acceptor requires inp.msg is CMessage1a etc.)
   - Infrastructure: clone_reply_cache helper, strengthened clone_request_batch_up_to_view ensures (for future use)
   - Total: 26 assume(false) remaining (down from 33). 570 verified, 0 errors.
+- [x] **23.5.8**: Prove 2 proposer functions via struct update + clone_up_to_view (2 more assume(false) eliminated)
+  - Pattern: `CProposer { field_override: value, ..s.clone_up_to_view() }` replaces per-field cloning
+  - CProposerCheckForViewTimeout: overrides election_state only
+  - CProposerResetViewTimerDueToExecution: overrides election_state only
+  - Blocked: MaybeEnterPhase2/ProcessHeartbeat/CheckForQuorumOfViewSuspicions have conditional branches with
+    exec↔spec condition matching (Tier B); MaybeEnterNewViewAndSend1a/Process1b/ProcessRequest construct
+    fundamentally different structs
+  - Total: 24 assume(false) remaining (down from 26). 570 verified, 0 errors.
 
 ### 23.6 Acceptance Criteria
 
 - [x] `executor_gen.rs`: 0 Verus errors (restored)
-- [ ] No RSL function has `assume(false)` without a real exec body beside it *(26 remaining — Init + no-op + delegation functions proven, Tier B blocked by message-variant preconditions + complex logic)*
+- [ ] No RSL function has `assume(false)` without a real exec body beside it *(24 remaining — Init + no-op + delegation + struct-update functions proven, Tier B blocked by conditional matching + message-variant preconditions)*
 - [ ] Every `external_body` stub has either `TRANSLATE-TODO` or `PROOF-TODO` *(16 stubs annotated)*
 - [x] Verus build: 0 errors, 570 verified (Phase 21 baseline restored)
 - [x] All transpiler tests pass (1871)

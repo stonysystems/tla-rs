@@ -394,19 +394,9 @@ ensures
     result.valid(),
     LProposerCheckForViewTimeout(s@, result@, *clock as int),
 {
-    assume(false);
     { let s_election_state = CElectionStateCheckForViewTimeout(&s.election_state, &clock); CProposer {
-        constants: s.constants.clone(),
-        current_state: s.current_state.clone(),
-        request_queue: clone_request_queue(&s.request_queue),
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-        next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-        received_1b_packets: clone_hashset(&s.received_1b_packets),
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-        incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
         election_state: s_election_state,
-        max_log_truncation_point: 0u64,
-        max_opn_with_proposal: 0u64,
+        ..s.clone_up_to_view()
     } }
 
 }
@@ -455,19 +445,9 @@ ensures
     result.valid(),
     LProposerResetViewTimerDueToExecution(s@, result@, abstractify_crequestbatch(val)),
 {
-    assume(false);
     { let s_election_state = CElectionStateReflectExecutedRequestBatch(&s.election_state, &val); CProposer {
-        constants: s.constants.clone(),
-        current_state: s.current_state.clone(),
-        request_queue: clone_request_queue(&s.request_queue),
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-        next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-        received_1b_packets: clone_hashset(&s.received_1b_packets),
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-        incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
         election_state: s_election_state,
-        max_log_truncation_point: 0u64,
-        max_opn_with_proposal: 0u64,
+        ..s.clone_up_to_view()
     } }
 
 }
