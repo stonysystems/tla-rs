@@ -181,109 +181,106 @@ pub exec fn CElectionStateProcessHeartbeat(es: &CElectionState, p: &CPacket, clo
 requires
     es.valid(),
     p.valid(),
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     ElectionStateProcessHeartbeat(es@, result@, p@, *clock as int),
 {
-    assume(false);
-    { let result = if !contains(&es.constants.all.config.replica_ids, &p.src) {
-        es.clone()
+    if !contains(&es.constants.all.config.replica_ids, &p.src) {
+        es.clone_up_to_view()
     } else {
-                let (_unused0, sender_index) = es.constants.all.config.CGetReplicaIndex(&p.src);
-        let sender_index = (sender_index as u64);
-        if (CBalEq(&match &p.msg {
-    CMessage::CMessageHeartbeat { bal_heartbeat, .. } => bal_heartbeat.clone(),
-    _  => {
+        let (_unused0, sender_index_usize) = es.constants.all.config.CGetReplicaIndex(&p.src);
+        let sender_index = sender_index_usize as u64;
+        let (bal_heartbeat, suspicious) = match &p.msg {
+            CMessage::CMessageHeartbeat { bal_heartbeat, suspicious, .. } => (*bal_heartbeat, *suspicious),
+            _ => { proof { assert(false); } unreachable_value() }
+        };
         proof {
-            assert(false);
+            assert(sender_index as int == GetReplicaIndex(p@.src, es@.constants.all.config));
         }
-        unreachable_value()
-    },
-}, &es.current_view) && match &p.msg {
-            CMessage::CMessageHeartbeat { suspicious, .. } => suspicious.clone(),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
-        }) {
-            CElectionState {
+        if CBalEq(&bal_heartbeat, &es.current_view) && suspicious {
+            // Branch 2: bal == current_view && suspicious => union suspectors
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            let mut singleton = HashSet::new();
+            singleton.insert(sender_index);
+            let result = CElectionState {
                 constants: es.constants.clone(),
                 current_view: es.current_view.clone(),
-                current_view_suspectors: {
-                    let __rhs_0 = {
-                        broadcast use vstd::std_specs::hash::group_hash_axioms;
-                        let mut __hs = HashSet::new();
-                        __hs.insert(sender_index.clone());
-                        __hs
-                    };
-                    union_sets(&es.current_view_suspectors, &__rhs_0)
-                },
-                epoch_end_time: es.epoch_end_time.clone(),
-                epoch_length: es.epoch_length.clone(),
+                current_view_suspectors: union_sets(&es.current_view_suspectors, &singleton),
+                epoch_end_time: es.epoch_end_time,
+                epoch_length: es.epoch_length,
                 requests_received_this_epoch: clone_requests_received_this_epoch(&es.requests_received_this_epoch),
                 requests_received_prev_epochs: clone_requests_received_prev_epochs(&es.requests_received_prev_epochs),
                 cur_req_set: HashSet::new(),
                 prev_req_set: HashSet::new(),
+            };
+            proof {
+                lemma_empty_set_map();
+                broadcast use Set::lemma_set_map_insert_commute;
+                assert(singleton@ =~= Set::<u64>::empty().insert(sender_index));
+                assert(result.current_view_suspectors@ =~= es.current_view_suspectors@.insert(sender_index));
+                assert(result.current_view_suspectors@.map(|x:u64| x as int) =~=
+                       es.current_view_suspectors@.map(|x:u64| x as int).insert(sender_index as int));
+                assert(result@.current_view_suspectors =~= es@.current_view_suspectors + set![sender_index as int]);
             }
-        } else {
-            if CBalLt(&es.current_view, &match &p.msg {
-    CMessage::CMessageHeartbeat { bal_heartbeat, .. } => bal_heartbeat.clone(),
-    _  => {
-        proof {
-            assert(false);
-        }
-        unreachable_value()
-    },
-}) {
-                                let new_epoch_length = CUpperBoundedAddition(es.epoch_length.clone(), es.epoch_length.clone(), es.constants.all.params.max_integer_val);
-                CElectionState {
-                    constants: es.constants.clone(),
-                    current_view: match &p.msg {
-                        CMessage::CMessageHeartbeat { bal_heartbeat, .. } => bal_heartbeat.clone(),
-                        _  => {
-                            proof {
-                                assert(false);
-                            }
-                            unreachable_value()
-                        },
-                    },
-                    current_view_suspectors: if match &p.msg {
-                        CMessage::CMessageHeartbeat { suspicious, .. } => suspicious.clone(),
-                        _  => {
-                            proof {
-                                assert(false);
-                            }
-                            unreachable_value()
-                        },
-                    } {
-                                                broadcast use vstd::std_specs::hash::group_hash_axioms;
-                        let mut __hs = HashSet::new();
-                        __hs.insert(sender_index.clone());
-                        __hs
-
+            result
+        } else if CBalLt(&es.current_view, &bal_heartbeat) {
+            // Branch 3: BalLt => new view, new epoch, bounded requests
+            let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
+            let concat_result = concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch);
+            let _clen = concat_result.len();
+            proof {
+                assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
+                    if i < es.requests_received_prev_epochs@.len() {
+                        assert(concat_result@[i] == es.requests_received_prev_epochs@[i]);
                     } else {
-                        HashSet::new()
-                    },
-                    epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
-                    epoch_length: new_epoch_length,
-                    requests_received_this_epoch: vec![],
-                    requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
-                    cur_req_set: HashSet::new(),
-                    prev_req_set: HashSet::new(),
+                        assert(concat_result@[i] == es.requests_received_this_epoch@[i - es.requests_received_prev_epochs@.len()]);
+                    }
                 }
-
-            } else {
-                es.clone()
             }
+            let suspectors = if suspicious {
+                broadcast use vstd::std_specs::hash::group_hash_axioms;
+                let mut hs = HashSet::new();
+                hs.insert(sender_index);
+                hs
+            } else {
+                HashSet::new()
+            };
+            let result = CElectionState {
+                constants: es.constants.clone(),
+                current_view: bal_heartbeat,
+                current_view_suspectors: suspectors,
+                epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
+                epoch_length: new_epoch_length,
+                requests_received_this_epoch: vec![],
+                requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_result, es.constants.all.params.max_integer_val),
+                cur_req_set: HashSet::new(),
+                prev_req_set: HashSet::new(),
+            };
+            proof {
+                lemma_empty_set_map();
+                lemma_empty_requests_received_this_epoch_map();
+                broadcast use Set::lemma_set_map_insert_commute;
+                // Prove suspectors view
+                if suspicious {
+                    assert(suspectors@ =~= Set::<u64>::empty().insert(sender_index));
+                    assert(suspectors@.map(|x: u64| x as int) =~= set![sender_index as int]);
+                    assert(result@.current_view_suspectors =~= set![sender_index as int]);
+                } else {
+                    assert(result@.current_view_suspectors =~= Set::<int>::empty());
+                }
+                // concat map distributivity
+                assert(concat_result@.map(|i: int, r: CRequest| r@) =~=
+                       es.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@) +
+                       es.requests_received_this_epoch@.map(|i: int, r: CRequest| r@));
+                assert(result@.requests_received_prev_epochs =~= BoundRequestSequence(es@.requests_received_prev_epochs + es@.requests_received_this_epoch, es@.constants.all.params.max_integer_val));
+            }
+            result
+        } else {
+            // Branch 4: no-op
+            es.clone_up_to_view()
         }
-
-    }; proof {
-        lemma_empty_set_map();
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_requests_received_this_epoch_map();
-    }; result }
+    }
 
 }
 
@@ -377,27 +374,51 @@ ensures
     result.valid(),
     ElectionStateCheckForQuorumOfViewSuspicions(es@, result@, *clock as int),
 {
-    assume(false);
-    { let result = if (((es.current_view_suspectors.len() as u64) < (es.constants.all.config.CMinQuorumSize() as u64)) || !(es.current_view.seqno < es.constants.all.params.max_integer_val)) {
-        es.clone()
+    let cond1 = (es.current_view_suspectors.len() as u64) < (es.constants.all.config.CMinQuorumSize() as u64);
+    let cond2 = !(es.current_view.seqno < es.constants.all.params.max_integer_val);
+    proof {
+        // cond2 maps directly: !(seqno < max_int) == !LtUpperBound(seqno as int, UpperBoundFinite{n: max_int as int})
+        assert(cond2 == !LtUpperBound(es@.current_view.seqno, es@.constants.all.params.max_integer_val));
+        // cond1: Set::map cardinality gap — HashSet.len() vs Set.map(f).len()
+        assume(cond1 == (es@.current_view_suspectors.len() < LMinQuorumSize(es@.constants.all.config)));
+    }
+    if cond1 || cond2 {
+        es.clone_up_to_view()
     } else {
-                let new_epoch_length = CUpperBoundedAddition(es.epoch_length.clone(), es.epoch_length.clone(), es.constants.all.params.max_integer_val);
-        CElectionState {
+        let new_epoch_length = CUpperBoundedAddition(es.epoch_length, es.epoch_length, es.constants.all.params.max_integer_val);
+        let concat_result = concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch);
+        let _clen = concat_result.len();
+        proof {
+            assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
+                if i < es.requests_received_prev_epochs@.len() {
+                    assert(concat_result@[i] == es.requests_received_prev_epochs@[i]);
+                } else {
+                    assert(concat_result@[i] == es.requests_received_this_epoch@[i - es.requests_received_prev_epochs@.len()]);
+                }
+            }
+        }
+        let result = CElectionState {
             constants: es.constants.clone(),
             current_view: CComputeSuccessorView(&es.current_view, &es.constants.all),
             current_view_suspectors: HashSet::new(),
             epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
             epoch_length: new_epoch_length,
             requests_received_this_epoch: vec![],
-            requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
+            requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_result, es.constants.all.params.max_integer_val),
             cur_req_set: HashSet::new(),
             prev_req_set: HashSet::new(),
+        };
+        proof {
+            lemma_empty_set_map();
+            lemma_empty_requests_received_this_epoch_map();
+            // concat map distributivity
+            assert(concat_result@.map(|i: int, r: CRequest| r@) =~=
+                   es.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@) +
+                   es.requests_received_this_epoch@.map(|i: int, r: CRequest| r@));
+            assert(result@.requests_received_prev_epochs =~= BoundRequestSequence(es@.requests_received_prev_epochs + es@.requests_received_this_epoch, es@.constants.all.params.max_integer_val));
         }
-
-    }; proof {
-        lemma_empty_set_map();
-        lemma_empty_requests_received_this_epoch_map();
-    }; result }
+        result
+    }
 
 }
 

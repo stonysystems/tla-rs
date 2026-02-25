@@ -222,32 +222,53 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LProposerMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = if ((s.election_state.current_view.proposer_id == s.constants.my_index) && CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view)) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage1a {
-    bal_1a: s.election_state.current_view,
-});
-        (CProposer {
-    constants: s.constants.clone(),
-    current_state: 1u64,
-    request_queue: concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch),
-    max_ballot_i_sent_1a: s.election_state.current_view,
-    next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-    received_1b_packets: HashSet::new(),
-    highest_seqno_requested_by_client_this_view: HashMap::new(),
-    incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
-    election_state: s.election_state.clone(),
-    max_log_truncation_point: 0u64,
-    max_opn_with_proposal: 0u64,
-}, sent_packets)
-
+    let cond1 = s.election_state.current_view.proposer_id == s.constants.my_index;
+    let cond2 = CBalLt(&s.max_ballot_i_sent_1a, &s.election_state.current_view);
+    proof {
+        assert(cond1 == (s@.election_state.current_view.proposer_id == s@.constants.my_index));
+        assert(cond2 == BalLt(s@.max_ballot_i_sent_1a, s@.election_state.current_view));
+    }
+    if cond1 && cond2 {
+        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessage1a {
+            bal_1a: s.election_state.current_view,
+        });
+        let new_proposer = CProposer {
+            constants: s.constants.clone(),
+            current_state: 1u64,
+            request_queue: concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch),
+            max_ballot_i_sent_1a: s.election_state.current_view,
+            next_operation_number_to_propose: s.next_operation_number_to_propose,
+            received_1b_packets: HashSet::new(),
+            highest_seqno_requested_by_client_this_view: HashMap::new(),
+            incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
+            election_state: s.election_state.clone(),
+            max_log_truncation_point: 0u64,
+            max_opn_with_proposal: 0u64,
+        };
+        proof {
+            // Prove received_1b_packets: empty HashSet maps to empty Set
+            let pkt_set = new_proposer.received_1b_packets@.map(|p: CPacket| p@);
+            assert forall|y: RslPacket| !(#[trigger] pkt_set.contains(y)) by {}
+            assert(pkt_set =~= Set::<RslPacket>::empty());
+            // Prove highest_seqno_requested_by_client_this_view: empty HashMap maps to empty Map
+            let hsm = new_proposer@.highest_seqno_requested_by_client_this_view;
+            assert forall|ak: AbstractEndPoint| !(#[trigger] hsm.dom().contains(ak)) by {}
+            assert(hsm =~= Map::<AbstractEndPoint, int>::empty());
+            // Prove request_queue concat maps correctly
+            let prev = s.election_state.requests_received_prev_epochs@;
+            let this = s.election_state.requests_received_this_epoch@;
+            assert(new_proposer.request_queue@ =~= prev + this);
+            assert(new_proposer@.request_queue =~= s@.election_state.requests_received_prev_epochs + s@.election_state.requests_received_this_epoch);
+        }
+        (new_proposer, sent_packets)
     } else {
-        (s.clone(), vec![])
-    }; proof {
-        lemma_empty_set_map();
-        lemma_empty_request_queue_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        r
+    }
 
 }
 
@@ -305,32 +326,50 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LProposerMaybeEnterPhase2(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = if (((s.received_1b_packets.len() as u64) >= (s.constants.all.config.CMinQuorumSize() as u64)) && (CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a) && (s.current_state == 1))) {
-                let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
-    bal_2: s.max_ballot_i_sent_1a.clone(),
-    logTruncationPoint_2: log_truncation_point.clone(),
-});
-        (CProposer {
-    constants: s.constants.clone(),
-    current_state: 2u64,
-    request_queue: clone_request_queue(&s.request_queue),
-    max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-    next_operation_number_to_propose: log_truncation_point.clone(),
-    received_1b_packets: clone_hashset(&s.received_1b_packets),
-    highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-    incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
-    election_state: s.election_state.clone(),
-    max_log_truncation_point: 0u64,
-    max_opn_with_proposal: 0u64,
-}, sent_packets)
-
+    let cond1 = (s.received_1b_packets.len() as u64) >= (s.constants.all.config.CMinQuorumSize() as u64);
+    let cond2 = CProposer::CSetOfMessage1bAboutBallot(&s.received_1b_packets, &s.max_ballot_i_sent_1a);
+    let cond3 = s.current_state == 1;
+    proof {
+        // cond2 and cond3 map directly to spec
+        assert(cond2 == LSetOfMessage1bAboutBallot(s@.received_1b_packets, s@.max_ballot_i_sent_1a));
+        assert(cond3 == (s@.current_state == 1));
+        // cond1: Set::map cardinality gap — HashSet.len() vs Set.map(f).len()
+        assume(cond1 == (s@.received_1b_packets.len() >= LMinQuorumSize(s@.constants.all.config)));
+    }
+    if cond1 && cond2 && cond3 {
+        let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
+            bal_2: s.max_ballot_i_sent_1a.clone(),
+            logTruncationPoint_2: log_truncation_point.clone(),
+        });
+        let new_proposer = CProposer {
+            constants: s.constants.clone(),
+            current_state: 2u64,
+            request_queue: clone_request_queue(&s.request_queue),
+            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
+            next_operation_number_to_propose: *log_truncation_point,
+            received_1b_packets: clone_hashset(&s.received_1b_packets),
+            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
+            incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
+            election_state: s.election_state.clone(),
+            max_log_truncation_point: 0u64,
+            max_opn_with_proposal: 0u64,
+        };
+        proof {
+            // received_1b_packets: clone preserves view
+            broadcast use Set::lemma_set_map_insert_commute;
+            assert(new_proposer@.received_1b_packets =~= s@.received_1b_packets);
+            // highest_seqno_requested_by_client_this_view: clone preserves view
+            assert(new_proposer@.highest_seqno_requested_by_client_this_view =~= s@.highest_seqno_requested_by_client_this_view);
+        }
+        (new_proposer, sent_packets)
     } else {
-        (s.clone(), vec![])
-    }; proof {
-        lemma_empty_request_queue_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        r
+    }
 
 }
 
@@ -374,6 +413,7 @@ pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -
 requires
     s.valid(),
     p.valid(),
+    p.msg is CMessageHeartbeat,
 ensures
     result.valid(),
     LProposerProcessHeartbeat(s@, result@, p@, *clock as int),
