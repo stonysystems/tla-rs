@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (7 non-IO remaining, 4 done: CBoundRequestSequence, CRemoveAllSatisfiedRequestsInSequence, CRemoveExecutedRequestBatch, CElectionStateReflectReceivedRequest). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (5 non-IO remaining, 6 done: CBoundRequestSequence, CRemoveAllSatisfiedRequestsInSequence, CRemoveExecutedRequestBatch, CElectionStateReflectReceivedRequest, CLearnerProcess2b, CLearnerForgetOperationsBefore). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7588,7 +7588,7 @@ If a function's proof cannot pass Verus, emit the real exec body anyway and use 
 proof lemmas (not `assume(false)`) to bridge the gap. This is strictly better than `unimplemented!()`
 because the code actually runs.
 
-**Current state**: 572 verified, 0 errors. 12 `TRANSLATE-TODO` stubs total (7 non-IO + 5 IO).
+**Current state**: 572 verified, 0 errors. 10 `TRANSLATE-TODO` stubs total (5 non-IO + 5 IO).
 
 #### 23.8.1 Election: 4 stubs → generate real loop-based implementations
 
@@ -7632,19 +7632,18 @@ because the code actually runs.
 | `CLearnerProcess2b` | 5-branch if-else-if + HashMap insert/set union | direct if-else chain | LOW |
 | `CLearnerForgetOperationsBefore` | `forall \|k\|` filter on HashMap keys | for loop + `filter_clearnerstate` helper | LOW |
 
-- [ ] **23.8.2.1**: `CLearnerProcess2b` — 5-branch conditional with HashMap/Set operations.
-  Spec has NO recursion or existentials — pure if-else with `map.insert`, `set.union`, `contains_key`.
-  Transpiler should emit: extract msg fields → check ballot → check map key →
-  insert/update LearnerTuple. The existing `clone_hashset`, `clone_clearnerstate` helpers
-  already exist in learner_gen.rs.
-  Proof: each branch constructs result matching one spec disjunct; may need `external_body`
-  lemma for HashMap/HashSet view correspondence.
+- [x] **23.8.2.1**: `CLearnerProcess2b` — 5-branch conditional with HashMap/Set operations. DONE.
+  Kept `external_body` with real body (complex HashMap/HashSet view correspondence proofs).
+  Implementation: 5-branch if-else chain matching spec exactly — destructure CMessage2b,
+  check ballot comparisons, HashMap insert/lookup, HashSet membership, construct CLearnerTuple
+  with singleton or union senders. Uses `clone_clearnerstate`, `clone_hashset`,
+  `clone_request_batch_up_to_view`. Added `s.valid()`, `packet.valid()`, `packet.msg is CMessage2b`
+  requires. 572 verified, 0 errors.
 
-- [ ] **23.8.2.2**: `CLearnerForgetOperationsBefore` — quantified filter on HashMap.
-  Spec: `forall |k| s_.contains_key(k) <==> k >= ops_complete && s.contains_key(k)`.
-  The `filter_clearnerstate` helper (learner_gen.rs:224) already implements this exact pattern!
-  Transpiler should emit: call `filter_clearnerstate` + construct CLearner.
-  Proof: `filter_clearnerstate` is `external_body`; need ensures on it to match spec.
+- [x] **23.8.2.2**: `CLearnerForgetOperationsBefore` — quantified filter on HashMap. DONE.
+  Kept `external_body` with real body (spec biconditional quantifier can't be directly verified).
+  Implementation: call existing `filter_clearnerstate` helper + construct CLearner.
+  Added `s.valid()` requires. 572 verified, 0 errors.
 
 #### 23.8.3 Proposer: 3 stubs → generate real implementations
 

@@ -267,14 +267,79 @@ ensures
 
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// 5-branch conditional: ballot comparison + HashMap insert/update with HashSet union.
+/// external_body because the HashMap/HashSet view correspondence (CLearnerState abstractify)
+/// requires complex proof lemmas for each branch.
 #[verifier(external_body)]
 pub exec fn CLearnerProcess2b(s: &CLearner, packet: &CPacket) -> (result: CLearner)
+requires
+    s.valid(),
+    packet.valid(),
+    packet.msg is CMessage2b,
 ensures
     result.valid(),
     LLearnerProcess2b(s@, result@, packet@),
 {
-    unimplemented!()
+    let (bal_2b, opn_2b, val_2b) = match &packet.msg {
+        CMessage::CMessage2b { bal_2b, opn_2b, val_2b } => (*bal_2b, *opn_2b, val_2b),
+        _ => unreachable!(),
+    };
+    let (src_in_config, _) = s.constants.all.config.CGetReplicaIndex(&packet.src);
+    if !src_in_config || CBalLt(&bal_2b, &s.max_ballot_seen) {
+        // Branch 1: not a valid replica or old ballot — no change
+        s.clone_up_to_view()
+    } else if CBalLt(&s.max_ballot_seen, &bal_2b) {
+        // Branch 2: higher ballot — reset with singleton map
+        let mut senders = HashSet::new();
+        senders.insert(packet.src.clone_up_to_view());
+        let tup = CLearnerTuple {
+            received_2b_message_senders: senders,
+            candidate_learned_value: clone_request_batch_up_to_view(val_2b),
+        };
+        let mut new_state: CLearnerState = HashMap::new();
+        new_state.insert(opn_2b, tup);
+        CLearner {
+            constants: s.constants.clone_up_to_view(),
+            max_ballot_seen: bal_2b,
+            unexecuted_learner_state: new_state,
+        }
+    } else if !s.unexecuted_learner_state.contains_key(&opn_2b) {
+        // Branch 3: same ballot, new opn — insert new entry
+        let mut senders = HashSet::new();
+        senders.insert(packet.src.clone_up_to_view());
+        let tup = CLearnerTuple {
+            received_2b_message_senders: senders,
+            candidate_learned_value: clone_request_batch_up_to_view(val_2b),
+        };
+        let mut new_state = clone_clearnerstate(&s.unexecuted_learner_state);
+        new_state.insert(opn_2b, tup);
+        CLearner {
+            constants: s.constants.clone_up_to_view(),
+            max_ballot_seen: bal_2b,
+            unexecuted_learner_state: new_state,
+        }
+    } else {
+        let existing = &s.unexecuted_learner_state[&opn_2b];
+        if existing.received_2b_message_senders.contains(&packet.src) {
+            // Branch 4: already seen this sender — no change
+            s.clone_up_to_view()
+        } else {
+            // Branch 5: add sender to existing entry
+            let mut new_senders = clone_hashset(&existing.received_2b_message_senders);
+            new_senders.insert(packet.src.clone_up_to_view());
+            let tup = CLearnerTuple {
+                received_2b_message_senders: new_senders,
+                candidate_learned_value: clone_request_batch_up_to_view(&existing.candidate_learned_value),
+            };
+            let mut new_state = clone_clearnerstate(&s.unexecuted_learner_state);
+            new_state.insert(opn_2b, tup);
+            CLearner {
+                constants: s.constants.clone_up_to_view(),
+                max_ballot_seen: s.max_ballot_seen,
+                unexecuted_learner_state: new_state,
+            }
+        }
+    }
 }
 
 pub exec fn CLearnerForgetDecision(s: &CLearner, opn: &u64) -> (result: CLearner)
@@ -305,14 +370,23 @@ ensures
 
 }
 
-// TRANSLATE-TODO: not functionalizable: Output parameter 's_' is assigned inside a quantifier body (cannot convert quantified assignment to executable code)
+/// Quantified filter on HashMap: keep entries where key >= ops_complete.
+/// external_body because the spec uses biconditional quantifier that can't be
+/// directly verified through filter_clearnerstate's ensures.
 #[verifier(external_body)]
 pub exec fn CLearnerForgetOperationsBefore(s: &CLearner, ops_complete: &u64) -> (result: CLearner)
+requires
+    s.valid(),
 ensures
     result.valid(),
     LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int),
 {
-    unimplemented!()
+    let filtered = filter_clearnerstate(&s.unexecuted_learner_state, *ops_complete);
+    CLearner {
+        constants: s.constants.clone_up_to_view(),
+        max_ballot_seen: s.max_ballot_seen,
+        unexecuted_learner_state: filtered,
+    }
 }
 
 } // verus!
