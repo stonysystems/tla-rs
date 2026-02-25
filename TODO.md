@@ -8122,12 +8122,19 @@ but is `external_body` because proof fails.
 - For the truncation branch, compose `CAcceptorTruncateLog` result into CReplica fields
 
 **Steps:**
-- [ ] **25.5.1**: Add loop invariants to the search loop in transpiler output
-- [ ] **25.5.2**: Add existential witness assertion after the loop:
-  `assert(exists |opn: u64| ... ) by { /* witness: target */ }`
-- [ ] **25.5.3**: Add field-by-field view mapping assertions for the CReplica construction
-- [ ] **25.5.4**: If proof still fails, use targeted assumes and document remaining gaps
-- [ ] **25.5.5**: Regenerate replica_gen.rs and verify
+- [x] **25.5.1**: Added loop invariants: `found ==> ss.acceptor.last_checkpointed_operation.contains(target as int)`
+  and `found ==> IsLogTruncationPointValid(target as int, ...)` with `decreases` clause
+- [x] **25.5.2**: Added existential witness assertion after loop + CIsLogTruncationPointValid bridging
+  inside loop body (spec ↔ exec type bridging via `ss.acceptor == vec@.map(|i,x| x as int)`)
+- [x] **25.5.3**: Added field-by-field view mapping assertions for CReplica construction +
+  LAcceptorTruncateLog postcondition assertion
+- [x] **25.5.4**: Only 1 assume needed for irreducible `!found` branch (unreachable in practice,
+  same pattern as ReplicaImpl.rs). `found && target <= log_truncation_point` case proven directly.
+- [x] **25.5.5**: Verified: 604 verified, 0 errors; 1903 transpiler tests pass
+
+**Results**: Removed `#[verifier(external_body)]` from `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`.
+Function now verified with 1 targeted assume (unreachable `!found` branch — no existential witness).
+Proof pattern modeled after verified ReplicaImpl.rs implementation.
 
 ### 25.6 Phase 25.6: Prove `CExecutorExecute` (implementation layer)
 

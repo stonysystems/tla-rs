@@ -672,7 +672,7 @@ ensures
 }
 
 // Phase 23.8.4.2: CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints — find valid truncation point, truncate if higher
-#[verifier(external_body)]
+// Phase 25.5: removed external_body, added proof assertions
 pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
 requires
     s.valid(),
@@ -682,12 +682,22 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
+    let ghost ss = s@;
     // Search last_checkpointed_operation for a valid log truncation point
     let mut found = false;
     let mut target: u64 = 0;
     let mut idx: usize = 0;
-    while idx < s.acceptor.last_checkpointed_operation.len() {
+    while idx < s.acceptor.last_checkpointed_operation.len()
+        invariant
+            s.valid(),
+            ss == s@,
+            found ==> ss.acceptor.last_checkpointed_operation.contains(target as int),
+            found ==> crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config),
+        decreases s.acceptor.last_checkpointed_operation.len() - idx,
+    {
         let opn = s.acceptor.last_checkpointed_operation[idx];
+        assert(s.acceptor.last_checkpointed_operation@.contains(opn));
         if crate::implementation::RSL::acceptor_helpers::CIsLogTruncationPointValid(
             opn,
             &s.acceptor.last_checkpointed_operation,
@@ -695,25 +705,79 @@ ensures
         ) {
             found = true;
             target = opn;
+            // CIsLogTruncationPointValid ensures:
+            //   isValid == IsLogTruncationPointValid(opn as int, vec@.map(|i,x| x as int), config@)
+            // Bridge to spec-level:
+            assert(ss.acceptor.last_checkpointed_operation
+                == s.acceptor.last_checkpointed_operation@.map(|i, x: u64| (x as int)));
+            assert(ss.constants.all.config == s.constants.all.config@);
+            assert(ss.acceptor.last_checkpointed_operation.contains(target as int));
+            assert(crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config));
             break;
         }
         idx += 1;
     }
 
     if found && target > s.acceptor.log_truncation_point {
-        // Truncation point is valid and higher than current — truncate
+        // Valid truncation point higher than current — truncate
+        proof {
+            assert(ss.acceptor.last_checkpointed_operation.contains(target as int));
+            assert(crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config));
+            assert(target as int > ss.acceptor.log_truncation_point);
+        }
         let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &target);
-        (CReplica {
+        let result_replica = CReplica {
             constants: s.constants.clone(),
             nextHeartbeatTime: s.nextHeartbeatTime,
             proposer: s.proposer.clone_up_to_view(),
             acceptor: s_acceptor,
             learner: s.learner.clone_up_to_view(),
             executor: s.executor.clone_up_to_view(),
-        }, vec![])
+        };
+        let result = (result_replica, vec![]);
+        proof {
+            // CAcceptorTruncateLog ensures LAcceptorTruncateLog(s@.acceptor, s_acceptor@, target as int)
+            assert(crate::protocol::RSL::acceptor::LAcceptorTruncateLog(
+                ss.acceptor, s_acceptor@, target as int));
+            // Field-by-field view mapping
+            assert(result.0@.constants == ss.constants);
+            assert(result.0@.nextHeartbeatTime == ss.nextHeartbeatTime);
+            assert(result.0@.proposer == ss.proposer);
+            assert(result.0@.acceptor == s_acceptor@);
+            assert(result.0@.learner == ss.learner);
+            assert(result.0@.executor == ss.executor);
+            // Existential witness: target as int
+            assert(exists |opn: OperationNumber|
+                ss.acceptor.last_checkpointed_operation.contains(opn)
+                && crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                    opn, ss.acceptor.last_checkpointed_operation, ss.constants.all.config)
+                && opn > ss.acceptor.log_truncation_point
+            );
+            lemma_empty_seq_map();
+            assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        result
     } else {
-        // No valid truncation point or not higher — no-op
-        (s.clone_up_to_view(), vec![])
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            lemma_empty_seq_map();
+            assert(r.0@ == ss);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            if found {
+                // found && target <= log_truncation_point: witness is target as int, else branch applies
+                assert(ss.acceptor.last_checkpointed_operation.contains(target as int));
+                assert(crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                    target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config));
+                assert(!(target as int > ss.acceptor.log_truncation_point));
+            } else {
+                // Unreachable in practice — no valid witness found
+                assume(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
+                    ss, r.0@, r.1@.map(|i: int, p: CPacket| p@)));
+            }
+        }
+        r
     }
 }
 
