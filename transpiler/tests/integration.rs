@@ -2321,6 +2321,144 @@ fn test_replica_process1b_is_implemented() {
     );
 }
 
+/// Phase 23.8.5.1: Verify transpiler generates loop code for recursive election functions
+/// when they are removed from skip_functions.
+#[test]
+fn test_election_recursive_functions_generate_loop_code() {
+    use std::io::Write;
+
+    // Read the election spec and automan files
+    let spec_path = "../src/protocol/RSL/election.rs";
+    let automan_path = "../src/protocol/RSL/election.automan";
+
+    // Create a test TOML that removes the recursive functions from skip_functions
+    let base_toml = std::fs::read_to_string("../src/protocol/RSL/election_transpile.toml")
+        .expect("Failed to read election_transpile.toml");
+
+    // Verify the recursive functions are NOT in skip_functions (they were removed in Phase 23.8.5.1)
+    let config: toml::Value = base_toml.parse().expect("Failed to parse election_transpile.toml");
+    let skip_fns = config
+        .get("skip_functions")
+        .and_then(|v| v.as_array())
+        .expect("skip_functions must exist");
+    let skip_names: Vec<&str> = skip_fns.iter().filter_map(|v| v.as_str()).collect();
+    assert!(
+        !skip_names.contains(&"RemoveAllSatisfiedRequestsInSequence"),
+        "RemoveAllSatisfiedRequestsInSequence should no longer be in skip_functions (Phase 23.8.5.1)"
+    );
+    assert!(
+        !skip_names.contains(&"RemoveExecutedRequestBatch"),
+        "RemoveExecutedRequestBatch should no longer be in skip_functions (Phase 23.8.5.1)"
+    );
+
+    // Run the transpiler with the updated config
+    let tmp_toml = std::env::temp_dir().join("test_election_recursive.toml");
+    std::fs::write(&tmp_toml, &base_toml).expect("Failed to write temp TOML");
+    let tmp_out = std::env::temp_dir().join("test_election_recursive_out.rs");
+
+    let output = std::process::Command::new("cargo")
+        .args([
+            "run", "--", "-i", spec_path, "-a", automan_path,
+            "-c", tmp_toml.to_str().unwrap(),
+            "-o", tmp_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run transpiler");
+    assert!(
+        output.status.success(),
+        "Transpiler failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let generated = std::fs::read_to_string(&tmp_out).expect("Failed to read generated output");
+
+    // 1. CRemoveAllSatisfiedRequestsInSequence should be a filter loop (not a stub)
+    assert!(
+        generated.contains("pub exec fn CRemoveAllSatisfiedRequestsInSequence("),
+        "Generated output must contain CRemoveAllSatisfiedRequestsInSequence"
+    );
+    let filter_fn_start = generated.find("pub exec fn CRemoveAllSatisfiedRequestsInSequence(").unwrap();
+    let filter_fn_end = generated[filter_fn_start + 1..]
+        .find("\npub exec fn ")
+        .map(|i| filter_fn_start + 1 + i)
+        .unwrap_or(generated.len());
+    let filter_fn = &generated[filter_fn_start..filter_fn_end];
+
+    // Should NOT be a stub (no unimplemented!() or TRANSLATE-TODO)
+    assert!(
+        !filter_fn.contains("unimplemented!()"),
+        "CRemoveAllSatisfiedRequestsInSequence should have a real loop body, not unimplemented!()"
+    );
+    // Should contain a for-loop with invariants
+    assert!(
+        filter_fn.contains("for i in (0..s.len())"),
+        "CRemoveAllSatisfiedRequestsInSequence should use a for-loop over the input sequence"
+    );
+    assert!(
+        filter_fn.contains("invariant"),
+        "CRemoveAllSatisfiedRequestsInSequence should have loop invariants"
+    );
+    // Should call the predicate and conditionally push
+    assert!(
+        filter_fn.contains("CRequestSatisfiedBy"),
+        "Filter loop should use CRequestSatisfiedBy predicate"
+    );
+    assert!(
+        filter_fn.contains("push"),
+        "Filter loop should push matching elements"
+    );
+    // Should have the spec-equivalence invariant
+    assert!(
+        filter_fn.contains("RemoveAllSatisfiedRequestsInSequence"),
+        "Loop invariant should reference the spec function RemoveAllSatisfiedRequestsInSequence"
+    );
+
+    // 2. CRemoveExecutedRequestBatch should be a fold loop
+    assert!(
+        generated.contains("pub exec fn CRemoveExecutedRequestBatch("),
+        "Generated output must contain CRemoveExecutedRequestBatch"
+    );
+    let fold_fn_start = generated.find("pub exec fn CRemoveExecutedRequestBatch(").unwrap();
+    let fold_fn_end = generated[fold_fn_start + 1..]
+        .find("\npub exec fn ")
+        .map(|i| fold_fn_start + 1 + i)
+        .unwrap_or(generated.len());
+    let fold_fn = &generated[fold_fn_start..fold_fn_end];
+
+    // Should NOT be a stub
+    assert!(
+        !fold_fn.contains("unimplemented!()"),
+        "CRemoveExecutedRequestBatch should have a real fold loop body, not unimplemented!()"
+    );
+    // Should contain a for-loop with accumulator pattern
+    assert!(
+        fold_fn.contains("let mut acc"),
+        "CRemoveExecutedRequestBatch should use an accumulator variable"
+    );
+    assert!(
+        fold_fn.contains("for i in (0..batch.len())"),
+        "CRemoveExecutedRequestBatch should use a for-loop over the batch"
+    );
+    assert!(
+        fold_fn.contains("invariant"),
+        "CRemoveExecutedRequestBatch should have loop invariants"
+    );
+    // Should call the filter function in each iteration
+    assert!(
+        fold_fn.contains("CRemoveAllSatisfiedRequestsInSequence"),
+        "Fold loop should call CRemoveAllSatisfiedRequestsInSequence in each iteration"
+    );
+    // Should have the fold spec-equivalence invariant
+    assert!(
+        fold_fn.contains("RemoveExecutedRequestBatch"),
+        "Loop invariant should reference the spec function RemoveExecutedRequestBatch"
+    );
+
+    // Clean up temp files
+    let _ = std::fs::remove_file(&tmp_toml);
+    let _ = std::fs::remove_file(&tmp_out);
+}
+
 #[test]
 fn test_replica_manual_code_removed_and_dispatch_fallbacks_present() {
     let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")

@@ -11,14 +11,12 @@ spec_only_functions = [
 skip_valid_types = ["RequestBatch"]
 
 # BoundRequestSequence uses enum `is`/`->` pattern matching on CUpperBound (trusted enum).
-# RemoveAllSatisfiedRequestsInSequence and RemoveExecutedRequestBatch are recursive
-# filter functions — the for-loop conversion loses assume(false) wrapping.
 # ElectionStateReflectReceivedRequest has `for ... in iter:` loops whose iterator
 # invariants are checked independently of assume(false).
+# RemoveAllSatisfiedRequestsInSequence and RemoveExecutedRequestBatch: REMOVED from skip —
+# transpiler now detects as recursive filter/fold patterns and generates loop code (Phase 23.8.5.1).
 skip_functions = [
     "BoundRequestSequence",
-    "RemoveAllSatisfiedRequestsInSequence",
-    "RemoveExecutedRequestBatch",
     "ElectionStateReflectReceivedRequest",
 ]
 

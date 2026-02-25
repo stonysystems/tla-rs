@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 COMPLETE — all 11 non-IO `unimplemented!()` stubs eliminated (5 IO stubs remain, out of scope). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1873 total tests, 572 verified, 0 errors. Phase 23.8 COMPLETE — all 11 non-IO `unimplemented!()` stubs eliminated (5 IO stubs remain, out of scope). Phase 23.8.5 transpiler enhancements in progress (23.8.5.1 done). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7691,10 +7691,12 @@ because the code actually runs.
 
 Based on the 11 functions above, the transpiler needs these new code generation capabilities:
 
-- [ ] **23.8.5.1**: **Recursive spec → for/while loop**: Convert `decreases s.len()` recursive
-  functions to iterative loops. Pattern: `if s.len()==0 { base } else { f(head) op recurse(tail) }`
-  → `for i in 0..s.len() { accumulator = f(s[i]) op accumulator }`.
-  Affects: `CRemoveAllSatisfiedRequestsInSequence`, `CRemoveExecutedRequestBatch`.
+- [x] **23.8.5.1**: **Recursive spec → for/while loop**: ✅ Transpiler already detects these patterns
+  (`detect_filter_pattern` for inverted filter, `detect_fold_pattern` Type 1 for accumulator fold).
+  Removed `RemoveAllSatisfiedRequestsInSequence` and `RemoveExecutedRequestBatch` from
+  `skip_functions` in `election_transpile.toml`. Integration test
+  `test_election_recursive_functions_generate_loop_code` verifies transpiler generates
+  correct `for`-loop code with spec-equivalence invariants for both patterns.
 
 - [ ] **23.8.5.2**: **Existential → linear search loop**: Convert `exists |x| container.contains(x) && P(x)`
   to `for x in container.iter() { if P(x) { found = true; break } }`.
