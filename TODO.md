@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (5 non-IO remaining, 6 done: CBoundRequestSequence, CRemoveAllSatisfiedRequestsInSequence, CRemoveExecutedRequestBatch, CElectionStateReflectReceivedRequest, CLearnerProcess2b, CLearnerForgetOperationsBefore). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (2 non-IO remaining, 9 done). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7588,7 +7588,7 @@ If a function's proof cannot pass Verus, emit the real exec body anyway and use 
 proof lemmas (not `assume(false)`) to bridge the gap. This is strictly better than `unimplemented!()`
 because the code actually runs.
 
-**Current state**: 572 verified, 0 errors. 10 `TRANSLATE-TODO` stubs total (5 non-IO + 5 IO).
+**Current state**: 572 verified, 0 errors. 7 `TRANSLATE-TODO` stubs total (2 non-IO + 5 IO).
 
 #### 23.8.1 Election: 4 stubs → generate real loop-based implementations
 
@@ -7653,29 +7653,22 @@ because the code actually runs.
 | `CProposerNominateOldValueAndSend2a` | `exists \|p\|` in HashSet + spec predicate | linear search + `external_body` lemma for `LValIsHighestNumberedProposal` | HIGH |
 | `CProposerMaybeNominateValueAndSend2a` | 5-branch dispatcher | if-else chain delegating to above two | MEDIUM (depends on above) |
 
-- [ ] **23.8.3.1**: `CProposerNominateNewValueAndSend2a` — batch sizing + struct + broadcast.
-  Spec: compute batchSize → split request_queue → set timer → broadcast Message2a.
-  Transpiler should emit: conditional batch size computation, Vec subrange, timer enum selection,
-  `CBroadcastToEveryone` call. No loops needed.
-  Proof: struct field equality + CBroadcastToEveryone ensures; may need `external_body` lemma
-  for `UpperBoundedAddition` and timer view mapping.
+- [x] **23.8.3.1**: `CProposerNominateNewValueAndSend2a` — batch sizing + struct + broadcast. DONE.
+  Kept `external_body` with real body (Vec subrange + timer view mapping proof is complex).
+  Implementation: compute batch_size, split request_queue via truncate_vec, set timer,
+  broadcast CMessage2a via CBroadcastToEveryone, construct new CProposer.
+  572 verified, 0 errors.
 
-- [ ] **23.8.3.2**: `CProposerNominateOldValueAndSend2a` — existential search in HashSet.
-  Spec: `exists |p| received_1b_packets.contains(p) && LValIsHighestNumberedProposal(p.msg->votes[opn].max_val, ...)`.
-  Transpiler should emit: for loop over `received_1b_packets`, find packet with highest ballot
-  for `opn` in votes map, extract `max_val`, broadcast Message2a.
-  Proof: `LValIsHighestNumberedProposal` is a spec-only predicate (compares all packets' votes).
-  **Requires `external_body` proof lemma** to assert the found value satisfies the spec predicate,
-  because the exec loop cannot directly prove the forall-in-set property.
+- [x] **23.8.3.2**: `CProposerNominateOldValueAndSend2a` — existential search in HashSet. DONE.
+  Kept `external_body` with real body (exec loop can't prove forall-in-set spec predicate).
+  Implementation: iterate received_1b_packets via hashset_to_vec, find highest-ballot vote
+  for opn, extract max_val, broadcast CMessage2a. 572 verified, 0 errors.
 
-- [ ] **23.8.3.3**: `CProposerMaybeNominateValueAndSend2a` — 5-branch if-else dispatcher.
-  Spec: check `CanNominate` → check `AllAcceptorsHadNoProposal` → check `ExistsAcceptorHasProposal` →
-  delegate to NominateOld/NominateNew/set timer/no-op.
-  Transpiler should emit: sequential condition checks, delegate to the two Nominate functions.
-  Helpers `CProposerCanNominateUsingOperationNumber`, `CAllAcceptorsHadNoProposal`,
-  `CExistsAcceptorHasProposalLargeThanOpn` need exec implementations (may already exist in
-  ProposerImpl.rs or need new helpers).
-  Proof: depends on NominateOld/NominateNew ensures.
+- [x] **23.8.3.3**: `CProposerMaybeNominateValueAndSend2a` — 5-branch dispatcher. DONE.
+  Kept `external_body` with real body (sub-function ensures composition).
+  Implementation: check CProposerCanNominateUsingOperationNumber, CAllAcceptorsHadNoProposal,
+  CExistsAcceptorHasProposalLargeThanOpn; delegate to NominateOld/NominateNew or handle
+  timer/no-op branches. All helpers already exist in ProposerImpl.rs. 572 verified, 0 errors.
 
 #### 23.8.4 Replica: 2 non-IO stubs → generate real implementations
 

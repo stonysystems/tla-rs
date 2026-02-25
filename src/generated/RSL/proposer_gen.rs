@@ -393,40 +393,181 @@ ensures
 
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// Batch slicing + struct update + broadcast CMessage2a.
+/// external_body because Vec subrange + timer view mapping proof is complex.
 #[verifier(external_body)]
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
+requires
+    s.valid(),
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LProposerNominateNewValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-    unimplemented!()
+    let queue_len = s.request_queue.len() as u64;
+    let max_batch = s.constants.all.params.max_batch_size;
+    let batch_size: u64 = if queue_len <= max_batch {
+        queue_len
+    } else {
+        max_batch
+    };
+    let v = truncate_vec(&s.request_queue, 0, batch_size as usize);
+    let new_queue = truncate_vec(&s.request_queue, batch_size as usize, queue_len as usize);
+    let opn = s.next_operation_number_to_propose;
+    let timer = if queue_len > batch_size {
+        CIncompleteBatchTimer::CIncompleteBatchTimerOn {
+            when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
+        }
+    } else {
+        CIncompleteBatchTimer::CIncompleteBatchTimerOff
+    };
+    let msg = CMessage::CMessage2a {
+        bal_2a: s.max_ballot_i_sent_1a,
+        opn_2a: opn,
+        val_2a: clone_request_batch_up_to_view(&v),
+    };
+    let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(
+        &s.constants.all.config,
+        &s.constants.my_index,
+        &msg,
+    );
+    let new_proposer = CProposer {
+        constants: s.constants.clone(),
+        current_state: s.current_state,
+        request_queue: new_queue,
+        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+        next_operation_number_to_propose: opn + 1,
+        received_1b_packets: clone_hashset(&s.received_1b_packets),
+        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
+        incomplete_batch_timer: timer,
+        election_state: s.election_state.clone(),
+        max_log_truncation_point: 0u64,
+        max_opn_with_proposal: 0u64,
+    };
+    (new_proposer, sent_packets)
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// Existential search in received_1b_packets for highest-numbered proposal at opn.
+/// external_body because exec loop cannot directly prove the forall-in-set spec predicate.
 #[verifier(external_body)]
 pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
+requires
+    s.valid(),
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LProposerNominateOldValueAndSend2a(s@, result.0@, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-    unimplemented!()
+    let opn = s.next_operation_number_to_propose;
+    // Find the highest-ballot vote for opn across all 1b packets
+    let mut best_val: Option<CRequestBatch> = None;
+    let mut best_bal: Option<CBallot> = None;
+    let packets = hashset_to_vec(&s.received_1b_packets);
+    let mut idx: usize = 0;
+    while idx < packets.len() {
+        let p = &packets[idx];
+        match &p.msg {
+            CMessage::CMessage1b { bal_1b: _, log_truncation_point: _, votes } => {
+                if votes.contains_key(&opn) {
+                    let vote = &votes[&opn];
+                    let is_better = match &best_bal {
+                        None => true,
+                        Some(bb) => CBalLt(bb, &vote.max_value_bal),
+                    };
+                    if is_better {
+                        best_val = Some(clone_request_batch_up_to_view(&vote.max_val));
+                        best_bal = Some(vote.max_value_bal);
+                    }
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    // Precondition (!AllAcceptorsHadNoProposal) guarantees we find a value
+    let val = best_val.unwrap();
+    let msg = CMessage::CMessage2a {
+        bal_2a: s.max_ballot_i_sent_1a,
+        opn_2a: opn,
+        val_2a: clone_request_batch_up_to_view(&val),
+    };
+    let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(
+        &s.constants.all.config,
+        &s.constants.my_index,
+        &msg,
+    );
+    let new_proposer = CProposer {
+        constants: s.constants.clone(),
+        current_state: s.current_state,
+        request_queue: clone_request_queue(&s.request_queue),
+        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+        next_operation_number_to_propose: opn + 1,
+        received_1b_packets: clone_hashset(&s.received_1b_packets),
+        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
+        incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
+        election_state: s.election_state.clone(),
+        max_log_truncation_point: 0u64,
+        max_opn_with_proposal: 0u64,
+    };
+    (new_proposer, sent_packets)
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// 5-branch dispatcher: delegates to NominateOld/NominateNew or handles timer/no-op.
+/// external_body because sub-function ensures need to be composed.
 #[verifier(external_body)]
 pub exec fn CProposerMaybeNominateValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
+requires
+    s.valid(),
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
-    unimplemented!()
+    let opn = s.next_operation_number_to_propose;
+    if !s.CProposerCanNominateUsingOperationNumber(*log_truncation_point, opn) {
+        // Branch 1: can't nominate — no change
+        (s.clone_up_to_view(), vec![])
+    } else if !CProposer::CAllAcceptorsHadNoProposal(&s.received_1b_packets, opn) {
+        // Branch 2: old value exists — nominate old
+        CProposerNominateOldValueAndSend2a(s, log_truncation_point)
+    } else {
+        let has_proposal_larger = CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, opn);
+        let queue_len = s.request_queue.len() as u64;
+        let max_batch = s.constants.all.params.max_batch_size;
+        let timer_on_and_expired = match &s.incomplete_batch_timer {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } => *clock >= *when,
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff => false,
+        };
+        if has_proposal_larger || queue_len >= max_batch || (queue_len > 0 && timer_on_and_expired) {
+            // Branch 3: nominate new value
+            CProposerNominateNewValueAndSend2a(s, clock, log_truncation_point)
+        } else if queue_len > 0 && matches!(&s.incomplete_batch_timer, CIncompleteBatchTimer::CIncompleteBatchTimerOff) {
+            // Branch 4: start batch timer — no packets
+            let timer = CIncompleteBatchTimer::CIncompleteBatchTimerOn {
+                when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
+            };
+            let new_proposer = CProposer {
+                constants: s.constants.clone(),
+                current_state: s.current_state,
+                request_queue: clone_request_queue(&s.request_queue),
+                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+                next_operation_number_to_propose: s.next_operation_number_to_propose,
+                received_1b_packets: clone_hashset(&s.received_1b_packets),
+                highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
+                incomplete_batch_timer: timer,
+                election_state: s.election_state.clone(),
+                max_log_truncation_point: 0u64,
+                max_opn_with_proposal: 0u64,
+            };
+            (new_proposer, vec![])
+        } else {
+            // Branch 5: default — no change
+            (s.clone_up_to_view(), vec![])
+        }
+    }
 }
 
 pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -> (result: CProposer)
