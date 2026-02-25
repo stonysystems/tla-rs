@@ -63,6 +63,10 @@ nat_type = "u64"
 "bal_heartbeat" = "CBalEq"
 "current_view" = "CBalEq"
 
+# Per-function extra requires clauses (arithmetic bounds the transpiler can't derive)
+[extra_requires]
+"CComputeSuccessorView" = ["b.seqno < c.params.max_integer_val"]
+
 [extra_fields]
 "CElectionState.cur_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
 "CElectionState.prev_req_set" = "HashSet<CRequestHeader> = HashSet::new()"

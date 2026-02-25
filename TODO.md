@@ -7970,15 +7970,27 @@ the same thing — adds per-function preconditions. The transpiler also has `pro
 for proof control. Replace the hardcoded check with these existing config mechanisms.
 
 **Steps:**
-- [ ] **25.1.1**: Move the extra requires `b.seqno < c.params.max_integer_val` to TOML
+- [x] **25.1.1**: Move the extra requires `b.seqno < c.params.max_integer_val` to TOML
   `extra_requires` for `CComputeSuccessorView` in `election_transpile.toml`
-- [ ] **25.1.2**: Generalize the "targeted assume reduction" pattern: instead of checking
-  one function name, check if the function is in `proven_functions` (or a new TOML list
-  `targeted_proof_functions`) — if so, emit `assert(result@ == ...)` instead of `assume(false)`
-- [ ] **25.1.3**: Delete `is_targeted_assume_reduction_candidate()` and
-  `targeted_assume_reduction_requires()` functions from translator/mod.rs
-- [ ] **25.1.4**: Add transpiler tests verifying the config-driven behavior matches old output
-- [ ] **25.1.5**: Regenerate election_gen.rs to verify identical output
+  *(done: added `[extra_requires]` section with `"CComputeSuccessorView" = ["b.seqno < c.params.max_integer_val"]`)*
+- [x] **25.1.2**: Generalize the "targeted assume reduction" pattern: the targeted proof
+  reduction was redundant since `ComputeSuccessorView` was already in `proven_functions`
+  (line 5304 returns early before the targeted check). Removed the entire targeted candidate
+  block from `apply_assume_postcondition_strategy()`. The `proven_functions` + `extra_requires`
+  combination now handles this case generically.
+- [x] **25.1.3**: Delete `is_targeted_assume_reduction_candidate()`,
+  `targeted_assume_reduction_requires()`, and `targeted_postcondition_clause()` from
+  translator/mod.rs. Removed all 3 caller sites.
+- [x] **25.1.4**: Add transpiler tests verifying the config-driven behavior matches old output
+  *(done: 3 new tests — `test_extra_requires_in_helper_functions`,
+  `test_extra_requires_not_duplicated_in_helpers`,
+  `test_no_hardcoded_compute_successor_view_in_translator`. Also updated existing test
+  to `test_config_driven_extra_requires_for_compute_successor_view`.)*
+- [x] **25.1.5**: Regenerated election_gen.rs — `CComputeSuccessorView` output identical
+  (same requires, ensures, body). Other diffs are from `--auto-skip --proof-fallback` flags
+  vs the manually-modified checked-in file (expected).
+  Also added `extra_requires` support to `build_helper_requires()` using `translate_definition_name()`
+  (not `translate_name()`, which returns spec-style names for calls).
 
 ### 25.2 Phase 25.2: Generalize UpperBound arithmetic helpers
 

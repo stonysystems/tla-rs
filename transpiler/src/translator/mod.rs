@@ -4207,9 +4207,8 @@ impl Translator {
         // Build return type: Vec<ElementType>
         let return_type = self.build_helper_return_type(func)?;
 
-        // Build requires clauses (validity predicates)
-        let mut requires = self.build_helper_requires(func);
-        requires.extend(self.targeted_assume_reduction_requires(func, &exec_name));
+        // Build requires clauses (validity predicates + extra_requires from TOML)
+        let requires = self.build_helper_requires(func);
 
         // Build ensures clause linking to spec function
         let ensures = self.build_helper_ensures(func);
@@ -4269,9 +4268,8 @@ impl Translator {
         // Build return type: Vec<ElementType>
         let return_type = self.build_helper_return_type(func)?;
 
-        // Build requires clauses (validity predicates)
-        let mut requires = self.build_helper_requires(func);
-        requires.extend(self.targeted_assume_reduction_requires(func, &exec_name));
+        // Build requires clauses (validity predicates + extra_requires from TOML)
+        let requires = self.build_helper_requires(func);
 
         // Build ensures clause linking to spec function
         let ensures = self.build_helper_ensures(func);
@@ -5228,9 +5226,8 @@ impl Translator {
         // Build return type from annotation
         let return_type = self.build_helper_return_type(func)?;
 
-        // Build requires clauses (validity for inputs)
-        let mut requires = self.build_helper_requires(func);
-        requires.extend(self.targeted_assume_reduction_requires(func, &exec_name));
+        // Build requires clauses (validity for inputs + extra_requires from TOML)
+        let requires = self.build_helper_requires(func);
 
         // Build ensures clauses (result.valid() + result@ == spec_call)
         let ensures = self.build_helper_ensures(func);
@@ -5287,13 +5284,12 @@ impl Translator {
 
     /// Apply assume-postconditions strategy:
     /// - for proven_functions, emit body without assume(false)
-    /// - for targeted first-leaf reductions, emit a proof wrapper
     /// - otherwise keep trusted `assume(false)` fallback
     fn apply_assume_postcondition_strategy(
         &self,
         func: &AnnotatedFunction,
-        exec_name: &str,
-        ensures: &[String],
+        _exec_name: &str,
+        _ensures: &[String],
         body: ExecExpr,
     ) -> ExecExpr {
         if !self.config.assume_postconditions {
@@ -5305,64 +5301,10 @@ impl Translator {
             return body;
         }
 
-        if self.is_targeted_assume_reduction_candidate(func, exec_name) {
-            if let Some(post_eq) = self.targeted_postcondition_clause(ensures) {
-                return ExecExpr::Block(vec![
-                    ExecExpr::Let {
-                        pattern: "result".to_string(),
-                        ty: None,
-                        value: Box::new(body),
-                    },
-                    ExecExpr::ProofBlock {
-                        stmts: vec![ExecExpr::Assert(Box::new(ExecExpr::Literal(post_eq)))],
-                    },
-                    ExecExpr::Var("result".to_string()),
-                ]);
-            }
-        }
-
         ExecExpr::Block(vec![
             ExecExpr::Assume(Box::new(ExecExpr::Literal("false".to_string()))),
             body,
         ])
-    }
-
-    /// First reduction leaf for TODO 12.2.8c: target one simple helper in RSL election.
-    fn is_targeted_assume_reduction_candidate(
-        &self,
-        func: &AnnotatedFunction,
-        exec_name: &str,
-    ) -> bool {
-        func.spec_fn.name == "ComputeSuccessorView" && exec_name == "CComputeSuccessorView"
-    }
-
-    /// Extra requires for targeted reduction helpers to keep generated arithmetic total.
-    fn targeted_assume_reduction_requires(
-        &self,
-        func: &AnnotatedFunction,
-        exec_name: &str,
-    ) -> Vec<String> {
-        if !self.is_targeted_assume_reduction_candidate(func, exec_name) {
-            return Vec::new();
-        }
-
-        let has_b = func.spec_fn.params.iter().any(|p| p.name == "b");
-        let has_c = func.spec_fn.params.iter().any(|p| p.name == "c");
-        if has_b && has_c {
-            vec!["b.seqno < c.params.max_integer_val".to_string()]
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Extract the `result@ == ...` postcondition clause used for targeted proof reduction.
-    fn targeted_postcondition_clause(&self, ensures: &[String]) -> Option<String> {
-        Some(
-            ensures
-            .iter()
-            .find(|clause| clause.trim_start().starts_with("result@ =="))?
-            .clone(),
-        )
     }
 
     /// Build decreases clauses for recursive functions
@@ -5972,6 +5914,18 @@ impl Translator {
         {
             for recommends_expr in &func.spec_fn.recommends {
                 requires.push(self.expr_to_requires_string(recommends_expr));
+            }
+        }
+
+        // Add per-function extra requires from TOML configuration.
+        // These are manually specified preconditions (e.g., arithmetic bounds)
+        // that the transpiler can't derive automatically.
+        let exec_name = self.translate_definition_name(&func.spec_fn.name);
+        if let Some(extra) = self.config.extra_requires.get(&exec_name) {
+            for req in extra {
+                if !requires.contains(req) {
+                    requires.push(req.clone());
+                }
             }
         }
 
@@ -24440,64 +24394,48 @@ mod tests {
     }
 
     #[test]
-    fn test_assume_postconditions_targeted_reduction_compute_successor_view() {
+    fn test_config_driven_extra_requires_for_compute_successor_view() {
+        // Phase 25.1: ComputeSuccessorView's extra requires are now config-driven
+        // via extra_requires TOML, not hardcoded in the translator.
+        // When in proven_functions + extra_requires, the function should:
+        // 1. Have the extra requires clause
+        // 2. NOT have assume(false) wrapper
         let mut config = TranslatorConfig::default();
         config.assume_postconditions = true;
+        config
+            .proven_functions
+            .insert("ComputeSuccessorView".to_string());
+        config.extra_requires.insert(
+            "CComputeSuccessorView".to_string(),
+            vec!["b.seqno < c.params.max_integer_val".to_string()],
+        );
         let translator = Translator::new(config);
         let annotated = make_helper_for_assume_postconditions_tests("ComputeSuccessorView");
 
         let exec_fn = translator
             .translate_helper(&annotated)
             .expect("ComputeSuccessorView helper should translate");
+
+        // Extra requires should come from TOML config
         assert!(
             exec_fn
                 .requires
                 .iter()
                 .any(|r| r == "b.seqno < c.params.max_integer_val"),
-            "Targeted helper should add overflow-safety precondition; exec_fn.name={}, requires={:?}",
-            exec_fn.name,
+            "Config-driven extra_requires should add overflow-safety precondition; requires={:?}",
             exec_fn.requires
         );
 
+        // Since it's in proven_functions, body should NOT have assume(false)
         match &exec_fn.body {
             ExecExpr::Block(stmts) => {
                 assert!(
-                    !stmts.is_empty(),
-                    "Targeted reduction should emit a wrapped block"
-                );
-                assert!(
-                    !is_assume_false_stmt(&stmts[0]),
-                    "Targeted reduction should remove leading assume(false)"
-                );
-                assert!(
-                    matches!(&stmts[0], ExecExpr::Let { pattern, .. } if pattern == "result"),
-                    "Targeted reduction should bind body to result"
-                );
-                match &stmts[1] {
-                    ExecExpr::ProofBlock { stmts: proof_stmts } => {
-                        assert_eq!(
-                            proof_stmts.len(),
-                            1,
-                            "Targeted proof block should contain a single assert"
-                        );
-                        assert!(
-                            matches!(
-                                        &proof_stmts[0],
-                                        ExecExpr::Assert(inner)
-                                            if matches!(inner.as_ref(), ExecExpr::Literal(clause)
-                                        if clause.contains("result@ == ComputeSuccessorView(b@, c@)"))
-                            ),
-                            "Proof block should assert the helper postcondition"
-                        );
-                    }
-                    other => panic!("Expected ProofBlock at index 1, got {:?}", other),
-                }
-                assert!(
-                    matches!(&stmts[2], ExecExpr::Var(name) if name == "result"),
-                    "Targeted reduction should return the bound result"
+                    stmts.is_empty() || !is_assume_false_stmt(&stmts[0]),
+                    "proven_functions + extra_requires should not emit assume(false)"
                 );
             }
-            other => panic!("Expected wrapped Block body, got {:?}", other),
+            // Non-block body means no assume(false) was prepended — also correct
+            _ => {}
         }
     }
 
@@ -24552,6 +24490,80 @@ mod tests {
             // Non-block body means no assume(false) was prepended — also correct
             _ => {}
         }
+    }
+
+    #[test]
+    fn test_extra_requires_in_helper_functions() {
+        // extra_requires from TOML should be applied to helper functions
+        // (e.g., CComputeSuccessorView gets "b.seqno < c.params.max_integer_val")
+        let mut config = TranslatorConfig::default();
+        config.assume_postconditions = true;
+        config
+            .proven_functions
+            .insert("ComputeSuccessorView".to_string());
+        config.extra_requires.insert(
+            "CComputeSuccessorView".to_string(),
+            vec!["b.seqno < c.params.max_integer_val".to_string()],
+        );
+        let translator = Translator::new(config);
+        let annotated = make_helper_for_assume_postconditions_tests("ComputeSuccessorView");
+
+        let exec_fn = translator
+            .translate_helper(&annotated)
+            .expect("ComputeSuccessorView helper should translate");
+
+        // The generated requires should include the extra_requires from TOML
+        assert!(
+            exec_fn
+                .requires
+                .iter()
+                .any(|r| r.contains("b.seqno < c.params.max_integer_val")),
+            "extra_requires should appear in helper function requires: {:?}",
+            exec_fn.requires
+        );
+    }
+
+    #[test]
+    fn test_extra_requires_not_duplicated_in_helpers() {
+        // If extra_requires matches an auto-derived requires, it should not be duplicated
+        let mut config = TranslatorConfig::default();
+        config.extra_requires.insert(
+            "CRequestsMatch".to_string(),
+            vec!["r1.valid()".to_string()],
+        );
+        let translator = Translator::new(config);
+        let annotated = make_helper_for_assume_postconditions_tests("RequestsMatch");
+
+        let exec_fn = translator
+            .translate_helper(&annotated)
+            .expect("RequestsMatch helper should translate");
+
+        // Count occurrences of "r1.valid()" in requires
+        let count = exec_fn
+            .requires
+            .iter()
+            .filter(|r| r.contains("r1.valid()"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "r1.valid() should appear exactly once (not duplicated): {:?}",
+            exec_fn.requires
+        );
+    }
+
+    #[test]
+    fn test_no_hardcoded_compute_successor_view_in_translator() {
+        // Verify that no hardcoded "ComputeSuccessorView" string remains in the
+        // translator logic (outside of tests). This is a regression guard for Phase 25.1.
+        let source = include_str!("mod.rs");
+        let test_marker = "mod tests {";
+        let test_start = source.find(test_marker).unwrap_or(source.len());
+        let non_test_code = &source[..test_start];
+
+        assert!(
+            !non_test_code.contains("ComputeSuccessorView"),
+            "No hardcoded 'ComputeSuccessorView' should remain in non-test translator code"
+        );
     }
 
     /// Helper to create a minimal TransformContext for unit testing.
