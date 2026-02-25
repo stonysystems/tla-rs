@@ -131,7 +131,7 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
     requires
         pkt.msg is CMessage1b,
     ensures
-        res ==> forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@,
+        res == (forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
 {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     broadcast use vstd::hash_map::group_hash_map_axioms;

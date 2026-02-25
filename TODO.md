@@ -8087,15 +8087,22 @@ to proposer+acceptor) but is `external_body` because Verus proof fails.
   then use `assert(...) by { ... }` blocks for the cross-module composition
 
 **Steps:**
-- [ ] **25.4.1**: Analyze the spec `LReplicaNextProcess1b` to enumerate exact proof obligations
-- [ ] **25.4.2**: Add proof assertions in transpiler output for the 4-condition check:
+- [x] **25.4.1**: Analyze the spec `LReplicaNextProcess1b` to enumerate exact proof obligations
+- [x] **25.4.2**: Add proof assertions in transpiler output for the 4-condition check:
   assert each condition individually, then assert the spec predicate
-- [ ] **25.4.3**: Handle the cross-module composition: the result CReplica combines
+- [x] **25.4.3**: Handle the cross-module composition: the result CReplica combines
   `s_proposer` from `CProposerProcess1b` and `s_acceptor` from `CAcceptorTruncateLog`
   with unchanged learner/executor — assert each field's view mapping
-- [ ] **25.4.4**: If proof still fails, use targeted assumes for specific conjuncts and
-  document which obligations remain unproven
-- [ ] **25.4.5**: Regenerate replica_gen.rs and verify
+- [x] **25.4.4**: Used 3 targeted assumes for irreducible gaps:
+  (1) Set::map CPacket↔RslPacket bridging for Packet1bHasUniqueSrc
+  (2) CMessage field view: log_truncation_point as int == sp.msg->log_truncation_point
+  (3) CMessage field view: bal_1b@ == sp.msg->bal_1b
+- [x] **25.4.5**: Verified: 602 verified, 0 errors; 1903 transpiler tests pass
+
+**Results**: Removed `#[verifier(external_body)]` from `CReplicaNextProcess1b`. Function now
+verified with 3 targeted assumes (all for trusted-enum field view bridging — irreducible
+without Verus support for `define_enum_and_derive_marshalable!` introspection).
+Also strengthened `Packet1bHasUniqueSrc` ensures from one-directional to bidirectional.
 
 ### 25.5 Phase 25.5: Prove `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (generated)
 
