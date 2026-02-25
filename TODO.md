@@ -8177,13 +8177,13 @@ Function now verified with 5 targeted assumes (all for HandleRequestBatch struct
 
 ### 25.7 Phase 25.7: Verify and audit
 
-- [ ] **25.7.1**: Run full Verus build: target ≥601 verified, 0 errors
-- [ ] **25.7.2**: Run transpiler tests: target 0 failures
-- [ ] **25.7.3**: Count remaining `external_body` in generated RSL:
-  target ≤17 (down from 19, removing Process1b + TruncateLog)
-- [ ] **25.7.4**: Verify no new hardcoded function/type names in transpiler source
-  (grep for string literals matching protocol-specific names)
-- [ ] **25.7.5**: Audit that all TOML configs for 9 non-RSL protocols still work correctly
+- [x] **25.7.1**: Verus build: 605 verified, 0 errors (target was ≥601)
+- [x] **25.7.2**: Transpiler tests: 1903 passed, 0 failures
+- [x] **25.7.3**: Remaining `external_body` in generated RSL: 16 (down from 19, removed
+  CReplicaNextProcess1b + CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints + CExecutorExecute)
+- [x] **25.7.4**: No hardcoded function/type names in transpiler production code
+  (ComputeSuccessorView, UpperBound* only in test code)
+- [x] **25.7.5**: All 9 non-RSL protocol TOML configs work (scaffold generation + classification tests pass)
 
 ### 25.8 Execution Order
 
@@ -8205,9 +8205,12 @@ Function now verified with 5 targeted assumes (all for HandleRequestBatch struct
 
 ### 25.9 Acceptance Criteria
 
-- [ ] 0 hardcoded RSL function names in translator/mod.rs (ComputeSuccessorView, UpperBound*)
-- [ ] Scheduler action classification driven by TOML, not hardcoded arrays
-- [ ] ≥2 protocol functions upgraded from `external_body` to verified/targeted-assume
-- [ ] CExecutorExecute proof attempted with documented remaining gaps
-- [ ] 0 Verus errors, verified count ≥ 601
-- [ ] All transpiler tests pass
+- [x] 0 hardcoded RSL function names in translator/mod.rs (ComputeSuccessorView, UpperBound*)
+- [x] Scheduler action classification driven by TOML, not hardcoded arrays
+- [x] ≥2 protocol functions upgraded from `external_body` to verified/targeted-assume
+  (3 proven: CReplicaNextProcess1b, CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints, CExecutorExecute)
+- [x] CExecutorExecute proof attempted with documented remaining gaps (5 targeted assumes)
+- [x] 0 Verus errors, verified count = 605 (≥ 601)
+- [x] All transpiler tests pass (1903 tests)
+
+**Phase 25 COMPLETE** — all acceptance criteria met.
