@@ -103,6 +103,21 @@ nat_type = "u64"
 "seqno_req" = "CMessage::CMessageRequest"
 "val" = "CMessage::CMessageRequest"
 
+# Inline expansion configuration for arithmetic helper functions.
+[inline_expansions.LeqUpperBound]
+spec_binary_op = "<="
+strategy = "conditional_binary"
+op = "<="
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
+[inline_expansions.LtUpperBound]
+spec_binary_op = "<"
+strategy = "conditional_binary"
+op = "<"
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true

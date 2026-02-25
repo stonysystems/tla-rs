@@ -244,6 +244,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub extra_requires: HashMap<String, Vec<String>>,
 
+    /// Inline expansion configuration for spec function calls.
+    /// Maps spec function name to expansion config controlling both
+    /// spec-context expansion (binary op) and exec-context call shaping.
+    /// e.g., {"LeqUpperBound" = {spec_binary_op = "<=", strategy = "conditional_binary", ...}}
+    #[serde(default)]
+    pub inline_expansions: HashMap<String, InlineExpansionConfig>,
+
     /// Maps field names to equality comparison functions.
     /// When a `==` comparison involves a field in this map, the transpiler generates
     /// a function call instead of using `==` (which may use external PartialEq).
@@ -919,6 +926,48 @@ pub struct ModuleConfig {
     /// Custom includes for the generated module
     #[serde(default)]
     pub custom_includes: Vec<String>,
+}
+
+/// Exec-level call strategy for inline-expanded functions.
+///
+/// Determines how function arguments are shaped and whether the call
+/// is lowered to a binary operator in exec context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "strategy")]
+pub enum ExecCallStrategy {
+    /// All args forced to owned via `clone_if_input_ref`, kept as function call.
+    /// e.g., `UpperBoundedAddition(x, y, z)` → all args owned
+    #[serde(rename = "owned_call")]
+    OwnedCall,
+
+    /// Args are owned; if arg at `condition_arg` has a type matching `condition_types`,
+    /// keep as function call; otherwise lower to binary op.
+    /// e.g., `LtUpperBound(x, y)` → if y is UpperBound-typed → call, else → `x < y`
+    #[serde(rename = "conditional_binary")]
+    ConditionalBinary {
+        op: String,
+        condition_arg: usize,
+        condition_types: Vec<String>,
+    },
+
+    /// Specific args wrapped in `&` via `ensure_borrowed_expr`; rest are owned.
+    /// e.g., `BoundRequestSequence(seq, n)` → `&seq, owned n`
+    #[serde(rename = "mixed_borrow")]
+    MixedBorrowCall { borrowed_args: Vec<usize> },
+}
+
+/// Configuration for inline expansion of a spec function call.
+///
+/// Controls how a function is expanded in both spec/ensures context
+/// (via `spec_binary_op`) and exec body context (via `exec` strategy).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InlineExpansionConfig {
+    /// If set, `F(a, b)` → `(a op b)` in spec/ensures context (expr_to_simple_string).
+    #[serde(default)]
+    pub spec_binary_op: Option<String>,
+    /// Exec call strategy.
+    #[serde(flatten)]
+    pub exec: ExecCallStrategy,
 }
 
 /// Configuration for transforming a spec function call into a method call.

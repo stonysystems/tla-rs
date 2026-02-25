@@ -67,6 +67,29 @@ nat_type = "u64"
 [extra_requires]
 "CComputeSuccessorView" = ["b.seqno < c.params.max_integer_val"]
 
+# Inline expansion configuration for arithmetic helper functions.
+# Controls how spec function calls are shaped in both spec and exec contexts.
+[inline_expansions.LeqUpperBound]
+spec_binary_op = "<="
+strategy = "conditional_binary"
+op = "<="
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
+[inline_expansions.LtUpperBound]
+spec_binary_op = "<"
+strategy = "conditional_binary"
+op = "<"
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
+[inline_expansions.UpperBoundedAddition]
+strategy = "owned_call"
+
+[inline_expansions.BoundRequestSequence]
+strategy = "mixed_borrow"
+borrowed_args = [0]
+
 [extra_fields]
 "CElectionState.cur_req_set" = "HashSet<CRequestHeader> = HashSet::new()"
 "CElectionState.prev_req_set" = "HashSet<CRequestHeader> = HashSet::new()"

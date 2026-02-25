@@ -21,7 +21,7 @@ pub type HelperCallResult = (
 );
 
 /// Configuration for method call transformation (imported from config module)
-pub use crate::config::MethodCallConfig;
+pub use crate::config::{ExecCallStrategy, InlineExpansionConfig, MethodCallConfig};
 
 /// Configuration for code generation
 #[derive(Debug, Clone)]
@@ -105,6 +105,9 @@ pub struct TranslatorConfig {
     /// These are manually specified preconditions that the transpiler can't derive.
     /// e.g., {"CInit" = ["c.node_id < c.chain_len"]}
     pub extra_requires: HashMap<String, Vec<String>>,
+    /// Inline expansion configuration for spec function calls.
+    /// Maps spec function name to expansion config.
+    pub inline_expansions: HashMap<String, InlineExpansionConfig>,
     /// Clone method to use in generated loops (e.g., "clone_up_to_view").
     /// When set, uses `x.clone_up_to_view()` instead of `x.clone()`.
     pub clone_method: Option<String>,
@@ -165,6 +168,7 @@ impl Default for TranslatorConfig {
             hashmap_index_fields: HashSet::new(),
             type_view_exprs: HashMap::new(),
             extra_requires: HashMap::new(),
+            inline_expansions: HashMap::new(),
             clone_method: None,
             clone_up_to_view_types: HashSet::new(),
             eq_function_fields: HashMap::new(),
@@ -1929,33 +1933,47 @@ impl Translator {
         false
     }
 
-    fn is_upper_bound_type(ty: &Type) -> bool {
+    fn is_type_matching_names(ty: &Type, names: &[String]) -> bool {
         match ty {
             Type::Named(path) => path
                 .segments
                 .last()
-                .map(|name| name == "UpperBound" || name == "CUpperBound")
+                .map(|seg| names.iter().any(|n| n == seg))
                 .unwrap_or(false),
-            Type::Reference { ty, .. } => Self::is_upper_bound_type(ty),
+            Type::Reference { ty, .. } => Self::is_type_matching_names(ty, names),
             _ => false,
         }
     }
 
-    fn is_upper_bound_typed_expr(&self, expr: &Expr, ctx: &TransformContext) -> bool {
+    fn is_expr_typed_matching(&self, expr: &Expr, ctx: &TransformContext, names: &[String]) -> bool {
         match expr {
             Expr::Ident(name) => {
                 ctx.input_types
                     .get(name)
-                    .map(Self::is_upper_bound_type)
+                    .map(|ty| Self::is_type_matching_names(ty, names))
                     .unwrap_or(false)
                     || ctx
                         .output_types
                         .get(name)
-                        .map(Self::is_upper_bound_type)
+                        .map(|ty| Self::is_type_matching_names(ty, names))
                         .unwrap_or(false)
             }
             _ => false,
         }
+    }
+
+    /// Look up inline expansion config for a function name.
+    /// Checks both the raw name and the name with exec prefix stripped.
+    fn get_inline_expansion<'a>(&'a self, name: &str) -> Option<&'a InlineExpansionConfig> {
+        self.config.inline_expansions.get(name).or_else(|| {
+            if name.starts_with(&self.config.exec_prefix) {
+                self.config
+                    .inline_expansions
+                    .get(&name[self.config.exec_prefix.len()..])
+            } else {
+                None
+            }
+        })
     }
 
     /// Apply the configured clone method to an expression.
@@ -7634,20 +7652,16 @@ impl Translator {
                     }
                 }
 
-                // Check for inline-expanded spec functions in exec body
-                // LeqUpperBound(x, bound) -> (x <= bound) since bound is always UpperBoundFinite in concrete types
-                // LtUpperBound(x, bound) -> (x < bound)
+                // Config-driven inline expansion: spec binary op (e.g., LeqUpperBound → <=)
                 if func.segments.len() == 1 {
-                    let raw_name = &func.segments[0];
-                    if raw_name == "LeqUpperBound" && args.len() == 2 {
-                        let a = self.expr_to_simple_string(&args[0]);
-                        let b = self.expr_to_simple_string(&args[1]);
-                        return format!("({} <= {})", a, b);
-                    }
-                    if raw_name == "LtUpperBound" && args.len() == 2 {
-                        let a = self.expr_to_simple_string(&args[0]);
-                        let b = self.expr_to_simple_string(&args[1]);
-                        return format!("({} < {})", a, b);
+                    if let Some(expansion) = self.get_inline_expansion(&func.segments[0]) {
+                        if let Some(ref op) = expansion.spec_binary_op {
+                            if args.len() == 2 {
+                                let a = self.expr_to_simple_string(&args[0]);
+                                let b = self.expr_to_simple_string(&args[1]);
+                                return format!("({} {} {})", a, op, b);
+                            }
+                        }
                     }
                 }
 
@@ -9271,68 +9285,76 @@ impl Translator {
             }
         }
 
-        // Bound helper call lowering: CUpperBoundedAddition expects owned u64 args.
-        // Avoid auto-borrowing and normalize input refs to owned values.
-        if matches!(func_name, "UpperBoundedAddition" | "CUpperBoundedAddition") {
-            let translated_args: TranspileResult<Vec<_>> = args
-                .iter()
-                .map(|a| {
-                    let transformed = self.transform_expr(a, ctx)?;
-                    Ok(self.clone_if_input_ref(transformed, ctx))
-                })
-                .collect();
-            return Ok(ExecExpr::Call {
-                func: self.translate_name(func_name),
-                args: translated_args?,
-            });
-        }
-
-        // Bound predicate call lowering:
-        // LtUpperBound(x, max_u64) in exec context should be a concrete comparison.
-        // Keep call form only when rhs is already typed as UpperBound/CUpperBound.
-        if func_name == "LtUpperBound" && args.len() == 2 {
-            let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
-            let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
-            if self.is_upper_bound_typed_expr(&args[1], ctx) {
-                return Ok(ExecExpr::Call {
-                    func: self.translate_name(func_name),
-                    args: vec![lhs, rhs],
-                });
+        // Config-driven inline expansion: exec call shaping
+        // Handles owned-call, conditional binary lowering, and mixed borrow patterns.
+        if let Some(expansion) = self.get_inline_expansion(func_name) {
+            match &expansion.exec {
+                ExecCallStrategy::OwnedCall => {
+                    let translated_args: TranspileResult<Vec<_>> = args
+                        .iter()
+                        .map(|a| {
+                            let transformed = self.transform_expr(a, ctx)?;
+                            Ok(self.clone_if_input_ref(transformed, ctx))
+                        })
+                        .collect();
+                    return Ok(ExecExpr::Call {
+                        func: self.translate_name(func_name),
+                        args: translated_args?,
+                    });
+                }
+                ExecCallStrategy::ConditionalBinary {
+                    op,
+                    condition_arg,
+                    condition_types,
+                } => {
+                    let translated_args: TranspileResult<Vec<_>> = args
+                        .iter()
+                        .map(|a| {
+                            let transformed = self.transform_expr(a, ctx)?;
+                            Ok(self.clone_if_input_ref(transformed, ctx))
+                        })
+                        .collect();
+                    let translated_args = translated_args?;
+                    if args.len() == 2
+                        && *condition_arg < args.len()
+                        && self.is_expr_typed_matching(
+                            &args[*condition_arg],
+                            ctx,
+                            condition_types,
+                        )
+                    {
+                        return Ok(ExecExpr::Call {
+                            func: self.translate_name(func_name),
+                            args: translated_args,
+                        });
+                    }
+                    if args.len() == 2 {
+                        return Ok(ExecExpr::Binary {
+                            lhs: Box::new(translated_args[0].clone()),
+                            op: op.clone(),
+                            rhs: Box::new(translated_args[1].clone()),
+                        });
+                    }
+                }
+                ExecCallStrategy::MixedBorrowCall { borrowed_args } => {
+                    let translated_args: TranspileResult<Vec<_>> = args
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| {
+                            let transformed = self.transform_expr(a, ctx)?;
+                            if borrowed_args.contains(&i) {
+                                Ok(Self::ensure_borrowed_expr(transformed))
+                            } else {
+                                Ok(self.clone_if_input_ref(transformed, ctx))
+                            }
+                        })
+                        .collect();
+                    return Ok(ExecExpr::Call {
+                        func: self.translate_name(func_name),
+                        args: translated_args?,
+                    });
+                }
             }
-            return Ok(ExecExpr::Binary {
-                lhs: Box::new(lhs),
-                op: "<".to_string(),
-                rhs: Box::new(rhs),
-            });
-        }
-
-        // LeqUpperBound(x, max_u64) in exec context should also be a concrete comparison.
-        if func_name == "LeqUpperBound" && args.len() == 2 {
-            let lhs = self.clone_if_input_ref(self.transform_expr(&args[0], ctx)?, ctx);
-            let rhs = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
-            if self.is_upper_bound_typed_expr(&args[1], ctx) {
-                return Ok(ExecExpr::Call {
-                    func: self.translate_name(func_name),
-                    args: vec![lhs, rhs],
-                });
-            }
-            return Ok(ExecExpr::Binary {
-                lhs: Box::new(lhs),
-                op: "<=".to_string(),
-                rhs: Box::new(rhs),
-            });
-        }
-
-        // Bound request sequence helper lowering:
-        // Keep first arg as borrowed Vec and second arg as owned scalar bound.
-        if matches!(func_name, "BoundRequestSequence" | "CBoundRequestSequence") && args.len() == 2
-        {
-            let seq_expr = self.transform_expr(&args[0], ctx)?;
-            let bound_expr = self.clone_if_input_ref(self.transform_expr(&args[1], ctx)?, ctx);
-            return Ok(ExecExpr::Call {
-                func: self.translate_name(func_name),
-                args: vec![Self::ensure_borrowed_expr(seq_expr), bound_expr],
-            });
         }
 
         // Check if this is a helper call with output parameters
@@ -15058,8 +15080,16 @@ mod tests {
 
     #[test]
     fn test_transform_upper_bounded_addition_uses_owned_args() {
-        let translator = Translator::default();
-        let config = TranslatorConfig::default();
+        use crate::config::ExecCallStrategy;
+        let mut config = TranslatorConfig::default();
+        config.inline_expansions.insert(
+            "UpperBoundedAddition".to_string(),
+            InlineExpansionConfig {
+                spec_binary_op: None,
+                exec: ExecCallStrategy::OwnedCall,
+            },
+        );
+        let translator = Translator::new(config.clone());
 
         let mut input_types = HashMap::new();
         input_types.insert("clock".to_string(), Type::Int);
@@ -15129,10 +15159,25 @@ mod tests {
 
     #[test]
     fn test_transform_lt_upper_bound_lowers_numeric_rhs_to_binary_lt() {
+        use crate::config::ExecCallStrategy;
         let mut config = TranslatorConfig::default();
         config
             .spec_only_functions
             .insert("LtUpperBound".to_string());
+        config.inline_expansions.insert(
+            "LtUpperBound".to_string(),
+            InlineExpansionConfig {
+                spec_binary_op: Some("<".to_string()),
+                exec: ExecCallStrategy::ConditionalBinary {
+                    op: "<".to_string(),
+                    condition_arg: 1,
+                    condition_types: vec![
+                        "UpperBound".to_string(),
+                        "CUpperBound".to_string(),
+                    ],
+                },
+            },
+        );
         let translator = Translator::new(config);
 
         let mut input_types = HashMap::new();
@@ -15209,10 +15254,20 @@ mod tests {
 
     #[test]
     fn test_transform_bound_request_sequence_argument_shaping() {
+        use crate::config::ExecCallStrategy;
         let mut config = TranslatorConfig::default();
         config.function_paths.insert(
             "BoundRequestSequence".to_string(),
             "crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence".to_string(),
+        );
+        config.inline_expansions.insert(
+            "BoundRequestSequence".to_string(),
+            InlineExpansionConfig {
+                spec_binary_op: None,
+                exec: ExecCallStrategy::MixedBorrowCall {
+                    borrowed_args: vec![0],
+                },
+            },
         );
         config.vec_fields = [
             "requests_received_prev_epochs".to_string(),
@@ -25036,5 +25091,191 @@ mod tests {
             "Input param of unlisted CAcceptor type should use regular .clone(): {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_inline_expansion_spec_binary_op() {
+        use crate::config::ExecCallStrategy;
+        let mut config = TranslatorConfig::default();
+        config.inline_expansions.insert(
+            "LeqUpperBound".to_string(),
+            InlineExpansionConfig {
+                spec_binary_op: Some("<=".to_string()),
+                exec: ExecCallStrategy::ConditionalBinary {
+                    op: "<=".to_string(),
+                    condition_arg: 1,
+                    condition_types: vec![
+                        "UpperBound".to_string(),
+                        "CUpperBound".to_string(),
+                    ],
+                },
+            },
+        );
+        let translator = Translator::new(config);
+
+        let call = Expr::Call {
+            func: crate::ast::Path::single("LeqUpperBound".to_string()),
+            args: vec![
+                Expr::Ident("x".to_string()),
+                Expr::Ident("y".to_string()),
+            ],
+        };
+
+        let result = translator.expr_to_simple_string(&call);
+        assert_eq!(result, "(x <= y)", "spec_binary_op should expand LeqUpperBound to <=");
+    }
+
+    #[test]
+    fn test_inline_expansion_conditional_binary_keeps_call_for_matching_type() {
+        use crate::config::ExecCallStrategy;
+        let mut config = TranslatorConfig::default();
+        config
+            .spec_only_functions
+            .insert("LeqUpperBound".to_string());
+        config.inline_expansions.insert(
+            "LeqUpperBound".to_string(),
+            InlineExpansionConfig {
+                spec_binary_op: Some("<=".to_string()),
+                exec: ExecCallStrategy::ConditionalBinary {
+                    op: "<=".to_string(),
+                    condition_arg: 1,
+                    condition_types: vec![
+                        "UpperBound".to_string(),
+                        "CUpperBound".to_string(),
+                    ],
+                },
+            },
+        );
+        let translator = Translator::new(config);
+
+        // When rhs is UpperBound-typed, should keep as function call
+        let mut input_types = HashMap::new();
+        input_types.insert("x".to_string(), Type::Int);
+        input_types.insert(
+            "bound".to_string(),
+            Type::Named(crate::ast::Path::single("CUpperBound".to_string())),
+        );
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["x".to_string(), "bound".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = Expr::Call {
+            func: crate::ast::Path::single("LeqUpperBound".to_string()),
+            args: vec![
+                Expr::Ident("x".to_string()),
+                Expr::Ident("bound".to_string()),
+            ],
+        };
+
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("LeqUpperBound with UpperBound-typed rhs should transform");
+
+        match result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "LeqUpperBound");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!(
+                "Expected call expression when rhs is UpperBound-typed, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_no_hardcoded_upper_bound_functions_in_translator() {
+        // Verify that no hardcoded UpperBound function name checks remain in the
+        // translator logic (outside of tests). This is a regression guard for Phase 25.2.
+        let source = include_str!("mod.rs");
+        let test_marker = "mod tests {";
+        let test_start = source.find(test_marker).unwrap_or(source.len());
+        let non_test_code = &source[..test_start];
+
+        // These patterns were the hardcoded matches that should now be config-driven
+        let forbidden_patterns = [
+            "\"UpperBoundedAddition\"",
+            "\"CUpperBoundedAddition\"",
+            "\"BoundRequestSequence\"",
+            "\"CBoundRequestSequence\"",
+            "is_upper_bound_type",
+            "is_upper_bound_typed_expr",
+        ];
+
+        for pattern in &forbidden_patterns {
+            assert!(
+                !non_test_code.contains(pattern),
+                "No hardcoded '{}' should remain in non-test translator code",
+                pattern
+            );
+        }
+    }
+
+    #[test]
+    fn test_inline_expansion_config_serde_roundtrip() {
+        use crate::config::{ExecCallStrategy, InlineExpansionConfig, TranspilerConfig};
+
+        let toml_str = r#"
+[inline_expansions.LeqUpperBound]
+spec_binary_op = "<="
+strategy = "conditional_binary"
+op = "<="
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
+[inline_expansions.UpperBoundedAddition]
+strategy = "owned_call"
+
+[inline_expansions.BoundRequestSequence]
+strategy = "mixed_borrow"
+borrowed_args = [0]
+"#;
+
+        let config: TranspilerConfig =
+            toml::from_str(toml_str).expect("Should parse inline_expansions TOML");
+
+        assert_eq!(config.inline_expansions.len(), 3);
+
+        let leq = config.inline_expansions.get("LeqUpperBound").unwrap();
+        assert_eq!(leq.spec_binary_op, Some("<=".to_string()));
+        match &leq.exec {
+            ExecCallStrategy::ConditionalBinary {
+                op,
+                condition_arg,
+                condition_types,
+            } => {
+                assert_eq!(op, "<=");
+                assert_eq!(*condition_arg, 1);
+                assert_eq!(condition_types.len(), 2);
+            }
+            other => panic!("Expected ConditionalBinary, got {:?}", other),
+        }
+
+        let uba = config
+            .inline_expansions
+            .get("UpperBoundedAddition")
+            .unwrap();
+        assert!(uba.spec_binary_op.is_none());
+        assert!(matches!(uba.exec, ExecCallStrategy::OwnedCall));
+
+        let brs = config
+            .inline_expansions
+            .get("BoundRequestSequence")
+            .unwrap();
+        assert!(brs.spec_binary_op.is_none());
+        match &brs.exec {
+            ExecCallStrategy::MixedBorrowCall { borrowed_args } => {
+                assert_eq!(borrowed_args, &[0]);
+            }
+            other => panic!("Expected MixedBorrowCall, got {:?}", other),
+        }
     }
 }

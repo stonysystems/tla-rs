@@ -87,6 +87,14 @@ nat_type = "u64"
 [function_paths]
 "BroadcastToEveryone" = "crate::generated::RSL::broadcast_gen::CBroadcastToEveryone"
 
+# Inline expansion configuration for arithmetic helper functions.
+[inline_expansions.LeqUpperBound]
+spec_binary_op = "<="
+strategy = "conditional_binary"
+op = "<="
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
 [extra_fields]
 "CAcceptor.min_vote_opn" = "u64 = 0u64"
 

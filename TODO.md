@@ -8018,14 +8018,25 @@ names to their exec-level expansions:
 ```
 
 **Steps:**
-- [ ] **25.2.1**: Design `InlineExpansionConfig` struct in config.rs with variants:
-  `BinaryOp { op, condition }`, `OwnedCall`, `MixedBorrowCall { borrow, own }`
-- [ ] **25.2.2**: Add `[inline_expansions]` section to TranspilerConfig with serde support
-- [ ] **25.2.3**: Replace hardcoded checks in `expr_to_simple_string()` (line 7686) and
-  `transform_call()` (line 9322) with config table lookups
-- [ ] **25.2.4**: Move the 4 function entries to RSL TOML configs (or a shared base config)
-- [ ] **25.2.5**: Add transpiler tests for config-driven inline expansion
-- [ ] **25.2.6**: Regenerate all RSL modules, verify identical output
+- [x] **25.2.1**: Design `InlineExpansionConfig` struct in config.rs with variants:
+  `ExecCallStrategy::OwnedCall`, `ConditionalBinary { op, condition_arg, condition_types }`,
+  `MixedBorrowCall { borrowed_args }` — plus `spec_binary_op` for ensures expansion.
+  Implemented as `#[serde(tag = "strategy")]` enum + `#[serde(flatten)]` struct.
+- [x] **25.2.2**: Add `[inline_expansions]` section to TranspilerConfig with serde support.
+  Added `inline_expansions: HashMap<String, InlineExpansionConfig>` with `#[serde(default)]`
+  to both `TranspilerConfig` (TOML) and `TranslatorConfig` (runtime). Pass-through in main.rs.
+- [x] **25.2.3**: Replace hardcoded checks in `expr_to_simple_string()` and `transform_call()`
+  with config table lookups via `get_inline_expansion()` helper (handles C-prefix stripping).
+  Deleted all 4 hardcoded blocks (UpperBoundedAddition, LtUpperBound, LeqUpperBound,
+  BoundRequestSequence). Generalized `is_upper_bound_type` → `is_type_matching_names`.
+- [x] **25.2.4**: Move the 4 function entries to 6 RSL TOML configs:
+  election, proposer, replica, acceptor, executor, transpile.
+- [x] **25.2.5**: Add 4 new transpiler tests: `test_inline_expansion_spec_binary_op`,
+  `test_inline_expansion_conditional_binary_keeps_call_for_matching_type`,
+  `test_no_hardcoded_upper_bound_functions_in_translator` (regression guard),
+  `test_inline_expansion_config_serde_roundtrip`. Updated 3 existing tests.
+  1461 unit + 432 integration = 1893 tests pass.
+- [x] **25.2.6**: Verified: 601 verified, 0 errors (unchanged from Phase 25.1).
 
 ### 25.3 Phase 25.3: Move scheduler action classification to TOML
 

@@ -110,6 +110,10 @@ nat_type = "u64"
 "max_ballot_i_sent_1a" = "CBalEq"
 "bal_1b" = "CBalEq"
 
+# Inline expansion configuration for arithmetic helper functions.
+[inline_expansions.UpperBoundedAddition]
+strategy = "owned_call"
+
 [extra_fields]
 "CProposer.max_log_truncation_point" = "u64 = 0u64"
 "CProposer.max_opn_with_proposal" = "u64 = 0u64"

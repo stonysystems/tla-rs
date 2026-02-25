@@ -132,6 +132,24 @@ nat_type = "u64"
 "logTruncationPoint_2" = "CMessage::CMessageStartingPhase2"
 "v" = "COutstandingOperation::COutstandingOpKnown"
 
+# Inline expansion configuration for arithmetic helper functions.
+[inline_expansions.LeqUpperBound]
+spec_binary_op = "<="
+strategy = "conditional_binary"
+op = "<="
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
+[inline_expansions.LtUpperBound]
+spec_binary_op = "<"
+strategy = "conditional_binary"
+op = "<"
+condition_arg = 1
+condition_types = ["UpperBound", "CUpperBound"]
+
+[inline_expansions.UpperBoundedAddition]
+strategy = "owned_call"
+
 [output]
 generate_abstraction_fns = true
 generate_validity_predicates = true
