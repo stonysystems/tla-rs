@@ -68,16 +68,24 @@ ensures
 }
 
 /// Connects HashMap.contains_key(&key) through abstractify_clearnerstate to spec Map[key as int].
-#[verifier(external_body)]
 proof fn lemma_clearnerstate_contains_key(m: CLearnerState, key: u64)
     requires
         clearnerstate_is_valid(m),
     ensures
         m@.contains_key(key) == abstractify_clearnerstate(m).contains_key(key as int),
-{}
+{
+    // abstractify_clearnerstate(m) = Map::new(|ak: int| exists |k: u64| m@.contains_key(k) && k@ == ak, ...)
+    // Map::new(f, g).contains_key(x) <==> f(x)
+    // So abstractify_clearnerstate(m).contains_key(key as int) <==>
+    //   exists |k: u64| m@.contains_key(k) && k as int == key as int
+    // Forward: m@.contains_key(key) ==> witness k = key
+    if m@.contains_key(key) {
+        assert(m@.contains_key(key) && key as int == key as int);
+    }
+    // Backward: exists |k| ... && k as int == key as int ==> k == key ==> m@.contains_key(key)
+}
 
 /// Connects HashMap[key] through abstractify_clearnerstate to spec Map[key as int] value.
-#[verifier(external_body)]
 proof fn lemma_clearnerstate_get(m: CLearnerState, key: u64)
     requires
         clearnerstate_is_valid(m),
@@ -85,17 +93,40 @@ proof fn lemma_clearnerstate_get(m: CLearnerState, key: u64)
     ensures
         abstractify_clearnerstate(m).contains_key(key as int),
         m@[key]@ == abstractify_clearnerstate(m)[key as int],
-{}
+{
+    // First ensure the key is in the abstracted map
+    lemma_clearnerstate_contains_key(m, key);
+    // The value at key as int in abstractify_clearnerstate(m) is:
+    //   let k = choose |k: u64| m@.contains_key(k) && k as int == key as int;
+    //   m@[k]@
+    // Since k as int == key as int and both are u64, k == key.
+    // So m@[k]@ == m@[key]@
+    let k = choose |k: u64| m@.contains_key(k) && k as int == key as int;
+    assert(m@.contains_key(key) && key as int == key as int);
+    assert(k as int == key as int);
+    // u64 as int is injective:
+    assert(k == key);
+}
 
 /// Instantiates the clearnerstate_is_valid quantifier at a specific key.
-#[verifier(external_body)]
 proof fn lemma_clearnerstate_value_valid(m: CLearnerState, key: u64)
     requires
         clearnerstate_is_valid(m),
         m@.contains_key(key),
     ensures
         m@[key].valid(),
-{}
+{
+    // clearnerstate_is_valid → clearnerstate_is_abstractable(m) &&
+    //   forall |i| m@.contains_key(i) ==> COperationNumberIsValid(i) && m@[i].valid()
+    // Re-derive the quantifier with an explicit trigger to ensure SMT matches:
+    assert forall |i: u64| m@.contains_key(i) implies COperationNumberIsValid(i) && (#[trigger] m@[i]).valid() by {
+        // This should follow from clearnerstate_is_valid(m) unfolding
+        assert(clearnerstate_is_valid(m));
+        // Mention both potential auto-trigger terms for i
+        let ghost _ = m@[i];
+        let ghost _ = COperationNumberIsValid(i);
+    };
+}
 
 
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)

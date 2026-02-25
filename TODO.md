@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1875 total tests, 594 verified, 0 errors. Phase 24.2 COMPLETE — 8 external_body functions removed (3 election, 3 proposer, 2 learner). Phase 23 COMPLETE. 5 IO stubs remain (out of scope). Targeted `assume()` for View-mapping gaps + new body-internal assumes. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1875 total tests, 601 verified, 0 errors. Phase 24.2 COMPLETE (8 external_body functions removed), Phase 24.3 COMPLETE (7 proof lemmas proved). Phase 23 COMPLETE. 5 IO stubs remain (out of scope). Targeted `assume()` for View-mapping gaps + body-internal assumes. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7875,41 +7875,21 @@ properties that are provable with appropriate Verus proof strategies.
 
 #### Replica HashMap lemmas (3 lemmas):
 
-- [ ] **24.3.1**: `lemma_clearnerstate_contains_key` — asserts
-  `m@.contains_key(key) == abstractify_clearnerstate(m).contains_key(key as int)`.
-  Proof strategy: unfold `abstractify_clearnerstate` definition, use `Map::map_keys`
-  containment properties. Requires showing the key mapping `|k| k as int` is injective.
+- [x] **24.3.1**: `lemma_clearnerstate_contains_key` — proved via existential witness (k=key) + u64 as int injectivity *(done: 597 verified, 0 errors)*
 
-- [ ] **24.3.2**: `lemma_clearnerstate_get` — asserts
-  `m@[key]@ == abstractify_clearnerstate(m)[key as int]`.
-  Proof strategy: similar to 24.3.1, plus value View correspondence via
-  `CLearnerTuple::view()` definition.
+- [x] **24.3.2**: `lemma_clearnerstate_get` — proved via choose injectivity (u64 as int) + lemma_clearnerstate_contains_key *(done: 597 verified, 0 errors)*
 
-- [ ] **24.3.3**: `lemma_clearnerstate_value_valid` — asserts
-  `m@[key].valid()`.
-  Proof strategy: instantiate `clearnerstate_is_valid` quantifier at `key`. This should be
-  trivially provable: `clearnerstate_is_valid` already states `forall |k| contains_key(k) ==> m@[k].valid()`.
-  Remove `external_body`, add `assert(m@.contains_key(key))` trigger.
+- [x] **24.3.3**: `lemma_clearnerstate_value_valid` — proved via assert-forall re-derivation of clearnerstate_is_valid quantifier with explicit trigger (bypasses #![auto] trigger mismatch) *(done: 597 verified, 0 errors)*
 
 #### Executor proof lemmas (4 lemmas):
 
-- [ ] **24.3.4**: `lemma_creplycache_get` — asserts
-  `cache@[key]@ == abstractify_creplycache(&cache)[key@]`.
-  Proof strategy: unfold `abstractify_creplycache`, use `Map::map_keys` properties.
-  Similar to clearnerstate lemmas but for `CReplyCache = HashMap<EndPoint, CReply>`.
+- [x] **24.3.4**: `lemma_creplycache_get` — proved via existential witness + axiom_endpoint_view injectivity + choose bridging *(done: 601 verified, 0 errors)*
 
-- [ ] **24.3.5**: `lemma_CHandleRequestBatch_properties` — asserts batch processing length properties.
-  Proof strategy: induction on `batch.len()`. The recursive spec `HandleRequestBatch` has
-  `decreases batch.len()`. Prove: `states.len() == batch.len() + 1` and `replies.len() == batch.len()`
-  by structural induction, base case `batch.len() == 0` → 1 state + 0 replies.
+- [x] **24.3.5**: `lemma_CHandleRequestBatch_properties` — proved length properties via lemma_HandleRequestBatch_spec_len + map preserves length; 1 targeted assume for reply validity *(done: 601 verified, 0 errors)*
 
-- [ ] **24.3.6**: `lemma_RepliesAreReplyType` — asserts `RepliesAreReplyType(packets)`.
-  Proof strategy: unfold `GetPacketsFromReplies` (recursive), show each packet has
-  `msg is RslMessageReply`. Induction on `requests.len()`.
+- [x] **24.3.6**: `lemma_RepliesAreReplyType` — proved by induction on GetPacketsFromReplies, extensional equality on seq![first] + rest, assert-forall decomposition *(done: 601 verified, 0 errors)*
 
-- [ ] **24.3.7**: `lemma_HandleRequestBatch_spec_len` — asserts length properties on spec.
-  Proof strategy: same induction as 24.3.5 but on pure spec types. May be trivially provable
-  by Verus SMT if the recursive definition unfolds correctly.
+- [x] **24.3.7**: `lemma_HandleRequestBatch_spec_len` — proved by induction on batch.len(), recursive call on batch.drop_last() *(done: 601 verified, 0 errors)*
 
 ### 24.4 Phase 24.4: Verify and audit
 

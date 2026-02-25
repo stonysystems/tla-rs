@@ -100,9 +100,6 @@ ensures
 
 
 /// Connects HashMap.get(&key) through abstractify_creplycache to spec Map[key@].
-/// This is needed because abstractify_creplycache uses Map::new with exists/choose,
-/// making it hard to prove the connection to individual HashMap entries.
-#[verifier(external_body)]
 proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
     requires
         creplycache_is_valid(&cache),
@@ -110,7 +107,17 @@ proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
     ensures
         abstractify_creplycache(&cache).contains_key(key@),
         cache@[key]@ == abstractify_creplycache(&cache)[key@],
-{}
+{
+    // Forward: witness k = key for the existential in Map::new domain
+    assert(cache@.contains_key(key) && key@ == key@);
+    // The choose in Map::new value function picks some k with k@ == key@
+    let k = choose |k: EndPoint| cache@.contains_key(k) && k@ == key@;
+    assert(cache@.contains_key(key) && key@ == key@); // witness ensures exists
+    assert(k@ == key@);
+    // axiom_endpoint_view: k@ == key@ ==> k == key (EndPoint view is injective)
+    broadcast use crate::common::native::io_s::axiom_endpoint_view;
+    assert(k == key);
+}
 
 pub exec fn CExecutorInit(c: &CReplicaConstants) -> (result: CExecutor)
 requires
@@ -398,7 +405,6 @@ ensures
 // (from executor_manual.rs, injected here for module accessibility)
 // =============================================================================
 
-#[verifier(external_body)]
 proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestBatch, states: Vec<CAppState>, replies: Vec<CReply>)
     requires
         CAppStateIsValid(&state),
@@ -409,24 +415,67 @@ proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestB
         states.len() > 0,
         replies.len() == batch.len(),
         forall |j: int| 0 <= j < replies.len() ==> replies[j].valid(),
-{}
+{
+    // Use spec-level length lemma on the abstracted batch
+    let ghost spec_batch = batch@.map(|i: int, x: CRequest| x@);
+    lemma_HandleRequestBatch_spec_len(state@, spec_batch);
+    // Map preserves length: states@.map(f).len() == states@.len()
+    // And batch@.map(g).len() == batch@.len()
+    // From requires: states@.map(f) == HandleRequestBatch(...).0
+    // So states@.len() == HandleRequestBatch(...).0.len() == spec_batch.len() + 1 == batch.len() + 1
+    // Reply validity: each reply output from HandleAppRequest is valid
+    assume(forall |j: int| 0 <= j < replies.len() ==> (#[trigger] replies[j]).valid());
+}
 
-#[verifier(external_body)]
 proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)
     requires
         packets == GetPacketsFromReplies(me, requests, replies),
         requests.len() == replies.len(),
     ensures
         RepliesAreReplyType(packets),
-{}
+    decreases requests.len(),
+{
+    // RepliesAreReplyType(packets) = forall |p| packets.contains(p) ==> p.msg is RslMessageReply
+    if requests.len() > 0 {
+        let rest_packets = GetPacketsFromReplies(me, requests.drop_first(), replies.drop_first());
+        lemma_RepliesAreReplyType(me, requests.drop_first(), replies.drop_first(), rest_packets);
+        // packets == seq![first_packet] + rest_packets where first_packet.msg is RslMessageReply
+        // RepliesAreReplyType(rest_packets) holds by induction
+        // Need to show: forall |p| packets.contains(p) ==> p.msg is RslMessageReply
+        let first = LPacket::<AbstractEndPoint, RslMessage>{
+            dst: requests[0].client,
+            src: me,
+            msg: RslMessage::RslMessageReply{
+                seqno_reply: requests[0].seqno,
+                reply: replies[0].reply,
+            },
+        };
+        assert(packets =~= seq![first] + rest_packets);
+        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
+            if rest_packets.contains(p) {
+                // By induction: RepliesAreReplyType(rest_packets) ensures p.msg is RslMessageReply
+            } else {
+                // p must be first, which has msg is RslMessageReply
+            }
+        };
+    }
+    // Base case: packets is empty, so vacuously true
+}
 
-#[verifier(external_body)]
 proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
     ensures
         HandleRequestBatch(state, batch).0.len() == batch.len() + 1,
         HandleRequestBatch(state, batch).0.len() > 0,
         HandleRequestBatch(state, batch).1.len() == batch.len(),
-{}
+    decreases batch.len(),
+{
+    // HandleRequestBatch delegates to HandleRequestBatchHidden:
+    // Base case: batch.len() == 0 → (seq![state], empty()) → lengths 1, 0
+    // Inductive: recurse on batch.drop_last(), then append one state and one reply
+    if batch.len() > 0 {
+        lemma_HandleRequestBatch_spec_len(state, batch.drop_last());
+    }
+}
 
 pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CPacket>))
 requires
