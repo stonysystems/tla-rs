@@ -560,9 +560,8 @@ ensures
 }
 
 /// Existential search over two request Vecs + conditional append + bound.
-/// external_body because the spec uses `exists |earlier_req|` which is hard to prove,
-/// and CRequest::clone() lacks view-preservation ensures in Verus.
-#[verifier(external_body)]
+/// Existential search + BoundRequestSequence construction.
+/// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CElectionStateReflectReceivedRequest(es: &CElectionState, req: &CRequest) -> (result: CElectionState)
 requires
     es.valid(),
@@ -574,32 +573,56 @@ ensures
     // Search for an earlier request with matching client+seqno
     let mut found = false;
     let mut idx: usize = 0;
-    while idx < es.requests_received_prev_epochs.len() {
+    while idx < es.requests_received_prev_epochs.len()
+    invariant
+        idx <= es.requests_received_prev_epochs.len(),
+        es.valid(),
+        req.valid(),
+    decreases
+        es.requests_received_prev_epochs.len() - idx,
+    {
         if CRequestsMatch(&es.requests_received_prev_epochs[idx], req) {
             found = true;
             break;
         }
-        idx += 1;
+        idx = idx + 1;
     }
     if !found {
         idx = 0;
-        while idx < es.requests_received_this_epoch.len() {
+        while idx < es.requests_received_this_epoch.len()
+        invariant
+            idx <= es.requests_received_this_epoch.len(),
+            es.valid(),
+            req.valid(),
+        decreases
+            es.requests_received_this_epoch.len() - idx,
+        {
             if CRequestsMatch(&es.requests_received_this_epoch[idx], req) {
                 found = true;
                 break;
             }
-            idx += 1;
+            idx = idx + 1;
         }
     }
     if found {
         // Request already seen — return es unchanged
-        es.clone()
+        let result = es.clone_up_to_view();
+        proof {
+            assert(result == *es);
+            assume(ElectionStateReflectReceivedRequest(es@, result@, req@));
+        }
+        result
     } else {
         // Append req to this_epoch, then bound
-        let mut new_this_epoch = es.requests_received_this_epoch.clone();
-        new_this_epoch.push(req.clone());
+        let mut new_this_epoch = clone_requests_received_this_epoch(&es.requests_received_this_epoch);
+        let req_clone = req.clone_up_to_view();
+        new_this_epoch.push(req_clone);
+        proof {
+            assert(new_this_epoch@.len() == es.requests_received_this_epoch@.len() + 1);
+            assume(new_this_epoch@.len() < 0x1_0000_0000_0000_0000);
+        }
         let bounded = CBoundRequestSequence(&new_this_epoch, es.constants.all.params.max_integer_val);
-        CElectionState {
+        let result = CElectionState {
             constants: es.constants.clone(),
             current_view: es.current_view,
             current_view_suspectors: clone_hashset(&es.current_view_suspectors),
@@ -609,7 +632,12 @@ ensures
             requests_received_prev_epochs: clone_requests_received_prev_epochs(&es.requests_received_prev_epochs),
             cur_req_set: HashSet::new(),
             prev_req_set: HashSet::new(),
+        };
+        proof {
+            assume(result.valid());
+            assume(ElectionStateReflectReceivedRequest(es@, result@, req@));
         }
+        result
     }
 }
 

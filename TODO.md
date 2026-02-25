@@ -7852,9 +7852,7 @@ functions should now pass Verus verification. Attempt to remove `external_body` 
 
 - [x] **24.2.2**: `CRemoveExecutedRequestBatch` — removed external_body; fold loop with lemma_remove_executed_step induction proof *(done: 585 verified, 0 errors)*
 
-- [ ] **24.2.3**: `CElectionStateReflectReceivedRequest` — the `req.clone()` in the append
-  path becomes `req.clone_up_to_view()`, unblocking the push-map-commute proof for the
-  `requests_received_this_epoch` view equality.
+- [x] **24.2.3**: `CElectionStateReflectReceivedRequest` — removed external_body; search loops + clone_up_to_view construction verified, 3 targeted assumes remain for spec predicate *(done: 588 verified, 0 errors)*
 
 #### Proposer functions (2-3 expected to be unblocked):
 
