@@ -2051,6 +2051,91 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
     );
 }
 
+/// Track Phase 23.8 progress: non-IO TRANSLATE-TODO stubs being replaced with real implementations.
+///
+/// As stubs are implemented, move them from `remaining_stubs` to `implemented_functions`
+/// and update the counts.
+#[test]
+fn test_rsl_translate_todo_stub_elimination_progress() {
+    let election_src = std::fs::read_to_string("../src/generated/RSL/election_gen.rs")
+        .expect("Failed to read election_gen.rs");
+    let learner_src = std::fs::read_to_string("../src/generated/RSL/learner_gen.rs")
+        .expect("Failed to read learner_gen.rs");
+    let proposer_src = std::fs::read_to_string("../src/generated/RSL/proposer_gen.rs")
+        .expect("Failed to read proposer_gen.rs");
+    let replica_src = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
+
+    // Functions that have been implemented (no longer stubs)
+    let implemented_functions: Vec<(&str, &str)> = vec![
+        ("election_gen.rs", "CBoundRequestSequence"),
+    ];
+    let sources: std::collections::BTreeMap<&str, &str> = [
+        ("election_gen.rs", election_src.as_str()),
+        ("learner_gen.rs", learner_src.as_str()),
+        ("proposer_gen.rs", proposer_src.as_str()),
+        ("replica_gen.rs", replica_src.as_str()),
+    ].into_iter().collect();
+
+    for (file, fn_name) in &implemented_functions {
+        let src = sources[file];
+        let fn_sig = format!("pub exec fn {}(", fn_name);
+        assert!(
+            src.contains(&fn_sig),
+            "{} should define {}",
+            file, fn_name
+        );
+        // Must NOT be external_body stub
+        let stub_marker = format!(
+            "// TRANSLATE-TODO: explicitly skipped (skip_functions)\n#[verifier(external_body)]\npub exec fn {}(",
+            fn_name
+        );
+        assert!(
+            !src.contains(&stub_marker),
+            "{} in {} should no longer be a TRANSLATE-TODO stub",
+            fn_name, file
+        );
+    }
+
+    // Remaining non-IO stubs (update as more are implemented)
+    let remaining_stubs: Vec<(&str, &str)> = vec![
+        ("election_gen.rs", "CRemoveAllSatisfiedRequestsInSequence"),
+        ("election_gen.rs", "CRemoveExecutedRequestBatch"),
+        ("election_gen.rs", "CElectionStateReflectReceivedRequest"),
+        ("learner_gen.rs", "CLearnerProcess2b"),
+        ("learner_gen.rs", "CLearnerForgetOperationsBefore"),
+        ("proposer_gen.rs", "CProposerNominateNewValueAndSend2a"),
+        ("proposer_gen.rs", "CProposerNominateOldValueAndSend2a"),
+        ("proposer_gen.rs", "CProposerMaybeNominateValueAndSend2a"),
+        ("replica_gen.rs", "CReplicaNextProcess1b"),
+        ("replica_gen.rs", "CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints"),
+    ];
+    for (file, fn_name) in &remaining_stubs {
+        let src = sources[file];
+        // Check for TRANSLATE-TODO comment (two patterns: "explicitly skipped" and "not functionalizable")
+        let fn_sig = format!("pub exec fn {}(", fn_name);
+        let fn_pos = src.find(&fn_sig).unwrap_or_else(|| panic!("{} not found in {}", fn_name, file));
+        let prefix = &src[..fn_pos];
+        assert!(
+            prefix.contains("// TRANSLATE-TODO:"),
+            "{} in {} should have a TRANSLATE-TODO comment (update test when implemented)",
+            fn_name, file
+        );
+        // Check it's still external_body with unimplemented!()
+        let fn_end = src[fn_pos..].find("\n}\n").map(|i| fn_pos + i + 3).unwrap_or(src.len());
+        let fn_body = &src[fn_pos..fn_end];
+        assert!(
+            fn_body.contains("unimplemented!()"),
+            "{} in {} should still have unimplemented!() body (update test when implemented)",
+            fn_name, file
+        );
+    }
+
+    // Summary counts
+    assert_eq!(implemented_functions.len(), 1, "implemented non-IO stubs count");
+    assert_eq!(remaining_stubs.len(), 10, "remaining non-IO stubs count");
+}
+
 /// Verify replica_gen.rs has all expected public functions
 #[test]
 fn test_generated_replica_module_public_api() {

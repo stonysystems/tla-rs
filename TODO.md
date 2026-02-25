@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1396 total tests, 571 verified, 0 errors. Phase 23 COMPLETE — all `assume(false)` eliminated from generated RSL code. 12 targeted `assume()` remain for irreducible View-mapping gaps (existential Map::new, Set::map cardinality). 10 IO trust boundary assumes (irreducible).
+**Active work**: 1497 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (10 non-IO remaining, 1 done: CBoundRequestSequence). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7588,7 +7588,7 @@ If a function's proof cannot pass Verus, emit the real exec body anyway and use 
 proof lemmas (not `assume(false)`) to bridge the gap. This is strictly better than `unimplemented!()`
 because the code actually runs.
 
-**Current state**: 571 verified, 0 errors. 16 `TRANSLATE-TODO` stubs total (11 non-IO + 5 IO).
+**Current state**: 572 verified, 0 errors. 15 `TRANSLATE-TODO` stubs total (10 non-IO + 5 IO).
 
 #### 23.8.1 Election: 4 stubs → generate real loop-based implementations
 
@@ -7599,10 +7599,11 @@ because the code actually runs.
 | `CRemoveExecutedRequestBatch` | nested recursion on batch | `for` loop over batch, calling `CRemoveAllSatisfied...` each iteration | LOW |
 | `CElectionStateReflectReceivedRequest` | `exists \|req\|` in two Vecs + conditional append | linear search loop + conditional struct update | MEDIUM |
 
-- [ ] **23.8.1.1**: `CBoundRequestSequence` — conditional Vec truncation. Spec:
-  `if lengthBound is UpperBoundFinite && 0 <= n < s.len() { s.subrange(0, n) } else { s }`.
-  Transpiler should emit: match on CUpperBound variant, slice Vec, return.
-  Proof: straightforward `subrange` + `map` equality.
+- [x] **23.8.1.1**: `CBoundRequestSequence` — conditional Vec truncation. DONE.
+  Fixed signature to take `u64` (CUpperBound.n is ghost `int`, not executable).
+  Implementation: if `lengthBound < s.len()` → `truncate_vec`, else → clone.
+  Uses existing `truncate_vec` (ensures subrange+map) and `clone_requests_received_prev_epochs`.
+  572 verified, 0 errors (up from 571).
 
 - [ ] **23.8.1.2**: `CRemoveAllSatisfiedRequestsInSequence` — recursive filter → for loop.
   Spec: `if s.len()==0 { empty } else if satisfied { recurse(tail) } else { head + recurse(tail) }`.

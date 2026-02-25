@@ -10,7 +10,7 @@ use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::abstractify_crequestbatch;
-use crate::protocol::common::upper_bound::{LtUpperBound, UpperBoundedAddition};
+use crate::protocol::common::upper_bound::{LtUpperBound, UpperBound, UpperBoundedAddition};
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::types::*;
@@ -115,11 +115,23 @@ if ((b.proposer_id + 1) < (c.config.replica_ids.len() as u64)) {
     }
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
-#[verifier(external_body)]
-pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: &CUpperBound) -> (result: Vec<CRequest>)
+pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: u64) -> (result: Vec<CRequest>)
+requires
+    s@.len() < 0x1_0000_0000_0000_0000,
+    forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+ensures
+    forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
+    result@.map(|i: int, r: CRequest| r@) == BoundRequestSequence(s@.map(|i: int, r: CRequest| r@), UpperBound::UpperBoundFinite{n: lengthBound as int}),
 {
-    unimplemented!()
+    let s_len = s.len() as u64;
+    if lengthBound < s_len {
+        let rc = truncate_vec(&s, 0, lengthBound as usize);
+        assert(rc@.map(|i: int, r: CRequest| r@) == s@.map(|i: int, r: CRequest| r@).subrange(0, lengthBound as int));
+        rc
+    } else {
+        let rc = clone_requests_received_prev_epochs(s);
+        rc
+    }
 }
 
 pub exec fn CRequestsMatch(r1: &CRequest, r2: &CRequest) -> (result: bool)
