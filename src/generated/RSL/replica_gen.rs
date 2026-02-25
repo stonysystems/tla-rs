@@ -94,8 +94,7 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessInvalid(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = (s.clone(), vec![]); proof {
+    { let result = (s.clone_up_to_view(), vec![]); proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
     }; result }
@@ -308,8 +307,7 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessReply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = (s.clone(), vec![]); proof {
+    { let result = (s.clone_up_to_view(), vec![]); proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
     }; result }

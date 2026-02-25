@@ -7423,8 +7423,9 @@ Remaining 8 functions use CElectionState/CProposer clone in no-op branches (Tier
 #### 23.3.5 Replica: 19 assume(false) → real impl (mostly Tier C) — PARTIAL
 
 CReplicaInit + CSchedulerInit PROVEN (Phase 23.5+). Compositional: uses sub-component Init ensures.
-Remaining 18 functions are complex state-transition functions (Tier B/C).
-18 assume(false) remaining. IO dispatch functions will remain external_body regardless.
+CReplicaNextProcessInvalid + CReplicaNextProcessReply PROVEN: pure no-op functions using clone_up_to_view().
+Remaining 16 functions are complex state-transition functions (Tier B/C).
+16 assume(false) remaining. IO dispatch functions will remain external_body regardless.
 
 ### 23.4 Phase 23.4: Fix Tier B gaps — emit real bodies with PROOF-TODO
 
@@ -7460,11 +7461,15 @@ This is the key semantic improvement over Phase 21: `assume(false)` is removed e
   - CReplicaInit: proven compositionally (all sub-Init functions have ensures)
   - CSchedulerInit: proven (delegates to CReplicaInit)
   - Total: 35 assume(false) remaining (down from 40). 570 verified, 0 errors.
+- [x] **23.5.6**: Prove 2 pure no-op replica functions (2 more assume(false) eliminated)
+  - CReplicaNextProcessInvalid: proven via clone_up_to_view() (no-op: s_ == s, empty packets)
+  - CReplicaNextProcessReply: proven via clone_up_to_view() (no-op: s_ == s, empty packets)
+  - Total: 33 assume(false) remaining (down from 35). 570 verified, 0 errors.
 
 ### 23.6 Acceptance Criteria
 
 - [x] `executor_gen.rs`: 0 Verus errors (restored)
-- [ ] No RSL function has `assume(false)` without a real exec body beside it *(35 remaining — Init functions proven, Tier B blocked by deep proof infrastructure)*
+- [ ] No RSL function has `assume(false)` without a real exec body beside it *(33 remaining — Init + no-op functions proven, Tier B blocked by deep proof infrastructure)*
 - [ ] Every `external_body` stub has either `TRANSLATE-TODO` or `PROOF-TODO` *(16 stubs annotated)*
 - [x] Verus build: 0 errors, 570 verified (Phase 21 baseline restored)
 - [x] All transpiler tests pass (1871)
