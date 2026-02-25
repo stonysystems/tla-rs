@@ -2070,6 +2070,7 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
     let implemented_functions: Vec<(&str, &str)> = vec![
         ("election_gen.rs", "CBoundRequestSequence"),
         ("election_gen.rs", "CRemoveAllSatisfiedRequestsInSequence"),
+        ("election_gen.rs", "CRemoveExecutedRequestBatch"),
     ];
     let sources: std::collections::BTreeMap<&str, &str> = [
         ("election_gen.rs", election_src.as_str()),
@@ -2100,7 +2101,6 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
 
     // Remaining non-IO stubs (update as more are implemented)
     let remaining_stubs: Vec<(&str, &str)> = vec![
-        ("election_gen.rs", "CRemoveExecutedRequestBatch"),
         ("election_gen.rs", "CElectionStateReflectReceivedRequest"),
         ("learner_gen.rs", "CLearnerProcess2b"),
         ("learner_gen.rs", "CLearnerForgetOperationsBefore"),
@@ -2132,8 +2132,8 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
     }
 
     // Summary counts
-    assert_eq!(implemented_functions.len(), 2, "implemented non-IO stubs count");
-    assert_eq!(remaining_stubs.len(), 9, "remaining non-IO stubs count");
+    assert_eq!(implemented_functions.len(), 3, "implemented non-IO stubs count");
+    assert_eq!(remaining_stubs.len(), 8, "remaining non-IO stubs count");
 }
 
 /// Verify replica_gen.rs has all expected public functions

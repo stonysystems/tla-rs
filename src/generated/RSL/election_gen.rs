@@ -460,15 +460,25 @@ ensures
     unimplemented!()
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// Fold: for each request in batch, remove all satisfied requests from reqs.
+/// external_body because the fold-equivalence proof requires induction on batch.len()
+/// and CRequest::clone() lacks view-preservation ensures in Verus.
 #[verifier(external_body)]
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)
+requires
+    forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),
 ensures
     result@.map(|i: int, r: CRequest| r@) == RemoveExecutedRequestBatch(reqs@.map(|i: int, r: CRequest| r@), abstractify_crequestbatch(batch)),
     forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
     forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable(),
 {
-    unimplemented!()
+    let mut result: Vec<CRequest> = reqs.clone();
+    let mut idx: usize = 0;
+    while idx < batch.len() {
+        result = CRemoveAllSatisfiedRequestsInSequence(&result, &batch[idx]);
+        idx += 1;
+    }
+    result
 }
 
 pub exec fn CElectionStateReflectExecutedRequestBatch(es: &CElectionState, batch: &CRequestBatch) -> (result: CElectionState)
