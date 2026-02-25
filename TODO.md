@@ -7848,9 +7848,7 @@ functions should now pass Verus verification. Attempt to remove `external_body` 
 
 #### Election functions (3 expected to be unblocked):
 
-- [ ] **24.2.1**: `CRemoveAllSatisfiedRequestsInSequence` — the loop body `s[idx].clone()` becomes
-  `s[idx].clone_up_to_view()`, providing `res@ == s[idx]@`. The filter-map equality proof should
-  then follow from element-wise view preservation + induction on loop index.
+- [x] **24.2.1**: `CRemoveAllSatisfiedRequestsInSequence` — removed external_body; uses clone_up_to_view() + lemma_remove_all_satisfied_push induction proof *(done: 582 verified, 0 errors)*
 
 - [ ] **24.2.2**: `CRemoveExecutedRequestBatch` — depends on 24.2.1's ensures. Once
   `CRemoveAllSatisfiedRequestsInSequence` has proper ensures, the fold loop can compose them.

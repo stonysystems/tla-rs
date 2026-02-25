@@ -190,10 +190,60 @@ ensures
 (((true && true) && (r1.client == r2.client)) && (r1.seqno <= r2.seqno))
 }
 
+/// Proof lemma: RemoveAllSatisfiedRequestsInSequence distributes over push.
+/// RemoveAll(s.push(x), r) == if RequestSatisfiedBy(x, r) then RemoveAll(s, r)
+///                            else RemoveAll(s, r).push(x)
+proof fn lemma_remove_all_satisfied_push(s: Seq<Request>, x: Request, r: Request)
+    ensures
+        RemoveAllSatisfiedRequestsInSequence(s.push(x), r) =~= (
+            if RequestSatisfiedBy(x, r) {
+                RemoveAllSatisfiedRequestsInSequence(s, r)
+            } else {
+                RemoveAllSatisfiedRequestsInSequence(s, r).push(x)
+            }
+        ),
+    decreases s.len(),
+{
+    reveal_with_fuel(RemoveAllSatisfiedRequestsInSequence, 3);
+    let sx = s.push(x);
+    if s.len() == 0 {
+        // Base case: s is empty, s.push(x) == seq![x]
+        assert(sx =~= seq![x]);
+        assert(sx.drop_first() =~= Seq::<Request>::empty());
+    } else {
+        // Inductive step: s.push(x) has first element s[0], rest is s.drop_first().push(x)
+        assert(sx[0] == s[0]);
+        assert(sx.drop_first() =~= s.drop_first().push(x));
+        lemma_remove_all_satisfied_push(s.drop_first(), x, r);
+        if !RequestSatisfiedBy(s[0], r) && !RequestSatisfiedBy(x, r) {
+            // Need: seq![s[0]] + (RemoveAll(s.drop_first(), r).push(x))
+            //     =~= (seq![s[0]] + RemoveAll(s.drop_first(), r)).push(x)
+            let tail_result = RemoveAllSatisfiedRequestsInSequence(s.drop_first(), r);
+            assert((seq![s[0]] + tail_result).push(x) =~= seq![s[0]] + tail_result.push(x));
+        }
+    }
+}
+
+/// Proof lemma: map distributes over take+1 for CRequest view.
+proof fn lemma_map_take_plus_one(s: Seq<CRequest>, k: int)
+    requires 0 <= k < s.len(),
+    ensures s.take(k + 1).map(|i: int, e: CRequest| e@) =~=
+            s.take(k).map(|i: int, e: CRequest| e@).push(s[k]@),
+{
+    let mapped = s.take(k + 1).map(|i: int, e: CRequest| e@);
+    let expected = s.take(k).map(|i: int, e: CRequest| e@).push(s[k]@);
+    assert(mapped.len() == expected.len());
+    assert forall|j: int| 0 <= j < mapped.len() implies mapped[j] == expected[j] by {
+        if j < k {
+            assert(s.take(k + 1)[j] == s.take(k)[j]);
+        } else {
+            assert(s.take(k + 1)[j] == s[k]);
+        }
+    }
+}
+
 /// Filter: keep elements of s where !RequestSatisfiedBy(elem, r).
-/// external_body because CRequest::clone() view-preservation cannot be proven in Verus
-/// (define_struct_and_derive_marshalable! types lack clone-view ensures).
-#[verifier(external_body)]
+/// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> (result: Vec<CRequest>)
 requires
     forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
@@ -204,11 +254,34 @@ ensures
 {
     let mut result: Vec<CRequest> = Vec::new();
     let mut idx: usize = 0;
-    while idx < s.len() {
-        if !CRequestSatisfiedBy(&s[idx], r) {
-            result.push(s[idx].clone());
+    while idx < s.len()
+    invariant
+        idx <= s.len(),
+        result@.len() <= idx as int,
+        forall |j: int| 0 <= j < result@.len() ==> result@[j].valid(),
+        result@.map(|i: int, e: CRequest| e@) == RemoveAllSatisfiedRequestsInSequence(s@.take(idx as int).map(|i: int, e: CRequest| e@), r@),
+        forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+        r.valid(),
+    decreases
+        s.len() - idx,
+    {
+        let satisfied = CRequestSatisfiedBy(&s[idx], r);
+        proof {
+            lemma_map_take_plus_one(s@, idx as int);
+            lemma_remove_all_satisfied_push(
+                s@.take(idx as int).map(|i: int, e: CRequest| e@),
+                s@[idx as int]@,
+                r@,
+            );
         }
-        idx += 1;
+        if !satisfied {
+            let elem = s[idx].clone_up_to_view();
+            result.push(elem);
+        }
+        idx = idx + 1;
+    }
+    proof {
+        assert(s@.take(s@.len() as int) =~= s@);
     }
     result
 }
