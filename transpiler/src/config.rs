@@ -121,6 +121,13 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub clone_strategy: HashMap<String, String>,
 
+    /// Types that should use `.clone_up_to_view()` instead of `.clone()`.
+    /// When cloning a value whose type is in this list, the transpiler emits
+    /// `.clone_up_to_view()` which provides `ensures res@ == self@`.
+    /// e.g., ["CRequest", "CReply", "CVote", "CLearnerTuple", "EndPoint"]
+    #[serde(default)]
+    pub clone_up_to_view_types: Vec<String>,
+
     /// Types to skip during generation (already manually implemented).
     /// These spec type names will be parsed but NOT generated as exec types.
     /// e.g., ["Ballot", "Request", "Reply", "Vote", "LearnerTuple"]
@@ -1458,5 +1465,36 @@ mod tests {
         let config = TranspilerConfig::from_toml(toml).unwrap();
         let msg = config.messages.unwrap();
         assert_eq!(msg.variants[0].fields[1], vec!["granted", "bool"]);
+    }
+
+    #[test]
+    fn test_parse_clone_up_to_view_types() {
+        let toml = r#"
+            clone_up_to_view_types = ["CRequest", "CReply", "CVote", "CLearnerTuple", "EndPoint"]
+
+            [naming]
+            spec_prefix = "L"
+            exec_prefix = "C"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.clone_up_to_view_types.len(), 5);
+        assert!(config.clone_up_to_view_types.contains(&"CRequest".to_string()));
+        assert!(config.clone_up_to_view_types.contains(&"CReply".to_string()));
+        assert!(config.clone_up_to_view_types.contains(&"CVote".to_string()));
+        assert!(config.clone_up_to_view_types.contains(&"CLearnerTuple".to_string()));
+        assert!(config.clone_up_to_view_types.contains(&"EndPoint".to_string()));
+    }
+
+    #[test]
+    fn test_clone_up_to_view_types_defaults_empty() {
+        let toml = r#"
+            [naming]
+            spec_prefix = "L"
+            exec_prefix = "C"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(config.clone_up_to_view_types.is_empty());
     }
 }

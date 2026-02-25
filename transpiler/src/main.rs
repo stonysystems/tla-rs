@@ -4212,6 +4212,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             eq_function_fields: file_config.eq_function_fields.clone(),
             arrow_variants: file_config.arrow_variants.clone(),
             clone_method: file_config.output.clone_method.clone(),
+            clone_up_to_view_types: file_config.clone_up_to_view_types.iter().cloned().collect(),
             vec_element_ensures: file_config.vec_element_ensures.clone(),
             set_fields: std::collections::HashSet::new(),
             assume_postconditions: file_config.output.assume_postconditions,

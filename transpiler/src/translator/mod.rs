@@ -108,6 +108,9 @@ pub struct TranslatorConfig {
     /// Clone method to use in generated loops (e.g., "clone_up_to_view").
     /// When set, uses `x.clone_up_to_view()` instead of `x.clone()`.
     pub clone_method: Option<String>,
+    /// Types that should use `.clone_up_to_view()` instead of `.clone()`.
+    /// When cloning a value whose type is in this set, emit `.clone_up_to_view()`.
+    pub clone_up_to_view_types: HashSet<String>,
     /// Maps field names to equality comparison function names.
     /// When a `==` comparison involves a field in this map, the transpiler generates
     /// a function call instead of using `==` (which may use external PartialEq).
@@ -163,6 +166,7 @@ impl Default for TranslatorConfig {
             type_view_exprs: HashMap::new(),
             extra_requires: HashMap::new(),
             clone_method: None,
+            clone_up_to_view_types: HashSet::new(),
             eq_function_fields: HashMap::new(),
             arrow_variants: HashMap::new(),
             vec_element_ensures: Vec::new(),
@@ -1864,7 +1868,9 @@ impl Translator {
                         expr: Box::new(expr),
                     }
                 } else {
-                    self.clone_with_config(expr)
+                    let type_name = ctx.input_types.get(name.as_str())
+                        .and_then(|ty| self.get_exec_type_name(ty));
+                    self.clone_for_type(expr, type_name.as_deref())
                 }
             }
             // Field access on input param: delegate to clone_input_field_access
@@ -1964,6 +1970,51 @@ impl Translator {
             }
         } else {
             ExecExpr::Clone(Box::new(expr))
+        }
+    }
+
+    /// Clone an expression, using `clone_up_to_view()` if the type is configured for it.
+    /// Falls back to `clone_with_config()` if no type-specific override applies.
+    fn clone_for_type(&self, expr: ExecExpr, type_name: Option<&str>) -> ExecExpr {
+        if let Some(name) = type_name {
+            if self.is_clone_up_to_view_type(name) {
+                return ExecExpr::MethodCall {
+                    receiver: Box::new(expr),
+                    method: "clone_up_to_view".to_string(),
+                    args: vec![],
+                };
+            }
+        }
+        self.clone_with_config(expr)
+    }
+
+    /// Extract the exec type name from a spec `Type`, applying type remapping.
+    /// Returns `None` for non-named types (Int, Bool, etc.).
+    fn get_exec_type_name(&self, ty: &Type) -> Option<String> {
+        match ty {
+            Type::Named(path) => {
+                if let Some(seg) = path.segments.last() {
+                    if let Some(remapped) = self.config.type_remapping.get(seg.as_str()) {
+                        Some(remapped.clone())
+                    } else {
+                        // Apply spec→exec prefix transformation
+                        let name = seg.to_string();
+                        if name.starts_with(&self.config.spec_prefix) {
+                            Some(format!(
+                                "{}{}",
+                                self.config.exec_prefix,
+                                &name[self.config.spec_prefix.len()..]
+                            ))
+                        } else {
+                            Some(name)
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            Type::Reference { ty, .. } => self.get_exec_type_name(ty),
+            _ => None,
         }
     }
 
@@ -2337,7 +2388,9 @@ impl Translator {
                         if let Some(helper) = self.get_clone_helper_name(field_name) {
                             Self::make_ref_call(helper, expr)
                         } else {
-                            self.clone_with_config(expr)
+                            let field_type = self.config.clone_field_types.get(field_name.as_str())
+                                .map(|s| s.as_str());
+                            self.clone_for_type(expr, field_type)
                         }
                     } else if self.is_vec_field(field_name) {
                         // Vec/HashMap field: use .clone()
@@ -2368,7 +2421,9 @@ impl Translator {
                             if let Some(helper) = self.get_clone_helper_name(field_name) {
                                 Self::make_ref_call(helper, *inner.clone())
                             } else {
-                                self.clone_with_config(*inner.clone())
+                                let field_type = self.config.clone_field_types.get(field_name.as_str())
+                                    .map(|s| s.as_str());
+                                self.clone_for_type(*inner.clone(), field_type)
                             }
                         } else if self.is_vec_field(field_name) {
                             // Vec/HashMap: keep .clone()
@@ -2431,6 +2486,11 @@ impl Translator {
         } else {
             None
         }
+    }
+
+    /// Check if a type name should use `.clone_up_to_view()` instead of `.clone()`.
+    fn is_clone_up_to_view_type(&self, type_name: &str) -> bool {
+        self.config.clone_up_to_view_types.contains(type_name)
     }
 
     /// Check if a field name is a non-Copy collection type (Set/Map/Vec/HashMap/struct-typed Vec).
@@ -9821,7 +9881,9 @@ impl Translator {
                 // Check if rhs is also an identifier (copy case)
                 if let Expr::Ident(rhs_name) = rhs {
                     if ctx.input_params.contains(rhs_name) {
-                        return Ok(self.clone_with_config(ExecExpr::Var(rhs_name.clone())));
+                        let type_name = ctx.input_types.get(rhs_name.as_str())
+                            .and_then(|ty| self.get_exec_type_name(ty));
+                        return Ok(self.clone_for_type(ExecExpr::Var(rhs_name.clone()), type_name.as_deref()));
                     }
                 }
                 return self.transform_expr(rhs, ctx);
@@ -9899,9 +9961,11 @@ impl Translator {
                         // Check if RHS is an input param - if so, generate clone
                         if let Expr::Ident(rhs_name) = rhs.as_ref() {
                             if ctx.input_params.contains(rhs_name) {
+                                let type_name = ctx.input_types.get(rhs_name.as_str())
+                                    .and_then(|ty| self.get_exec_type_name(ty));
                                 output_exprs.push((
                                     name.clone(),
-                                    self.clone_with_config(ExecExpr::Var(rhs_name.clone())),
+                                    self.clone_for_type(ExecExpr::Var(rhs_name.clone()), type_name.as_deref()),
                                 ));
                                 continue;
                             }
@@ -9917,9 +9981,11 @@ impl Translator {
                         // Check if LHS is an input param - if so, generate clone
                         if let Expr::Ident(lhs_name) = lhs.as_ref() {
                             if ctx.input_params.contains(lhs_name) {
+                                let type_name = ctx.input_types.get(lhs_name.as_str())
+                                    .and_then(|ty| self.get_exec_type_name(ty));
                                 output_exprs.push((
                                     name.clone(),
-                                    self.clone_with_config(ExecExpr::Var(lhs_name.clone())),
+                                    self.clone_for_type(ExecExpr::Var(lhs_name.clone()), type_name.as_deref()),
                                 ));
                                 continue;
                             }
@@ -24746,6 +24812,217 @@ mod tests {
             matches!(&rhs_result, ExecExpr::Var(name) if name == "other_opn"),
             "Both-Var RHS should stay unchanged: {:?}",
             rhs_result
+        );
+    }
+
+    #[test]
+    fn test_clone_for_type_with_clone_up_to_view_types() {
+        let mut config = TranslatorConfig::default();
+        config
+            .clone_up_to_view_types
+            .insert("CRequest".to_string());
+        config
+            .clone_up_to_view_types
+            .insert("CReply".to_string());
+        let translator = Translator::new(config);
+
+        // Type in list should use clone_up_to_view
+        let expr = ExecExpr::Var("req".to_string());
+        let result = translator.clone_for_type(expr, Some("CRequest"));
+        assert!(
+            matches!(&result, ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"),
+            "CRequest should use clone_up_to_view: {:?}",
+            result
+        );
+
+        // Type NOT in list should fall through to clone_with_config (default: Clone)
+        let expr2 = ExecExpr::Var("bal".to_string());
+        let result2 = translator.clone_for_type(expr2, Some("CBallot"));
+        assert!(
+            matches!(&result2, ExecExpr::Clone(_)),
+            "CBallot should use regular .clone(): {:?}",
+            result2
+        );
+
+        // None type should fall through to clone_with_config
+        let expr3 = ExecExpr::Var("x".to_string());
+        let result3 = translator.clone_for_type(expr3, None);
+        assert!(
+            matches!(&result3, ExecExpr::Clone(_)),
+            "None type should use regular .clone(): {:?}",
+            result3
+        );
+    }
+
+    #[test]
+    fn test_clone_for_type_with_global_clone_method_fallback() {
+        let mut config = TranslatorConfig::default();
+        config
+            .clone_up_to_view_types
+            .insert("CRequest".to_string());
+        config.clone_method = Some("clone_up_to_view".to_string());
+        let translator = Translator::new(config);
+
+        // Type in list: uses clone_up_to_view (from clone_up_to_view_types)
+        let result = translator.clone_for_type(ExecExpr::Var("req".to_string()), Some("CRequest"));
+        assert!(
+            matches!(&result, ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"),
+            "CRequest should use clone_up_to_view: {:?}",
+            result
+        );
+
+        // Type NOT in list: falls through to clone_method global config
+        let result2 =
+            translator.clone_for_type(ExecExpr::Var("bal".to_string()), Some("CBallot"));
+        assert!(
+            matches!(&result2, ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"),
+            "CBallot should use global clone_method fallback: {:?}",
+            result2
+        );
+    }
+
+    #[test]
+    fn test_get_exec_type_name() {
+        let config = TranslatorConfig::default();
+        let translator = Translator::new(config);
+
+        // Named type with L-prefix → C-prefix
+        let ty = Type::Named(Path {
+            segments: vec!["LAcceptor".to_string()],
+        });
+        assert_eq!(translator.get_exec_type_name(&ty), Some("CAcceptor".to_string()));
+
+        // Named type without L-prefix → kept as-is
+        let ty2 = Type::Named(Path {
+            segments: vec!["EndPoint".to_string()],
+        });
+        assert_eq!(translator.get_exec_type_name(&ty2), Some("EndPoint".to_string()));
+
+        // Reference type → unwrap
+        let ty3 = Type::Reference {
+            ty: Box::new(Type::Named(Path {
+                segments: vec!["LRequest".to_string()],
+            })),
+            mutable: false,
+        };
+        assert_eq!(translator.get_exec_type_name(&ty3), Some("CRequest".to_string()));
+
+        // Non-named type
+        assert_eq!(translator.get_exec_type_name(&Type::Int), None);
+        assert_eq!(translator.get_exec_type_name(&Type::Bool), None);
+    }
+
+    #[test]
+    fn test_get_exec_type_name_with_remapping() {
+        let mut config = TranslatorConfig::default();
+        config
+            .type_remapping
+            .insert("RslMessage".to_string(), "CMessage".to_string());
+        let translator = Translator::new(config);
+
+        let ty = Type::Named(Path {
+            segments: vec!["RslMessage".to_string()],
+        });
+        assert_eq!(
+            translator.get_exec_type_name(&ty),
+            Some("CMessage".to_string())
+        );
+    }
+
+    #[test]
+    fn test_is_clone_up_to_view_type() {
+        let mut config = TranslatorConfig::default();
+        config
+            .clone_up_to_view_types
+            .insert("CRequest".to_string());
+        config
+            .clone_up_to_view_types
+            .insert("CReply".to_string());
+        config.clone_up_to_view_types.insert("CVote".to_string());
+        config
+            .clone_up_to_view_types
+            .insert("CLearnerTuple".to_string());
+        config
+            .clone_up_to_view_types
+            .insert("EndPoint".to_string());
+        let translator = Translator::new(config);
+
+        assert!(translator.is_clone_up_to_view_type("CRequest"));
+        assert!(translator.is_clone_up_to_view_type("CReply"));
+        assert!(translator.is_clone_up_to_view_type("CVote"));
+        assert!(translator.is_clone_up_to_view_type("CLearnerTuple"));
+        assert!(translator.is_clone_up_to_view_type("EndPoint"));
+        assert!(!translator.is_clone_up_to_view_type("CBallot"));
+        assert!(!translator.is_clone_up_to_view_type("CAcceptor"));
+    }
+
+    #[test]
+    fn test_clone_if_input_ref_uses_clone_up_to_view_for_listed_type() {
+        let mut config = TranslatorConfig::default();
+        config
+            .clone_up_to_view_types
+            .insert("CRequest".to_string());
+        let translator = Translator::new(config);
+
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "req".to_string(),
+            Type::Named(Path {
+                segments: vec!["LRequest".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["req".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = ExecExpr::Var("req".to_string());
+        let result = translator.clone_if_input_ref(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"),
+            "Input param of CRequest type should use clone_up_to_view: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_clone_if_input_ref_uses_regular_clone_for_unlisted_type() {
+        let mut config = TranslatorConfig::default();
+        config
+            .clone_up_to_view_types
+            .insert("CRequest".to_string());
+        let translator = Translator::new(config);
+
+        let mut input_types = HashMap::new();
+        input_types.insert(
+            "acc".to_string(),
+            Type::Named(Path {
+                segments: vec!["LAcceptor".to_string()],
+            }),
+        );
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["acc".to_string()],
+            output_types: HashMap::new(),
+            input_types,
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let expr = ExecExpr::Var("acc".to_string());
+        let result = translator.clone_if_input_ref(expr, &ctx);
+        assert!(
+            matches!(&result, ExecExpr::Clone(_)),
+            "Input param of unlisted CAcceptor type should use regular .clone(): {:?}",
+            result
         );
     }
 }
