@@ -615,21 +615,80 @@ ensures
 
 /// Fold: for each request in batch, remove all satisfied requests from reqs.
 /// external_body because the fold-equivalence proof requires induction on batch.len()
-/// and CRequest::clone() lacks view-preservation ensures in Verus.
-#[verifier(external_body)]
+/// Proof lemma: RemoveExecutedRequestBatch distributes over batch take(k+1).
+proof fn lemma_remove_executed_step(reqs: Seq<Request>, batch: Seq<Request>, k: int)
+    requires 0 <= k < batch.len(),
+    ensures
+        RemoveExecutedRequestBatch(reqs, batch.take(k + 1)) =~=
+            RemoveAllSatisfiedRequestsInSequence(
+                RemoveExecutedRequestBatch(reqs, batch.take(k)),
+                batch[k],
+            ),
+    decreases k,
+{
+    reveal_with_fuel(RemoveExecutedRequestBatch, 10);
+    if k == 0 {
+        assert(batch.take(0int) =~= Seq::<Request>::empty());
+        assert(batch.take(1int).len() == 1);
+        assert(batch.take(1int)[0] == batch[0]);
+        assert(batch.take(1int).drop_first() =~= Seq::<Request>::empty());
+    } else {
+        assert(batch.take(k + 1)[0] == batch[0]);
+        assert(batch.take(k + 1).drop_first() =~= batch.drop_first().take(k));
+        assert(batch.take(k)[0] == batch[0]);
+        assert(batch.take(k).drop_first() =~= batch.drop_first().take(k - 1));
+        lemma_remove_executed_step(
+            RemoveAllSatisfiedRequestsInSequence(reqs, batch[0]),
+            batch.drop_first(),
+            k - 1,
+        );
+    }
+}
+
+/// Fold loop: apply RemoveAllSatisfiedRequestsInSequence for each batch element.
+/// Uses clone_up_to_view() for initial copy.
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)
 requires
     forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),
+    forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),
 ensures
     result@.map(|i: int, r: CRequest| r@) == RemoveExecutedRequestBatch(reqs@.map(|i: int, r: CRequest| r@), abstractify_crequestbatch(batch)),
     forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
     forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable(),
 {
-    let mut result: Vec<CRequest> = reqs.clone();
+    let mut result: Vec<CRequest> = clone_requests_received_prev_epochs(reqs);
+    let ghost batch_abs: Seq<Request> = batch@.map(|i: int, r: CRequest| r@);
     let mut idx: usize = 0;
-    while idx < batch.len() {
+    proof {
+        assert(batch_abs.take(0int) =~= Seq::<Request>::empty());
+        reveal_with_fuel(RemoveExecutedRequestBatch, 2);
+    }
+    while idx < batch.len()
+    invariant
+        idx <= batch.len(),
+        forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
+        batch_abs == batch@.map(|i: int, r: CRequest| r@),
+        result@.map(|i: int, r: CRequest| r@) == RemoveExecutedRequestBatch(
+            reqs@.map(|i: int, r: CRequest| r@),
+            batch_abs.take(idx as int),
+        ),
+        forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),
+        forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),
+    decreases
+        batch.len() - idx,
+    {
+        proof {
+            lemma_remove_executed_step(
+                reqs@.map(|i: int, r: CRequest| r@),
+                batch_abs,
+                idx as int,
+            );
+        }
         result = CRemoveAllSatisfiedRequestsInSequence(&result, &batch[idx]);
-        idx += 1;
+        idx = idx + 1;
+    }
+    proof {
+        assert(batch_abs.take(batch_abs.len() as int) =~= batch_abs);
     }
     result
 }
@@ -637,6 +696,7 @@ ensures
 pub exec fn CElectionStateReflectExecutedRequestBatch(es: &CElectionState, batch: &CRequestBatch) -> (result: CElectionState)
 requires
     es.valid(),
+    forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),
 ensures
     result.valid(),
     ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)),

@@ -7850,8 +7850,7 @@ functions should now pass Verus verification. Attempt to remove `external_body` 
 
 - [x] **24.2.1**: `CRemoveAllSatisfiedRequestsInSequence` — removed external_body; uses clone_up_to_view() + lemma_remove_all_satisfied_push induction proof *(done: 582 verified, 0 errors)*
 
-- [ ] **24.2.2**: `CRemoveExecutedRequestBatch` — depends on 24.2.1's ensures. Once
-  `CRemoveAllSatisfiedRequestsInSequence` has proper ensures, the fold loop can compose them.
+- [x] **24.2.2**: `CRemoveExecutedRequestBatch` — removed external_body; fold loop with lemma_remove_executed_step induction proof *(done: 585 verified, 0 errors)*
 
 - [ ] **24.2.3**: `CElectionStateReflectReceivedRequest` — the `req.clone()` in the append
   path becomes `req.clone_up_to_view()`, unblocking the push-map-commute proof for the

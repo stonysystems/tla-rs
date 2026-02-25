@@ -657,6 +657,7 @@ ensures
 pub exec fn CProposerResetViewTimerDueToExecution(s: &CProposer, val: &CRequestBatch) -> (result: CProposer)
 requires
     s.valid(),
+    forall |i: int| 0 <= i < val@.len() ==> val@[i].valid(),
 ensures
     result.valid(),
     LProposerResetViewTimerDueToExecution(s@, result@, abstractify_crequestbatch(val)),
