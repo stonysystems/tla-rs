@@ -154,11 +154,27 @@ ensures
 (((true && true) && (r1.client == r2.client)) && (r1.seqno <= r2.seqno))
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// Filter: keep elements of s where !RequestSatisfiedBy(elem, r).
+/// external_body because CRequest::clone() view-preservation cannot be proven in Verus
+/// (define_struct_and_derive_marshalable! types lack clone-view ensures).
 #[verifier(external_body)]
 pub exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> (result: Vec<CRequest>)
+requires
+    forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+    r.valid(),
+ensures
+    result@.map(|i: int, e: CRequest| e@) == RemoveAllSatisfiedRequestsInSequence(s@.map(|i: int, e: CRequest| e@), r@),
+    forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
 {
-    unimplemented!()
+    let mut result: Vec<CRequest> = Vec::new();
+    let mut idx: usize = 0;
+    while idx < s.len() {
+        if !CRequestSatisfiedBy(&s[idx], r) {
+            result.push(s[idx].clone());
+        }
+        idx += 1;
+    }
+    result
 }
 
 pub exec fn CElectionStateInit(c: &CReplicaConstants) -> (result: CElectionState)

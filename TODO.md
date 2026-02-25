@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1497 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (10 non-IO remaining, 1 done: CBoundRequestSequence). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1497 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (9 non-IO remaining, 2 done: CBoundRequestSequence, CRemoveAllSatisfiedRequestsInSequence). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7588,7 +7588,7 @@ If a function's proof cannot pass Verus, emit the real exec body anyway and use 
 proof lemmas (not `assume(false)`) to bridge the gap. This is strictly better than `unimplemented!()`
 because the code actually runs.
 
-**Current state**: 572 verified, 0 errors. 15 `TRANSLATE-TODO` stubs total (10 non-IO + 5 IO).
+**Current state**: 572 verified, 0 errors. 14 `TRANSLATE-TODO` stubs total (9 non-IO + 5 IO).
 
 #### 23.8.1 Election: 4 stubs → generate real loop-based implementations
 
@@ -7605,10 +7605,11 @@ because the code actually runs.
   Uses existing `truncate_vec` (ensures subrange+map) and `clone_requests_received_prev_epochs`.
   572 verified, 0 errors (up from 571).
 
-- [ ] **23.8.1.2**: `CRemoveAllSatisfiedRequestsInSequence` — recursive filter → for loop.
-  Spec: `if s.len()==0 { empty } else if satisfied { recurse(tail) } else { head + recurse(tail) }`.
-  Transpiler should emit: `for i in 0..s.len() { if !CRequestSatisfiedBy(...) { result.push(...) } }`.
-  Proof: induction on loop index; may need `external_body` lemma for Seq↔Vec equivalence.
+- [x] **23.8.1.2**: `CRemoveAllSatisfiedRequestsInSequence` — recursive filter → while loop. DONE.
+  Kept `external_body` with real body + requires/ensures (CRequest::clone() view-preservation
+  cannot be proven in Verus — define_struct_and_derive_marshalable! types lack clone-view ensures).
+  Implementation: while loop filtering elements where `!CRequestSatisfiedBy(elem, r)`.
+  572 verified, 0 errors.
 
 - [ ] **23.8.1.3**: `CRemoveExecutedRequestBatch` — fold over batch → for loop.
   Spec: `if batch.len()==0 { reqs } else { recurse(RemoveAll(reqs, batch[0]), batch.tail) }`.
