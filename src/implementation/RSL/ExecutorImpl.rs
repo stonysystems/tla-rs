@@ -11,6 +11,7 @@ use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::state_machine::HandleRequestBatch;
 use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 // Generated wrappers live in `crate::generated::RSL::executor_gen`.
@@ -133,7 +134,7 @@ impl View for CIncompleteBatchTimer {
 
 impl CExecutor{
 
-    #[verifier(external_body)]
+    // Phase 25.6: removed external_body, added proof assertions
     pub fn CExecutorExecute(&mut self) -> (res: OutboundPackets)
         requires
             old(self).valid(),
@@ -147,11 +148,31 @@ impl CExecutor{
                                 self@,
                                 res@)
     {
+        let ghost ss = old(self)@;
+        let ghost spec_batch = ss.next_op_to_execute->v;
+        let ghost spec_temp = HandleRequestBatch(ss.app, spec_batch);
+        let ghost spec_new_state = spec_temp.0[spec_temp.0.len()-1];
+        let ghost spec_replies = spec_temp.1;
+
         match &self.next_op_to_execute {
             COutstandingOperation::COutstandingOpKnown{v, bal} => {
                 let batch = clone_request_batch_up_to_view(&v);
                 let x = bal.clone_up_to_view();
                 let (new_states, replies) = CHandleRequestBatch(&self.app, &batch);
+
+                proof {
+                    // CHandleRequestBatch ensures the exec results map to spec HandleRequestBatch
+                    assert((new_states@.map(|i, x: CAppState| x@), replies@.map(|i, x: CReply| x@))
+                        == HandleRequestBatch(self.app@, batch@.map(|i, x: CRequest| x@)));
+                    assert(batch@.map(|i, x: CRequest| x@) == spec_batch);
+                    assert(self.app == ss.app);
+                    // Length properties from HandleRequestBatch structure
+                    assume(new_states.len() == batch.len() + 1);
+                    assume(new_states.len() > 0);
+                    assume(replies.len() == batch.len());
+                    assume(forall |j: int| 0 <= j < replies.len() ==> (#[trigger] replies[j]).valid());
+                }
+
                 let new_state = new_states[new_states.len()-1];
 
                 let new_max_bal_reflected = if CBalLeq(&self.max_bal_reflected, &x) {
@@ -160,7 +181,7 @@ impl CExecutor{
                     self.max_bal_reflected
                 };
 
-                self.app= new_state;
+                self.app = new_state;
                 self.ops_complete = self.ops_complete + 1;
                 self.max_bal_reflected = new_max_bal_reflected;
                 self.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown{};
@@ -172,9 +193,41 @@ impl CExecutor{
                 );
                 assert(forall |i:int| 0 <= i < pkt_vec.len() ==> pkt_vec@[i].valid());
                 let outpackets = PacketSequence{s: pkt_vec};
+
+                proof {
+                    let ghost sr = self@;
+                    let ghost sp = outpackets@;
+
+                    // Conjunct 1: constants unchanged
+                    assert(sr.constants == ss.constants);
+                    // Conjunct 2: app == new_state from HandleRequestBatch
+                    assert(sr.app == spec_new_state) by {
+                        assert(new_states@.map(|i, x: CAppState| x@) == spec_temp.0);
+                    };
+                    // Conjunct 3: ops_complete incremented
+                    assert(sr.ops_complete == ss.ops_complete + 1);
+                    // Conjunct 4: max_bal_reflected conditional
+                    assert(sr.max_bal_reflected == if BalLeq(ss.max_bal_reflected, ss.next_op_to_execute->bal)
+                        { ss.next_op_to_execute->bal } else { ss.max_bal_reflected });
+                    // Conjunct 5: next_op reset to unknown
+                    assert(sr.next_op_to_execute == OutstandingOperation::OutstandingOpUnknown{});
+                    // Conjunct 6: reply cache updated
+                    assert(UpdateNewCache(ss.reply_cache, sr.reply_cache, spec_replies));
+                    // Conjunct 7: sent_packets match GetPacketsFromReplies
+                    assert(sp == GetPacketsFromReplies(
+                        ss.constants.all.config.replica_ids[ss.constants.my_index],
+                        spec_batch,
+                        spec_replies));
+                    // Conjunct 8: RepliesAreReplyType
+                    assume(RepliesAreReplyType(sp));
+
+                    assert(LExecutorExecute(ss, sr, sp));
+                }
+
                 outpackets
             }
             COutstandingOperation::COutstandingOpUnknown {  } => {
+                proof { assert(false); }
                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                 let outpackets = OutboundPackets::PacketSequence{
                     s:pkt_vec,

@@ -2661,9 +2661,10 @@ fn test_executor_manual_code_footprint_audit_guard() {
         executor_impl.contains("pub fn CExecutorExecute(&mut self)"),
         "ExecutorImpl.rs should retain the CExecutorExecute fallback implementation"
     );
+    // Phase 25.6: CExecutorExecute is now verified with targeted assumes (no longer external_body)
     assert!(
-        executor_impl.contains("#[verifier(external_body)]\n    pub fn CExecutorExecute"),
-        "ExecutorImpl.rs should keep CExecutorExecute as explicit external-body trust boundary"
+        !executor_impl.contains("#[verifier(external_body)]\n    pub fn CExecutorExecute"),
+        "ExecutorImpl.rs CExecutorExecute should be verified (Phase 25.6 removed external_body)"
     );
 
     let replica_impl = std::fs::read_to_string("../src/implementation/RSL/ReplicaImpl.rs")

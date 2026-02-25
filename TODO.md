@@ -8159,13 +8159,21 @@ and constructs reply packets.
 - Most likely need targeted assumes for HashMap-related properties
 
 **Steps:**
-- [ ] **25.6.1**: Analyze `LExecutorExecute` spec to enumerate all proof obligations
-- [ ] **25.6.2**: Add proof assertions after `CHandleRequestBatch` call
-- [ ] **25.6.3**: Add proof assertions for `max_bal_reflected` conditional
-- [ ] **25.6.4**: Add proof assertions for `CUpdateNewCache` and `CGetPacketsFromReplies`
-- [ ] **25.6.5**: Remove `external_body`, attempt verification, add targeted assumes for
-  remaining gaps. Document what remains unproven
-- [ ] **25.6.6**: Run Verus build to verify
+- [x] **25.6.1**: Analyzed `LExecutorExecute` spec — 8 conjuncts covering constants, app, ops_complete,
+  max_bal_reflected, next_op_to_execute, reply_cache, sent_packets, RepliesAreReplyType
+- [x] **25.6.2**: Added proof assertions after `CHandleRequestBatch` call (view mapping, batch equivalence)
+- [x] **25.6.3**: Added proof assertions for `max_bal_reflected` conditional (CBalLeq ↔ BalLeq bridging)
+- [x] **25.6.4**: Added proof assertions for all 8 LExecutorExecute conjuncts individually
+- [x] **25.6.5**: Removed `external_body`, 5 targeted assumes:
+  - 3 HandleRequestBatch length properties (states.len() == batch.len()+1, >0, replies.len() == batch.len())
+  - 1 reply validity (forall |j| replies[j].valid())
+  - 1 RepliesAreReplyType (packet type correctness)
+  These match the same gaps as executor_gen.rs's lemma_CHandleRequestBatch_properties.
+- [x] **25.6.6**: Verified: 605 verified, 0 errors; 1903 transpiler tests pass
+
+**Results**: Removed `#[verifier(external_body)]` from `CExecutorExecute` in ExecutorImpl.rs.
+Function now verified with 5 targeted assumes (all for HandleRequestBatch structural properties
++ RepliesAreReplyType — same gaps as the standalone executor_gen.rs proof).
 
 ### 25.7 Phase 25.7: Verify and audit
 
