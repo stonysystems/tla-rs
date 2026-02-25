@@ -16,9 +16,10 @@ use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound};
+use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound, UpperBoundedAddition};
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::environment::{RslIo, RslPacket};
+use crate::protocol::RSL::message::RslMessage;
 use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
@@ -202,56 +203,63 @@ pub exec fn CReplicaNextProcess2a(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessage2a,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcess2a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = {
-        let m = &received_packet.msg;
-        if {
-            let __rhs_0 = {
-                CBalLeq(&s.acceptor.max_bal, &match &m {
-    CMessage::CMessage2a { bal_2a, .. } => bal_2a.clone(),
-    _  => {
+    let m = &received_packet.msg;
+    let (bal_2a, opn_2a) = match m {
+        CMessage::CMessage2a { bal_2a, opn_2a, .. } => (*bal_2a, *opn_2a),
+        _ => { proof { assert(false); } unreachable_value() }
+    };
+    let src_in_config = contains(&s.acceptor.constants.all.config.replica_ids, &received_packet.src);
+    let bal_leq = CBalLeq(&s.acceptor.max_bal, &bal_2a);
+    let opn_in_bound = opn_2a <= s.acceptor.constants.all.params.max_integer_val;
+    proof {
+        // Bridge exec conditions to spec conditions
+        assert(src_in_config == s@.acceptor.constants.all.config.replica_ids.contains(received_packet@.src));
+        assert(bal_leq == BalLeq(s@.acceptor.max_bal, received_packet@.msg->bal_2a));
+        assert(opn_in_bound == LeqUpperBound(received_packet@.msg->opn_2a, s@.acceptor.constants.all.params.max_integer_val));
+    }
+    if src_in_config && bal_leq && opn_in_bound {
+        let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
+        let result_replica = CReplica {
+            constants: s.constants.clone(),
+            nextHeartbeatTime: s.nextHeartbeatTime,
+            proposer: s.proposer.clone_up_to_view(),
+            acceptor: s_acceptor,
+            learner: s.learner.clone_up_to_view(),
+            executor: s.executor.clone_up_to_view(),
+        };
         proof {
-            assert(false);
+            assert(result_replica@.constants == s@.constants);
+            assert(result_replica@.nextHeartbeatTime == s@.nextHeartbeatTime);
+            assert(result_replica@.proposer == s@.proposer);
+            assert(result_replica@.acceptor == s_acceptor@);
+            assert(result_replica@.learner == s@.learner);
+            assert(result_replica@.executor == s@.executor);
+            assert(result_replica@ == LReplica {
+                constants: s@.constants,
+                nextHeartbeatTime: s@.nextHeartbeatTime,
+                proposer: s@.proposer,
+                acceptor: result_replica@.acceptor,
+                learner: s@.learner,
+                executor: s@.executor,
+            });
         }
-        unreachable_value()
-    },
-});
-                (match &m {
-                    CMessage::CMessage2a { opn_2a, .. } => opn_2a.clone(),
-                    _  => {
-                        proof {
-                            assert(false);
-                        }
-                        unreachable_value()
-                    },
-                } <= s.acceptor.constants.all.params.max_integer_val)
-            };
-            (contains(&s.acceptor.constants.all.config.replica_ids, &received_packet.src) && __rhs_0)
-        } {
-                        let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
-            (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
-        } else {
-            (s.clone(), vec![])
+        (result_replica, sent_packets)
+    } else {
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            lemma_empty_seq_map();
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
         }
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
-
+        r
+    }
 }
 
 pub exec fn CReplicaNextProcess2b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
@@ -385,21 +393,39 @@ pub exec fn CReplicaNextProcessAppStateRequest(s: &CReplica, received_packet: &C
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    { let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet); (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s.proposer.clone_up_to_view(),
-    acceptor: s.acceptor.clone_up_to_view(),
-    learner: s.learner.clone_up_to_view(),
-    executor: s_executor,
-}, sent_packets) }
-
+    let (s_executor, sent_packets) = crate::generated::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet);
+    let result_replica = CReplica {
+        constants: s.constants.clone(),
+        nextHeartbeatTime: s.nextHeartbeatTime,
+        proposer: s.proposer.clone_up_to_view(),
+        acceptor: s.acceptor.clone_up_to_view(),
+        learner: s.learner.clone_up_to_view(),
+        executor: s_executor,
+    };
+    proof {
+        assert(result_replica@.constants == s@.constants);
+        assert(result_replica@.nextHeartbeatTime == s@.nextHeartbeatTime);
+        assert(result_replica@.proposer == s@.proposer);
+        assert(result_replica@.acceptor == s@.acceptor);
+        assert(result_replica@.learner == s@.learner);
+        assert(result_replica@.executor == s_executor@);
+        assert(result_replica@ == LReplica {
+            constants: s@.constants,
+            nextHeartbeatTime: s@.nextHeartbeatTime,
+            proposer: s@.proposer,
+            acceptor: s@.acceptor,
+            learner: s@.learner,
+            executor: result_replica@.executor,
+        });
+    }
+    (result_replica, sent_packets)
 }
 
 pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket, clock: &u64) -> (result: (CReplica, Vec<CPacket>))
@@ -567,35 +593,78 @@ pub exec fn CReplicaNextReadClockMaybeSendHeartbeat(s: &CReplica, clock: &CClock
 requires
     s.valid(),
     clock.valid(),
+    ReplicaIndexValid(s.constants.my_index, s.constants.all.config),
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextReadClockMaybeSendHeartbeat(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = if (clock.t < s.nextHeartbeatTime) {
-        (s.clone(), vec![])
+    if (clock.t < s.nextHeartbeatTime) {
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            lemma_empty_seq_map();
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            assert(LReplicaNextReadClockMaybeSendHeartbeat(s@, r.0@, clock@, r.1@.map(|i: int, p: CPacket| p@)));
+        }
+        r
     } else {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageHeartbeat {
-    bal_heartbeat: s.proposer.election_state.current_view,
-    suspicious: s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index),
-    opn_ckpt: s.executor.ops_complete,
-});
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: CUpperBoundedAddition(clock.t.clone(), s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets)
-
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-    }; result }
-
+        // Establish CMessage validity for CBroadcastToEveryone requires
+        let suspicious_val = s.proposer.election_state.current_view_suspectors.contains(&s.constants.my_index);
+        let msg = CMessage::CMessageHeartbeat {
+            bal_heartbeat: s.proposer.election_state.current_view,
+            suspicious: suspicious_val,
+            opn_ckpt: s.executor.ops_complete,
+        };
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(
+            &s.constants.all.config, &s.constants.my_index, &msg);
+        let mut result_replica = s.clone_up_to_view();
+        result_replica.nextHeartbeatTime = CUpperBoundedAddition(
+            clock.t, s.constants.all.params.heartbeat_period, s.constants.all.params.max_integer_val);
+        proof {
+            // Prove suspicious field view mapping: Set<u64>.contains(k) == Set<u64>.map(f).contains(f(k))
+            let suspectors = s.proposer.election_state.current_view_suspectors@;
+            let my_idx = s.constants.my_index;
+            assert(suspectors.map(|x: u64| x as int).contains(my_idx as int) == suspectors.contains(my_idx)) by {
+                if suspectors.contains(my_idx) {
+                    assert(suspectors.map(|x: u64| x as int).contains(my_idx as int));
+                }
+                if suspectors.map(|x: u64| x as int).contains(my_idx as int) {
+                    let witness = choose |x: u64| suspectors.contains(x) && (x as int) == (my_idx as int);
+                    assert(witness == my_idx);
+                }
+            }
+            // Connect message view to spec message
+            assert(msg@== RslMessage::RslMessageHeartbeat {
+                bal_heartbeat: s.proposer.election_state.current_view@,
+                suspicious: suspicious_val,
+                opn_ckpt: s.executor.ops_complete as int,
+            });
+            // Prove msg@ matches spec message
+            assert(s.proposer.election_state.current_view@ == s@.proposer.election_state.current_view);
+            assert(s.executor.ops_complete as int == s@.executor.ops_complete);
+            assert(suspicious_val == s@.proposer.election_state.current_view_suspectors.contains(s@.constants.my_index));
+            // Field-by-field view assertions for result replica
+            assert(result_replica@.constants == s@.constants);
+            assert(result_replica@.nextHeartbeatTime == UpperBoundedAddition(
+                clock@.t, s@.constants.all.params.heartbeat_period, s@.constants.all.params.max_integer_val));
+            assert(result_replica@.proposer == s@.proposer);
+            assert(result_replica@.acceptor == s@.acceptor);
+            assert(result_replica@.learner == s@.learner);
+            assert(result_replica@.executor == s@.executor);
+            // Prove result replica matches spec struct
+            assert(result_replica@ == LReplica {
+                constants: s@.constants,
+                nextHeartbeatTime: result_replica@.nextHeartbeatTime,
+                proposer: s@.proposer,
+                acceptor: s@.acceptor,
+                learner: s@.learner,
+                executor: s@.executor,
+            });
+        }
+        (result_replica, sent_packets)
+    }
 }
 
 pub exec fn CReplicaNextReadClockCheckForViewTimeout(s: &CReplica, clock: &CClockReading) -> (result: (CReplica, Vec<CPacket>))

@@ -99,6 +99,19 @@ ensures
 }
 
 
+/// Connects HashMap.get(&key) through abstractify_creplycache to spec Map[key@].
+/// This is needed because abstractify_creplycache uses Map::new with exists/choose,
+/// making it hard to prove the connection to individual HashMap entries.
+#[verifier(external_body)]
+proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
+    requires
+        creplycache_is_valid(&cache),
+        cache@.contains_key(key),
+    ensures
+        abstractify_creplycache(&cache).contains_key(key@),
+        cache@[key]@ == abstractify_creplycache(&cache)[key@],
+{}
+
 pub exec fn CExecutorInit(c: &CReplicaConstants) -> (result: CExecutor)
 requires
     c.valid(),
@@ -203,55 +216,56 @@ pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (re
 requires
     s.valid(),
     inp.valid(),
+    inp.msg is CMessageAppStateRequest,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = {
-        let m = &inp.msg;
-        if {
-            let __rhs_0 = {
-                CBalLeq(&s.max_bal_reflected, &match &m {
-    CMessage::CMessageAppStateRequest { bal_state_req, .. } => bal_state_req.clone(),
-    _  => {
+    let (bal_state_req, opn_state_req) = match &inp.msg {
+        CMessage::CMessageAppStateRequest { bal_state_req, opn_state_req } => (*bal_state_req, *opn_state_req),
+        _ => { proof { assert(false); } unreachable_value() }
+    };
+    let src_in_config = contains(&s.constants.all.config.replica_ids, &inp.src);
+    let bal_leq = CBalLeq(&s.max_bal_reflected, &bal_state_req);
+    let opn_ok = s.ops_complete >= opn_state_req;
+    let constants_valid = s.constants.CReplicaConstantsValid();
+    proof {
+        assert(src_in_config == s@.constants.all.config.replica_ids.contains(inp@.src));
+        assert(bal_leq == BalLeq(s@.max_bal_reflected, inp@.msg->bal_state_req));
+        assert(opn_ok == (s@.ops_complete >= inp@.msg->opn_state_req));
+        assert(constants_valid == LReplicaConstantsValid(s@.constants));
+    }
+    if src_in_config && bal_leq && opn_ok && constants_valid {
+        let cloned_cache = clone_reply_cache(&s.reply_cache);
+        let packet = CPacket {
+            dst: inp.src.clone(),
+            src: s.constants.all.config.replica_ids[(s.constants.my_index as usize)].clone(),
+            msg: CMessage::CMessageAppStateSupply {
+                bal_state_supply: s.max_bal_reflected,
+                opn_state_supply: s.ops_complete,
+                app_state: s.app,
+                reply_cache: cloned_cache,
+            },
+        };
+        let r = (s.clone_up_to_view(), vec![packet]);
         proof {
-            assert(false);
+            assert(r.0@ == s@);
+            assert(r.1@.len() == 1);
+            assert(r.1@[0] == packet);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= seq![packet@]);
         }
-        unreachable_value()
-    },
-});
-                (s.ops_complete >= match &m {
-                    CMessage::CMessageAppStateRequest { opn_state_req, .. } => opn_state_req.clone(),
-                    _  => {
-                        proof {
-                            assert(false);
-                        }
-                        unreachable_value()
-                    },
-                })
-            };
-            (contains(&s.constants.all.config.replica_ids, &inp.src) && __rhs_0)
-        } {
-            (s.clone(), vec![CPacket {
-    dst: inp.src.clone(),
-    src: s.constants.all.config.replica_ids[(s.constants.my_index as usize)].clone(),
-    msg: CMessage::CMessageAppStateSupply {
-        bal_state_supply: s.max_bal_reflected.clone(),
-        opn_state_supply: s.ops_complete.clone(),
-        app_state: s.app.clone(),
-        reply_cache: s.reply_cache.clone(),
-    },
-}])
-        } else {
-            (s.clone(), vec![])
+        r
+    } else {
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            lemma_empty_seq_map();
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
         }
-    }; proof {
-        lemma_empty_seq_map();
-    }; result }
-
+        r
+    }
 }
 
 pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
@@ -315,37 +329,68 @@ pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Ve
 requires
     s.valid(),
     inp.valid(),
+    inp.msg is CMessageRequest,
+    s.reply_cache@.contains_key(inp.src),
 ensures
     forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
     forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
     LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = if ((match &inp.msg {
-        CMessage::CMessageRequest { seqno_req, .. } => seqno_req.clone(),
-        _  => {
-            proof {
-                assert(false);
-            }
-            unreachable_value()
-        },
-    } == s.reply_cache.get(&inp.src).unwrap().clone().seqno) && s.constants.CReplicaConstantsValid()) {
-                let r = s.reply_cache.get(&inp.src).unwrap().clone();
-        vec![CPacket {
-    dst: r.client,
-    src: s.constants.all.config.replica_ids[(s.constants.my_index as usize)].clone(),
-    msg: CMessage::CMessageReply {
-        seqno_reply: r.seqno,
-        reply: r.reply,
-    },
-}]
-
+    let seqno_req = match &inp.msg {
+        CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
+        _ => { proof { assert(false); } unreachable_value() }
+    };
+    let ghost ss = s@;
+    let ghost sp = inp@;
+    proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+    }
+    let r_opt = s.reply_cache.get(&inp.src);
+    proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+        assert(r_opt.is_some());
+        lemma_creplycache_get(s.reply_cache, inp.src);
+    }
+    let constants_valid = s.constants.CReplicaConstantsValid();
+    if r_opt.is_some() && seqno_req == r_opt.unwrap().seqno && constants_valid {
+        let r = r_opt.unwrap();
+        proof {
+            lemma_creplycache_get(s.reply_cache, inp.src);
+            assert(r@ == ss.reply_cache[sp.src]);
+            assert(constants_valid == LReplicaConstantsValid(ss.constants));
+        }
+        let pkt = CPacket {
+            dst: r.client.clone_up_to_view(),
+            src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone_up_to_view(),
+            msg: CMessage::CMessageReply {
+                seqno_reply: r.seqno,
+                reply: r.reply.clone_up_to_view(),
+            },
+        };
+        let result = vec![pkt];
+        proof {
+            let ghost r_spec = ss.reply_cache[sp.src];
+            let ghost smsg = RslMessage::RslMessageReply {
+                seqno_reply: r_spec.seqno,
+                reply: r_spec.reply,
+            };
+            let ghost spkt = LPacket {
+                dst: r_spec.client,
+                src: ss.constants.all.config.replica_ids[ss.constants.my_index],
+                msg: smsg,
+            };
+            assert(pkt@ == spkt);
+            assert(result@.map(|i: int, p: CPacket| p@) =~= seq![spkt]);
+        }
+        result
     } else {
-        vec![]
-    }; proof {
-        lemma_empty_seq_map();
-    }; result }
-
+        let result = vec![];
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        result
+    }
 }
 
 } // verus!
