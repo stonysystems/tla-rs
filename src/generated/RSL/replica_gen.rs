@@ -324,13 +324,13 @@ pub exec fn CReplicaNextProcessAppStateSupply(s: &CReplica, received_packet: &CP
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessageAppStateSupply,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessAppStateSupply(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let result = if (contains(&s.executor.constants.all.config.replica_ids, &received_packet.src) && (match &received_packet.msg {
         CMessage::CMessageAppStateSupply { opn_state_supply, .. } => opn_state_supply.clone(),
         _  => {
@@ -350,21 +350,33 @@ ensures
     },
 });
         let s_executor = crate::generated::RSL::executor_gen::CExecutorProcessAppStateSupply(&s.executor, &received_packet);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
+        let r = (CReplica {
+    constants: s.constants.clone_up_to_view(),
+    nextHeartbeatTime: s.nextHeartbeatTime,
+    proposer: s.proposer.clone_up_to_view(),
+    acceptor: s.acceptor.clone_up_to_view(),
     learner: s_learner,
     executor: s_executor,
-}, vec![])
+}, vec![]);
+        proof {
+            assert(r.0@ =~= (LReplica {
+                constants: s@.constants,
+                nextHeartbeatTime: s@.nextHeartbeatTime,
+                proposer: s@.proposer,
+                acceptor: s@.acceptor,
+                learner: r.0@.learner,
+                executor: r.0@.executor,
+            }));
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        r
 
     } else {
-        (s.clone(), vec![])
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        r
     }; result }
 
 }

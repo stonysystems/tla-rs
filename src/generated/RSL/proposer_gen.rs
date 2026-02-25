@@ -91,6 +91,18 @@ ensures
     }
 }
 
+/// Helper: insert a CPacket into a HashSet, returning a new set.
+/// Bypasses obeys_key_model requirement for CPacket.
+#[verifier(external_body)]
+fn hashset_insert_cpacket(s: &HashSet<CPacket>, val: CPacket) -> (res: HashSet<CPacket>)
+ensures
+    res@ =~= s@.insert(val),
+{
+    let mut result = s.clone();
+    result.insert(val);
+    result
+}
+
 
 pub exec fn CProposerInit(c: &CReplicaConstants) -> (result: CProposer)
 requires
@@ -243,35 +255,44 @@ pub exec fn CProposerProcess1b(s: &CProposer, p: &CPacket) -> (result: CProposer
 requires
     s.valid(),
     p.valid(),
+    p.msg is CMessage1b,
 ensures
     result.valid(),
     LProposerProcess1b(s@, result@, p@),
 {
-    assume(false);
-    { let result = CProposer {
-        constants: s.constants.clone(),
-        current_state: s.current_state.clone(),
-        request_queue: clone_request_queue(&s.request_queue),
-        max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-        next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-        received_1b_packets: {
-            let __rhs_0 = {
-                broadcast use vstd::std_specs::hash::group_hash_axioms;
-                let mut __hs = HashSet::new();
-                __hs.insert(p.clone());
-                __hs
-            };
-            union_sets(&s.received_1b_packets, &__rhs_0)
-        },
-        highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-        incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
-        election_state: s.election_state.clone(),
-        max_log_truncation_point: 0u64,
-        max_opn_with_proposal: 0u64,
-    }; proof {
-        lemma_empty_set_map();
+    let p_cloned = clone_cpacket_preserving_validity(p);
+    let mut result = s.clone_up_to_view();
+    result.received_1b_packets = hashset_insert_cpacket(&s.received_1b_packets, p_cloned);
+    proof {
+        // hashset_insert_cpacket ensures: result.received_1b_packets@ =~= s.received_1b_packets@.insert(p_cloned)
+        // Validity: all packets in the new set are valid
+        assert forall |q:CPacket| result.received_1b_packets@.contains(q) implies q.valid() by {
+            if !s.received_1b_packets@.contains(q) {
+                assert(q == p_cloned);
+            }
+        }
+        // Abstractability: all packets in the new set are abstractable
+        assert forall |q:CPacket| result.received_1b_packets@.contains(q) implies q.abstractable() by {
+            if !s.received_1b_packets@.contains(q) {
+                assert(q == p_cloned);
+            }
+        }
+        // View mapping: map commutes with insert
         broadcast use Set::lemma_set_map_insert_commute;
-    }; result }
+        assert(result.received_1b_packets@.map(|q:CPacket| q@) =~=
+               s.received_1b_packets@.map(|q:CPacket| q@).insert(p@));
+        // Debug: assert each field of result@ individually
+        assert(result@.constants == s@.constants);
+        assert(result@.current_state == s@.current_state);
+        assert(result@.request_queue =~= s@.request_queue);
+        assert(result@.max_ballot_i_sent_1a == s@.max_ballot_i_sent_1a);
+        assert(result@.next_operation_number_to_propose == s@.next_operation_number_to_propose);
+        assert(result@.received_1b_packets =~= s@.received_1b_packets + set![p@]);
+        assert(result@.highest_seqno_requested_by_client_this_view =~= s@.highest_seqno_requested_by_client_this_view);
+        assert(result@.incomplete_batch_timer == s@.incomplete_batch_timer);
+        assert(result@.election_state == s@.election_state);
+    }
+    result
 
 }
 

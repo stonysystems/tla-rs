@@ -150,6 +150,7 @@ impl Clone for CElectionState {
     #[verifier(external_body)]
     fn clone(&self) -> (result: Self)
     ensures
+        *self == result,
         result@ == self@,
         result.valid() == self.valid(),
     {

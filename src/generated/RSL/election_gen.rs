@@ -10,7 +10,7 @@ use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::abstractify_crequestbatch;
-use crate::protocol::common::upper_bound::LtUpperBound;
+use crate::protocol::common::upper_bound::{LtUpperBound, UpperBoundedAddition};
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::types::*;
@@ -294,50 +294,79 @@ ensures
     result.valid(),
     ElectionStateCheckForViewTimeout(es@, result@, *clock as int),
 {
-    assume(false);
-    { let result = if (*clock < es.epoch_end_time) {
+    if (*clock < es.epoch_end_time) {
+        // Branch 1: no-op
         es.clone()
+    } else if ((es.requests_received_prev_epochs.len() as u64) == 0) {
+        // Branch 2: reset epoch, swap request queues
+        let new_epoch_length = es.constants.all.params.baseline_view_timeout_period.clone();
+        let mut result = es.clone();
+        result.epoch_end_time = CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val);
+        result.epoch_length = new_epoch_length;
+        result.requests_received_prev_epochs = clone_requests_received_this_epoch(&es.requests_received_this_epoch);
+        result.requests_received_this_epoch = vec![];
+        result.cur_req_set = HashSet::new();
+        result.prev_req_set = HashSet::new();
+        proof {
+            lemma_empty_requests_received_this_epoch_map();
+            assert(result@ =~= ElectionState {
+                constants: es@.constants,
+                current_view: es@.current_view,
+                current_view_suspectors: es@.current_view_suspectors,
+                epoch_end_time: UpperBoundedAddition(*clock as int, new_epoch_length as int, es@.constants.all.params.max_integer_val),
+                epoch_length: new_epoch_length as int,
+                requests_received_this_epoch: Seq::<Request>::empty(),
+                requests_received_prev_epochs: es@.requests_received_this_epoch,
+            });
+        }
+        result
     } else {
-        if ((es.requests_received_prev_epochs.len() as u64) == 0) {
-                        let new_epoch_length = es.constants.all.params.baseline_view_timeout_period.clone();
-            CElectionState {
-                constants: es.constants.clone(),
-                current_view: es.current_view.clone(),
-                current_view_suspectors: clone_hashset(&es.current_view_suspectors),
-                epoch_end_time: CUpperBoundedAddition(*clock, new_epoch_length, es.constants.all.params.max_integer_val),
-                epoch_length: new_epoch_length,
-                requests_received_this_epoch: vec![],
-                requests_received_prev_epochs: clone_requests_received_this_epoch(&es.requests_received_this_epoch),
-                cur_req_set: HashSet::new(),
-                prev_req_set: HashSet::new(),
-            }
-
-        } else {
-            CElectionState {
-                constants: es.constants.clone(),
-                current_view: es.current_view.clone(),
-                current_view_suspectors: {
-                    let __rhs_0 = {
-                        broadcast use vstd::std_specs::hash::group_hash_axioms;
-                        let mut __hs = HashSet::new();
-                        __hs.insert(es.constants.my_index.clone());
-                        __hs
-                    };
-                    union_sets(&es.current_view_suspectors, &__rhs_0)
-                },
-                epoch_end_time: CUpperBoundedAddition(*clock, es.epoch_length.clone(), es.constants.all.params.max_integer_val),
-                epoch_length: es.epoch_length.clone(),
-                requests_received_this_epoch: vec![],
-                requests_received_prev_epochs: crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch), es.constants.all.params.max_integer_val),
-                cur_req_set: HashSet::new(),
-                prev_req_set: HashSet::new(),
+        // Branch 3: union suspectors + reset epoch + bound request sequence
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        let mut singleton = HashSet::new();
+        singleton.insert(es.constants.my_index.clone());
+        let concat_result = concat_vecs(&es.requests_received_prev_epochs, &es.requests_received_this_epoch);
+        let _clen = concat_result.len();
+        proof {
+            assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
+                if i < es.requests_received_prev_epochs@.len() {
+                    assert(concat_result@[i] == es.requests_received_prev_epochs@[i]);
+                } else {
+                    assert(concat_result@[i] == es.requests_received_this_epoch@[i - es.requests_received_prev_epochs@.len()]);
+                }
             }
         }
-    }; proof {
-        lemma_empty_set_map();
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_requests_received_this_epoch_map();
-    }; result }
+        let mut result = es.clone();
+        result.current_view_suspectors = union_sets(&es.current_view_suspectors, &singleton);
+        result.epoch_end_time = CUpperBoundedAddition(*clock, es.epoch_length.clone(), es.constants.all.params.max_integer_val);
+        result.requests_received_prev_epochs = crate::generated::RSL::types_gen::CElectionState::CBoundRequestSequence(&concat_result, es.constants.all.params.max_integer_val);
+        result.requests_received_this_epoch = vec![];
+        result.cur_req_set = HashSet::new();
+        result.prev_req_set = HashSet::new();
+        proof {
+            lemma_empty_set_map();
+            lemma_empty_requests_received_this_epoch_map();
+            broadcast use Set::lemma_set_map_insert_commute;
+            // Prove suspectors view: union then map(u64 → int)
+            assert(singleton@ =~= Set::<u64>::empty().insert(es.constants.my_index));
+            assert(result.current_view_suspectors@ =~= es.current_view_suspectors@.insert(es.constants.my_index));
+            assert(result.current_view_suspectors@.map(|x:u64| x as int) =~=
+                   es.current_view_suspectors@.map(|x:u64| x as int).insert(es.constants.my_index as int));
+            // Debug: individual field assertions
+            assert(result@.constants == es@.constants);
+            assert(result@.current_view == es@.current_view);
+            assert(result@.current_view_suspectors =~= es@.current_view_suspectors + set![es@.constants.my_index]);
+            assert(result@.epoch_end_time == UpperBoundedAddition(*clock as int, es@.epoch_length, es@.constants.all.params.max_integer_val));
+            assert(result@.epoch_length == es@.epoch_length);
+            assert(result@.requests_received_this_epoch =~= Seq::<Request>::empty());
+            // requests_received_prev_epochs: need concat map distributivity
+            assert(concat_result@.map(|i: int, r: CRequest| r@) =~=
+                   es.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@) +
+                   es.requests_received_this_epoch@.map(|i: int, r: CRequest| r@));
+            assert(result@.requests_received_prev_epochs =~= BoundRequestSequence(es@.requests_received_prev_epochs + es@.requests_received_this_epoch, es@.constants.all.params.max_integer_val));
+        }
+        result
+    }
 
 }
 

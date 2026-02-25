@@ -21,6 +21,8 @@ verus! {
     pub fn union_sets<T>(s1:&HashSet<T>, s2:&HashSet<T>) -> (res:HashSet<T>)
     where
         T: Clone + Eq + Hash
+    ensures
+        res@ == s1@.union(s2@),
     {
         let mut result = HashSet::new();
         for elem in s1 {
