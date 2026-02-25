@@ -131,21 +131,17 @@ pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CR
 requires
     s.valid(),
     bal.valid(),
+    crequestbatch_is_valid(v),
 ensures
     result.valid(),
     LExecutorGetDecision(s@, result@, bal@, *opn as int, abstractify_crequestbatch(v)),
 {
-    assume(false);
     CExecutor {
-        constants: s.constants.clone(),
-        app: s.app.clone(),
-        ops_complete: s.ops_complete.clone(),
-        max_bal_reflected: s.max_bal_reflected.clone(),
         next_op_to_execute: COutstandingOperation::COutstandingOpKnown {
-            v: v.clone(),
+            v: clone_request_batch_up_to_view(v),
             bal: bal.clone(),
         },
-        reply_cache: s.reply_cache.clone(),
+        ..s.clone_up_to_view()
     }
 
 }

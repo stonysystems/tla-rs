@@ -146,21 +146,21 @@ pub exec fn CReplicaNextProcess1a(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessage1a,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let (s_acceptor, sent_packets) = crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&s.acceptor, &received_packet); (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, sent_packets) }
+        constants: s.constants.clone(),
+        nextHeartbeatTime: s.nextHeartbeatTime,
+        proposer: s.proposer.clone_up_to_view(),
+        acceptor: s_acceptor,
+        learner: s.learner.clone_up_to_view(),
+        executor: s.executor.clone_up_to_view(),
+    }, sent_packets) }
 
 }
 
@@ -257,13 +257,13 @@ pub exec fn CReplicaNextProcess2b(s: &CReplica, received_packet: &CPacket) -> (r
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessage2b,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcess2b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let result = {
         let opn = match &received_packet.msg {
             CMessage::CMessage2b { opn_2b, .. } => opn_2b.clone(),
@@ -277,21 +277,27 @@ ensures
         { let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingOpUnknown { .. }))); if op_learnable {
                         let s_learner = crate::generated::RSL::learner_gen::CLearnerProcess2b(&s.learner, &received_packet);
             (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s.proposer.clone(),
-    acceptor: s.acceptor.clone(),
-    learner: s_learner,
-    executor: s.executor.clone(),
-}, vec![])
+                constants: s.constants.clone_up_to_view(),
+                nextHeartbeatTime: s.nextHeartbeatTime,
+                proposer: s.proposer.clone_up_to_view(),
+                acceptor: s.acceptor.clone_up_to_view(),
+                learner: s_learner,
+                executor: s.executor.clone_up_to_view(),
+            }, vec![])
 
         } else {
-            (s.clone(), vec![])
+            (s.clone_up_to_view(), vec![])
         } }
     }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
+        assert(result.0@ =~= (LReplica {
+            constants: s@.constants,
+            nextHeartbeatTime: s@.nextHeartbeatTime,
+            proposer: s@.proposer,
+            acceptor: s@.acceptor,
+            learner: result.0@.learner,
+            executor: s@.executor,
+        }));
+        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
     }; result }
 
 }
@@ -387,27 +393,32 @@ pub exec fn CReplicaNextProcessHeartbeat(s: &CReplica, received_packet: &CPacket
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessageHeartbeat,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, *clock as int, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
-    { let result = {
-        let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
-        let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
-        (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime.clone(),
-    proposer: s_proposer,
-    acceptor: s_acceptor,
-    learner: s.learner.clone(),
-    executor: s.executor.clone(),
-}, vec![])
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
+    { let s_proposer = crate::generated::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
+    let s_acceptor = crate::generated::RSL::acceptor_gen::CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
+    let result = (CReplica {
+        constants: s.constants.clone_up_to_view(),
+        nextHeartbeatTime: s.nextHeartbeatTime,
+        proposer: s_proposer,
+        acceptor: s_acceptor,
+        learner: s.learner.clone_up_to_view(),
+        executor: s.executor.clone_up_to_view(),
+    }, vec![]); proof {
+        assert(result.0@ =~= (LReplica {
+            constants: s@.constants,
+            nextHeartbeatTime: s@.nextHeartbeatTime,
+            proposer: result.0@.proposer,
+            acceptor: result.0@.acceptor,
+            learner: s@.learner,
+            executor: s@.executor,
+        }));
+        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
     }; result }
 
 }

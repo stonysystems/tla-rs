@@ -357,33 +357,21 @@ ensures
     result.valid(),
     LProposerProcessHeartbeat(s@, result@, p@, *clock as int),
 {
-    assume(false);
-    { let result = {
-        let s_election_state = CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
+    { let s_election_state = CElectionStateProcessHeartbeat(&s.election_state, &p, &clock);
+    if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+        proof { lemma_empty_request_queue_map(); }
         CProposer {
-            constants: s.constants.clone(),
-            current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                0u64
-            } else {
-                s.current_state.clone()
-            },
-            request_queue: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                vec![]
-            } else {
-                clone_request_queue(&s.request_queue)
-            },
-            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-            next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-            received_1b_packets: clone_hashset(&s.received_1b_packets),
-            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-            incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
+            current_state: 0u64,
+            request_queue: vec![],
             election_state: s_election_state,
-            max_log_truncation_point: 0u64,
-            max_opn_with_proposal: 0u64,
+            ..s.clone_up_to_view()
         }
-    }; proof {
-        lemma_empty_request_queue_map();
-    }; result }
+    } else {
+        CProposer {
+            election_state: s_election_state,
+            ..s.clone_up_to_view()
+        }
+    } }
 
 }
 
@@ -408,33 +396,21 @@ ensures
     result.valid(),
     LProposerCheckForQuorumOfViewSuspicions(s@, result@, *clock as int),
 {
-    assume(false);
-    { let result = {
-        let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
+    { let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&s.election_state, &clock);
+    if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
+        proof { lemma_empty_request_queue_map(); }
         CProposer {
-            constants: s.constants.clone(),
-            current_state: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                0u64
-            } else {
-                s.current_state.clone()
-            },
-            request_queue: if CBalLt(&s.election_state.current_view, &s_election_state.current_view) {
-                vec![]
-            } else {
-                clone_request_queue(&s.request_queue)
-            },
-            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
-            next_operation_number_to_propose: s.next_operation_number_to_propose.clone(),
-            received_1b_packets: clone_hashset(&s.received_1b_packets),
-            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-            incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
+            current_state: 0u64,
+            request_queue: vec![],
             election_state: s_election_state,
-            max_log_truncation_point: 0u64,
-            max_opn_with_proposal: 0u64,
+            ..s.clone_up_to_view()
         }
-    }; proof {
-        lemma_empty_request_queue_map();
-    }; result }
+    } else {
+        CProposer {
+            election_state: s_election_state,
+            ..s.clone_up_to_view()
+        }
+    } }
 
 }
 
