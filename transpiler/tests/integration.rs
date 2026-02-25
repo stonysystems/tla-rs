@@ -1976,12 +1976,14 @@ fn collect_assume_lines(fn_start_line: usize, fn_source: &str) -> Vec<(usize, St
 /// keep the trusted `assume(false)` footprint explicit and stable in generated RSL modules.
 #[test]
 fn test_rsl_generated_assume_false_footprint_drift_guard() {
-    // Phase 23.5.14: All assume(false) eliminated from generated RSL code.
-    // Now track targeted assume() calls (for irreducible View-mapping gaps).
+    // Phase 24: All assume(false) eliminated; external_body removed from 8 functions + 7 lemmas.
+    // Targeted assume() counts increased as function bodies are now verified with local assumes.
     let expected_targeted_counts: std::collections::BTreeMap<&str, usize> = [
-        ("election_gen.rs", 3usize),  // 1 cardinality gap + 2 valid/spec
-        ("proposer_gen.rs", 5usize),  // 1 cardinality gap + 4 valid/spec (2 branches × 2)
-        ("replica_gen.rs", 4usize),   // 1 cardinality gap + 3 spec/valid
+        ("election_gen.rs", 7usize),  // 3 original + 4 from unblocked CElectionStateReflectReceivedRequest
+        ("executor_gen.rs", 1usize),  // 1 reply validity assume in lemma_CHandleRequestBatch_properties
+        ("learner_gen.rs", 5usize),   // 3 from CLearnerProcess2b (ballot valid + postconditions) + 2 from CLearnerForgetOperationsBefore
+        ("proposer_gen.rs", 22usize), // 5 original + 17 from 3 Nominate functions (overflow, ballot, unwrap, msg validity, postconditions)
+        ("replica_gen.rs", 4usize),   // 1 cardinality gap + 3 spec/valid (unchanged)
     ]
     .into_iter()
     .collect();

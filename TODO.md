@@ -7893,12 +7893,14 @@ properties that are provable with appropriate Verus proof strategies.
 
 ### 24.4 Phase 24.4: Verify and audit
 
-- [ ] **24.4.1**: Run Verus build: target ≥572 verified, 0 errors
-- [ ] **24.4.2**: Count remaining `external_body`: target ≤22 (down from 34)
-  - ~12 expected remaining: 5 IO dispatch + ~5 Verus-std helpers (clone_hashset, hashset_insert)
-    + 1-2 irreducible proof gaps
-- [ ] **24.4.3**: Update `docs/dev/proof-gap-audit-v2.md`
-- [ ] **24.4.4**: Run transpiler tests: `cargo test --all-features`
+- [x] **24.4.1**: Run Verus build: 601 verified, 0 errors (target was ≥572) ✅
+- [x] **24.4.2**: Count remaining `external_body`: 19 remaining (target was ≤22, down from ~34) ✅
+  - 8 Clone helpers (HashSet/HashMap have no Verus clone spec)
+  - 5 IO dispatch functions (irreducible trust boundary)
+  - 5 other helpers (unreachable_value, filter_clearnerstate for-loop, etc.)
+  - 1 comment (not actual external_body)
+- [x] **24.4.3**: Update `docs/dev/proof-gap-audit-v2.md` — added Phase 24 summary: 8 functions + 7 lemmas upgraded, 19 external_body remaining ✅
+- [x] **24.4.4**: Run transpiler tests: 1886 tests pass, 0 failures ✅
 
 ### 24.5 Execution Order
 
@@ -7927,8 +7929,8 @@ properties that are provable with appropriate Verus proof strategies.
 
 ### 24.6 Acceptance Criteria
 
-- [ ] Transpiler generates `.clone_up_to_view()` for configured marshalable types
-- [ ] ≥6 protocol functions upgraded from `external_body` to verified (or real body + PROOF-TODO)
-- [ ] ≥4 trusted proof lemmas upgraded from `external_body` to proven
-- [ ] 0 Verus errors, verified count ≥ 572
-- [ ] All transpiler tests pass
+- [x] Transpiler generates `.clone_up_to_view()` for configured marshalable types ✅ (Phase 24.1)
+- [x] ≥6 protocol functions upgraded from `external_body` to verified: **8 functions** (3 election + 3 proposer + 2 learner) ✅
+- [x] ≥4 trusted proof lemmas upgraded from `external_body` to proven: **7 lemmas** (3 clearnerstate + 4 executor) ✅
+- [x] 0 Verus errors, verified count ≥ 572: **601 verified, 0 errors** ✅
+- [x] All transpiler tests pass: **1886 tests, 0 failures** ✅

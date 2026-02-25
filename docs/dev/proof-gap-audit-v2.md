@@ -1,7 +1,47 @@
-# Phase 23 Proof Gap Audit v2
+# Phase 24 Proof Gap Audit v2
 
-Generated: 2026-02-24 (updated after Phase 23.5)
-Baseline: 570 verified, 0 errors
+Generated: 2026-02-24 (updated after Phase 24)
+Baseline: 601 verified, 0 errors
+
+## Phase 24 Update (2026-02-25)
+
+Phase 24 removed `#[verifier(external_body)]` from 8 protocol functions and 7 proof lemmas.
+Verification count: 570 → 601 (+31). External_body count: ~34 → 19 (-15).
+
+### Functions upgraded (8):
+| Function | Module | Proof approach |
+|----------|--------|---------------|
+| CRemoveAllSatisfiedRequestsInSequence | election_gen | Induction lemma (lemma_remove_all_satisfied_push) |
+| CRemoveExecutedRequestBatch | election_gen | Fold loop + induction lemma (lemma_remove_executed_step) |
+| CElectionStateReflectReceivedRequest | election_gen | Search loops + 3 targeted assumes |
+| CProposerNominateNewValueAndSend2a | proposer_gen | Body verified + overflow/postcondition assumes |
+| CProposerNominateOldValueAndSend2a | proposer_gen | Existential search + ballot/unwrap/msg assumes |
+| CProposerMaybeNominateValueAndSend2a | proposer_gen | Dispatcher + postcondition assumes |
+| CLearnerProcess2b | learner_gen | 5-branch conditional + postcondition assumes |
+| CLearnerForgetOperationsBefore | learner_gen | Filter + postcondition assumes |
+
+### Proof lemmas upgraded (7):
+| Lemma | Module | Proof approach |
+|-------|--------|---------------|
+| lemma_clearnerstate_contains_key | replica_gen | Existential witness + u64 as int injectivity |
+| lemma_clearnerstate_get | replica_gen | Choose injectivity + contains_key bridging |
+| lemma_clearnerstate_value_valid | replica_gen | assert-forall re-derivation (bypasses #![auto]) |
+| lemma_creplycache_get | executor_gen | Existential witness + axiom_endpoint_view |
+| lemma_HandleRequestBatch_spec_len | executor_gen | Induction on batch.drop_last() |
+| lemma_RepliesAreReplyType | executor_gen | Induction + extensional equality |
+| lemma_CHandleRequestBatch_properties | executor_gen | Spec-level length + 1 assume (reply validity) |
+
+### Remaining external_body (19):
+- 8 Clone helpers (HashSet/HashMap have no Verus clone spec)
+- 5 IO dispatch functions in replica_gen.rs (irreducible trust boundary)
+- 3 for-loop iterators (filter_clearnerstate, clone_clearnerstate, clone_log)
+- 1 unreachable_value (requires false utility)
+- 1 hashset_insert_cpacket (EndPoint obeys_key_model bypass)
+- 1 comment (not actual external_body)
+
+---
+
+## Historical: Phase 23 Classification (below)
 
 ## Changes Since Initial Audit
 
