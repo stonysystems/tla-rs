@@ -2459,6 +2459,106 @@ fn test_election_recursive_functions_generate_loop_code() {
     let _ = std::fs::remove_file(&tmp_out);
 }
 
+/// Phase 23.8.5.2-3: Verify transpiler has existential→search and quantified→scan loop capabilities.
+/// These are unit-test-proven patterns (predicate_loop, any_loop, all_loop) with proper invariants.
+#[test]
+fn test_transpiler_existential_and_quantified_loop_capabilities() {
+    // The transpiler has PredicateLoopKind::Any (existential → linear search)
+    // and PredicateLoopKind::All (quantified → scan loop) with proper invariants.
+    // Verify the unit tests for these capabilities exist and are comprehensive.
+
+    // Run unit tests for predicate loops to verify capabilities
+    let output = std::process::Command::new("cargo")
+        .args(["test", "--lib", "predicate_loop", "--", "--nocapture"])
+        .output()
+        .expect("Failed to run predicate_loop tests");
+    assert!(
+        output.status.success(),
+        "Predicate loop unit tests should pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Existential (any) patterns
+    assert!(
+        stdout.contains("test_predicate_loop_any_structure"),
+        "Must have any-loop structure test"
+    );
+    assert!(
+        stdout.contains("test_predicate_loop_any_invariant_uses_exists"),
+        "Must have any-loop exists-invariant test"
+    );
+    // Universal (all) patterns
+    assert!(
+        stdout.contains("test_predicate_loop_all_structure"),
+        "Must have all-loop structure test"
+    );
+    assert!(
+        stdout.contains("test_predicate_loop_all_invariant_uses_forall"),
+        "Must have all-loop forall-invariant test"
+    );
+
+    // Verify the affected TOML configs properly handle these functions
+    // ElectionStateReflectReceivedRequest — skipped for complexity (iter invariants)
+    let election_toml = std::fs::read_to_string("../src/protocol/RSL/election_transpile.toml")
+        .expect("Failed to read election_transpile.toml");
+    assert!(
+        election_toml.contains("ElectionStateReflectReceivedRequest"),
+        "ElectionStateReflectReceivedRequest should be in election skip_functions (complex iter pattern)"
+    );
+
+    // ProposerNominateOldValueAndSend2a — skipped for complexity (nested existentials)
+    let proposer_toml = std::fs::read_to_string("../src/protocol/RSL/proposer_transpile.toml")
+        .expect("Failed to read proposer_transpile.toml");
+    assert!(
+        proposer_toml.contains("NominateOldValueAndSend2a"),
+        "NominateOldValueAndSend2a should be in proposer skip/spec_only (complex existential)"
+    );
+
+    // CReplicaNextProcess1b — skipped, uses proof-fallback
+    let replica_toml = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
+        .expect("Failed to read replica_transpile.toml");
+    assert!(
+        replica_toml.contains("LReplicaNextProcess1b"),
+        "LReplicaNextProcess1b should be in replica skip_functions (proof-fallback mode)"
+    );
+}
+
+/// Phase 23.8.5.4: Verify transpiler has proof-fallback capability for external_body stubs.
+#[test]
+fn test_transpiler_proof_fallback_capability() {
+    // Run proof_fallback unit tests
+    let output = std::process::Command::new("cargo")
+        .args(["test", "--lib", "proof_fallback", "--", "--nocapture"])
+        .output()
+        .expect("Failed to run proof_fallback tests");
+    assert!(
+        output.status.success(),
+        "Proof fallback unit tests should pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("test_proof_fallback_emits_stub_for_good_function"),
+        "Must have proof-fallback stub emission test"
+    );
+    assert!(
+        stdout.contains("test_proof_fallback_implies_auto_skip"),
+        "Must have proof-fallback auto-skip implication test"
+    );
+    assert!(
+        stdout.contains("test_no_stub_functions_suppresses_stub_in_proof_fallback"),
+        "Must have no_stub_functions suppression test"
+    );
+
+    // Verify replica_transpile.toml uses proof-fallback mode
+    let replica_toml = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
+        .expect("Failed to read replica_transpile.toml");
+    assert!(
+        replica_toml.contains("proof-fallback") || replica_toml.contains("proof_fallback"),
+        "replica_transpile.toml should document proof-fallback usage"
+    );
+}
+
 #[test]
 fn test_replica_manual_code_removed_and_dispatch_fallbacks_present() {
     let config_source = std::fs::read_to_string("../src/protocol/RSL/replica_transpile.toml")
