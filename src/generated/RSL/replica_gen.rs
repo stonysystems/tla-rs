@@ -180,6 +180,7 @@ pub exec fn CReplicaNextProcessStartingPhase2(s: &CReplica, received_packet: &CP
 requires
     s.valid(),
     received_packet.valid(),
+    received_packet.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),

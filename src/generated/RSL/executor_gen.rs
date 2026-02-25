@@ -150,11 +150,11 @@ pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CPacket) -> (res
 requires
     s.valid(),
     inp.valid(),
+    inp.msg is CMessageAppStateSupply,
 ensures
     result.valid(),
     LExecutorProcessAppStateSupply(s@, result@, inp@),
 {
-    assume(false);
     { let m = &inp.msg; CExecutor {
         constants: s.constants.clone(),
         app: match &m {
@@ -187,7 +187,7 @@ ensures
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: match &m {
-            CMessage::CMessageAppStateSupply { reply_cache, .. } => reply_cache.clone(),
+            CMessage::CMessageAppStateSupply { reply_cache, .. } => clone_reply_cache(reply_cache),
             _  => {
                 proof {
                     assert(false);
@@ -258,13 +258,13 @@ pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (res
 requires
     s.valid(),
     inp.valid(),
+    inp.msg is CMessageStartingPhase2,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
 {
-    assume(false);
     { let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
         CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => logTruncationPoint_2.clone(),
         _  => {
@@ -294,13 +294,19 @@ ensures
         },
     },
 });
-        (s.clone(), sent_packets)
+        let r = (s.clone_up_to_view(), sent_packets);
+        proof {
+            assert(r.0@ == s@);
+        }
+        r
 
     } else {
-        (s.clone(), vec![])
-    }; proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty());
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            assert(r.0@ == s@);
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        r
     }; result }
 
 }
