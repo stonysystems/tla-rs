@@ -328,6 +328,7 @@ impl Transpiler {
                 has_set_remove,
                 &self.config.translator.struct_vec_fields,
                 &self.config.translator.int_type,
+                &self.config.translator.clone_up_to_view_types,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -362,6 +363,7 @@ impl Transpiler {
                 false,
                 &std::collections::HashMap::new(),
                 &self.config.translator.int_type,
+                &self.config.translator.clone_up_to_view_types,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -970,6 +972,7 @@ impl Transpiler {
                 has_set_remove,
                 &self.config.translator.struct_vec_fields,
                 &self.config.translator.int_type,
+                &self.config.translator.clone_up_to_view_types,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -1093,6 +1096,7 @@ impl Transpiler {
         has_set_remove: bool,
         struct_vec_fields: &std::collections::HashMap<String, (String, String)>,
         int_type: &str,
+        clone_up_to_view_types: &std::collections::HashSet<String>,
     ) -> String {
         let mut output = String::new();
 
@@ -1205,26 +1209,67 @@ impl Transpiler {
                 output.push_str("{\n");
                 output.push_str("}\n\n");
 
-                // clone_<field> external_body wrapper
+                // clone_<field> — verified loop or external_body wrapper
+                let use_verified_loop = clone_up_to_view_types.contains(exec_type.as_str());
                 output.push_str(&format!(
                     "/// Helper: clone a Vec<{}> preserving both raw and mapped view.\n",
                     exec_type
                 ));
-                output.push_str("/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.\n");
-                output.push_str("#[verifier(external_body)]\n");
-                output.push_str(&format!(
-                    "fn clone_{}(v: &Vec<{}>) -> (res: Vec<{}>)\n",
-                    field, exec_type, exec_type
-                ));
-                output.push_str("ensures\n");
-                output.push_str("    res@ == v@,\n");
-                output.push_str(&format!(
-                    "    res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@),\n",
-                    exec_type, exec_type
-                ));
-                output.push_str("{\n");
-                output.push_str("    v.clone()\n");
-                output.push_str("}\n\n");
+                if use_verified_loop {
+                    output.push_str(&format!(
+                        "fn clone_{}(v: &Vec<{}>) -> (res: Vec<{}>)\n",
+                        field, exec_type, exec_type
+                    ));
+                    output.push_str("ensures\n");
+                    output.push_str("    res@ == v@,\n");
+                    output.push_str(&format!(
+                        "    res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@),\n",
+                        exec_type, exec_type
+                    ));
+                    output.push_str("{\n");
+                    output.push_str("    let mut res: Vec<");
+                    output.push_str(exec_type);
+                    output.push_str("> = Vec::new();\n");
+                    output.push_str("    let mut idx: usize = 0;\n");
+                    output.push_str("    while idx < v.len()\n");
+                    output.push_str("    invariant\n");
+                    output.push_str("        idx <= v.len(),\n");
+                    output.push_str("        res@.len() == idx as int,\n");
+                    output.push_str("        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j]) == v@[j],\n");
+                    output.push_str(&format!(
+                        "        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j])@ == v@[j]@,\n",
+                    ));
+                    output.push_str("    {\n");
+                    output.push_str("        let elem = v[idx].clone_up_to_view();\n");
+                    output.push_str("        res.push(elem);\n");
+                    output.push_str("        idx = idx + 1;\n");
+                    output.push_str("    }\n");
+                    output.push_str("    proof {\n");
+                    output.push_str("        assert(res@ =~= v@);\n");
+                    output.push_str(&format!(
+                        "        assert(res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@));\n",
+                        exec_type, exec_type
+                    ));
+                    output.push_str("    }\n");
+                    output.push_str("    res\n");
+                    output.push_str("}\n\n");
+                } else {
+                    output.push_str("/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.\n");
+                    output.push_str("#[verifier(external_body)]\n");
+                    output.push_str(&format!(
+                        "fn clone_{}(v: &Vec<{}>) -> (res: Vec<{}>)\n",
+                        field, exec_type, exec_type
+                    ));
+                    output.push_str("ensures\n");
+                    output.push_str("    res@ == v@,\n");
+                    output.push_str(&format!(
+                        "    res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@),\n",
+                        exec_type, exec_type
+                    ));
+                    output.push_str("{\n");
+                    output.push_str("    v.clone()\n");
+                    output.push_str("}\n\n");
+                }
             }
         } else if has_vec_fields {
             // Seq proof helpers only needed when vec_fields are configured (u64-typed)
@@ -2649,7 +2694,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64");
+        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new());
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2682,12 +2727,12 @@ mod tests {
 
         // When has_set_remove=false, remove_commute should NOT be present
         let output_no_remove =
-            Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64");
+            Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64", &std::collections::HashSet::new());
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
 
         // When has_set_fields=false, set lemmas should NOT be present
         let output_no_sets =
-            Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64");
+            Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64", &std::collections::HashSet::new());
         assert!(!output_no_sets.contains("lemma_empty_set_map"));
         assert!(!output_no_sets.contains("lemma_set_map_remove_commute"));
         assert!(!output_no_sets.contains("clone_hashset"));
@@ -2698,13 +2743,13 @@ mod tests {
         let empty = std::collections::HashMap::new();
 
         // With i64 int_type (TLA+ pipeline default)
-        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64");
+        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64", &std::collections::HashSet::new());
         assert!(output_i64.contains("Set::<i64>::empty()"));
         assert!(output_i64.contains("|x: i64| x as int"));
         assert!(output_i64.contains("lemma_set_map_remove_commute(s: Set<i64>, elt: i64)"));
 
         // With u64 int_type (RSL protocol default)
-        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64");
+        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new());
         assert!(output_u64.contains("Set::<u64>::empty()"));
         assert!(output_u64.contains("|x: u64| x as int"));
     }
@@ -2712,7 +2757,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_with_vec_fields() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64");
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64", &std::collections::HashSet::new());
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2730,7 +2775,7 @@ mod tests {
             "log".to_string(),
             ("CLogEntry".to_string(), "LLogEntry".to_string()),
         );
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64");
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &std::collections::HashSet::new());
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2750,6 +2795,69 @@ mod tests {
         // Generic u64-typed seq lemmas should NOT be present (struct_vec takes priority)
         assert!(!output.contains("lemma_empty_seq_map"));
         assert!(!output.contains("lemma_seq_push_map_commute"));
+    }
+
+    #[test]
+    fn test_generate_proof_helper_lemmas_with_clone_up_to_view_types() {
+        let mut svf = std::collections::HashMap::new();
+        svf.insert(
+            "request_queue".to_string(),
+            ("CRequest".to_string(), "Request".to_string()),
+        );
+        // CRequest is in clone_up_to_view_types — should generate verified loop
+        let mut cutv = std::collections::HashSet::new();
+        cutv.insert("CRequest".to_string());
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv);
+
+        // Should generate clone_request_queue with verified loop, NOT external_body
+        assert!(
+            output.contains("fn clone_request_queue(v: &Vec<CRequest>) -> (res: Vec<CRequest>)"),
+            "Should generate clone_request_queue function: {}", output
+        );
+        assert!(
+            !output.contains("#[verifier(external_body)]\nfn clone_request_queue"),
+            "Should NOT use external_body for CRequest clone: {}", output
+        );
+        assert!(
+            output.contains("clone_up_to_view()"),
+            "Should use clone_up_to_view in loop body: {}", output
+        );
+        assert!(
+            output.contains("while idx < v.len()"),
+            "Should generate while loop: {}", output
+        );
+        assert!(
+            output.contains("res@.len() == idx as int"),
+            "Should have length invariant: {}", output
+        );
+        assert!(
+            output.contains("res@ =~= v@"),
+            "Should have extensional equality proof assertion: {}", output
+        );
+    }
+
+    #[test]
+    fn test_generate_proof_helper_lemmas_external_body_when_not_in_cutv() {
+        let mut svf = std::collections::HashMap::new();
+        svf.insert(
+            "log".to_string(),
+            ("CLogEntry".to_string(), "LLogEntry".to_string()),
+        );
+        // CLogEntry is NOT in clone_up_to_view_types — should use external_body
+        let cutv = std::collections::HashSet::new();
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv);
+
+        assert!(
+            output.contains("#[verifier(external_body)]"),
+            "Should use external_body when type not in clone_up_to_view_types: {}", output
+        );
+        assert!(
+            output.contains("fn clone_log(v: &Vec<CLogEntry>) -> (res: Vec<CLogEntry>)"),
+        );
+        assert!(
+            !output.contains("clone_up_to_view"),
+            "Should NOT use clone_up_to_view when type not listed: {}", output
+        );
     }
 
     #[test]
@@ -3134,6 +3242,7 @@ mod tests {
             true,
             &config.translator.struct_vec_fields,
             "u64",
+            &config.translator.clone_up_to_view_types,
         );
 
         // Should generate clone_log helper for struct_vec_fields

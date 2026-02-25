@@ -7819,10 +7819,10 @@ Transpiler checks this list when generating clone calls; if type is listed, emit
 **Option B: Auto-detect** — transpiler scans implementation modules for `clone_up_to_view`
 method signatures and automatically uses them. More robust but requires impl-block scanning.
 
-- [ ] **24.1.1**: Add `clone_up_to_view_types` config support (or auto-detection) to transpiler
-- [ ] **24.1.2**: Update translator code generation: when cloning a value of a listed type,
-  emit `.clone_up_to_view()` instead of `.clone()`
-- [ ] **24.1.3**: Handle Vec<T> cloning: when T has `clone_up_to_view`, generate a verified
+- [x] **24.1.1**: Add `clone_up_to_view_types` config support (or auto-detection) to transpiler *(done: commit 36e2e4f)*
+- [x] **24.1.2**: Update translator code generation: when cloning a value of a listed type,
+  emit `.clone_up_to_view()` instead of `.clone()` *(done: commit 36e2e4f — type-aware clone_for_type() + get_exec_type_name())*
+- [x] **24.1.3**: Handle Vec<T> cloning: when T has `clone_up_to_view`, generate a verified
   clone loop instead of `external_body` Vec clone:
   ```rust
   fn clone_vec_of_T(v: &Vec<T>) -> (res: Vec<T>)
@@ -7838,7 +7838,7 @@ method signatures and automatically uses them. More robust but requires impl-blo
   ```
   This eliminates `clone_request_queue`, `clone_requests_received_prev_epochs`,
   `clone_requests_received_this_epoch` as `external_body`.
-- [ ] **24.1.4**: Add transpiler unit tests for clone_up_to_view code generation
+- [x] **24.1.4**: Add transpiler unit tests for clone_up_to_view code generation *(done: commit 36e2e4f — 9 new tests)*
 - [ ] **24.1.5**: Regenerate all RSL modules and run Verus build
 
 ### 24.2 Phase 24.2: Unblock protocol functions via clone_up_to_view
