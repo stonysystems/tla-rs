@@ -450,14 +450,58 @@ ensures
 
 }
 
-// TRANSLATE-TODO: explicitly skipped (skip_functions)
+/// Existential search over two request Vecs + conditional append + bound.
+/// external_body because the spec uses `exists |earlier_req|` which is hard to prove,
+/// and CRequest::clone() lacks view-preservation ensures in Verus.
 #[verifier(external_body)]
 pub exec fn CElectionStateReflectReceivedRequest(es: &CElectionState, req: &CRequest) -> (result: CElectionState)
+requires
+    es.valid(),
+    req.valid(),
 ensures
     result.valid(),
     ElectionStateReflectReceivedRequest(es@, result@, req@),
 {
-    unimplemented!()
+    // Search for an earlier request with matching client+seqno
+    let mut found = false;
+    let mut idx: usize = 0;
+    while idx < es.requests_received_prev_epochs.len() {
+        if CRequestsMatch(&es.requests_received_prev_epochs[idx], req) {
+            found = true;
+            break;
+        }
+        idx += 1;
+    }
+    if !found {
+        idx = 0;
+        while idx < es.requests_received_this_epoch.len() {
+            if CRequestsMatch(&es.requests_received_this_epoch[idx], req) {
+                found = true;
+                break;
+            }
+            idx += 1;
+        }
+    }
+    if found {
+        // Request already seen — return es unchanged
+        es.clone()
+    } else {
+        // Append req to this_epoch, then bound
+        let mut new_this_epoch = es.requests_received_this_epoch.clone();
+        new_this_epoch.push(req.clone());
+        let bounded = CBoundRequestSequence(&new_this_epoch, es.constants.all.params.max_integer_val);
+        CElectionState {
+            constants: es.constants.clone(),
+            current_view: es.current_view,
+            current_view_suspectors: clone_hashset(&es.current_view_suspectors),
+            epoch_end_time: es.epoch_end_time,
+            epoch_length: es.epoch_length,
+            requests_received_this_epoch: bounded,
+            requests_received_prev_epochs: clone_requests_received_prev_epochs(&es.requests_received_prev_epochs),
+            cur_req_set: HashSet::new(),
+            prev_req_set: HashSet::new(),
+        }
+    }
 }
 
 /// Fold: for each request in batch, remove all satisfied requests from reqs.

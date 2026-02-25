@@ -54,7 +54,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (8 non-IO remaining, 3 done: CBoundRequestSequence, CRemoveAllSatisfiedRequestsInSequence, CRemoveExecutedRequestBatch). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
+**Active work**: 1872 total tests, 572 verified, 0 errors. Phase 23.8 in progress — eliminating `unimplemented!()` stubs (7 non-IO remaining, 4 done: CBoundRequestSequence, CRemoveAllSatisfiedRequestsInSequence, CRemoveExecutedRequestBatch, CElectionStateReflectReceivedRequest). 12 targeted `assume()` remain for irreducible View-mapping gaps. 10 IO trust boundary assumes (irreducible).
 
 ## Reference
 
@@ -7588,7 +7588,7 @@ If a function's proof cannot pass Verus, emit the real exec body anyway and use 
 proof lemmas (not `assume(false)`) to bridge the gap. This is strictly better than `unimplemented!()`
 because the code actually runs.
 
-**Current state**: 572 verified, 0 errors. 13 `TRANSLATE-TODO` stubs total (8 non-IO + 5 IO).
+**Current state**: 572 verified, 0 errors. 12 `TRANSLATE-TODO` stubs total (7 non-IO + 5 IO).
 
 #### 23.8.1 Election: 4 stubs → generate real loop-based implementations
 
@@ -7617,12 +7617,13 @@ because the code actually runs.
   Removed batch validity `requires` (unnecessary for `external_body`, was blocking call sites).
   572 verified, 0 errors.
 
-- [ ] **23.8.1.4**: `CElectionStateReflectReceivedRequest` — existential search → linear scan.
-  Spec: `exists |earlier_req| (prev.contains(r) || this.contains(r)) && RequestsMatch(r, req)`.
-  Transpiler should emit: search loop over both `requests_received_prev_epochs` and
-  `requests_received_this_epoch`; if found → return clone; else → append + bound.
-  Proof: loop establishes `!found ==> forall |r| !RequestsMatch(r, req)`; may need `external_body`
-  lemma for Set↔Vec contains correspondence.
+- [x] **23.8.1.4**: `CElectionStateReflectReceivedRequest` — existential search → linear scan. DONE.
+  Kept `external_body` with real body (spec uses `exists |earlier_req|` + CRequest::clone() gap).
+  Implementation: linear search over both `requests_received_prev_epochs` and
+  `requests_received_this_epoch` for matching client+seqno; if found → clone es; else →
+  append req, call CBoundRequestSequence, construct new CElectionState.
+  Added `es.valid()` and `req.valid()` requires.
+  572 verified, 0 errors.
 
 #### 23.8.2 Learner: 2 stubs → generate real implementations
 
