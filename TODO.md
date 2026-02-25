@@ -8059,14 +8059,14 @@ The generic keyword detection (`receive`, `handle`, `timeout`) stays as-is in co
 genuinely general. Only the protocol-specific override lists move to TOML.
 
 **Steps:**
-- [ ] **25.3.1**: Add `message_response_overrides`, `role_prefixes`, `timer_overrides`
+- [x] **25.3.1**: Add `message_response_overrides`, `role_prefixes`, `timer_overrides`
   optional fields to `SchedulerTomlConfig` in config.rs
-- [ ] **25.3.2**: Update `classify_single_action()` to merge TOML overrides with the
+- [x] **25.3.2**: Update `classify_single_action()` to merge TOML overrides with the
   default keyword-based heuristic (TOML overrides take priority)
-- [ ] **25.3.3**: Update `strip_role_prefix()` to accept an external prefix list
-- [ ] **25.3.4**: Distribute current hardcoded values to per-protocol TOML configs
-- [ ] **25.3.5**: Add transpiler tests for TOML-driven classification
-- [ ] **25.3.6**: Verify all 9 non-RSL protocol host scaffolds generate identically
+- [x] **25.3.3**: Update `strip_role_prefix()` to accept an external prefix list
+- [x] **25.3.4**: Distribute current hardcoded values to per-protocol TOML configs
+- [x] **25.3.5**: Add transpiler tests for TOML-driven classification (10 new tests)
+- [x] **25.3.6**: Verify all 9 non-RSL protocol host scaffolds generate identically
 
 ### 25.4 Phase 25.4: Prove `CReplicaNextProcess1b` (generated, proof difficulty)
 

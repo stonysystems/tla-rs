@@ -86,6 +86,10 @@ fields = [["term", "u64"], ["success", "bool"], ["match_index", "u64"], ["follow
 next_fn = "LNext"
 params = ["s", "s_", "c"]
 action_count = 11
+# GrantVote and FollowerAppendEntries are responses to incoming messages
+message_response_overrides = ["GrantVote", "FollowerAppendEntries"]
+# HandleAppendReject is a failure sub-case, not a direct message handler
+timer_overrides = ["HandleAppendReject"]
 
 [[scheduler.actions]]
 spec_name = "LTimeout"

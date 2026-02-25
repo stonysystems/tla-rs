@@ -52,6 +52,8 @@ fields = [["leader", "u64"]]
 next_fn = "LNext"
 params = ["s", "s_", "c"]
 action_count = 7
+# SendAnswer is a response to an Election message
+message_response_overrides = ["SendAnswer"]
 
 [[scheduler.actions]]
 spec_name = "LDetectFailure"

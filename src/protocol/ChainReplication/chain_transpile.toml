@@ -60,6 +60,8 @@ doc = "Client sends a read request to the tail."
 next_fn = "LNext"
 params = ["s", "s_", "c"]
 action_count = 8
+# ClientRead is triggered by an incoming client request message
+message_response_overrides = ["ClientRead"]
 
 [[scheduler.actions]]
 spec_name = "LHeadReceiveWrite"

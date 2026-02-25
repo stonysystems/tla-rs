@@ -470,6 +470,24 @@ pub struct SchedulerTomlConfig {
     /// When present, the generated host scaffold dispatches to per-role step methods.
     #[serde(default)]
     pub role_dispatch: Option<RoleDispatchConfig>,
+
+    /// Protocol-specific action name patterns classified as message-driven responses.
+    /// These are actions that respond to incoming messages but don't contain standard
+    /// message keywords (receive/rcv/handle). TOML overrides take priority over defaults.
+    /// e.g., ["Send1b", "Send2b"] for Paxos, ["GrantVote"] for Raft
+    #[serde(default)]
+    pub message_response_overrides: Vec<String>,
+
+    /// Protocol-specific role prefixes to strip from action names for variant matching.
+    /// e.g., ["TM", "RM"] for TwoPhase, ["Primary", "Backup"] for PrimaryBackup
+    #[serde(default)]
+    pub role_prefixes: Vec<String>,
+
+    /// Protocol-specific action name patterns that should be timer-driven even when
+    /// they contain message keywords (like "Handle"). Checked before keyword matching.
+    /// e.g., ["HandleAppendReject"] for Raft
+    #[serde(default)]
+    pub timer_overrides: Vec<String>,
 }
 
 impl SchedulerTomlConfig {

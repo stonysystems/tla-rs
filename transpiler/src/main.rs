@@ -4061,20 +4061,34 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 )
             })?;
 
-            // Load message variants from TOML config if provided
-            let message_variants: Vec<String> = if let Some(cfg_path) = config_path {
+            // Load message variants and classification overrides from TOML config
+            let (message_variants, classification_overrides) = if let Some(cfg_path) = config_path
+            {
                 let file_config = FileConfig::from_file(cfg_path)
                     .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
-                file_config
+                let variants = file_config
                     .messages
                     .map(|m| m.variants.iter().map(|v| v.name.clone()).collect())
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                let overrides = file_config
+                    .scheduler
+                    .map(|s| verus_transpiler::ActionClassificationOverrides {
+                        message_response_overrides: s.message_response_overrides,
+                        role_prefixes: s.role_prefixes,
+                        timer_overrides: s.timer_overrides,
+                    })
+                    .unwrap_or_default();
+                (variants, overrides)
             } else {
-                vec![]
+                (vec![], verus_transpiler::ActionClassificationOverrides::default())
             };
 
             // Classify actions as message_driven or timer_driven
-            verus_transpiler::classify_actions(&mut sched_config, &message_variants);
+            verus_transpiler::classify_actions(
+                &mut sched_config,
+                &message_variants,
+                &classification_overrides,
+            );
 
             let msg_count = sched_config
                 .actions

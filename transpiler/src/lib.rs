@@ -59,8 +59,9 @@ pub use checker::{
 pub use codegen::{
     classify_actions, extract_lnext_actions, find_and_analyze_lnext, generate_all_types,
     generate_host_init_test_program, generate_host_scaffold, generate_marshalable_impls,
-    generate_message_code, scheduler_config_to_toml, ActionKind, GeneratedCode, HostScaffoldParams,
-    HostTestParams, SchedulerAction, SchedulerConfig, TemplateCodeGenerator, TypeGenerator,
+    generate_message_code, scheduler_config_to_toml, ActionClassificationOverrides, ActionKind,
+    GeneratedCode, HostScaffoldParams, HostTestParams, SchedulerAction, SchedulerConfig,
+    TemplateCodeGenerator, TypeGenerator,
 };
 pub use config::{
     MarshalableConfig, MarshalableEnum, MarshalableEnumVariant, MarshalableType, MessageConfig,

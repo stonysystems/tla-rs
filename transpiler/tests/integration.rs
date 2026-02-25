@@ -5158,7 +5158,7 @@ fn test_classify_twophase_integration() {
         "Commit".to_string(),
         "Abort".to_string(),
     ];
-    verus_transpiler::classify_actions(&mut config, &variants);
+    verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
 
     let msg_count = config
         .actions
@@ -5241,7 +5241,7 @@ fn test_classify_all_protocols_have_both_kinds() {
     for (spec_path, variant_strs) in &protocols {
         let mut config = analyze_lnext(spec_path);
         let variants: Vec<String> = variant_strs.iter().map(|s| s.to_string()).collect();
-        verus_transpiler::classify_actions(&mut config, &variants);
+        verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
 
         let msg_count = config
             .actions
@@ -5272,7 +5272,7 @@ fn test_classify_toml_output_has_variants() {
         "Accept".to_string(),
         "Accepted".to_string(),
     ];
-    verus_transpiler::classify_actions(&mut config, &variants);
+    verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
 
     let toml = verus_transpiler::scheduler_config_to_toml(&config);
     // RecvPromise should have message_variant = "Promise"
@@ -5614,7 +5614,7 @@ fn test_scheduler_toml_roundtrip() {
         "Commit".to_string(),
         "Abort".to_string(),
     ];
-    verus_transpiler::classify_actions(&mut config, &variants);
+    verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
 
     // Generate TOML string from runtime SchedulerConfig
     let toml_str = verus_transpiler::scheduler_config_to_toml(&config);

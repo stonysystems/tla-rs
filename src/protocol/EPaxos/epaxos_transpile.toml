@@ -63,6 +63,8 @@ fields = [["cmd", "u64"], ["seq", "u64"]]
 next_fn = "LNext"
 params = ["s", "s_", "c"]
 action_count = 11
+# SendPreAcceptOk/SendAcceptOk are responses to PreAccept/Accept messages
+message_response_overrides = ["SendPreAcceptOk", "SendAcceptOk"]
 
 [[scheduler.actions]]
 spec_name = "LPropose"

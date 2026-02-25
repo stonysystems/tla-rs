@@ -67,6 +67,8 @@ fields = [["config", "u64"], ["value", "u64"]]
 next_fn = "LNext"
 params = ["s", "s_", "c"]
 action_count = 10
+# SendPromise responds to Prepare; WitnessSync/Sync are sync-protocol message handlers
+message_response_overrides = ["SendPromise", "WitnessSync", "Sync"]
 
 [[scheduler.actions]]
 spec_name = "LPrepare"

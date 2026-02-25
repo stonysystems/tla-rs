@@ -12,6 +12,21 @@ use crate::ast::{Binding, Expr, Path, SpecFunction, Type};
 use crate::config::RoleConfig;
 use crate::config::{MessageVariant, RoleDispatchConfig, SchedulerActionConfig};
 
+/// Protocol-specific overrides for action classification.
+/// These override or supplement the default keyword-based heuristics.
+#[derive(Debug, Clone, Default)]
+pub struct ActionClassificationOverrides {
+    /// Action name patterns classified as message-driven responses.
+    /// Supplements the default keyword heuristics (receive/rcv/handle).
+    pub message_response_overrides: Vec<String>,
+    /// Role prefixes to strip from action names for variant matching.
+    /// Supplements (and takes priority over) the default role prefix list.
+    pub role_prefixes: Vec<String>,
+    /// Action name patterns forced to timer-driven even when they contain
+    /// message keywords. Checked before keyword matching.
+    pub timer_overrides: Vec<String>,
+}
+
 /// How an action is triggered at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionKind {
@@ -205,9 +220,14 @@ fn type_to_string(ty: &Type) -> String {
 ///
 /// If `message_variants` is provided (from the [messages] TOML section), we also
 /// try to match actions to message variants for the `message_variant` field.
-pub fn classify_actions(config: &mut SchedulerConfig, message_variants: &[String]) {
+pub fn classify_actions(
+    config: &mut SchedulerConfig,
+    message_variants: &[String],
+    overrides: &ActionClassificationOverrides,
+) {
     for action in &mut config.actions {
-        let (kind, variant) = classify_single_action(&action.spec_name, message_variants);
+        let (kind, variant) =
+            classify_single_action(&action.spec_name, message_variants, overrides);
         action.kind = kind;
         action.message_variant = variant;
     }
@@ -218,6 +238,7 @@ pub fn classify_actions(config: &mut SchedulerConfig, message_variants: &[String
 fn classify_single_action(
     spec_name: &str,
     message_variants: &[String],
+    overrides: &ActionClassificationOverrides,
 ) -> (ActionKind, Option<String>) {
     // Normalize: strip common spec prefix "L" for pattern matching
     let name = spec_name.strip_prefix('L').unwrap_or(spec_name);
@@ -225,54 +246,35 @@ fn classify_single_action(
 
     // Timer-driven override: checked FIRST because some action names contain
     // message keywords (like "Handle") but are actually timer/state-driven.
-    let timer_override_patterns = [
-        "HandleAppendReject", // Raft: failure sub-case, handled within AppendResponse
-    ];
-    if timer_override_patterns.iter().any(|p| name.contains(p)) {
+    // Uses TOML overrides only — no hardcoded defaults.
+    if overrides
+        .timer_overrides
+        .iter()
+        .any(|p| name.contains(p.as_str()))
+    {
         return (ActionKind::TimerDriven, None);
     }
 
-    // Strong message-driven indicators
+    // Strong message-driven indicators (generic keywords, not protocol-specific)
     let message_keywords = ["receive", "rcv", "recv", "handle"];
     if message_keywords.iter().any(|kw| name_lower.contains(kw)) {
-        let variant = find_matching_variant(name, message_variants);
+        let variant = find_matching_variant(name, message_variants, &overrides.role_prefixes);
         return (ActionKind::MessageDriven, variant);
     }
 
-    // Known message-driven response patterns (triggered by incoming messages
-    // even though their names don't contain "Receive"/"Rcv"):
-    // - Paxos: Send1b (response to Prepare), Send2b (response to Accept)
-    // - LeaderElection: SendAnswer (response to Election)
-    // - Raft: GrantVote (response to RequestVote),
-    //         FollowerAppendEntries (response to AppendEntries)
-    // - EPaxos: SendPreAcceptOk, SendAcceptOk
-    //
-    // NOTE: The following are NOT message-driven despite suggestive names:
-    // - BecomeLeader (quorum state transition, no msgs_* flag check)
-    // - StepDown (cross-cutting higher-term detection, not a single-variant handler)
-    // - PrePrepare (primary initiates, not responding to a message)
-    // - EnterCommit (quorum state transition on prepare_senders count)
-    // - ExecuteReply (quorum state transition on commit_senders count)
-    // - PrimaryWrite (client request action, not triggered by network message)
-    let message_response_patterns = [
-        "Send1b",
-        "Send2b",                // Paxos (acceptor responds to Prepare/Accept)
-        "SendAnswer",            // LeaderElection (response to Election msg)
-        "GrantVote",             // Raft (response to RequestVote)
-        "FollowerAppendEntries", // Raft (response to AppendEntries)
-        "SendPreAcceptOk",       // EPaxos (response to PreAccept)
-        "SendAcceptOk",          // EPaxos (response to Accept)
-        "SendPromise",           // VerticalPaxos (response to Prepare)
-        "WitnessSync",           // VerticalPaxos (response to Sync message)
-        "Sync",                  // VerticalPaxos (joining new config via Sync)
-        "ClientRead",            // ChainReplication (tail responds to read)
-    ];
-    if message_response_patterns.iter().any(|p| name.contains(p)) {
-        let variant = find_matching_variant(name, message_variants);
+    // Protocol-specific message-driven response patterns from TOML config.
+    // These are actions triggered by incoming messages even though their names
+    // don't contain standard message keywords (receive/rcv/handle).
+    if overrides
+        .message_response_overrides
+        .iter()
+        .any(|p| name.contains(p.as_str()))
+    {
+        let variant = find_matching_variant(name, message_variants, &overrides.role_prefixes);
         return (ActionKind::MessageDriven, variant);
     }
 
-    // Strong timer-driven indicators
+    // Strong timer-driven indicators (generic keywords, not protocol-specific)
     let timer_keywords = ["timeout", "detectfailure"];
     if timer_keywords.iter().any(|kw| name_lower.contains(kw)) {
         return (ActionKind::TimerDriven, None);
@@ -287,10 +289,14 @@ fn classify_single_action(
 /// Uses multiple strategies with priority ordering:
 /// 1. Keyword extraction (most precise): strip role prefix + verb, match against variants
 /// 2. Full variant name containment in action name (longest wins)
-fn find_matching_variant(action_suffix: &str, message_variants: &[String]) -> Option<String> {
+fn find_matching_variant(
+    action_suffix: &str,
+    message_variants: &[String],
+    role_prefixes: &[String],
+) -> Option<String> {
     // Strategy 1 (most precise): Extract keyword, find best variant match.
     // E.g., "TMRcvPrepared" → keyword "Prepared" → variant "PreparedVote"
-    let keyword = extract_action_keyword(action_suffix);
+    let keyword = extract_action_keyword(action_suffix, role_prefixes);
     if !keyword.is_empty() {
         let keyword_lower = keyword.to_lowercase();
 
@@ -351,12 +357,12 @@ fn find_matching_variant(action_suffix: &str, message_variants: &[String]) -> Op
 }
 
 /// Extract the "keyword" part of an action name by stripping:
-/// - Role prefixes (TM, RM, Primary, etc.)
+/// - Role prefixes (from TOML config + defaults)
 /// - Action verbs (Receive, Rcv, Recv, Handle, Send)
 ///
 /// E.g., "TMRcvPrepared" → "Prepared", "RMReceiveCommit" → "Commit"
-fn extract_action_keyword(name: &str) -> &str {
-    let stripped = strip_role_prefix(name);
+fn extract_action_keyword<'a>(name: &'a str, role_prefixes: &[String]) -> &'a str {
+    let stripped = strip_role_prefix(name, role_prefixes);
     // Strip action verb prefixes
     let verb_prefixes = ["Receive", "Rcv", "Recv", "Handle", "Send"];
     for prefix in &verb_prefixes {
@@ -367,23 +373,35 @@ fn extract_action_keyword(name: &str) -> &str {
     stripped
 }
 
-/// Strip common role prefixes from action names for variant matching.
-fn strip_role_prefix(name: &str) -> &str {
-    let role_prefixes = [
-        "TM",
-        "RM",
-        "Primary",
-        "Backup",
-        "Head",
-        "Tail",
-        "Middle",
-        "Follower",
-        "Leader",
-        "Candidate",
-    ];
-    for prefix in &role_prefixes {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            return rest;
+/// Default role prefixes used when no TOML overrides are provided.
+const DEFAULT_ROLE_PREFIXES: &[&str] = &[
+    "TM",
+    "RM",
+    "Primary",
+    "Backup",
+    "Head",
+    "Tail",
+    "Middle",
+    "Follower",
+    "Leader",
+    "Candidate",
+];
+
+/// Strip role prefixes from action names for variant matching.
+/// If TOML `role_prefixes` is non-empty, uses those exclusively;
+/// otherwise falls back to the built-in default list.
+fn strip_role_prefix<'a>(name: &'a str, role_prefixes: &[String]) -> &'a str {
+    if !role_prefixes.is_empty() {
+        for prefix in role_prefixes {
+            if let Some(rest) = name.strip_prefix(prefix.as_str()) {
+                return rest;
+            }
+        }
+    } else {
+        for prefix in DEFAULT_ROLE_PREFIXES {
+            if let Some(rest) = name.strip_prefix(prefix) {
+                return rest;
+            }
         }
     }
     name
@@ -1509,57 +1527,69 @@ mod tests {
 
     #[test]
     fn test_classify_receive_keyword() {
-        let (kind, _) = classify_single_action("LRMReceivePrepare", &[]);
+        let (kind, _) = classify_single_action("LRMReceivePrepare", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::MessageDriven);
     }
 
     #[test]
     fn test_classify_rcv_keyword() {
-        let (kind, _) = classify_single_action("LTMRcvPrepared", &[]);
+        let (kind, _) = classify_single_action("LTMRcvPrepared", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::MessageDriven);
     }
 
     #[test]
     fn test_classify_handle_keyword() {
-        let (kind, _) = classify_single_action("LHandleAppendResponse", &[]);
+        let (kind, _) = classify_single_action("LHandleAppendResponse", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::MessageDriven);
     }
 
     #[test]
     fn test_classify_timeout() {
-        let (kind, _) = classify_single_action("LTimeout", &[]);
+        let (kind, _) = classify_single_action("LTimeout", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_detect_failure() {
-        let (kind, _) = classify_single_action("LDetectFailure", &[]);
+        let (kind, _) = classify_single_action("LDetectFailure", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_paxos_send1b_message_response() {
-        let (kind, _) = classify_single_action("LSend1b", &[]);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["Send1b".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LSend1b", &[], &overrides);
         assert_eq!(
             kind,
             ActionKind::MessageDriven,
-            "Send1b is a response to Prepare"
+            "Send1b is a response to Prepare (via TOML override)"
         );
     }
 
     #[test]
     fn test_classify_paxos_send2b_message_response() {
-        let (kind, _) = classify_single_action("LSend2b", &[]);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["Send2b".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LSend2b", &[], &overrides);
         assert_eq!(
             kind,
             ActionKind::MessageDriven,
-            "Send2b is a response to Accept"
+            "Send2b is a response to Accept (via TOML override)"
         );
     }
 
     #[test]
     fn test_classify_grant_vote() {
-        let (kind, _) = classify_single_action("LGrantVote", &[]);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["GrantVote".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LGrantVote", &[], &overrides);
         assert_eq!(kind, ActionKind::MessageDriven);
     }
 
@@ -1567,15 +1597,19 @@ mod tests {
     fn test_classify_become_leader() {
         // BecomeLeader is a quorum state transition (votes_granted >= quorum_size),
         // not a response to a specific message variant.
-        let (kind, _) = classify_single_action("LBecomeLeader", &[]);
+        let (kind, _) = classify_single_action("LBecomeLeader", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_handle_append_reject_timer() {
         // HandleAppendReject contains "Handle" keyword but is a failure sub-case
-        // of the AppendResponse handler — should be timer_driven.
-        let (kind, _) = classify_single_action("LHandleAppendReject", &[]);
+        // of the AppendResponse handler — should be timer_driven via TOML override.
+        let overrides = ActionClassificationOverrides {
+            timer_overrides: vec!["HandleAppendReject".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LHandleAppendReject", &[], &overrides);
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
@@ -1583,68 +1617,68 @@ mod tests {
     fn test_classify_step_down_timer() {
         // StepDown detects higher terms from any message — cross-cutting concern,
         // not a single-variant message handler.
-        let (kind, _) = classify_single_action("LStepDown", &[]);
+        let (kind, _) = classify_single_action("LStepDown", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_pre_prepare_timer() {
         // PrePrepare is the primary initiating a round — not responding to a message.
-        let (kind, _) = classify_single_action("LPrePrepare", &[]);
+        let (kind, _) = classify_single_action("LPrePrepare", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_enter_commit_timer() {
         // EnterCommit is a quorum state transition (prepare_senders >= threshold).
-        let (kind, _) = classify_single_action("LEnterCommit", &[]);
+        let (kind, _) = classify_single_action("LEnterCommit", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_execute_reply_timer() {
         // ExecuteReply is a quorum state transition (commit_senders >= threshold).
-        let (kind, _) = classify_single_action("LExecuteReply", &[]);
+        let (kind, _) = classify_single_action("LExecuteReply", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_primary_write_timer() {
         // PrimaryWrite is a client request action, not triggered by network message.
-        let (kind, _) = classify_single_action("LPrimaryWrite", &[]);
+        let (kind, _) = classify_single_action("LPrimaryWrite", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_send_prepare_timer() {
         // TMSendPrepare is a spontaneous action (TM initiates prepare)
-        let (kind, _) = classify_single_action("LTMSendPrepare", &[]);
+        let (kind, _) = classify_single_action("LTMSendPrepare", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_send1a_timer() {
         // Send1a is Paxos proposer initiating Phase 1
-        let (kind, _) = classify_single_action("LSend1a", &[]);
+        let (kind, _) = classify_single_action("LSend1a", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_learn_timer() {
-        let (kind, _) = classify_single_action("LLearn", &[]);
+        let (kind, _) = classify_single_action("LLearn", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_client_request_timer() {
-        let (kind, _) = classify_single_action("LClientRequest", &[]);
+        let (kind, _) = classify_single_action("LClientRequest", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::TimerDriven);
     }
 
     #[test]
     fn test_classify_with_variant_matching() {
         let variants = vec!["Prepare".to_string(), "Promise".to_string()];
-        let (kind, variant) = classify_single_action("LRMReceivePrepare", &variants);
+        let (kind, variant) = classify_single_action("LRMReceivePrepare", &variants, &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::MessageDriven);
         assert_eq!(variant, Some("Prepare".to_string()));
     }
@@ -1652,18 +1686,18 @@ mod tests {
     #[test]
     fn test_classify_rcv_with_variant_matching() {
         let variants = vec!["Prepare".to_string(), "PreparedVote".to_string()];
-        let (kind, variant) = classify_single_action("LTMRcvPrepared", &variants);
+        let (kind, variant) = classify_single_action("LTMRcvPrepared", &variants, &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::MessageDriven);
         assert_eq!(variant, Some("PreparedVote".to_string()));
     }
 
     #[test]
     fn test_strip_role_prefix() {
-        assert_eq!(strip_role_prefix("TMSendPrepare"), "SendPrepare");
-        assert_eq!(strip_role_prefix("RMReceivePrepare"), "ReceivePrepare");
-        assert_eq!(strip_role_prefix("FollowerAppendEntries"), "AppendEntries");
-        assert_eq!(strip_role_prefix("PrimaryWrite"), "Write");
-        assert_eq!(strip_role_prefix("NoPrefix"), "NoPrefix");
+        assert_eq!(strip_role_prefix("TMSendPrepare", &[]), "SendPrepare");
+        assert_eq!(strip_role_prefix("RMReceivePrepare", &[]), "ReceivePrepare");
+        assert_eq!(strip_role_prefix("FollowerAppendEntries", &[]), "AppendEntries");
+        assert_eq!(strip_role_prefix("PrimaryWrite", &[]), "Write");
+        assert_eq!(strip_role_prefix("NoPrefix", &[]), "NoPrefix");
     }
 
     #[test]
@@ -1678,7 +1712,7 @@ mod tests {
             "Commit".to_string(),
             "Abort".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        classify_actions(&mut config, &variants, &ActionClassificationOverrides::default());
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1720,7 +1754,11 @@ mod tests {
             "Accept".to_string(),
             "Accepted".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["Send1b".to_string(), "Send2b".to_string()],
+            ..Default::default()
+        };
+        classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1748,7 +1786,15 @@ mod tests {
             "AppendEntries".to_string(),
             "AppendResponse".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec![
+                "GrantVote".to_string(),
+                "FollowerAppendEntries".to_string(),
+            ],
+            timer_overrides: vec!["HandleAppendReject".to_string()],
+            ..Default::default()
+        };
+        classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1785,7 +1831,11 @@ mod tests {
             "Answer".to_string(),
             "Coordinator".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["SendAnswer".to_string()],
+            ..Default::default()
+        };
+        classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1822,7 +1872,7 @@ mod tests {
             "Ack".to_string(),
             "ClientRequest".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        classify_actions(&mut config, &variants, &ActionClassificationOverrides::default());
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1864,7 +1914,11 @@ mod tests {
             "ClientWrite".to_string(),
             "ClientRead".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["ClientRead".to_string()],
+            ..Default::default()
+        };
+        classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1896,7 +1950,7 @@ mod tests {
             "Commit".to_string(),
             "ClientRequest".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        classify_actions(&mut config, &variants, &ActionClassificationOverrides::default());
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1942,7 +1996,15 @@ mod tests {
             "Commit".to_string(),
             "Sync".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec![
+                "SendPromise".to_string(),
+                "WitnessSync".to_string(),
+                "Sync".to_string(),
+            ],
+            ..Default::default()
+        };
+        classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -1974,7 +2036,14 @@ mod tests {
             "AcceptOk".to_string(),
             "CommitMsg".to_string(),
         ];
-        classify_actions(&mut config, &variants);
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec![
+                "SendPreAcceptOk".to_string(),
+                "SendAcceptOk".to_string(),
+            ],
+            ..Default::default()
+        };
+        classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
@@ -2013,9 +2082,181 @@ mod tests {
     #[test]
     fn test_classify_no_variants_still_works() {
         // Classification should work even without message variants (no variant matching)
-        let (kind, variant) = classify_single_action("LReceivePrepare", &[]);
+        let (kind, variant) = classify_single_action("LReceivePrepare", &[], &ActionClassificationOverrides::default());
         assert_eq!(kind, ActionKind::MessageDriven);
         assert!(variant.is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // TOML-driven classification tests (Phase 25.3)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_toml_message_response_override_beats_default_timer() {
+        // Without override: "Send1b" has no message keywords → TimerDriven
+        let (kind, _) = classify_single_action("LSend1b", &[], &ActionClassificationOverrides::default());
+        assert_eq!(kind, ActionKind::TimerDriven);
+
+        // With override: "Send1b" is explicitly marked as message-driven
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["Send1b".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LSend1b", &[], &overrides);
+        assert_eq!(kind, ActionKind::MessageDriven);
+    }
+
+    #[test]
+    fn test_toml_timer_override_beats_message_keyword() {
+        // Without override: "HandleAppendReject" contains "Handle" → MessageDriven
+        let (kind, _) = classify_single_action("LHandleAppendReject", &[], &ActionClassificationOverrides::default());
+        assert_eq!(kind, ActionKind::MessageDriven);
+
+        // With timer override: explicitly marked as timer-driven despite "Handle" keyword
+        let overrides = ActionClassificationOverrides {
+            timer_overrides: vec!["HandleAppendReject".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LHandleAppendReject", &[], &overrides);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_toml_timer_override_priority_over_message_response() {
+        // If both timer and message overrides match, timer wins (checked first)
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["Foo".to_string()],
+            timer_overrides: vec!["Foo".to_string()],
+            ..Default::default()
+        };
+        let (kind, _) = classify_single_action("LFoo", &[], &overrides);
+        assert_eq!(kind, ActionKind::TimerDriven);
+    }
+
+    #[test]
+    fn test_toml_custom_role_prefixes_for_variant_matching() {
+        let variants = vec!["Write".to_string(), "Read".to_string()];
+        // With custom role prefix "Node", "NodeReceiveWrite" → strip "Node" → "ReceiveWrite"
+        // → keyword "Write" matches variant "Write"
+        let overrides = ActionClassificationOverrides {
+            role_prefixes: vec!["Node".to_string()],
+            ..Default::default()
+        };
+        let (kind, variant) = classify_single_action("LNodeReceiveWrite", &variants, &overrides);
+        assert_eq!(kind, ActionKind::MessageDriven);
+        assert_eq!(variant, Some("Write".to_string()));
+    }
+
+    #[test]
+    fn test_toml_custom_role_prefixes_override_defaults() {
+        let variants = vec!["Prepare".to_string()];
+        // With custom role prefix that doesn't include "TM", "TMRcvPrepare" won't strip "TM"
+        let overrides = ActionClassificationOverrides {
+            role_prefixes: vec!["Node".to_string()],
+            ..Default::default()
+        };
+        let (kind, variant) = classify_single_action("LTMRcvPrepare", &variants, &overrides);
+        assert_eq!(kind, ActionKind::MessageDriven);
+        // Since "TM" is NOT in custom role_prefixes, it won't strip "TM"
+        // but "Rcv" verb is stripped → keyword "TMRcv" doesn't work
+        // However, strategy 2 (containment) should still find "Prepare" in "TMRcvPrepare"
+        assert_eq!(variant, Some("Prepare".to_string()));
+    }
+
+    #[test]
+    fn test_toml_empty_overrides_use_defaults() {
+        // Empty overrides should use DEFAULT_ROLE_PREFIXES for stripping
+        let variants = vec!["Prepare".to_string()];
+        let (kind, variant) = classify_single_action(
+            "LTMRcvPrepare",
+            &variants,
+            &ActionClassificationOverrides::default(),
+        );
+        assert_eq!(kind, ActionKind::MessageDriven);
+        assert_eq!(variant, Some("Prepare".to_string()));
+    }
+
+    #[test]
+    fn test_strip_role_prefix_custom_list() {
+        let custom = vec!["Node".to_string(), "Shard".to_string()];
+        assert_eq!(strip_role_prefix("NodeReceiveWrite", &custom), "ReceiveWrite");
+        assert_eq!(strip_role_prefix("ShardForward", &custom), "Forward");
+        // Default prefixes NOT used when custom list provided
+        assert_eq!(strip_role_prefix("TMSendPrepare", &custom), "TMSendPrepare");
+    }
+
+    #[test]
+    fn test_toml_scheduler_config_deserializes_overrides() {
+        let toml_str = r#"
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_"]
+action_count = 2
+message_response_overrides = ["Send1b", "Send2b"]
+role_prefixes = ["Node"]
+timer_overrides = ["HandleReject"]
+
+[[scheduler.actions]]
+spec_name = "LSend1b"
+exec_name = "CSend1b"
+kind = "message_driven"
+existential_params = []
+
+[[scheduler.actions]]
+spec_name = "LTimeout"
+exec_name = "CTimeout"
+kind = "timer_driven"
+existential_params = []
+"#;
+        let config: crate::config::TranspilerConfig =
+            toml::from_str(toml_str).expect("Failed to parse TOML with overrides");
+        let sched = config.scheduler.expect("Should have scheduler section");
+        assert_eq!(
+            sched.message_response_overrides,
+            vec!["Send1b".to_string(), "Send2b".to_string()]
+        );
+        assert_eq!(sched.role_prefixes, vec!["Node".to_string()]);
+        assert_eq!(
+            sched.timer_overrides,
+            vec!["HandleReject".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_toml_scheduler_config_defaults_when_omitted() {
+        let toml_str = r#"
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+
+[scheduler]
+next_fn = "LNext"
+params = ["s", "s_"]
+action_count = 0
+"#;
+        let config: crate::config::TranspilerConfig =
+            toml::from_str(toml_str).expect("Failed to parse TOML without overrides");
+        let sched = config.scheduler.expect("Should have scheduler section");
+        assert!(sched.message_response_overrides.is_empty());
+        assert!(sched.role_prefixes.is_empty());
+        assert!(sched.timer_overrides.is_empty());
+    }
+
+    #[test]
+    fn test_message_response_override_gets_variant_matching() {
+        // A message_response_override should still participate in variant matching
+        let variants = vec!["PreAcceptOk".to_string(), "AcceptOk".to_string()];
+        let overrides = ActionClassificationOverrides {
+            message_response_overrides: vec!["SendPreAcceptOk".to_string()],
+            ..Default::default()
+        };
+        let (kind, variant) = classify_single_action("LSendPreAcceptOk", &variants, &overrides);
+        assert_eq!(kind, ActionKind::MessageDriven);
+        assert_eq!(variant, Some("PreAcceptOk".to_string()));
     }
 
     // ---------------------------------------------------------------
