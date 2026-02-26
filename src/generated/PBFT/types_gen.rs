@@ -29,7 +29,21 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            view: self.view,
+            phase: self.phase.clone(),
+            prepare_senders: self.prepare_senders.clone(),
+            commit_senders: self.commit_senders.clone(),
+            seq_num: self.seq_num,
+            is_primary: self.is_primary,
+            request_digest: self.request_digest,
+            checkpoint_seq: self.checkpoint_seq,
+            checkpoint_digest: self.checkpoint_digest,
+            low_watermark: self.low_watermark,
+            high_watermark: self.high_watermark,
+        }
+    }
 }
 
 impl CState {

@@ -28,7 +28,20 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            role: self.role.clone(),
+            history: self.history.clone(),
+            pending_sent: self.pending_sent.clone(),
+            committed_count: self.committed_count,
+            obj_value: self.obj_value,
+            has_predecessor: self.has_predecessor,
+            predecessor: self.predecessor,
+            has_successor: self.has_successor,
+            successor: self.successor,
+            alive: self.alive,
+        }
+    }
 }
 
 impl CState {

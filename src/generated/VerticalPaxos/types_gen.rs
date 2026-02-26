@@ -30,7 +30,22 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            config_num: self.config_num,
+            max_bal: self.max_bal,
+            max_v_bal: self.max_v_bal,
+            max_val: self.max_val,
+            has_voted: self.has_voted,
+            is_active: self.is_active,
+            promises_rcvd: self.promises_rcvd.clone(),
+            accepts_rcvd: self.accepts_rcvd.clone(),
+            committed: self.committed,
+            committed_val: self.committed_val,
+            witness_val: self.witness_val,
+            has_witness: self.has_witness,
+        }
+    }
 }
 
 impl CState {

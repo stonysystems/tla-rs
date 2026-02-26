@@ -53,7 +53,19 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            current_term: self.current_term,
+            role: self.role.clone(),
+            has_voted: self.has_voted,
+            voted_for: self.voted_for,
+            log: self.log.clone(),
+            commit_index: self.commit_index,
+            votes_granted: self.votes_granted.clone(),
+            match_index: self.match_index.clone(),
+            next_index: self.next_index.clone(),
+        }
+    }
 }
 
 impl CState {
@@ -92,7 +104,13 @@ impl Clone for CConstants {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CConstants {
+            servers: self.servers.clone(),
+            quorum_size: self.quorum_size,
+            my_id: self.my_id,
+        }
+    }
 }
 
 impl CConstants {

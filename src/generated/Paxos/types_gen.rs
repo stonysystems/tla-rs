@@ -29,7 +29,21 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            promised_bal: self.promised_bal,
+            accepted_bal: self.accepted_bal,
+            accepted_val: self.accepted_val,
+            proposer_bal: self.proposer_bal,
+            phase: self.phase.clone(),
+            promises_rcvd: self.promises_rcvd.clone(),
+            highest_accepted_bal: self.highest_accepted_bal,
+            highest_accepted_val: self.highest_accepted_val,
+            proposed_val: self.proposed_val,
+            accepts_rcvd: self.accepts_rcvd.clone(),
+            decided_val: self.decided_val,
+        }
+    }
 }
 
 impl CState {
@@ -70,7 +84,13 @@ impl Clone for CConstants {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CConstants {
+            acceptors: self.acceptors.clone(),
+            quorum_size: self.quorum_size,
+            node_id: self.node_id,
+        }
+    }
 }
 
 impl CConstants {

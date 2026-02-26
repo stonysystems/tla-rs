@@ -3401,19 +3401,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 file_config.output.generate_clone_up_to_view_simple;
             let generate_unreachable_value_helper =
                 file_config.output.generate_unreachable_value_helper;
-            let manual_code = config
-                .as_ref()
-                .and_then(|config_path| {
-                    file_config
-                        .output
-                        .manual_code
-                        .as_ref()
-                        .map(|rel_path| (config_path, rel_path))
-                })
-                .and_then(|(config_path, rel_path)| {
-                    let base_dir = config_path.parent().unwrap_or(Path::new("."));
-                    std::fs::read_to_string(base_dir.join(rel_path)).ok()
-                });
+            // Note: manual_code is NOT injected during generate-types.
+            // It is a function-generation concern (injected into *_gen.rs, not types_gen.rs).
+            // Protocols that share a single TOML config for both types and functions
+            // (e.g., Raft) would incorrectly inject function-level manual code into types.
 
             let mut registry = TypeRegistry::new();
 
@@ -3488,7 +3479,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     skip_view_types: &skip_view_types,
                     generate_clone_up_to_view_simple,
                     generate_unreachable_value_helper,
-                    manual_code: manual_code.as_deref(),
+                    manual_code: None,
                 },
             );
 
@@ -6650,7 +6641,7 @@ verus! {
     }
 
     #[test]
-    fn test_generate_types_injects_manual_code_from_config_file() {
+    fn test_generate_types_does_not_inject_manual_code() {
         use std::io::Write;
 
         let dir = tempfile::tempdir().unwrap();
@@ -6712,15 +6703,11 @@ manual_code = "manual_helpers.rs"
         handle_command(&command, &cli).unwrap();
 
         let generated = std::fs::read_to_string(&output_path).unwrap();
-        let manual_pos = generated
-            .find("ManualTypesHelper")
-            .expect("manual helper should be injected");
-        let close_pos = generated
-            .find("} // verus!")
-            .expect("verus close marker missing");
+        // manual_code should NOT be injected in generate-types mode;
+        // it is a function-generation concern (belongs in *_gen.rs, not types_gen.rs).
         assert!(
-            manual_pos < close_pos,
-            "manual helper must be inside verus block"
+            generated.find("ManualTypesHelper").is_none(),
+            "manual_code must not be injected during generate-types"
         );
     }
 

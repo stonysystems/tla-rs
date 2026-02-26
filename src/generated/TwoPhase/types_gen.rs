@@ -23,7 +23,15 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            tm_state: self.tm_state.clone(),
+            tm_prepared: self.tm_prepared.clone(),
+            rm_prepared: self.rm_prepared.clone(),
+            rm_committed: self.rm_committed.clone(),
+            rm_aborted: self.rm_aborted.clone(),
+        }
+    }
 }
 
 impl CState {
@@ -56,7 +64,11 @@ impl Clone for CConstants {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CConstants {
+            rm: self.rm.clone(),
+        }
+    }
 }
 
 impl CConstants {

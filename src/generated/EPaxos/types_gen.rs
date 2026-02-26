@@ -31,7 +31,22 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            ballot: self.ballot,
+            phase: self.phase.clone(),
+            cmd: self.cmd,
+            seq: self.seq,
+            dep_count: self.dep_count,
+            is_leader: self.is_leader,
+            committed_count: self.committed_count,
+            executed_count: self.executed_count,
+            preaccept_senders: self.preaccept_senders.clone(),
+            accept_senders: self.accept_senders.clone(),
+            has_conflict: self.has_conflict,
+            max_resp_seq: self.max_resp_seq,
+        }
+    }
 }
 
 impl CState {

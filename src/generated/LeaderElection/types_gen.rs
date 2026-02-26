@@ -26,7 +26,18 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CState {
+            electing: self.electing.clone(),
+            has_leader: self.has_leader,
+            leader: self.leader,
+            alive: self.alive.clone(),
+            has_highest: self.has_highest,
+            highest_heard: self.highest_heard,
+            waiting_answer: self.waiting_answer,
+            waiting_node: self.waiting_node,
+        }
+    }
 }
 
 impl CState {
@@ -63,7 +74,12 @@ impl Clone for CConstants {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
-    { unimplemented!() }
+    {
+        CConstants {
+            nodes: self.nodes.clone(),
+            num_nodes: self.num_nodes,
+        }
+    }
 }
 
 impl CConstants {

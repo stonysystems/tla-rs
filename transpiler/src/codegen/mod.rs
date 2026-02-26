@@ -189,15 +189,42 @@ impl TypeGenerator {
     }
 
     /// Generate `#[verifier(external_body)]` Clone impl for types that can't use `#[derive(Clone)]`.
-    fn generate_external_body_clone(&self, exec_name: &str, code: &mut String) {
+    /// When field information is available, generates a real field-by-field clone body
+    /// (copy scalars directly, `.clone()` for non-copy fields).
+    fn generate_external_body_clone(
+        &self,
+        exec_name: &str,
+        fields: &[&FieldDef],
+        code: &mut String,
+    ) {
         code.push_str(&format!("impl Clone for {} {{\n", exec_name));
         code.push_str(&format!(
-            "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n{}{{ unimplemented!() }}\n",
+            "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n",
             self.indent, self.indent, self.indent,
             self.indent, self.indent,
             self.validity_predicate_name, self.validity_predicate_name,
-            self.indent
         ));
+        if fields.is_empty() {
+            code.push_str(&format!("{}{{ unimplemented!() }}\n", self.indent));
+        } else {
+            code.push_str(&format!("{}{{\n", self.indent));
+            code.push_str(&format!("{}    {} {{\n", self.indent, exec_name));
+            for field in fields {
+                if self.is_copy_scalar_type_for_clone_up_to_view(&field.ty) {
+                    code.push_str(&format!(
+                        "{}        {}: self.{},\n",
+                        self.indent, field.name, field.name
+                    ));
+                } else {
+                    code.push_str(&format!(
+                        "{}        {}: self.{}.clone(),\n",
+                        self.indent, field.name, field.name
+                    ));
+                }
+            }
+            code.push_str(&format!("{}    }}\n", self.indent));
+            code.push_str(&format!("{}}}\n", self.indent));
+        }
         code.push_str("}\n\n");
     }
 
@@ -316,7 +343,7 @@ impl TypeGenerator {
         }
 
         if clone_strat == "external_body" {
-            self.generate_external_body_clone(&exec_name, &mut code);
+            self.generate_external_body_clone(&exec_name, &generated_fields, &mut code);
         }
 
         // Generate Hash+PartialEq+Eq impls for types stored in HashSet
@@ -368,7 +395,7 @@ impl TypeGenerator {
         code.push_str("}\n\n");
 
         if clone_strat == "external_body" {
-            self.generate_external_body_clone(&exec_name, &mut code);
+            self.generate_external_body_clone(&exec_name, &[], &mut code);
         }
 
         // Generate well_formed predicate unless this type is configured for manual validity impl.
@@ -3360,7 +3387,7 @@ mod tests {
     fn test_generate_external_body_clone_output() {
         let generator = TypeGenerator::new(make_config());
         let mut code = String::new();
-        generator.generate_external_body_clone("CNode", &mut code);
+        generator.generate_external_body_clone("CNode", &[], &mut code);
         assert!(
             code.contains("impl Clone for CNode"),
             "Should generate Clone impl"
@@ -3377,6 +3404,57 @@ mod tests {
         assert!(
             code.contains("res.well_formed() == self.well_formed()"),
             "Should have validity preservation ensure: {}",
+            code
+        );
+        // With no fields, should still contain unimplemented!()
+        assert!(
+            code.contains("unimplemented!()"),
+            "Empty fields should produce unimplemented!(): {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_generate_external_body_clone_with_fields() {
+        let generator = TypeGenerator::new(make_config());
+        let fields = vec![
+            FieldDef {
+                name: "term".to_string(),
+                ty: Type::Int,
+                is_public: true,
+            },
+            FieldDef {
+                name: "log".to_string(),
+                ty: Type::Seq(Box::new(Type::Int)),
+                is_public: true,
+            },
+            FieldDef {
+                name: "active".to_string(),
+                ty: Type::Bool,
+                is_public: true,
+            },
+        ];
+        let field_refs: Vec<&FieldDef> = fields.iter().collect();
+        let mut code = String::new();
+        generator.generate_external_body_clone("CState", &field_refs, &mut code);
+        assert!(
+            code.contains("term: self.term,"),
+            "Copy field should not use .clone(): {}",
+            code
+        );
+        assert!(
+            code.contains("log: self.log.clone(),"),
+            "Non-copy field should use .clone(): {}",
+            code
+        );
+        assert!(
+            code.contains("active: self.active,"),
+            "Bool field should not use .clone(): {}",
+            code
+        );
+        assert!(
+            !code.contains("unimplemented!()"),
+            "With fields, should not contain unimplemented!(): {}",
             code
         );
     }
