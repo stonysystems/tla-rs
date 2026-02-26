@@ -7767,7 +7767,7 @@ The stubs exist only for the Verus type checker and are never invoked at runtime
 - [x] Any unprovable postconditions use `external_body` proof lemmas (not `assume(false)`) ✅
 - [x] IO-dispatch stubs (5 functions) unchanged — documented as trust boundary ✅
 
-## Phase 24: clone_up_to_view Migration and Trusted Proof Lemma Elimination
+## Phase 24: clone_up_to_view Migration and Trusted Proof Lemma Elimination ✅ COMPLETE
 
 ### 24.0 Problem Statement
 
@@ -7935,7 +7935,7 @@ properties that are provable with appropriate Verus proof strategies.
 - [x] 0 Verus errors, verified count ≥ 572: **601 verified, 0 errors** ✅
 - [x] All transpiler tests pass: **1886 tests, 0 failures** ✅
 
-## Phase 25: Transpiler Generalization and Protocol Proof Hardening
+## Phase 25: Transpiler Generalization and Protocol Proof Hardening ✅ COMPLETE
 
 ### 25.0 Problem Statement
 
@@ -8217,7 +8217,7 @@ Function now verified with 5 targeted assumes (all for HandleRequestBatch struct
 
 ---
 
-## Phase 26: Raft Benchmark Client — Throughput & Latency Measurement
+## Phase 26: Raft Benchmark Client — Throughput & Latency Measurement ✅ COMPLETE
 
 ### 26.0 Background
 
