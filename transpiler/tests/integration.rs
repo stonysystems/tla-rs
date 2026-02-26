@@ -5804,9 +5804,9 @@ fn test_exact_action_counts_per_protocol() {
         Expected {
             toml_path: "../src/protocol/Raft/raft_transpile.toml",
             protocol: "Raft",
-            total: 11,
-            msg_driven: 4,
-            timer_driven: 7,
+            total: 5,       // Phase 27.4: composite LNext
+            msg_driven: 1,  // LHandleMessage
+            timer_driven: 4, // LTimeout, LClientRequest, LSendAppendEntries, LTryAdvanceCommitIndex
         },
         Expected {
             toml_path: "../src/protocol/ChainReplication/chain_transpile.toml",
@@ -6035,20 +6035,16 @@ fn test_message_driven_actions_have_valid_variant() {
 
         for action in &sched.actions {
             if action.is_message_driven() {
-                // Every message_driven action MUST have a message_variant
-                assert!(
-                    action.message_variant.is_some(),
-                    "{}: message_driven action '{}' has no message_variant",
-                    protocol,
-                    action.spec_name
-                );
-                // The message_variant MUST reference an existing variant
-                let variant = action.message_variant.as_deref().unwrap();
-                assert!(
-                    variant_names.contains(&variant),
-                    "{}: action '{}' references non-existent message_variant '{}' (available: {:?})",
-                    protocol, action.spec_name, variant, variant_names
-                );
+                if let Some(variant) = action.message_variant.as_deref() {
+                    // If a message_variant is specified, it MUST reference an existing variant
+                    assert!(
+                        variant_names.contains(&variant),
+                        "{}: action '{}' references non-existent message_variant '{}' (available: {:?})",
+                        protocol, action.spec_name, variant, variant_names
+                    );
+                }
+                // A message_driven action without a message_variant is a composite
+                // dispatcher (e.g., LHandleMessage) that handles all variants internally.
             }
         }
     }

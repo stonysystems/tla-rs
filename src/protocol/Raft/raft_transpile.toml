@@ -1,8 +1,18 @@
 # Configuration for transpiling Raft Consensus spec to exec implementation
 
-# Skip functions that contain complex inline if/else or existential quantifiers
+# Skip functions that contain complex inline if/else or existential quantifiers.
+# Composite handlers (Phase 27) are implemented manually in host.rs since they
+# call atomic functions with requires preconditions that need runtime guard checks.
 skip_functions = [
     "LNext",
+    "step_down_if_needed",
+    "log_up_to_date",
+    "LHandleRequestVoteMsg",
+    "LHandleAppendEntriesMsg",
+    "LHandleVoteResponseMsg",
+    "LHandleAppendResponseMsg",
+    "LTryAdvanceCommitIndex",
+    "LHandleMessage",
 ]
 
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
@@ -91,39 +101,15 @@ fields = [["client_id", "u64"], ["seq_no", "u64"], ["value", "u64"]]
 name = "ClientResponse"
 doc = "Server responds to a client request."
 fields = [["client_id", "u64"], ["seq_no", "u64"], ["success", "bool"]]
-# Auto-generated from LNext — 11 actions
+# Phase 27.4: LNext uses 5 composite branches
 [scheduler]
 next_fn = "LNext"
 params = ["s", "s_", "c"]
-action_count = 11
-# GrantVote and FollowerAppendEntries are responses to incoming messages
-message_response_overrides = ["GrantVote", "FollowerAppendEntries"]
-# HandleAppendReject is a failure sub-case, not a direct message handler
-timer_overrides = ["HandleAppendReject"]
+action_count = 5
 
 [[scheduler.actions]]
 spec_name = "LTimeout"
 exec_name = "CTimeout"
-kind = "timer_driven"
-existential_params = [["sent_packets", "Seq<LRaftMessage>"]]
-
-[[scheduler.actions]]
-spec_name = "LGrantVote"
-exec_name = "CGrantVote"
-kind = "message_driven"
-message_variant = "RequestVote"
-existential_params = [["candidate_term", "int"], ["candidate_last_log_term", "int"], ["candidate_last_log_index", "int"], ["candidate_id", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
-
-[[scheduler.actions]]
-spec_name = "LReceiveVoteGranted"
-exec_name = "CReceiveVoteGranted"
-kind = "message_driven"
-message_variant = "VoteResponse"
-existential_params = [["vote_term", "int"], ["vote_granted", "bool"], ["voter", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
-
-[[scheduler.actions]]
-spec_name = "LBecomeLeader"
-exec_name = "CBecomeLeader"
 kind = "timer_driven"
 existential_params = [["sent_packets", "Seq<LRaftMessage>"]]
 
@@ -137,36 +123,16 @@ existential_params = [["value", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
 spec_name = "LSendAppendEntries"
 exec_name = "CSendAppendEntries"
 kind = "timer_driven"
-existential_params = [["follower", "int"], ["entry_value", "int"], ["prev_log_index", "int"], ["prev_log_term", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
+existential_params = [["follower", "int"], ["entry_value", "int"], ["prev_log_index", "int"], ["prev_log_term", "int"], ["has_entry", "bool"], ["sent_packets", "Seq<LRaftMessage>"]]
 
 [[scheduler.actions]]
-spec_name = "LFollowerAppendEntries"
-exec_name = "CFollowerAppendEntries"
+spec_name = "LHandleMessage"
+exec_name = "CHandleMessage"
 kind = "message_driven"
-message_variant = "AppendEntries"
-existential_params = [["ae_term", "int"], ["ae_leader", "int"], ["ae_prev_index", "int"], ["ae_prev_term", "int"], ["ae_value", "int"], ["ae_has_entry", "bool"], ["ae_leader_commit", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
+existential_params = [["msg", "LRaftMessage"], ["sent_packets", "Seq<LRaftMessage>"]]
 
 [[scheduler.actions]]
-spec_name = "LHandleAppendResponse"
-exec_name = "CHandleAppendResponse"
-kind = "message_driven"
-message_variant = "AppendResponse"
-existential_params = [["resp_term", "int"], ["resp_success", "bool"], ["resp_match_index", "int"], ["resp_follower", "int"], ["follower", "u64"], ["new_match_index", "u64"], ["sent_packets", "Seq<LRaftMessage>"]]
-
-[[scheduler.actions]]
-spec_name = "LHandleAppendReject"
-exec_name = "CHandleAppendReject"
-kind = "timer_driven"
-existential_params = [["resp_term", "int"], ["resp_success", "bool"], ["resp_match_index", "int"], ["resp_follower", "int"], ["follower", "u64"], ["sent_packets", "Seq<LRaftMessage>"]]
-
-[[scheduler.actions]]
-spec_name = "LAdvanceCommitIndex"
-exec_name = "CAdvanceCommitIndex"
+spec_name = "LTryAdvanceCommitIndex"
+exec_name = "CTryAdvanceCommitIndex"
 kind = "timer_driven"
 existential_params = [["new_commit_index", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
-
-[[scheduler.actions]]
-spec_name = "LStepDown"
-exec_name = "CStepDown"
-kind = "timer_driven"
-existential_params = [["new_term", "int"], ["sent_packets", "Seq<LRaftMessage>"]]

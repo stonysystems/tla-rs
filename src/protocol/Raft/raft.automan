@@ -2,7 +2,10 @@
 // Format: FunctionName(mode1, mode2, ...) where + = input, - = output
 
 module Raft::raft {
+    // Core state functions
     LInit(-, +);
+
+    // Atomic actions (transpiled to verified exec functions)
     LTimeout(+, -, +, -);
     LGrantVote(+, -, +, +, +, +, +, -);
     LReceiveVoteGranted(+, -, +, +, +, +, -);
@@ -14,5 +17,17 @@ module Raft::raft {
     LHandleAppendReject(+, -, +, +, +, +, +, +, -);
     LAdvanceCommitIndex(+, -, +, +, -);
     LStepDown(+, -, +, +, -);
+
+    // Composite message handlers (Phase 27 -- manually implemented)
+    // These are skipped in transpilation since they call atomic functions
+    // with requires preconditions that need runtime guard checks.
+    // step_down_if_needed: helper returning LState (not a predicate)
+    // log_up_to_date: helper returning bool
+    // LHandleRequestVoteMsg(+, -, +, +, +, +, +, -);
+    // LHandleAppendEntriesMsg(+, -, +, +, +, +, +, +, +, +, -);
+    // LHandleVoteResponseMsg(+, -, +, +, +, +, -);
+    // LHandleAppendResponseMsg(+, -, +, +, +, +, +, -);
+    // LTryAdvanceCommitIndex(+, -, +, +, -);
+    // LHandleMessage(+, -, +, +, -);
     // LNext not transpiled (contains existential quantifiers)
 }
