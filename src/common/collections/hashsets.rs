@@ -138,12 +138,30 @@ verus! {
     /// This is external_body because Verus's group_hash_axioms broadcast
     /// doesn't fire for generic type parameters.
     ///
-    /// Used for RSL EndPoint-based sets (received_1b_packets,
-    /// current_view_suspectors, received_2b_message_senders).
+    /// Note: generic external_body lemmas may not instantiate correctly in
+    /// Verus SMT encoding. Prefer the monomorphic variants below.
     #[verifier::external_body]
     pub proof fn lemma_hashset_view_len<T: View>(s: &HashSet<T>)
     ensures
         s@.map(|t: T| t@).len() == s.len(),
+    {
+    }
+
+    /// Monomorphic CPacket variant: bridges HashSet<CPacket>.len() to
+    /// Set<RslPacket>.len() via view mapping.
+    #[verifier::external_body]
+    pub proof fn lemma_hashset_cpacket_len(s: &HashSet<crate::implementation::RSL::cmessage::CPacket>)
+    ensures
+        s@.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).len() == s.len(),
+    {
+    }
+
+    /// Monomorphic EndPoint variant: bridges HashSet<EndPoint>.len() to
+    /// Set<AbstractEndPoint>.len() via view mapping.
+    #[verifier::external_body]
+    pub proof fn lemma_hashset_endpoint_len(s: &HashSet<crate::common::native::io_s::EndPoint>)
+    ensures
+        s@.map(|e: crate::common::native::io_s::EndPoint| e@).len() == s.len(),
     {
     }
 }

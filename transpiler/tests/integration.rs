@@ -1982,11 +1982,11 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
     // Phase 24: All assume(false) eliminated; external_body removed from 8 functions + 7 lemmas.
     // Targeted assume() counts increased as function bodies are now verified with local assumes.
     let expected_targeted_counts: std::collections::BTreeMap<&str, usize> = [
-        ("election_gen.rs", 7usize),  // 3 original + 4 from unblocked CElectionStateReflectReceivedRequest
+        ("election_gen.rs", 6usize),  // 3 original + 4 from unblocked CElectionStateReflectReceivedRequest - 1 cardinality (Phase 30)
         ("executor_gen.rs", 1usize),  // 1 reply validity assume in lemma_CHandleRequestBatch_properties
         ("learner_gen.rs", 5usize),   // 3 from CLearnerProcess2b (ballot valid + postconditions) + 2 from CLearnerForgetOperationsBefore
-        ("proposer_gen.rs", 22usize), // 5 original + 17 from 3 Nominate functions (overflow, ballot, unwrap, msg validity, postconditions)
-        ("replica_gen.rs", 8usize),   // 4 original + 3 from CReplicaNextProcess1b + 1 from CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints (!found unreachable)
+        ("proposer_gen.rs", 21usize), // 5 original + 17 from 3 Nominate functions - 1 cardinality (Phase 30)
+        ("replica_gen.rs", 7usize),   // 4 original + 3 from CReplicaNextProcess1b + 1 from CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints - 1 cardinality (Phase 30)
     ]
     .into_iter()
     .collect();

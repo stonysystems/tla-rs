@@ -516,8 +516,8 @@ ensures
     proof {
         // cond2 maps directly: !(seqno < max_int) == !LtUpperBound(seqno as int, UpperBoundFinite{n: max_int as int})
         assert(cond2 == !LtUpperBound(es@.current_view.seqno, es@.constants.all.params.max_integer_val));
-        // cond1: Set::map cardinality gap — HashSet.len() vs Set.map(f).len()
-        assume(cond1 == (es@.current_view_suspectors.len() < LMinQuorumSize(es@.constants.all.config)));
+        // cond1: bridge HashSet<u64>.len() to Set<int>.len() via u64-to-int cardinality lemma
+        crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped(&es.current_view_suspectors);
     }
     if cond1 || cond2 {
         es.clone_up_to_view()

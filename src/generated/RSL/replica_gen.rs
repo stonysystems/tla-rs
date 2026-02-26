@@ -807,8 +807,8 @@ ensures
         let cond3 = senders_len >= quorum_size;
         proof {
             lemma_clearnerstate_get(s.learner.unexecuted_learner_state, opn);
-            // Targeted assume for Set::map cardinality gap (EndPoint → AbstractEndPoint)
-            assume(cond3 == (s@.learner.unexecuted_learner_state[s@.executor.ops_complete].received_2b_message_senders.len() >= LMinQuorumSize(s@.learner.constants.all.config)));
+            // Bridge HashSet<EndPoint>.len() to Set<AbstractEndPoint>.len() via cardinality lemma
+            crate::common::collections::hashsets::lemma_hashset_endpoint_len(&lt.received_2b_message_senders);
         }
         if cond3 {
             proof {

@@ -2226,6 +2226,166 @@ impl Translator {
         }
     }
 
+    /// Inject cardinality bridge proofs before If expressions that compare HashSet.len()
+    /// against a quorum or other value. The bridge lemma `lemma_hashset_view_len`
+    /// proves that `hashset@.map(|t| t@).len() == hashset.len()`, which is needed
+    /// when the spec condition uses `set.len()` on the view-mapped set but exec uses
+    /// `HashSet.len()` directly.
+    ///
+    /// Detects patterns like:
+    ///   `if (s.field.len() as u64) >= quorum { ... }`
+    /// and injects:
+    ///   `proof { crate::common::collections::hashsets::lemma_hashset_view_len(&s.field); }`
+    /// before the If expression.
+    fn inject_cardinality_bridge_proofs(expr: ExecExpr, set_fields: &HashSet<String>) -> ExecExpr {
+        match expr {
+            ExecExpr::Block(stmts) => {
+                let mut new_stmts = Vec::new();
+                for stmt in stmts {
+                    let stmt = Self::inject_cardinality_bridge_proofs(stmt, set_fields);
+                    // Check if this statement is an If with cardinality conditions
+                    let fields = Self::extract_cardinality_fields_from_expr(&stmt, set_fields);
+                    if !fields.is_empty() {
+                        let proof_stmts: Vec<ExecExpr> = fields
+                            .into_iter()
+                            .map(|field_path| ExecExpr::Call {
+                                func: "crate::common::collections::hashsets::lemma_hashset_view_len".to_string(),
+                                args: vec![ExecExpr::Var(format!("&{}", field_path))],
+                            })
+                            .collect();
+                        new_stmts.push(ExecExpr::ProofBlock { stmts: proof_stmts });
+                    }
+                    new_stmts.push(stmt);
+                }
+                ExecExpr::Block(new_stmts)
+            }
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                let then_branch = Box::new(Self::inject_cardinality_bridge_proofs(*then_branch, set_fields));
+                let else_branch =
+                    else_branch.map(|eb| Box::new(Self::inject_cardinality_bridge_proofs(*eb, set_fields)));
+                let result = ExecExpr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                };
+                // For a top-level If (not inside a Block), check if it needs a proof
+                let fields = Self::extract_cardinality_fields_from_expr(&result, set_fields);
+                if !fields.is_empty() {
+                    let proof_stmts: Vec<ExecExpr> = fields
+                        .into_iter()
+                        .map(|field_path| ExecExpr::Call {
+                            func: "crate::common::collections::hashsets::lemma_hashset_view_len".to_string(),
+                            args: vec![ExecExpr::Var(format!("&{}", field_path))],
+                        })
+                        .collect();
+                    ExecExpr::Block(vec![
+                        ExecExpr::ProofBlock { stmts: proof_stmts },
+                        result,
+                    ])
+                } else {
+                    result
+                }
+            }
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
+                pattern,
+                ty,
+                value: Box::new(Self::inject_cardinality_bridge_proofs(*value, set_fields)),
+            },
+            ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
+                scrutinee,
+                arms: arms
+                    .into_iter()
+                    .map(|(pat, body)| (pat, Self::inject_cardinality_bridge_proofs(body, set_fields)))
+                    .collect(),
+            },
+            other => other,
+        }
+    }
+
+    /// Extract field paths from If conditions that contain HashSet.len() comparisons.
+    /// Returns a list of field paths like "s.received_1b_packets" that need cardinality lemmas.
+    fn extract_cardinality_fields_from_expr(expr: &ExecExpr, set_fields: &HashSet<String>) -> Vec<String> {
+        let mut fields = Vec::new();
+        if let ExecExpr::If { cond, .. } = expr {
+            Self::collect_len_fields_from_condition(cond, set_fields, &mut fields);
+        }
+        // Deduplicate
+        fields.sort();
+        fields.dedup();
+        fields
+    }
+
+    /// Recursively scan a condition expression for Cast(MethodCall { method: "len" }, "u64") patterns.
+    /// Collects the receiver field paths into `fields`.
+    fn collect_len_fields_from_condition(expr: &ExecExpr, set_fields: &HashSet<String>, fields: &mut Vec<String>) {
+        match expr {
+            ExecExpr::Binary { lhs, rhs, op } if op == ">=" || op == "<" || op == "<=" || op == ">" => {
+                // Check if lhs or rhs is a Cast(.len(), u64)
+                if let Some(field_path) = Self::extract_len_cast_field(lhs, set_fields) {
+                    fields.push(field_path);
+                }
+                if let Some(field_path) = Self::extract_len_cast_field(rhs, set_fields) {
+                    fields.push(field_path);
+                }
+            }
+            ExecExpr::Binary { lhs, rhs, .. } => {
+                // Recurse through && and || conditions
+                Self::collect_len_fields_from_condition(lhs, set_fields, fields);
+                Self::collect_len_fields_from_condition(rhs, set_fields, fields);
+            }
+            ExecExpr::Unary { expr, .. } => {
+                Self::collect_len_fields_from_condition(expr, set_fields, fields);
+            }
+            _ => {}
+        }
+    }
+
+    /// Extract the field path from a `Cast(MethodCall { method: "len", receiver }, "u64")` pattern.
+    /// Returns the field path string (e.g., "s.received_1b_packets") if the pattern matches
+    /// and the receiver is a known HashSet field (listed in `set_fields`).
+    fn extract_len_cast_field(expr: &ExecExpr, set_fields: &HashSet<String>) -> Option<String> {
+        if let ExecExpr::Cast(inner, ty) = expr {
+            if ty == "u64" {
+                if let ExecExpr::MethodCall {
+                    receiver, method, ..
+                } = inner.as_ref()
+                {
+                    if method == "len" {
+                        let field_path = Self::exec_expr_to_field_path(receiver)?;
+                        // Extract the leaf field name from the dotted path
+                        // e.g., "s.learner.unexecuted_learner_state" -> "unexecuted_learner_state"
+                        // But for nested access like "lt.received_2b_message_senders",
+                        // the leaf is "received_2b_message_senders".
+                        let leaf_field = field_path.rsplit('.').next().unwrap_or(&field_path);
+                        if set_fields.contains(leaf_field) {
+                            return Some(field_path);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Convert an ExecExpr field access chain to a dotted path string.
+    /// E.g., Field(Field(Var("s"), "learner"), "field") -> "s.learner.field"
+    fn exec_expr_to_field_path(expr: &ExecExpr) -> Option<String> {
+        match expr {
+            ExecExpr::Var(name) => Some(name.clone()),
+            ExecExpr::Field(base, field) => {
+                let base_path = Self::exec_expr_to_field_path(base)?;
+                Some(format!("{}.{}", base_path, field))
+            }
+            // Handle unary reference operator (&expr)
+            ExecExpr::Unary { op, expr } if op == "&" => Self::exec_expr_to_field_path(expr),
+            _ => None,
+        }
+    }
+
     /// Inject proof assertions that a helper return value preserves specific fields
     /// of the original input. Called on composite function bodies when the function
     /// uses `let s_mid = Chelper(s, ...)` and later delegates to a sub-action that
@@ -5991,6 +6151,15 @@ impl Translator {
         // call whose extra_requires reference fields of the original input.
         let body = if needs.has_delegating_call_in_conditional {
             Self::inject_helper_preserves_proofs(body, &self.config.extra_requires)
+        } else {
+            body
+        };
+
+        // Inject cardinality bridge proofs for If conditions that compare HashSet.len()
+        // against a quorum or other value. This bridges exec-level HashSet.len() to
+        // spec-level Set.map(|t| t@).len() by calling lemma_hashset_view_len.
+        let body = if !self.config.set_fields.is_empty() {
+            Self::inject_cardinality_bridge_proofs(body, &self.config.set_fields)
         } else {
             body
         };

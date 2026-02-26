@@ -371,8 +371,10 @@ ensures
         // cond2 and cond3 map directly to spec
         assert(cond2 == LSetOfMessage1bAboutBallot(s@.received_1b_packets, s@.max_ballot_i_sent_1a));
         assert(cond3 == (s@.current_state == 1));
-        // cond1: Set::map cardinality gap — HashSet.len() vs Set.map(f).len()
-        assume(cond1 == (s@.received_1b_packets.len() >= LMinQuorumSize(s@.constants.all.config)));
+        // cond1: bridge HashSet<CPacket>.len() to Set<RslPacket>.len()
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        crate::common::collections::hashsets::lemma_hashset_cpacket_len(&s.received_1b_packets);
+        assert(s.received_1b_packets@.map(|t: CPacket| t@) =~= s@.received_1b_packets);
     }
     if cond1 && cond2 && cond3 {
         let sent_packets = CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageStartingPhase2 {
