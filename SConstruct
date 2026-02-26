@@ -140,4 +140,5 @@ env.DotnetBuild('bin/IronRSLServerUDP.dll', 'csharp/IronRSLServerUDP/IronRSLServ
 env.DotnetBuild('bin/CreateIronServiceCerts.dll', 'csharp/CreateIronServiceCerts/CreateIronServiceCerts.csproj')
 env.DotnetBuild('bin/TestIoFramework.dll', 'csharp/TestIoFramework/TestIoFramework.csproj')
 env.DotnetBuild('bin/IronProtocolServer.dll', 'csharp/IronProtocolServer/IronProtocolServer.csproj')
+env.DotnetBuild('bin/IronRaftClient.dll', 'csharp/IronRaftClient/IronRaftClient.csproj')
 env.VerusBuild('liblib.so', 'src/lib.rs')
