@@ -275,6 +275,178 @@ verus! {
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
+    // ---------------------------------------------------------------
+    // Composite message handlers (Phase 27.1)
+    //
+    // Each incorporates step-down + guard checks + state transition
+    // into a single action, matching the host.rs handler logic.
+    // Guard failure yields s_ == s_mid && sent_packets == empty.
+    // ---------------------------------------------------------------
+
+    /// Spec helper: compute step-down intermediate state.
+    /// If new_term > current_term, become Follower and reset voting state.
+    /// Otherwise, return s unchanged.
+    pub open spec fn step_down_if_needed(s: LState, new_term: int) -> LState {
+        if new_term > s.current_term {
+            LState {
+                current_term: new_term,
+                role: LServerRole::Follower,
+                has_voted: false,
+                voted_for: 0int,
+                votes_granted: Set::<int>::empty(),
+                ..s
+            }
+        } else {
+            s
+        }
+    }
+
+    /// Spec helper: check if candidate's log is at least as up-to-date as ours.
+    pub open spec fn log_up_to_date(
+        s: LState, candidate_last_log_term: int, candidate_last_log_index: int,
+    ) -> bool {
+        let my_last_log_term: int = if s.log.len() == 0 {
+            0int
+        } else {
+            s.log[s.log.len() - 1].term
+        };
+        candidate_last_log_term > my_last_log_term
+            || (candidate_last_log_term == my_last_log_term
+                && candidate_last_log_index >= s.log.len())
+    }
+
+    /// Handle RequestVote: step down if higher term, check guards, grant vote or no-op.
+    pub open spec fn LHandleRequestVoteMsg(
+        s: LState, s_: LState, c: LConstants,
+        term: int, candidate_id: int, last_log_index: int, last_log_term: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let s_mid = step_down_if_needed(s, term);
+        if term < s_mid.current_term {
+            // Stale term after possible step-down: no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if s_mid.has_voted && s_mid.voted_for != candidate_id {
+            // Already voted for different candidate: no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !log_up_to_date(s_mid, last_log_term, last_log_index) {
+            // Candidate's log not up-to-date: no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else {
+            // All guards pass: grant vote
+            LGrantVote(s_mid, s_, c, term, last_log_term, last_log_index,
+                       candidate_id, sent_packets)
+        }
+    }
+
+    /// Handle AppendEntries: step down if higher term, check guards, append or reject.
+    pub open spec fn LHandleAppendEntriesMsg(
+        s: LState, s_: LState, c: LConstants,
+        ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
+        ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let s_mid = step_down_if_needed(s, ae_term);
+        if ae_term < s_mid.current_term {
+            // Stale term: send failure response
+            &&& s_ == s_mid
+            &&& sent_packets == seq![LRaftMessage::AppendResponse {
+                term: s_mid.current_term,
+                success: false,
+                match_index: 0int,
+                follower: c.my_id,
+            }]
+        } else {
+            // Accept: delegate to atomic follower append entries
+            LFollowerAppendEntries(s_mid, s_, c, ae_term, ae_leader, ae_prev_index,
+                                   ae_prev_term, ae_value, ae_has_entry,
+                                   ae_leader_commit, sent_packets)
+        }
+    }
+
+    /// Handle VoteResponse: step down if higher term, add vote, check quorum, become leader.
+    pub open spec fn LHandleVoteResponseMsg(
+        s: LState, s_: LState, c: LConstants,
+        term: int, granted: bool, voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let s_mid = step_down_if_needed(s, term);
+        if !(s_mid.role is Candidate) {
+            // Not a candidate (stepped down or was follower/leader): no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !granted {
+            // Vote denied: no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !c.servers.contains(voter) {
+            // Unknown voter: no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else {
+            // Add vote, then check quorum
+            let s_voted = LState {
+                votes_granted: s_mid.votes_granted.insert(voter),
+                ..s_mid
+            };
+            if s_voted.votes_granted.len() >= c.quorum_size {
+                // Quorum reached: become leader
+                &&& s_.current_term == s_voted.current_term
+                &&& s_.role is Leader
+                &&& s_.has_voted == s_voted.has_voted
+                &&& s_.voted_for == s_voted.voted_for
+                &&& s_.log == s_voted.log
+                &&& s_.commit_index == s_voted.commit_index
+                &&& s_.votes_granted == s_voted.votes_granted
+                &&& s_.match_index == Map::<u64, u64>::empty()
+                &&& s_.next_index == Map::<u64, u64>::empty()
+                &&& sent_packets == Seq::<LRaftMessage>::empty()
+            } else {
+                // Below quorum: stay candidate with updated votes
+                &&& s_ == s_voted
+                &&& sent_packets == Seq::<LRaftMessage>::empty()
+            }
+        }
+    }
+
+    /// Handle AppendResponse: step down if higher term, update match/next_index or backtrack.
+    pub open spec fn LHandleAppendResponseMsg(
+        s: LState, s_: LState, c: LConstants,
+        term: int, success: bool, match_index: int, follower_id: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let s_mid = step_down_if_needed(s, term);
+        if !(s_mid.role is Leader) {
+            // Not leader (stepped down): no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !c.servers.contains(follower_id) {
+            // Unknown follower: no-op
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if success {
+            // Success path: update match_index and next_index
+            let follower = follower_id as u64;
+            let new_match_index = match_index as u64;
+            if new_match_index as int > s_mid.log.len() {
+                // match_index out of bounds: no-op
+                &&& s_ == s_mid
+                &&& sent_packets == Seq::<LRaftMessage>::empty()
+            } else {
+                LHandleAppendResponse(s_mid, s_, c, term, success, match_index,
+                                      follower_id, follower, new_match_index,
+                                      sent_packets)
+            }
+        } else {
+            // Failure path: backtrack next_index
+            let follower = follower_id as u64;
+            LHandleAppendReject(s_mid, s_, c, term, success, match_index,
+                                follower_id, follower, sent_packets)
+        }
+    }
+
     /// Next-state relation: disjunction of all possible transitions
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
         ||| exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets)

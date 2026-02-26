@@ -42,6 +42,7 @@ pub fn generate_message_code(config: &MessageConfig) -> String {
 
 /// Generate the enum definition.
 fn generate_enum_def(out: &mut String, config: &MessageConfig) {
+    out.push_str("#[derive(Clone)]\n");
     out.push_str(&format!("pub enum {} {{\n", config.enum_name));
     for variant in &config.variants {
         if !variant.doc.is_empty() {
