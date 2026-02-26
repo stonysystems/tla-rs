@@ -854,7 +854,7 @@ pub struct ExecParameter {
 }
 
 /// Type for exec code
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExecType {
     Named(String),
     Generic(String, Vec<ExecType>),
@@ -1235,9 +1235,51 @@ enum PredicateLoopKind {
     All,
 }
 
+/// Classification of a spec function for translation purposes.
+///
+/// This determines how the translator handles the function:
+/// - `Predicate`: Standard input/output translation (conjunction extraction)
+/// - `ValueReturning`: Helper function returning a non-bool value (expression translation)
+/// - `Skipped`: Not translated (e.g., LNext with existential quantifiers)
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionClassification {
+    /// Predicate function with input/output parameters (returns bool in spec).
+    /// Translated by extracting field assignments from conjunctions.
+    Predicate,
+    /// Value-returning helper function (returns LState, bool, etc.).
+    /// Translated by direct expression translation preserving control flow.
+    ValueReturning {
+        /// The exec return type (e.g., `CState`, `bool`)
+        exec_return_type: ExecType,
+        /// The spec return type (e.g., `Type::Named("LState")`)
+        spec_return_type: Type,
+    },
+    /// Function is skipped (not translated).
+    Skipped {
+        reason: String,
+    },
+}
+
+/// Information about a registered spec function, used for looking up
+/// exec versions when translating let-bindings and cross-function calls.
+#[derive(Debug, Clone)]
+pub struct FunctionInfo {
+    /// Spec function name (e.g., "step_down_if_needed")
+    pub spec_name: String,
+    /// Exec function name (e.g., "CStepDownIfNeeded")
+    pub exec_name: String,
+    /// Classification determining how this function is translated
+    pub classification: FunctionClassification,
+}
+
 /// Code translator
 pub struct Translator {
     config: TranslatorConfig,
+    /// Registry of known spec functions and their classifications.
+    /// Maps spec function name -> FunctionInfo.
+    /// Populated before translation begins so that let-bindings can resolve
+    /// calls to value-returning helpers.
+    function_registry: HashMap<String, FunctionInfo>,
 }
 
 /// Controls how variables are dereferenced in invariant string conversion.
@@ -1256,7 +1298,103 @@ enum DerefMode<'a> {
 impl Translator {
     /// Create a new translator with the given configuration
     pub fn new(config: TranslatorConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            function_registry: HashMap::new(),
+        }
+    }
+
+    /// Register a spec function in the function registry.
+    ///
+    /// This should be called for all annotated functions before translation begins,
+    /// so that let-bindings in composite functions can resolve calls to value-returning
+    /// helpers (e.g., `let s_mid = step_down_if_needed(s, term)`).
+    pub fn register_function(&mut self, func: &AnnotatedFunction) {
+        let spec_name = func.spec_fn.name.clone();
+        let exec_name = self.translate_definition_name(&spec_name);
+
+        let classification = match func.kind {
+            FunctionKind::Helper => {
+                let exec_return_type = self.build_helper_return_type_internal(func);
+                FunctionClassification::ValueReturning {
+                    exec_return_type,
+                    spec_return_type: func.spec_fn.return_type.clone(),
+                }
+            }
+            FunctionKind::Predicate => FunctionClassification::Predicate,
+        };
+
+        self.function_registry.insert(
+            spec_name.clone(),
+            FunctionInfo {
+                spec_name,
+                exec_name,
+                classification,
+            },
+        );
+    }
+
+    /// Register a skipped function in the registry.
+    ///
+    /// Skipped functions are recorded so downstream code can distinguish between
+    /// "function not found" and "function explicitly skipped".
+    pub fn register_skipped_function(&mut self, spec_name: &str, reason: &str) {
+        let exec_name = self.translate_definition_name(spec_name);
+        self.function_registry.insert(
+            spec_name.to_string(),
+            FunctionInfo {
+                spec_name: spec_name.to_string(),
+                exec_name,
+                classification: FunctionClassification::Skipped {
+                    reason: reason.to_string(),
+                },
+            },
+        );
+    }
+
+    /// Look up function info by spec name.
+    ///
+    /// Returns `None` if the function is not registered (neither annotated nor skipped).
+    pub fn get_function_info(&self, spec_name: &str) -> Option<&FunctionInfo> {
+        self.function_registry.get(spec_name)
+    }
+
+    /// Check if a spec function is a value-returning helper.
+    ///
+    /// Used when translating let-bindings to determine if a call should be
+    /// translated to an exec function call returning a value.
+    pub fn is_value_returning(&self, spec_name: &str) -> bool {
+        self.function_registry
+            .get(spec_name)
+            .map(|info| matches!(info.classification, FunctionClassification::ValueReturning { .. }))
+            .unwrap_or(false)
+    }
+
+    /// Get the exec return type of a value-returning helper function.
+    ///
+    /// Returns `None` if the function is not registered or is not value-returning.
+    pub fn get_value_return_type(&self, spec_name: &str) -> Option<&ExecType> {
+        self.function_registry.get(spec_name).and_then(|info| {
+            if let FunctionClassification::ValueReturning {
+                ref exec_return_type,
+                ..
+            } = info.classification
+            {
+                Some(exec_return_type)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Build the helper return type without borrowing issues.
+    /// Internal method used during registration.
+    fn build_helper_return_type_internal(&self, func: &AnnotatedFunction) -> ExecType {
+        if let Some(ref return_type_str) = func.return_type {
+            self.translate_type_string(return_type_str)
+        } else {
+            self.translate_type(&func.spec_fn.return_type)
+        }
     }
 
     /// Convert a PascalCase name to snake_case.
@@ -25277,5 +25415,255 @@ borrowed_args = [0]
             }
             other => panic!("Expected MixedBorrowCall, got {:?}", other),
         }
+    }
+
+    // ============ Function Registry Tests ============
+
+    use crate::ast::{FunctionKind, ParameterMode, VariableMode};
+
+    /// Helper to create an AnnotatedFunction for testing
+    fn make_test_annotated(
+        name: &str,
+        kind: FunctionKind,
+        params: Vec<(String, Type, ParameterMode)>,
+        return_type: Type,
+        annotation_return_type: Option<String>,
+    ) -> crate::moder::AnnotatedFunction {
+        let spec_fn = SpecFunction {
+            name: name.to_string(),
+            generics: Generics::default(),
+            params: params
+                .iter()
+                .map(|(n, t, m)| Parameter {
+                    name: n.clone(),
+                    ty: t.clone(),
+                    mode: Some(*m),
+                    variable_mode: VariableMode::Exec,
+                    span: None,
+                })
+                .collect(),
+            return_type,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: crate::ast::Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind,
+            param_modes: params.iter().map(|(_, _, m)| *m).collect(),
+            return_type: annotation_return_type,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        }
+    }
+
+    #[test]
+    fn test_register_predicate_function() {
+        let mut translator = Translator::default();
+
+        let annotated = make_test_annotated(
+            "LGrantVote",
+            FunctionKind::Predicate,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Output),
+            ],
+            Type::Bool,
+            None,
+        );
+
+        translator.register_function(&annotated);
+
+        let info = translator.get_function_info("LGrantVote");
+        assert!(info.is_some(), "LGrantVote should be registered");
+        let info = info.unwrap();
+        assert_eq!(info.spec_name, "LGrantVote");
+        assert_eq!(info.exec_name, "CGrantVote");
+        assert_eq!(info.classification, FunctionClassification::Predicate);
+        assert!(!translator.is_value_returning("LGrantVote"));
+    }
+
+    #[test]
+    fn test_register_value_returning_helper() {
+        let mut translator = Translator::default();
+
+        let annotated = make_test_annotated(
+            "step_down_if_needed",
+            FunctionKind::Helper,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("new_term".to_string(), Type::Int, ParameterMode::Input),
+            ],
+            Type::Named(Path::single("LState".to_string())),
+            Some("LState".to_string()),
+        );
+
+        translator.register_function(&annotated);
+
+        let info = translator.get_function_info("step_down_if_needed");
+        assert!(info.is_some(), "step_down_if_needed should be registered");
+        let info = info.unwrap();
+        assert_eq!(info.spec_name, "step_down_if_needed");
+        // step_down_if_needed doesn't start with L followed by uppercase, so
+        // it becomes Cstep_down_if_needed via default naming
+        assert!(translator.is_value_returning("step_down_if_needed"));
+
+        // Check exec return type
+        let ret_type = translator.get_value_return_type("step_down_if_needed");
+        assert!(ret_type.is_some());
+        assert_eq!(ret_type.unwrap(), &ExecType::Named("CState".to_string()));
+    }
+
+    #[test]
+    fn test_register_bool_returning_helper() {
+        let mut translator = Translator::default();
+
+        let annotated = make_test_annotated(
+            "log_up_to_date",
+            FunctionKind::Helper,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("term".to_string(), Type::Int, ParameterMode::Input),
+                ("index".to_string(), Type::Int, ParameterMode::Input),
+            ],
+            Type::Bool,
+            Some("bool".to_string()),
+        );
+
+        translator.register_function(&annotated);
+
+        assert!(translator.is_value_returning("log_up_to_date"));
+        let ret_type = translator.get_value_return_type("log_up_to_date");
+        assert!(ret_type.is_some());
+        assert_eq!(ret_type.unwrap(), &ExecType::Named("bool".to_string()));
+    }
+
+    #[test]
+    fn test_register_skipped_function() {
+        let mut translator = Translator::default();
+
+        translator.register_skipped_function("LNext", "contains existential quantifiers");
+
+        let info = translator.get_function_info("LNext");
+        assert!(info.is_some(), "LNext should be registered");
+        let info = info.unwrap();
+        assert_eq!(info.spec_name, "LNext");
+        assert_eq!(info.exec_name, "CNext");
+        assert!(
+            matches!(info.classification, FunctionClassification::Skipped { .. }),
+            "LNext should be classified as Skipped"
+        );
+        assert!(!translator.is_value_returning("LNext"));
+        assert!(translator.get_value_return_type("LNext").is_none());
+    }
+
+    #[test]
+    fn test_unknown_function_returns_none() {
+        let translator = Translator::default();
+        assert!(translator.get_function_info("NonExistent").is_none());
+        assert!(!translator.is_value_returning("NonExistent"));
+        assert!(translator.get_value_return_type("NonExistent").is_none());
+    }
+
+    #[test]
+    fn test_register_helper_with_type_remapping() {
+        let mut config = TranslatorConfig::default();
+        config.type_remapping.insert("LRaftMessage".to_string(), "CRaftMessage".to_string());
+        let mut translator = Translator::new(config);
+
+        let annotated = make_test_annotated(
+            "LHandleRequestVoteMsg",
+            FunctionKind::Predicate,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Output),
+            ],
+            Type::Bool,
+            None,
+        );
+
+        translator.register_function(&annotated);
+
+        let info = translator.get_function_info("LHandleRequestVoteMsg").unwrap();
+        assert_eq!(info.exec_name, "CHandleRequestVoteMsg");
+        assert_eq!(info.classification, FunctionClassification::Predicate);
+    }
+
+    #[test]
+    fn test_multiple_registrations() {
+        let mut translator = Translator::default();
+
+        // Register a predicate
+        let pred = make_test_annotated(
+            "LGrantVote",
+            FunctionKind::Predicate,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Output),
+            ],
+            Type::Bool,
+            None,
+        );
+        translator.register_function(&pred);
+
+        // Register a value-returning helper
+        let helper = make_test_annotated(
+            "step_down_if_needed",
+            FunctionKind::Helper,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("term".to_string(), Type::Int, ParameterMode::Input),
+            ],
+            Type::Named(Path::single("LState".to_string())),
+            Some("LState".to_string()),
+        );
+        translator.register_function(&helper);
+
+        // Register a skipped function
+        translator.register_skipped_function("LNext", "existential quantifiers");
+
+        // Verify all three
+        assert!(!translator.is_value_returning("LGrantVote"));
+        assert!(translator.is_value_returning("step_down_if_needed"));
+        assert!(!translator.is_value_returning("LNext"));
+        assert_eq!(
+            translator.get_function_info("LGrantVote").unwrap().classification,
+            FunctionClassification::Predicate
+        );
+        assert!(matches!(
+            translator.get_function_info("step_down_if_needed").unwrap().classification,
+            FunctionClassification::ValueReturning { .. }
+        ));
+        assert!(matches!(
+            translator.get_function_info("LNext").unwrap().classification,
+            FunctionClassification::Skipped { .. }
+        ));
+    }
+
+    #[test]
+    fn test_helper_return_type_fallback_to_spec() {
+        // When no explicit annotation return type, use spec function's return type
+        let mut translator = Translator::default();
+
+        let annotated = make_test_annotated(
+            "LComputeHelper",
+            FunctionKind::Helper,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+            ],
+            Type::Named(Path::single("LState".to_string())),
+            None, // No explicit return type in annotation
+        );
+
+        translator.register_function(&annotated);
+
+        assert!(translator.is_value_returning("LComputeHelper"));
+        let ret_type = translator.get_value_return_type("LComputeHelper").unwrap();
+        assert_eq!(ret_type, &ExecType::Named("CState".to_string()));
     }
 }

@@ -128,7 +128,7 @@ pub enum VariableMode {
 }
 
 /// Type representation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     /// Named type (e.g., `Ballot`, `LAcceptor`)
     Named(Path),
@@ -157,7 +157,7 @@ pub enum Type {
 }
 
 /// A path like `RSL::Acceptor::LAcceptor`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Path {
     pub segments: Vec<String>,
 }
