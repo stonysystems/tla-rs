@@ -9242,7 +9242,9 @@ in spec, and the transpiler generates verified exec code without `manual_code`.
   membership bridging), inline empty msg proofs for all-tuple returns, field-level clone ensures.
   7/8 composite functions auto-generated. `manual_code` still needed for the 1 remaining function.
 - [x] **29.4.5**: Verus verification passes: 627 verified, 0 errors, 0 assumes in raft_gen.rs
-- [ ] **29.4.6**: Raft benchmark results unchanged
+- [x] **29.4.6**: Raft benchmark results unchanged — confirmed on fresh 3-node clusters:
+  1-thread 1222.7 ops/sec 0.84ms (baseline ~1297, -5.7% within variance),
+  4-thread 3649.1 ops/sec 1.13ms (baseline ~3554, +2.7% within variance)
 - [x] **29.4.7**: Transpiler tests: 1739 pass (1552 unit + 187 integration), 1 pre-existing
   host scaffold failure. New tests: `test_cast_deref_input_ref_in_let_binding`,
   updated `test_manual_code_footprint_is_empty` and `test_raft_helpers_not_in_generated`
