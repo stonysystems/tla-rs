@@ -8764,7 +8764,7 @@ docs/survey/
   - NLP/LLM venues (e.g., ACL/EMNLP/NAACL/NeurIPS/ICLR where relevant),
   - GitHub repo/code search,
   - TLA+/formal methods community resources (if used).
-- [ ] **28.2.4** Record a reproducible search log in `docs/survey/search_log.md`:
+- [x] **28.2.4** Record a reproducible search log in `docs/survey/search_log.md`:
   - date searched,
   - engine/site,
   - exact query string,
@@ -8774,7 +8774,7 @@ docs/survey/
   - `artifacts/papers_screened.csv`
   - `artifacts/repos_screened.csv`
   Required columns: `id`, `title`, `type`, `year`, `url`, `screen_stage`, `category`, `directness`, `include/exclude`, `reason`, `inspected_depth`, `notes`.
-- [ ] **28.2.6** Minimum evidence thresholds (to prevent cutting corners):
+- [x] **28.2.6** Minimum evidence thresholds (to prevent cutting corners):
   - Screen at least `30` candidates total (papers + repos/tools combined), unless the search space is demonstrably smaller (must justify in `methodology.md`).
   - Perform deep review (not just abstract skim) for at least `12` included items, with source-specific notes.
   - Include at least `8` items in the final comparison matrix (direct + adjacent combined) unless fewer are genuinely relevant (must justify).
@@ -8783,22 +8783,22 @@ docs/survey/
 
 **Goal**: Determine whether any published paper/repo already solves this directly.
 
-- [ ] **28.3.1** Create `docs/survey/related_work_direct.md`.
-- [ ] **28.3.2** For each candidate direct work, verify and document:
+- [x] **28.3.1** Create `docs/survey/related_work_direct.md`.
+- [x] **28.3.2** For each candidate direct work, verify and document:
   - actual input (free text? structured requirements? pseudocode? templates?),
   - actual output (`.tla` / TLA+ module / pseudo-formal notation?),
   - whether the output is machine-checkable (SANY/TLC/Apalache/etc.),
   - whether source code/artifact is available,
   - evaluation method and dataset.
-- [ ] **28.3.3** Add a "claim verification" subsection for each included direct work:
+- [x] **28.3.3** Add a "claim verification" subsection for each included direct work:
   - "What the paper/repo claims"
   - "What is actually demonstrated"
   - "What is missing for our use"
-- [ ] **28.3.4** If no direct text->TLA+ work is found:
+- [x] **28.3.4** If no direct text->TLA+ work is found:
   - state this clearly (with date + search protocol scope),
   - list the strongest near-miss works and why they do not qualify,
   - avoid unsupported statements like "no one has done this" without explicit search evidence.
-- [ ] **28.3.5** If direct works are found:
+- [x] **28.3.5** If direct works are found:
   - list exact paper titles + links + repo links,
   - summarize whether they are reproducible and how close they are to practical use.
 
@@ -8806,35 +8806,35 @@ docs/survey/
 
 **Goal**: Map the ecosystem if direct `text -> TLA+` is sparse/nonexistent.
 
-- [ ] **28.4.1** Create `docs/survey/related_work_adjacent.md` and `docs/survey/tooling_landscape.md`.
-- [ ] **28.4.2** Survey adjacent research areas (separate sections; do not blend them):
+- [x] **28.4.1** Create `docs/survey/related_work_adjacent.md` and `docs/survey/tooling_landscape.md`.
+- [x] **28.4.2** Survey adjacent research areas (separate sections; do not blend them):
   - natural language -> formal logic/specification (e.g., LTL/CTL, temporal logic, Alloy, Z, Event-B, Dafny/Coq/Isabelle-style targets),
   - natural language -> state machine / automata / workflow extraction,
   - natural language -> code generation methods relevant to formal structure synthesis,
   - grammar-constrained or syntax-constrained generation,
   - retrieval-augmented generation and tool-using agents for spec/code tasks,
   - program repair / self-refinement / verifier-in-the-loop methods that may transfer to TLA+ generation.
-- [ ] **28.4.3** Survey TLA+-adjacent tooling/components that may be reusable in a future pipeline:
+- [x] **28.4.3** Survey TLA+-adjacent tooling/components that may be reusable in a future pipeline:
   - syntax/semantic checkers (e.g., SANY/TLC/other model-check tools),
   - parsers/AST libraries/printers,
   - trace/model-check feedback that could be used in generation loops,
   - benchmark/spec corpora that can serve as supervision/evaluation references.
-- [ ] **28.4.4** For each tool/repo, include practical integration notes:
+- [x] **28.4.4** For each tool/repo, include practical integration notes:
   - license,
   - maintenance status (last commit / recent activity),
   - install friction,
   - API/CLI availability,
   - whether it can be scripted in CI,
   - likely role in a `text -> TLA+` workflow.
-- [ ] **28.4.5** Explicitly label speculative reuse vs demonstrated reuse.
+- [x] **28.4.5** Explicitly label speculative reuse vs demonstrated reuse.
 
 ### 28.5 Comparison Matrix (Big Picture, Readable, Decision-Oriented)
 
 **Goal**: Make the survey easy to skim and compare. This is the main anti-corner-cutting artifact.
 
-- [ ] **28.5.1** Create `docs/survey/comparison_matrix.md` with a concise intro and a human-readable table.
-- [ ] **28.5.2** Create matching `docs/survey/artifacts/comparison_matrix.csv`.
-- [ ] **28.5.3** Required columns (minimum):
+- [x] **28.5.1** Create `docs/survey/comparison_matrix.md` with a concise intro and a human-readable table.
+- [x] **28.5.2** Create matching `docs/survey/artifacts/comparison_matrix.csv`.
+- [x] **28.5.3** Required columns (minimum):
   - `Name`
   - `Type (paper/repo/tool/system)`
   - `Year`
@@ -8853,12 +8853,12 @@ docs/survey/
   - `Limitations`
   - `Potential reuse for this repo`
   - `Confidence in assessment` (High/Med/Low)
-- [ ] **28.5.4** Add a synthesis section (not just table dump):
+- [x] **28.5.4** Add a synthesis section (not just table dump):
   - What is already solved well,
   - What is partially solved,
   - What appears unsolved,
   - Which gaps are unique to `text -> TLA+`.
-- [ ] **28.5.5** Add at least one "decision lens" summary:
+- [x] **28.5.5** Add at least one "decision lens" summary:
   - "Best near-term building blocks"
   - "High-risk research bets"
   - "Likely dead ends / low ROI options"
@@ -8867,13 +8867,13 @@ docs/survey/
 
 **Goal**: Explain LLM-based approaches and, critically, how to evaluate them in a way that a non-LLM/PL reader can follow.
 
-- [ ] **28.6.1** Create `docs/survey/evaluation_of_text_to_tla.md`.
-- [ ] **28.6.2** Add a beginner-friendly primer (1-2 pages) covering:
+- [x] **28.6.1** Create `docs/survey/evaluation_of_text_to_tla.md`.
+- [x] **28.6.2** Add a beginner-friendly primer (1-2 pages) covering:
   - why LLMs are likely relevant here,
   - what they are good at (pattern translation, boilerplate, reformulation),
   - what they are bad at (silent omissions, hallucinated constraints, unstable semantics),
   - why formal outputs need stronger evaluation than normal code generation demos.
-- [ ] **28.6.3** Define evaluation dimensions for `text -> TLA+` outputs (must be separate and concrete):
+- [x] **28.6.3** Define evaluation dimensions for `text -> TLA+` outputs (must be separate and concrete):
   - syntax validity (parses / SANY),
   - semantic/model-check readiness (TLC-ready wrappers/configs where applicable),
   - requirement coverage (did the spec include all stated requirements?),
@@ -8882,7 +8882,7 @@ docs/survey/
   - ambiguity handling (explicit assumptions vs hidden guesses),
   - completeness of safety properties extracted from text (where text provides them),
   - downstream compatibility with current TLA+ conversion workflow.
-- [ ] **28.6.4** Document concrete evaluation methods for source-text alignment (not generic "manual review"):
+- [x] **28.6.4** Document concrete evaluation methods for source-text alignment (not generic "manual review"):
   - requirement extraction + requirement-to-spec traceability matrix,
   - scenario-based conformance checks (textual scenarios -> expected state transitions),
   - entailment/contradiction checks on structured claims (human-reviewed),
@@ -8890,13 +8890,13 @@ docs/survey/
   - differential comparison against a trusted reference TLA+ spec (when available),
   - model-checking derived invariants from the source text (when finite models are available),
   - mutation tests on the source requirements (change one requirement and verify spec changes correspondingly).
-- [ ] **28.6.5** For each evaluation method above, include:
+- [x] **28.6.5** For each evaluation method above, include:
   - what it catches,
   - what it misses,
   - required human effort,
   - automation potential,
   - failure examples (at least short hypothetical examples if no published examples exist).
-- [ ] **28.6.6** Add a failure taxonomy specific to LLM-generated TLA+:
+- [x] **28.6.6** Add a failure taxonomy specific to LLM-generated TLA+:
   - omitted guards,
   - incorrect priming / state-update semantics,
   - underconstrained transitions,
@@ -8905,12 +8905,12 @@ docs/survey/
   - hidden assumptions not grounded in text,
   - property/spec mismatch (e.g., invariant doesn't match prose requirement),
   - syntax-valid but semantically wrong specs.
-- [ ] **28.6.7** Define a proposed evaluation rubric/template for future experiments in this repo:
+- [x] **28.6.7** Define a proposed evaluation rubric/template for future experiments in this repo:
   - scoring categories,
   - pass/fail gates,
   - reviewer instructions,
   - evidence to save per sample.
-- [ ] **28.6.8** Explicitly note benchmark/data limitations:
+- [x] **28.6.8** Explicitly note benchmark/data limitations:
   - whether a standard `text -> TLA+` benchmark exists,
   - if not, what a minimal internal benchmark should contain (without creating it yet).
 
@@ -8918,23 +8918,23 @@ docs/survey/
 
 **Goal**: Turn the survey into actionable options, without implementing them yet.
 
-- [ ] **28.7.1** Create `docs/survey/recommendations.md`.
-- [ ] **28.7.2** Propose at least `3` architecture options for a future `text -> TLA+` front-end:
+- [x] **28.7.1** Create `docs/survey/recommendations.md`.
+- [x] **28.7.2** Propose at least `3` architecture options for a future `text -> TLA+` front-end:
   - Option A: LLM-first direct TLA+ generation + checker/repair loop,
   - Option B: Text -> structured intermediate representation -> deterministic TLA+ emitter,
   - Option C: Human-in-the-loop template-driven extraction + assisted completion.
-- [ ] **28.7.3** For each option, provide:
+- [x] **28.7.3** For each option, provide:
   - inputs/outputs,
   - core components/tools,
   - expected strengths/risks,
   - evaluation strategy,
   - likely engineering effort,
   - compatibility with the existing downstream TLA+ workflow.
-- [ ] **28.7.4** Include a "text-first, PDF-later" note:
+- [x] **28.7.4** Include a "text-first, PDF-later" note:
   - what changes when supporting PDFs,
   - preprocessing candidates to survey later (OCR/layout extraction),
   - why PDF parsing is deferred in this phase.
-- [ ] **28.7.5** Recommend a short next step after the survey (documentation-only recommendation, not execution), e.g. a small pilot benchmark and evaluation harness plan.
+- [x] **28.7.5** Recommend a short next step after the survey (documentation-only recommendation, not execution), e.g. a small pilot benchmark and evaluation harness plan.
 
 ### 28.8 Quality Control and Anti-Corner-Cutting Rules (For the Agent Doing the Survey)
 
