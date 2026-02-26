@@ -9352,8 +9352,8 @@ Replace each `assume(cond == (set@.map(f).len() >= quorum))` with a lemma call:
 - [ ] `generated/RSL/replica_gen.rs:811` — received_2b_message_senders quorum
 - [ ] `implementation/RSL/ReplicaImpl.rs:794` — 2b senders len equality
 - [ ] `implementation/RSL/ReplicaImpl.rs:808` — 2b senders len comparison
-- [ ] `protocol/Raft/raft_manual.rs:85` — votes_granted >= quorum
-- [ ] `protocol/Raft/raft_manual.rs:96` — votes_granted < quorum
+- [x] `protocol/Raft/raft_manual.rs:85` — votes_granted >= quorum (replaced with lemma_hashset_u64_len_eq_mapped)
+- [x] `protocol/Raft/raft_manual.rs:96` — votes_granted < quorum (replaced with lemma_hashset_u64_len_eq_mapped)
 - [ ] `generated/RSL/replica_gen.rs:268` — samesrc forall equivalence
 
 #### 30.2.2 Remove external_body from 19 predicate functions
@@ -9395,7 +9395,9 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 ### 30.4 Acceptance Criteria
 
-- [ ] **30.4.1**: HashSet/HashMap lemma primitives in `src/common/collections/`
+- [x] **30.4.1**: HashSet/HashMap lemma primitives in `src/common/collections/`
+  - `hashsets.rs`: `lemma_set_map_injective_len` (core, external_body), `lemma_set_u64_to_int_len` (verified convenience), `lemma_hashset_u64_len_eq_mapped` (verified, bridges exec→spec)
+  - `hashmaps.rs`: `lemma_hashmap_filter_by_key`, `lemma_hashmap_iter_complete` (both external_body)
 - [ ] **30.4.2**: All 8 assume sites replaced with lemma calls, `assume` count = 0 (non-IO, non-clone)
 - [ ] **30.4.3**: ≥15 of 19 predicate functions verified (external_body removed, lemma calls added)
 - [ ] **30.4.4**: Verus verification passes (0 errors)

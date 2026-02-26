@@ -80,10 +80,10 @@ ensures
                     lemma_set_map_contains(c.servers@, *voter);
                 }
                 let (s_voted, _) = CReceiveVoteGranted(&s_mid, c, term, granted, voter);
+                proof {
+                    crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped(&s_voted.votes_granted);
+                }
                 if s_voted.votes_granted.len() as u64 >= c.quorum_size {
-                    proof {
-                        assume(s_voted@.votes_granted.len() >= c@.quorum_size);
-                    }
                     let (s_leader, _) = CBecomeLeader(&s_voted, c);
                     let sent: Vec<CRaftMessage> = vec![];
                     proof { lemma_empty_msg_map(); }
@@ -92,8 +92,6 @@ ensures
                     let sent: Vec<CRaftMessage> = vec![];
                     proof {
                         lemma_empty_msg_map();
-                        // Set::map cardinality gap: exec HashSet.len() != spec Set<int>.len()
-                        assume(s_voted@.votes_granted.len() < c@.quorum_size);
                     }
                     (s_voted, sent)
                 }
