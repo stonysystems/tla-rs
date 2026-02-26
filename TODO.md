@@ -41,9 +41,10 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 - Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 **Next steps (priority order):**
-1. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
-2. **Phase 20: Auto-infer TOML configuration from spec analysis** — ✅ MOSTLY COMPLETE. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
-3. **Phase 22: Native model checking from tla-rs spec source** — Add a source-first checker that consumes Verus spec files (`LInit`/`LNext`) directly, with finite-domain safety checking and counterexample traces. See [Phase 22](#phase-22-native-model-checking-for-tla-rs-spec-source-first).
+1. **Phase 27.9.4-27.9.5: Transpiler generates composite Raft exec functions + thin host** — Spec and refinement proof done (27.1-27.4, 27.7); remaining: teach transpiler to generate exec code for composite specs (CHandleMessage, CHandleRequestVoteMsg, etc.) and reduce host.rs from ~1001 LOC to ≤200 LOC. See [Phase 27](#phase-27-lift-raft-host-logic-into-spec--thin-host-via-transpiler-partial).
+2. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
+3. **Phase 20: Auto-infer TOML configuration from spec analysis** — ✅ MOSTLY COMPLETE. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
+4. **Phase 22: Native model checking from tla-rs spec source** — Add a source-first checker that consumes Verus spec files (`LInit`/`LNext`) directly, with finite-domain safety checking and counterexample traces. See [Phase 22](#phase-22-native-model-checking-for-tla-rs-spec-source-first).
 2. ~~**Phase 19: Eliminate all manual impl delegates from generated RSL code**~~ ✅ COMPLETE — All RSL gen modules fully standalone. election_gen.rs enabled, 0 delegates across all 7 gen modules. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
 2. ~~**Phase 18: Replace flattened msgs_* fields with sent_packets output parameters**~~ ✅ COMPLETE — All 8 non-RSL protocols migrated from ~68 msgs_* fields to sent_packets output parameters. ~1,269 LOC frame-condition boilerplate eliminated. All acceptance criteria met.
 3. ~~**Phase 17: Runnable protocols**~~ ✅ MOSTLY COMPLETE — All 9 non-RSL protocols have runnable implementations with networking, marshalling, and main loop. 17.3.2/17.3.3 (RSL Marshalable codegen for structs+enums) COMPLETE. Remaining: 17.6.3 (cluster integration tests, requires .NET SDK).
@@ -8334,7 +8335,7 @@ P99 latency: X.XX ms
 
 ---
 
-## Phase 27: Lift Raft Host Logic into Spec — Thin Host via Transpiler ✅ COMPLETE
+## Phase 27: Lift Raft Host Logic into Spec — Thin Host via Transpiler (PARTIAL)
 
 ### 27.0 Background & Motivation
 
@@ -8598,12 +8599,13 @@ plus new verification obligations from the composite functions.
   spec uses existential quantification over new_commit_index)
 - [x] **27.9.3**: `LHandleMessage` dispatch function added to spec (renamed from `LProcessMessage`
   for transpiler classifier compatibility — "handle" keyword triggers message_driven classification)
-- [x] **27.9.4**: Atomic exec functions generated successfully; composite functions skipped in
-  transpiler (they call atomic functions with `requires` preconditions needing runtime guard checks).
-  Composite exec logic stays in host.rs as unverified runtime wrappers.
-- [x] **27.9.5**: host.rs uses verified `sent_packets` via `craft_to_raft` conversion instead of
-  manual message construction. Full handler logic remains (~1001 LOC) because composites aren't
-  generated — this is a deliberate design tradeoff (guard checks need runtime evaluation).
+- [ ] **27.9.4**: Transpiler generates exec functions for composite specs (`CHandleRequestVoteMsg`,
+  `CHandleAppendEntriesMsg`, `CHandleVoteResponseMsg`, `CHandleAppendResponseMsg`,
+  `CHandleMessage`, `CTryAdvanceCommitIndex`). Requires transpiler support for: `let s_mid`
+  intermediate state, multi-branch if/else with guard checks, calling other generated functions
+  internally (StepDown + GrantVote composition).
+- [ ] **27.9.5**: host.rs reduced to ≤200 LOC (timers, randomization, I/O only). Message dispatch,
+  guard checks, step-down logic, and commit index scanning all moved to transpiler-generated code.
 - [x] **27.9.6**: Refinement proof in `raft_refinement.rs` (6 lemmas + main theorem) shows
   composite LNext ⊆ atomic LNextAtomic: every composite step maps to stutter, 1, or 2 atomic steps
 - [x] **27.9.7**: Verus verification passes with 611 verified, 0 errors
