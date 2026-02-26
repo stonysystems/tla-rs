@@ -81,6 +81,16 @@ fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["pr
 name = "AppendResponse"
 doc = "Follower responds to an append entries request."
 fields = [["term", "u64"], ["success", "bool"], ["match_index", "u64"], ["follower", "u64"]]
+
+[[messages.variants]]
+name = "ClientRequest"
+doc = "External client submits a request to the cluster."
+fields = [["client_id", "u64"], ["seq_no", "u64"], ["value", "u64"]]
+
+[[messages.variants]]
+name = "ClientResponse"
+doc = "Server responds to a client request."
+fields = [["client_id", "u64"], ["seq_no", "u64"], ["success", "bool"]]
 # Auto-generated from LNext — 11 actions
 [scheduler]
 next_fn = "LNext"

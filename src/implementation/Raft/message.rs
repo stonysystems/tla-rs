@@ -33,6 +33,18 @@ pub enum RaftMessage {
         match_index: u64,
         follower: u64,
     },
+    /// External client submits a request to the cluster.
+    ClientRequest {
+        client_id: u64,
+        seq_no: u64,
+        value: u64,
+    },
+    /// Server responds to a client request.
+    ClientResponse {
+        client_id: u64,
+        seq_no: u64,
+        success: bool,
+    },
 }
 
 // Message tags for serialization
@@ -40,6 +52,8 @@ const TAG_REQUEST_VOTE: u64 = 1;
 const TAG_VOTE_RESPONSE: u64 = 2;
 const TAG_APPEND_ENTRIES: u64 = 3;
 const TAG_APPEND_RESPONSE: u64 = 4;
+const TAG_CLIENT_REQUEST: u64 = 5;
+const TAG_CLIENT_RESPONSE: u64 = 6;
 
 /// Read a u64 from a byte slice at the given byte offset.
 fn read_u64(data: &Vec<u8>, offset: usize) -> u64 {
@@ -113,6 +127,27 @@ impl ProtocolMessage for RaftMessage {
                 buf.extend_from_slice(&match_index.to_le_bytes());
                 buf.extend_from_slice(&follower.to_le_bytes());
             }
+            RaftMessage::ClientRequest {
+                client_id,
+                seq_no,
+                value,
+            } => {
+                buf.extend_from_slice(&TAG_CLIENT_REQUEST.to_le_bytes());
+                buf.extend_from_slice(&client_id.to_le_bytes());
+                buf.extend_from_slice(&seq_no.to_le_bytes());
+                buf.extend_from_slice(&value.to_le_bytes());
+            }
+            RaftMessage::ClientResponse {
+                client_id,
+                seq_no,
+                success,
+            } => {
+                buf.extend_from_slice(&TAG_CLIENT_RESPONSE.to_le_bytes());
+                buf.extend_from_slice(&client_id.to_le_bytes());
+                buf.extend_from_slice(&seq_no.to_le_bytes());
+                let success_val: u64 = if *success { 1 } else { 0 };
+                buf.extend_from_slice(&success_val.to_le_bytes());
+            }
         }
     }
 
@@ -184,6 +219,32 @@ impl ProtocolMessage for RaftMessage {
                     success,
                     match_index,
                     follower,
+                })
+            }
+            TAG_CLIENT_REQUEST => {
+                if data.len() < 32 {
+                    return None;
+                }
+                let client_id = read_u64(data, 8);
+                let seq_no = read_u64(data, 16);
+                let value = read_u64(data, 24);
+                Some(RaftMessage::ClientRequest {
+                    client_id,
+                    seq_no,
+                    value,
+                })
+            }
+            TAG_CLIENT_RESPONSE => {
+                if data.len() < 32 {
+                    return None;
+                }
+                let client_id = read_u64(data, 8);
+                let seq_no = read_u64(data, 16);
+                let success = read_u64(data, 24) != 0;
+                Some(RaftMessage::ClientResponse {
+                    client_id,
+                    seq_no,
+                    success,
                 })
             }
             _ => None,

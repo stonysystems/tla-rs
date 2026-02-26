@@ -683,6 +683,50 @@ impl RaftHost {
         }
     }
 
+    /// Handle an incoming ClientRequest message from a benchmark client.
+    ///
+    /// If this node is the leader, appends the value to the log via
+    /// CClientRequest and sends a ClientResponse(success=true) back.
+    /// If not the leader, sends a ClientResponse(success=false) back.
+    fn handle_client_request(
+        &mut self,
+        config: &RaftConfig,
+        src: &EndPoint,
+        client_id: u64,
+        seq_no: u64,
+        value: u64,
+    ) -> StepResult<RaftMessage> {
+        // Only the leader can serve client requests
+        if !matches!(self.state.role, CServerRole::Leader) {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::Send {
+                    dst: src.clone_up_to_view(),
+                    msg: RaftMessage::ClientResponse {
+                        client_id,
+                        seq_no,
+                        success: false,
+                    },
+                },
+            };
+        }
+
+        let (new_state, _sent) = raft_gen::CClientRequest(&self.state, &config.constants, &value);
+        self.state = new_state;
+
+        StepResult {
+            ok: true,
+            outbound: GenericOutbound::Send {
+                dst: src.clone_up_to_view(),
+                msg: RaftMessage::ClientResponse {
+                    client_id,
+                    seq_no,
+                    success: true,
+                },
+            },
+        }
+    }
+
     /// Timer action: Leader processes a client request.
     ///
     /// CClientRequest requires:
@@ -733,13 +777,6 @@ impl ProtocolHost for RaftHost {
     ) -> StepResult<Self::Msg> {
         // Handle incoming message based on current role
         if let Some(pkt) = packet {
-            let _msg_term = match &pkt.msg {
-                RaftMessage::RequestVote { term, .. } => *term,
-                RaftMessage::VoteResponse { term, .. } => *term,
-                RaftMessage::AppendEntries { term, .. } => *term,
-                RaftMessage::AppendResponse { term, .. } => *term,
-            };
-
             return match pkt.msg {
                 RaftMessage::RequestVote {
                     term,
@@ -784,6 +821,18 @@ impl ProtocolHost for RaftHost {
                     match_index,
                     follower,
                 } => self.handle_append_response(config, term, success, match_index, follower),
+                RaftMessage::ClientRequest {
+                    client_id,
+                    seq_no,
+                    value,
+                } => self.handle_client_request(config, &pkt.src, client_id, seq_no, value),
+                RaftMessage::ClientResponse { .. } => {
+                    // Servers ignore client responses (these are for clients only)
+                    StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    }
+                }
             };
         }
 
