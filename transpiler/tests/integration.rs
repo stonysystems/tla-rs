@@ -4367,7 +4367,10 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
 
 /// Phase 16.8.5: D1 on LLM-authored TLA+ specs
 /// Tests parser robustness against TLA+ written by an LLM without knowledge of parser limitations.
-/// 3/12 pass (simple flat-variable specs), 9/12 fail (range operator, temporal subscript, etc.)
+/// 3/16 pass (simple flat-variable specs), 13/16 fail (range operator, temporal subscript, etc.)
+/// Full specs: Raft, Paxos, PBFT, EPaxos, BullyElection, ChainRep, PrimaryBackup,
+/// TwoPhaseCommit, VerticalPaxos — all fail on parser gaps (range, EXCEPT, CHOOSE, \o)
+/// Simple* pass: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables only)
 #[test]
 fn test_d1_on_llm_tla_specs() {
     use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
@@ -4429,20 +4432,20 @@ fn test_d1_on_llm_tla_specs() {
     );
 
     assert!(
-        total >= 12,
-        "Should process at least 12 .tla files, got {total}"
+        total >= 16,
+        "Should process at least 16 .tla files (7 simple + 9 full), got {total}"
     );
     assert!(
         passed >= 3,
         "At least 3 simple specs should pass, got {passed}"
     );
     assert!(
-        range_fails >= 4,
-        "Expected >= 4 range operator failures, got {range_fails}"
+        range_fails >= 8,
+        "Expected >= 8 range operator failures, got {range_fails}"
     );
     assert!(
-        temporal_fails >= 3,
-        "Expected >= 3 temporal subscript failures, got {temporal_fails}"
+        temporal_fails >= 4,
+        "Expected >= 4 temporal subscript failures, got {temporal_fails}"
     );
     if !other_fails.is_empty() {
         eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));

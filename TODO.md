@@ -5788,9 +5788,8 @@ transpiler/tla_test_workspace/
 #### 16.8.5: External TLA+ corpora (LLM + community)
 
 - [x] Generate TLA+ files for each protocol under `transpiler/tla_test_workspace/generated_tla_by_llm/`
-  - Current snapshot: `12` specs total = `5` non-simple (`BullyElection`, `ChainRep`, `PrimaryBackup`, `TwoPhaseCommit`, `VerticalPaxos`) + `7` simplified variants (`SimpleConsensus`, `SimpleEPaxos`, `SimpleLeader`, `SimplePBFT`, `SimplePaxos`, `SimplePrimary`, `SimpleRaft`)
-  - The previous "9 rich + 3 simple" summary does not match the checked-in folder contents
-- [ ] Replace or supplement `Simple*` specs with full/standard protocol specs for the intended LLM corpus evaluation (keep simplified variants only as parser smoke tests if still useful)
+  - Current snapshot: `16` specs total = `9` full (`BullyElection`, `ChainRep`, `EPaxos`, `PBFT`, `Paxos`, `PrimaryBackup`, `Raft`, `TwoPhaseCommit`, `VerticalPaxos`) + `7` simplified variants (`SimpleConsensus`, `SimpleEPaxos`, `SimpleLeader`, `SimplePBFT`, `SimplePaxos`, `SimplePrimary`, `SimpleRaft`)
+- [x] Replace or supplement `Simple*` specs with full/standard protocol specs for the intended LLM corpus evaluation (keep simplified variants only as parser smoke tests if still useful) — Added 4 full specs (`Raft`, `Paxos`, `PBFT`, `EPaxos`) with multi-node state, quorum logic, and safety invariants. D1 results: 3/16 pass (same 3 Simple* pass), 13/16 fail on parser gaps (range `..`, `EXCEPT`, `CHOOSE`, `\o`). Simple* retained as parser smoke tests.
 - [x] Collect community-authored TLA+ protocol specs under `transpiler/tla_test_workspace/tla_by_community/`
   - 4 specs with permissive licenses: 2PC (MIT), Paxos (MIT), Raft (CC BY 4.0), EPaxos (Apache 2.0)
   - Excluded: PBFT (no license), Chain Replication (incomplete, no license)
@@ -5801,8 +5800,9 @@ transpiler/tla_test_workspace/
 #### 16.8.6: External corpora conversion validation ⚠️ PARTIAL (D1 artifacts materialized; D2 blocked on annotation generation)
 
 - [x] For `generated_tla_by_llm/`: run D1, output to `generated_tla_by_llm/d1_output/`
-  - **3/12 PASS**: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables, no advanced constructs)
-  - **9/12 FAIL**: Range operator `1..N` (5), temporal subscript `[][Next]_<<vars>>` (3), named ASSUME (1)
+  - **3/16 PASS**: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables, no advanced constructs)
+  - **13/16 FAIL**: Range operator `..` (8), temporal/tuple `<<>>` (4), sequence concat `\o` (1)
+  - Full specs added: Raft, Paxos, PBFT, EPaxos — all fail D1 (standard TLA+ features unsupported by parser)
   - D2 blocked: only 3 files produce D1 output; output quality is basic (flat variable specs)
 - [x] For `tla_by_community/`: run D1, output to `tla_by_community/d1_output/`
   - **3/4 PASS**: EPaxos, Paxos, Raft (parser succeeds but output is minimal — empty structs, no operators translated)
