@@ -2042,6 +2042,59 @@ impl Translator {
         }
     }
 
+    /// Strip redundant `&` from input params in function call arguments.
+    ///
+    /// Input params are already `&T` in the generated exec function. When the general
+    /// `transform_call` adds `&` to all non-output identifiers, input params get `&&T`.
+    /// This post-processing pass strips the extra `&` by walking the expression tree
+    /// and removing `&var` → `var` for input params in Call arguments.
+    fn strip_double_ref_on_inputs(expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
+        match expr {
+            ExecExpr::Call { func, args } => {
+                let args = args.into_iter().map(|a| {
+                    // Strip & from input params: &s → s (s is already &CState)
+                    if let ExecExpr::Unary { ref op, ref expr } = a {
+                        if op == "&" {
+                            if let ExecExpr::Var(ref name) = **expr {
+                                if ctx.is_input(name) {
+                                    return (**expr).clone();
+                                }
+                            }
+                        }
+                    }
+                    Self::strip_double_ref_on_inputs(a, ctx)
+                }).collect();
+                ExecExpr::Call { func, args }
+            }
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
+                pattern,
+                ty,
+                value: Box::new(Self::strip_double_ref_on_inputs(*value, ctx)),
+            },
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts.into_iter().map(|s| Self::strip_double_ref_on_inputs(s, ctx)).collect()
+            ),
+            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+                cond: Box::new(Self::strip_double_ref_on_inputs(*cond, ctx)),
+                then_branch: Box::new(Self::strip_double_ref_on_inputs(*then_branch, ctx)),
+                else_branch: else_branch.map(|e| Box::new(Self::strip_double_ref_on_inputs(*e, ctx))),
+            },
+            ExecExpr::Tuple(elems) => ExecExpr::Tuple(
+                elems.into_iter().map(|e| Self::strip_double_ref_on_inputs(e, ctx)).collect()
+            ),
+            ExecExpr::Unary { op, expr } => ExecExpr::Unary {
+                op,
+                expr: Box::new(Self::strip_double_ref_on_inputs(*expr, ctx)),
+            },
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(Self::strip_double_ref_on_inputs(*lhs, ctx)),
+                op,
+                rhs: Box::new(Self::strip_double_ref_on_inputs(*rhs, ctx)),
+            },
+            other => other,
+        }
+    }
+
     /// Check if a named input parameter is a scalar reference type (Int/Nat → &u64).
     /// Scalar ref params need dereferencing, not cloning. Bool is excluded because
     /// it is passed by value (Copy type), not by reference.
@@ -2698,7 +2751,33 @@ impl Translator {
                 "usize".to_string(),
             ),
             ExecExpr::Var(_) => ExecExpr::Cast(Box::new(idx_expr), "usize".to_string()),
+            // Strip `as u64` casts from .len() and other expressions used as indices,
+            // since Vec indexing requires usize, not u64.
+            ExecExpr::Cast(inner, ty) if ty == "u64" => {
+                // .len() as u64 → .len() (which returns usize, valid for indexing)
+                *inner.clone()
+            }
+            // Binary expressions (e.g., `(s.log.len() as u64) - 1`) need cast stripping
+            // on operands, then overall cast to usize.
+            ExecExpr::Binary { lhs, op, rhs } => {
+                let lhs = Self::strip_u64_casts_for_index(*lhs.clone());
+                let rhs = Self::strip_u64_casts_for_index(*rhs.clone());
+                ExecExpr::Binary {
+                    lhs: Box::new(lhs),
+                    op: op.clone(),
+                    rhs: Box::new(rhs),
+                }
+            }
             _ => idx_expr,
+        }
+    }
+
+    /// Strip `as u64` casts from an expression so it can be used as a usize index.
+    /// Specifically targets `.len() as u64` → `.len()` patterns.
+    fn strip_u64_casts_for_index(expr: ExecExpr) -> ExecExpr {
+        match expr {
+            ExecExpr::Cast(inner, ref ty) if ty == "u64" => *inner,
+            other => other,
         }
     }
 
@@ -5352,6 +5431,9 @@ impl Translator {
             requires: requires.clone(),
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
+        // Strip redundant & on input params in sub-calls: input params are already &T,
+        // so &input_param gives &&T which is incorrect.
+        let body = Self::strip_double_ref_on_inputs(body, &ctx);
 
         // If generate_proofs is enabled, analyze the body and append proof blocks
         let body = self.maybe_append_proof_block(body, &return_type);
@@ -5410,6 +5492,9 @@ impl Translator {
         // This handles identity returns like `else { s }` where s: &CState needs cloning,
         // and recurses into if/else branches via clone_if_input_ref's If handling.
         let body = self.clone_if_input_ref(body, &ctx);
+        // Strip redundant & on input params in sub-calls: input params are already &T,
+        // so &input_param gives &&T which is incorrect.
+        let body = Self::strip_double_ref_on_inputs(body, &ctx);
 
         // If generate_proofs is enabled, analyze the body and append proof blocks
         let body = self.maybe_append_proof_block(body, &return_type);
@@ -8554,34 +8639,85 @@ impl Translator {
                 // Use translate_path to handle both simple struct names and enum variants
                 // e.g., "Struct" -> "CStruct" or "RslMessage::RslMessage1b" -> "CMessage::CMessage1b"
                 let exec_name = self.translate_path(name);
-                let translated_fields: TranspileResult<Vec<_>> = fields
-                    .iter()
-                    .map(|(fname, fexpr)| {
-                        let expr = self.transform_expr(fexpr, ctx)?;
-                        // Clone input parameters when assigning to struct fields
-                        let expr = self.clone_if_input_ref(expr, ctx);
-                        // Ensure .len() calls in if/else branches get `as u64` cast
-                        let expr = Self::cast_len_to_u64_recursive(expr);
-                        Ok((fname.clone(), expr))
-                    })
-                    .collect();
 
-                // Post-process: extract HashSet mutations from struct fields
-                let (pre_stmts, new_fields) =
-                    self.extract_set_mutations_from_struct(translated_fields?, ctx);
+                // Check for struct update syntax: parser stores `..base` as a field named ".."
+                let has_base = fields.iter().any(|(fname, _)| fname == "..");
 
-                let struct_expr = ExecExpr::Struct {
-                    name: exec_name,
-                    fields: new_fields,
-                };
+                if has_base {
+                    // Extract the base expression and translate it
+                    let base_field = fields.iter().find(|(fname, _)| fname == "..").unwrap();
+                    let base_expr = self.transform_expr(&base_field.1, ctx)?;
+                    let base_expr = self.clone_if_input_ref(base_expr, ctx);
 
-                if pre_stmts.is_empty() {
-                    Ok(struct_expr)
+                    // Translate non-base fields
+                    let translated_fields: TranspileResult<Vec<_>> = fields
+                        .iter()
+                        .filter(|(fname, _)| fname != "..")
+                        .map(|(fname, fexpr)| {
+                            let expr = self.transform_expr(fexpr, ctx)?;
+                            let expr = self.clone_if_input_ref(expr, ctx);
+                            let expr = Self::cast_len_to_u64_recursive(expr);
+                            Ok((fname.clone(), expr))
+                        })
+                        .collect();
+                    let translated_fields = translated_fields?;
+
+                    // Check for HashSet mutations
+                    let has_mutations = translated_fields
+                        .iter()
+                        .any(|(_, expr)| Self::is_set_mutation(expr));
+
+                    if has_mutations {
+                        let (pre_stmts, new_fields) =
+                            self.extract_set_mutations_from_struct(translated_fields, ctx);
+                        let struct_expr = ExecExpr::Struct {
+                            name: exec_name,
+                            fields: new_fields,
+                        };
+                        if pre_stmts.is_empty() {
+                            Ok(struct_expr)
+                        } else {
+                            let mut block = pre_stmts;
+                            block.push(struct_expr);
+                            Ok(ExecExpr::Block(block))
+                        }
+                    } else {
+                        Ok(ExecExpr::StructUpdate {
+                            name: exec_name,
+                            base: Box::new(base_expr),
+                            fields: translated_fields,
+                        })
+                    }
                 } else {
-                    // Wrap in block: pre_stmts + struct_expr
-                    let mut block = pre_stmts;
-                    block.push(struct_expr);
-                    Ok(ExecExpr::Block(block))
+                    let translated_fields: TranspileResult<Vec<_>> = fields
+                        .iter()
+                        .map(|(fname, fexpr)| {
+                            let expr = self.transform_expr(fexpr, ctx)?;
+                            // Clone input parameters when assigning to struct fields
+                            let expr = self.clone_if_input_ref(expr, ctx);
+                            // Ensure .len() calls in if/else branches get `as u64` cast
+                            let expr = Self::cast_len_to_u64_recursive(expr);
+                            Ok((fname.clone(), expr))
+                        })
+                        .collect();
+
+                    // Post-process: extract HashSet mutations from struct fields
+                    let (pre_stmts, new_fields) =
+                        self.extract_set_mutations_from_struct(translated_fields?, ctx);
+
+                    let struct_expr = ExecExpr::Struct {
+                        name: exec_name,
+                        fields: new_fields,
+                    };
+
+                    if pre_stmts.is_empty() {
+                        Ok(struct_expr)
+                    } else {
+                        // Wrap in block: pre_stmts + struct_expr
+                        let mut block = pre_stmts;
+                        block.push(struct_expr);
+                        Ok(ExecExpr::Block(block))
+                    }
                 }
             }
 
@@ -8593,6 +8729,7 @@ impl Translator {
                 let base_expr = self.clone_if_input_ref(base_expr, ctx);
                 let translated_fields: TranspileResult<Vec<_>> = fields
                     .iter()
+                    .filter(|(fname, _)| fname != "..")  // base is already captured above
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(fexpr, ctx)?;
                         // Clone input parameters when assigning to struct fields
