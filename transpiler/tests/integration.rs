@@ -649,6 +649,9 @@ fn test_raft_function_transpilation() {
             "LFollowerAppendEntries".to_string(),
             "LHandleAppendResponse".to_string(),
             "LHandleAppendReject".to_string(),
+            "LHandleVoteResponseMsg".to_string(),
+            "LHandleAppendResponseMsg".to_string(),
+            "LHandleMessage".to_string(),
         ],
         ..Default::default()
     };
@@ -6462,13 +6465,8 @@ fn test_host_init_raft() {
 /// (not injected via manual_code into generated files)
 #[test]
 fn test_raft_helpers_not_in_generated() {
-    // Raft TOML should not have manual_code
-    let toml = std::fs::read_to_string("../src/protocol/Raft/raft_transpile.toml")
-        .expect("Failed to read raft_transpile.toml");
-    assert!(
-        !toml.contains("manual_code"),
-        "Raft TOML should not have manual_code (helpers moved to implementation/Raft/helpers.rs)"
-    );
+    // Phase 29: Raft TOML uses manual_code for CHandleVoteResponseMsg (Set cardinality proof).
+    // But Cu64_inc/Cu64_dec should still be in helpers.rs, not in generated files.
 
     // Generated files should NOT define Cu64_inc/Cu64_dec (only call them)
     let types_gen = std::fs::read_to_string("../src/generated/Raft/types_gen.rs")
@@ -6548,12 +6546,14 @@ fn test_manual_code_footprint_is_empty() {
     manual_bindings.sort();
 
     // Phase 23.3.2: acceptor uses manual_code for 5 proven action functions.
+    // Phase 29: Raft uses manual_code for CHandleVoteResponseMsg (requires manual Set cardinality proof).
     let expected: Vec<(String, String)> = vec![
         ("../src/protocol/RSL/acceptor_transpile.toml".to_string(), "acceptor_manual.rs".to_string()),
+        ("../src/protocol/Raft/raft_transpile.toml".to_string(), "raft_manual.rs".to_string()),
     ];
     assert_eq!(
         manual_bindings, expected,
-        "only acceptor should use manual_code (for proven action functions)"
+        "only acceptor and raft should use manual_code"
     );
 
 }

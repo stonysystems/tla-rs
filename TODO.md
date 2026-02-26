@@ -9226,17 +9226,23 @@ in spec, and the transpiler generates verified exec code without `manual_code`.
 
 ### 29.4 Acceptance Criteria
 
-- [ ] **29.4.1**: Transpiler generates exec functions for spec helpers returning non-bool types
-  (`step_down_if_needed` → `CStepDownIfNeeded`, `log_up_to_date` → `CLogUpToDate`)
-- [ ] **29.4.2**: Transpiler generates exec functions for composite spec predicates containing
+- [x] **29.4.1**: Transpiler generates exec functions for spec helpers returning non-bool types
+  (`step_down_if_needed` → `Cstep_down_if_needed`, `log_up_to_date` → `Clog_up_to_date`)
+- [x] **29.4.2**: Transpiler generates exec functions for composite spec predicates containing
   `let s_mid = helper(...)` bindings (`LHandleRequestVoteMsg` → `CHandleRequestVoteMsg`, etc.)
-- [ ] **29.4.3**: Transpiler generates message dispatch function from spec match
-  (`LHandleMessage` → `CHandleMessage`)
+- [x] **29.4.3**: Transpiler generates message dispatch function from spec match
+  (`LHandleMessage` → `CHandleMessage`) — required bool param type tracking in function registry
+  for `detect_helper_call` to correctly dereference `&bool` match-arm bindings
 - [ ] **29.4.4**: `raft_manual.rs` deleted, `manual_code` removed from `raft_transpile.toml`
-- [ ] **29.4.5**: Verus verification passes (0 errors, ≤2 assumes for Set::map cardinality)
+  **Partially met**: `raft_manual.rs` reduced to 112 LOC (from 369). `CHandleVoteResponseMsg`
+  remains manual due to Set::map cardinality proof gap (2 assumes). 6/8 composite functions
+  auto-generated. `manual_code` still needed for the 1 remaining function.
+- [x] **29.4.5**: Verus verification passes: 622 verified, 0 errors, 2 assumes for Set::map
+  cardinality (in manual CHandleVoteResponseMsg only)
 - [ ] **29.4.6**: Raft benchmark results unchanged
-- [ ] **29.4.7**: Transpiler tests updated (new integration tests for value-returning function
-  translation, let-binding with function calls, intermediate-state delegation)
+- [x] **29.4.7**: Transpiler tests: 1739 pass (1552 unit + 187 integration), 1 pre-existing
+  host scaffold failure. New tests: `test_cast_deref_input_ref_in_let_binding`,
+  updated `test_manual_code_footprint_is_empty` and `test_raft_helpers_not_in_generated`
 
 ### 29.5 Execution Order
 
@@ -9255,3 +9261,143 @@ in spec, and the transpiler generates verified exec code without `manual_code`.
   ↓
 29.2.7 Regenerate + verify          ← 0 errors, delete raft_manual.rs
 ```
+
+## Phase 30: Verified HashSet/HashMap Primitives — Eliminate external_body and assume Gaps
+
+### 30.0 Background & Motivation
+
+Analysis of the remaining verification gaps (see `reports/verification_gaps.md`) reveals that **36 of 36
+non-IO, non-clone gaps** trace to a single root cause: **Verus lacks verified HashSet/HashMap support**.
+Multi-Paxos uses set predicates extensively (quorum checks, forall/exists over 1b packets, HashMap
+insert/filter), which are concise at spec level but require unverifiable iteration at exec level.
+
+Currently each function that touches a HashSet/HashMap is marked `external_body` (trusting the entire
+function body) or uses `assume` (trusting a specific assertion). The key insight is that we can **push
+the trusted boundary down to 2-3 minimal primitives** and verify everything above them.
+
+**Goal**: Reduce 36 verification gaps to ~8 by introducing common trusted primitives for collection
+iteration, then rewriting predicate functions as verified code on top.
+
+### 30.1 Trusted Primitives (external_body — the new trust boundary)
+
+Approach: write operation-level lemmas for HashSet/HashMap that bridge exec operations to spec.
+The existing predicate functions keep their iteration logic unchanged; only remove `external_body`
+and add lemma calls so Verus can verify the function body. **Zero runtime overhead** (no data copying).
+
+#### 30.1.1 HashSet lemmas
+
+```rust
+#[verifier(external_body)]
+proof fn lemma_hashset_len<T>(s: &HashSet<T>)
+ensures s.len() == s@.len();
+
+#[verifier(external_body)]
+proof fn lemma_hashset_contains<T: Hash + Eq>(s: &HashSet<T>, x: &T) -> (b: bool)
+ensures b == s@.contains(*x);
+
+#[verifier(external_body)]
+proof fn lemma_hashset_insert<T: Hash + Eq>(s: &HashSet<T>, x: T) -> (res: HashSet<T>)
+ensures res@ == s@.insert(x);
+
+// Bridges exec iteration to spec: after iterating all elements, the result
+// matches the spec-level forall/exists.
+#[verifier(external_body)]
+proof fn lemma_hashset_iter_complete<T>(s: &HashSet<T>, visited: &Vec<T>)
+requires
+    forall |i: int| 0 <= i < visited@.len() ==> s@.contains(visited@[i]),
+    visited@.len() == s@.len(),
+    forall |i: int, j: int| 0 <= i < j < visited@.len() ==> visited@[i] != visited@[j],
+ensures
+    forall |x: T| s@.contains(x) ==> visited@.contains(x);
+```
+
+#### 30.1.2 HashMap lemmas
+
+```rust
+#[verifier(external_body)]
+proof fn lemma_hashmap_len<K, V>(m: &HashMap<K, V>)
+ensures m.len() == m@.len();
+
+#[verifier(external_body)]
+proof fn lemma_hashmap_get<K: Hash + Eq, V>(m: &HashMap<K, V>, k: &K) -> (v: Option<&V>)
+ensures
+    v.is_some() == m@.contains_key(*k),
+    v.is_some() ==> *v.unwrap() == m@[*k];
+
+#[verifier(external_body)]
+proof fn lemma_hashmap_insert<K: Hash + Eq, V>(m: &HashMap<K, V>, k: K, v: V) -> (res: HashMap<K, V>)
+ensures res@ == m@.insert(k, v);
+```
+
+#### 30.1.3 Set::map cardinality lemma
+
+```rust
+#[verifier(external_body)]
+proof fn lemma_set_map_preserves_len<T>(s: HashSet<T>)
+ensures
+    s@.len() == s@.map(|x: T| x@).len();
+```
+
+Eliminates all 8 assume sites directly. The proof obligation (view function is injective)
+is sound because distinct exec values have distinct views by construction.
+
+### 30.2 Rewrite Plan
+
+#### 30.2.1 Eliminate 8 assumes (using lemma_set_map_preserves_len)
+
+Replace each `assume(cond == (set@.map(f).len() >= quorum))` with a lemma call:
+
+- [ ] `generated/RSL/proposer_gen.rs:375` — received_1b_packets quorum
+- [ ] `generated/RSL/election_gen.rs:520` — current_view_suspectors quorum
+- [ ] `generated/RSL/replica_gen.rs:811` — received_2b_message_senders quorum
+- [ ] `implementation/RSL/ReplicaImpl.rs:794` — 2b senders len equality
+- [ ] `implementation/RSL/ReplicaImpl.rs:808` — 2b senders len comparison
+- [ ] `protocol/Raft/raft_manual.rs:85` — votes_granted >= quorum
+- [ ] `protocol/Raft/raft_manual.rs:96` — votes_granted < quorum
+- [ ] `generated/RSL/replica_gen.rs:268` — samesrc forall equivalence
+
+#### 30.2.2 Remove external_body from 19 predicate functions
+
+Keep existing iteration logic in each function unchanged. Remove `#[verifier(external_body)]`
+and add operation-level lemma calls (lemma_hashset_contains, lemma_hashmap_get, etc.) so Verus
+can verify the loop body and postcondition.
+
+- [ ] `acceptor_helpers.rs` — CRemoveVotesBeforeLogTruncationPoint, CAddVoteAndRemoveOldOnes (2)
+- [ ] `gen_helpers.rs` — CReplicaNextProcess1b, CReplicaNextSpontaneous..., Packet1bHasUniqueSrc,
+  CClientsInReplies, CUpdateNewCache (5)
+- [ ] `ProposerImpl.rs` — CIsAfterLogTruncationPoint, CSetOfMessage1bAboutBallot,
+  CAllAcceptorsHadNoProposal, CExistVotesHasProposal..., CExistsAcceptor...,
+  Cmax_balInS, CExistsBallotInS, CValIsHighestNumberedProposal{,AtBallot},
+  CProposerCanNominateUsingOperationNumber (10)
+- [ ] `ReplicaImpl.rs` — Packet1bHasUniqueSrc, ...TruncateLogBasedOnCheckpoints_optimized (2)
+
+#### 30.2.3 Sorting (keep or replace)
+
+- [ ] `SortVecCOperationNumber` — consider verified insertion sort (O(n²) acceptable for small checkpoint lists)
+- [ ] `CGetHighestValueAmongMajority` — rewrite as verified linear scan
+
+#### 30.2.4 Axioms (keep as-is)
+
+These 5 `external_body` proof axioms are irreducible type-system trust:
+- `axiom_cmessage_view`, `axiom_cmessage_key_model`, `axiom_cpacket_view`, `axiom_cpacket_key_model`
+- `CRequest::eq` (PartialEq with EndPoint)
+
+### 30.3 Expected Outcome
+
+| Metric | Before | After |
+|--------|--------|-------|
+| assumes (non-IO, non-clone) | 8 | 0 |
+| external_body predicates | 19 | 0 (verified with lemma calls) |
+| external_body lemma primitives | 0 | ~8 (hashset: 4, hashmap: 3, set_map: 1) |
+| external_body sorting | 2 | 0-1 (verified insertion sort) |
+| external_body axioms | 5 | 5 (irreducible) |
+| **Total gaps** | **36** | **~14** (8 lemma primitives + 5 axioms + 0-1 sort) |
+
+### 30.4 Acceptance Criteria
+
+- [ ] **30.4.1**: HashSet/HashMap lemma primitives in `src/common/collections/`
+- [ ] **30.4.2**: All 8 assume sites replaced with lemma calls, `assume` count = 0 (non-IO, non-clone)
+- [ ] **30.4.3**: ≥15 of 19 predicate functions verified (external_body removed, lemma calls added)
+- [ ] **30.4.4**: Verus verification passes (0 errors)
+- [ ] **30.4.5**: Raft benchmark results unchanged (zero runtime overhead — no data copying)
+- [ ] **30.4.6**: `reports/verification_gaps.md` updated with new counts

@@ -1324,6 +1324,10 @@ pub struct FunctionInfo {
     pub exec_name: String,
     /// Classification determining how this function is translated
     pub classification: FunctionClassification,
+    /// Input parameter types from the spec function signature.
+    /// Used by `detect_helper_call` to determine whether arguments should be
+    /// passed by reference (`&`) or by value (e.g., `bool` params are by-value).
+    pub input_param_types: Vec<Type>,
 }
 
 /// Code translator
@@ -1378,12 +1382,23 @@ impl Translator {
             FunctionKind::Predicate => FunctionClassification::Predicate,
         };
 
+        // Collect input parameter types (for bool detection in detect_helper_call)
+        let input_param_types: Vec<Type> = func
+            .spec_fn
+            .params
+            .iter()
+            .zip(&func.param_modes)
+            .filter(|(_, m)| **m == ParameterMode::Input)
+            .map(|(p, _)| p.ty.clone())
+            .collect();
+
         self.function_registry.insert(
             spec_name.clone(),
             FunctionInfo {
                 spec_name,
                 exec_name,
                 classification,
+                input_param_types,
             },
         );
     }
@@ -1402,6 +1417,31 @@ impl Translator {
                 classification: FunctionClassification::Skipped {
                     reason: reason.to_string(),
                 },
+                input_param_types: Vec::new(),
+            },
+        );
+    }
+
+    /// Register a skipped function with known input parameter types.
+    ///
+    /// Like `register_skipped_function` but includes input param types
+    /// so that `detect_helper_call` can correctly handle bool-typed parameters.
+    pub fn register_skipped_function_with_types(
+        &mut self,
+        spec_name: &str,
+        reason: &str,
+        input_param_types: Vec<Type>,
+    ) {
+        let exec_name = self.translate_definition_name(spec_name);
+        self.function_registry.insert(
+            spec_name.to_string(),
+            FunctionInfo {
+                spec_name: spec_name.to_string(),
+                exec_name,
+                classification: FunctionClassification::Skipped {
+                    reason: reason.to_string(),
+                },
+                input_param_types,
             },
         );
     }
@@ -9005,8 +9045,11 @@ impl Translator {
                     if has_mutations {
                         let (pre_stmts, new_fields) =
                             self.extract_set_mutations_from_struct(translated_fields, ctx);
-                        let struct_expr = ExecExpr::Struct {
+                        // Keep as StructUpdate with ..base.clone() so non-mutated fields
+                        // are inherited from the base (not dropped).
+                        let struct_expr = ExecExpr::StructUpdate {
                             name: exec_name,
+                            base: Box::new(ExecExpr::Clone(Box::new(base_expr))),
                             fields: new_fields,
                         };
                         if pre_stmts.is_empty() {
@@ -9087,13 +9130,14 @@ impl Translator {
                     .any(|(_, expr)| Self::is_set_mutation(expr));
 
                 if has_mutations {
-                    // When there are set mutations, convert StructUpdate to explicit Struct
-                    // to avoid issues with ..base.clone() and HashSet fields
+                    // When there are set mutations, extract mutation pre-statements and
+                    // keep as StructUpdate with ..base.clone() for remaining fields.
                     let (pre_stmts, new_fields) =
                         self.extract_set_mutations_from_struct(translated_fields, ctx);
 
-                    let struct_expr = ExecExpr::Struct {
+                    let struct_expr = ExecExpr::StructUpdate {
                         name: struct_name,
+                        base: Box::new(ExecExpr::Clone(Box::new(base_expr))),
                         fields: new_fields,
                     };
 
@@ -9501,6 +9545,16 @@ impl Translator {
             Expr::Cast(inner_expr, target_type) => {
                 let inner = self.transform_expr(inner_expr, ctx)?;
                 let exec_type = self.translate_type(target_type);
+                // Dereference input references before casting (e.g., &u64 as u64 → *param as u64)
+                let inner = if let ExecExpr::Var(ref name) = inner {
+                    if ctx.is_input(name) && self.is_scalar_input_param(name, ctx) {
+                        ExecExpr::Unary { op: "*".to_string(), expr: Box::new(inner) }
+                    } else {
+                        inner
+                    }
+                } else {
+                    inner
+                };
                 Ok(ExecExpr::Cast(Box::new(inner), exec_type.to_rust_string()))
             }
         }
@@ -10808,6 +10862,15 @@ impl Translator {
             let mut output_fields = Vec::new();
             let mut output_params = Vec::new();
 
+            // Look up the target function's input param types for bool detection.
+            // When the target takes a `bool` by value, we must not add `&` to the argument.
+            let target_input_types = self
+                .function_registry
+                .get(&func_name)
+                .map(|info| &info.input_param_types[..])
+                .unwrap_or(&[]);
+            let mut input_idx = 0usize;
+
             for arg in args {
                 // Check if argument is output_var.field (e.g., s_.proposer)
                 if let Expr::Field(base, field) = arg {
@@ -10829,7 +10892,35 @@ impl Translator {
                 }
                 // Not an output, it's an input
                 // Transform it and add to inputs with reference prefix where appropriate
+                let is_bool_param = target_input_types
+                    .get(input_idx)
+                    .map(|ty| matches!(ty, Type::Bool))
+                    .unwrap_or(false);
+                input_idx += 1;
+
                 if let Ok(transformed) = self.transform_expr(arg, ctx) {
+                    // Bool parameters are passed by value in exec functions.
+                    // - Input params (bool by value): pass directly, no & needed
+                    // - Match-arm bindings (&bool from match ergonomics): dereference with *
+                    if is_bool_param {
+                        if let Expr::Ident(name) = arg {
+                            if !ctx.is_input(name) {
+                                // Match-arm or local binding — already &bool, need *name
+                                input_args.push(ExecExpr::Unary {
+                                    op: "*".to_string(),
+                                    expr: Box::new(transformed),
+                                });
+                            } else {
+                                // Input param — already bool, pass directly
+                                input_args.push(transformed);
+                            }
+                        } else {
+                            // Complex expression — pass directly
+                            input_args.push(transformed);
+                        }
+                        continue;
+                    }
+
                     // Add reference for most argument types:
                     // - Field accesses (s.field)
                     // - Method calls (obj.method())
@@ -25407,6 +25498,35 @@ mod tests {
             "Complex expressions should pass through unchanged: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_cast_deref_input_ref_in_let_binding() {
+        // When spec has `let x = param as u64` where param is an input (&u64),
+        // the generated code should be `let x = (*param as u64)` not `(param as u64)`.
+        let mut config = TranslatorConfig::default();
+        config.spec_prefix = "L".to_string();
+        config.exec_prefix = "C".to_string();
+        config.int_type = "u64".to_string();
+        let translator = Translator::new(config);
+        let mut ctx = make_cast_test_context(&translator.config);
+        ctx.input_params.push("follower_id".to_string());
+        ctx.input_types.insert("follower_id".to_string(), Type::Int);
+
+        let expr = Expr::Cast(Box::new(Expr::Ident("follower_id".to_string())), Type::Int);
+        let result = translator.transform_expr(&expr, &ctx).unwrap();
+        // Should be Cast(Unary("*", Var("follower_id")), "u64")
+        match &result {
+            ExecExpr::Cast(inner, ty) => {
+                assert_eq!(ty, "u64");
+                assert!(
+                    matches!(inner.as_ref(), ExecExpr::Unary { op, .. } if op == "*"),
+                    "Input param should be dereferenced inside cast: {:?}",
+                    inner
+                );
+            }
+            _ => panic!("Expected Cast with deref, got {:?}", result),
+        }
     }
 
     #[test]

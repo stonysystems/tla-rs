@@ -6,8 +6,6 @@
 skip_functions = [
     "LNext",
     "LHandleVoteResponseMsg",
-    "LHandleAppendResponseMsg",
-    "LHandleMessage",
 ]
 
 # Message type for sent_packets Vec proof helpers (generates lemma_empty_msg_map)
@@ -30,6 +28,12 @@ msg_vec_type = ["CRaftMessage", "LRaftMessage"]
     "s.log@.len() < u64::MAX as int",
 ]
 "CHandleAppendEntriesMsg" = [
+    "s.log@.len() < u64::MAX as int",
+]
+"CHandleAppendResponseMsg" = [
+    "s.log@.len() < u64::MAX as int",
+]
+"CHandleMessage" = [
     "s.log@.len() < u64::MAX as int",
 ]
 "CHandleAppendResponse" = [

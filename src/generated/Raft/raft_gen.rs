@@ -634,6 +634,52 @@ ensures
 
 }
 
+pub exec fn CHandleAppendResponseMsg(s: &CState, c: &CConstants, term: &u64, success: bool, match_index: &u64, follower_id: &u64) -> (result: (CState, Vec<CRaftMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.log@.len() < u64::MAX as int,
+ensures
+    result.0.valid(),
+    LHandleAppendResponseMsg(s@, result.0@, c@, *term as int, success, *match_index as int, *follower_id as int, result.1@.map(|i, p: CRaftMessage| p@)),
+{
+    let s_mid = Cstep_down_if_needed(s, term);
+    if !matches!(s_mid.role, CServerRole::Leader { .. }) {
+                proof {
+            lemma_empty_msg_map();
+        }
+        (s_mid, vec![])
+
+    } else {
+        if !c.servers.contains(&follower_id) {
+                        proof {
+                lemma_empty_msg_map();
+            }
+            (s_mid, vec![])
+
+        } else {
+            if success {
+                                let follower = (*follower_id as u64);
+                { let new_match_index = (*match_index as u64); if ((new_match_index as u64) > (s_mid.log.len() as u64)) {
+                                        proof {
+                        lemma_empty_msg_map();
+                    }
+                    (s_mid, vec![])
+
+                } else {
+                    CHandleAppendResponse(&s_mid, c, term, success, match_index, follower_id, &follower, &new_match_index)
+                } }
+
+            } else {
+                                let follower = (*follower_id as u64);
+                CHandleAppendReject(&s_mid, c, term, success, match_index, follower_id, &follower)
+
+            }
+        }
+    }
+
+}
+
 pub exec fn CTryAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
@@ -654,6 +700,24 @@ if (!matches!(s.role, CServerRole::Leader { .. }) || (*new_commit_index <= s.com
 
     } else {
         CAdvanceCommitIndex(s, c, new_commit_index)
+    }
+}
+
+pub exec fn CHandleMessage(s: &CState, c: &CConstants, msg: &CRaftMessage) -> (result: (CState, Vec<CRaftMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    msg.valid(),
+    s.log@.len() < u64::MAX as int,
+ensures
+    result.0.valid(),
+    LHandleMessage(s@, result.0@, c@, msg@, result.1@.map(|i, p: CRaftMessage| p@)),
+{
+match msg {
+        CRaftMessage::RequestVote { term: term, candidate: candidate, last_log_index: last_log_index, last_log_term: last_log_term } => CHandleRequestVoteMsg(&s, &c, &term, &candidate, &last_log_index, &last_log_term),
+        CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter } => CHandleVoteResponseMsg(&s, &c, &term, *granted, &voter),
+        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, has_entry: has_entry, leader_commit: leader_commit } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, *has_entry, &leader_commit),
+        CRaftMessage::AppendResponse { term: term, success: success, match_index: match_index, follower: follower } => CHandleAppendResponseMsg(&s, &c, &term, *success, &match_index, &follower),
     }
 }
 
@@ -771,105 +835,5 @@ ensures
     }
 }
 
-/// Handle AppendResponse: step down if higher term, dispatch success/reject.
-pub exec fn CHandleAppendResponseMsg(
-    s: &CState, c: &CConstants,
-    term: &u64, success: bool, match_index: &u64, follower_id: &u64,
-) -> (result: (CState, Vec<CRaftMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.log@.len() < u64::MAX as int,
-ensures
-    result.0.valid(),
-    LHandleAppendResponseMsg(s@, result.0@, c@, *term as int, success, *match_index as int,
-                             *follower_id as int,
-                             result.1@.map(|i, p: CRaftMessage| p@)),
-{
-    let s_mid = Cstep_down_if_needed(s, term);
-
-    match s_mid.role {
-        CServerRole::Leader => {
-            // s_mid is leader
-            if !c.servers.contains(follower_id) {
-                let sent: Vec<CRaftMessage> = vec![];
-                proof {
-                    lemma_empty_msg_map();
-                    assert(s_mid@.role is Leader);
-                    lemma_set_map_not_contains(c.servers@, *follower_id);
-                }
-                (s_mid, sent)
-            } else if success {
-                let new_match_index = *match_index;
-                if new_match_index > s_mid.log.len() as u64 {
-                    let sent: Vec<CRaftMessage> = vec![];
-                    proof {
-                        lemma_empty_msg_map();
-                        assert(s_mid@.role is Leader);
-                        lemma_set_map_contains(c.servers@, *follower_id);
-                    }
-                    (s_mid, sent)
-                } else {
-                    proof {
-                        broadcast use vstd::std_specs::hash::group_hash_axioms;
-                        lemma_set_map_contains(c.servers@, *follower_id);
-                        // new_match_index <= s_mid.log.len() <= s.log.len() < u64::MAX
-                        // step_down preserves log, so s_mid@.log.len() == s@.log.len()
-                        assert(s_mid@.log =~= s@.log);
-                        assert(s_mid@.log.len() == s@.log.len());
-                    }
-                    CHandleAppendResponse(&s_mid, c, term, success, match_index,
-                                          follower_id, follower_id, &new_match_index)
-                }
-            } else {
-                proof {
-                    broadcast use vstd::std_specs::hash::group_hash_axioms;
-                    lemma_set_map_contains(c.servers@, *follower_id);
-                }
-                CHandleAppendReject(&s_mid, c, term, success, match_index, follower_id, follower_id)
-            }
-        }
-        _ => {
-            // Not leader: no-op
-            let sent: Vec<CRaftMessage> = vec![];
-            proof {
-                lemma_empty_msg_map();
-                assert(!(s_mid@.role is Leader));
-            }
-            (s_mid, sent)
-        }
-    }
-}
-
-/// Dispatch an incoming message to the appropriate composite handler.
-pub exec fn CHandleMessage(
-    s: &CState, c: &CConstants,
-    msg: &CRaftMessage,
-) -> (result: (CState, Vec<CRaftMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.log@.len() < u64::MAX as int,
-ensures
-    result.0.valid(),
-    LHandleMessage(s@, result.0@, c@, msg@, result.1@.map(|i, p: CRaftMessage| p@)),
-{
-    match msg {
-        CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => {
-            CHandleRequestVoteMsg(s, c, term, candidate, last_log_index, last_log_term)
-        }
-        CRaftMessage::VoteResponse { term, granted, voter } => {
-            CHandleVoteResponseMsg(s, c, term, *granted, voter)
-        }
-        CRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
-                                      value, has_entry, leader_commit } => {
-            CHandleAppendEntriesMsg(s, c, term, leader, prev_index, prev_term,
-                                    value, *has_entry, leader_commit)
-        }
-        CRaftMessage::AppendResponse { term, success, match_index, follower } => {
-            CHandleAppendResponseMsg(s, c, term, *success, match_index, follower)
-        }
-    }
-}
 
 } // verus!

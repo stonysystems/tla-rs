@@ -230,9 +230,37 @@ impl Transpiler {
             let mut pre_analyzer = ModeAnalyzer::new();
             for spec_fn in &spec_fns {
                 if self.config.skip_functions.contains(&spec_fn.name) {
-                    translator.register_skipped_function(
+                    // For skipped functions, try to get annotations so we can
+                    // register input param types (needed for bool detection
+                    // in detect_helper_call when called from other functions).
+                    let annotation = annotations
+                        .iter()
+                        .flat_map(|m| m.functions.values())
+                        .find(|a| a.name == spec_fn.name);
+                    let input_param_types = if let Some(ann) = annotation {
+                        if let Ok(annotated) =
+                            pre_analyzer.annotate(spec_fn.clone(), ann)
+                        {
+                            annotated
+                                .spec_fn
+                                .params
+                                .iter()
+                                .zip(&annotated.param_modes)
+                                .filter(|(_, m)| {
+                                    **m == crate::ast::ParameterMode::Input
+                                })
+                                .map(|(p, _)| p.ty.clone())
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    translator.register_skipped_function_with_types(
                         &spec_fn.name,
                         "explicitly skipped (skip_functions)",
+                        input_param_types,
                     );
                     continue;
                 }
@@ -906,9 +934,34 @@ impl Transpiler {
             let mut pre_analyzer = ModeAnalyzer::new();
             for spec_fn in &spec_fns {
                 if self.config.skip_functions.contains(&spec_fn.name) {
-                    translator.register_skipped_function(
+                    let annotation = annotations
+                        .iter()
+                        .flat_map(|m| m.functions.values())
+                        .find(|a| a.name == spec_fn.name);
+                    let input_param_types = if let Some(ann) = annotation {
+                        if let Ok(annotated) =
+                            pre_analyzer.annotate(spec_fn.clone(), ann)
+                        {
+                            annotated
+                                .spec_fn
+                                .params
+                                .iter()
+                                .zip(&annotated.param_modes)
+                                .filter(|(_, m)| {
+                                    **m == crate::ast::ParameterMode::Input
+                                })
+                                .map(|(p, _)| p.ty.clone())
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    translator.register_skipped_function_with_types(
                         &spec_fn.name,
                         "explicitly skipped (skip_functions)",
+                        input_param_types,
                     );
                     continue;
                 }

@@ -25,9 +25,9 @@ module Raft::raft {
     // Composite message handlers (Phase 29 — transpiler-generated)
     LHandleRequestVoteMsg(+, -, +, +, +, +, +, -);
     LHandleAppendEntriesMsg(+, -, +, +, +, +, +, +, +, +, -);
-    // LHandleVoteResponseMsg(+, -, +, +, +, +, -);
-    // LHandleAppendResponseMsg(+, -, +, +, +, +, +, -);
+    LHandleVoteResponseMsg(+, -, +, +, +, +, -);
+    LHandleAppendResponseMsg(+, -, +, +, +, +, +, -);
     LTryAdvanceCommitIndex(+, -, +, +, -);
-    // LHandleMessage(+, -, +, +, -);
+    LHandleMessage(+, -, +, +, -);
     // LNext not transpiled (contains existential quantifiers)
 }
