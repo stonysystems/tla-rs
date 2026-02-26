@@ -634,6 +634,29 @@ ensures
 
 }
 
+pub exec fn CTryAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index: &u64) -> (result: (CState, Vec<CRaftMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    (!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
+        *new_commit_index as int <= s@.log.len()
+        && s.log@[*new_commit_index as int - 1].term == s.current_term
+    ),
+ensures
+    result.0.valid(),
+    LTryAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
+{
+if (!matches!(s.role, CServerRole::Leader { .. }) || (*new_commit_index <= s.commit_index)) {
+                proof {
+            lemma_empty_msg_map();
+        }
+        (s.clone(), vec![])
+
+    } else {
+        CAdvanceCommitIndex(s, c, new_commit_index)
+    }
+}
+
 
 // Manual verified implementations for composite Raft spec actions.
 // Injected into raft_gen.rs via manual_code config.
@@ -815,33 +838,6 @@ ensures
             }
             (s_mid, sent)
         }
-    }
-}
-
-/// Advance commit index: guard check + delegate to CAdvanceCommitIndex.
-pub exec fn CTryAdvanceCommitIndex(
-    s: &CState, c: &CConstants,
-    new_commit_index: &u64,
-) -> (result: (CState, Vec<CRaftMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    (!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
-        *new_commit_index as int <= s@.log.len()
-        && s.log@[*new_commit_index as int - 1].term == s.current_term
-    ),
-ensures
-    result.0.valid(),
-    LTryAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int,
-                           result.1@.map(|i, p: CRaftMessage| p@)),
-{
-    if !matches!(s.role, CServerRole::Leader) || *new_commit_index <= s.commit_index {
-        let s_clone = clone_state(s);
-        let sent: Vec<CRaftMessage> = vec![];
-        proof { lemma_empty_msg_map(); }
-        (s_clone, sent)
-    } else {
-        CAdvanceCommitIndex(s, c, new_commit_index)
     }
 }
 

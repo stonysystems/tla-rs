@@ -7,7 +7,6 @@ skip_functions = [
     "LNext",
     "LHandleVoteResponseMsg",
     "LHandleAppendResponseMsg",
-    "LTryAdvanceCommitIndex",
     "LHandleMessage",
 ]
 
@@ -35,6 +34,12 @@ msg_vec_type = ["CRaftMessage", "LRaftMessage"]
 ]
 "CHandleAppendResponse" = [
     "*new_match_index < u64::MAX",
+]
+"CTryAdvanceCommitIndex" = [
+    """(!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
+        *new_commit_index as int <= s@.log.len()
+        && s.log@[*new_commit_index as int - 1].term == s.current_term
+    )""",
 ]
 "CAdvanceCommitIndex" = [
     "s.role is Leader",
