@@ -26074,4 +26074,127 @@ borrowed_args = [0]
         assert!(matches!(&result, ExecExpr::Var(name) if name == "s_mid"),
             "Expected Var(s_mid), got {:?}", result);
     }
+
+    // ============ Sub-Action Call Recognition Tests (Phase 29.2.4) ============
+
+    /// Test that a sub-predicate call with let-bound local as first arg is correctly translated.
+    /// Simulates: `LGrantVote(s_mid, s_, c, term, sent_packets)` where s_mid is local, s_ is output.
+    /// Expected: `CGrantVote(&s_mid, &c, &term)` — output params stripped, inputs get &.
+    #[test]
+    fn test_sub_predicate_call_with_local_var_input() {
+        let translator = Translator::default();
+
+        // LGrantVote(s_mid, s_, c, term, sent_packets)
+        let expr = Expr::Call {
+            func: Path::single("LGrantVote".to_string()),
+            args: vec![
+                Expr::Ident("s_mid".to_string()),   // let-bound local
+                Expr::Ident("s_".to_string()),       // output
+                Expr::Ident("c".to_string()),        // input
+                Expr::Ident("term".to_string()),     // input
+                Expr::Ident("sent_packets".to_string()), // output
+            ],
+        };
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec!["s_".to_string(), "sent_packets".to_string()],
+            input_params: vec!["s".to_string(), "c".to_string(), "term".to_string()],
+            output_types: HashMap::from([
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("sent_packets".to_string(), Type::Named(Path::single("Seq".to_string()))),
+            ]),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                ("term".to_string(), Type::Int),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        match &result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "CGrantVote", "Expected CGrantVote");
+                assert_eq!(args.len(), 3, "Expected 3 input args (s_mid, c, term), got {}: {:?}", args.len(), args);
+                // First arg: &s_mid
+                match &args[0] {
+                    ExecExpr::Unary { op, expr } if op == "&" => {
+                        assert!(matches!(expr.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
+                            "Expected &s_mid, got &{:?}", expr);
+                    }
+                    other => panic!("Expected &s_mid, got {:?}", other),
+                }
+                // Second arg: &c
+                match &args[1] {
+                    ExecExpr::Unary { op, expr } if op == "&" => {
+                        assert!(matches!(expr.as_ref(), ExecExpr::Var(name) if name == "c"),
+                            "Expected &c, got &{:?}", expr);
+                    }
+                    other => panic!("Expected &c, got {:?}", other),
+                }
+                // Third arg: &term
+                match &args[2] {
+                    ExecExpr::Unary { op, expr } if op == "&" => {
+                        assert!(matches!(expr.as_ref(), ExecExpr::Var(name) if name == "term"),
+                            "Expected &term, got &{:?}", expr);
+                    }
+                    other => panic!("Expected &term, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Call, got {:?}", other),
+        }
+    }
+
+    /// Test that a sub-predicate call in a conjunction (inside a predicate body)
+    /// is handled correctly — the call becomes the return value.
+    /// Simulates the else branch: `LGrantVote(s_mid, s_, c, ..., sent_packets)`
+    /// appearing as the only conjunct.
+    #[test]
+    fn test_sub_predicate_call_in_conjunction() {
+        let translator = Translator::default();
+
+        // Conjunction with just the call (like the else branch of LHandleRequestVoteMsg)
+        let call = Expr::Call {
+            func: Path::single("LGrantVote".to_string()),
+            args: vec![
+                Expr::Ident("s_mid".to_string()),
+                Expr::Ident("s_".to_string()),
+                Expr::Ident("c".to_string()),
+                Expr::Ident("term".to_string()),
+                Expr::Ident("sent_packets".to_string()),
+            ],
+        };
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec!["s_".to_string(), "sent_packets".to_string()],
+            input_params: vec!["s".to_string(), "c".to_string(), "term".to_string()],
+            output_types: HashMap::from([
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("sent_packets".to_string(), Type::Named(Path::single("Seq".to_string()))),
+            ]),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                ("term".to_string(), Type::Int),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        // Test the call directly
+        let result = translator.transform_expr(&call, &ctx).expect("should transform");
+        match &result {
+            ExecExpr::Call { func, args } => {
+                assert_eq!(func, "CGrantVote");
+                // s_mid and c and term are inputs; s_ and sent_packets are outputs
+                assert_eq!(args.len(), 3);
+            }
+            other => panic!("Expected Call, got {:?}", other),
+        }
+    }
 }
