@@ -1068,65 +1068,6 @@ impl CReplica{
         }
     }
 
-    #[verifier(external_body)]
-    pub fn SortVecCOperationNumber(s:&mut Vec<COperationNumber>)
-    {
-        let mut i = 1;
-        while i < s.len()
-        {
-            let mut j = i;
-            while 0 < j && s[j-1] > s[j]
-            {
-                let temp = s[j-1];
-                s[j-1] = s[j];
-                s[j] = s[j-1];
-                j = j - 1;
-            }
-            i = i + 1;
-        }
-    }
-
-
-
-    #[verifier(external_body)]
-    pub fn CGetHighestValueAmongMajority(checkpoints:&Vec<COperationNumber>, n:usize) -> (res:COperationNumber)
-    {
-        let mut s = clone_vec_coperationnumber(checkpoints);
-        Self::SortVecCOperationNumber(&mut s);
-        let len = checkpoints.len();
-        s[len - n]
-    }
-
-    #[verifier(external_body)]
-    pub fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints_optimized(&mut self) -> (res:OutboundPackets)
-        requires
-            old(self).valid()
-        ensures
-            self.valid(),
-            Replica_Common_Postconditions_NoPacket(old(self)@,*self,res),
-            res.valid(),
-            LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
-                old(self)@,
-                self@,
-                res@)
-    {
-        let n = self.constants.all.config.CMinQuorumSize();
-        let opn = Self::CGetHighestValueAmongMajority(&self.acceptor.last_checkpointed_operation, n);
-        if opn > self.acceptor.log_truncation_point{
-            self.acceptor = generated_acceptor::CAcceptorTruncateLog(&self.acceptor, &opn);
-            let mut pkt_vec: Vec<CPacket> = Vec::new();
-            let outpackets = OutboundPackets::PacketSequence{
-                s:pkt_vec,
-            };
-            outpackets
-        } else {
-            let mut pkt_vec: Vec<CPacket> = Vec::new();
-            let outpackets = OutboundPackets::PacketSequence{
-                s:pkt_vec,
-            };
-            outpackets
-        }
-    }
 
 
     pub fn CReplicaNextReadClockMaybeNominateValueAndSend2a(&mut self, clock: u64) -> (res: OutboundPackets)

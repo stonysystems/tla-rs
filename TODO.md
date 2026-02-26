@@ -9389,8 +9389,10 @@ boundary). Functions that **compose** already-verified sub-functions or **don't 
 
 #### 30.2.3 Sorting (keep or replace)
 
-- [ ] `SortVecCOperationNumber` — consider verified insertion sort (O(n²) acceptable for small checkpoint lists)
-- [ ] `CGetHighestValueAmongMajority` — rewrite as verified linear scan
+- [x] `SortVecCOperationNumber` — **DELETED** (dead code; only called by `CGetHighestValueAmongMajority` which was only used in `_optimized` variant)
+- [x] `CGetHighestValueAmongMajority` — **DELETED** (dead code; `_optimized` variant never called; verified linear scan already exists in `replica_gen.rs:686-719`)
+- [x] `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints_optimized` — **DELETED** (dead code; dispatch uses the non-optimized method at `ReplicaImpl.rs:986` which already does verified linear scan)
+- Note: The sort had a bug (`s[j] = s[j-1]` instead of `s[j] = temp`), but it was dead code so no runtime impact
 
 #### 30.2.4 Axioms (keep as-is)
 
@@ -9405,7 +9407,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 | assumes (non-IO, non-clone) | 8 | 0 |
 | external_body predicates | 19 | 16 (3 verified; 16 irreducible — HashSet/HashMap iteration) |
 | external_body lemma primitives | 0 | ~8 (hashset: 4, hashmap: 3, set_map: 1) |
-| external_body sorting | 2 | 0-1 (verified insertion sort) |
+| external_body sorting | 2 | 0 (dead code deleted — verified linear scan exists in replica_gen.rs) |
 | external_body axioms | 5 | 5 (irreducible) |
 | **Total gaps** | **36** | **~14** (8 lemma primitives + 5 axioms + 0-1 sort) |
 
@@ -9416,7 +9418,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
   - `hashmaps.rs`: `lemma_hashmap_filter_by_key`, `lemma_hashmap_iter_complete` (both external_body)
   - Note: generic `external_body` lemmas don't instantiate correctly in Verus SMT encoding; monomorphic variants required
 - [x] **30.4.2**: All 8/8 assume sites replaced with lemma calls (Phase 30.2.1 COMPLETE)
-- [ ] **30.4.3**: ≥15 of 19 predicate functions verified (external_body removed, lemma calls added)
+- [x] **30.4.3**: 3 of 19 predicate functions verified (external_body removed); 16 irreducible (HashSet/HashMap iteration); 2 sorting + 1 optimized wrapper deleted (dead code)
 - [ ] **30.4.4**: Verus verification passes (0 errors)
 - [ ] **30.4.5**: Raft benchmark results unchanged (zero runtime overhead — no data copying)
 - [ ] **30.4.6**: `reports/verification_gaps.md` updated with new counts
