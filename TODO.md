@@ -5149,11 +5149,11 @@ Workflow for each failure:
 
 ---
 
-### Phase 16.8: Real-Protocol Cross-Direction + Model Checking Validation — ✅ COMPLETE
+### Phase 16.8: Real-Protocol Cross-Direction + Model Checking Validation — ⚠️ PARTIAL (REOPENED)
 
 **Goal**: Extend Phase 16 with a stricter workflow that uses real protocol specs as inputs (not only simplified `tests/tla_examples/`), adds explicit TLA+ properties for model checking, and validates pipeline robustness on external TLA+ sources (LLM-generated and community-authored).
 
-**Status**: ✅ COMPLETE. All success criteria met (16.8.1-16.8.7).
+**Status**: ⚠️ PARTIAL / REOPENED (artifact-audit mismatch, 2026-02-26). The translator/test work recorded below may be valid, but the checked-in `transpiler/tla_test_workspace/` snapshot does not currently contain all artifacts/runs claimed by the "complete" status.
 
 #### Scope Notes
 
@@ -5177,6 +5177,23 @@ transpiler/tla_test_workspace/
   community_to_verus_exec/                     # D2 output for community_to_verus_spec
 ```
 
+#### Repository Artifact Audit (2026-02-26)
+
+- Present top-level workspace dirs (`5`): `generated_tla_by_llm/`, `tla_by_community/`, `transpiler_generated_tla/`, `transpiler_generated_tla_with_properties/`, `transpiler_generated_verus_spec/`
+- Missing top-level workspace dirs promised above (`5`):
+  - `transpiler_generated_verus_exec/`
+  - `llm_to_verus_spec/`
+  - `llm_to_verus_exec/`
+  - `community_to_verus_spec/`
+  - `community_to_verus_exec/`
+- `transpiler_generated_tla/` protocol dirs present (`10`): `ChainReplication`, `EPaxos`, `LeaderElection`, `PBFT`, `Paxos`, `PrimaryBackup`, `RSL`, `Raft`, `TwoPhase`, `VerticalPaxos`
+- `transpiler_generated_tla_with_properties/` currently contains MC wrappers for only `4` protocols: `LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`
+  - Missing MC wrappers/property bundles for: `ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`
+  - `RSL` is present in D3 output but not represented in the MC-property folder; scope should be explicitly documented (in-scope vs intentionally excluded)
+- No checked-in TLC output/log artifacts (`*.out`, `*.log`, TLC traces) were found under `transpiler/tla_test_workspace/`; TODO currently records summarized TLC outcomes but the workspace snapshot does not preserve reproducible run artifacts
+- External-corpus D1 outputs are currently stored as subfolders (`generated_tla_by_llm/d1_output/`, `tla_by_community/d1_output/`) rather than the promised top-level `llm_to_verus_spec/` and `community_to_verus_spec/`
+- `generated_tla_by_llm/` contains `12` specs, but `7` are simplified (`Simple*`) and only `5` are non-simple; if this phase requires full/standard versions for all covered protocols, that work remains open
+
 #### Target Protocol Set (applicable cases)
 
 - Start with: `Raft`, `Paxos`, `PBFT`, `TwoPhase`
@@ -5190,16 +5207,16 @@ transpiler/tla_test_workspace/
 - [x] Ensure each generated `.tla` passes TLA+ syntax/semantic compile (SANY)
 - [x] Record per-file pass/fail in `docs/conversion-testing-guide.md` extension table
 
-#### 16.8.2: Property injection + TLC model checking for D3 output ✅ COMPLETE
+#### 16.8.2: Property injection + TLC model checking for D3 output ⚠️ PARTIAL
 
-- [x] For each generated `.tla` in `transpiler_generated_tla/`, add protocol-specific properties manually:
-- [x] Add `Init/Next/Spec` wrappers where needed for TLC (MC wrappers with explicit VARIABLE state, finite domains, message channels)
-- [x] Add safety invariants and protocol-specific checks (e.g., Agreement, Consistency, LogCoherence, etc.)
-- [x] Save augmented modules under `transpiler_generated_tla_with_properties/`
-- [x] Run TLC model checking for each augmented case
-- [x] Record model-check outcomes (pass/fail/counterexample/timeout) in status matrix
+- [x] Add `Init/Next/Spec` wrappers + safety invariants for a subset of D3 outputs (`LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`)
+- [x] Save those augmented modules under `transpiler_generated_tla_with_properties/`
+- [ ] Add protocol-property bundles for all remaining intended D3 protocol outputs (`ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`) and explicitly decide/document whether `RSL` is in scope for TLC in this phase
+- [ ] Run TLC for every property-augmented protocol case (use bounded/finite configs as needed; for large state spaces run time-bounded jobs up to 24h and record `timeout/no-violation-so-far` outcomes)
+- [ ] Check in reproducible TLC evidence per protocol (at minimum: `.cfg`, command used, summary result, wall-clock time, states/distinct counts; preferably logs/traces or archived outputs)
+- [ ] Record model-check outcomes (pass/fail/counterexample/timeout) in status matrix for the full intended protocol set
 
-**TLC Results:**
+**TLC Results (claimed summary; workspace TLC logs not currently checked in):**
 - TwoPhase: ✅ PASS — 926 states, 304 distinct, 5 invariants, 2s
 - Paxos: ⚠️ PARTIAL — 3-node model (ballot=node-ID, quorum=2); 1.37B+ states explored, 198M+ distinct, 0 violations in 20min; exhaustive check infeasible
 - LeaderElection: ✅ PASS — 100,636 states, 9,337 distinct, 5 invariants, 2s
@@ -5715,11 +5732,12 @@ transpiler/tla_test_workspace/
           - Promotion decision: `16.8.3d-3` promoted/closed (required gate now enforced in integration assertions).
 - [x] Track failures by pattern category (parser, typing, unsupported TLA constructs)
 
-#### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec)
+#### 16.8.4: D2 on regenerated specs (Verus Spec -> Verus Exec) ⚠️ PARTIAL (compile-gate work recorded; artifacts/runtime validation missing)
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_verus_spec/`
-- [x] Output: `transpiler/tla_test_workspace/transpiler_generated_verus_exec/` (28/33 files currently transpile)
+- [ ] Check in/materialize output under `transpiler/tla_test_workspace/transpiler_generated_verus_exec/` (TODO text records `28/33` D2 transpile status, but this folder is absent in the current workspace snapshot)
 - [x] Require output to pass D2 generated-workspace compile gate (promoted by `16.8.4d-4`): `>=27/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, and `<=6` recursive-codegen "other" failures.
+- [ ] Add runtime validation for generated D2 outputs (after D2 workflow supports execution): run normal-case protocol executions for `30s` with `3 clients / 3 replicas`, and record per-protocol pass/fail + observed behavior (not only compile/transpile status)
   - [x] **16.8.4a** Deduplicate reserved `s` / `s_` / `c` params when D1-generated operators already declare them, so emitted Verus signatures are syntactically valid for this failure class.
     - Implemented in `transpiler/src/tla/translator.rs::generate_spec_function` with collision filtering against auto-injected state/constant params.
     - Added translator regression tests to prevent reintroducing duplicate reserved params.
@@ -5769,15 +5787,17 @@ transpiler/tla_test_workspace/
 #### 16.8.5: External TLA+ corpora (LLM + community)
 
 - [x] Generate TLA+ files for each protocol under `transpiler/tla_test_workspace/generated_tla_by_llm/`
-  - 12 specs: 9 rich (standard TLA+ features) + 3 simple (parser-compatible subset)
-  - Protocols covered: 2PC, Paxos, Raft, Bully Election, Primary-Backup, Chain Replication, PBFT, Vertical Paxos, EPaxos + 3 simplified variants
+  - Current snapshot: `12` specs total = `5` non-simple (`BullyElection`, `ChainRep`, `PrimaryBackup`, `TwoPhaseCommit`, `VerticalPaxos`) + `7` simplified variants (`SimpleConsensus`, `SimpleEPaxos`, `SimpleLeader`, `SimplePBFT`, `SimplePaxos`, `SimplePrimary`, `SimpleRaft`)
+  - The previous "9 rich + 3 simple" summary does not match the checked-in folder contents
+- [ ] Replace or supplement `Simple*` specs with full/standard protocol specs for the intended LLM corpus evaluation (keep simplified variants only as parser smoke tests if still useful)
 - [x] Collect community-authored TLA+ protocol specs under `transpiler/tla_test_workspace/tla_by_community/`
   - 4 specs with permissive licenses: 2PC (MIT), Paxos (MIT), Raft (CC BY 4.0), EPaxos (Apache 2.0)
   - Excluded: PBFT (no license), Chain Replication (incomplete, no license)
   - Not found: Leader Election (Bully), Primary-Backup, Vertical Paxos
+- [ ] Expand `tla_by_community/` with more licensed examples when available (especially PBFT / ChainReplication / PrimaryBackup / VerticalPaxos / Bully-style leader election)
 - [x] For each community file, include source URL + author/license attribution in colocated metadata file (e.g., `SOURCES.md`)
 
-#### 16.8.6: External corpora conversion validation
+#### 16.8.6: External corpora conversion validation ⚠️ PARTIAL (D1-only/partial; D2 artifacts + runtime validation missing)
 
 - [x] For `generated_tla_by_llm/`: run D1, output to `generated_tla_by_llm/d1_output/`
   - **3/12 PASS**: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables, no advanced constructs)
@@ -5787,6 +5807,13 @@ transpiler/tla_test_workspace/
   - **3/4 PASS**: EPaxos, Paxos, Raft (parser succeeds but output is minimal — empty structs, no operators translated)
   - **1/4 FAIL**: TwoPhase — record set constructor `[type : {"Prepared"}, rm : RM]`
   - D2 blocked: passing files produce only struct skeletons (complex constructs parse but don't codegen)
+- [ ] Materialize/copy D1 artifacts into the top-level layout promised by this phase:
+  - `transpiler/tla_test_workspace/llm_to_verus_spec/`
+  - `transpiler/tla_test_workspace/community_to_verus_spec/`
+- [ ] Run D2 for external-corpus D1 outputs when supported, and store outputs in:
+  - `transpiler/tla_test_workspace/llm_to_verus_exec/`
+  - `transpiler/tla_test_workspace/community_to_verus_exec/`
+- [ ] After D2 external exec generation is runnable, run normal-case executions for `30s` with `3 clients / 3 replicas` for both `llm_to_verus_exec` and `community_to_verus_exec`, and record results (pass/fail/unsupported)
 - [x] Per-protocol status matrix maintained in `docs/conversion-testing-guide.md`
 
 #### 16.8.7: Compatibility report for unsupported inputs
@@ -5801,13 +5828,17 @@ transpiler/tla_test_workspace/
 
 #### 16.8 Success Criteria
 
-1. [x] Workspace directories are created and documented
+1. [ ] Workspace directories are created and documented (current snapshot has `5/10` top-level dirs; missing `transpiler_generated_verus_exec`, `llm_to_verus_spec`, `llm_to_verus_exec`, `community_to_verus_spec`, `community_to_verus_exec`)
 2. [x] Real-spec D3 outputs generated for all applicable protocols and SANY checked
-3. [x] Property-augmented TLA+ modules exist for each applicable protocol and TLC results are recorded
-4. [x] D1 and D2 succeed (or fail with categorized reasons) on real-spec generated TLA+
-5. [x] D1 and D2 are executed on both external corpora (LLM/community) with compile status tracked
+3. [ ] Property-augmented TLA+ modules exist for each applicable protocol and TLC results are recorded (current snapshot only has MC wrappers for `LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`; no checked-in TLC logs found under workspace)
+4. [ ] D1 and D2 succeed (or fail with categorized reasons) on real-spec generated TLA+ and the D2 output artifacts are materialized in `transpiler_generated_verus_exec/`
+5. [ ] D1 and D2 are executed on both external corpora (LLM/community) with compile status tracked and outputs stored in the promised `*_to_verus_spec/` + `*_to_verus_exec/` folders
 6. [x] `docs/tla-input-compatibility-report.md` published with supported/forbidden input patterns
 7. [x] `docs/conversion-testing-guide.md` expanded with this phase's status matrix and reproduction commands
+8. [ ] For every property-augmented protocol, run TLC to completion or a documented time-bound (target: up to 24h for large models) and record timeout/no-violation metrics
+9. [ ] For generated exec outputs (`transpiler_generated_verus_exec`, `llm_to_verus_exec`, `community_to_verus_exec`), run normal-case executions for `30s` with `3 clients / 3 replicas` once D2 runtime support is available, and record outcomes
+10. [ ] External LLM corpus contains full/standard protocol specs for the intended protocols (simple variants may remain only as auxiliary parser-smoke inputs)
+11. [ ] Expand `tla_by_community/` with additional licensed examples where available (or explicitly document availability/licensing blockers)
 
 ---
 
