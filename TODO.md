@@ -8732,33 +8732,33 @@ docs/survey/
     evidence_checklist.md                # Checklist showing every deliverable is complete
 ```
 
-- [ ] **28.1.1** Create the directory structure and file skeletons above with section headers (no empty files).
-- [ ] **28.1.2** `README.md` must include:
+- [x] **28.1.1** Create the directory structure and file skeletons above with section headers (no empty files).
+- [x] **28.1.2** `README.md` must include:
   - survey scope,
   - what "text" means in this phase (plain text, not PDF parsing),
   - compatibility target (output TLA+ should be consumable by current downstream workflow),
   - reading order for non-experts.
-- [ ] **28.1.3** `glossary.md` must define beginner terms (minimum):
+- [x] **28.1.3** `glossary.md` must define beginner terms (minimum):
   - `TLA+`, `TLC`, `SANY`, `state machine`, `safety`, `liveness`, `invariant`,
   - `LLM`, `prompting`, `RAG`, `constrained decoding`, `fine-tuning`,
   - `formal specification`, `semantic equivalence`, `trace`, `counterexample`.
-- [ ] **28.1.4** `comparison_matrix.md` and `artifacts/comparison_matrix.csv` must have matching columns/rows.
+- [x] **28.1.4** `comparison_matrix.md` and `artifacts/comparison_matrix.csv` must have matching columns/rows.
 
 ### 28.2 Survey Methodology (Systematic; No Hand-Wavy "Related Work")
 
 **Goal**: Prevent a shallow survey. The agent must follow a reproducible screening process.
 
-- [ ] **28.2.1** Write `docs/survey/methodology.md` with explicit research questions:
+- [x] **28.2.1** Write `docs/survey/methodology.md` with explicit research questions:
   - `RQ1`: Are there direct papers/repos that perform `text -> TLA+`?
   - `RQ2`: If not, which adjacent methods/tools are strongest building blocks?
   - `RQ3`: How do existing works evaluate faithfulness/correctness of generated formal artifacts from text?
   - `RQ4`: What evaluation plan is appropriate for `text -> TLA+` in this repo context?
-- [ ] **28.2.2** Define inclusion/exclusion criteria (must be explicit):
+- [x] **28.2.2** Define inclusion/exclusion criteria (must be explicit):
   - Include papers, repos, toolkits, benchmarks, and industrial systems relevant to NL/text -> formal specs or closely adjacent tasks.
   - Separate "direct" vs "adjacent" vs "not applicable".
   - Exclude generic LLM-overview papers unless they contribute concrete methods/evaluation relevant to formal spec generation.
   - Exclude blog posts as primary evidence unless no paper/repo exists (then mark as secondary evidence).
-- [ ] **28.2.3** Define search sources to cover (document all used sources and dates checked):
+- [x] **28.2.3** Define search sources to cover (document all used sources and dates checked):
   - scholarly indexes (e.g., arXiv / Google Scholar / Semantic Scholar / DBLP / ACM / IEEE),
   - PL/FM venues (e.g., CAV, FMCAD, FM, POPL, OOPSLA, PLDI, ICSE/FSE/ASE where relevant),
   - NLP/LLM venues (e.g., ACL/EMNLP/NAACL/NeurIPS/ICLR where relevant),
@@ -8770,7 +8770,7 @@ docs/survey/
   - exact query string,
   - top results screened,
   - why kept/rejected.
-- [ ] **28.2.5** Add screening logs:
+- [x] **28.2.5** Add screening logs:
   - `artifacts/papers_screened.csv`
   - `artifacts/repos_screened.csv`
   Required columns: `id`, `title`, `type`, `year`, `url`, `screen_stage`, `category`, `directness`, `include/exclude`, `reason`, `inspected_depth`, `notes`.
