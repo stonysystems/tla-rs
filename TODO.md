@@ -9371,7 +9371,7 @@ boundary). Functions that **compose** already-verified sub-functions or **don't 
 **Tier 2 — Composition functions** (delegate to sub-functions, no direct iteration):
 - [x] `ProposerImpl.rs` — CProposerCanNominateUsingOperationNumber: removed `external_body`; replaced `HashSet::clone()` with `clone_hashset()`, `==` with `CBalEq()`, added cardinality bridge proof
 - [x] `ProposerImpl.rs` — CValIsHighestNumberedProposalAtBallot: removed `external_body`; pure AND of two sub-calls, no changes to body
-- [ ] `ProposerImpl.rs` — CSetOfMessage1bAboutBallot: stays `external_body` (uses `iter().next()` for HashSet peek — same iteration limitation as Tier 3)
+- [x] `ProposerImpl.rs` — CSetOfMessage1bAboutBallot: stays `external_body` (uses `iter().next()` for HashSet peek — same iteration limitation as Tier 3) — WONTFIX
 
 **Tier 3 — HashSet iteration predicates** (irreducible `external_body` — Verus limitation, WONTFIX):
 - [x] `gen_helpers.rs` — Packet1bHasUniqueSrc (1) — stays external_body
