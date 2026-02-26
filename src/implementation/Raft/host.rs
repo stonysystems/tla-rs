@@ -26,6 +26,46 @@ use crate::generated::Raft::types_gen::*;
 use crate::implementation::Raft::message::*;
 use std::collections::{HashMap, HashSet};
 
+/// Convert a CRaftMessage (verified protocol type) to RaftMessage (network wire type).
+///
+/// CRaftMessage is produced by verified generated functions in raft_gen.rs.
+/// RaftMessage is the network-facing type with serialization support.
+/// Field names differ slightly (e.g. `candidate` vs `candidate_id`).
+fn craft_to_raft(cm: &CRaftMessage) -> RaftMessage {
+    match cm {
+        CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } =>
+            RaftMessage::RequestVote {
+                term: *term,
+                candidate_id: *candidate,
+                last_log_index: *last_log_index,
+                last_log_term: *last_log_term,
+            },
+        CRaftMessage::VoteResponse { term, granted, voter } =>
+            RaftMessage::VoteResponse {
+                term: *term,
+                granted: *granted,
+                voter: *voter,
+            },
+        CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } =>
+            RaftMessage::AppendEntries {
+                term: *term,
+                leader_id: *leader,
+                prev_log_index: *prev_index,
+                prev_log_term: *prev_term,
+                value: *value,
+                has_entry: *has_entry,
+                leader_commit: *leader_commit,
+            },
+        CRaftMessage::AppendResponse { term, success, match_index, follower } =>
+            RaftMessage::AppendResponse {
+                term: *term,
+                success: *success,
+                match_index: *match_index,
+                follower: *follower,
+            },
+    }
+}
+
 /// Raft protocol configuration.
 pub struct RaftConfig {
     /// All peer endpoints (ordered by node index).
@@ -224,7 +264,7 @@ impl RaftHost {
             };
         }
 
-        let (new_state, _sent) = raft_gen::CGrantVote(
+        let (new_state, sent) = raft_gen::CGrantVote(
             &self.state,
             &config.constants,
             &term,
@@ -238,16 +278,16 @@ impl RaftHost {
         // "reset election timeout" on granting vote to candidate)
         self.last_heartbeat = std::time::Instant::now();
 
-        // Send VoteResponse (granted=true) back to candidate
+        // Use the VoteResponse from sent_packets (produced by verified CGrantVote)
         StepResult {
             ok: true,
-            outbound: GenericOutbound::Send {
-                dst: src.clone_up_to_view(),
-                msg: RaftMessage::VoteResponse {
-                    term: self.state.current_term,
-                    granted: true,
-                    voter: config.my_index,
-                },
+            outbound: if sent.is_empty() {
+                GenericOutbound::None
+            } else {
+                GenericOutbound::Send {
+                    dst: src.clone_up_to_view(),
+                    msg: craft_to_raft(&sent[0]),
+                }
             },
         }
     }
@@ -307,14 +347,7 @@ impl RaftHost {
             };
         }
 
-        // Compute the match_index for the response before updating state
-        let resp_match_index = if has_entry {
-            (self.state.log.len() as u64) + 1
-        } else {
-            self.state.log.len() as u64
-        };
-
-        let (new_state, _sent) = raft_gen::CFollowerAppendEntries(
+        let (new_state, sent) = raft_gen::CFollowerAppendEntries(
             &self.state,
             &config.constants,
             &term,
@@ -327,17 +360,16 @@ impl RaftHost {
         );
         self.state = new_state;
 
-        // Send AppendResponse back to the leader
+        // Use the AppendResponse from sent_packets (produced by verified CFollowerAppendEntries)
         StepResult {
             ok: true,
-            outbound: GenericOutbound::Send {
-                dst: src.clone_up_to_view(),
-                msg: RaftMessage::AppendResponse {
-                    term,
-                    success: true,
-                    match_index: resp_match_index,
-                    follower: config.my_index,
-                },
+            outbound: if sent.is_empty() {
+                GenericOutbound::None
+            } else {
+                GenericOutbound::Send {
+                    dst: src.clone_up_to_view(),
+                    msg: craft_to_raft(&sent[0]),
+                }
             },
         }
     }
@@ -378,26 +410,24 @@ impl RaftHost {
             };
         }
 
-        let new_term = self.state.current_term + 1;
         eprintln!(
             "Raft: Node {} election timeout, starting election for term {}",
-            config.my_index, new_term
+            config.my_index, self.state.current_term + 1
         );
-        let (new_state, _sent) = raft_gen::CTimeout(&self.state, &config.constants);
+        let (new_state, sent) = raft_gen::CTimeout(&self.state, &config.constants);
         self.state = new_state;
 
-        // Broadcast RequestVote to all peers
+        // Broadcast the RequestVote from sent_packets to all peers
         let others = Self::other_peers(config);
         StepResult {
             ok: true,
-            outbound: GenericOutbound::Broadcast {
-                dsts: others,
-                msg: RaftMessage::RequestVote {
-                    term: new_term,
-                    candidate_id: config.my_index,
-                    last_log_index: 0,
-                    last_log_term: 0,
-                },
+            outbound: if sent.is_empty() {
+                GenericOutbound::None
+            } else {
+                GenericOutbound::Broadcast {
+                    dsts: others,
+                    msg: craft_to_raft(&sent[0]),
+                }
             },
         }
     }
@@ -620,8 +650,7 @@ impl RaftHost {
                 0
             };
 
-            // Call CSendAppendEntries
-            let (new_state, _sent) = raft_gen::CSendAppendEntries(
+            let (new_state, sent) = raft_gen::CSendAppendEntries(
                 &self.state,
                 &config.constants,
                 &follower_id,
@@ -632,21 +661,15 @@ impl RaftHost {
             );
             self.state = new_state;
 
-            // Build the network message
-            let dst = config.peers[i].clone_up_to_view();
-            packets.push(GenericPacket {
-                dst,
-                src: config.peers[config.my_index as usize].clone_up_to_view(),
-                msg: RaftMessage::AppendEntries {
-                    term: self.state.current_term,
-                    leader_id: config.my_index,
-                    prev_log_index,
-                    prev_log_term,
-                    value: entry_value,
-                    has_entry,
-                    leader_commit: self.state.commit_index,
-                },
-            });
+            // Use the AppendEntries from sent_packets (produced by verified CSendAppendEntries)
+            if !sent.is_empty() {
+                let dst = config.peers[i].clone_up_to_view();
+                packets.push(GenericPacket {
+                    dst,
+                    src: config.peers[config.my_index as usize].clone_up_to_view(),
+                    msg: craft_to_raft(&sent[0]),
+                });
+            }
         }
 
         if packets.is_empty() {
