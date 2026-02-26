@@ -41,7 +41,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 - Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 **Next steps (priority order):**
-1. **Phase 27.9.4-27.9.5: Transpiler generates composite Raft exec functions + thin host** — Spec and refinement proof done (27.1-27.4, 27.7); remaining: teach transpiler to generate exec code for composite specs (CHandleMessage, CHandleRequestVoteMsg, etc.) and reduce host.rs from ~1001 LOC to ≤200 LOC. See [Phase 27](#phase-27-lift-raft-host-logic-into-spec--thin-host-via-transpiler-partial).
+1. ~~**Phase 27.9.4-27.9.5: Transpiler generates composite Raft exec functions + thin host**~~ — DONE. All composite exec functions via manual_code injection (622 verified, 0 errors). host.rs reduced from 1001 to 204 lines.
 2. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
 3. **Phase 20: Auto-infer TOML configuration from spec analysis** — ✅ MOSTLY COMPLETE. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
 4. **Phase 22: Native model checking from tla-rs spec source** — Add a source-first checker that consumes Verus spec files (`LInit`/`LNext`) directly, with finite-domain safety checking and counterexample traces. See [Phase 22](#phase-22-native-model-checking-for-tla-rs-spec-source-first).
@@ -8335,7 +8335,7 @@ P99 latency: X.XX ms
 
 ---
 
-## Phase 27: Lift Raft Host Logic into Spec — Thin Host via Transpiler (PARTIAL)
+## Phase 27: Lift Raft Host Logic into Spec — Thin Host via Transpiler (COMPLETE)
 
 ### 27.0 Background & Motivation
 
