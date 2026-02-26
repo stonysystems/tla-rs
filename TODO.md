@@ -9234,11 +9234,12 @@ in spec, and the transpiler generates verified exec code without `manual_code`.
   (`LHandleMessage` → `CHandleMessage`) — required bool param type tracking in function registry
   for `detect_helper_call` to correctly dereference `&bool` match-arm bindings
 - [ ] **29.4.4**: `raft_manual.rs` deleted, `manual_code` removed from `raft_transpile.toml`
-  **Partially met**: `raft_manual.rs` reduced to 112 LOC (from 369). `CHandleVoteResponseMsg`
-  remains manual due to Set::map cardinality proof gap (2 assumes). 6/8 composite functions
-  auto-generated. `manual_code` still needed for the 1 remaining function.
-- [x] **29.4.5**: Verus verification passes: 622 verified, 0 errors, 2 assumes for Set::map
-  cardinality (in manual CHandleVoteResponseMsg only)
+  **Partially met**: `raft_manual.rs` reduced to 108 LOC (from 369), **0 assumes** (was 2 — replaced
+  with `lemma_hashset_u64_len_eq_mapped` from Phase 30). `CHandleVoteResponseMsg` remains manual
+  because transpiler can't generate Set::map membership proofs (`lemma_set_map_contains`/
+  `lemma_set_map_not_contains`) or per-branch cardinality bridge injection.
+  7/8 composite functions auto-generated. `manual_code` still needed for the 1 remaining function.
+- [x] **29.4.5**: Verus verification passes: 627 verified, 0 errors, 0 assumes in raft_gen.rs
 - [ ] **29.4.6**: Raft benchmark results unchanged
 - [x] **29.4.7**: Transpiler tests: 1739 pass (1552 unit + 187 integration), 1 pre-existing
   host scaffold failure. New tests: `test_cast_deref_input_ref_in_let_binding`,
