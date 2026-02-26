@@ -5389,17 +5389,27 @@ impl Translator {
         let ensures = self.build_helper_ensures(func);
 
         // Transform function body - no output extraction needed
+        let input_types: HashMap<String, Type> = func
+            .spec_fn
+            .params
+            .iter()
+            .map(|p| (p.name.clone(), p.ty.clone()))
+            .collect();
         let ctx = TransformContext {
             config: &self.config,
             output_params: Vec::new(), // helpers have no output params
             input_params: func.spec_fn.params.iter().map(|p| p.name.clone()).collect(),
             output_types: HashMap::new(),
-            input_types: HashMap::new(),
+            input_types,
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
             requires: vec![],
         };
         let body = self.transform_expr(&func.spec_fn.body, &ctx)?;
+        // Clone input references at the top level of the return expression.
+        // This handles identity returns like `else { s }` where s: &CState needs cloning,
+        // and recurses into if/else branches via clone_if_input_ref's If handling.
+        let body = self.clone_if_input_ref(body, &ctx);
 
         // If generate_proofs is enabled, analyze the body and append proof blocks
         let body = self.maybe_append_proof_block(body, &return_type);
@@ -8577,6 +8587,10 @@ impl Translator {
 
             Expr::StructUpdate { base, fields, name } => {
                 let base_expr = self.transform_expr(base, ctx)?;
+                // Clone the base when it's an input reference (e.g., `..s` where s: &CState).
+                // In Rust, struct update syntax `CState { field: val, ..s }` moves out of `s`,
+                // but input params are references, so we need `..s.clone()`.
+                let base_expr = self.clone_if_input_ref(base_expr, ctx);
                 let translated_fields: TranspileResult<Vec<_>> = fields
                     .iter()
                     .map(|(fname, fexpr)| {
@@ -25665,5 +25679,246 @@ borrowed_args = [0]
         assert!(translator.is_value_returning("LComputeHelper"));
         let ret_type = translator.get_value_return_type("LComputeHelper").unwrap();
         assert_eq!(ret_type, &ExecType::Named("CState".to_string()));
+    }
+
+    // ============ Value-Returning Helper Codegen Tests (Phase 29.2.2) ============
+
+    /// Helper to create an AnnotatedFunction with a custom body for testing translate_helper.
+    fn make_test_annotated_with_body(
+        name: &str,
+        kind: FunctionKind,
+        params: Vec<(String, Type, ParameterMode)>,
+        return_type: Type,
+        annotation_return_type: Option<String>,
+        body: Expr,
+    ) -> crate::moder::AnnotatedFunction {
+        let spec_fn = SpecFunction {
+            name: name.to_string(),
+            generics: Generics::default(),
+            params: params
+                .iter()
+                .map(|(n, t, m)| Parameter {
+                    name: n.clone(),
+                    ty: t.clone(),
+                    mode: Some(*m),
+                    variable_mode: VariableMode::Exec,
+                    span: None,
+                })
+                .collect(),
+            return_type,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body,
+            span: None,
+        };
+
+        crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind,
+            param_modes: params.iter().map(|(_, _, m)| *m).collect(),
+            return_type: annotation_return_type,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        }
+    }
+
+    /// Test that identity return of input param in helper gets cloned.
+    /// Simulates: `pub open spec fn identity_helper(s: LState) -> LState { s }`
+    /// Expected output body: `s.clone()` (since s is &CState)
+    #[test]
+    fn test_helper_identity_return_gets_cloned() {
+        let translator = Translator::default();
+
+        let body = Expr::Ident("s".to_string());
+        let annotated = make_test_annotated_with_body(
+            "identity_helper",
+            FunctionKind::Helper,
+            vec![("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input)],
+            Type::Named(Path::single("LState".to_string())),
+            Some("LState".to_string()),
+            body,
+        );
+
+        let result = translator.translate_helper(&annotated).expect("should translate");
+        // The body should be clone of s, not raw s
+        match &result.body {
+            ExecExpr::Clone(inner) => {
+                assert!(matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s"),
+                    "Expected clone of s, got {:?}", inner);
+            }
+            other => panic!("Expected Clone(Var(s)), got {:?}", other),
+        }
+    }
+
+    /// Test that if/else with identity return in else branch gets cloned.
+    /// Simulates: `if cond { LState { field: val, ..s } } else { s }`
+    /// Expected: else branch becomes `s.clone()`
+    #[test]
+    fn test_helper_if_else_identity_else_gets_cloned() {
+        let translator = Translator::default();
+
+        // Build: if new_term > s.current_term { LState { current_term: new_term, ..s } } else { s }
+        let body = Expr::If {
+            cond: Box::new(Expr::Gt(
+                Box::new(Expr::Ident("new_term".to_string())),
+                Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "current_term".to_string())),
+            )),
+            then_branch: Box::new(Expr::StructUpdate {
+                name: Some(Path::single("LState".to_string())),
+                base: Box::new(Expr::Ident("s".to_string())),
+                fields: vec![
+                    ("current_term".to_string(), Expr::Ident("new_term".to_string())),
+                ],
+            }),
+            else_branch: Some(Box::new(Expr::Ident("s".to_string()))),
+        };
+
+        let annotated = make_test_annotated_with_body(
+            "step_down_if_needed",
+            FunctionKind::Helper,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("new_term".to_string(), Type::Int, ParameterMode::Input),
+            ],
+            Type::Named(Path::single("LState".to_string())),
+            Some("LState".to_string()),
+            body,
+        );
+
+        let result = translator.translate_helper(&annotated).expect("should translate");
+        // The body should be an If where the else branch has s cloned
+        match &result.body {
+            ExecExpr::If { else_branch: Some(else_br), then_branch, .. } => {
+                // Else branch: s.clone()
+                assert!(matches!(else_br.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+                    "Expected else branch to be s.clone(), got {:?}", else_br);
+                // Then branch: StructUpdate with base cloned
+                match then_branch.as_ref() {
+                    ExecExpr::StructUpdate { base, .. } => {
+                        assert!(matches!(base.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+                            "Expected StructUpdate base to be s.clone(), got {:?}", base);
+                    }
+                    other => panic!("Expected StructUpdate in then branch, got {:?}", other),
+                }
+            }
+            other => panic!("Expected If expression, got {:?}", other),
+        }
+    }
+
+    /// Test that bool-returning helper doesn't get unnecessary cloning.
+    /// Simulates: `pub open spec fn log_up_to_date(s: LState, term: int) -> bool { term > 0 }`
+    #[test]
+    fn test_helper_bool_return_no_spurious_clone() {
+        let translator = Translator::default();
+
+        let body = Expr::Gt(
+            Box::new(Expr::Ident("term".to_string())),
+            Box::new(Expr::Literal(Literal::Int(0))),
+        );
+
+        let annotated = make_test_annotated_with_body(
+            "log_up_to_date",
+            FunctionKind::Helper,
+            vec![
+                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                ("term".to_string(), Type::Int, ParameterMode::Input),
+            ],
+            Type::Bool,
+            Some("bool".to_string()),
+            body,
+        );
+
+        let result = translator.translate_helper(&annotated).expect("should translate");
+        // The body should be a binary comparison, not a Clone
+        match &result.body {
+            ExecExpr::Binary { op, .. } => {
+                assert_eq!(op, ">", "Expected > operator");
+            }
+            other => panic!("Expected Binary expression, got {:?}", other),
+        }
+    }
+
+    /// Test that StructUpdate base gets cloned when base is an input ref.
+    /// Directly tests transform_expr on a StructUpdate where base is input param.
+    #[test]
+    fn test_struct_update_base_input_ref_gets_cloned() {
+        let translator = Translator::default();
+
+        let expr = Expr::StructUpdate {
+            name: Some(Path::single("LState".to_string())),
+            base: Box::new(Expr::Ident("s".to_string())),
+            fields: vec![
+                ("current_term".to_string(), Expr::Ident("new_term".to_string())),
+            ],
+        };
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["s".to_string(), "new_term".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("new_term".to_string(), Type::Int),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        match &result {
+            ExecExpr::StructUpdate { base, fields, .. } => {
+                // Base should be s.clone()
+                assert!(matches!(base.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+                    "Expected StructUpdate base to be s.clone(), got {:?}", base);
+                // Field value new_term should be *new_term (scalar deref)
+                let (fname, fexpr) = &fields[0];
+                assert_eq!(fname, "current_term");
+                assert!(matches!(fexpr, ExecExpr::Unary { op, .. } if op == "*"),
+                    "Expected scalar deref for new_term field, got {:?}", fexpr);
+            }
+            other => panic!("Expected StructUpdate, got {:?}", other),
+        }
+    }
+
+    /// Test that StructUpdate base is NOT cloned when base is NOT an input ref.
+    #[test]
+    fn test_struct_update_base_local_var_not_cloned() {
+        let translator = Translator::default();
+
+        let expr = Expr::StructUpdate {
+            name: Some(Path::single("LState".to_string())),
+            base: Box::new(Expr::Ident("local_var".to_string())),
+            fields: vec![
+                ("current_term".to_string(), Expr::Literal(Literal::Int(5))),
+            ],
+        };
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec![],
+            input_params: vec!["s".to_string()], // local_var is NOT an input param
+            output_types: HashMap::new(),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        match &result {
+            ExecExpr::StructUpdate { base, .. } => {
+                // Base should be raw local_var (NOT cloned)
+                assert!(matches!(base.as_ref(), ExecExpr::Var(name) if name == "local_var"),
+                    "Expected raw Var(local_var), got {:?}", base);
+            }
+            other => panic!("Expected StructUpdate, got {:?}", other),
+        }
     }
 }
