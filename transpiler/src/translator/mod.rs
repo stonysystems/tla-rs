@@ -25433,7 +25433,7 @@ borrowed_args = [0]
 
     // ============ Function Registry Tests ============
 
-    use crate::ast::{FunctionKind, ParameterMode, VariableMode};
+    use crate::ast::{Binding, FunctionKind, ParameterMode, Pattern, VariableMode};
 
     /// Helper to create an AnnotatedFunction for testing
     fn make_test_annotated(
@@ -25920,5 +25920,158 @@ borrowed_args = [0]
             }
             other => panic!("Expected StructUpdate, got {:?}", other),
         }
+    }
+
+    // ============ Let-Binding Value-Returning Call Tests (Phase 29.2.3) ============
+
+    /// Test that a let-binding calling a value-returning function translates correctly.
+    /// Simulates: `let s_mid = step_down_if_needed(s, term); s_mid.current_term`
+    /// Expected: `{ let s_mid = Cstep_down_if_needed(&s, &term); s_mid.current_term }`
+    #[test]
+    fn test_let_binding_value_returning_call() {
+        let translator = Translator::default();
+
+        // Build AST: let s_mid = step_down_if_needed(s, term); s_mid.current_term
+        let expr = Expr::Let {
+            binding: Binding {
+                pattern: Pattern::Ident("s_mid".to_string()),
+                ty: Some(Type::Named(Path::single("LState".to_string()))),
+                variable_mode: VariableMode::Exec,
+            },
+            value: Box::new(Expr::Call {
+                func: Path::single("step_down_if_needed".to_string()),
+                args: vec![
+                    Expr::Ident("s".to_string()),
+                    Expr::Ident("term".to_string()),
+                ],
+            }),
+            body: Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_mid".to_string())),
+                "current_term".to_string(),
+            )),
+        };
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "term".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                ("term".to_string(), Type::Int),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        // Expected: Block [ Let { s_mid = Cstep_down_if_needed(&s, &term) }, Field(s_mid, current_term) ]
+        match &result {
+            ExecExpr::Block(stmts) => {
+                assert_eq!(stmts.len(), 2, "Expected 2 statements in block");
+                // First stmt: let s_mid = Cstep_down_if_needed(&s, &term)
+                match &stmts[0] {
+                    ExecExpr::Let { pattern, value, .. } => {
+                        assert_eq!(pattern, "s_mid");
+                        match value.as_ref() {
+                            ExecExpr::Call { func, args } => {
+                                assert_eq!(func, "Cstep_down_if_needed");
+                                assert_eq!(args.len(), 2, "Expected 2 args");
+                                // First arg: &s
+                                assert!(matches!(&args[0], ExecExpr::Unary { op, .. } if op == "&"),
+                                    "Expected &s, got {:?}", args[0]);
+                                // Second arg: &term
+                                assert!(matches!(&args[1], ExecExpr::Unary { op, .. } if op == "&"),
+                                    "Expected &term, got {:?}", args[1]);
+                            }
+                            other => panic!("Expected Call, got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected Let, got {:?}", other),
+                }
+                // Second stmt: s_mid.current_term
+                match &stmts[1] {
+                    ExecExpr::Field(base, field) => {
+                        assert_eq!(field, "current_term");
+                        assert!(matches!(base.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
+                            "Expected Var(s_mid), got {:?}", base);
+                    }
+                    other => panic!("Expected Field, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Block, got {:?}", other),
+        }
+    }
+
+    /// Test that s_mid (local let-bound var) is NOT cloned when accessed in a field chain.
+    /// Simulates: in a predicate body, after `let s_mid = ...`, accessing `s_mid.current_term`
+    /// should produce `s_mid.current_term` (NOT `s_mid.clone().current_term`)
+    #[test]
+    fn test_let_bound_var_not_cloned_on_field_access() {
+        let translator = Translator::default();
+
+        // s_mid.current_term where s_mid is NOT an input param
+        let expr = Expr::Field(
+            Box::new(Expr::Ident("s_mid".to_string())),
+            "current_term".to_string(),
+        );
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string(), "term".to_string()],
+            output_types: HashMap::new(),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        match &result {
+            ExecExpr::Field(base, field) => {
+                assert_eq!(field, "current_term");
+                // s_mid should be raw Var, not cloned
+                assert!(matches!(base.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
+                    "Expected Var(s_mid), got {:?}", base);
+            }
+            other => panic!("Expected Field, got {:?}", other),
+        }
+    }
+
+    /// Test that output equality `s_ == s_mid` (where s_mid is let-bound local)
+    /// produces `s_mid` (the RHS) as the output value.
+    #[test]
+    fn test_output_equality_with_local_var() {
+        let translator = Translator::default();
+
+        // s_ == s_mid
+        let expr = Expr::Eq(
+            Box::new(Expr::Ident("s_".to_string())),
+            Box::new(Expr::Ident("s_mid".to_string())),
+        );
+
+        let ctx = TransformContext {
+            config: &translator.config,
+            output_params: vec!["s_".to_string()],
+            input_params: vec!["s".to_string()],
+            output_types: HashMap::from([
+                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ]),
+            input_types: HashMap::from([
+                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+            ]),
+            field_substitutions: HashMap::new(),
+            temp_var_counter: std::cell::RefCell::new(0),
+            requires: vec![],
+        };
+
+        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        // `s_ == s_mid` should produce just `s_mid` (the local var, not cloned)
+        assert!(matches!(&result, ExecExpr::Var(name) if name == "s_mid"),
+            "Expected Var(s_mid), got {:?}", result);
     }
 }
