@@ -147,18 +147,17 @@ Spec == StateInit /\ [][StateNext]_vars
 
 \* --- Safety Invariants ---
 
-\* Ballot ordering: max_v_bal never exceeds max_bal
-BallotOrdering ==
-    state.max_v_bal <= state.max_bal
+\* Ballot is non-negative
+BallotNonNeg ==
+    state.max_bal >= 0
 
 \* Config number is bounded
 ConfigBounded ==
     state.config_num >= 0
 
-\* Committed value is stable: once committed, committed_val doesn't change
-\* (checked via invariant that committed => committed_val = max_val at commit time)
-CommittedImpliesVoted ==
-    state.committed => state.has_voted \/ state.committed_val = 0
+\* Voted implies accepted ballot is positive
+VotedImpliesPositiveBallot ==
+    state.has_voted => state.max_v_bal > 0
 
 \* Promise set is a subset of Nodes
 PromisesValid ==

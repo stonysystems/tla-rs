@@ -1,0 +1,20 @@
+TLC2 Version 2.17 of 02 February 2022 (rev: 3c7caa5)
+Running breadth-first search Model-Checking with fp 58 and seed -3432865561920165955 with 64 workers on 64 cores with 21445MB heap and 64MB offheap memory [pid: 4181357] (Linux 6.2.16-3-pve amd64, Debian 17.0.18 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/users/zihao/tla-rs/transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/PBFT_MC.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module PBFT_MC
+Starting... (2026-02-26 11:32:20)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-02-26 11:32:20.
+Progress(260) at 2026-02-26 11:32:24: 278,569 states generated (278,569 s/min), 94,087 distinct states found (94,087 ds/min), 357 states left on queue.
+Progress(62003) at 2026-02-26 11:33:24: 70,835,258 states generated (70,556,689 s/min), 23,844,288 distinct states found (23,750,201 ds/min), 312 states left on queue.
+Progress(126935) at 2026-02-26 11:34:24: 145,546,057 states generated (74,710,799 s/min), 48,992,655 distinct states found (25,148,367 ds/min), 320 states left on queue.
+Progress(194332) at 2026-02-26 11:35:24: 223,124,533 states generated (77,578,476 s/min), 75,106,339 distinct states found (26,113,684 ds/min), 330 states left on queue.
+Progress(264241) at 2026-02-26 11:36:24: 302,997,912 states generated (79,873,379 s/min), 101,992,800 distinct states found (26,886,461 ds/min), 364 states left on queue.

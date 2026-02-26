@@ -1,0 +1,20 @@
+TLC2 Version 2.17 of 02 February 2022 (rev: 3c7caa5)
+Running breadth-first search Model-Checking with fp 113 and seed -7105607345174948385 with 64 workers on 64 cores with 21445MB heap and 64MB offheap memory [pid: 4182352] (Linux 6.2.16-3-pve amd64, Debian 17.0.18 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/users/zihao/tla-rs/transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/EPaxos_MC.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module EPaxos_MC
+Starting... (2026-02-26 11:32:30)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-02-26 11:32:31.
+Progress(629) at 2026-02-26 11:32:34: 291,502 states generated (291,502 s/min), 122,080 distinct states found (122,080 ds/min), 119 states left on queue.
+Progress(88149) at 2026-02-26 11:33:34: 41,570,257 states generated (41,278,755 s/min), 17,331,652 distinct states found (17,209,572 ds/min), 168 states left on queue.
+Progress(176289) at 2026-02-26 11:34:34: 83,124,399 states generated (41,554,142 s/min), 34,654,989 distinct states found (17,323,337 ds/min), 184 states left on queue.
+Progress(281330) at 2026-02-26 11:35:34: 133,120,949 states generated (49,996,550 s/min), 55,476,430 distinct states found (20,821,441 ds/min), 164 states left on queue.
+Progress(401259) at 2026-02-26 11:36:34: 190,010,078 states generated (56,889,129 s/min), 79,177,559 distinct states found (23,701,129 ds/min), 211 states left on queue.

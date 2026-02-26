@@ -1,0 +1,25 @@
+TLC2 Version 2.17 of 02 February 2022 (rev: 3c7caa5)
+Running breadth-first search Model-Checking with fp 4 and seed 1236750497432671688 with 64 workers on 64 cores with 21445MB heap and 64MB offheap memory [pid: 4184725] (Linux 6.2.16-3-pve amd64, Debian 17.0.18 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/users/zihao/tla-rs/transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/VerticalPaxos_MC.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module VerticalPaxos_MC
+Starting... (2026-02-26 11:38:52)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-02-26 11:38:53.
+Progress(16) at 2026-02-26 11:38:56: 2,927,972 states generated (2,927,972 s/min), 218,681 distinct states found (218,681 ds/min), 37,406 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 4.5E-8
+  based on the actual fingerprints:  val = 4.4E-10
+3480465 states generated, 255872 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 21.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 31 and the 95th percentile is 4).
+Finished in 05s at (2026-02-26 11:38:57)

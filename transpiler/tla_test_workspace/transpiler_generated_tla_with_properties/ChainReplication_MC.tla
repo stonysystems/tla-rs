@@ -20,16 +20,16 @@ Values == 1..MaxValues
 \* State variables
 VARIABLE state, constants
 
-\* Role tags
-Head == [tag |-> Head_tag]
-Middle == [tag |-> Middle_tag]
-Tail == [tag |-> Tail_tag]
+\* Role tags (renamed to avoid clash with Sequences.Head/Tail)
+HeadRole == [tag |-> Head_tag]
+MiddleRole == [tag |-> Middle_tag]
+TailRole == [tag |-> Tail_tag]
 
 \* --- State machine ---
 
 StateInit ==
     /\ constants = [node_id |-> NodeId, chain_len |-> ChainLen]
-    /\ state = [role |-> Head, history |-> <<>>, pending_sent |-> {},
+    /\ state = [role |-> HeadRole, history |-> <<>>, pending_sent |-> {},
                 committed_count |-> 0, obj_value |-> 0,
                 has_predecessor |-> FALSE, predecessor |-> 0,
                 has_successor |-> TRUE, successor |-> 1,
@@ -37,7 +37,7 @@ StateInit ==
 
 \* HeadReceiveWrite: head receives a new value
 HeadReceiveWrite(value) ==
-    /\ state.role = Head
+    /\ state.role = HeadRole
     /\ state.alive = TRUE
     /\ ~(value \in state.pending_sent)
     /\ Len(state.history) < MaxValues
@@ -48,7 +48,7 @@ HeadReceiveWrite(value) ==
 
 \* ForwardToSuccessor: forward a pending value downstream
 ForwardToSuccessor(value) ==
-    /\ state.role = Head \/ state.role = Middle
+    /\ state.role = HeadRole \/ state.role = MiddleRole
     /\ state.alive = TRUE
     /\ value \in state.pending_sent
     /\ state.has_successor = TRUE
@@ -56,7 +56,7 @@ ForwardToSuccessor(value) ==
 
 \* ReceiveAck: receive acknowledgment, remove from pending
 ReceiveAck(value) ==
-    /\ state.role = Head \/ state.role = Middle
+    /\ state.role = HeadRole \/ state.role = MiddleRole
     /\ state.alive = TRUE
     /\ value \in state.pending_sent
     /\ state' = [state EXCEPT
@@ -82,7 +82,7 @@ Spec == StateInit /\ [][StateNext]_vars
 
 \* Role is a valid tag
 RoleValid ==
-    state.role \in {Head, Middle, Tail}
+    state.role \in {HeadRole, MiddleRole, TailRole}
 
 \* History only grows (length is monotonically non-decreasing)
 HistoryBounded ==
@@ -97,13 +97,9 @@ PendingInHistory ==
     \A v \in state.pending_sent :
         \E i \in 1..Len(state.history) : state.history[i] = v
 
-\* Dead nodes don't change state (checked implicitly by action guards)
-DeadNodeStable ==
-    state.alive = FALSE => state.pending_sent = state.pending_sent
-
 \* Chain topology consistent with node ID
 TopologyConsistent ==
-    /\ (constants.node_id = 0 => state.role = Head)
+    /\ (constants.node_id = 0 => state.role = HeadRole)
     /\ (constants.node_id = 0 => state.has_predecessor = FALSE)
 
 ====
