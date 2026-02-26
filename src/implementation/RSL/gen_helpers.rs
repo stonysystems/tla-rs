@@ -24,8 +24,7 @@ use crate::protocol::RSL::replica::{
 verus! {
 
 /// Clone a CPacket preserving both view equality and validity.
-/// Standard clone_up_to_view only ensures view preservation; we also need validity.
-#[verifier(external_body)]
+/// Verified: CPacket::clone_up_to_view ensures res.valid() == self.valid().
 pub fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
     requires p.valid(),
     ensures res@ == p@, res.valid(),

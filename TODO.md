@@ -9356,20 +9356,36 @@ Replace each `assume(cond == (set@.map(f).len() >= quorum))` with a lemma call:
 - [x] `protocol/Raft/raft_manual.rs:96` — votes_granted < quorum (replaced with lemma_hashset_u64_len_eq_mapped)
 - [x] `generated/RSL/replica_gen.rs:268` — samesrc forall equivalence (replaced with lemma_cpacket_set_forall_src)
 
-#### 30.2.2 Remove external_body from 19 predicate functions
+#### 30.2.2 Remove external_body from predicate/helper functions
 
-Keep existing iteration logic in each function unchanged. Remove `#[verifier(external_body)]`
-and add operation-level lemma calls (lemma_hashset_contains, lemma_hashmap_get, etc.) so Verus
-can verify the loop body and postcondition.
+**Limitation**: Verus cannot verify `for x in hashset.iter()` loops natively — HashSet iteration
+produces elements in unspecified order and Verus lacks loop invariant support for it. Functions
+that iterate over HashSet/HashMap remain `external_body` (the iteration is the irreducible trust
+boundary). Functions that **compose** already-verified sub-functions or **don't iterate** can be verified.
 
+**Tier 1 — Clone helpers** (no collection iteration, can be verified):
+- [x] `gen_helpers.rs` — clone_cpacket_preserving_validity: removed `external_body`, verified via strengthened `CPacket::clone_up_to_view` ensures (`res.valid() == self.valid()`)
+- [ ] `gen_helpers.rs` — clone_cpacket_full: stays `external_body` (requires structural `res == *p` which can't be derived from view equality — CPacket's `derive(Eq, PartialEq)` is `#[verus::trusted]`)
+
+**Tier 2 — Composition functions** (delegate to sub-functions, no direct iteration):
+- [x] `ProposerImpl.rs` — CProposerCanNominateUsingOperationNumber: removed `external_body`; replaced `HashSet::clone()` with `clone_hashset()`, `==` with `CBalEq()`, added cardinality bridge proof
+- [x] `ProposerImpl.rs` — CValIsHighestNumberedProposalAtBallot: removed `external_body`; pure AND of two sub-calls, no changes to body
+- [ ] `ProposerImpl.rs` — CSetOfMessage1bAboutBallot: stays `external_body` (uses `iter().next()` for HashSet peek — same iteration limitation as Tier 3)
+
+**Tier 3 — HashSet iteration predicates** (irreducible `external_body` — Verus limitation):
+- [ ] `gen_helpers.rs` — Packet1bHasUniqueSrc (HashSet<CPacket> forall src check) (1)
+- [ ] `ProposerImpl.rs` — CIsAfterLogTruncationPoint, CAllAcceptorsHadNoProposal,
+  CExistVotesHasProposalLargeThanOpn, CExistsAcceptorHasProposalLargeThanOpn,
+  Cmax_balInS, CExistsBallotInS, CValIsHighestNumberedProposal (7)
+- [ ] `ReplicaImpl.rs` — Packet1bHasUniqueSrc (1)
+
+**Tier 4 — HashMap iteration functions** (irreducible `external_body` — Verus limitation):
 - [ ] `acceptor_helpers.rs` — CRemoveVotesBeforeLogTruncationPoint, CAddVoteAndRemoveOldOnes (2)
-- [ ] `gen_helpers.rs` — CReplicaNextProcess1b, CReplicaNextSpontaneous..., Packet1bHasUniqueSrc,
-  CClientsInReplies, CUpdateNewCache (5)
-- [ ] `ProposerImpl.rs` — CIsAfterLogTruncationPoint, CSetOfMessage1bAboutBallot,
-  CAllAcceptorsHadNoProposal, CExistVotesHasProposal..., CExistsAcceptor...,
-  Cmax_balInS, CExistsBallotInS, CValIsHighestNumberedProposal{,AtBallot},
-  CProposerCanNominateUsingOperationNumber (10)
-- [ ] `ReplicaImpl.rs` — Packet1bHasUniqueSrc, ...TruncateLogBasedOnCheckpoints_optimized (2)
+- [ ] `gen_helpers.rs` — CClientsInReplies, CUpdateNewCache (2)
+
+**Tier 5 — Complex delegation wrappers** (external_body, delegate to sub-functions):
+- [ ] `gen_helpers.rs` — CReplicaNextProcess1b, CReplicaNextSpontaneous...,
+  CExtractSentPacketsFromIos, outbound_packets_to_vec (4)
 
 #### 30.2.3 Sorting (keep or replace)
 
@@ -9387,7 +9403,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 | Metric | Before | After |
 |--------|--------|-------|
 | assumes (non-IO, non-clone) | 8 | 0 |
-| external_body predicates | 19 | 0 (verified with lemma calls) |
+| external_body predicates | 19 | 16 (3 verified; 16 irreducible — HashSet/HashMap iteration) |
 | external_body lemma primitives | 0 | ~8 (hashset: 4, hashmap: 3, set_map: 1) |
 | external_body sorting | 2 | 0-1 (verified insertion sort) |
 | external_body axioms | 5 | 5 (irreducible) |

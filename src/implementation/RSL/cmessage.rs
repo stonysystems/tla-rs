@@ -244,7 +244,10 @@ verus! {
     impl CPacket{
 
         pub fn clone_up_to_view(&self) -> (res: CPacket)
-        ensures res@ == self@
+        ensures
+            res@ == self@,
+            res.valid() == self.valid(),
+            res.abstractable() == self.abstractable(),
         {
             CPacket{
                 dst: self.dst.clone_up_to_view(),

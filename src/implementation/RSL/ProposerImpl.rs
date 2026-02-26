@@ -482,7 +482,6 @@ impl CProposer{
 
     }
 
-    #[verifier(external_body)]
     pub fn CValIsHighestNumberedProposalAtBallot(v:&CRequestBatch, c:&CBallot, S:&HashSet<CPacket>, opn:&COperationNumber) -> (result_CValIsHighestNumberedProposalAtBallot:bool)
     requires
         crequestbatch_is_valid(v),
@@ -543,7 +542,6 @@ impl CProposer{
     // Called from proposer_gen.rs and proposer_manual.rs
     // =========================================================================
 
-    #[verifier(external_body)]
     pub fn CProposerCanNominateUsingOperationNumber(&self, log_truncation_point: COperationNumber, opn:COperationNumber) -> (result_CProposerCanNominateUsingOperationNumber:bool)
     requires
         self.valid(),
@@ -555,10 +553,17 @@ impl CProposer{
             result_CProposerCanNominateUsingOperationNumber == lr
         })
     {
-        self.election_state.current_view == self.max_ballot_i_sent_1a
+        proof {
+            // Bridge HashSet<CPacket>.len() to Set<RslPacket>.len()
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            crate::common::collections::hashsets::lemma_hashset_cpacket_len(&self.received_1b_packets);
+            assert(self.received_1b_packets@.map(|t: CPacket| t@) =~= self@.received_1b_packets);
+        }
+        let cloned_packets = crate::common::collections::hashsets::clone_hashset(&self.received_1b_packets);
+        CBalEq(&self.election_state.current_view, &self.max_ballot_i_sent_1a)
         && self.current_state == 2
         && self.received_1b_packets.len() >= self.constants.all.config.CMinQuorumSize()
-        && Self::CSetOfMessage1bAboutBallot(&self.received_1b_packets.clone(),&self.max_ballot_i_sent_1a)
+        && Self::CSetOfMessage1bAboutBallot(&cloned_packets, &self.max_ballot_i_sent_1a)
         && Self::CIsAfterLogTruncationPoint(opn, &self.received_1b_packets)
         && opn < CUpperBoundedAddition(log_truncation_point, self.constants.all.params.max_log_length, self.constants.all.params.max_integer_val)
         && opn >= 0
