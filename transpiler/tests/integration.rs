@@ -8954,3 +8954,92 @@ fn test_impl_files_size_after_stripping() {
         );
     }
 }
+
+/// Phase 16.8: Verify the tla_test_workspace has all 10 required top-level directories
+/// and that the D2 materialized output (transpiler_generated_verus_exec/) contains the
+/// expected number of files matching the D1 spec input.
+#[test]
+fn test_workspace_directory_structure_complete() {
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tla_test_workspace");
+
+    if !workspace.exists() {
+        eprintln!("Skipping: workspace not found at {:?}", workspace);
+        return;
+    }
+
+    // All 10 required top-level directories
+    let required_dirs = [
+        "transpiler_generated_tla",
+        "transpiler_generated_tla_with_properties",
+        "transpiler_generated_verus_spec",
+        "transpiler_generated_verus_exec",
+        "generated_tla_by_llm",
+        "tla_by_community",
+        "llm_to_verus_spec",
+        "llm_to_verus_exec",
+        "community_to_verus_spec",
+        "community_to_verus_exec",
+    ];
+
+    for dir_name in &required_dirs {
+        let dir_path = workspace.join(dir_name);
+        assert!(
+            dir_path.exists() && dir_path.is_dir(),
+            "Required workspace directory missing: {}",
+            dir_name
+        );
+    }
+
+    // D2 materialized output should have the same number of .rs files as D1 spec input
+    let spec_dir = workspace.join("transpiler_generated_verus_spec");
+    let exec_dir = workspace.join("transpiler_generated_verus_exec");
+
+    let spec_rs_count = walkdir(spec_dir.to_str().unwrap())
+        .iter()
+        .filter(|f| f.ends_with(".rs"))
+        .count();
+    let exec_rs_count = walkdir(exec_dir.to_str().unwrap())
+        .iter()
+        .filter(|f| f.ends_with(".rs"))
+        .count();
+
+    assert!(
+        spec_rs_count > 0,
+        "transpiler_generated_verus_spec should contain .rs files"
+    );
+    assert_eq!(
+        spec_rs_count, exec_rs_count,
+        "D2 exec output ({} files) should match D1 spec input ({} files)",
+        exec_rs_count, spec_rs_count
+    );
+
+    // llm_to_verus_spec should have files copied from generated_tla_by_llm/d1_output
+    let llm_spec_count = std::fs::read_dir(workspace.join("llm_to_verus_spec"))
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+                .count()
+        })
+        .unwrap_or(0);
+    assert!(
+        llm_spec_count >= 3,
+        "llm_to_verus_spec should have >= 3 D1 output files, found {}",
+        llm_spec_count
+    );
+
+    // community_to_verus_spec should have files copied from tla_by_community/d1_output
+    let community_spec_count = std::fs::read_dir(workspace.join("community_to_verus_spec"))
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+                .count()
+        })
+        .unwrap_or(0);
+    assert!(
+        community_spec_count >= 3,
+        "community_to_verus_spec should have >= 3 D1 output files, found {}",
+        community_spec_count
+    );
+}
