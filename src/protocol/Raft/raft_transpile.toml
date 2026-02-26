@@ -48,6 +48,7 @@ int_type = "u64"
 nat_type = "u64"
 
 [output]
+manual_code = "raft_manual.rs"
 generate_abstraction_fns = true
 generate_validity_predicates = true
 validity_predicate_name = "valid"
