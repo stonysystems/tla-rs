@@ -1500,7 +1500,11 @@ mod tests {
             .expect("Failed to read Raft spec");
         let fns = parse_spec_fns(&source);
         let config = find_and_analyze_lnext(&fns, "LNext", "L", "C").unwrap();
-        assert_eq!(config.actions.len(), 11, "Raft LNext has 11 branches");
+        // Phase 27.4: LNext now uses composite actions (5 branches)
+        // - LTimeout, LClientRequest, LSendAppendEntries (timer-driven)
+        // - LHandleMessage (composite message dispatch)
+        // - LTryAdvanceCommitIndex (composite commit advancement)
+        assert_eq!(config.actions.len(), 5, "Raft LNext has 5 composite branches");
 
         let names: Vec<&str> = config
             .actions
@@ -1508,10 +1512,10 @@ mod tests {
             .map(|a| a.spec_name.as_str())
             .collect();
         assert!(names.contains(&"LTimeout"));
-        assert!(names.contains(&"LGrantVote"));
-        assert!(names.contains(&"LBecomeLeader"));
         assert!(names.contains(&"LClientRequest"));
-        assert!(names.contains(&"LAdvanceCommitIndex"));
+        assert!(names.contains(&"LSendAppendEntries"));
+        assert!(names.contains(&"LHandleMessage"));
+        assert!(names.contains(&"LTryAdvanceCommitIndex"));
     }
 
     #[test]
@@ -1780,44 +1784,26 @@ mod tests {
             .expect("Failed to read Raft spec");
         let fns = parse_spec_fns(&source);
         let mut config = find_and_analyze_lnext(&fns, "LNext", "L", "C").unwrap();
+        // Phase 27.4: LNext now uses composite actions (5 branches)
         let variants = vec![
             "RequestVote".to_string(),
             "VoteResponse".to_string(),
             "AppendEntries".to_string(),
             "AppendResponse".to_string(),
         ];
-        let overrides = ActionClassificationOverrides {
-            message_response_overrides: vec![
-                "GrantVote".to_string(),
-                "FollowerAppendEntries".to_string(),
-            ],
-            timer_overrides: vec!["HandleAppendReject".to_string()],
-            ..Default::default()
-        };
+        let overrides = ActionClassificationOverrides::default();
         classify_actions(&mut config, &variants, &overrides);
 
         let find = |name: &str| config.actions.iter().find(|a| a.spec_name == name).unwrap();
 
-        // Timer-driven (including state transitions that don't check msgs_* flags)
+        // Timer-driven actions
         assert_eq!(find("LTimeout").kind, ActionKind::TimerDriven);
         assert_eq!(find("LSendAppendEntries").kind, ActionKind::TimerDriven);
-        assert_eq!(find("LAdvanceCommitIndex").kind, ActionKind::TimerDriven);
         assert_eq!(find("LClientRequest").kind, ActionKind::TimerDriven);
-        assert_eq!(find("LBecomeLeader").kind, ActionKind::TimerDriven); // quorum state transition
-        assert_eq!(find("LStepDown").kind, ActionKind::TimerDriven); // cross-cutting term detection
-        assert_eq!(find("LHandleAppendReject").kind, ActionKind::TimerDriven); // failure sub-case
+        assert_eq!(find("LTryAdvanceCommitIndex").kind, ActionKind::TimerDriven);
 
-        // Message-driven (actions that check msgs_* flags for specific variants)
-        assert_eq!(find("LGrantVote").kind, ActionKind::MessageDriven);
-        assert_eq!(find("LReceiveVoteGranted").kind, ActionKind::MessageDriven);
-        assert_eq!(
-            find("LFollowerAppendEntries").kind,
-            ActionKind::MessageDriven
-        );
-        assert_eq!(
-            find("LHandleAppendResponse").kind,
-            ActionKind::MessageDriven
-        );
+        // Message-driven: LHandleMessage dispatches all incoming messages
+        assert_eq!(find("LHandleMessage").kind, ActionKind::MessageDriven);
     }
 
     #[test]

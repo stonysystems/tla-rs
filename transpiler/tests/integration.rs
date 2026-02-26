@@ -5044,18 +5044,18 @@ fn test_analyze_lnext_leader_election() {
 #[test]
 fn test_analyze_lnext_raft() {
     let config = analyze_lnext("../src/protocol/Raft/raft.rs");
-    assert_eq!(config.actions.len(), 11, "Raft has 11 actions");
+    // Phase 27.4: LNext now uses 5 composite branches
+    assert_eq!(config.actions.len(), 5, "Raft has 5 composite actions");
     let names: Vec<&str> = config
         .actions
         .iter()
         .map(|a| a.spec_name.as_str())
         .collect();
     assert!(names.contains(&"LTimeout"));
-    assert!(names.contains(&"LBecomeLeader"));
-    assert!(names.contains(&"LGrantVote"));
     assert!(names.contains(&"LClientRequest"));
-    assert!(names.contains(&"LAdvanceCommitIndex"));
-    assert!(names.contains(&"LStepDown"));
+    assert!(names.contains(&"LSendAppendEntries"));
+    assert!(names.contains(&"LHandleMessage"));
+    assert!(names.contains(&"LTryAdvanceCommitIndex"));
 }
 
 #[test]

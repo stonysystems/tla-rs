@@ -447,40 +447,88 @@ verus! {
         }
     }
 
-    /// Next-state relation: disjunction of all possible transitions
+    // ---------------------------------------------------------------
+    // Commit index advancement (Phase 27.2)
+    //
+    // Combines guard check + LAdvanceCommitIndex into one composite
+    // action. The quorum scan logic stays in the implementation
+    // (host.rs / transpiler-generated code); the spec nondeterministically
+    // picks any valid new_commit_index via existential quantification
+    // in LNext.
+    // ---------------------------------------------------------------
+
+    /// Advance commit index: combines guard check + LAdvanceCommitIndex.
+    /// If not leader or new_commit_index is not an advancement, stutter.
+    /// The actual quorum replication check is an implementation concern --
+    /// the spec allows any valid new_commit_index, and the exec code
+    /// computes the correct one via the quorum scan loop.
+    pub open spec fn LTryAdvanceCommitIndex(
+        s: LState, s_: LState, c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        if !(s.role is Leader) || new_commit_index <= s.commit_index {
+            // Not leader or no advancement: stutter
+            &&& s_ == s
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else {
+            // Valid advancement: delegate to LAdvanceCommitIndex
+            LAdvanceCommitIndex(s, s_, c, new_commit_index, sent_packets)
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Message dispatch (Phase 27.3)
+    //
+    // Top-level dispatch from incoming message to composite handler,
+    // analogous to RSL's LReplicaNextProcessPacket.
+    // ---------------------------------------------------------------
+
+    /// Dispatch an incoming message to the appropriate composite handler.
+    pub open spec fn LHandleMessage(
+        s: LState, s_: LState, c: LConstants,
+        msg: LRaftMessage,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        match msg {
+            LRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } =>
+                LHandleRequestVoteMsg(s, s_, c, term, candidate, last_log_index,
+                                      last_log_term, sent_packets),
+            LRaftMessage::VoteResponse { term, granted, voter } =>
+                LHandleVoteResponseMsg(s, s_, c, term, granted, voter, sent_packets),
+            LRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
+                                          value, has_entry, leader_commit } =>
+                LHandleAppendEntriesMsg(s, s_, c, term, leader, prev_index, prev_term,
+                                        value, has_entry, leader_commit, sent_packets),
+            LRaftMessage::AppendResponse { term, success, match_index, follower } =>
+                LHandleAppendResponseMsg(s, s_, c, term, success, match_index,
+                                         follower, sent_packets),
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Next-state relation (Phase 27.4)
+    //
+    // Uses composite message handlers and commit advancement instead
+    // of individual atomic actions. Timer-driven actions are unchanged.
+    // ---------------------------------------------------------------
+
+    /// Next-state relation: disjunction of all possible transitions.
+    /// Uses composite message dispatch + commit advancement (Phases 27.2-27.4).
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        // Timer-driven actions (unchanged)
         ||| exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets)
-        ||| exists |candidate_term: int, candidate_last_log_term: int,
-                    candidate_last_log_index: int, candidate_id: int,
-                    sent_packets: Seq<LRaftMessage>|
-                LGrantVote(s, s_, c, candidate_term, candidate_last_log_term,
-                           candidate_last_log_index, candidate_id, sent_packets)
-        ||| exists |vote_term: int, vote_granted: bool, voter: int,
-                    sent_packets: Seq<LRaftMessage>|
-                LReceiveVoteGranted(s, s_, c, vote_term, vote_granted, voter, sent_packets)
-        ||| exists |sent_packets: Seq<LRaftMessage>| LBecomeLeader(s, s_, c, sent_packets)
         ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
                 LClientRequest(s, s_, c, value, sent_packets)
         ||| exists |follower: int, entry_value: int, prev_log_index: int, prev_log_term: int,
-                    sent_packets: Seq<LRaftMessage>|
-                LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index, prev_log_term, true, sent_packets)
-        ||| exists |ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-                    ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
-                    sent_packets: Seq<LRaftMessage>|
-                LFollowerAppendEntries(s, s_, c, ae_term, ae_leader, ae_prev_index, ae_prev_term,
-                                       ae_value, ae_has_entry, ae_leader_commit, sent_packets)
-        ||| exists |resp_term: int, resp_success: bool, resp_match_index: int, resp_follower: int,
-                    follower: u64, new_match_index: u64,
-                    sent_packets: Seq<LRaftMessage>|
-                LHandleAppendResponse(s, s_, c, resp_term, resp_success, resp_match_index, resp_follower,
-                                      follower, new_match_index, sent_packets)
-        ||| exists |resp_term: int, resp_success: bool, resp_match_index: int, resp_follower: int,
-                    follower: u64, sent_packets: Seq<LRaftMessage>|
-                LHandleAppendReject(s, s_, c, resp_term, resp_success, resp_match_index, resp_follower,
-                                    follower, sent_packets)
+                    has_entry: bool, sent_packets: Seq<LRaftMessage>|
+                LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index,
+                                   prev_log_term, has_entry, sent_packets)
+        // Composite message dispatch (replaces individual message handlers)
+        ||| exists |msg: LRaftMessage, sent_packets: Seq<LRaftMessage>|
+                LHandleMessage(s, s_, c, msg, sent_packets)
+        // Composite commit advancement (replaces LAdvanceCommitIndex)
         ||| exists |new_commit_index: int, sent_packets: Seq<LRaftMessage>|
-                LAdvanceCommitIndex(s, s_, c, new_commit_index, sent_packets)
-        ||| exists |new_term: int, sent_packets: Seq<LRaftMessage>|
-                LStepDown(s, s_, c, new_term, sent_packets)
+                LTryAdvanceCommitIndex(s, s_, c, new_commit_index, sent_packets)
     }
 }
