@@ -9239,21 +9239,20 @@ in spec, and the transpiler generates verified exec code without `manual_code`.
 - [x] **29.4.3**: Transpiler generates message dispatch function from spec match
   (`LHandleMessage` → `CHandleMessage`) — required bool param type tracking in function registry
   for `detect_helper_call` to correctly dereference `&bool` match-arm bindings
-- [ ] **29.4.4**: `raft_manual.rs` deleted, `manual_code` removed from `raft_transpile.toml`
-  **Partially met**: `raft_manual.rs` reduced to 112 LOC (from 369), **0 assumes**. `CHandleVoteResponseMsg`
-  remains manual because inline struct construction with `..base.clone()` produces opaque datatype
-  errors in Verus (Vec clone, HashMap::new views). The function requires delegation to
-  `CReceiveVoteGranted`/`CBecomeLeader` which the transpiler can't pattern-match from inline spec.
-  Transpiler now has: `set_fields` TOML config, `inject_contains_membership_proofs` (Set::map
-  membership bridging), inline empty msg proofs for all-tuple returns, field-level clone ensures.
-  7/8 composite functions auto-generated. `manual_code` still needed for the 1 remaining function.
-- [x] **29.4.5**: Verus verification passes: 627 verified, 0 errors, 0 assumes in raft_gen.rs
+- [x] **29.4.4**: `raft_manual.rs` deleted, `manual_code` removed from `raft_transpile.toml`
+  All 8/8 composite handlers auto-generated. Spec refactored: `LReceiveVoteAndBecomeLeader`
+  combines vote-receive + leader-transition for the quorum branch; `LHandleVoteResponseMsg`
+  delegates to it (quorum) or `LReceiveVoteGranted` (non-quorum). Transpiler enhanced:
+  chained set mutation handling (`Set::insert(x).len()` → clone+insert+len block),
+  `as int` cast for scalar params in spec collection methods, cardinality bridge proof
+  injection (`lemma_hashset_u64_len_eq_mapped`) inside chained set blocks.
+- [x] **29.4.5**: Verus verification passes: 628 verified, 0 errors, 0 assumes in raft_gen.rs
 - [x] **29.4.6**: Raft benchmark results unchanged — confirmed on fresh 3-node clusters:
   1-thread 1222.7 ops/sec 0.84ms (baseline ~1297, -5.7% within variance),
   4-thread 3649.1 ops/sec 1.13ms (baseline ~3554, +2.7% within variance)
-- [x] **29.4.7**: Transpiler tests: 1739 pass (1552 unit + 187 integration), 1 pre-existing
+- [x] **29.4.7**: Transpiler tests: 1741 pass (1552 unit + 189 integration), 1 pre-existing
   host scaffold failure. New tests: `test_cast_deref_input_ref_in_let_binding`,
-  updated `test_manual_code_footprint_is_empty` and `test_raft_helpers_not_in_generated`
+  updated `test_manual_code_footprint_is_empty` (now expects only acceptor)
 
 ### 29.5 Execution Order
 

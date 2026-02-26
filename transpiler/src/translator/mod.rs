@@ -8410,15 +8410,18 @@ impl Translator {
                 }
                 // For .contains() / .contains_key(), add & and cast scalar args
                 let needs_ref = method == "contains" || method == "contains_key";
-                let is_spec_set_method = method == "contains";
+                // Detect spec-level collection methods: when receiver is at view level
+                // (contains @), methods like insert/remove/contains take int-typed args
+                let is_spec_collection_method = recv.contains('@')
+                    && (method == "insert" || method == "remove" || method == "contains");
                 let args_str: Vec<_> = args
                     .iter()
                     .map(|a| {
                         let s = self.expr_to_view_simple_string(a, view_params, scalar_params);
-                        if is_spec_set_method {
+                        if is_spec_collection_method {
                             if let Expr::Ident(name) = a {
                                 if scalar_params.contains(name) {
-                                    // Scalar param in .contains(): *name as int
+                                    // Scalar param in spec collection method: *name as int
                                     return format!("*{} as int", name);
                                 }
                             }
@@ -10645,6 +10648,66 @@ impl Translator {
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
         let recv_expr = self.transform_expr(receiver, ctx)?;
+
+        // Handle chained set mutations: in spec, Set::insert(x) returns a new Set,
+        // so s.field.insert(x).len() is valid. In exec, HashSet::insert() mutates
+        // in place and returns bool. When the receiver is a set mutation and the
+        // current method reads from the set (len, contains, etc.), we extract the
+        // mutation into a block: { let mut __tmp = clone_hashset(&recv); __tmp.insert(val); __tmp.method() }
+        if Self::is_set_mutation(&recv_expr) {
+            if let Some((inner_recv, mut_method, mut_args)) =
+                Self::extract_mutation_info(&recv_expr)
+            {
+                let tmp_name = "__set_tmp";
+                let clone_call =
+                    Self::make_ref_call("clone_hashset".to_string(), inner_recv);
+                let translated_args: Result<Vec<ExecExpr>, _> = args
+                    .iter()
+                    .map(|a| self.transform_expr(a, ctx))
+                    .collect();
+                // Dereference mutation args: HashSet::insert takes owned T, not &T
+                let needs_deref = mut_method == "insert" || mut_method == "push";
+                let deref_args = self.deref_mutation_args(mut_args, ctx, needs_deref);
+                // Build the final method call, casting len() to u64 for consistency
+                let final_call = ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var(tmp_name.to_string())),
+                    method: method.to_string(),
+                    args: translated_args?,
+                };
+                let final_expr = if method == "len" {
+                    ExecExpr::Cast(Box::new(final_call), "u64".to_string())
+                } else {
+                    final_call
+                };
+                let mut block_stmts = vec![
+                    // let mut __set_tmp = clone_hashset(&receiver);
+                    ExecExpr::Let {
+                        pattern: format!("mut {}", tmp_name),
+                        ty: None,
+                        value: Box::new(clone_call),
+                    },
+                    // __set_tmp.insert(val);  (semicolon added by printer for non-last stmt)
+                    ExecExpr::MethodCall {
+                        receiver: Box::new(ExecExpr::Var(tmp_name.to_string())),
+                        method: mut_method,
+                        args: deref_args,
+                    },
+                ];
+                // When reading .len() on a set field, inject cardinality bridge proof
+                // so Verus can connect exec HashSet.len() to spec Set.len()
+                if method == "len" && !self.config.set_fields.is_empty() {
+                    block_stmts.push(ExecExpr::ProofBlock {
+                        stmts: vec![ExecExpr::Call {
+                            func: "crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped".to_string(),
+                            args: vec![ExecExpr::Var(format!("&{}", tmp_name))],
+                        }],
+                    });
+                }
+                // __set_tmp.method(args) [as u64 if method is len]
+                block_stmts.push(final_expr);
+                return Ok(ExecExpr::Block(block_stmts));
+            }
+        }
 
         // Special handling for .index() — apply HashMap/Vec discrimination
         // same as Expr::Index, since .index(key) ≡ collection[key].

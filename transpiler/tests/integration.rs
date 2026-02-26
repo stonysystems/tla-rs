@@ -6549,14 +6549,13 @@ fn test_manual_code_footprint_is_empty() {
     manual_bindings.sort();
 
     // Phase 23.3.2: acceptor uses manual_code for 5 proven action functions.
-    // Phase 29: Raft uses manual_code for CHandleVoteResponseMsg (requires manual Set cardinality proof).
+    // Phase 29.4.4: Raft manual_code eliminated — all 8 composite handlers auto-generated.
     let expected: Vec<(String, String)> = vec![
         ("../src/protocol/RSL/acceptor_transpile.toml".to_string(), "acceptor_manual.rs".to_string()),
-        ("../src/protocol/Raft/raft_transpile.toml".to_string(), "raft_manual.rs".to_string()),
     ];
     assert_eq!(
         manual_bindings, expected,
-        "only acceptor and raft should use manual_code"
+        "only acceptor should use manual_code"
     );
 
 }

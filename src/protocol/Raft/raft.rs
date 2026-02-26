@@ -366,6 +366,28 @@ verus! {
         }
     }
 
+    /// Receive vote and become leader: add vote, then transition to leader role.
+    /// Combines LReceiveVoteGranted + LBecomeLeader into a single atomic action.
+    pub open spec fn LReceiveVoteAndBecomeLeader(
+        s: LState, s_: LState, c: LConstants,
+        vote_term: int, vote_granted: bool, voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        &&& s.role is Candidate
+        &&& vote_granted == true
+        &&& c.servers.contains(voter)
+        &&& s_.current_term == s.current_term
+        &&& s_.role is Leader
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.commit_index == s.commit_index
+        &&& s_.votes_granted == s.votes_granted.insert(voter)
+        &&& s_.match_index == Map::<u64, u64>::empty()
+        &&& s_.next_index == Map::<u64, u64>::empty()
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
     /// Handle VoteResponse: step down if higher term, add vote, check quorum, become leader.
     pub open spec fn LHandleVoteResponseMsg(
         s: LState, s_: LState, c: LConstants,
@@ -385,29 +407,12 @@ verus! {
             // Unknown voter: no-op
             &&& s_ == s_mid
             &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if s_mid.votes_granted.insert(voter).len() >= c.quorum_size {
+            // Quorum reached: add vote and become leader
+            LReceiveVoteAndBecomeLeader(s_mid, s_, c, term, granted, voter, sent_packets)
         } else {
-            // Add vote, then check quorum
-            let s_voted = LState {
-                votes_granted: s_mid.votes_granted.insert(voter),
-                ..s_mid
-            };
-            if s_voted.votes_granted.len() >= c.quorum_size {
-                // Quorum reached: become leader
-                &&& s_.current_term == s_voted.current_term
-                &&& s_.role is Leader
-                &&& s_.has_voted == s_voted.has_voted
-                &&& s_.voted_for == s_voted.voted_for
-                &&& s_.log == s_voted.log
-                &&& s_.commit_index == s_voted.commit_index
-                &&& s_.votes_granted == s_voted.votes_granted
-                &&& s_.match_index == Map::<u64, u64>::empty()
-                &&& s_.next_index == Map::<u64, u64>::empty()
-                &&& sent_packets == Seq::<LRaftMessage>::empty()
-            } else {
-                // Below quorum: stay candidate with updated votes
-                &&& s_ == s_voted
-                &&& sent_packets == Seq::<LRaftMessage>::empty()
-            }
+            // Below quorum: just receive vote
+            LReceiveVoteGranted(s_mid, s_, c, term, granted, voter, sent_packets)
         }
     }
 

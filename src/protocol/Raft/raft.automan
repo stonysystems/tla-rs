@@ -9,6 +9,7 @@ module Raft::raft {
     LTimeout(+, -, +, -);
     LGrantVote(+, -, +, +, +, +, +, -);
     LReceiveVoteGranted(+, -, +, +, +, +, -);
+    LReceiveVoteAndBecomeLeader(+, -, +, +, +, +, -);
     LBecomeLeader(+, -, +, -);
     LClientRequest(+, -, +, +, -);
     LSendAppendEntries(+, -, +, +, +, +, +, +, -);

@@ -5,7 +5,6 @@
 # call atomic functions with requires preconditions that need runtime guard checks.
 skip_functions = [
     "LNext",
-    "LHandleVoteResponseMsg",
 ]
 
 # Message type for sent_packets Vec proof helpers (generates lemma_empty_msg_map)
@@ -62,7 +61,6 @@ int_type = "u64"
 nat_type = "u64"
 
 [output]
-manual_code = "raft_manual.rs"
 generate_abstraction_fns = true
 generate_validity_predicates = true
 validity_predicate_name = "valid"
