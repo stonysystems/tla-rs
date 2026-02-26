@@ -8331,3 +8331,307 @@ P99 latency: X.XX ms
   ↓
 26.4 Run benchmark & collect numbers
 ```
+
+---
+
+## Phase 27: Lift Raft Host Logic into Spec — Thin Host via Transpiler
+
+### 27.0 Background & Motivation
+
+The current Raft host (`src/implementation/Raft/host.rs`, ~980 LOC) contains substantial protocol
+logic that is **unverified**: message dispatch, step-down-on-higher-term, guard checks before
+calling verified functions, and combined actions (ReceiveVoteGranted + BecomeLeader). This logic
+should live in the Raft spec so the transpiler can generate verified exec code, leaving host.rs
+as a thin runtime shell (~100-150 LOC) that only handles wall-clock timers, randomization, and
+network I/O.
+
+**What moves into spec** (does not increase model checking state space):
+1. Per-message-type composite handlers (step-down + guards + state transition)
+2. Message dispatch (match on message type → call appropriate handler)
+3. Combined actions (receive vote → check quorum → become leader)
+4. Commit index advancement scan (find highest quorum-replicated index)
+
+**What stays in host** (cannot be modeled in TLA+):
+- Wall-clock timers (`Instant::now()`, `elapsed()`)
+- Randomized election timeout (PRNG)
+- Heartbeat rate-limiting and piggybacking
+- Network I/O (UDP send/receive)
+- `merge_outbound` (runtime scheduling optimization)
+
+**Reference**: RSL achieves a thin host via `LReplicaNextProcessPacket` (message dispatch)
+and `LReplicaNextReadClockAndProcessPacket` (unified timer+message entry point), both in spec.
+The transpiler generates `CReplicaNextProcessPacket` etc., so RSL's host.rs is minimal.
+
+### 27.1 Add Composite Message Handler Specs
+
+**Goal**: Add per-message-type spec functions that incorporate step-down + guard checks +
+state transition in a single action. Each takes raw message fields and produces `(s_, sent_packets)`.
+
+**File**: `src/protocol/Raft/raft.rs`
+
+**New spec functions** (modeled after RSL's `LReplicaNextProcess1a/1b/2a/2b` pattern):
+
+```rust
+/// Handle RequestVote: step down if higher term, check guards, grant vote or no-op.
+pub open spec fn LHandleRequestVoteMsg(
+    s: LState, s_: LState, c: LConstants,
+    term: int, candidate_id: int, last_log_index: int, last_log_term: int,
+    sent_packets: Seq<LRaftMessage>,
+) -> bool
+
+/// Handle AppendEntries: step down if higher term, check guards, append or reject.
+pub open spec fn LHandleAppendEntriesMsg(
+    s: LState, s_: LState, c: LConstants,
+    ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
+    ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+    sent_packets: Seq<LRaftMessage>,
+) -> bool
+
+/// Handle VoteResponse: step down if higher term, add vote, check quorum, become leader.
+pub open spec fn LHandleVoteResponseMsg(
+    s: LState, s_: LState, c: LConstants,
+    term: int, granted: bool, voter: int,
+    sent_packets: Seq<LRaftMessage>,
+) -> bool
+
+/// Handle AppendResponse: step down if higher term, update match/next_index or backtrack.
+pub open spec fn LHandleAppendResponseMsg(
+    s: LState, s_: LState, c: LConstants,
+    term: int, success: bool, match_index: int, follower: int,
+    sent_packets: Seq<LRaftMessage>,
+) -> bool
+```
+
+Each composite spec is a single-step relation `(s, s_)` that may internally compose
+StepDown + the atomic action. Guard failure yields `s_ == s && sent_packets == empty`.
+
+**Design note**: Use `let` bindings in spec functions to express intermediate states:
+```rust
+pub open spec fn LHandleRequestVoteMsg(...) -> bool {
+    let s_mid = if term > s.current_term {
+        LState { current_term: term, role: Follower, has_voted: false, voted_for: 0,
+                 votes_granted: Set::empty(), ..s }
+    } else { s };
+    // Guard: term >= current_term after possible step-down
+    if term < s_mid.current_term { s_ == s_mid && sent_packets == Seq::empty() }
+    else if s_mid.has_voted && s_mid.voted_for != candidate_id { s_ == s_mid && sent_packets == Seq::empty() }
+    else if !log_up_to_date_check(...) { s_ == s_mid && sent_packets == Seq::empty() }
+    else { LGrantVote(s_mid, s_, c, term, ..., sent_packets) }
+}
+```
+
+### 27.2 Add Commit Index Advancement to Spec
+
+**Goal**: Move the quorum scan logic (`try_advance_commit_index`) into the spec.
+
+Currently this is ~50 LOC of unverified Rust in host.rs that scans `match_index` values.
+Add a spec function that computes the highest quorum-replicated commit index:
+
+```rust
+/// Spec helper: count servers with match_index >= n (including self).
+pub open spec fn quorum_replicated(s: LState, c: LConstants, n: int) -> bool
+
+/// Advance commit index to the highest quorum-replicated entry in current term.
+/// Combines the scan + CAdvanceCommitIndex into one action.
+pub open spec fn LTryAdvanceCommitIndex(
+    s: LState, s_: LState, c: LConstants,
+    sent_packets: Seq<LRaftMessage>,
+) -> bool
+```
+
+The transpiler generates `CTryAdvanceCommitIndex` which replaces the hand-written
+`try_advance_commit_index` in host.rs (including the O(log_len) scan loop).
+
+### 27.3 Add Message Dispatch Spec
+
+**Goal**: Add a top-level `LProcessMessage` that dispatches to the appropriate handler
+based on message type, analogous to RSL's `LReplicaNextProcessPacket`.
+
+```rust
+/// Dispatch an incoming message to the appropriate handler.
+pub open spec fn LProcessMessage(
+    s: LState, s_: LState, c: LConstants,
+    msg: LRaftMessage,
+    sent_packets: Seq<LRaftMessage>,
+) -> bool {
+    match msg {
+        LRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } =>
+            LHandleRequestVoteMsg(s, s_, c, term, candidate, last_log_index, last_log_term, sent_packets),
+        LRaftMessage::VoteResponse { term, granted, voter } =>
+            LHandleVoteResponseMsg(s, s_, c, term, granted, voter, sent_packets),
+        LRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } =>
+            LHandleAppendEntriesMsg(s, s_, c, term, leader, prev_index, prev_term, value, has_entry, leader_commit, sent_packets),
+        LRaftMessage::AppendResponse { term, success, match_index, follower } =>
+            LHandleAppendResponseMsg(s, s_, c, term, success, match_index, follower, sent_packets),
+    }
+}
+```
+
+**Note**: `LRaftMessage` already exists in `types.rs`. `LProcessMessage` takes it as a parameter
+(unlike the current atomic specs which take destructured fields). The transpiler will generate
+`CProcessMessage` that takes `&CRaftMessage` and does the `match` dispatch internally.
+
+### 27.4 Update LNext
+
+**Goal**: Update `LNext` to include the new composite actions alongside (or replacing) the
+atomic ones.
+
+Option A — **Replace**: `LNext` uses only composite actions. Simpler, but changes the spec's
+observable behavior (model checking results may differ).
+
+Option B — **Supplement**: Keep atomic actions in `LNext`, add composite actions as additional
+disjuncts. More permissive, backward-compatible, but redundant.
+
+**Recommended**: Option A (replace), with a refinement proof (27.7) showing the new `LNext`
+is equivalent to the old one. This keeps the spec clean.
+
+### 27.5 Transpiler Configuration
+
+**Goal**: Configure `.automan` annotations and `.toml` for the new composite functions.
+
+**Files to modify**:
+- `src/protocol/Raft/raft.automan` — Add annotation entries for new spec functions
+  (parameter modes: `&` for input refs, `-` for output `sent_packets`)
+- `src/protocol/Raft/raft_transpile.toml` — Add any needed remappings,
+  `skip_functions` (keep atomic specs as spec-only), `vec_element_ensures`, etc.
+- May need to add `LRaftMessage` → `CRaftMessage` variant remapping for the
+  `match msg` dispatch in `LProcessMessage`
+
+**Key TOML considerations**:
+- The composite functions reference intermediate `let` bindings — transpiler must handle
+  `let s_mid = if ... { LState{...} } else { s }` patterns
+- `LProcessMessage` takes `LRaftMessage` as a parameter — need `[remapping]` entry
+  `"LRaftMessage" = "CRaftMessage"` to avoid C-prefixing
+- Atomic specs (`LTimeout`, `LGrantVote`, etc.) should move to `spec_only_functions` since
+  they're only used by the composite functions, not directly transpiled
+
+### 27.6 Regenerate and Rewrite Host
+
+**Goal**: Regenerate `raft_gen.rs` with the new composite functions, then rewrite host.rs.
+
+**Steps**:
+1. Regenerate `types_gen.rs` (if `LRaftMessage` changes needed)
+2. Regenerate `raft_gen.rs` with new functions:
+   - `CHandleRequestVoteMsg`, `CHandleAppendEntriesMsg`,
+     `CHandleVoteResponseMsg`, `CHandleAppendResponseMsg`
+   - `CTryAdvanceCommitIndex`
+   - `CProcessMessage`
+3. Rewrite host.rs to use `CProcessMessage` for all incoming messages and
+   `CTryAdvanceCommitIndex` for the timer path
+
+**Target host.rs structure** (~100-150 LOC):
+```rust
+impl ProtocolHost for RaftHost {
+    fn next(&mut self, config, packet) -> StepResult {
+        let hb_packets = self.maybe_heartbeat_packets(config);
+
+        if let Some(pkt) = packet {
+            let raft_msg = to_craft_message(&pkt.msg);  // RaftMessage → CRaftMessage
+            let (new_state, sent) = raft_gen::CProcessMessage(&self.state, &config.constants, &raft_msg);
+            self.state = new_state;
+            // Timer resets based on message type
+            self.update_timers(&pkt.msg);
+            let result = outbound_from_sent(sent, config);
+            return Self::merge_outbound(result, hb_packets);
+        }
+
+        match &self.state.role {
+            Follower | Candidate => self.try_follower_timeout(config),  // wall-clock only
+            Leader => {
+                let (new_state, sent) = raft_gen::CTryAdvanceCommitIndex(&self.state, &config.constants);
+                self.state = new_state;
+                let result = outbound_from_sent(sent, config);
+                Self::merge_outbound(result, hb_packets)
+            }
+        }
+    }
+}
+```
+
+**Eliminated from host.rs**:
+- `handle_request_vote` (~70 LOC) → `CHandleRequestVoteMsg`
+- `handle_append_entries` (~80 LOC) → `CHandleAppendEntriesMsg`
+- `handle_vote_response` (~60 LOC) → `CHandleVoteResponseMsg`
+- `handle_append_response` (~80 LOC) → `CHandleAppendResponseMsg`
+- `try_advance_commit_index` (~60 LOC) → `CTryAdvanceCommitIndex`
+- Message type dispatch in `next()` (~50 LOC) → `CProcessMessage`
+- **Total: ~400 LOC eliminated, ~100 LOC remaining** (timers + merge + init)
+
+### 27.7 Refinement Proof
+
+**Goal**: Prove that the new composite `LNext` refines the original atomic `LNext`,
+i.e., every state transition under the new spec is also valid under the old spec.
+
+**File**: `src/protocol/Raft/raft_refinement.rs` (new file)
+
+**What to prove**:
+- `LHandleRequestVoteMsg(s, s_, ...)` implies the original `LNext(s, s_, c)` disjunct:
+  either `LStepDown` followed by `LGrantVote`, or just `LGrantVote`, or stutter (s_ == s after step-down)
+- Similar for other composite handlers
+- `LTryAdvanceCommitIndex(s, s_, ...)` implies `LAdvanceCommitIndex(s, s_, ...)` or stutter
+
+**Proof strategy**: Each composite handler is a direct composition of existing atomic specs.
+The proof should be straightforward — unfold the composite definition and identify which
+atomic disjunct in the old `LNext` it corresponds to.
+
+**Note**: If stutter steps (s_ == s, guard failure) are not in the original `LNext`,
+the refinement map needs a stutter-equivalence clause. This is standard in TLA+ refinement.
+
+### 27.8 Verify
+
+**Goal**: All code passes Verus verification.
+
+**Verification scope**:
+- New spec functions in `raft.rs` (spec mode — type-check only)
+- Regenerated `raft_gen.rs` (exec mode — full verification)
+- Refinement proofs in `raft_refinement.rs` (proof mode)
+- Host.rs (unverified runtime — only `cargo build` check)
+
+**Expected verification count**: Should remain ~585 verified, 0 errors (existing count),
+plus new verification obligations from the composite functions.
+
+### 27.9 Acceptance Criteria
+
+- [ ] **27.9.1**: Composite spec functions (`LHandleRequestVoteMsg`, `LHandleAppendEntriesMsg`,
+  `LHandleVoteResponseMsg`, `LHandleAppendResponseMsg`) added to `raft.rs`
+- [ ] **27.9.2**: `LTryAdvanceCommitIndex` with quorum scan logic added to spec
+- [ ] **27.9.3**: `LProcessMessage` dispatch function added to spec
+- [ ] **27.9.4**: Transpiler generates all composite exec functions successfully
+- [ ] **27.9.5**: host.rs reduced to ≤200 LOC (timers, randomization, I/O only)
+- [ ] **27.9.6**: Refinement proof shows new composite `LNext` ⊆ old atomic `LNext`
+- [ ] **27.9.7**: Verus verification passes with 0 errors
+- [ ] **27.9.8**: Raft benchmark still passes with same throughput/latency baseline
+
+### 27.10 Execution Order
+
+```
+27.1 Composite handler specs             ← spec functions in raft.rs
+  ↓
+27.2 Commit index advancement spec       ← quorum scan in spec
+  ↓
+27.3 Message dispatch spec               ← LProcessMessage
+  ↓
+27.4 Update LNext                        ← use composite actions
+  ↓
+27.5 Transpiler configuration            ← .automan + .toml
+  ↓
+27.6 Regenerate + rewrite host           ← raft_gen.rs + thin host.rs
+  ↓
+27.7 Refinement proof                    ← new LNext refines old LNext
+  ↓
+27.8 Verify                              ← Verus 0 errors + benchmark pass
+```
+
+### 27.11 Estimated Effort
+
+| Step | Effort |
+|------|--------|
+| 27.1 Composite handler specs | ~3 hours |
+| 27.2 Commit index advancement spec | ~2 hours |
+| 27.3 Message dispatch spec | ~1 hour |
+| 27.4 Update LNext | ~30 min |
+| 27.5 Transpiler configuration | ~2 hours |
+| 27.6 Regenerate + rewrite host | ~3 hours |
+| 27.7 Refinement proof | ~2 hours |
+| 27.8 Verify + benchmark | ~2 hours |
+| **Total** | **~15 hours** |
