@@ -279,6 +279,14 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub vec_element_ensures: Vec<String>,
 
+    /// Field names whose exec type is HashSet<T> and spec type is Set<T>.
+    /// Used by cardinality bridge proof injection (`inject_cardinality_bridge_proofs`)
+    /// and to distinguish HashSet.contains() from Vec.contains().
+    /// Auto-populated when `generate_inline_types = true`; specify manually otherwise.
+    /// e.g., ["votes_granted", "servers"]
+    #[serde(default)]
+    pub set_fields: Vec<String>,
+
     /// Optional message generation configuration.
     /// When present, `generate-messages` subcommand can generate ProtocolMessage impl.
     #[serde(default)]

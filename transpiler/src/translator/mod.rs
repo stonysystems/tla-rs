@@ -2167,7 +2167,7 @@ impl Translator {
                 let mut new_stmts = Vec::new();
                 for stmt in stmts {
                     // Check for Let bindings with VecLit values (hoisted sent_packets)
-                    if let ExecExpr::Let { ref pattern, ref ty, ref value } = stmt {
+                    if let ExecExpr::Let { ref pattern, ty: _, ref value } = stmt {
                         if let ExecExpr::VecLit(ref elems) = **value {
                             if elems.is_empty() {
                                 // Empty vec: proof { lemma_empty_msg_map(); }
@@ -2383,6 +2383,219 @@ impl Translator {
             // Handle unary reference operator (&expr)
             ExecExpr::Unary { op, expr } if op == "&" => Self::exec_expr_to_field_path(expr),
             _ => None,
+        }
+    }
+
+    /// Inject Set::map membership proofs around `if !field.contains(&x)` patterns
+    /// where `field` is a HashSet listed in `set_fields`.
+    ///
+    /// For `if !field.contains(&x) { then } else { else_ }`:
+    /// - Then branch gets: `proof { lemma_set_map_not_contains(field@, *x); }`
+    /// - Else branch gets: `proof { broadcast use vstd::std_specs::hash::group_hash_axioms; lemma_set_map_contains(field@, *x); }`
+    ///
+    /// These proofs bridge exec-level `HashSet<u64>.contains()` to spec-level `Set<int>.contains()`.
+    fn inject_contains_membership_proofs(expr: ExecExpr, set_fields: &HashSet<String>) -> ExecExpr {
+        match expr {
+            ExecExpr::Block(stmts) => {
+                let new_stmts = stmts
+                    .into_iter()
+                    .map(|s| Self::inject_contains_membership_proofs(s, set_fields))
+                    .collect();
+                ExecExpr::Block(new_stmts)
+            }
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                // Recurse into branches first
+                let then_branch = Box::new(Self::inject_contains_membership_proofs(*then_branch, set_fields));
+                let else_branch = else_branch
+                    .map(|eb| Box::new(Self::inject_contains_membership_proofs(*eb, set_fields)));
+
+                // Check if condition is `!field.contains(&x)` where field is in set_fields
+                if let Some((field_path, arg_expr)) =
+                    Self::extract_negated_contains_on_set_field(&cond, set_fields)
+                {
+                    // Build the argument for the lemma: dereference &x to *x
+                    let arg_str = Self::contains_arg_to_deref_str(&arg_expr);
+
+                    // Then branch (contains returned false):
+                    // proof { lemma_set_map_not_contains(field@, *x); }
+                    let not_contains_proof = ExecExpr::ProofBlock {
+                        stmts: vec![ExecExpr::Call {
+                            func: "lemma_set_map_not_contains".to_string(),
+                            args: vec![
+                                ExecExpr::Var(format!("{}@", field_path)),
+                                ExecExpr::Var(arg_str.clone()),
+                            ],
+                        }],
+                    };
+                    let then_with_proof = Self::prepend_to_block(*then_branch, not_contains_proof);
+
+                    // Else branch (contains returned true):
+                    // proof { broadcast use vstd::std_specs::hash::group_hash_axioms; lemma_set_map_contains(field@, *x); }
+                    let contains_proof = ExecExpr::ProofBlock {
+                        stmts: vec![
+                            ExecExpr::Var("broadcast use vstd::std_specs::hash::group_hash_axioms".to_string()),
+                            ExecExpr::Call {
+                                func: "lemma_set_map_contains".to_string(),
+                                args: vec![
+                                    ExecExpr::Var(format!("{}@", field_path)),
+                                    ExecExpr::Var(arg_str),
+                                ],
+                            },
+                        ],
+                    };
+                    let else_with_proof = else_branch
+                        .map(|eb| Box::new(Self::prepend_to_block(*eb, contains_proof)));
+
+                    ExecExpr::If {
+                        cond,
+                        then_branch: Box::new(then_with_proof),
+                        else_branch: else_with_proof,
+                    }
+                } else if let Some((field_path, arg_expr)) =
+                    Self::extract_positive_contains_on_set_field(&cond, set_fields)
+                {
+                    // Handle positive case: `if field.contains(&x) { then } else { else_ }`
+                    let arg_str = Self::contains_arg_to_deref_str(&arg_expr);
+
+                    // Then branch (contains returned true):
+                    let contains_proof = ExecExpr::ProofBlock {
+                        stmts: vec![
+                            ExecExpr::Var("broadcast use vstd::std_specs::hash::group_hash_axioms".to_string()),
+                            ExecExpr::Call {
+                                func: "lemma_set_map_contains".to_string(),
+                                args: vec![
+                                    ExecExpr::Var(format!("{}@", field_path)),
+                                    ExecExpr::Var(arg_str.clone()),
+                                ],
+                            },
+                        ],
+                    };
+                    let then_with_proof = Self::prepend_to_block(*then_branch, contains_proof);
+
+                    // Else branch (contains returned false):
+                    let not_contains_proof = ExecExpr::ProofBlock {
+                        stmts: vec![ExecExpr::Call {
+                            func: "lemma_set_map_not_contains".to_string(),
+                            args: vec![
+                                ExecExpr::Var(format!("{}@", field_path)),
+                                ExecExpr::Var(arg_str),
+                            ],
+                        }],
+                    };
+                    let else_with_proof = else_branch
+                        .map(|eb| Box::new(Self::prepend_to_block(*eb, not_contains_proof)));
+
+                    ExecExpr::If {
+                        cond,
+                        then_branch: Box::new(then_with_proof),
+                        else_branch: else_with_proof,
+                    }
+                } else {
+                    ExecExpr::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                    }
+                }
+            }
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
+                pattern,
+                ty,
+                value: Box::new(Self::inject_contains_membership_proofs(*value, set_fields)),
+            },
+            ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
+                scrutinee,
+                arms: arms
+                    .into_iter()
+                    .map(|(pat, body)| {
+                        (pat, Self::inject_contains_membership_proofs(body, set_fields))
+                    })
+                    .collect(),
+            },
+            other => other,
+        }
+    }
+
+    /// Extract (field_path, arg_expr) from `!field.contains(&x)` where field is in set_fields.
+    /// Returns None if the pattern doesn't match.
+    fn extract_negated_contains_on_set_field(
+        cond: &ExecExpr,
+        set_fields: &HashSet<String>,
+    ) -> Option<(String, ExecExpr)> {
+        if let ExecExpr::Unary { op, expr } = cond {
+            if op == "!" {
+                return Self::extract_positive_contains_on_set_field(expr, set_fields);
+            }
+        }
+        None
+    }
+
+    /// Extract (field_path, arg_expr) from `field.contains(&x)` where field is in set_fields.
+    fn extract_positive_contains_on_set_field(
+        cond: &ExecExpr,
+        set_fields: &HashSet<String>,
+    ) -> Option<(String, ExecExpr)> {
+        if let ExecExpr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = cond
+        {
+            if method == "contains" && args.len() == 1 {
+                let field_path = Self::exec_expr_to_field_path(receiver)?;
+                let leaf_field = field_path.rsplit('.').next().unwrap_or(&field_path);
+                if set_fields.contains(leaf_field) {
+                    return Some((field_path, args[0].clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Convert a contains argument (typically `&x` or `&*voter`) to a dereferenced form for proof calls.
+    /// `&x` -> `*x`, `&voter` -> `*voter`
+    fn contains_arg_to_deref_str(arg: &ExecExpr) -> String {
+        match arg {
+            ExecExpr::Unary { op, expr } if op == "&" => {
+                // The inner expr is the variable name
+                match expr.as_ref() {
+                    ExecExpr::Var(name) => format!("*{}", name),
+                    _ => format!("*{}", Self::exec_expr_to_string(expr)),
+                }
+            }
+            ExecExpr::Var(name) => format!("*{}", name),
+            _ => Self::exec_expr_to_string(arg),
+        }
+    }
+
+    /// Simple conversion of ExecExpr to a string representation for proof arguments.
+    fn exec_expr_to_string(expr: &ExecExpr) -> String {
+        match expr {
+            ExecExpr::Var(name) => name.clone(),
+            ExecExpr::Field(base, field) => {
+                format!("{}.{}", Self::exec_expr_to_string(base), field)
+            }
+            ExecExpr::Unary { op, expr } => {
+                format!("{}{}", op, Self::exec_expr_to_string(expr))
+            }
+            _ => "???".to_string(),
+        }
+    }
+
+    /// Prepend a proof statement to the beginning of a block expression.
+    /// If the expression is already a Block, insert at the beginning.
+    /// Otherwise, wrap in a new Block.
+    fn prepend_to_block(expr: ExecExpr, proof: ExecExpr) -> ExecExpr {
+        match expr {
+            ExecExpr::Block(mut stmts) => {
+                stmts.insert(0, proof);
+                ExecExpr::Block(stmts)
+            }
+            other => ExecExpr::Block(vec![proof, other]),
         }
     }
 
@@ -6117,10 +6330,16 @@ impl Translator {
 
         let mut needs = ProofNeeds::analyze(&body);
 
-        // For composite handlers with mixed conditional returns (some branches return
-        // Tuple with empty VecLit, others delegate to sub-action Calls), inject inline
-        // proof blocks inside each branch that returns an empty vec.
-        let body = if needs.has_delegating_call_in_conditional {
+        // Inject inline proof blocks (lemma_empty_msg_map) inside each branch that
+        // returns an empty vec in a tuple. This handles two cases:
+        // 1. Mixed conditional: some branches return Tuple (empty VecLit), others delegate
+        // 2. All-inline: every branch returns Tuple with empty VecLit (no delegating calls)
+        // In case (2), the trailing proof block is insufficient because Verus loses track
+        // of which branch was taken through `let result = { ... }`.
+        let has_tuple_vec_return = matches!(return_type, ExecType::Tuple(types) if types.get(1).map_or(false, |t| matches!(t, ExecType::Vec(_))));
+        let needs_inline_msg_proofs = needs.has_delegating_call_in_conditional
+            || (has_tuple_vec_return && needs.has_empty_vec);
+        let body = if needs_inline_msg_proofs {
             // Extract the message element type from the return type for the lemma
             let msg_type = if let ExecType::Tuple(types) = return_type {
                 types.get(1).and_then(|t| {
@@ -6138,6 +6357,11 @@ impl Translator {
                 None
             };
             if let Some(ref msg_type_name) = msg_type {
+                // Inline proofs handle empty vec assertions, so clear redundant
+                // trailing proof block items to avoid the `let result` wrapping pattern
+                // which causes Verus to lose branch-specific type information.
+                needs.has_empty_vec = false;
+                needs.tuple_vec_lit_sites.clear();
                 Self::inject_inline_empty_msg_proofs(body, msg_type_name)
             } else {
                 body
@@ -6160,6 +6384,15 @@ impl Translator {
         // spec-level Set.map(|t| t@).len() by calling lemma_hashset_view_len.
         let body = if !self.config.set_fields.is_empty() {
             Self::inject_cardinality_bridge_proofs(body, &self.config.set_fields)
+        } else {
+            body
+        };
+
+        // Inject contains-membership bridge proofs for If conditions that test
+        // HashSet.contains(&x). This bridges exec-level contains to spec-level
+        // Set.map(|t| t@).contains(x@) by calling lemma_set_map_contains / _not_contains.
+        let body = if !self.config.set_fields.is_empty() {
+            Self::inject_contains_membership_proofs(body, &self.config.set_fields)
         } else {
             body
         };
@@ -6212,6 +6445,26 @@ impl Translator {
             Some(pb) => pb,
             None => return body, // No proofs needed
         };
+
+        // If the proof block only contains BroadcastUse statements (no assertions or
+        // calls that reference `result`), we can prepend them to the body and return
+        // directly. This avoids the `let result = { ... }; proof { ... }; result`
+        // pattern which causes Verus to lose branch-specific type information.
+        if let ExecExpr::ProofBlock { ref stmts } = proof_block {
+            let all_broadcasts = stmts.iter().all(|s| matches!(s, ExecExpr::BroadcastUse(_)));
+            if all_broadcasts {
+                // Prepend broadcast proof block to the body
+                match body {
+                    ExecExpr::Block(mut body_stmts) => {
+                        body_stmts.insert(0, proof_block);
+                        return ExecExpr::Block(body_stmts);
+                    }
+                    other => {
+                        return ExecExpr::Block(vec![proof_block, other]);
+                    }
+                }
+            }
+        }
 
         // Flatten the body: if it's a Block, extract pre-statements (mutations)
         // and only bind the final expression to `result`.
@@ -21121,24 +21374,20 @@ mod tests {
 
         let result = translator.maybe_append_proof_block(body, &return_type);
 
-        // Should produce proof block with CPacket, not CMessage
+        // With inline msg proofs enabled, the empty vec gets a proof block prepended
+        // directly (no `let result` wrapping). The proof should call lemma_empty_msg_map.
         match result {
             ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 3, "Expected Let + ProofBlock + Var");
-                if let ExecExpr::ProofBlock { stmts: proof_stmts } = &stmts[1] {
+                assert_eq!(stmts.len(), 2, "Expected ProofBlock + Tuple");
+                if let ExecExpr::ProofBlock { stmts: proof_stmts } = &stmts[0] {
                     let proof_str = format!("{:?}", proof_stmts);
                     assert!(
-                        proof_str.contains("CPacket"),
-                        "Proof assertion should reference CPacket from return type, got: {}",
-                        proof_str
-                    );
-                    assert!(
-                        !proof_str.contains("CMessage"),
-                        "Proof assertion should NOT reference CMessage, got: {}",
+                        proof_str.contains("lemma_empty_msg_map"),
+                        "Inline proof should call lemma_empty_msg_map, got: {}",
                         proof_str
                     );
                 } else {
-                    panic!("Expected ProofBlock at index 1, got {:?}", stmts[1]);
+                    panic!("Expected ProofBlock at index 0, got {:?}", stmts[0]);
                 }
             }
             other => panic!("Expected Block, got {:?}", other),

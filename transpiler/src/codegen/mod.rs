@@ -204,6 +204,20 @@ impl TypeGenerator {
             self.indent, self.indent,
             self.validity_predicate_name, self.validity_predicate_name,
         ));
+        // Add concrete field-level ensures for fields whose types support spec equality.
+        // This lets Verus track field values through `..base.clone()` in struct updates,
+        // since external_body clone is opaque and view equality alone doesn't imply
+        // concrete field equality (e.g., enum discriminants, u64 values, bools).
+        // We include all fields except container types (Vec, HashSet, HashMap, Set, Seq, Map)
+        // since Verus can compare those only through views.
+        for field in fields {
+            if Self::is_spec_equality_comparable(&field.ty) {
+                code.push_str(&format!(
+                    "{}    res.{} == self.{},\n",
+                    self.indent, field.name, field.name,
+                ));
+            }
+        }
         if fields.is_empty() {
             code.push_str(&format!("{}{{ unimplemented!() }}\n", self.indent));
         } else {
@@ -247,6 +261,23 @@ impl TypeGenerator {
                 }
                 false
             }
+            Type::Reference { .. }
+            | Type::Generic(_, _)
+            | Type::Seq(_)
+            | Type::Set(_)
+            | Type::Map(_, _)
+            | Type::Tuple(_) => false,
+        }
+    }
+
+    /// Check if a type supports equality comparison in Verus spec mode for clone ensures.
+    /// Returns true for primitives (u64, bool, etc.) and Named types (including enums).
+    /// Returns false for container types (Vec, HashSet, HashMap, Seq, Set, Map) where
+    /// spec equality would require element-level reasoning.
+    fn is_spec_equality_comparable(ty: &Type) -> bool {
+        match ty {
+            Type::Bool | Type::Int | Type::Nat | Type::Unit => true,
+            Type::Named(_) => true,
             Type::Reference { .. }
             | Type::Generic(_, _)
             | Type::Seq(_)
@@ -3433,6 +3464,11 @@ mod tests {
                 ty: Type::Bool,
                 is_public: true,
             },
+            FieldDef {
+                name: "role".to_string(),
+                ty: Type::Named(Path::single("CServerRole".to_string())),
+                is_public: true,
+            },
         ];
         let field_refs: Vec<&FieldDef> = fields.iter().collect();
         let mut code = String::new();
@@ -3455,6 +3491,29 @@ mod tests {
         assert!(
             !code.contains("unimplemented!()"),
             "With fields, should not contain unimplemented!(): {}",
+            code
+        );
+        // Copy/scalar fields should have concrete ensures
+        assert!(
+            code.contains("res.term == self.term,"),
+            "Copy field should have concrete ensures: {}",
+            code
+        );
+        assert!(
+            code.contains("res.active == self.active,"),
+            "Bool field should have concrete ensures: {}",
+            code
+        );
+        // Named types (enums) should have concrete ensures (Verus supports spec equality)
+        assert!(
+            code.contains("res.role == self.role,"),
+            "Named type field should have concrete ensures: {}",
+            code
+        );
+        // Non-copy container fields (like Seq) should NOT have concrete ensures
+        assert!(
+            !code.contains("res.log == self.log,"),
+            "Non-copy field should not have concrete ensures: {}",
             code
         );
     }

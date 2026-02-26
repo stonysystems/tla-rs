@@ -11,6 +11,9 @@ skip_functions = [
 # Message type for sent_packets Vec proof helpers (generates lemma_empty_msg_map)
 msg_vec_type = ["CRaftMessage", "LRaftMessage"]
 
+# HashSet fields for cardinality bridge proof injection
+set_fields = ["votes_granted", "servers"]
+
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
 [extra_requires]
 "CClientRequest" = ["s.role is Leader"]

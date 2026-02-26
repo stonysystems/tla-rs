@@ -4220,7 +4220,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             clone_method: file_config.output.clone_method.clone(),
             clone_up_to_view_types: file_config.clone_up_to_view_types.iter().cloned().collect(),
             vec_element_ensures: file_config.vec_element_ensures.clone(),
-            set_fields: std::collections::HashSet::new(),
+            set_fields: file_config.set_fields.iter().cloned().collect(),
             assume_postconditions: file_config.output.assume_postconditions,
             proven_functions: file_config.output.proven_functions.iter().cloned().collect(),
             spec_prefix: file_config.naming.spec_prefix.clone(),

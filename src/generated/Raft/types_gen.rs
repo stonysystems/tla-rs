@@ -53,6 +53,11 @@ impl Clone for CState {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.current_term == self.current_term,
+        res.role == self.role,
+        res.has_voted == self.has_voted,
+        res.voted_for == self.voted_for,
+        res.commit_index == self.commit_index,
     {
         CState {
             current_term: self.current_term,
@@ -104,6 +109,8 @@ impl Clone for CConstants {
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.quorum_size == self.quorum_size,
+        res.my_id == self.my_id,
     {
         CConstants {
             servers: self.servers.clone(),

@@ -9234,10 +9234,12 @@ in spec, and the transpiler generates verified exec code without `manual_code`.
   (`LHandleMessage` → `CHandleMessage`) — required bool param type tracking in function registry
   for `detect_helper_call` to correctly dereference `&bool` match-arm bindings
 - [ ] **29.4.4**: `raft_manual.rs` deleted, `manual_code` removed from `raft_transpile.toml`
-  **Partially met**: `raft_manual.rs` reduced to 108 LOC (from 369), **0 assumes** (was 2 — replaced
-  with `lemma_hashset_u64_len_eq_mapped` from Phase 30). `CHandleVoteResponseMsg` remains manual
-  because transpiler can't generate Set::map membership proofs (`lemma_set_map_contains`/
-  `lemma_set_map_not_contains`) or per-branch cardinality bridge injection.
+  **Partially met**: `raft_manual.rs` reduced to 112 LOC (from 369), **0 assumes**. `CHandleVoteResponseMsg`
+  remains manual because inline struct construction with `..base.clone()` produces opaque datatype
+  errors in Verus (Vec clone, HashMap::new views). The function requires delegation to
+  `CReceiveVoteGranted`/`CBecomeLeader` which the transpiler can't pattern-match from inline spec.
+  Transpiler now has: `set_fields` TOML config, `inject_contains_membership_proofs` (Set::map
+  membership bridging), inline empty msg proofs for all-tuple returns, field-level clone ensures.
   7/8 composite functions auto-generated. `manual_code` still needed for the 1 remaining function.
 - [x] **29.4.5**: Verus verification passes: 627 verified, 0 errors, 0 assumes in raft_gen.rs
 - [ ] **29.4.6**: Raft benchmark results unchanged

@@ -193,10 +193,14 @@ ensures
     result.0.valid(),
     LReceiveVoteGranted(s@, result.0@, c@, *vote_term as int, vote_granted, *voter as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = {
-        let mut __votes_granted = clone_hashset(&s.votes_granted);
-        __votes_granted.insert(voter.clone());
-        (CState {
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    let mut __votes_granted = clone_hashset(&s.votes_granted);
+    __votes_granted.insert(voter.clone());
+    { proof {
+        lemma_empty_msg_map();
+    }; (CState {
     current_term: s.current_term.clone(),
     role: clone_role(&s.role),
     has_voted: s.has_voted.clone(),
@@ -206,14 +210,7 @@ ensures
     votes_granted: __votes_granted,
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
-}, vec![])
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_log_map();
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
-    }
-    result
+}, vec![]) }
 
 }
 
@@ -227,7 +224,10 @@ ensures
     result.0.valid(),
     LBecomeLeader(s@, result.0@, c@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = (CState {
+    proof {
+        lemma_empty_msg_map();
+    }
+    (CState {
     current_term: s.current_term.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
@@ -237,12 +237,7 @@ ensures
     match_index: HashMap::new(),
     next_index: HashMap::new(),
     role: CServerRole::Leader,
-}, vec![]);
-    proof {
-        lemma_empty_log_map();
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
-    }
-    result
+}, vec![])
 
 }
 
@@ -261,7 +256,9 @@ ensures
     term: s.current_term.clone(),
     value: *value,
 });
-        (CState {
+        { proof {
+            lemma_empty_msg_map();
+        }; (CState {
     current_term: s.current_term.clone(),
     role: clone_role(&s.role),
     has_voted: s.has_voted.clone(),
@@ -271,12 +268,10 @@ ensures
     votes_granted: clone_hashset(&s.votes_granted),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
-}, vec![])
+}, vec![]) }
     };
     proof {
-        lemma_empty_log_map();
         lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 
@@ -398,12 +393,16 @@ ensures
     result.0.valid(),
     LHandleAppendResponse(s@, result.0@, c@, *resp_term as int, resp_success, *resp_match_index as int, *resp_follower as int, follower@, new_match_index@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = {
-        let mut __match_index = s.match_index.clone();
-        __match_index.insert(follower.clone(), new_match_index.clone());
-        let mut __next_index = s.next_index.clone();
-        __next_index.insert(follower.clone(), Cu64_inc(&new_match_index));
-        (CState {
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    let mut __match_index = s.match_index.clone();
+    __match_index.insert(follower.clone(), new_match_index.clone());
+    let mut __next_index = s.next_index.clone();
+    __next_index.insert(follower.clone(), Cu64_inc(&new_match_index));
+    { proof {
+        lemma_empty_msg_map();
+    }; (CState {
     current_term: s.current_term.clone(),
     role: clone_role(&s.role),
     has_voted: s.has_voted.clone(),
@@ -413,14 +412,7 @@ ensures
     votes_granted: clone_hashset(&s.votes_granted),
     match_index: __match_index,
     next_index: __next_index,
-}, vec![])
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_log_map();
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
-    }
-    result
+}, vec![]) }
 
 }
 
@@ -435,14 +427,18 @@ ensures
     result.0.valid(),
     LHandleAppendReject(s@, result.0@, c@, *resp_term as int, resp_success, *resp_match_index as int, *resp_follower as int, follower@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = {
-        let mut __next_index = s.next_index.clone();
-        if (s.next_index.contains_key(&follower) && (s.next_index.get(&follower).unwrap().clone() > 0)) {
-                        __next_index.insert(follower.clone(), Cu64_dec(&s.next_index.get(&follower).unwrap().clone()));
-            
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+    }
+    let mut __next_index = s.next_index.clone();
+    if (s.next_index.contains_key(&follower) && (s.next_index.get(&follower).unwrap().clone() > 0)) {
+                __next_index.insert(follower.clone(), Cu64_dec(&s.next_index.get(&follower).unwrap().clone()));
+        
 
-        };
-        (CState {
+    };
+    { proof {
+        lemma_empty_msg_map();
+    }; (CState {
     next_index: __next_index,
     current_term: s.current_term.clone(),
     role: clone_role(&s.role),
@@ -452,14 +448,7 @@ ensures
     commit_index: s.commit_index.clone(),
     votes_granted: clone_hashset(&s.votes_granted),
     match_index: s.match_index.clone(),
-}, vec![])
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_log_map();
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
-    }
-    result
+}, vec![]) }
 
 }
 
@@ -477,7 +466,10 @@ ensures
     result.0.valid(),
     LAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = (CState {
+    proof {
+        lemma_empty_msg_map();
+    }
+    (CState {
     current_term: s.current_term.clone(),
     role: clone_role(&s.role),
     has_voted: s.has_voted.clone(),
@@ -487,12 +479,7 @@ ensures
     votes_granted: clone_hashset(&s.votes_granted),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
-}, vec![]);
-    proof {
-        lemma_empty_log_map();
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
-    }
-    result
+}, vec![])
 
 }
 
@@ -505,7 +492,11 @@ ensures
     result.0.valid(),
     LStepDown(s@, result.0@, c@, *new_term as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_msg_map();
+        }
+        (CState {
     current_term: *new_term,
     has_voted: false,
     voted_for: 0u64,
@@ -515,11 +506,10 @@ ensures
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_set_map();
-        lemma_empty_log_map();
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 
@@ -653,11 +643,18 @@ ensures
     } else {
         if !c.servers.contains(&follower_id) {
                         proof {
+                lemma_set_map_not_contains(c.servers@, *follower_id);
+            }
+            proof {
                 lemma_empty_msg_map();
             }
             (s_mid, vec![])
 
         } else {
+                        proof {
+                broadcast use vstd::std_specs::hash::group_hash_axioms;
+                lemma_set_map_contains(c.servers@, *follower_id);
+            }
             if success {
                                 let follower = (*follower_id as u64);
                 { let new_match_index = (*match_index as u64); if ((new_match_index as u64) > (s_mid.log.len() as u64)) {
@@ -675,6 +672,7 @@ ensures
                 CHandleAppendReject(&s_mid, c, term, success, match_index, follower_id, &follower)
 
             }
+
         }
     }
 
@@ -729,8 +727,8 @@ match msg {
 //
 // Phase 29: CHandleRequestVoteMsg, Cstep_down_if_needed, Clog_up_to_date are now
 // auto-generated by the transpiler. Only CHandleVoteResponseMsg remains manual
-// (requires Set::map membership proofs and cardinality bridge that the transpiler
-// cannot yet generate).
+// (requires delegation to CReceiveVoteGranted/CBecomeLeader for opaque datatype
+// proofs that inline struct construction cannot satisfy).
 
 /// Helper: clone a CState preserving view and validity.
 #[verifier(external_body)]
