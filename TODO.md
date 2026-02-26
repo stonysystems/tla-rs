@@ -8604,8 +8604,9 @@ plus new verification obligations from the composite functions.
   `CHandleMessage`, `CTryAdvanceCommitIndex`). Implemented via `manual_code` injection
   (`raft_manual.rs`): 10 verified composite exec functions with proof helpers, 2 targeted
   assumes for Set::map cardinality gap. 622 verified, 0 errors.
-- [ ] **27.9.5**: host.rs reduced to ≤200 LOC (timers, randomization, I/O only). Message dispatch,
-  guard checks, step-down logic, and commit index scanning all moved to transpiler-generated code.
+- [x] **27.9.5**: host.rs reduced to 185 LOC (204 total lines). Message dispatch via single
+  `CHandleMessage` call replaces 4 manual handlers (~300 lines removed). Only timers,
+  randomization, I/O conversion, heartbeat iteration, and commit scanning remain.
 - [x] **27.9.6**: Refinement proof in `raft_refinement.rs` (6 lemmas + main theorem) shows
   composite LNext ⊆ atomic LNextAtomic: every composite step maps to stutter, 1, or 2 atomic steps
 - [x] **27.9.7**: Verus verification passes with 611 verified, 0 errors
