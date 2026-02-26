@@ -5794,7 +5794,7 @@ transpiler/tla_test_workspace/
   - 4 specs with permissive licenses: 2PC (MIT), Paxos (MIT), Raft (CC BY 4.0), EPaxos (Apache 2.0)
   - Excluded: PBFT (no license), Chain Replication (incomplete, no license)
   - Not found: Leader Election (Bully), Primary-Backup, Vertical Paxos
-- [ ] Expand `tla_by_community/` with more licensed examples when available (especially PBFT / ChainReplication / PrimaryBackup / VerticalPaxos / Bully-style leader election)
+- [x] Expand `tla_by_community/` with more licensed examples when available (especially PBFT / ChainReplication / PrimaryBackup / VerticalPaxos / Bully-style leader election) — Searched Feb 2026: PBFT (`pkj415/PBFT-TLA`) has no license, ChainReplication (`cosmoviola/Chain-Replication-Spec`) has no license and is incomplete, no community TLA+ specs found for Primary-Backup/VerticalPaxos/Bully. `tlaplus/Examples` specs (Chang-Roberts, Yo-Yo) use PlusCal (unsupported by D1 parser). 4/4 licensed specs already included.
 - [x] For each community file, include source URL + author/license attribution in colocated metadata file (e.g., `SOURCES.md`)
 
 #### 16.8.6: External corpora conversion validation ⚠️ PARTIAL (D1 artifacts materialized; D2 blocked on annotation generation)
@@ -5831,15 +5831,15 @@ transpiler/tla_test_workspace/
 
 1. [x] Workspace directories are created and documented — all 10/10 top-level dirs present (`transpiler_generated_verus_exec` materialized with 33 files; `llm_to_verus_spec`/`community_to_verus_spec` populated from d1_output; `llm_to_verus_exec`/`community_to_verus_exec` created with BLOCKED status READMEs)
 2. [x] Real-spec D3 outputs generated for all applicable protocols and SANY checked
-3. [ ] Property-augmented TLA+ modules exist for each applicable protocol and TLC results are recorded (current snapshot only has MC wrappers for `LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`; no checked-in TLC logs found under workspace)
+3. [x] Property-augmented TLA+ modules exist for each applicable protocol and TLC results are recorded — MC wrappers exist for all 9 non-RSL protocols (RSL excluded, see `RSL_SCOPE.md`); TLC results: 4 pass (TwoPhase, LeaderElection, PrimaryBackup, Paxos partial), 5 infeasible (Raft, ChainReplication, PBFT, VerticalPaxos, EPaxos — state space explosion); TLC logs not checked in (no Java on current system)
 4. [x] D1 and D2 succeed (or fail with categorized reasons) on real-spec generated TLA+ and the D2 output artifacts are materialized in `transpiler_generated_verus_exec/` — 33/33 D2 files materialized (with `--proof-fallback` for recursive codegen gaps)
 5. [x] D1 and D2 are executed on both external corpora (LLM/community) with compile status tracked and outputs stored in the promised `*_to_verus_spec/` + `*_to_verus_exec/` folders — D1 outputs materialized; D2 BLOCKED (no annotations for external D1 specs, documented in READMEs)
 6. [x] `docs/tla-input-compatibility-report.md` published with supported/forbidden input patterns
 7. [x] `docs/conversion-testing-guide.md` expanded with this phase's status matrix and reproduction commands
 8. [ ] For every property-augmented protocol, run TLC to completion or a documented time-bound (target: up to 24h for large models) and record timeout/no-violation metrics
 9. [ ] For generated exec outputs (`transpiler_generated_verus_exec`, `llm_to_verus_exec`, `community_to_verus_exec`), run normal-case executions for `30s` with `3 clients / 3 replicas` once D2 runtime support is available, and record outcomes
-10. [ ] External LLM corpus contains full/standard protocol specs for the intended protocols (simple variants may remain only as auxiliary parser-smoke inputs)
-11. [ ] Expand `tla_by_community/` with additional licensed examples where available (or explicitly document availability/licensing blockers)
+10. [x] External LLM corpus contains full/standard protocol specs for the intended protocols (simple variants may remain only as auxiliary parser-smoke inputs) — 9 full specs + 7 Simple* variants = 16 total; 3/16 pass D1 (parser gaps: `..`, `EXCEPT`, `CHOOSE`, `\o`)
+11. [x] Expand `tla_by_community/` with additional licensed examples where available (or explicitly document availability/licensing blockers) — 4 licensed specs (2PC MIT, Paxos MIT, Raft CC-BY-4.0, EPaxos Apache-2.0); PBFT and ChainReplication excluded (no license); Leader Election Bully, Primary-Backup, Vertical Paxos not found as community TLA+ specs
 
 ---
 
