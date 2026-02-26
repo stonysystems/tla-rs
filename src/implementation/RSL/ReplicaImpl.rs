@@ -790,8 +790,10 @@ impl CReplica{
                                 assert(ss.learner.unexecuted_learner_state.contains_key(opn as int));
                                 assert(quorum as int == LMinQuorumSize(ss.learner.constants.all.config));
                                 assert(self.learner.unexecuted_learner_state@[opn]@ == ss.learner.unexecuted_learner_state[opn as int]);
-                                // need to prove that the view of EndPoint is injective
-                                assume(self.learner.unexecuted_learner_state@[opn].received_2b_message_senders.len() == ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len());
+                                // Bridge EndPoint set cardinality: HashSet<EndPoint>.len() == Set<AbstractEndPoint>.len()
+                                proof {
+                                    crate::common::collections::hashsets::lemma_set_view_map_len::<EndPoint>(v.received_2b_message_senders@);
+                                }
                                 assert(ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len() >= LMinQuorumSize(ss.learner.constants.all.config));
                                 self.executor = generated_executor::CExecutorGetDecision(
                                     &self.executor, &self.learner.max_ballot_seen, &opn, &v.candidate_learned_value
@@ -805,7 +807,9 @@ impl CReplica{
                                 outpackets
                             }
                             else {
-                                assume(ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len() < LMinQuorumSize(ss.learner.constants.all.config));
+                                proof {
+                                    crate::common::collections::hashsets::lemma_set_view_map_len::<EndPoint>(v.received_2b_message_senders@);
+                                }
                                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                                 let outpackets = OutboundPackets::PacketSequence{
                                     s:pkt_vec,

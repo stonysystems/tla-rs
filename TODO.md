@@ -9350,8 +9350,8 @@ Replace each `assume(cond == (set@.map(f).len() >= quorum))` with a lemma call:
 - [ ] `generated/RSL/proposer_gen.rs:375` — received_1b_packets quorum
 - [ ] `generated/RSL/election_gen.rs:520` — current_view_suspectors quorum
 - [ ] `generated/RSL/replica_gen.rs:811` — received_2b_message_senders quorum
-- [ ] `implementation/RSL/ReplicaImpl.rs:794` — 2b senders len equality
-- [ ] `implementation/RSL/ReplicaImpl.rs:808` — 2b senders len comparison
+- [x] `implementation/RSL/ReplicaImpl.rs:794` — 2b senders len equality (replaced with lemma_set_view_map_len)
+- [x] `implementation/RSL/ReplicaImpl.rs:808` — 2b senders len comparison (replaced with lemma_set_view_map_len)
 - [x] `protocol/Raft/raft_manual.rs:85` — votes_granted >= quorum (replaced with lemma_hashset_u64_len_eq_mapped)
 - [x] `protocol/Raft/raft_manual.rs:96` — votes_granted < quorum (replaced with lemma_hashset_u64_len_eq_mapped)
 - [ ] `generated/RSL/replica_gen.rs:268` — samesrc forall equivalence

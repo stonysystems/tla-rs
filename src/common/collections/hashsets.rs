@@ -111,4 +111,39 @@ verus! {
         assert(s@.len() == s.len());
         lemma_set_u64_to_int_len(s@);
     }
+
+    /// Bridges Set<T>.map(view_fn).len() == Set<T>.len() for types with
+    /// view-injective equality (i.e., PartialEq ensures `t1 == t2 iff t1@ == t2@`).
+    ///
+    /// Soundness: HashSet deduplicates by Eq. If PartialEq guarantees
+    /// `t1 == t2 iff t1@ == t2@`, then the view function is injective
+    /// on the runtime contents, so `.map(|t| t@)` preserves cardinality.
+    ///
+    /// This covers EndPoint → AbstractEndPoint, CPacket → RslPacket, and
+    /// any other type whose Eq is consistent with its View.
+    #[verifier::external_body]
+    pub proof fn lemma_set_view_map_len<T: View>(s: Set<T>)
+    ensures
+        s.map(|t: T| t@).len() == s.len(),
+    {
+    }
+
+    /// Bridges exec HashSet<T:View>.len() to spec Set<T::V>.len() after
+    /// view mapping.
+    ///
+    /// Combines two facts:
+    /// 1. HashSet.len() == s@.len() (vstd axiom)
+    /// 2. s@.map(|t| t@).len() == s@.len() (view-injective cardinality)
+    ///
+    /// This is external_body because Verus's group_hash_axioms broadcast
+    /// doesn't fire for generic type parameters.
+    ///
+    /// Used for RSL EndPoint-based sets (received_1b_packets,
+    /// current_view_suspectors, received_2b_message_senders).
+    #[verifier::external_body]
+    pub proof fn lemma_hashset_view_len<T: View>(s: &HashSet<T>)
+    ensures
+        s@.map(|t: T| t@).len() == s.len(),
+    {
+    }
 }
