@@ -42,7 +42,8 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 **Next steps (priority order):**
 1. ~~**Phase 27.9.4-27.9.5: Transpiler generates composite Raft exec functions + thin host**~~ — DONE. All composite exec functions via manual_code injection (622 verified, 0 errors). host.rs reduced from 1001 to 204 lines.
-2. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
+2. **Phase 29: Transpiler support for spec helper functions and composite action generation** — Extend transpiler to translate value-returning spec helpers (`step_down_if_needed` → `CStepDownIfNeeded`), let-bindings with intermediate states, and whole-state delegation (`LGrantVote(s_mid, s_, ...)`). Eliminates `raft_manual.rs` (369 LOC). Enables the same natural spec style for all future protocols. See [Phase 29](#phase-29-transpiler-support-for-spec-helper-functions-and-composite-action-generation).
+3. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — Simplify all TOMLs to minimal auto-inferred form, regenerate all 10 protocols, eliminate manual_code by letting the transpiler generate all functions (mark unproven ones `external_body` with diagnostic info). See [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code).
 3. **Phase 20: Auto-infer TOML configuration from spec analysis** — ✅ MOSTLY COMPLETE. See [Phase 20](#phase-20-auto-infer-toml-configuration-from-spec-analysis).
 4. **Phase 22: Native model checking from tla-rs spec source** — Add a source-first checker that consumes Verus spec files (`LInit`/`LNext`) directly, with finite-domain safety checking and counterexample traces. See [Phase 22](#phase-22-native-model-checking-for-tla-rs-spec-source-first).
 2. ~~**Phase 19: Eliminate all manual impl delegates from generated RSL code**~~ ✅ COMPLETE — All RSL gen modules fully standalone. election_gen.rs enabled, 0 delegates across all 7 gen modules. See [Phase 19](#phase-19-eliminate-manual-impl-delegates-from-generated-rsl-code).
@@ -87,6 +88,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 20. [Phase 21: Minimal TOML Regeneration and Eliminate manual_code](#phase-21-minimal-toml-regeneration-and-eliminate-manual-code)
 21. [Phase 22: Native Model Checking for TLA-rs Spec (Source-First)](#phase-22-native-model-checking-for-tla-rs-spec-source-first)
 22. [Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation)](#phase-28-text-to-tla-survey-related-work-and-evaluation)
+23. [Phase 29: Transpiler Support for Spec Helper Functions and Composite Action Generation](#phase-29-transpiler-support-for-spec-helper-functions-and-composite-action-generation)
 
 ---
 
@@ -9011,7 +9013,7 @@ docs/survey/
 ### 28.12 Estimated Effort (Survey Only; No Implementation)
 
 | Step | Effort |
-|------|--------|
+|------|--------| 
 | 28.1 Deliverable scaffolding | ~1 hour |
 | 28.2 Methodology + search protocol | ~2 hours |
 | 28.2 Search + screening + logging | ~6-10 hours |
@@ -9022,3 +9024,231 @@ docs/survey/
 | 28.7 Recommendations | ~2-3 hours |
 | 28.8/28.9 QC pass + consistency checks | ~2-3 hours |
 | **Total** | **~26-42 hours** |
+
+---
+
+## Phase 29: Transpiler Support for Spec Helper Functions and Composite Action Generation
+
+### 29.0 Background & Motivation
+
+The transpiler can translate atomic spec predicates (`LGrantVote(s, s_, c, ...) -> bool`) into
+verified exec functions, and can handle cross-action calls when they follow the RSL sub-component
+pattern (`LAcceptorProcess1a(s.acceptor, s_.acceptor, ...)`). However, it **cannot** translate
+spec functions that:
+
+1. **Return non-bool values** (e.g., `step_down_if_needed(s, term) -> LState`)
+2. **Use let-bound intermediate states from such helpers** (e.g., `let s_mid = step_down_if_needed(...)`)
+3. **Delegate to other spec predicates with an intermediate state as input** (e.g., `LGrantVote(s_mid, s_, ...)`)
+
+This pattern — "compute intermediate state via helper, then branch/delegate" — is the natural
+way to express protocols with cross-cutting concerns (Raft's step-down-on-higher-term, PBFT's
+view-change, any protocol where message handling first updates some shared state). Currently these
+must be manually implemented in `manual_code` files (see Phase 27: `raft_manual.rs`, 369 LOC).
+
+**Goal**: Extend the transpiler to generate exec code for spec functions containing these patterns,
+eliminating the need for `manual_code` in Raft and enabling the same pattern in future protocols.
+
+**Concrete target**: Remove `raft_manual.rs` entirely. The transpiler generates all 8 composite
+exec functions (`CStepDownIfNeeded`, `CLogUpToDate`, `CHandleRequestVoteMsg`,
+`CHandleAppendEntriesMsg`, `CHandleVoteResponseMsg`, `CHandleAppendResponseMsg`,
+`CTryAdvanceCommitIndex`, `CHandleMessage`) and they pass Verus verification.
+
+### 29.1 Analysis: What the Transpiler Needs to Learn
+
+Three capabilities, in dependency order:
+
+#### 29.1.1 Translate spec functions returning non-bool types
+
+**Current**: Transpiler only generates exec functions for spec predicates (`... -> bool`).
+Functions like `step_down_if_needed(s: LState, new_term: int) -> LState` are in `skip_functions`.
+
+**Needed**: Recognize spec functions returning a state type (or other mapped type), generate
+an exec function that returns the corresponding concrete type:
+
+```
+// Spec:
+pub open spec fn step_down_if_needed(s: LState, new_term: int) -> LState {
+    if new_term > s.current_term { LState { current_term: new_term, ..., ..s } }
+    else { s }
+}
+
+// Generated exec:
+pub exec fn CStepDownIfNeeded(s: &CState, new_term: &u64) -> (result: CState)
+requires s.valid(),
+ensures result.valid(), result@ == step_down_if_needed(s@, *new_term as int),
+{
+    if *new_term > s.current_term {
+        CState { current_term: *new_term, ..., log: clone_log(&s.log), ... }
+    } else {
+        clone_state(s)
+    }
+}
+```
+
+**Key challenges**:
+- Return type mapping: `LState -> CState`, `bool -> bool`, etc.
+- The `else { s }` branch must generate a clone (since we take `s` by reference)
+- The `if` branch constructs a new struct with `..s` spread — transpiler already handles
+  struct construction for predicates, needs to adapt for value-returning functions
+- Ensures clause: `result@ == spec_fn(s@, ...)` instead of `SpecPredicate(s@, result@, ...)`
+
+#### 29.1.2 Translate let-bindings that call value-returning spec functions
+
+**Current**: `let s_mid = step_down_if_needed(s, term)` in a spec causes the entire containing
+function to be skipped. The transpiler's `transform_expr` for `Expr::Let` does handle let-bindings,
+but when the value is a call to a function not in the exec function registry, it fails.
+
+**Needed**: When a let-binding calls a spec function that returns a mapped type:
+1. Look up the exec version of the called function (via L→C name mapping)
+2. Generate `let s_mid = CStepDownIfNeeded(s, *term);`
+3. Track `s_mid` as a local variable of type `CState` for subsequent expressions
+
+Similarly for `log_up_to_date(s, ...) -> bool`:
+```
+let log_ok = CLogUpToDate(&s_mid, *last_log_term, *last_log_index);
+```
+
+#### 29.1.3 Translate spec predicate delegation with intermediate-state input
+
+**Current**: The transpiler recognizes `LAcceptorProcess1a(s.acceptor, s_.acceptor, ...)`
+as a sub-component call (maps `s.field` → `&s.field`, captures result → `s_.field`). But it
+does not recognize `LGrantVote(s_mid, s_, c, ...)` where the first argument is a let-bound
+local variable.
+
+**Needed**: Generalize the call pattern to support:
+- First argument is a local variable (e.g., `s_mid`) → pass `&s_mid`
+- Second argument is `s_` → the call result IS the output state (not a sub-field)
+- Return value becomes the function's return value directly (not merged into a struct)
+
+```
+// Spec: LGrantVote(s_mid, s_, c, term, ..., sent_packets)
+// Generated: CGrantVote(&s_mid, c, &term, ...)  →  returns (CState, Vec<CRaftMessage>)
+```
+
+### 29.2 Implementation Plan
+
+#### 29.2.1 Extend function registry with return type info
+
+**File**: `transpiler/src/translator/mod.rs`
+
+Currently the transpiler tracks spec functions for name translation (L→C mapping) and parameter
+modes (input/output). Add return type tracking:
+
+- Parse the return type of each spec function during the analysis phase
+- Classify functions as: `Predicate` (returns bool), `ValueReturning` (returns LState, etc.),
+  or `Skipped` (LNext, etc.)
+- For `ValueReturning` functions, record the return type and its concrete mapping
+
+#### 29.2.2 Generate exec functions for value-returning spec helpers
+
+**File**: `transpiler/src/translator/mod.rs` (code generation path)
+
+New code generation path for `ValueReturning` functions:
+- Signature: `pub exec fn CHelperName(params...) -> (result: CReturnType)`
+- Requires: `s.valid()`, etc. (same as predicate functions)
+- Ensures: `result@ == spec_helper_name(s@, ...)` (value equality, not predicate satisfaction)
+- Body: translate the function body as an expression (not as conjunction extraction)
+  - `if/else` → exec `if/else` returning values
+  - Struct construction → concrete struct construction with clones
+  - `s` (identity return) → `clone_state(s)`
+
+**Key difference from predicate translation**: predicate translation extracts field assignments
+from conjuncts. Value-returning translation translates the expression tree directly, preserving
+control flow (if/else, match, let).
+
+#### 29.2.3 Handle let-bindings calling value-returning functions
+
+**File**: `transpiler/src/translator/mod.rs` (`transform_expr`, `Expr::Let` arm)
+
+When the let-binding's value expression is a call to a known `ValueReturning` function:
+1. Translate the call to the exec version: `step_down_if_needed(s, term)` → `CStepDownIfNeeded(s, *term)`
+2. Emit `let s_mid = CStepDownIfNeeded(s, *term);`
+3. Register `s_mid` as a local variable with its concrete type in the expression context
+4. Continue translating the body expression with `s_mid` available
+
+#### 29.2.4 Generalize sub-action call recognition
+
+**File**: `transpiler/src/translator/mod.rs` (`transform_call` / `detect_helper_call`)
+
+Extend the call detection to recognize:
+- `LPredicate(local_var, s_, ...)` where `local_var` is a let-bound intermediate state
+  → Generate `CPredicate(&local_var, ...)`, result becomes the function output
+- `LPredicate(s_mid, s_, c, field1, field2, ..., sent_packets)` → filter output params,
+  pass `&s_mid` as first arg, return `(CState, Vec<CMessage>)`
+
+The existing pattern `LSubAction(s.field, s_.field, ...)` → `CSubAction(&s.field, ...)` remains
+unchanged. The new pattern adds whole-state delegation with intermediate state as input.
+
+#### 29.2.5 Generate proof blocks for composite functions
+
+For predicate functions, the transpiler generates `proof { assert(result.1@.map(...) =~= ...); }`.
+For composite functions calling other exec functions, generate:
+- After `let s_mid = CStepDownIfNeeded(...)`: no additional proof needed (ensures propagates)
+- After `CGrantVote(&s_mid, ...)`: the ensures of CGrantVote + CStepDownIfNeeded should
+  compose to prove the composite spec predicate
+- For no-op branches (`s_ == s_mid && sent_packets == empty`): generate
+  `proof { lemma_empty_msg_map(); }` (existing pattern)
+
+**Open question**: Will Verus automatically prove the composition, or will the transpiler need
+to emit intermediate assertions? This may require experimentation. Worst case, emit
+`assert(s_mid@ == step_down_if_needed(s@, ...));` after each intermediate step.
+
+#### 29.2.6 Update Raft TOML configuration
+
+**File**: `src/protocol/Raft/raft_transpile.toml`
+
+- Remove `step_down_if_needed`, `log_up_to_date`, `LHandleRequestVoteMsg`,
+  `LHandleAppendEntriesMsg`, `LHandleVoteResponseMsg`, `LHandleAppendResponseMsg`,
+  `LTryAdvanceCommitIndex`, `LHandleMessage` from `skip_functions`
+- Remove `manual_code` reference to `raft_manual.rs`
+- Add any needed configuration for the new value-returning function support
+
+#### 29.2.7 Regenerate and verify
+
+- Regenerate `raft_gen.rs`
+- Delete `raft_manual.rs`
+- Run Verus verification: target 0 errors
+- Run Raft benchmark: confirm behavioral equivalence
+
+### 29.3 Scope and Applicability
+
+This is not Raft-specific. The same patterns appear in:
+- **PBFT**: `step_down_if_needed` equivalent for view-change
+- **EPaxos**: pre-accept/accept handlers that first check ballot then dispatch
+- **LeaderElection**: step-down on higher-priority node
+- Any future protocol with cross-cutting handler logic
+
+Once this transpiler capability exists, all protocols can express composite handlers naturally
+in spec, and the transpiler generates verified exec code without `manual_code`.
+
+### 29.4 Acceptance Criteria
+
+- [ ] **29.4.1**: Transpiler generates exec functions for spec helpers returning non-bool types
+  (`step_down_if_needed` → `CStepDownIfNeeded`, `log_up_to_date` → `CLogUpToDate`)
+- [ ] **29.4.2**: Transpiler generates exec functions for composite spec predicates containing
+  `let s_mid = helper(...)` bindings (`LHandleRequestVoteMsg` → `CHandleRequestVoteMsg`, etc.)
+- [ ] **29.4.3**: Transpiler generates message dispatch function from spec match
+  (`LHandleMessage` → `CHandleMessage`)
+- [ ] **29.4.4**: `raft_manual.rs` deleted, `manual_code` removed from `raft_transpile.toml`
+- [ ] **29.4.5**: Verus verification passes (0 errors, ≤2 assumes for Set::map cardinality)
+- [ ] **29.4.6**: Raft benchmark results unchanged
+- [ ] **29.4.7**: Transpiler tests updated (new integration tests for value-returning function
+  translation, let-binding with function calls, intermediate-state delegation)
+
+### 29.5 Execution Order
+
+```
+29.2.1 Return type registry          ← analysis phase extension
+  ↓
+29.2.2 Value-returning codegen       ← step_down_if_needed, log_up_to_date
+  ↓
+29.2.3 Let-binding translation       ← let s_mid = CStepDownIfNeeded(...)
+  ↓
+29.2.4 Intermediate-state delegation ← CGrantVote(&s_mid, ...)
+  ↓
+29.2.5 Proof block generation        ← composition proofs
+  ↓
+29.2.6 Raft TOML update             ← remove skip_functions + manual_code
+  ↓
+29.2.7 Regenerate + verify          ← 0 errors, delete raft_manual.rs
+```
