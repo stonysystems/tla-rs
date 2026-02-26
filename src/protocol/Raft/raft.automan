@@ -18,13 +18,13 @@ module Raft::raft {
     LAdvanceCommitIndex(+, -, +, +, -);
     LStepDown(+, -, +, +, -);
 
-    // Composite message handlers (Phase 27 -- manually implemented)
-    // These are skipped in transpilation since they call atomic functions
-    // with requires preconditions that need runtime guard checks.
-    // step_down_if_needed: helper returning LState (not a predicate)
-    // log_up_to_date: helper returning bool
-    // LHandleRequestVoteMsg(+, -, +, +, +, +, +, -);
-    // LHandleAppendEntriesMsg(+, -, +, +, +, +, +, +, +, +, -);
+    // Spec helpers (value-returning functions)
+    helper step_down_if_needed(+, +) -> LState;
+    helper log_up_to_date(+, +, +) -> bool;
+
+    // Composite message handlers (Phase 29 — transpiler-generated)
+    LHandleRequestVoteMsg(+, -, +, +, +, +, +, -);
+    LHandleAppendEntriesMsg(+, -, +, +, +, +, +, +, +, +, -);
     // LHandleVoteResponseMsg(+, -, +, +, +, +, -);
     // LHandleAppendResponseMsg(+, -, +, +, +, +, +, -);
     // LTryAdvanceCommitIndex(+, -, +, +, -);

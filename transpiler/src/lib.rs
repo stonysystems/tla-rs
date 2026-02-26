@@ -118,6 +118,9 @@ pub struct TranspilerConfig {
     /// `#[verifier(external_body)]` stubs instead of being silently skipped.
     /// Each stub includes a `// TRANSLATE-TODO:` or `// PROOF-TODO:` comment.
     pub proof_fallback: bool,
+    /// Message type pair (ExecType, SpecType) for generating `lemma_empty_msg_map()`.
+    /// Used by composite handlers that return `(CState, Vec<CMessage>)`.
+    pub msg_vec_type: Option<(String, String)>,
 }
 
 /// A function that was automatically skipped during transpilation.
@@ -359,6 +362,7 @@ impl Transpiler {
                 &self.config.translator.struct_vec_fields,
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
+                &self.config.msg_vec_type,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -394,6 +398,7 @@ impl Transpiler {
                 &std::collections::HashMap::new(),
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
+                &None,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -1028,6 +1033,7 @@ impl Transpiler {
                 &self.config.translator.struct_vec_fields,
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
+                &self.config.msg_vec_type,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -1152,6 +1158,7 @@ impl Transpiler {
         struct_vec_fields: &std::collections::HashMap<String, (String, String)>,
         int_type: &str,
         clone_up_to_view_types: &std::collections::HashSet<String>,
+        msg_vec_type: &Option<(String, String)>,
     ) -> String {
         let mut output = String::new();
 
@@ -1347,6 +1354,22 @@ impl Transpiler {
             output.push_str("proof fn lemma_seq_push_map_commute(s: Seq<u64>, x: u64)\n");
             output.push_str("ensures\n");
             output.push_str("    s.push(x).map(|i: int, v: u64| v as int) =~= s.map(|i: int, v: u64| v as int).push(x as int),\n");
+            output.push_str("{\n");
+            output.push_str("}\n\n");
+        }
+
+        // Generate lemma_empty_msg_map for message type (sent_packets proof helper)
+        if let Some((exec_type, spec_type)) = msg_vec_type {
+            output.push_str(&format!(
+                "/// Helper proof: mapping over an empty Vec<{}> yields an empty seq.\n",
+                exec_type
+            ));
+            output.push_str("proof fn lemma_empty_msg_map()\n");
+            output.push_str("ensures\n");
+            output.push_str(&format!(
+                "    Seq::<{}>::empty().map(|i: int, e: {}| e@) =~= Seq::<{}>::empty(),\n",
+                exec_type, exec_type, spec_type
+            ));
             output.push_str("{\n");
             output.push_str("}\n\n");
         }
@@ -2751,7 +2774,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new());
+        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new(), &None);
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2784,12 +2807,12 @@ mod tests {
 
         // When has_set_remove=false, remove_commute should NOT be present
         let output_no_remove =
-            Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64", &std::collections::HashSet::new());
+            Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64", &std::collections::HashSet::new(), &None);
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
 
         // When has_set_fields=false, set lemmas should NOT be present
         let output_no_sets =
-            Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64", &std::collections::HashSet::new());
+            Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64", &std::collections::HashSet::new(), &None);
         assert!(!output_no_sets.contains("lemma_empty_set_map"));
         assert!(!output_no_sets.contains("lemma_set_map_remove_commute"));
         assert!(!output_no_sets.contains("clone_hashset"));
@@ -2800,13 +2823,13 @@ mod tests {
         let empty = std::collections::HashMap::new();
 
         // With i64 int_type (TLA+ pipeline default)
-        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64", &std::collections::HashSet::new());
+        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64", &std::collections::HashSet::new(), &None);
         assert!(output_i64.contains("Set::<i64>::empty()"));
         assert!(output_i64.contains("|x: i64| x as int"));
         assert!(output_i64.contains("lemma_set_map_remove_commute(s: Set<i64>, elt: i64)"));
 
         // With u64 int_type (RSL protocol default)
-        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new());
+        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new(), &None);
         assert!(output_u64.contains("Set::<u64>::empty()"));
         assert!(output_u64.contains("|x: u64| x as int"));
     }
@@ -2814,7 +2837,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_with_vec_fields() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64", &std::collections::HashSet::new());
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64", &std::collections::HashSet::new(), &None);
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2832,7 +2855,7 @@ mod tests {
             "log".to_string(),
             ("CLogEntry".to_string(), "LLogEntry".to_string()),
         );
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &std::collections::HashSet::new());
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &std::collections::HashSet::new(), &None);
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2864,7 +2887,7 @@ mod tests {
         // CRequest is in clone_up_to_view_types — should generate verified loop
         let mut cutv = std::collections::HashSet::new();
         cutv.insert("CRequest".to_string());
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv, &None);
 
         // Should generate clone_request_queue with verified loop, NOT external_body
         assert!(
@@ -2910,7 +2933,7 @@ mod tests {
         );
         // CLogEntry is NOT in clone_up_to_view_types — should use external_body
         let cutv = std::collections::HashSet::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv, &None);
 
         assert!(
             output.contains("#[verifier(external_body)]"),
@@ -3308,6 +3331,7 @@ mod tests {
             &config.translator.struct_vec_fields,
             "u64",
             &config.translator.clone_up_to_view_types,
+            &None,
         );
 
         // Should generate clone_log helper for struct_vec_fields

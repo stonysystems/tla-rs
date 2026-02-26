@@ -230,6 +230,12 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub map_fields: HashMap<String, Vec<String>>,
 
+    /// Message type for sent_packets Vec proof helpers in composite handlers.
+    /// Generates `lemma_empty_msg_map()` for proving `Seq::<ExecType>::empty().map(f) =~= Seq::<SpecType>::empty()`.
+    /// Format: ["CRaftMessage", "LRaftMessage"]
+    #[serde(default)]
+    pub msg_vec_type: Option<Vec<String>>,
+
     /// Fields that are HashMap-typed and need `&key` indexing, but should NOT trigger
     /// helper code generation (unlike `map_fields` which generates abstractify/clone/filter).
     /// Used purely for `is_map_index_base()` detection in Index expressions.

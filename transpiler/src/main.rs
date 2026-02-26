@@ -4251,6 +4251,11 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
         }),
         auto_skip: false,
         proof_fallback: false,
+        msg_vec_type: file_config.msg_vec_type.as_ref().map(|v| {
+            let exec_type = v.first().cloned().unwrap_or_default();
+            let spec_type = v.get(1).cloned().unwrap_or_default();
+            (exec_type, spec_type)
+        }),
         printer: verus_transpiler::PrinterConfig {
             extra_fields: file_config.extra_fields,
             ..Default::default()

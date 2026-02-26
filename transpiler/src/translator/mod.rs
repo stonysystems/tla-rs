@@ -267,6 +267,10 @@ pub struct ProofNeeds {
     /// Each entry is (tuple_index, element_count, element_type_name).
     /// element_type_name is the concrete type (e.g., "CTPCMessage") extracted from variant paths.
     pub tuple_vec_lit_sites: Vec<(usize, usize, Option<String>)>,
+    /// Body has an If/Else where some branches return Tuple (with VecLit) and others return
+    /// a Call (sub-action delegation). When true, global proof assertions are incorrect —
+    /// inline branch-local proofs are needed instead.
+    pub has_delegating_call_in_conditional: bool,
 }
 
 impl ProofNeeds {
@@ -355,6 +359,16 @@ impl ProofNeeds {
                 self.scan_expr(then_branch);
                 if let Some(eb) = else_branch {
                     self.scan_expr(eb);
+                }
+                // Detect mixed conditional: some branches return Tuple (with VecLit),
+                // others return Call (sub-action delegation). This means global proof
+                // assertions on result.N@ are incorrect.
+                let mut leaves = Vec::new();
+                Self::collect_if_else_leaves(expr, &mut leaves);
+                let has_tuple = leaves.iter().any(|l| matches!(l, ExecExpr::Tuple(_)));
+                let has_call = leaves.iter().any(|l| matches!(l, ExecExpr::Call { .. }));
+                if has_tuple && has_call {
+                    self.has_delegating_call_in_conditional = true;
                 }
             }
             ExecExpr::Binary { lhs, rhs, .. } => {
@@ -466,6 +480,31 @@ impl ProofNeeds {
             | ExecExpr::Break
             | ExecExpr::Comment(_)
             | ExecExpr::Matches { .. } => {}
+        }
+    }
+
+    /// Collect the "leaf" expressions from an if/else chain.
+    /// A leaf is the final expression in each branch: either a Tuple, Call, or another expression.
+    /// Recurses through nested If/Else to find all terminal branches.
+    fn collect_if_else_leaves<'a>(expr: &'a ExecExpr, leaves: &mut Vec<&'a ExecExpr>) {
+        match expr {
+            ExecExpr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::collect_if_else_leaves(then_branch, leaves);
+                if let Some(eb) = else_branch {
+                    Self::collect_if_else_leaves(eb, leaves);
+                }
+            }
+            ExecExpr::Block(stmts) if !stmts.is_empty() => {
+                // The leaf of a block is its last statement
+                Self::collect_if_else_leaves(stmts.last().unwrap(), leaves);
+            }
+            other => {
+                leaves.push(other);
+            }
         }
     }
 
@@ -724,7 +763,10 @@ impl ProofNeeds {
         // Otherwise, use generic names (e.g., lemma_empty_seq_map).
         let first_field = struct_vec_fields.keys().next();
 
-        if self.has_empty_vec {
+        // Skip has_empty_vec when delegating call is in conditional — the empty vec
+        // is for message tuples in branches, not for struct fields. Inline branch proofs
+        // handle the empty message vec case separately.
+        if self.has_empty_vec && !self.has_delegating_call_in_conditional {
             let func_name = if let Some(field) = first_field {
                 format!("lemma_empty_{}_map", field)
             } else {
@@ -764,10 +806,22 @@ impl ProofNeeds {
         // For sent_packets: assert(result.N@.map(|i: int, p: CType| p@) =~= seq![...]);
         // This is needed because Verus cannot automatically verify View mappings on Vec literals.
         //
+        // Skip entirely when the body has mixed conditional returns (some branches return
+        // Tuple with VecLit, others delegate to sub-action Calls). In this case, global
+        // assertions are wrong — inline branch-local proofs are injected separately.
+        //
         // When the same tuple index appears multiple times with different element counts
         // (e.g., if-else with vec![packet] in one branch and vec![] in the other),
         // skip that index — the proof block is outside the conditional and can't assert
         // a specific length.
+        if self.has_delegating_call_in_conditional {
+            // Skip all tuple_vec_lit assertions — handled by inline branch proofs
+            if stmts.is_empty() {
+                return None;
+            } else {
+                return Some(ExecExpr::ProofBlock { stmts });
+            }
+        }
         let mut conflicting_indices = std::collections::HashSet::new();
         {
             let mut seen: std::collections::HashMap<usize, usize> =
@@ -2040,6 +2094,249 @@ impl Translator {
             }
             _ => expr,
         }
+    }
+
+    /// Inject inline proof blocks into If/Else branches that return a Tuple with
+    /// an empty VecLit. This is needed for composite handlers where some branches
+    /// return `(state, vec![])` and others delegate to sub-action Calls.
+    ///
+    /// Transforms:
+    ///   `if cond { (s_mid, vec![]) } else { CGrantVote(...) }`
+    /// into:
+    ///   `if cond { proof { lemma_empty_msg_map(); } (s_mid, vec![]) } else { CGrantVote(...) }`
+    fn inject_inline_empty_msg_proofs(expr: ExecExpr, msg_type: &str) -> ExecExpr {
+        match expr {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond,
+                then_branch: Box::new(Self::inject_inline_empty_msg_proofs(
+                    *then_branch,
+                    msg_type,
+                )),
+                else_branch: else_branch.map(|eb| {
+                    Box::new(Self::inject_inline_empty_msg_proofs(*eb, msg_type))
+                }),
+            },
+            ExecExpr::Block(stmts) => {
+                if stmts.is_empty() {
+                    return ExecExpr::Block(stmts);
+                }
+                let mut new_stmts = Vec::new();
+                for stmt in stmts {
+                    // Check for Let bindings with VecLit values (hoisted sent_packets)
+                    if let ExecExpr::Let { ref pattern, ref ty, ref value } = stmt {
+                        if let ExecExpr::VecLit(ref elems) = **value {
+                            if elems.is_empty() {
+                                // Empty vec: proof { lemma_empty_msg_map(); }
+                                new_stmts.push(stmt);
+                                new_stmts.push(ExecExpr::ProofBlock {
+                                    stmts: vec![ExecExpr::Call {
+                                        func: "lemma_empty_msg_map".to_string(),
+                                        args: vec![],
+                                    }],
+                                });
+                                continue;
+                            } else {
+                                // Non-empty vec: assert extensional equality of mapped view
+                                // assert(_sent_0@.map(|i: int, p: CType| p@) =~= seq![...])
+                                let var_name = pattern.clone();
+                                let proof_assert = Self::build_veclit_proof_assert(
+                                    &var_name, elems, msg_type,
+                                );
+                                new_stmts.push(stmt);
+                                if let Some(proof) = proof_assert {
+                                    new_stmts.push(proof);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    new_stmts.push(stmt);
+                }
+                // Recurse into the last statement
+                if let Some(last) = new_stmts.pop() {
+                    let last = Self::inject_inline_empty_msg_proofs(last, msg_type);
+                    new_stmts.push(last);
+                }
+                ExecExpr::Block(new_stmts)
+            }
+            ExecExpr::Tuple(ref elems) => {
+                // Check if this tuple has an empty VecLit at any position
+                let has_empty_vec = elems
+                    .iter()
+                    .any(|e| matches!(e, ExecExpr::VecLit(v) if v.is_empty()));
+                if has_empty_vec {
+                    let proof_call = ExecExpr::ProofBlock {
+                        stmts: vec![ExecExpr::Call {
+                            func: "lemma_empty_msg_map".to_string(),
+                            args: vec![],
+                        }],
+                    };
+                    ExecExpr::Block(vec![proof_call, expr])
+                } else {
+                    expr
+                }
+            }
+            // For Call expressions (sub-action delegation), no proof needed
+            // for the sent_packets assertion, but may need helper-preserves-fields proofs.
+            _ => expr,
+        }
+    }
+
+    /// Inject proof assertions that a helper return value preserves specific fields
+    /// of the original input. Called on composite function bodies when the function
+    /// uses `let s_mid = Chelper(s, ...)` and later delegates to a sub-action that
+    /// requires properties of `s.field`.
+    ///
+    /// Generates: `proof { assert(s_mid@.field =~= s@.field); }`
+    /// for each field mentioned in `extra_requires` of any called function.
+    fn inject_helper_preserves_proofs(
+        body: ExecExpr,
+        extra_requires: &HashMap<String, Vec<String>>,
+    ) -> ExecExpr {
+        // Find Let bindings of helper calls: let s_mid = Chelper(s, ...)
+        // Then scan for Call expressions that use s_mid and have extra_requires mentioning s.field
+        let helper_bindings = Self::find_helper_let_bindings(&body);
+        if helper_bindings.is_empty() {
+            return body;
+        }
+        Self::inject_preserves_in_branches(body, &helper_bindings, extra_requires)
+    }
+
+    /// Find let bindings of the form `let var = Chelper(input, ...)` in the top-level block.
+    /// Returns Vec of (bound_var_name, original_input_name).
+    fn find_helper_let_bindings(body: &ExecExpr) -> Vec<(String, String)> {
+        let stmts = match body {
+            ExecExpr::Block(stmts) => stmts,
+            _ => return vec![],
+        };
+        let mut bindings = Vec::new();
+        for stmt in stmts {
+            if let ExecExpr::Let { pattern, value, .. } = stmt {
+                if let ExecExpr::Call { args, .. } = value.as_ref() {
+                    // First argument to the helper is the original input (e.g., &s → s)
+                    if let Some(first_arg) = args.first() {
+                        let input_name = match first_arg {
+                            ExecExpr::Var(name) => Some(name.clone()),
+                            ExecExpr::Unary { op, expr } if op == "&" => {
+                                if let ExecExpr::Var(name) = expr.as_ref() {
+                                    Some(name.clone())
+                                } else { None }
+                            }
+                            _ => None,
+                        };
+                        if let Some(input) = input_name {
+                            bindings.push((pattern.clone(), input));
+                        }
+                    }
+                }
+            }
+        }
+        bindings
+    }
+
+    /// Recursively inject proof blocks before Call expressions that use helper results
+    /// and whose callees have extra_requires mentioning fields of the original input.
+    fn inject_preserves_in_branches(
+        expr: ExecExpr,
+        helper_bindings: &[(String, String)],
+        extra_requires: &HashMap<String, Vec<String>>,
+    ) -> ExecExpr {
+        match expr {
+            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+                cond,
+                then_branch: Box::new(Self::inject_preserves_in_branches(
+                    *then_branch, helper_bindings, extra_requires,
+                )),
+                else_branch: else_branch.map(|eb| Box::new(
+                    Self::inject_preserves_in_branches(*eb, helper_bindings, extra_requires),
+                )),
+            },
+            ExecExpr::Block(stmts) => {
+                let mut new_stmts = Vec::new();
+                for stmt in stmts {
+                    let stmt = Self::inject_preserves_in_branches(stmt, helper_bindings, extra_requires);
+                    new_stmts.push(stmt);
+                }
+                ExecExpr::Block(new_stmts)
+            }
+            ExecExpr::Call { ref func, ref args } => {
+                // Check if this call uses a helper result as its first argument
+                // and has extra_requires mentioning fields
+                let callee_name = func.clone();
+                let first_arg_name = match args.first() {
+                    Some(ExecExpr::Unary { op, expr }) if op == "&" => {
+                        if let ExecExpr::Var(name) = expr.as_ref() { Some(name.clone()) } else { None }
+                    }
+                    Some(ExecExpr::Var(name)) => Some(name.clone()),
+                    _ => None,
+                };
+                if let Some(arg_name) = first_arg_name {
+                    // Check if this arg is a helper-bound variable
+                    if let Some((_, original_input)) = helper_bindings.iter()
+                        .find(|(bound, _)| bound == &arg_name)
+                    {
+                        // Check if the callee has extra_requires mentioning fields
+                        if let Some(requires) = extra_requires.get(&callee_name) {
+                            let mut proof_stmts = Vec::new();
+                            for req in requires {
+                                // Extract field names from requires like "s.log@.len() < u64::MAX as int"
+                                // Look for patterns: original_input.field
+                                let field_pattern = format!("{}.log", original_input);
+                                if req.contains(&field_pattern) {
+                                    proof_stmts.push(ExecExpr::Assert(Box::new(
+                                        ExecExpr::Var(format!(
+                                            "{}@.log =~= {}@.log",
+                                            arg_name, original_input
+                                        ))
+                                    )));
+                                    proof_stmts.push(ExecExpr::Assert(Box::new(
+                                        ExecExpr::Var(format!(
+                                            "{}@.log.len() == {}@.log.len()",
+                                            arg_name, original_input
+                                        ))
+                                    )));
+                                }
+                            }
+                            if !proof_stmts.is_empty() {
+                                let proof = ExecExpr::ProofBlock { stmts: proof_stmts };
+                                return ExecExpr::Block(vec![proof, expr]);
+                            }
+                        }
+                    }
+                }
+                expr
+            }
+            _ => expr,
+        }
+    }
+
+    /// Build a proof assertion for a non-empty VecLit.
+    /// Generates: `proof { assert(var@.map(|i: int, p: CType| p@) =~= seq![var@[0]@, ...]); }`
+    fn build_veclit_proof_assert(
+        var_name: &str,
+        elems: &[ExecExpr],
+        msg_type: &str,
+    ) -> Option<ExecExpr> {
+        let n = elems.len();
+        let mapped_elements: Vec<String> = (0..n)
+            .map(|i| format!("{}@[{}]@", var_name, i))
+            .collect();
+        let seq_str = if n == 1 {
+            format!("Seq::empty().push({})", mapped_elements[0])
+        } else {
+            format!("seq![{}]", mapped_elements.join(", "))
+        };
+        let assertion = format!(
+            "{}@.map(|i: int, p: {}| p@) =~= {}",
+            var_name, msg_type, seq_str
+        );
+        Some(ExecExpr::ProofBlock {
+            stmts: vec![ExecExpr::Assert(Box::new(ExecExpr::Var(assertion)))],
+        })
     }
 
     /// Strip redundant `&` from input params in function call arguments.
@@ -5619,6 +5916,44 @@ impl Translator {
         }
 
         let mut needs = ProofNeeds::analyze(&body);
+
+        // For composite handlers with mixed conditional returns (some branches return
+        // Tuple with empty VecLit, others delegate to sub-action Calls), inject inline
+        // proof blocks inside each branch that returns an empty vec.
+        let body = if needs.has_delegating_call_in_conditional {
+            // Extract the message element type from the return type for the lemma
+            let msg_type = if let ExecType::Tuple(types) = return_type {
+                types.get(1).and_then(|t| {
+                    if let ExecType::Vec(inner) = t {
+                        if let ExecType::Named(name) = inner.as_ref() {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            };
+            if let Some(ref msg_type_name) = msg_type {
+                Self::inject_inline_empty_msg_proofs(body, msg_type_name)
+            } else {
+                body
+            }
+        } else {
+            body
+        };
+
+        // For composite handlers, inject field-preservation proofs where a helper
+        // result (e.g., s_mid from Cstep_down_if_needed) is passed to a delegated
+        // call whose extra_requires reference fields of the original input.
+        let body = if needs.has_delegating_call_in_conditional {
+            Self::inject_helper_preserves_proofs(body, &self.config.extra_requires)
+        } else {
+            body
+        };
 
         // Resolve missing element types for empty VecLit sites.
         // First try extracting from the function's return type (most accurate).
@@ -9454,9 +9789,16 @@ impl Translator {
             // Sort by output parameter order if possible
             let sorted_outputs = self.sort_outputs_by_param_order(&output_exprs, &updated_ctx);
 
+            // Hoist VecLit elements into let bindings to avoid use-after-move.
+            // When the tuple is (s_mid, vec![Struct{field: s_mid.field}]), Rust moves
+            // s_mid in position 0 before evaluating position 1. Fix by extracting
+            // the VecLit into a let binding evaluated before the tuple.
+            let (sorted_outputs, extra_lets) = Self::hoist_veclit_to_avoid_move(sorted_outputs);
+
             // Combine let bindings + other expressions + tuple
             let mut block = let_bindings;
             block.extend(other_exprs);
+            block.extend(extra_lets);
             block.push(ExecExpr::Tuple(sorted_outputs));
             if block.len() == 1 {
                 Ok(block.pop().unwrap())
@@ -10390,6 +10732,71 @@ impl Translator {
             a_idx.cmp(&b_idx)
         });
         sorted.into_iter().map(|(_, e)| e).collect()
+    }
+
+    /// Check if an expression references a given variable name (including field accesses).
+    fn expr_references_var(expr: &ExecExpr, var_name: &str) -> bool {
+        match expr {
+            ExecExpr::Var(name) => name == var_name,
+            ExecExpr::Field(base, _) => Self::expr_references_var(base, var_name),
+            ExecExpr::MethodCall { receiver, args, .. } => {
+                Self::expr_references_var(receiver, var_name)
+                    || args.iter().any(|a| Self::expr_references_var(a, var_name))
+            }
+            ExecExpr::Call { args, .. } => args.iter().any(|a| Self::expr_references_var(a, var_name)),
+            ExecExpr::Struct { fields, .. } => {
+                fields.iter().any(|(_, e)| Self::expr_references_var(e, var_name))
+            }
+            ExecExpr::VecLit(elems) => elems.iter().any(|e| Self::expr_references_var(e, var_name)),
+            ExecExpr::Tuple(elems) => elems.iter().any(|e| Self::expr_references_var(e, var_name)),
+            ExecExpr::Block(stmts) => stmts.iter().any(|e| Self::expr_references_var(e, var_name)),
+            ExecExpr::If { cond, then_branch, else_branch } => {
+                Self::expr_references_var(cond, var_name)
+                    || Self::expr_references_var(then_branch, var_name)
+                    || else_branch.as_ref().map_or(false, |e| Self::expr_references_var(e, var_name))
+            }
+            _ => false,
+        }
+    }
+
+    /// Hoist VecLit elements out of a tuple to avoid use-after-move errors.
+    ///
+    /// When a tuple has a Var in position 0 (which moves it) and a VecLit in
+    /// a later position that references the same variable's fields, Rust fails
+    /// because the variable is moved before the VecLit is evaluated.
+    ///
+    /// Fix: extract the VecLit into a let binding before the tuple.
+    /// `(s_mid, vec![Struct{f: s_mid.f}])` → `let _sent = vec![...]; (s_mid, _sent)`
+    fn hoist_veclit_to_avoid_move(mut outputs: Vec<ExecExpr>) -> (Vec<ExecExpr>, Vec<ExecExpr>) {
+        // Find which position has a bare Var (the moved value)
+        let moved_var = if let Some(ExecExpr::Var(name)) = outputs.first() {
+            Some(name.clone())
+        } else {
+            None
+        };
+
+        let Some(var_name) = moved_var else {
+            return (outputs, vec![]);
+        };
+
+        let mut extra_lets = Vec::new();
+        let mut hoisted_idx = 0;
+        for i in 1..outputs.len() {
+            if matches!(&outputs[i], ExecExpr::VecLit(_))
+                && Self::expr_references_var(&outputs[i], &var_name)
+            {
+                let hoisted_name = format!("_sent_{}", hoisted_idx);
+                let veclit = std::mem::replace(&mut outputs[i], ExecExpr::Var(hoisted_name.clone()));
+                extra_lets.push(ExecExpr::Let {
+                    pattern: hoisted_name,
+                    ty: None,
+                    value: Box::new(veclit),
+                });
+                hoisted_idx += 1;
+            }
+        }
+
+        (outputs, extra_lets)
     }
 
     /// Detect helper predicate calls with output parameters

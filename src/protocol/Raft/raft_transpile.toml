@@ -5,15 +5,14 @@
 # call atomic functions with requires preconditions that need runtime guard checks.
 skip_functions = [
     "LNext",
-    "step_down_if_needed",
-    "log_up_to_date",
-    "LHandleRequestVoteMsg",
-    "LHandleAppendEntriesMsg",
     "LHandleVoteResponseMsg",
     "LHandleAppendResponseMsg",
     "LTryAdvanceCommitIndex",
     "LHandleMessage",
 ]
+
+# Message type for sent_packets Vec proof helpers (generates lemma_empty_msg_map)
+msg_vec_type = ["CRaftMessage", "LRaftMessage"]
 
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
 [extra_requires]
@@ -29,6 +28,9 @@ skip_functions = [
     })""",
 ]
 "CFollowerAppendEntries" = [
+    "s.log@.len() < u64::MAX as int",
+]
+"CHandleAppendEntriesMsg" = [
     "s.log@.len() < u64::MAX as int",
 ]
 "CHandleAppendResponse" = [
