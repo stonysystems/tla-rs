@@ -164,4 +164,32 @@ verus! {
         s@.map(|e: crate::common::native::io_s::EndPoint| e@).len() == s.len(),
     {
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Trusted primitives: Set::map forall bridging lemmas (Phase 30)
+    // ══════════════════════════════════════════════════════════════════
+    //
+    // These lemmas bridge universal quantifiers across Set::map when
+    // the view function is injective. Used for predicate functions that
+    // check forall/exists over HashSet elements at exec level but need
+    // to prove the same property at spec level over the view-mapped set.
+
+    /// Bridges a universal src-inequality predicate from Set<CPacket> to
+    /// Set<RslPacket> across the CPacket view mapping.
+    ///
+    /// Soundness: CPacket view is injective (axiom_cpacket_view ensures
+    /// p1@ == p2@ ==> p1 == p2). This establishes a bijection between
+    /// S and S.map(|p| p@), so the forall transfers in both directions.
+    /// The .src field maps through view: p@.src == p.src@.
+    #[verifier::external_body]
+    pub proof fn lemma_cpacket_set_forall_src(
+        s: Set<crate::implementation::RSL::cmessage::CPacket>,
+        src: crate::common::native::io_s::AbstractEndPoint,
+    )
+    ensures
+        (forall |op: crate::implementation::RSL::cmessage::CPacket| s.contains(op) ==> op.src@ != src)
+        <==>
+        (forall |op: crate::protocol::RSL::environment::RslPacket| s.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).contains(op) ==> op.src != src),
+    {
+    }
 }

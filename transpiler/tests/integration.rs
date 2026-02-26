@@ -1986,7 +1986,7 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
         ("executor_gen.rs", 1usize),  // 1 reply validity assume in lemma_CHandleRequestBatch_properties
         ("learner_gen.rs", 5usize),   // 3 from CLearnerProcess2b (ballot valid + postconditions) + 2 from CLearnerForgetOperationsBefore
         ("proposer_gen.rs", 21usize), // 5 original + 17 from 3 Nominate functions - 1 cardinality (Phase 30)
-        ("replica_gen.rs", 7usize),   // 4 original + 3 from CReplicaNextProcess1b + 1 from CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints - 1 cardinality (Phase 30)
+        ("replica_gen.rs", 6usize),   // 4 original + 3 from CReplicaNextProcess1b + 1 from CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints - 2 (Phase 30: cardinality + samesrc forall)
     ]
     .into_iter()
     .collect();

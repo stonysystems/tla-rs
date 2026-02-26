@@ -262,11 +262,10 @@ ensures
         assert(src_in_config == s@.proposer.constants.all.config.replica_ids.contains(received_packet@.src));
         assert(bal_eq == (received_packet@.msg->bal_1b == s@.proposer.max_ballot_i_sent_1a));
         assert(state_is_1 == (s@.proposer.current_state == 1));
-        // Condition 4 (samesrc): bidirectional over CPacket, but bridging to RslPacket
-        // requires Set::map injectivity reasoning (irreducible Verus gap).
-        // Targeted assume: samesrc ↔ spec-level forall over RslPacket
-        assume(samesrc == (forall |op: RslPacket| s@.proposer.received_1b_packets.contains(op)
-            ==> op.src != received_packet@.src));
+        // Condition 4 (samesrc): bridge CPacket forall to RslPacket forall via view injectivity
+        crate::common::collections::hashsets::lemma_cpacket_set_forall_src(
+            s.proposer.received_1b_packets@, received_packet.src@);
+        assert(s.proposer.received_1b_packets@.map(|p: CPacket| p@) =~= s@.proposer.received_1b_packets);
     }
 
     if src_in_config && bal_eq && state_is_1 && samesrc
