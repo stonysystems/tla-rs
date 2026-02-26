@@ -8214,3 +8214,120 @@ Function now verified with 5 targeted assumes (all for HandleRequestBatch struct
 - [x] All transpiler tests pass (1903 tests)
 
 **Phase 25 COMPLETE** — all acceptance criteria met.
+
+---
+
+## Phase 26: Raft Benchmark Client — Throughput & Latency Measurement
+
+### 26.0 Background
+
+The Raft protocol implementation is fully runnable (3-node cluster verified in Phase 25 testing).
+However, the current Raft implementation has **no external client request/response path** — the
+leader auto-generates client requests internally via timer (`try_client_request` in host.rs:693).
+To measure throughput and latency, we need:
+1. A client request/response message protocol added to the Raft wire format
+2. A C# benchmark client (modeled after `IronRSLClientUDP`)
+
+Reference: RSL has `csharp/IronRSLClientUDP/` which sends `CMessageRequest` to servers and
+receives `CMessageReply` with sequence-numbered request/response tracking, multi-threaded
+clients, and HiResTimer-based latency measurement.
+
+### 26.1 Add Client Request/Response Messages to Raft Wire Protocol
+
+**Goal**: Extend the Raft message format to support external client requests and responses.
+
+**Files to modify**:
+- `src/implementation/Raft/message.rs` — Add two new message variants:
+  ```
+  ClientRequest { client_id: u64, seq_no: u64, value: u64 }   // TAG = 5
+  ClientResponse { client_id: u64, seq_no: u64, success: bool } // TAG = 6
+  ```
+  Implement `serialize_to_bytes` and `deserialize_from_bytes` for both.
+
+- `src/implementation/Raft/host.rs` — Modify `fn next()` to:
+  - Handle incoming `ClientRequest` messages: if leader, append to log and reply
+    with `ClientResponse { success: true }` once committed; if not leader, reply
+    with `ClientResponse { success: false }` (or drop/redirect)
+  - Remove or keep `try_client_request` as a fallback for self-generated entries
+
+**Estimated effort**: ~2 hours
+
+### 26.2 Create C# Benchmark Client
+
+**Goal**: Build `csharp/IronRaftClient/` modeled after `IronRSLClientUDP`.
+
+**Files to create**:
+- `csharp/IronRaftClient/IronRaftClient.csproj` — .NET 6 project file
+- `csharp/IronRaftClient/Program.cs` — CLI entry point with params:
+  - `ip1/port1`, `ip2/port2`, `ip3/port3` (server addresses)
+  - `clientip/clientport` (bind address)
+  - `nthreads` (concurrent clients, default 1)
+  - `duration` (seconds, default 60)
+  - `initialseqno` (starting sequence number)
+- `csharp/IronRaftClient/Client.cs` — Benchmark logic:
+  - UDP socket sending `ClientRequest` messages to all servers (leader discovery)
+  - Receive `ClientResponse`, match by `seq_no`
+  - Track per-request latency via `Stopwatch` / HiResTimer
+  - Retry with timeout (e.g., 1s) if no response
+  - Print periodic stats: `#req<N> <throughput> ops/sec, avg_lat <X> ms, p50 <Y> ms, p99 <Z> ms`
+
+**Wire format**: Little-endian u64 fields matching `message.rs` TAG scheme:
+- Send: `[TAG=5][client_id][seq_no][value]` — 32 bytes
+- Recv: `[TAG=6][client_id][seq_no][success]` — 32 bytes
+
+**Estimated effort**: ~3 hours
+
+### 26.3 Integration & Build
+
+**Goal**: Wire the benchmark client into the build system and test harness.
+
+**Files to modify**:
+- `SConstruct` — Add `IronRaftClient.dll` build target
+- `scripts/integration_test_cluster.sh` — Add raft benchmark mode:
+  - Start 3-node cluster, wait for leader election
+  - Run `IronRaftClient` for 10s, capture throughput/latency
+  - Verify non-zero throughput (sanity check)
+
+**Estimated effort**: ~1 hour
+
+### 26.4 Benchmark Execution & Reporting
+
+**Goal**: Run the benchmark and collect baseline numbers.
+
+**Benchmark configurations to test**:
+1. **Single client, 3 nodes**: Baseline latency measurement
+2. **Multi-client (4 threads), 3 nodes**: Throughput saturation
+3. **Varying payload** (optional): Measure impact of value size
+
+**Expected output format**:
+```
+=== Raft Benchmark Results ===
+Cluster: 3 nodes (localhost)
+Duration: 60s
+Threads: 1
+Total requests: NNNNN
+Throughput: XXXX ops/sec
+Avg latency: X.XX ms
+P50 latency: X.XX ms
+P99 latency: X.XX ms
+```
+
+### 26.5 Acceptance Criteria
+
+- [ ] **26.5.1**: Raft servers accept external `ClientRequest` messages and reply with `ClientResponse`
+- [ ] **26.5.2**: C# benchmark client successfully connects and exchanges messages with 3-node cluster
+- [ ] **26.5.3**: Benchmark reports non-zero throughput (ops/sec) and latency (ms) after 10s run
+- [ ] **26.5.4**: `scons` builds `IronRaftClient.dll` successfully
+- [ ] **26.5.5**: Integration test script includes raft benchmark mode
+
+### 26.6 Execution Order
+
+```
+26.1 Client request/response messages     ← Rust message + host changes
+  ↓
+26.2 C# benchmark client                  ← standalone, can test against running cluster
+  ↓
+26.3 Build integration                    ← SConstruct + test script
+  ↓
+26.4 Run benchmark & collect numbers
+```
