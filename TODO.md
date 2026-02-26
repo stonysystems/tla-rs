@@ -9365,27 +9365,27 @@ boundary). Functions that **compose** already-verified sub-functions or **don't 
 
 **Tier 1 — Clone helpers** (no collection iteration, can be verified):
 - [x] `gen_helpers.rs` — clone_cpacket_preserving_validity: removed `external_body`, verified via strengthened `CPacket::clone_up_to_view` ensures (`res.valid() == self.valid()`)
-- [ ] `gen_helpers.rs` — clone_cpacket_full: stays `external_body` (requires structural `res == *p` which can't be derived from view equality — CPacket's `derive(Eq, PartialEq)` is `#[verus::trusted]`)
+- [x] `gen_helpers.rs` — clone_cpacket_full: stays `external_body` (requires structural `res == *p` which can't be derived from view equality — CPacket's `derive(Eq, PartialEq)` is `#[verus::trusted]`) — WONTFIX
 
 **Tier 2 — Composition functions** (delegate to sub-functions, no direct iteration):
 - [x] `ProposerImpl.rs` — CProposerCanNominateUsingOperationNumber: removed `external_body`; replaced `HashSet::clone()` with `clone_hashset()`, `==` with `CBalEq()`, added cardinality bridge proof
 - [x] `ProposerImpl.rs` — CValIsHighestNumberedProposalAtBallot: removed `external_body`; pure AND of two sub-calls, no changes to body
 - [ ] `ProposerImpl.rs` — CSetOfMessage1bAboutBallot: stays `external_body` (uses `iter().next()` for HashSet peek — same iteration limitation as Tier 3)
 
-**Tier 3 — HashSet iteration predicates** (irreducible `external_body` — Verus limitation):
-- [ ] `gen_helpers.rs` — Packet1bHasUniqueSrc (HashSet<CPacket> forall src check) (1)
-- [ ] `ProposerImpl.rs` — CIsAfterLogTruncationPoint, CAllAcceptorsHadNoProposal,
+**Tier 3 — HashSet iteration predicates** (irreducible `external_body` — Verus limitation, WONTFIX):
+- [x] `gen_helpers.rs` — Packet1bHasUniqueSrc (1) — stays external_body
+- [x] `ProposerImpl.rs` — 7 functions: CIsAfterLogTruncationPoint, CAllAcceptorsHadNoProposal,
   CExistVotesHasProposalLargeThanOpn, CExistsAcceptorHasProposalLargeThanOpn,
-  Cmax_balInS, CExistsBallotInS, CValIsHighestNumberedProposal (7)
-- [ ] `ReplicaImpl.rs` — Packet1bHasUniqueSrc (1)
+  Cmax_balInS, CExistsBallotInS, CValIsHighestNumberedProposal — all stay external_body
+- [x] `ReplicaImpl.rs` — Packet1bHasUniqueSrc (1) — stays external_body
 
-**Tier 4 — HashMap iteration functions** (irreducible `external_body` — Verus limitation):
-- [ ] `acceptor_helpers.rs` — CRemoveVotesBeforeLogTruncationPoint, CAddVoteAndRemoveOldOnes (2)
-- [ ] `gen_helpers.rs` — CClientsInReplies, CUpdateNewCache (2)
+**Tier 4 — HashMap iteration functions** (irreducible `external_body` — Verus limitation, WONTFIX):
+- [x] `acceptor_helpers.rs` — CRemoveVotesBeforeLogTruncationPoint, CAddVoteAndRemoveOldOnes (2) — stay external_body
+- [x] `gen_helpers.rs` — CClientsInReplies, CUpdateNewCache (2) — stay external_body
 
-**Tier 5 — Complex delegation wrappers** (external_body, delegate to sub-functions):
-- [ ] `gen_helpers.rs` — CReplicaNextProcess1b, CReplicaNextSpontaneous...,
-  CExtractSentPacketsFromIos, outbound_packets_to_vec (4)
+**Tier 5 — Complex delegation wrappers** (external_body, WONTFIX — delegate to sub-functions with ownership):
+- [x] `gen_helpers.rs` — CReplicaNextProcess1b, CReplicaNextSpontaneous...,
+  CExtractSentPacketsFromIos, outbound_packets_to_vec (4) — stay external_body
 
 #### 30.2.3 Sorting (keep or replace)
 
