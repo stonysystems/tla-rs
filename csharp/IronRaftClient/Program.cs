@@ -27,6 +27,7 @@ Allowed keys:
   nthreads   - Number of client threads to run (default 1)
   duration   - Duration of experiment in seconds (default 60)
   initialseqno - First sequence number each thread uses (default 0)
+  leader     - Server index (0-based) to send to first (default: auto-discover)
 
 Wire format (little-endian u64 fields, 32 bytes each):
   Send: [TAG=5][client_id][seq_no][value]
@@ -47,6 +48,7 @@ Wire format (little-endian u64 fields, 32 bytes each):
             int port2 = 4002;
             int port3 = 4003;
             ulong initialSeqNo = 0;
+            int leaderIdx = -1; // -1 = auto-discover
 
             foreach (var arg in args)
             {
@@ -74,6 +76,7 @@ Wire format (little-endian u64 fields, 32 bytes each):
                         case "nthreads": numThreads = Convert.ToInt32(value); break;
                         case "duration": duration = Convert.ToUInt64(value); break;
                         case "initialseqno": initialSeqNo = Convert.ToUInt64(value); break;
+                        case "leader": leaderIdx = Convert.ToInt32(value); break;
                         default:
                             Console.WriteLine("Invalid argument {0}", arg);
                             Usage();
@@ -97,6 +100,8 @@ Wire format (little-endian u64 fields, 32 bytes each):
 
             int[] reqCounts = new int[numThreads];
             double[] latencySums = new double[numThreads];
+            // Shared across all threads: sharedLeaderIdx[0] holds the current leader index.
+            int[] sharedLeaderIdx = new int[] { leaderIdx };
 
             HiResTimer.Initialize();
             Console.Error.WriteLine("Raft benchmark client starting {0} thread(s) for {1}s ...", numThreads, duration);
@@ -116,6 +121,7 @@ Wire format (little-endian u64 fields, 32 bytes each):
                     Endpoints = endpoints,
                     ReqCounts = reqCounts,
                     LatencySums = latencySums,
+                    SharedLeaderIdx = sharedLeaderIdx,
                 };
                 threads[i] = new Thread(Client.Run);
                 threads[i].Start(p);

@@ -102,6 +102,31 @@ pub struct RaftHost {
     pub action_index: u64,
     /// Client request counter (used to generate unique values).
     pub client_request_counter: u64,
+    /// Wall-clock time of last heartbeat received (for election timeout).
+    pub last_heartbeat: std::time::Instant,
+    /// Wall-clock time of last heartbeat sent (for rate-limiting leader heartbeats).
+    pub last_heartbeat_sent: std::time::Instant,
+    /// Current randomized election timeout (refreshed each election attempt).
+    pub election_timeout_ms: u128,
+}
+
+/// Minimum election timeout in milliseconds.
+const ELECTION_TIMEOUT_MIN_MS: u128 = 1000;
+/// Maximum election timeout in milliseconds.
+const ELECTION_TIMEOUT_MAX_MS: u128 = 2000;
+
+/// Heartbeat interval in milliseconds. Leader sends heartbeats at most this often.
+/// Must be significantly less than ELECTION_TIMEOUT_MIN_MS to prevent spurious elections.
+const HEARTBEAT_INTERVAL_MS: u128 = 100;
+
+/// Generate a random election timeout in [ELECTION_TIMEOUT_MIN_MS, ELECTION_TIMEOUT_MAX_MS].
+fn random_election_timeout() -> u128 {
+    // Simple PRNG using system time nanoseconds
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos() as u128;
+    ELECTION_TIMEOUT_MIN_MS + (nanos % (ELECTION_TIMEOUT_MAX_MS - ELECTION_TIMEOUT_MIN_MS + 1))
 }
 
 impl RaftHost {
@@ -161,6 +186,10 @@ impl RaftHost {
         if term > self.state.current_term && term < u64::MAX {
             let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
             self.state = new_state;
+            // Reset election timer on step-down so we don't immediately start
+            // our own election (especially important for leaders who never
+            // receive heartbeats and thus have a stale last_heartbeat).
+            self.last_heartbeat = std::time::Instant::now();
         }
 
         // Guard: candidate_term >= current_term
@@ -205,6 +234,10 @@ impl RaftHost {
         );
         self.state = new_state;
 
+        // Reset election timer after granting vote (Raft paper §5.2:
+        // "reset election timeout" on granting vote to candidate)
+        self.last_heartbeat = std::time::Instant::now();
+
         // Send VoteResponse (granted=true) back to candidate
         StepResult {
             ok: true,
@@ -242,6 +275,11 @@ impl RaftHost {
         if term > self.state.current_term && term < u64::MAX {
             let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
             self.state = new_state;
+        }
+
+        // Reset election timeout on valid heartbeat/append from leader
+        if term >= self.state.current_term {
+            self.last_heartbeat = std::time::Instant::now();
         }
 
         // Guard: term >= current_term
@@ -321,6 +359,17 @@ impl RaftHost {
             };
         }
 
+        // Only fire election timeout after randomized wall-clock time without a heartbeat
+        if self.last_heartbeat.elapsed().as_millis() < self.election_timeout_ms {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
+        }
+        self.last_heartbeat = std::time::Instant::now();
+        // Pick a new random timeout for the next election attempt
+        self.election_timeout_ms = random_election_timeout();
+
         // Guard: current_term < MAX
         if self.state.current_term >= u64::MAX {
             return StepResult {
@@ -330,6 +379,10 @@ impl RaftHost {
         }
 
         let new_term = self.state.current_term + 1;
+        eprintln!(
+            "Raft: Node {} election timeout, starting election for term {}",
+            config.my_index, new_term
+        );
         let (new_state, _sent) = raft_gen::CTimeout(&self.state, &config.constants);
         self.state = new_state;
 
@@ -372,6 +425,7 @@ impl RaftHost {
         if term > self.state.current_term && term < u64::MAX {
             let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
             self.state = new_state;
+            self.last_heartbeat = std::time::Instant::now();
             return StepResult {
                 ok: true,
                 outbound: GenericOutbound::None,
@@ -444,6 +498,7 @@ impl RaftHost {
         if term > self.state.current_term && term < u64::MAX {
             let (new_state, _sent) = raft_gen::CStepDown(&self.state, &config.constants, &term);
             self.state = new_state;
+            self.last_heartbeat = std::time::Instant::now();
             return StepResult {
                 ok: true,
                 outbound: GenericOutbound::None,
@@ -755,6 +810,66 @@ impl RaftHost {
             outbound: GenericOutbound::None,
         }
     }
+    /// Collect heartbeat packets into a Vec if the heartbeat interval has elapsed.
+    /// Returns None if not time yet or not a leader.
+    fn maybe_heartbeat_packets(&mut self, config: &RaftConfig) -> Option<Vec<GenericPacket<RaftMessage>>> {
+        if !matches!(self.state.role, CServerRole::Leader) {
+            return None;
+        }
+        if self.last_heartbeat_sent.elapsed().as_millis() < HEARTBEAT_INTERVAL_MS {
+            return None;
+        }
+        self.last_heartbeat_sent = std::time::Instant::now();
+
+        let hb_result = self.try_send_append_entries(config);
+        match hb_result.outbound {
+            GenericOutbound::Sequence { packets } => Some(packets),
+            _ => None,
+        }
+    }
+
+    /// Merge heartbeat packets with a message handler result.
+    /// If heartbeat packets exist, combine them with whatever outbound
+    /// the message handler produced, into a single Sequence.
+    fn merge_outbound(
+        msg_result: StepResult<RaftMessage>,
+        hb_packets: Option<Vec<GenericPacket<RaftMessage>>>,
+    ) -> StepResult<RaftMessage> {
+        let hb_packets = match hb_packets {
+            Some(p) if !p.is_empty() => p,
+            _ => return msg_result,
+        };
+
+        let mut all_packets = hb_packets;
+        // Add message handler's outbound packets
+        match msg_result.outbound {
+            GenericOutbound::None => {}
+            GenericOutbound::Send { dst, msg } => {
+                all_packets.push(GenericPacket {
+                    dst,
+                    src: EndPoint { id: Vec::new() }, // src is set by framework
+                    msg,
+                });
+            }
+            GenericOutbound::Broadcast { dsts, msg } => {
+                for dst in dsts {
+                    all_packets.push(GenericPacket {
+                        dst,
+                        src: EndPoint { id: Vec::new() },
+                        msg: msg.clone(),
+                    });
+                }
+            }
+            GenericOutbound::Sequence { packets } => {
+                all_packets.extend(packets);
+            }
+        }
+
+        StepResult {
+            ok: msg_result.ok,
+            outbound: GenericOutbound::Sequence { packets: all_packets },
+        }
+    }
 }
 
 impl ProtocolHost for RaftHost {
@@ -767,6 +882,9 @@ impl ProtocolHost for RaftHost {
             state,
             action_index: 0,
             client_request_counter: 0,
+            last_heartbeat: std::time::Instant::now(),
+            last_heartbeat_sent: std::time::Instant::now(),
+            election_timeout_ms: random_election_timeout(),
         })
     }
 
@@ -775,9 +893,17 @@ impl ProtocolHost for RaftHost {
         config: &Self::Cfg,
         packet: Option<GenericPacket<Self::Msg>>,
     ) -> StepResult<Self::Msg> {
-        // Handle incoming message based on current role
+        // IMPORTANT: Leader must send heartbeats on a periodic basis regardless
+        // of message traffic. If we only check the timer on timeout (no message),
+        // a busy leader processing continuous client requests will never send
+        // heartbeats, causing followers to start elections.
+        //
+        // Collect heartbeat packets first (if due), then merge with message result.
+        let hb_packets = self.maybe_heartbeat_packets(config);
+
+        // Handle incoming message
         if let Some(pkt) = packet {
-            return match pkt.msg {
+            let msg_result = match pkt.msg {
                 RaftMessage::RequestVote {
                     term,
                     candidate_id,
@@ -827,32 +953,26 @@ impl ProtocolHost for RaftHost {
                     value,
                 } => self.handle_client_request(config, &pkt.src, client_id, seq_no, value),
                 RaftMessage::ClientResponse { .. } => {
-                    // Servers ignore client responses (these are for clients only)
                     StepResult {
                         ok: true,
                         outbound: GenericOutbound::None,
                     }
                 }
             };
+            return Self::merge_outbound(msg_result, hb_packets);
         }
 
-        // No message -- run timer-driven actions round-robin based on role
-        let result = match &self.state.role {
+        // No message -- run timer-driven actions based on role
+        match &self.state.role {
             CServerRole::Follower | CServerRole::Candidate => {
-                // Followers and candidates: election timeout
                 self.try_follower_timeout(config)
             }
             CServerRole::Leader => {
-                // Leader cycles through: send heartbeats, advance commit, client requests
-                let result = match self.action_index % 3 {
-                    0 => self.try_send_append_entries(config),
-                    1 => self.try_advance_commit_index(config),
-                    _ => self.try_client_request(config),
-                };
-                self.action_index = self.action_index.wrapping_add(1);
-                result
+                // Heartbeats already handled above via maybe_heartbeat_packets.
+                // On the no-message path, do commit advancement.
+                let commit_result = self.try_advance_commit_index(config);
+                Self::merge_outbound(commit_result, hb_packets)
             }
-        };
-        result
+        }
     }
 }

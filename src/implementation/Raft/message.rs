@@ -2,6 +2,7 @@
 
 use crate::common::framework::protocol_trait::ProtocolMessage;
 
+#[derive(Clone)]
 pub enum RaftMessage {
     /// Candidate requests votes from peers during an election.
     RequestVote {

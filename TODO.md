@@ -8315,8 +8315,8 @@ P99 latency: X.XX ms
 ### 26.5 Acceptance Criteria
 
 - [x] **26.5.1**: Raft servers accept external `ClientRequest` messages and reply with `ClientResponse`
-- [ ] **26.5.2**: C# benchmark client successfully connects and exchanges messages with 3-node cluster
-- [ ] **26.5.3**: Benchmark reports non-zero throughput (ops/sec) and latency (ms) after 10s run
+- [x] **26.5.2**: C# benchmark client successfully connects and exchanges messages with 3-node cluster
+- [x] **26.5.3**: Benchmark reports non-zero throughput (ops/sec) and latency (ms) after 10s run
 - [x] **26.5.4**: `scons` builds `IronRaftClient.dll` successfully
 - [x] **26.5.5**: Integration test script includes raft benchmark mode
 

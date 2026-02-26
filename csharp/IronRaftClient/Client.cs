@@ -6,6 +6,7 @@ namespace IronRaftClient
     using System.Net;
     using System.Net.Sockets;
     using System.Linq;
+    using System.Threading;
 
     /// <summary>
     /// Parameters passed to each benchmark thread.
@@ -18,6 +19,8 @@ namespace IronRaftClient
         public List<IPEndPoint> Endpoints;
         public int[] ReqCounts;
         public double[] LatencySums;
+        /// <summary>Shared leader index across all threads. -1 = unknown.</summary>
+        public int[] SharedLeaderIdx;
     }
 
     /// <summary>
@@ -33,6 +36,7 @@ namespace IronRaftClient
     {
         private const ulong TAG_CLIENT_REQUEST = 5;
         private const ulong TAG_CLIENT_RESPONSE = 6;
+        private const int RECEIVE_TIMEOUT_MS = 50;
 
         private UdpClient udpClient;
         private List<IPEndPoint> endpoints;
@@ -43,7 +47,8 @@ namespace IronRaftClient
             System.Threading.Thread.Sleep(3000); // Stagger startup
             var p = (ClientParams)param;
             var client = new Client();
-            client.Main(p.Id, p.Port, p.InitialSeqNo, p.Endpoints, p.ReqCounts, p.LatencySums);
+            client.Main(p.Id, p.Port, p.InitialSeqNo, p.Endpoints,
+                        p.ReqCounts, p.LatencySums, p.SharedLeaderIdx);
         }
 
         private void Main(
@@ -52,14 +57,18 @@ namespace IronRaftClient
             ulong initialSeqNo,
             List<IPEndPoint> endpoints,
             int[] reqCounts,
-            double[] latencySums)
+            double[] latencySums,
+            int[] sharedLeaderIdx)
         {
             this.endpoints = endpoints;
             this.udpClient = new UdpClient(port);
-            this.udpClient.Client.ReceiveTimeout = 1000; // 1-second timeout
+            this.udpClient.Client.ReceiveTimeout = RECEIVE_TIMEOUT_MS;
             this.clientId = (ulong)port; // Use port as unique client ID
 
-            int serverIdx = 0;
+            // Start from shared leader if known, otherwise server 0
+            int serverIdx = Volatile.Read(ref sharedLeaderIdx[0]);
+            if (serverIdx < 0 || serverIdx >= endpoints.Count)
+                serverIdx = 0;
 
             for (ulong seqNo = initialSeqNo; ; seqNo++)
             {
@@ -90,7 +99,6 @@ namespace IronRaftClient
                     // Parse ClientResponse: [TAG=6][client_id][seq_no][success]
                     if (bytes.Length < 32)
                     {
-                        Console.Error.WriteLine("Client {0}: unexpected packet length {1}", id, bytes.Length);
                         continue;
                     }
 
@@ -120,8 +128,9 @@ namespace IronRaftClient
                         continue;
                     }
 
-                    // Success!
+                    // Success! Publish leader for other threads.
                     receivedReply = true;
+                    Volatile.Write(ref sharedLeaderIdx[0], serverIdx);
                     double latencyMs = HiResTimer.TicksToMilliseconds(endTime - startTime);
                     reqCounts[id] += 1;
                     latencySums[id] += latencyMs;
