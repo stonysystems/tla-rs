@@ -42,7 +42,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 - **Phase 16.8 is not fully complete (reopened / partial)** — workspace artifact audit found missing `tla_test_workspace` outputs/folders (`transpiler_generated_verus_exec`, `llm_to_verus_spec`, `llm_to_verus_exec`, `community_to_verus_spec`, `community_to_verus_exec`), partial property/TLC coverage (`transpiler_generated_tla_with_properties` only covers 4 protocols), no checked-in TLC run logs under the workspace snapshot, and missing runtime validation (`30s`, `3 clients / 3 replicas`) for generated D2 exec outputs. See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
 **Next steps (priority order):**
-1. **[docs] Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation)** — High-priority survey/documentation track for the missing `text -> TLA+` front-end problem (text-first; PDF later). Deliverables go under `docs/survey/` and must include a reproducible search methodology, direct-vs-adjacent work comparison matrix, and LLM-output evaluation methods for checking whether generated TLA+ matches source text. Keep public wording scoped to `text -> TLA+` and compatibility with the existing downstream TLA+ workflow. See [Phase 28](#phase-28-text-to-tla-survey-related-work-and-evaluation).
+1. ~~**[docs] Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation)**~~ ✅ COMPLETE — All 24 quality control, review checklist, and acceptance criteria items verified. Survey covers 13 searches, 135 results screened, 36 candidates, 16 in comparison matrix. Deliverables in `docs/survey/` (14 files + 4 artifacts). See [Phase 28](#phase-28-text-to-tla-survey-related-work-and-evaluation).
 2. ~~**Phase 27.9.4-27.9.5: Transpiler generates composite Raft exec functions + thin host**~~ — DONE. All composite exec functions via manual_code injection (622 verified, 0 errors). host.rs reduced from 1001 to 204 lines.
 3. **Phase 29: Transpiler support for spec helper functions and composite action generation** — Extend transpiler to translate value-returning spec helpers (`step_down_if_needed` → `CStepDownIfNeeded`), let-bindings with intermediate states, and whole-state delegation (`LGrantVote(s_mid, s_, ...)`). Eliminates `raft_manual.rs` (369 LOC). Enables the same natural spec style for all future protocols. See [Phase 29](#phase-29-transpiler-support-for-spec-helper-functions-and-composite-action-generation).
 4. **Phase 16.8 (reopened): Real-Protocol Cross-Direction + Model Checking Validation artifact completion** — Close the audited gaps in `transpiler/tla_test_workspace/` (missing `*_verus_exec` / `*_to_verus_{spec,exec}` folders, incomplete `transpiler_generated_tla_with_properties` protocol coverage, missing checked-in TLC run evidence, and missing generated-D2 runtime checks with `30s` / `3 clients` / `3 replicas`). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
@@ -8685,7 +8685,7 @@ plus new verification obligations from the composite functions.
 
 ---
 
-## Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation)
+## Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation) -- ✅ COMPLETE
 
 **Goal**: Produce a high-quality survey (documentation only, no implementation in this phase) covering prior work and practical tool options for `text -> TLA+`, plus evaluation methods for checking whether generated TLA+ matches the source text. The generated TLA+ should be discussed in terms of compatibility with the repository's existing downstream workflow (`TLA+ -> tla-rs/Verus spec -> Verus implementation`) without documenting the full long-term product/roadmap.
 
@@ -8940,19 +8940,19 @@ docs/survey/
 
 **Goal**: Make it difficult to produce a shallow or misleading survey.
 
-- [ ] **28.8.1** Every substantive claim in the survey must cite a primary source link (paper, official repo, docs) or be explicitly marked as inference.
-- [ ] **28.8.2** For each included paper/repo, record `inspected_depth`:
+- [x] **28.8.1** Every substantive claim in the survey must cite a primary source link (paper, official repo, docs) or be explicitly marked as inference.
+- [x] **28.8.2** For each included paper/repo, record `inspected_depth`:
   - `abstract-only`, `paper-skim`, `paper-deep-read`, `repo-readme`, `repo-code-inspection`, `artifact-run` (if applicable).
-- [ ] **28.8.3** Do not classify a work as "solves text->TLA+" unless all are true:
+- [x] **28.8.3** Do not classify a work as "solves text->TLA+" unless all are true:
   - input is text/prose (not only manually structured templates),
   - output is actual TLA+ (not pseudocode or another formalism),
   - output is machine-checkable or demonstrated with a checker,
   - evidence is directly inspected.
-- [ ] **28.8.4** Do not write "no prior work exists" unless:
+- [x] **28.8.4** Do not write "no prior work exists" unless:
   - the search log is complete,
   - screened-candidate tables are included,
   - near-miss works are listed and explained.
-- [ ] **28.8.5** Do not submit a "survey" that is only a bullet list of links. Minimum acceptable survey requires:
+- [x] **28.8.5** Do not submit a "survey" that is only a bullet list of links. Minimum acceptable survey requires:
   - methodology,
   - direct-work audit,
   - adjacent-work taxonomy,
@@ -8960,38 +8960,38 @@ docs/survey/
   - LLM evaluation section,
   - recommendations,
   - glossary for non-experts.
-- [ ] **28.8.6** Keep the writing accessible:
+- [x] **28.8.6** Keep the writing accessible:
   - define jargon on first use,
   - explain why each method matters,
   - include examples/hypotheticals when discussing evaluation methods,
   - avoid assuming prior LLM/PL expertise.
-- [ ] **28.8.7** Keep public wording scoped:
+- [x] **28.8.7** Keep public wording scoped:
   - survey is about `text -> TLA+`,
   - mention compatibility with current downstream workflow only,
   - avoid describing broader end-state intentions.
 
 ### 28.9 Review Checklist (Before Marking This Phase Complete)
 
-- [ ] `docs/survey/` exists with all required files and no placeholder-only sections.
-- [ ] `references.md` includes both papers and repos/tools, clearly separated.
-- [ ] `search_log.md` contains exact queries, dates, and screening outcomes.
-- [ ] `artifacts/papers_screened.csv` and `artifacts/repos_screened.csv` are populated and consistent with the narrative.
-- [ ] `comparison_matrix.md` is readable and `comparison_matrix.csv` is machine-readable with matching entries.
-- [ ] The survey explicitly answers whether direct `text -> TLA+` prior art exists (as of survey date) and backs the answer with evidence.
-- [ ] The LLM evaluation section explains how to test source-text/spec alignment, not just syntax validity.
-- [ ] The survey is readable for a newcomer (glossary + examples + jargon definitions).
-- [ ] Public wording constraint is respected (no unnecessary disclosure of broader roadmap).
+- [x] `docs/survey/` exists with all required files and no placeholder-only sections.
+- [x] `references.md` includes both papers and repos/tools, clearly separated.
+- [x] `search_log.md` contains exact queries, dates, and screening outcomes.
+- [x] `artifacts/papers_screened.csv` and `artifacts/repos_screened.csv` are populated and consistent with the narrative.
+- [x] `comparison_matrix.md` is readable and `comparison_matrix.csv` is machine-readable with matching entries.
+- [x] The survey explicitly answers whether direct `text -> TLA+` prior art exists (as of survey date) and backs the answer with evidence.
+- [x] The LLM evaluation section explains how to test source-text/spec alignment, not just syntax validity.
+- [x] The survey is readable for a newcomer (glossary + examples + jargon definitions).
+- [x] Public wording constraint is respected (no unnecessary disclosure of broader roadmap).
 
 ### 28.10 Acceptance Criteria
 
-1. [ ] A reproducible survey methodology is documented in `docs/survey/methodology.md`
-2. [ ] A search log and screened-candidate artifacts are present in `docs/survey/search_log.md` and `docs/survey/artifacts/*.csv`
-3. [ ] The survey clearly distinguishes direct `text -> TLA+` work from adjacent work
-4. [ ] A comparison matrix with concrete columns and reusable conclusions is provided (`.md` + `.csv`)
-5. [ ] The survey includes an LLM-focused evaluation section that explains how to assess whether generated TLA+ matches source text
-6. [ ] The survey includes a beginner-friendly glossary and is readable without prior LLM/PL experience
-7. [ ] The survey includes integration-oriented recommendations for a future `text -> TLA+` front-end compatible with the existing downstream TLA+ workflow
-8. [ ] The survey explicitly states known gaps, risks, and open questions instead of over-claiming certainty
+1. [x] A reproducible survey methodology is documented in `docs/survey/methodology.md`
+2. [x] A search log and screened-candidate artifacts are present in `docs/survey/search_log.md` and `docs/survey/artifacts/*.csv`
+3. [x] The survey clearly distinguishes direct `text -> TLA+` work from adjacent work
+4. [x] A comparison matrix with concrete columns and reusable conclusions is provided (`.md` + `.csv`)
+5. [x] The survey includes an LLM-focused evaluation section that explains how to assess whether generated TLA+ matches source text
+6. [x] The survey includes a beginner-friendly glossary and is readable without prior LLM/PL experience
+7. [x] The survey includes integration-oriented recommendations for a future `text -> TLA+` front-end compatible with the existing downstream TLA+ workflow
+8. [x] The survey explicitly states known gaps, risks, and open questions instead of over-claiming certainty
 
 ### 28.11 Suggested Execution Order
 

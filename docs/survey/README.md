@@ -45,7 +45,11 @@ For readers unfamiliar with the domain, we recommend:
 
 ## Summary
 
-*(To be filled after the survey is complete.)*
+As of February 2026, **no published system directly generates TLA+ specifications from natural-language text**. A systematic search (13 queries, 135 results screened, 36 candidates kept) found 7 near-miss works: code-to-TLA+ generation (Specula), LLM-assisted proof/annotation, and TLA+-focused benchmarks -- but none accept free-form prose as input and produce machine-checkable TLA+ modules as output.
+
+Adjacent work in NL-to-formal-spec (for Alloy, LTL, Dafny) demonstrates that LLM-based translation pipelines can work when combined with grammar-constrained decoding, syntax/model-checking repair loops, and domain-specific retrieval. The recommended architecture (Option B in `recommendations.md`) combines an LLM for requirements extraction with a deterministic TLA+ emitter, ensuring the output conforms to the `Init`/`Next`/`vars`/`Spec` idiom expected by this repository's downstream pipeline.
+
+Key evaluation insight: syntax validity alone is insufficient. Generated TLA+ must be assessed on requirement coverage, faithfulness, and absence of invented behavior. Seven concrete evaluation methods are proposed in `evaluation_of_text_to_tla.md`, ranging from automated traceability matrices to mutation testing.
 
 ## File Index
 
