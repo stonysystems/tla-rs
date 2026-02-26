@@ -5188,9 +5188,9 @@ transpiler/tla_test_workspace/
 - Present top-level workspace dirs (`10/10`): `generated_tla_by_llm/`, `tla_by_community/`, `transpiler_generated_tla/`, `transpiler_generated_tla_with_properties/`, `transpiler_generated_verus_spec/`, `transpiler_generated_verus_exec/` (33 D2 files), `llm_to_verus_spec/` (3 files), `llm_to_verus_exec/` (BLOCKED README), `community_to_verus_spec/` (3 files), `community_to_verus_exec/` (BLOCKED README)
 - ~~Missing top-level workspace dirs promised above (`5`)~~ — All materialized
 - `transpiler_generated_tla/` protocol dirs present (`10`): `ChainReplication`, `EPaxos`, `LeaderElection`, `PBFT`, `Paxos`, `PrimaryBackup`, `RSL`, `Raft`, `TwoPhase`, `VerticalPaxos`
-- `transpiler_generated_tla_with_properties/` currently contains MC wrappers for only `4` protocols: `LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`
-  - Missing MC wrappers/property bundles for: `ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`
-  - `RSL` is present in D3 output but not represented in the MC-property folder; scope should be explicitly documented (in-scope vs intentionally excluded)
+- `transpiler_generated_tla_with_properties/` contains MC wrappers for all `9` non-RSL protocols: `LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`, `ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`
+  - ~~Missing MC wrappers/property bundles for: `ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`~~ — All created
+  - RSL explicitly excluded from TLC scope (multi-module, Verus-verified with 624 conditions, 0 errors); decision documented in `RSL_SCOPE.md`
 - No checked-in TLC output/log artifacts (`*.out`, `*.log`, TLC traces) were found under `transpiler/tla_test_workspace/`; TODO currently records summarized TLC outcomes but the workspace snapshot does not preserve reproducible run artifacts
 - External-corpus D1 outputs are currently stored as subfolders (`generated_tla_by_llm/d1_output/`, `tla_by_community/d1_output/`) rather than the promised top-level `llm_to_verus_spec/` and `community_to_verus_spec/`
 - `generated_tla_by_llm/` contains `12` specs, but `7` are simplified (`Simple*`) and only `5` are non-simple; if this phase requires full/standard versions for all covered protocols, that work remains open
@@ -5212,7 +5212,7 @@ transpiler/tla_test_workspace/
 
 - [x] Add `Init/Next/Spec` wrappers + safety invariants for a subset of D3 outputs (`LeaderElection`, `Paxos`, `PrimaryBackup`, `TwoPhase`)
 - [x] Save those augmented modules under `transpiler_generated_tla_with_properties/`
-- [ ] Add protocol-property bundles for all remaining intended D3 protocol outputs (`ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`) and explicitly decide/document whether `RSL` is in scope for TLC in this phase
+- [x] Add protocol-property bundles for all remaining intended D3 protocol outputs (`ChainReplication`, `EPaxos`, `PBFT`, `Raft`, `VerticalPaxos`) and explicitly decide/document whether `RSL` is in scope for TLC in this phase — RSL excluded (see `RSL_SCOPE.md`); 9/9 non-RSL protocols have MC bundles
 - [ ] Run TLC for every property-augmented protocol case (use bounded/finite configs as needed; for large state spaces run time-bounded jobs up to 24h and record `timeout/no-violation-so-far` outcomes)
 - [ ] Check in reproducible TLC evidence per protocol (at minimum: `.cfg`, command used, summary result, wall-clock time, states/distinct counts; preferably logs/traces or archived outputs)
 - [ ] Record model-check outcomes (pass/fail/counterexample/timeout) in status matrix for the full intended protocol set

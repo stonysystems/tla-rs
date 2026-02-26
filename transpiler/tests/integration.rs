@@ -7406,15 +7406,15 @@ fn test_tlc_mc_wrappers_exist_and_well_structured() {
         }
     }
 
-    // Verify we have exactly 4 MC wrappers
+    // Verify we have exactly 9 MC wrappers (all non-RSL protocols)
     let mc_count = std::fs::read_dir(&dir)
         .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().ends_with("_MC.tla"))
         .count();
     assert_eq!(
-        mc_count, 4,
-        "Expected 4 MC wrapper TLA+ files, got {}",
+        mc_count, 9,
+        "Expected 9 MC wrapper TLA+ files, got {}",
         mc_count
     );
 }
@@ -9041,5 +9041,72 @@ fn test_workspace_directory_structure_complete() {
         community_spec_count >= 3,
         "community_to_verus_spec should have >= 3 D1 output files, found {}",
         community_spec_count
+    );
+}
+
+#[test]
+fn test_property_bundles_complete_for_all_non_rsl_protocols() {
+    let props_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tla_test_workspace")
+        .join("transpiler_generated_tla_with_properties");
+
+    if !props_dir.exists() {
+        eprintln!("Skipping: properties directory not found at {:?}", props_dir);
+        return;
+    }
+
+    // All 9 non-RSL protocols should have MC wrapper bundles (.tla + .cfg)
+    // RSL is excluded: multi-module, verified via Verus (see RSL_SCOPE.md)
+    let expected_protocols = [
+        "TwoPhase_MC",
+        "PrimaryBackup_MC",
+        "LeaderElection_MC",
+        "Paxos_MC",
+        "ChainReplication_MC",
+        "Raft_MC",
+        "PBFT_MC",
+        "VerticalPaxos_MC",
+        "EPaxos_MC",
+    ];
+
+    for protocol in &expected_protocols {
+        let tla_path = props_dir.join(format!("{}.tla", protocol));
+        let cfg_path = props_dir.join(format!("{}.cfg", protocol));
+
+        assert!(
+            tla_path.exists(),
+            "Missing property bundle TLA+ file: {}.tla",
+            protocol
+        );
+        assert!(
+            cfg_path.exists(),
+            "Missing property bundle config file: {}.cfg",
+            protocol
+        );
+
+        // Each .cfg should declare at least one INVARIANT
+        let cfg_content = std::fs::read_to_string(&cfg_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}.cfg: {}", protocol, e));
+        assert!(
+            cfg_content.contains("INVARIANT"),
+            "{}.cfg should declare INVARIANTS section",
+            protocol
+        );
+
+        // Each .tla should declare a Spec
+        let tla_content = std::fs::read_to_string(&tla_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}.tla: {}", protocol, e));
+        assert!(
+            tla_content.contains("Spec =="),
+            "{}.tla should define Spec ==",
+            protocol
+        );
+    }
+
+    // RSL scope decision document should exist
+    let scope_doc = props_dir.join("RSL_SCOPE.md");
+    assert!(
+        scope_doc.exists(),
+        "RSL scope decision document (RSL_SCOPE.md) should exist"
     );
 }
